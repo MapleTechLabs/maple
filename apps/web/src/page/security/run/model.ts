@@ -14,6 +14,7 @@ import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import { ParsedMarkdown } from "../../kit/markdown"
+import { SeverityBucket } from "../kit/findings"
 
 // `/security/runs/$runId`: one audit run, live while it is in progress.
 
@@ -29,6 +30,9 @@ export const UnitFilter = Schema.Literals([
 	"out_of_scope",
 ])
 export type UnitFilter = typeof UnitFilter.Type
+
+/** The events panel's chip: every event, only what went wrong, or only what concerns leads. */
+export const EventFilter = Schema.Literals(["all", "problems", "leads"])
 
 const ReportDoc = Schema.Literals(["report", "findingsDetail", "needsValidation"])
 
@@ -55,8 +59,18 @@ export const Model = Schema.Struct({
 	hasMoreOlder: Schema.Boolean,
 	units: KeyedSchema(SecurityAuditUnitsResponse, LoadFailure),
 	targets: KeyedSchema(SecurityAuditTargetsResponse, LoadFailure),
+	/** What this run reported, each with the finding's current triage. */
 	findings: KeyedSchema(SecurityAuditFindingsResponse, LoadFailure),
+	/** The severity tile narrowing the list; null shows every section. */
+	severity: Schema.NullOr(SeverityBucket),
+	collapsed: Schema.Array(SeverityBucket),
+	/** The finding open in the side sheet. */
+	openFingerprint: Schema.NullOr(Schema.String),
+	findingDialog: Dialog.Model,
+	/** Phases, totals, ledger and events: open while live, folded once the run finished. */
+	isDetailsOpen: Schema.NullOr(Schema.Boolean),
 	unitFilter: UnitFilter,
+	eventFilter: EventFilter,
 	isLedgerOpen: Schema.Boolean,
 	busy: Schema.NullOr(Schema.Literals(["start", "cancel"])),
 	cancelDialog: Dialog.Model,
@@ -84,7 +98,13 @@ export const Message = defineMessageUnion({
 	TickedPoll: { nowMs: Schema.Finite },
 	ClickedRetry: {},
 	ClickedLoadOlder: {},
+	PickedSeverity: { bucket: Schema.NullOr(SeverityBucket) },
+	ToggledSection: { bucket: SeverityBucket },
+	ClickedFinding: { fingerprint: Schema.String },
+	GotFindingDialogMessage: { message: Dialog.Message },
+	ToggledDetails: {},
 	PickedUnitFilter: { filter: UnitFilter },
+	PickedEventFilter: { filter: EventFilter },
 	ToggledLedger: {},
 	ClickedStartRun: {},
 	CompletedStartRun: { result: Schema.Result(SecurityAuditRun, LoadFailure) },

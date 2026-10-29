@@ -357,6 +357,134 @@ describe("v2 attribute_mappings over HTTP", () => {
 	})
 })
 
+describe("v2 ingest_rules over HTTP", () => {
+	const dropDebug = {
+		name: "Drop debug logs",
+		signals: ["logs"],
+		conditions: [{ field: "severity", op: "lt", value: "info" }],
+		action: { type: "drop", keep_percent: 0 },
+	}
+
+	it("full CRUD round-trip with wire shapes and position order", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+
+		const created = await harness.request("POST", "/v2/ingest_rules", {
+			token: key.secret,
+			body: dropDebug,
+		})
+		expect(created.status).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "ingest_rule",
+			enabled: true,
+			position: 0,
+			action: dropDebug.action,
+		})
+		expect(created.body.id.startsWith("irule_")).toBe(true)
+
+		const redact = await harness.request("POST", "/v2/ingest_rules", {
+			token: key.secret,
+			body: {
+				name: "Mask emails",
+				signals: ["logs", "traces"],
+				action: {
+					type: "redact",
+					keys: [],
+					detectors: ["email"],
+					patterns: [],
+					scopes: ["attributes"],
+					method: "hash",
+				},
+			},
+		})
+		expect(redact.status).toBe(200)
+		expect(redact.body.position).toBe(1)
+		expect(redact.body.conditions).toEqual([])
+
+		const moved = await harness.request("PATCH", `/v2/ingest_rules/${redact.body.id}`, {
+			token: key.secret,
+			body: {
+				position: 0,
+				action: {
+					type: "redact",
+					keys: ["*password*"],
+					detectors: [],
+					patterns: [],
+					scopes: ["attributes"],
+					method: "remove",
+				},
+			},
+		})
+		expect(moved.status).toBe(200)
+		expect(moved.body.signals).toEqual(["logs", "traces"])
+		expect(moved.body.action.method).toBe("remove")
+
+		const list = await harness.request("GET", "/v2/ingest_rules", { token: key.secret })
+		expect(list.body.data.map((rule: { name: string }) => rule.name)).toEqual([
+			"Drop debug logs",
+			"Mask emails",
+		])
+
+		const deleted = await harness.request("DELETE", `/v2/ingest_rules/${created.body.id}`, {
+			token: key.secret,
+		})
+		expect(deleted.body).toEqual({ id: created.body.id, object: "ingest_rule", deleted: true })
+		const retrieved = await harness.request("GET", `/v2/ingest_rules/${created.body.id}`, {
+			token: key.secret,
+		})
+		expect(retrieved.status).toBe(404)
+		expect(retrieved.body.error.code).toBe("ingest_rule_not_found")
+		await harness.dispose()
+	})
+
+	it("reports stats for an empty window and rejects an inverted one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+		const empty = await harness.request("GET", "/v2/ingest_rules/stats", { token: key.secret })
+		expect(empty.status).toBe(200)
+		expect(empty.body).toMatchObject({ object: "ingest_rule_stats", rules: [], signals: [], hourly: [] })
+		const inverted = await harness.request(
+			"GET",
+			"/v2/ingest_rules/stats?start_time=2026-10-28T12:00:00.000Z&end_time=2026-10-27T12:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(inverted.status).toBe(400)
+		await harness.dispose()
+	})
+
+	it("answers an invalid rule with 400 and every problem", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+		const invalid = await harness.request("POST", "/v2/ingest_rules", {
+			token: key.secret,
+			body: {
+				...dropDebug,
+				signals: ["traces"],
+				conditions: [{ field: "body", op: "regex", value: "(?=x)" }],
+			},
+		})
+		expect(invalid.status).toBe(400)
+		expect(invalid.body.error.code).toBe("ingest_rule_invalid")
+		expect(invalid.body.error.message).toContain("body only applies to logs")
+		await harness.dispose()
+	})
+
+	// A rule drops or rewrites the whole org's telemetry, so writes are admin-only.
+	it("refuses ingest_rule writes from a non-admin member", async () => {
+		const harness = makeHarness()
+		const member = await harness.bootstrapMemberKey()
+		const denied = await harness.request("POST", "/v2/ingest_rules", {
+			token: member.secret,
+			body: dropDebug,
+		})
+		expect(denied.status).toBe(403)
+		expect(denied.body.error.code).toBe("ingest_rule_forbidden")
+		const list = await harness.request("GET", "/v2/ingest_rules", { token: member.secret })
+		expect(list.status).toBe(200)
+		await harness.dispose()
+	})
+})
+
 describe("v2 ingest_keys over HTTP", () => {
 	it("retrieves (creating on first access) and rolls both keys", async () => {
 		const harness = makeHarness()

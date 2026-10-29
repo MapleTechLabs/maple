@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { pageDescriptionStyles, pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
@@ -81,7 +82,10 @@ const connectedRow = (
 			h.span(
 				[
 					h.Class(
-						cn("flex items-center gap-2", connected?.stat ? "w-36 shrink-0" : "min-w-36 flex-1"),
+						cn(
+							"flex items-center gap-2",
+							connected?.stat ? "w-36 shrink-0" : "min-w-36 flex-1 justify-end",
+						),
 					),
 				],
 				[
@@ -211,6 +215,29 @@ const firstStatusFailure = (model: Model): LoadFailure | null =>
 		return found ?? (data._tag === "Failure" || data._tag === "Stale" ? data.error : null)
 	}, null)
 
+/** The hub's title and its one-line description, tight under the `<h1>` like every page header. */
+export const hubTitle = (h: H): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-1")],
+		[
+			h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Integrations"]),
+			h.p(
+				[h.Class(cn(pageDescriptionStyles, "text-sm"))],
+				[
+					"Where Maple sends alerts and chat. Data sources like Cloudflare, Prometheus and GitHub are under ",
+					h.a(
+						[
+							h.Href(hrefOf(AppRoute.Sources())),
+							h.Class("text-foreground underline underline-offset-2"),
+						],
+						["Sources"],
+					),
+					".",
+				],
+			),
+		],
+	)
+
 export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html => {
 	const rows = HUB_CATALOG.map((entry) => ({
 		entry,
@@ -242,20 +269,6 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 			),
 		],
 		[
-			h.p(
-				[h.Class("font-prose text-muted-foreground text-sm")],
-				[
-					"Where Maple sends alerts and chat; data sources like Cloudflare, Prometheus and GitHub are under ",
-					h.a(
-						[
-							h.Href(hrefOf(AppRoute.Sources())),
-							h.Class("text-foreground underline underline-offset-2"),
-						],
-						["Sources"],
-					),
-					".",
-				],
-			),
 			...(connected.length > 0 || loading.length > 0
 				? [
 						h.section(

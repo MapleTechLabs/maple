@@ -37,6 +37,7 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
 ] }
 opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "trace", "logs", "metrics", "with-serde"] }
 prost = "0.14.3"
+regex = "1.12"
 crc32fast = "1.5"
 dashmap = "6.1"
 num_cpus = "1.17"
@@ -78,6 +79,8 @@ default = []
 # CPU on the request path.
 hotpath = ["hotpath/hotpath"]
 hotpath-alloc = ["hotpath/hotpath-alloc"]
+# Exposes `ingest_rules::conformance` for the `ingest_rules_oracle` example.
+conformance = []
 
 [lints.rust]
 unsafe_code = "deny"
@@ -128,6 +131,7 @@ items_after_statements = "allow"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
+proptest = { version = "1.10", default-features = false, features = ["std"] }
 
 [[bench]]
 name = "ingest_bench"
@@ -136,3 +140,13 @@ harness = false
 [[bench]]
 name = "ai_session_bench"
 harness = false
+
+[[bench]]
+name = "ingest_rules_bench"
+harness = false
+
+# Reads fixture-shaped cases as JSON lines on stdin and prints each outcome; driven by
+# `bun run --cwd packages/ingest-rules fuzz` to diff this engine against the TS one.
+[[example]]
+name = "ingest_rules_oracle"
+required-features = ["conformance"]

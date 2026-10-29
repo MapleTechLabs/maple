@@ -8,6 +8,7 @@ import {
 	AlertRuleStates,
 	AlertIncidents,
 	AlertDeliveryEvents,
+	AlertLinearIssues,
 } from "./alerts"
 import { AnomalyDetectorSettings, AnomalyDetectorStates, AnomalyIncidents } from "./anomalies"
 import { ApiKeys } from "./api-keys"
@@ -18,6 +19,7 @@ import { CliDeviceAuthorizations } from "./cli-device-authorizations"
 import { CloudflareAnalyticsState } from "./cloudflare-analytics-state"
 import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
+import { CloudflareZoneSettings } from "./cloudflare-zone-settings"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
 import { DeviceCredentials, DeviceProofReplays } from "./device-credentials"
@@ -48,6 +50,7 @@ import { OrgOnboardingState } from "./onboarding"
 import { OrgClickHouseSchemaApplyRuns } from "./org-clickhouse-schema-apply-runs"
 import { OrgClickHouseSettings } from "./org-clickhouse-settings"
 import { OrgIngestAttributeMappings } from "./org-ingest-attribute-mappings"
+import { OrgIngestRules, OrgIngestRuleSettings, OrgIngestRuleStats } from "./org-ingest-rules"
 import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
 import { Sources } from "./sources"
@@ -101,6 +104,7 @@ export * from "./cli-device-authorizations"
 export * from "./cloudflare-analytics-state"
 export * from "./cloudflare-hyperdrive-configs"
 export * from "./cloudflare-logpush-connectors"
+export * from "./cloudflare-zone-settings"
 export * from "./dashboard-shares"
 export * from "./dashboards"
 export * from "./device-credentials"
@@ -119,6 +123,7 @@ export * from "./onboarding"
 export * from "./org-clickhouse-schema-apply-runs"
 export * from "./org-clickhouse-settings"
 export * from "./org-ingest-attribute-mappings"
+export * from "./org-ingest-rules"
 export * from "./org-ingest-keys"
 export * from "./org-ingest-sampling-policies"
 export * from "./org-recommendation-issues"
@@ -144,6 +149,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	AlertRuleStates,
 	AlertIncidents,
 	AlertDeliveryEvents,
+	AlertLinearIssues,
 	AnomalyDetectorSettings,
 	AnomalyDetectorStates,
 	AnomalyIncidents,
@@ -155,6 +161,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
 	CloudflareLogpushConnectors,
+	CloudflareZoneSettings,
 	DashboardShares,
 	Dashboards,
 	DashboardVersions,
@@ -189,6 +196,9 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgClickHouseSchemaApplyRuns,
 	OrgClickHouseSettings,
 	OrgIngestAttributeMappings,
+	OrgIngestRules,
+	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
 	OrgOpenRouterKeys,

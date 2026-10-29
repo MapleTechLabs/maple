@@ -133,6 +133,7 @@ const PLATFORM_OF_FLOW = {
 	supabase: "supabase",
 	github: null,
 	hazel: null,
+	linear: null,
 	chat_install: null,
 	chat_identity: null,
 } satisfies { readonly [K in OAuthReturnFlow]: StackPlatform | null }

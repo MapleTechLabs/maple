@@ -14,6 +14,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import { TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
+import { ServiceNamespaces } from "./uptime-groups"
 
 export const RuleBucket = Schema.Literals(["firing", "blind", "healthy", "disabled"])
 export type RuleBucket = typeof RuleBucket.Type
@@ -58,6 +59,7 @@ export const Message = defineMessageUnion({
 	GotNewRuleMenuMessage: { message: Menu.Message },
 	CompletedFetchMonitors: { key: Schema.String, result: outcome(Schema.Array(V2UptimeMonitor)) },
 	ClickedRetryMonitors: {},
+	CompletedFetchServiceNamespaces: { key: Schema.String, result: outcome(ServiceNamespaces) },
 	ChangedUptimeQuery: { value: Schema.String },
 	ClickedUptimeStatus: { filter: UptimeStatusFilter },
 	ChangedUptimeKind: { kind: UptimeKindFilter },

@@ -14,7 +14,7 @@ Auto-detects commit SHA and deployment environment from common platform env vars
 
 `Maple.layer` always exports. The endpoint defaults to the public Maple ingest for your region (`https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` with `region: "eu"` / `MAPLE_REGION=eu`), so supplying an ingest key is usually all you need. A missing key does **not** switch export off — that keeps keyless setups working against a local `maple start` sink or your own OTLP collector. Keyless against the public ingest is the one combination that can't work (it 401s), and it logs a one-shot warning.
 
-> `MapleFlush.make` and the Cloudflare `make()` behave differently: they **do** no-op when no ingest key resolves. Reach for those if you want telemetry to disable itself automatically.
+> `MapleFlush.make` and the Cloudflare `make()` differ in one case: keyless against the public ingest, they no-op instead of warning. Keyless against any other endpoint, they export like `Maple.layer`.
 
 ```typescript
 import { Maple } from "@maple-dev/effect-sdk/server"
@@ -74,7 +74,7 @@ export default {
 
 `telemetry.layer` MUST live in the same runtime as your routes — provide it to the layer composition you hand to `HttpRouter.toWebHandler`, not a separate per-request runtime, or your spans won't pick up the Tracer reference.
 
-When `MAPLE_INGEST_KEY` is unset, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. After a flush failure, the failed batch is restored ahead of newer telemetry and that signal sleeps 60s before retrying. Trace and log cooldowns are independent.
+When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`) and the endpoint is the public Maple ingest, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. Against any other endpoint (a local `maple start`, your own collector) it exports without an `Authorization` header. After a flush failure, the failed batch is restored ahead of newer telemetry and that signal sleeps 60s before retrying. Trace and log cooldowns are independent.
 
 ### Cloudflare-specific options
 

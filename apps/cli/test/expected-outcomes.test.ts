@@ -184,6 +184,25 @@ describe("default chDB backups config", () => {
 		}
 	})
 
+	it("gives an in-memory store the ingest defaults without enabling backups", async () => {
+		const root = mkdtempSync(join(tmpdir(), "maple-chdb-config-"))
+		try {
+			const dataDir = join(root, "data")
+			const resolved = await Effect.runPromise(
+				resolveChdbConfigFile(dataDir, undefined, { backups: false }).pipe(
+					Effect.provide(BunServices.layer),
+				),
+			)
+
+			strictEqual(resolved, chdbConfigPath(dataDir))
+			const xml = readFileSync(resolved ?? "", "utf8")
+			ok(xml.includes("<cleanup_delay_period>1</cleanup_delay_period>"))
+			ok(!xml.includes("<backups>"))
+		} finally {
+			rmSync(root, { recursive: true, force: true })
+		}
+	})
+
 	it("honours a user-supplied config untouched and writes nothing", async () => {
 		const root = mkdtempSync(join(tmpdir(), "maple-chdb-config-"))
 		try {

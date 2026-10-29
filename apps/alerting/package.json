@@ -15,7 +15,6 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@types/node": "catalog:tooling",

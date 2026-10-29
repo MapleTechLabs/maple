@@ -19,11 +19,13 @@ export type IntegrationId =
 	| "supabase"
 	| "warpstream"
 	| "hazel"
+	| "linear"
 	| "github"
 	| ChatIntegrationId
 
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
+export const LINEAR_ACCENT = "#5E6AD5"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
@@ -141,6 +143,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("RailwayIcon"),
 		accent: RAILWAY_ACCENT,
 		iconClassName: "text-foreground",
+		docsUrl: docsUrl("railway"),
 	},
 	{
 		id: "supabase",
@@ -151,6 +154,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
 		icon: named("SupabaseIcon"),
 		accent: SUPABASE_ACCENT,
+		docsUrl: docsUrl("supabase"),
 	},
 	{
 		id: "warpstream",
@@ -170,6 +174,15 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("HazelIcon"),
 		accent: HAZEL_ACCENT,
 		docsUrl: "https://hazel.sh/docs/integrations/maple",
+	},
+	{
+		id: "linear",
+		category: "notifications",
+		name: "Linear",
+		description:
+			"Open one Linear issue per alert rule, then comment as it fires again, changes severity or resolves.",
+		icon: named("LinearIcon"),
+		accent: LINEAR_ACCENT,
 	},
 	{
 		id: "github",

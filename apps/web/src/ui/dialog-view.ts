@@ -38,6 +38,11 @@ type Parts = Readonly<{
 	isLabelled: boolean
 }>
 
+// A dialog is a prose context: its buttons and field labels share the sans face of its title and body.
+// Close and Cancel buttons carry their own slot (`dialog-close`, `alert-dialog-cancel`), so match those too.
+const proseControls =
+	"[&_[data-slot=button]]:font-prose [&_[data-slot$='-close']]:font-prose [&_[data-slot$='-cancel']]:font-prose [&_[data-slot=label]]:font-prose [&_[data-slot=field-label]]:font-prose"
+
 // dialog.tsx `DialogPopup`, alert-dialog.tsx `AlertDialogPopup`, sheet.tsx `SheetPopup`, command.tsx
 const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isBottomStick = true): Parts => {
 	switch (kind) {
@@ -51,6 +56,7 @@ const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isB
 				popup: cn(
 					DialogStyles.dialogPopupStyles,
 					isBottomStick && DialogStyles.dialogPopupBottomStickStyles,
+					proseControls,
 					className,
 				),
 				closeButton: Option.some(DialogStyles.dialogCloseStyles),
@@ -67,6 +73,7 @@ const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isB
 				popup: cn(
 					AlertDialogStyles.alertDialogPopupStyles,
 					AlertDialogStyles.alertDialogPopupBottomStickStyles,
+					proseControls,
 					className,
 				),
 				closeButton: Option.none(),

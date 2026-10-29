@@ -25,6 +25,7 @@ import {
 	AlertDeliveryEvents,
 	AlertDestinations,
 	AlertIncidents,
+	AlertLinearIssues,
 	AlertRuleStates,
 	AlertRules,
 	ApiKeys,
@@ -56,6 +57,9 @@ import {
 	OrgClickHouseSettings,
 	OrgIngestKeys,
 	OrgOpenRouterKeys,
+	OrgIngestRules,
+	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
 	PlanetscaleConnections,
 	PlanetscaleIssueReceipts,
 	RailwayConnections,
@@ -126,6 +130,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	AlertIncidents,
 	AlertRuleStates,
 	AlertRules,
+	// Before its destination: a thread row references it.
+	AlertLinearIssues,
 	AlertDestinations,
 	ApiKeys,
 	CancellationReviews,
@@ -196,6 +202,10 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	SupabaseConnections,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	OrgOpenRouterKeys,
+	// Drop rules and the hash salt: a recreated org must not silently lose data to old rules.
+	OrgIngestRules,
+	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	LiveActivities,
@@ -242,6 +252,7 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"AnomalyIncidents",
 	"CloudflareAnalyticsState",
 	"CloudflareHyperdriveConfigs",
+	"CloudflareZoneSettings",
 	"ErrorFingerprintCandidates",
 	"ErrorIssuePullRequests",
 	"ErrorIssueVerifications",

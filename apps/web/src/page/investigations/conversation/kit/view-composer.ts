@@ -88,7 +88,8 @@ export const composer = <M>(h: HtmlBuilder<M>, options: ComposerOptions<M>): Htm
 				textarea(h, {
 					id: options.textareaId,
 					isUnstyled: true,
-					className: "field-sizing-content max-h-48 min-h-16",
+					// Sans, like the messages it sends.
+					className: "field-sizing-content max-h-48 min-h-16 font-prose",
 					attributes: [
 						h.Name("message"),
 						h.Placeholder(options.placeholder),

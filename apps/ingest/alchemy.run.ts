@@ -647,6 +647,10 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(yield* optionalPlain("INGEST_GCP_ORG_MAX_IN_FLIGHT")),
 				...(yield* optionalPlain("INGEST_REQUEST_TIMEOUT_SECS")),
 				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
+				// Customer ingest rules (docs/ingest-rules.md): the gateway defaults to on; set "false" only to
+				// switch rule application off in an emergency.
+				...(yield* optionalPlain("INGEST_RULES_ENABLED")),
+				...(yield* optionalPlain("INGEST_RULES_CACHE_TTL_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
 				// The edge rule matches exact header values only; the gateway refuses these

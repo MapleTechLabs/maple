@@ -18,6 +18,7 @@ import { ScrapeScheduler } from "./ScrapeScheduler"
 import { Scraper } from "./Scraper"
 import { TargetFetcher } from "./TargetFetcher"
 import { TargetRegistry } from "./TargetRegistry"
+import * as TimedHttpClient from "./TimedHttpClient"
 import { telemetryLayer } from "./Telemetry"
 import { UptimeDnsProbe } from "./UptimeDnsProbe"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
@@ -38,7 +39,8 @@ const UptimeLive = UptimeScheduler.layer.pipe(
 	Layer.provide(Layer.mergeAll(UptimeRegistry.layer, UptimeReporter.layer, UptimeProber.layer)),
 	Layer.provide(
 		Layer.mergeAll(
-			UptimeHttpProbe.layer,
+			// HTTP checks dial through node:https so each phase is timed; the rest stays on fetch.
+			UptimeHttpProbe.layer.pipe(Layer.provide(TimedHttpClient.layer)),
 			UptimeTcpProbe.layer,
 			UptimeDnsProbe.layer,
 			UptimeSpanExporter.layer,

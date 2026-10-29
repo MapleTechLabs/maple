@@ -20,7 +20,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { incidentRow, NOW, ORG } from "../shared/test-rows"
 import { monitorHref } from "../shared/uptime-commands"
 import type { UptimeMonitor } from "../shared/uptime-derive"
-import { downMonitor, httpMonitor, pausedMonitor } from "../shared/uptime-test-monitors"
+import { downMonitor, httpMonitor, monitorId, pausedMonitor } from "../shared/uptime-test-monitors"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, monitorMenuId, update } from "./update"
@@ -50,6 +50,22 @@ const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>): Model => {
 }
 
 const THREE = [httpMonitor(), downMonitor(), pausedMonitor()]
+
+const withNamespaces = (model: Model, namespaces: Record<string, string>): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedFetchServiceNamespaces({
+			key: model.serviceNamespaces.key ?? "",
+			result: Result.succeed(namespaces),
+		}),
+	).model
+
+const GROUPED = [
+	httpMonitor(),
+	downMonitor({ service_name: "payments-api" }),
+	httpMonitor({ id: monitorId(4), name: "cron-heartbeat", service_name: null }),
+]
+const NAMESPACES = { "checkout-api": "shop", "payments-api": "billing" }
 
 describe("alerts hub inbox, uptime incidents", () => {
 	test("an uptime incident reads as its monitor being down, without the ungrouped key", () => {
@@ -82,12 +98,66 @@ describe("alerts hub inbox, uptime incidents", () => {
 })
 
 describe("alerts hub, Uptime tab", () => {
+	test("a row's subline names the type and the target, and drops a target the name repeats", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withMonitors([
+					httpMonitor(),
+					httpMonitor({ id: monitorId(5), name: "api.acme.dev/checkout/health" }),
+				]),
+			),
+			expectView(text("HTTP · api.acme.dev/checkout/health")).toExist(),
+			// The second row's subline is the type alone; there is no Type column to match instead.
+			expectView(text("HTTP")).toExist(),
+		)
+	})
+
 	test("the monitors are read only when the Uptime tab is open", () => {
 		expect(names(init({ _tag: "Alerts", search: {} }, context).commands)).not.toContain(
 			"FetchAlertsHubMonitors",
 		)
 		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
 			"FetchAlertsHubMonitors",
+		)
+	})
+
+	test("opening the tab also reads which namespace each service reports under", () => {
+		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
+			"FetchAlertsHubServiceNamespaces",
+		)
+	})
+
+	test("monitors sit under their service's namespace, unlinked ones under No namespace", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withNamespaces(withMonitors(GROUPED), NAMESPACES)),
+			expectView(text("shop")).toExist(),
+			expectView(text("billing")).toExist(),
+			expectView(text("No namespace")).toExist(),
+			expectView(role("link", { name: "cron-heartbeat" })).toExist(),
+		)
+	})
+
+	test("without namespaces the list has no group headers", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withNamespaces(withMonitors(GROUPED), {})),
+			expectView(text("No namespace")).not.toExist(),
+			expectView(role("link", { name: "checkout-api" })).toExist(),
+		)
+	})
+
+	test("a pinned namespace lists only its own monitors, without a header", () => {
+		const pinned: PageContext = { ...context, pinnedNamespace: "billing" }
+		const pinnedUpdate = (model: Model, message: Message) => update(model, message, pinned)
+		scene(
+			{ update: pinnedUpdate, view: withViewInputs(pageView, { context: pinned })() },
+			given(withNamespaces(withMonitors(GROUPED), NAMESPACES)),
+			expectView(role("link", { name: "payments-api" })).toExist(),
+			expectView(role("link", { name: "checkout-api" })).not.toExist(),
+			expectView(role("link", { name: "cron-heartbeat" })).not.toExist(),
+			expectView(text("No namespace")).not.toExist(),
 		)
 	})
 
@@ -103,6 +173,17 @@ describe("alerts hub, Uptime tab", () => {
 				"href",
 				monitorHref(downMonitor().id),
 			),
+		)
+	})
+
+	test("each row reads P50, P95 and P99 off its recent checks", () => {
+		// Recent durations 100 to 139 ms: nearest rank lands on 119, 137 and 139.
+		scene(
+			{ update: pageUpdate, view },
+			given(withMonitors([httpMonitor()])),
+			expectView(text("119 ms")).toExist(),
+			expectView(text("137 ms")).toExist(),
+			expectView(text("139 ms")).toExist(),
 		)
 	})
 

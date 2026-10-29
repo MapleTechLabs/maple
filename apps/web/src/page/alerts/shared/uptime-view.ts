@@ -1,4 +1,4 @@
-import { TONE_BORDER, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
@@ -13,14 +13,10 @@ import {
 
 // The uptime marks: the status chip, the status square and the recent-checks strip.
 
-/** Title-chip status badge: rounded, tinted, sentence case ("Down 6m", "Paused"). */
+/** The status badge, sentence case ("Down 6m", "Paused"), in the same tinted chip as other status badges. */
 export const uptimeStatusChip = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor, nowMs: number): Html => {
 	const tone = STATUS_TONE[displayStatus(monitor)]
-	return badge(
-		h,
-		{ variant: "outline", className: cn("rounded-full font-normal", TONE_BORDER[tone], TONE_SOFT[tone]) },
-		[statusLabel(monitor, nowMs)],
-	)
+	return badge(h, { variant: tone === "neutral" ? "muted" : tone }, [statusLabel(monitor, nowMs)])
 }
 
 /** The small square leading a monitor row; static, never animated. */

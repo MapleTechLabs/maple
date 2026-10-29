@@ -1,4 +1,5 @@
 import { UptimeMonitorId } from "@maple/domain"
+import { UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
 import {
 	UptimeMonitorPublicId,
 	type V2UptimeMonitor,
@@ -105,8 +106,8 @@ export const editMonitorHref = (id: UptimeMonitorId): string =>
 
 export const uptimeTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "uptime" } }))
 
-/** Every check is a span in the `maple-uptime` service. */
-export const UPTIME_SERVICE = "maple-uptime"
+/** Every check is a span in the `maple-uptime` service, namespace `maple-services`. */
+export const UPTIME_SERVICE = UPTIME_SERVICE_NAME
 
 export const uptimeTracesHref = (): string =>
 	hrefOf(AppRoute.Traces({ search: { services: [UPTIME_SERVICE] } }))

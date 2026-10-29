@@ -82,7 +82,8 @@ const headerActions = (h: H, model: Model): Html => {
 		viewInputs: {
 			entries: environmentItems(model).map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
 			size: "sm",
-			className: "w-full min-w-0 @2xl/page:w-auto @2xl/page:min-w-36",
+			// Sized to its value like the Overview select; full width only on its own narrow row.
+			className: "w-full min-w-0 @2xl/page:w-auto",
 			// `SelectValue` shows the raw value when it is not among the items (facets not loaded).
 			renderValue: (value) => [
 				environmentItems(model).find((item) => item.value === value)?.label ?? value,

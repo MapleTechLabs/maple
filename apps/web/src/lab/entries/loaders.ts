@@ -13,6 +13,10 @@ type Model = typeof Model.Type
 const heading = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	eyebrow(h, { variant: "label", as: "h2", className: "mb-2" }, [text])
 
+/** On the text's middle, with the same gap either side (the margins stand in for the spaces). */
+const inlineLoader = <M>(h: HtmlBuilder<M>): Html =>
+	dotLoader(h, { className: "mx-1.5 align-middle -translate-y-px" })
+
 const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 	h.div(
 		[h.Class("mx-auto flex max-w-3xl flex-col gap-10 p-8")],
@@ -33,7 +37,7 @@ const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 				[h.Class("flex flex-col gap-1")],
 				[
 					heading(h, "The tool row: running, then settled"),
-					...["Searching Traces", "Reading spans", "Grouping by service"].map((line) =>
+					...["Searching traces", "Reading spans", "Grouping by service"].map((line) =>
 						h.div(
 							[h.Key(line), h.Class("flex items-center gap-2 py-0.5 text-xs")],
 							[
@@ -71,12 +75,12 @@ const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 					h.p(
 						[h.Class("text-sm leading-relaxed")],
 						[
-							"The checkout path is still degraded ",
-							dotLoader(h),
-							" and the paywall worker is the one dragging it down ",
-							dotLoader(h),
-							" so I am pulling the last hour of spans ",
-							dotLoader(h),
+							"The checkout path is still degraded",
+							inlineLoader(h),
+							"and the paywall worker is the one dragging it down",
+							inlineLoader(h),
+							"so I am pulling the last hour of spans",
+							inlineLoader(h),
 							"before saying anything firmer.",
 						],
 					),

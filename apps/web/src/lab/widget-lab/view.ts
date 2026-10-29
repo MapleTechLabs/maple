@@ -236,7 +236,7 @@ const modeToggle = (h: H, model: Model): Html =>
 	})
 
 const pageContent = (h: H, model: Model): Html =>
-	dashboardPage(h, { actions: modeToggle(h, model) }, [
+	dashboardPage(h, {}, [
 		h.div(
 			[h.Class("flex flex-col gap-8 pb-12"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 			// Painted in one go once the theme, the chart runtime and the clock are in (S3).
@@ -246,20 +246,31 @@ const pageContent = (h: H, model: Model): Html =>
 						h.nav(
 							[
 								h.Class(
-									"sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-1 border-b bg-background/80 px-4 py-2 backdrop-blur",
+									"sticky top-0 z-10 -mx-4 flex items-center gap-3 border-b bg-background/80 px-4 py-2 backdrop-blur",
 								),
 							],
-							NAV_ITEMS.map(([id, label]) =>
-								h.a(
+							// One row: the anchors scroll sideways when tight, so the View/Edit toggle never wraps below them.
+							[
+								h.div(
 									[
-										h.Href(`#${id}`),
 										h.Class(
-											"rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
+											"flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]",
 										),
 									],
-									[label],
+									NAV_ITEMS.map(([id, label]) =>
+										h.a(
+											[
+												h.Href(`#${id}`),
+												h.Class(
+													"shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
+												),
+											],
+											[label],
+										),
+									),
 								),
-							),
+								h.div([h.Class("shrink-0")], [modeToggle(h, model)]),
+							],
 						),
 						section(
 							h,

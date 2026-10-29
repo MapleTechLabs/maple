@@ -86,7 +86,7 @@ export const V2AlertDestination = Schema.Struct({
 	}),
 	type: AlertDestinationType.annotate({
 		description:
-			"The delivery channel: `pagerduty`, `webhook`, `hazel-oauth`, `discord`, `telegram`, `email`, or `chat` (a channel in a chat workspace linked through a chat connector). Immutable after creation.",
+			"The delivery channel: `pagerduty`, `webhook`, `hazel-oauth`, `discord`, `telegram`, `email`, `chat` (a channel in a chat workspace linked through a chat connector), or `linear` (a team in the connected Linear workspace). Immutable after creation.",
 		examples: ["pagerduty"],
 	}),
 	enabled: Schema.Boolean.annotate({
@@ -119,6 +119,11 @@ export const V2AlertDestination = Schema.Struct({
 				"For a `chat` destination, the linked chat workspace it posts into. Absent otherwise.",
 		}),
 	),
+	linear_team_id: Schema.optionalKey(
+		Schema.String.annotate({
+			description: "For a `linear` destination, the Linear team it opens issues in. Absent otherwise.",
+		}),
+	),
 	last_tested_at: Schema.NullOr(Timestamp).annotate({
 		description: "When a test notification was last sent to this destination, or `null` if never tested.",
 	}),
@@ -132,7 +137,7 @@ export const V2AlertDestination = Schema.Struct({
 	identifier: "AlertDestination",
 	title: "Alert Destination",
 	description:
-		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Hazel OAuth, Discord, Telegram, workspace-member email, or a channel in a linked chat workspace). Channel secrets are write-only: responses carry a redacted `summary` instead.",
+		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Hazel OAuth, Discord, Telegram, workspace-member email, a channel in a linked chat workspace, or a Linear team). Channel secrets are write-only: responses carry a redacted `summary` instead.",
 	examples: [wireExample(alertDestinationExample)],
 })
 export type V2AlertDestination = Schema.Schema.Type<typeof V2AlertDestination>
@@ -254,6 +259,17 @@ const V2ChatDestinationCreateParams = Schema.Struct({
 	enabled: enabledField,
 }).annotate({ identifier: "AlertDestinationCreateChat", title: "Chat connector destination" })
 
+const V2LinearDestinationCreateParams = Schema.Struct({
+	type: Schema.Literal("linear"),
+	name: nameField,
+	team_id: NonEmptyString.annotate({
+		description:
+			"A team in the Linear workspace connected on the Integrations page. Each alert rule opens one issue there (one per group), and later events comment on it. The team's key and name are read from Linear.",
+		examples: ["9cfb482a-81e3-4154-b5b9-2c805e70a02d"],
+	}),
+	enabled: enabledField,
+}).annotate({ identifier: "AlertDestinationCreateLinear", title: "Linear destination" })
+
 export const V2AlertDestinationCreateParams = Schema.Union([
 	V2PagerDutyDestinationCreateParams,
 	V2WebhookDestinationCreateParams,
@@ -262,6 +278,7 @@ export const V2AlertDestinationCreateParams = Schema.Union([
 	V2TelegramDestinationCreateParams,
 	V2EmailDestinationCreateParams,
 	V2ChatDestinationCreateParams,
+	V2LinearDestinationCreateParams,
 ]).annotate({
 	identifier: "AlertDestinationCreateParams",
 	title: "Alert destination create parameters",
@@ -334,6 +351,12 @@ export const V2AlertDestinationUpdateParams = Schema.Union([
 		channel_id: OptionalNonEmptyString,
 		enabled: Schema.optionalKey(Schema.Boolean),
 	}).annotate({ identifier: "AlertDestinationUpdateChat", title: "Chat connector destination update" }),
+	Schema.Struct({
+		type: Schema.Literal("linear"),
+		name: optionalNameField,
+		team_id: OptionalNonEmptyString,
+		enabled: Schema.optionalKey(Schema.Boolean),
+	}).annotate({ identifier: "AlertDestinationUpdateLinear", title: "Linear destination update" }),
 ]).annotate({
 	identifier: "AlertDestinationUpdateParams",
 	title: "Alert destination update parameters",

@@ -120,6 +120,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			aws: Keyed.idle(),
 			supabase: Keyed.idle(),
 			hazel: Keyed.idle(),
+			linear: Keyed.idle(),
 			github: Keyed.idle(),
 			chat: Keyed.idle(),
 			scrapeTargets: Keyed.idle(),
@@ -237,6 +238,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
+		CompletedLoadLinear: ({ key, result }) =>
+			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
 		CompletedLoadChat: ({ key, result }) =>
@@ -278,6 +281,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedZoneSort: ({ key }) => CloudflareCard.clickedZoneSort(model, key),
 		ClickedWorkersExpand: () =>
 			CloudflareCard.updateBoard(model, { workersExpanded: !model.cloudflareCard.workersExpanded }),
+		ClickedManageZones: () => CloudflareCard.clickedManageZones(model),
+		GotZoneDialogMessage: ({ message: child }) => CloudflareCard.gotZoneDialog(model, child),
+		ToggledManagedZone: ({ accountId, zoneId }) =>
+			CloudflareCard.toggledManagedZone(model, accountId, zoneId),
+		ToggledWatchNewZones: ({ accountId }) => CloudflareCard.toggledWatchNewZones(model, accountId),
+		ClickedSetAccountZones: ({ accountId, watched }) =>
+			CloudflareCard.clickedSetAccountZones(model, accountId, watched),
+		ChangedManagedZoneSearch: ({ value }) =>
+			CloudflareCard.updateBoard(model, { zoneDraftSearch: value }),
+		SubmittedZoneSettings: () => CloudflareCard.submittedZoneSettings(model),
+		CompletedCloudflareZones: ({ failure }) =>
+			CloudflareCard.completedZoneSettings(model, context, failure),
 		CompletedLoadChartRuntime: () =>
 			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Ready() }),
 		FailedLoadChartRuntime: ({ reason }) =>

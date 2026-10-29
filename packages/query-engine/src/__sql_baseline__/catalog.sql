@@ -5035,7 +5035,7 @@ SELECT
         GROUP BY hourTs
         FORMAT JSON
 
--- builder:service-map-rollup:serviceMapEdgesRollupSQL:default  [f4240642]
+-- builder:service-map-rollup:serviceMapEdgesRollupSQL:default  [639f3369]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -5060,7 +5060,8 @@ SELECT
         WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
-          AND service_map_spans.OrgId = 'org_sql_catalog') AS p
+          AND service_map_spans.OrgId = 'org_sql_catalog'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -5807,7 +5808,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesForServiceQuery:default  [e832e6b5]
+-- builder:service-map:serviceDependenciesForServiceQuery:default  [211f518c]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -5828,6 +5829,7 @@ SELECT
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
           AND service_map_edges_hourly.SourceService = 'web'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
         GROUP BY sourceService, targetService
@@ -5853,7 +5855,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND service_map_spans.ServiceName = 'web') AS p
+          AND service_map_spans.ServiceName = 'web'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -5874,7 +5877,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [010fb51f]
+-- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [cc329604]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -5894,6 +5897,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND (service_map_edges_hourly.SourceService = 'web' OR service_map_edges_hourly.TargetService = 'web')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
@@ -5919,7 +5923,8 @@ SELECT
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -5941,7 +5946,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:default  [2aa810d6]
+-- builder:service-map:serviceDependenciesSQL:default  [5467ed65]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -5961,6 +5966,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
         GROUP BY sourceService, targetService
@@ -5985,7 +5991,8 @@ SELECT
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -6006,7 +6013,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:env-scoped  [3f463d3e]
+-- builder:service-map:serviceDependenciesSQL:env-scoped  [1fd187fd]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -6026,6 +6033,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND service_map_edges_hourly.DeploymentEnv = 'production'
@@ -6052,7 +6060,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -6215,7 +6224,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceMapEdgeJoinQuery:rollup-hour  [f4240642]
+-- builder:service-map:serviceMapEdgeJoinQuery:rollup-hour  [639f3369]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -6240,7 +6249,8 @@ SELECT
         WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
-          AND service_map_spans.OrgId = 'org_sql_catalog') AS p
+          AND service_map_spans.OrgId = 'org_sql_catalog'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -6256,7 +6266,7 @@ SELECT
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
         FORMAT JSON
 
--- builder:service-map:serviceMapEdgeJoinQuery:scoped-to-service  [f0f11d97]
+-- builder:service-map:serviceMapEdgeJoinQuery:scoped-to-service  [ebdcfe82]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -6283,7 +6293,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.DeploymentEnv = 'production'
-          AND service_map_spans.ServiceName = 'web') AS p
+          AND service_map_spans.ServiceName = 'web'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -12741,7 +12752,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- pipe:service_dependencies:default:baseline  [3f463d3e]
+-- pipe:service_dependencies:default:baseline  [1fd187fd]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -12761,6 +12772,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND service_map_edges_hourly.DeploymentEnv = 'production'
@@ -12787,7 +12799,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,

@@ -22,12 +22,12 @@ Respond with any `2xx` within **15 seconds**. The response body is ignored.
 
 ## Events
 
-| Event      | Sent when                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------------ |
-| `trigger`  | An incident opens, after the rule's required number of consecutive breaching checks        |
-| `renotify` | An incident is still breaching after the rule's re-notify interval (30 minutes by default) |
-| `resolve`  | An incident closes, after the rule's required number of consecutive healthy checks         |
-| `test`     | You press **Send test** on the destination, or test a rule with notifications on           |
+| Event      | Sent when                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| `trigger`  | An incident opens, after the rule's required number of consecutive breaching checks           |
+| `renotify` | An incident is still breaching after the rule's re-notify interval (30 minutes by default)    |
+| `resolve`  | An incident closes, after the rule's required number of consecutive healthy checks            |
+| `test`     | You press **Send test** on the destination, or under **Who gets notified** in the rule editor |
 
 ## Payload
 
@@ -46,15 +46,21 @@ Respond with any `2xx` within **15 seconds**. The response body is ignored.
 		"comparator": "gt",
 		"threshold": 5,
 		"thresholdUpper": null,
-		"windowMinutes": 5
+		"windowMinutes": 5,
+		"severities": ["warning", "critical"]
 	},
+	"peakSeverity": "critical",
 	"observed": { "value": 8.4, "sampleCount": 1250 },
 	"template": null,
 	"chart": { "url": "https://…" },
 	"linkUrl": "https://app.maple.dev/alerts/…",
 	"chatUrl": "https://app.maple.dev/alerts/incidents/…",
 	"sentAt": "2026-09-25T09:14:00.000Z",
-	"event": { "specversion": "1.0", "type": "dev.maple.alert.lifecycle.trigger.v1", "…": "…" }
+	"event": {
+		"specversion": "1.0",
+		"type": "dev.maple.alert.lifecycle.trigger.v1",
+		"…": "…"
+	}
 }
 ```
 
@@ -71,6 +77,8 @@ Respond with any `2xx` within **15 seconds**. The response body is ignored.
 | `rule.threshold`       | The threshold, or the lower bound for `between` and `not_between`                                          |
 | `rule.thresholdUpper`  | The upper bound for `between` and `not_between`, otherwise `null`                                          |
 | `rule.windowMinutes`   | The evaluation window                                                                                      |
+| `rule.severities`      | The severities of the rule's threshold tiers, such as `["warning", "critical"]`. May be absent             |
+| `peakSeverity`         | The highest severity the incident reached, or `null`                                                       |
 | `observed.value`       | The value the check measured                                                                               |
 | `observed.sampleCount` | How many data points the value was computed from                                                           |
 | `template`             | The rule's rendered notification template, or `null`                                                       |
@@ -127,7 +135,7 @@ The signature covers the body only, and the body carries no delivery timestamp y
 
 Alert events are attempted up to **5 times**, about 1, 2, 4 and 8 minutes apart, with every retry carrying the same body and `x-maple-delivery-key`. **Send test** is attempted once.
 
-After **3 consecutive non-retryable failures**, the destination is disabled and the reason is shown on it under **Alerts → Destinations**. Fix the endpoint and re-enable it; a successful delivery resets the count.
+After **3 consecutive non-retryable failures**, the destination is disabled and the reason is shown on it under **Alerts → Routing**, in **Destinations**. Fix the endpoint and re-enable it; a successful delivery resets the count.
 
 ## Endpoint checklist
 

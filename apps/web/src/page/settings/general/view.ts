@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { warmAvatarTone } from "../../../ui/avatar-tone"
-import { avatarFallback, badge } from "../../../ui/display"
+import { avatarFallback } from "../../../ui/display"
 import { input } from "../../../ui/input"
 import { settingRow } from "../../../ui/setting-row"
 import { panel } from "../../../ui/panel"
@@ -150,21 +150,10 @@ const dataRegionSection = (h: H, org: OrgInfo): Html => {
 		},
 		[
 			row(h, "org-region", "Region", "Set when the organization was created. It cannot be changed.", [
-				h.div(
-					[h.Id("org-region"), h.Class("flex items-center gap-2 text-sm")],
-					[
-						badge(
-							h,
-							{
-								variant: "meta",
-								size: "xs",
-								mono: true,
-								attributes: [h.Title(`Data region: ${region.name}`)],
-							},
-							[region.short],
-						),
-						h.span([], [region.name]),
-					],
+				// The full name alone: a short code chip before it repeated the name at low contrast.
+				h.span(
+					[h.Id("org-region"), h.Class("text-sm"), h.Title(`Data region: ${region.name}`)],
+					[region.name],
 				),
 			]),
 		],
@@ -176,7 +165,8 @@ const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 	return settingsSection(h, { id: "settings-general-danger", title: "Danger zone", framed: false }, [
 		panel(h, { className: "divide-y border-destructive/40" }, [
 			h.div(
-				[h.Class("flex items-center justify-between gap-4 p-4")],
+				// Top-aligned like the delete row below, whose consequence list runs longer.
+				[h.Class("flex items-start justify-between gap-6 p-4")],
 				[
 					h.div(
 						[h.Class("space-y-1")],
@@ -192,17 +182,20 @@ const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 							),
 						],
 					),
-					button(
-						h,
-						{
-							// Disabled reads neutral, so dim red text never passes for an active action.
-							variant: leave === "allowed" ? "destructive-outline" : "outline",
-							size: "sm",
-							isDisabled: leave !== "allowed",
-							attributes: [h.OnClick(Message.ClickedLeave())],
-						},
-						["Leave organization"],
-					),
+					// A disabled button fires no hover, so its wrapper carries the reason as a tooltip.
+					h.span(leave === "last-admin" ? [h.Title("Make another member an admin first")] : [], [
+						button(
+							h,
+							{
+								// Disabled reads neutral, so dim red text never passes for an active action.
+								variant: leave === "allowed" ? "destructive-outline" : "outline",
+								size: "sm",
+								isDisabled: leave !== "allowed",
+								attributes: [h.OnClick(Message.ClickedLeave())],
+							},
+							["Leave organization"],
+						),
+					]),
 				],
 			),
 			...(model.isAdmin

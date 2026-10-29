@@ -16,7 +16,6 @@
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"ajv": "8.20.0",
 		"typescript": "catalog:tooling",

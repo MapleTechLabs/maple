@@ -21,7 +21,7 @@ import {
 	readRawTelemetryRetentionDays,
 	rawTelemetryTtlStatements,
 } from "./chdb"
-import { buildInsertStatements } from "./inserts"
+import { InsertBatcher } from "./insert-batcher"
 import {
 	eventingControlSnapshotPath,
 	type EventConsumerFailure,
@@ -71,6 +71,7 @@ import {
 	secretMatches,
 	sessionCookie,
 } from "./remote-auth"
+import { applyLocalIngestRules, localIngestRulesPath, makeLocalIngestRulesSource } from "./ingest-rules"
 import { localServiceMapRollupLoop } from "./service-map-rollup"
 import { ensureStoreMarkerDurable, storeHasData } from "./store-version"
 import {
@@ -397,8 +398,10 @@ const projectionFailure =
 	(error: { readonly message: string }): Effect.Effect<never, IngestStopped> =>
 		Effect.fail(stopIngest(text(`event projection ${signal}: ${error.message}`, status), requestBytes))
 
+const localIngestRules = makeLocalIngestRulesSource(localIngestRulesPath())
+
 const ingest = (
-	db: Pick<Chdb, "exec">,
+	inserts: Pick<InsertBatcher, "insert">,
 	authority: RetiredDayAuthority,
 	signal: Signal,
 	req: Request,
@@ -425,6 +428,21 @@ const ingest = (
 				),
 			),
 		)
+		// Customer ingest rules run first, so dropped or redacted data never reaches events or chDB.
+		const { rules, reloaded } = localIngestRules()
+		if (reloaded)
+			yield* Effect.forEach(rules.problems, (problem) => Effect.logWarning(problem), { discard: true })
+		// A value the rules cannot read (a malformed int or bytes) is the sender's fault: 400.
+		const ruled = yield* Effect.try({
+			try: () => applyLocalIngestRules(signal, decoded, rules.compiled),
+			catch: (error) =>
+				stopIngest(text(`decode ${signal}: ${describeThrown(error)}`, 400), requestBytes),
+		})
+		if (ruled.dropped + ruled.redactedValues > 0)
+			yield* Effect.annotateCurrentSpan({
+				"maple.ingest.rules.dropped_items": ruled.dropped,
+				"maple.ingest.rules.redacted_values": ruled.redactedValues,
+			})
 		const rejectProjection = (status: 400 | 503) => projectionFailure(signal, requestBytes, status)
 		const evaluation = yield* eventing
 			.evaluateOtlp(signal, decoded, (rangeDate) => authority.isRetired(rangeDate))
@@ -466,27 +484,36 @@ const ingest = (
 			rejected += filtered.rejected
 			return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
 		})
-		let accepted = 0
-		for (const batch of batches) {
-			if (batch.rowCount === 0) continue
-			for (const statement of buildInsertStatements(batch.datasource, batch.ndjson)) {
-				const inserted = Result.try(() => db.exec(statement.sql))
-				if (Result.isFailure(inserted))
-					return yield* stopIngest(
-						text(`chDB insert (${batch.datasource}): ${describeThrown(inserted.failure)}`, 500),
-						requestBytes,
-						accepted,
-					)
-				accepted += statement.rowCount
-			}
-		}
 		const readyEventIds = [...evaluation.recoveredEventIds, ...staged.eventIds]
-		// The rows are committed: a 5xx here would make exporters resend the batch
-		// and double-count it, so readiness is retried in the background instead.
-		if (readyEventIds.length > 0) {
-			const marked = yield* Effect.exit(eventing.markReady(readyEventIds))
-			if (Exit.isFailure(marked)) readiness.retry(readyEventIds)
-		}
+		// Queued rows commit even if this fiber is interrupted while it waits on the
+		// batcher, so the wait and the readiness marking after it run as one step.
+		const accepted = yield* Effect.uninterruptible(
+			Effect.gen(function* () {
+				const accepted = yield* inserts
+					.insert(batches.filter((batch) => batch.rowCount > 0))
+					.pipe(
+						Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
+							Effect.fail(
+								stopIngest(
+									text(
+										`chDB insert (${error.datasource}): ${describeThrown(error.cause)}`,
+										500,
+									),
+									requestBytes,
+									error.accepted,
+								),
+							),
+						),
+					)
+				// The rows are committed: a 5xx here would make exporters resend the batch
+				// and double-count it, so readiness is retried in the background instead.
+				if (readyEventIds.length > 0) {
+					const marked = yield* Effect.exit(eventing.markReady(readyEventIds))
+					if (Exit.isFailure(marked)) readiness.retry(readyEventIds)
+				}
+				return accepted
+			}),
+		)
 		const droppedEvents = staged.dropped
 		const errorMessage = rejected > 0 ? "telemetry from permanently retired UTC days was rejected" : ""
 		if (contentType.includes("json")) {
@@ -681,7 +708,7 @@ interface ServerStatus {
 /** OTLP-ingest request as a `Server`-kind span, mirroring the Rust gateway
  *  (`apps/ingest`): `maple.signal`, item count, request size, HTTP semconv. */
 const ingestSpan = (
-	db: Chdb,
+	inserts: InsertBatcher,
 	authority: RetiredDayAuthority,
 	readiness: ReadinessRetry,
 	status: ServerStatus,
@@ -690,7 +717,13 @@ const ingestSpan = (
 ): Effect.Effect<Response, never, LocalEventingRuntime> =>
 	recoverResponse(
 		Effect.gen(function* () {
-			const { response, accepted, requestBytes } = yield* ingest(db, authority, signal, req, readiness)
+			const { response, accepted, requestBytes } = yield* ingest(
+				inserts,
+				authority,
+				signal,
+				req,
+				readiness,
+			)
 			if (accepted > 0 && response.status < 300) status.lastIngestAtMs = yield* Clock.currentTimeMillis
 			yield* Effect.annotateCurrentSpan({
 				"http.request.body.size": requestBytes,
@@ -1469,6 +1502,7 @@ const loginSpan = (
 
 interface ServerContext {
 	readonly db: Chdb
+	readonly inserts: InsertBatcher
 	readonly options: ServerOptions
 	readonly policy: BrowserOriginPolicy
 	readonly runSpan: SpanRunner
@@ -1548,7 +1582,14 @@ const makeFetch =
 					await runSpan(
 						admitted(
 							gate,
-							ingestSpan(db, authority, context.readiness, context.status, signal, req),
+							ingestSpan(
+								context.inserts,
+								authority,
+								context.readiness,
+								context.status,
+								signal,
+								req,
+							),
 						),
 					),
 				)
@@ -1766,6 +1807,7 @@ export const startServer = (
 			),
 		)
 		const gate = new RequestQuiescenceGate()
+		const inserts = InsertBatcher.attach(db)
 		const runSpan: SpanRunner = (effect) => runtime.runPromise(effect)
 		const eventing = Context.get(services, LocalEventingRuntime)
 		const readiness = new ReadinessRecovery(
@@ -1792,6 +1834,7 @@ export const startServer = (
 						hostname: options.hostname,
 						fetch: makeFetch({
 							db,
+							inserts,
 							options,
 							policy,
 							runSpan,
@@ -1826,6 +1869,9 @@ export const startServer = (
 					// then cut whatever is left. chDB closes after this finalizer.
 					readiness.stop()
 					const drained = gate.shutdown()
+					// Queued exports are admitted requests: commit them now rather than
+					// on the next tick. Requests admitted later still flush on their own tick.
+					inserts.flush()
 					const stopped = s.stop(false)
 					await settleWithin(Promise.all([drained, stopped]), SHUTDOWN_DRAIN_MS)
 					await s.stop(true)

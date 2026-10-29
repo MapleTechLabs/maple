@@ -169,6 +169,18 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 				),
 			),
 		),
+	nearby: (path, basename) =>
+		Effect.succeed(
+			bounded(
+				git(dir, ["ls-tree", "-r", "--name-only", sha])
+					.stdout.split("\n")
+					.filter(
+						(file) =>
+							file.startsWith(`${path}/`) || file === basename || file.endsWith(`/${basename}`),
+					)
+					.join("\n"),
+			),
+		),
 	log: (path) =>
 		Effect.flatMap(safePath(path), (safe) =>
 			Effect.succeed(
@@ -222,7 +234,12 @@ const fileStore = (out: string): AuditStoreApi => {
 		saveMetadata: (metadata) => write("run-metadata.json", json(metadata)),
 		saveArchitecture: (_, md) => write("architecture.md", md),
 		saveLedger: (_, ledger) => write("coverage-ledger.json", json(ledger)),
-		saveFindings: (_, findings) => write("findings.json", json(findings)),
+		// findings.json keeps the skill's shape; the estimates are Maple's, in a file of their own.
+		saveFindings: (_, findings, estimates) =>
+			Effect.all([
+				write("findings.json", json(findings)),
+				write("estimated-severity.json", json(Object.fromEntries(estimates))),
+			]).pipe(Effect.asVoid),
 		saveReports: (_, reports) =>
 			Effect.all([
 				write("REPORT.md", reports.report),

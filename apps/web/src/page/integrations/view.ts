@@ -18,13 +18,14 @@ import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "./view-gcp"
 import { githubCard } from "./view-github"
 import { hazelCard } from "./view-hazel"
+import { linearCard } from "./view-linear"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
 import { awsCard } from "./view-aws"
 import { supabaseCard } from "./view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
-import { integrationCatalog, integrationsSummary } from "./view-hub"
+import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 
 // `IntegrationsPage`.
 
@@ -41,6 +42,8 @@ export const connectButton = (h: H, model: Model, integration: IntegrationId): H
 		{
 			size: "sm",
 			isLoading: model.connect.isStarting,
+			// Linear's start is admin-only on the server.
+			isDisabled: integration === "linear" && !model.isAdmin,
 			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
 		[entryGlyph(h, entry, undefined), "Connect ", entry.name],
@@ -60,6 +63,8 @@ export const cardView = (
 	switch (integration) {
 		case "hazel":
 			return [hazelCard(h, model)]
+		case "linear":
+			return [linearCard(h, model)]
 		case "github":
 			return githubCard(h, model, timeZone)
 		case "cloudflare":
@@ -115,7 +120,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		? dashboardPage(
 				h,
 				{
-					title: "Integrations",
+					titleContent: hubTitle(h),
 					filters: settingsNav(h, model),
 					actions: integrationsSummary(h, model) ?? h.empty,
 					width: "settings",

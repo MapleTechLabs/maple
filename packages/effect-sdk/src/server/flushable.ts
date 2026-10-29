@@ -62,7 +62,11 @@ export interface MapleFlushableConfig extends MapleSpanOptions {
 	 * Falls back to `MAPLE_REGION`. Any endpoint, set here or in env, wins.
 	 */
 	readonly region?: MapleRegion | undefined
-	/** Maple ingest key. Falls back to `MAPLE_INGEST_KEY`. When unset, runs in no-op mode. */
+	/**
+	 * Maple ingest key. Falls back to `MAPLE_INGEST_KEY`. When unset, exports
+	 * without `Authorization` to a custom endpoint, and runs in no-op mode
+	 * against Maple's hosted ingest.
+	 */
 	readonly ingestKey?: string | undefined
 	/** Additional resource attributes (highest precedence). */
 	readonly attributes?: Record<string, unknown> | undefined
@@ -105,7 +109,10 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 	const tracesState: SignalState = { disabledUntil: 0 }
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
-	const noOpNotice = makeNoOpNotice("[MapleServerSDK]", "set MAPLE_INGEST_KEY to enable")
+	const noOpNotice = makeNoOpNotice(
+		"[MapleServerSDK]",
+		"set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector",
+	)
 
 	// Resolve the resource once, lazily, on first flush. Memoize the PROMISE (not
 	// the result) so a manual flush racing the auto-flush timer can't kick off two
@@ -127,7 +134,7 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 					logsPath: config.logsPath,
 					metricsPath: config.metricsPath,
 					userAgent: `maple-effect-sdk-server/${SDK_VERSION}`,
-					keyless: "disable",
+					keyless: "disable-at-maple-ingest",
 				}),
 			)
 			resolvedPromise = pending

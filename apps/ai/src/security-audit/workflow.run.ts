@@ -17,6 +17,7 @@ import {
 } from "@maple/domain/security-audit"
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { trackSecurityAuditCharge } from "@maple/backend/services/billing/autumn-tracker"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import {
@@ -56,7 +57,13 @@ import {
 	Schema,
 } from "effect"
 import { HttpClient } from "effect/http"
-import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
+import {
+	layerLlm,
+	type LlmSettings,
+	loadLlmSettings,
+	resolveSecurityAuditModel,
+	withOrgOpenRouterKey,
+} from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
 import { changedPaths } from "./changed-paths"
 import { inspectDependencies } from "./dependencies"
@@ -67,6 +74,7 @@ import {
 	refusalReason,
 	repoLimitViolations,
 } from "./repo-size"
+import { formatRepoTree, REPO_TREE_COMMAND } from "./repo-tree"
 import { sandboxSource } from "./sandbox-source"
 import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
 
@@ -107,6 +115,12 @@ export const toSandboxStepError =
 /** Sandbox reads time out and fail transiently; the parent retries rather than losing a step. */
 const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } } as const
 
+/**
+ * The spend check before each agent reads the billing provider, and a refusal stops the whole run.
+ * A billing outage of a few minutes is waited out (about 16 minutes in all) rather than ending it.
+ */
+const ADMISSION_RETRY = { retries: { limit: 6, delay: "15 seconds", backoff: "exponential" } } as const
+
 /** An agent may run 20 minutes; its step allows that plus a margin, and retries once. */
 const AGENT_STEP = {
 	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
@@ -123,7 +137,7 @@ const retried = (store: AuditStoreApi): AuditStoreApi => {
 		saveMetadata: (m) => Effect.retry(store.saveMetadata(m), policy),
 		saveArchitecture: (r, md) => Effect.retry(store.saveArchitecture(r, md), policy),
 		saveLedger: (r, l) => Effect.retry(store.saveLedger(r, l), policy),
-		saveFindings: (r, f) => Effect.retry(store.saveFindings(r, f), policy),
+		saveFindings: (r, f, e) => Effect.retry(store.saveFindings(r, f, e), policy),
 		saveReports: (r, x) => Effect.retry(store.saveReports(r, x), policy),
 		recordEvent: (r, e) => Effect.retry(store.recordEvent(r, e), policy),
 	}
@@ -155,7 +169,7 @@ const durableAgents = (
 		const admitted: Effect.Effect<Admission, AuditBudgetExhaustedError> = durableStep(
 			`org-budget:${invocation.agentId}`,
 			admit(invocation.agentId),
-			STEP_RETRY,
+			ADMISSION_RETRY,
 		).pipe(
 			Effect.provide(step),
 			// A budget that cannot be read is not a budget with room: the run stops rather than overspend.
@@ -256,10 +270,12 @@ const runAgentStep = (
 /**
  * The Workflow body over an agent factory: the deployed run passes real models, tests pass scripted
  * agents. Everything else (pinning, prior run, durable steps, store) is the same code either way.
+ * `ownKey`: the agents run on the org's OpenRouter key, which it pays directly, so Maple bills nothing.
  */
 export const auditWithAgents = <E, R>(
 	payload: SecurityAuditWorkflowPayload,
 	agentsFor: (source: SourceReaderApi) => Effect.Effect<AuditAgentsApi, E, R>,
+	options: { readonly ownKey?: boolean } = {},
 ) =>
 	Effect.gen(function* () {
 		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
@@ -345,6 +361,34 @@ export const auditWithAgents = <E, R>(
 			store.setExecutionProfile(payload.runId, executionProfile),
 			STEP_RETRY,
 		)
+		// The repository's directories for hunter and critic prompts, once per run. Without it agents
+		// only guess more, so a sandbox that cannot list them costs the run nothing else.
+		const repoTree = yield* durableStep(
+			"repo-tree",
+			sandbox.exec(orgId, pinned, REPO_TREE_COMMAND).pipe(
+				Effect.mapError(toSandboxStepError("repo-tree")),
+				Effect.flatMap((result) =>
+					result.exitCode === 0
+						? Effect.succeed(formatRepoTree(result.stdout, result.truncated))
+						: Effect.logWarning("Could not list the repository's directories").pipe(
+								Effect.annotateLogs({
+									runId: payload.runId,
+									exitCode: result.exitCode,
+									stderr: result.stderr.slice(0, 500),
+								}),
+								Effect.as(""),
+							),
+				),
+			),
+			STEP_RETRY,
+		).pipe(
+			Effect.catch((error) =>
+				Effect.logWarning("Could not list the repository's directories").pipe(
+					Effect.annotateLogs({ runId: payload.runId, error: messageOf(error) }),
+					Effect.as(""),
+				),
+			),
+		)
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.
@@ -364,6 +408,7 @@ export const auditWithAgents = <E, R>(
 					sourceRef: priorRow.value.sourceRef,
 					ledger: (yield* store.listUnits(priorRow.value.id)).map((row) => row.unit),
 					findings: yield* store.listRunFindings(priorRow.value.id),
+					estimates: yield* store.listRunFindingEstimates(priorRow.value.id),
 				}
 		const changed =
 			prior === null
@@ -380,10 +425,13 @@ export const auditWithAgents = <E, R>(
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
 		const credits = yield* SecurityAuditCredits
 		const httpClient = yield* HttpClient.HttpClient
+		const ownKey = options.ownKey === true
 		const bill = (agentId: string, kind: "sandbox" | "model", usd: number) =>
-			trackSecurityAuditCharge({ orgId, runId: payload.runId, agentId, kind, usd }).pipe(
-				Effect.provideService(HttpClient.HttpClient, httpClient),
-			)
+			ownKey
+				? Effect.void
+				: trackSecurityAuditCharge({ orgId, runId: payload.runId, agentId, kind, usd }).pipe(
+						Effect.provideService(HttpClient.HttpClient, httpClient),
+					)
 		/**
 		 * One invocation, while the org has AI credits, its sandbox fee billed once it is granted. Known
 		 * gap: the Autumn track is fire-and-forget, so a charge is lost while Autumn is down; reconcile
@@ -391,10 +439,14 @@ export const auditWithAgents = <E, R>(
 		 */
 		const admit = (agentId: string) =>
 			Effect.gen(function* () {
-				const hasCredits = yield* credits.ensure(orgId).pipe(
-					Effect.as(true),
-					Effect.catchTag("@maple/backend/security-audit/NoCredits", () => Effect.succeed(false)),
-				)
+				const hasCredits =
+					ownKey ||
+					(yield* credits.ensure(orgId).pipe(
+						Effect.as(true),
+						Effect.catchTag("@maple/backend/security-audit/NoCredits", () =>
+							Effect.succeed(false),
+						),
+					))
 				if (!hasCredits) return "no_credits" as const
 				// Read live, so a limit an admin raises or lowers applies to the agents still to come.
 				const limits = yield* securityAuditLimits
@@ -407,7 +459,8 @@ export const auditWithAgents = <E, R>(
 				const reservation = yield* store.reserveOrgInvocation(payload.runId, agentId, {
 					since,
 					limitUsd,
-					sandboxFeeUsd: limits.sandboxFeeUsd,
+					// Waived on the org's own key, as Maple meters nothing for it.
+					sandboxFeeUsd: ownKey ? 0 : limits.sandboxFeeUsd,
 				})
 				if (reservation === "granted") yield* bill(agentId, "sandbox", limits.sandboxFeeUsd)
 				return reservation
@@ -437,6 +490,7 @@ export const auditWithAgents = <E, R>(
 			},
 			executionProfile,
 			toolGuidance: AUDIT_TOOL_GUIDANCE,
+			repoTree,
 			prior,
 			changedSincePrior,
 		}).pipe(
@@ -538,29 +592,39 @@ export const auditWithAgents = <E, R>(
 		),
 	)
 
-/** The deployed run: discovery and validation on the models it started with, priced by OpenRouter. */
+/**
+ * The deployed run: discovery and validation on the models it started with, priced by OpenRouter,
+ * on the org's own OpenRouter key when it has one.
+ */
 export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) =>
-	auditWithAgents(payload, (source) =>
-		Effect.gen(function* () {
-			const settings = yield* loadLlmSettings
-			const tags = {
-				surface: "chat" as const,
-				orgId: payload.orgId,
-				sessionId: `audit-${payload.runId}`,
-			}
-			const models = {
-				discovery: resolveSecurityAuditModel(settings, "discovery", tags, payload.models.discovery),
-				validation: resolveSecurityAuditModel(
-					settings,
-					"validation",
-					tags,
-					payload.models.validation,
-				),
-			}
-			return yield* makeAuditAgents(models, source).pipe(
-				// The Workflow run is the entry point that owns these clients.
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
-				Effect.provide(layerLlm(settings)),
-			)
-		}),
-	)
+	Effect.gen(function* () {
+		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(orgId)
+		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
+		const deploySettings = yield* loadLlmSettings
+		const settings = Option.match(orgKey, {
+			onNone: () => deploySettings,
+			onSome: (apiKey) => withOrgOpenRouterKey(deploySettings, apiKey),
+		})
+		return yield* auditWithAgents(payload, (source) => agentsOn(settings, payload, source), {
+			ownKey: Option.isSome(orgKey),
+		})
+	})
+
+const agentsOn = (settings: LlmSettings, payload: SecurityAuditWorkflowPayload, source: SourceReaderApi) =>
+	Effect.gen(function* () {
+		const tags = {
+			surface: "chat" as const,
+			orgId: payload.orgId,
+			sessionId: `audit-${payload.runId}`,
+		}
+		const models = {
+			discovery: resolveSecurityAuditModel(settings, "discovery", tags, payload.models.discovery),
+			validation: resolveSecurityAuditModel(settings, "validation", tags, payload.models.validation),
+		}
+		return yield* makeAuditAgents(models, source).pipe(
+			// The Workflow run is the entry point that owns these clients.
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(layerLlm(settings)),
+		)
+	})

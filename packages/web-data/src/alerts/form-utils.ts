@@ -633,6 +633,9 @@ export type DestinationFormState = {
 	chatConnector: string
 	chatChannelId: string
 	chatChannelName: string
+	/** Linear destination: the team issues open in, and its name for the suggested name. */
+	linearTeamId: string
+	linearTeamName: string
 }
 
 export const MAX_EMAIL_MEMBER_RECIPIENTS = 10
@@ -659,6 +662,8 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		chatConnector: "",
 		chatChannelId: "",
 		chatChannelName: "",
+		linearTeamId: "",
+		linearTeamName: "",
 	}
 }
 
@@ -692,6 +697,8 @@ export function suggestedDestinationName(form: DestinationFormState): string {
 			return form.chatChannelName.length > 0 ? `#${form.chatChannelName}` : ""
 		case "hazel-oauth":
 			return form.hazelChannelName.length > 0 ? `Hazel #${form.hazelChannelName}` : "Hazel"
+		case "linear":
+			return form.linearTeamName.length > 0 ? `Linear ${form.linearTeamName}` : "Linear"
 		case "webhook":
 			return URL.canParse(form.url.trim()) ? new URL(form.url.trim()).host : "Webhook"
 		case "pagerduty":
@@ -731,6 +738,9 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		chatChannelId: "",
 		chatChannelName:
 			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
+		// The team's name is only in the server's "Linear · <team>" summary.
+		linearTeamId: destination.linearTeamId ?? "",
+		linearTeamName: destination.type === "linear" ? destination.summary.replace(/^Linear · /, "") : "",
 	}
 }
 
@@ -800,6 +810,14 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				enabled: form.enabled,
 				workspace_id: form.chatWorkspaceId,
 				channel_id: form.chatChannelId.trim(),
+			}
+		case "linear":
+			// The team's key and name are read from Linear on save.
+			return {
+				type: "linear",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				team_id: form.linearTeamId.trim(),
 			}
 	}
 }
@@ -892,6 +910,15 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 				enabled: form.enabled,
 				...(name ? { name } : undefined),
 				...(channelId ? { channel_id: channelId } : undefined),
+			}
+		}
+		case "linear": {
+			const teamId = form.linearTeamId.trim()
+			return {
+				type: "linear",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(teamId ? { team_id: teamId } : undefined),
 			}
 		}
 	}

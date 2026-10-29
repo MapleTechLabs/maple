@@ -12,8 +12,9 @@ import {
 	type PullRequestSummary,
 	type VcsInstallation,
 	type VcsRepo,
+	type VcsRepositoryRef,
 } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Cache, Context, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import type { VcsCodeSearchMatch, VcsSourceFile } from "./VcsProviderClient"
@@ -61,6 +62,12 @@ export interface RepositoryCheckout {
 }
 
 const isCommitSha = Schema.is(GitCommitSha)
+
+/**
+ * A clone token lives an hour and is reused for half that, so a run of sandbox commands does not
+ * mint one each. Repository access is still checked on every call; only the mint is shared.
+ */
+export const CLONE_CREDENTIALS_REUSE = Duration.minutes(30)
 
 export interface ConnectedSourceRepository {
 	readonly provider: VcsRepo["provider"]
@@ -186,6 +193,23 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 					),
 				).pipe(Effect.map((groups) => groups.flat()))
 			})
+
+			const cloneCredentials = yield* Cache.makeWith(
+				(key: {
+					readonly provider: VcsRepo["provider"]
+					readonly installation: VcsInstallation
+					readonly repository: VcsRepositoryRef
+				}) =>
+					asUpstream(providers.resolve(key.provider)).pipe(
+						Effect.flatMap((provider) =>
+							asUpstream(provider.fetchCloneCredentials(key.installation, key.repository)),
+						),
+					),
+				{
+					capacity: 256,
+					timeToLive: (exit) => (Exit.isSuccess(exit) ? CLONE_CREDENTIALS_REUSE : Duration.zero),
+				},
+			)
 
 			const resolveRepository = Effect.fn("VcsSourceService.resolveRepository")(function* (
 				orgId: OrgId,
@@ -435,7 +459,11 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 							`A service version string is not a git ref.`,
 					})
 				}
-				const credentials = yield* asUpstream(provider.fetchCloneCredentials(installation, repoRef))
+				const credentials = yield* Cache.get(cloneCredentials, {
+					provider: repository.provider,
+					installation,
+					repository: repoRef,
+				})
 				yield* Effect.annotateCurrentSpan({ "vcs.ref.head.revision": resolved.value })
 				return {
 					provider: repository.provider,

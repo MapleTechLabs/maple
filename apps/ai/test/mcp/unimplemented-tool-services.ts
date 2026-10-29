@@ -22,6 +22,7 @@ import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCo
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -48,6 +49,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(VcsSourceService)({}),
 	Layer.mock(SetupAuditService)({}),
 	Layer.mock(UptimeMonitorsService)({}),
+	Layer.mock(IngestRuleService)({}),
 	Layer.mock(RepoSandboxService)({}),
 	Layer.mock(QueryEngineService)({}),
 	WarehouseQueryService.layer,

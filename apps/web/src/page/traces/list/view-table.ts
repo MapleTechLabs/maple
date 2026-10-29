@@ -139,8 +139,8 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 	)
 }
 
-const spacer = (h: HtmlBuilder<Message>, height: number): Html =>
-	h.tr([h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
+const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
+	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
 
 /** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
@@ -152,7 +152,7 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 	return h.tbody(
 		[h.Class(tableBodyStyles), h.DataAttribute("slot", "table-body")],
 		[
-			...(first === undefined ? [] : [spacer(h, first.start)]),
+			...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
 			...model.virtualRows.flatMap((item) => {
 				const row = rows[item.index]
 				return row === undefined
@@ -166,11 +166,11 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 							}),
 						]
 			}),
-			...(last === undefined ? [] : [spacer(h, model.totalSize - last.end)]),
+			...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),
 			...(model.pagination.isFetching
 				? [
 						h.tr(
-							[],
+							[h.Key("loading-more")],
 							[
 								h.td(
 									[h.Attribute("colspan", String(COLUMNS.length)), h.Class("p-2")],

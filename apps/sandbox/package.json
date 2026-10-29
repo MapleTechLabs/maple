@@ -5,18 +5,18 @@
 	"scripts": {
 		"test": "vitest run",
 		"verify:image": "bun scripts/verify-image.ts",
+		"verify:executor-probe": "bun scripts/verify-executor-probe.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@alchemy.run/cloudflare": "catalog:alchemy",
-		"@cloudflare/sandbox": "1.0.0",
+		"@cloudflare/sandbox": "1.0.3",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",

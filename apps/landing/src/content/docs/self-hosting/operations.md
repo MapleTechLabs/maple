@@ -15,7 +15,7 @@ Everything lives on the `/data` volume: the store, its [restore points](/docs/lo
 
 ## Upgrades
 
-Pull the new image and recreate the container on the same volume. `latest` follows each stable release; pin a release tag (`ghcr.io/mapletechlabs/maple:<version>`) if you want to choose when you upgrade.
+Pull the new image and recreate the container on the same volume. `latest` follows each stable release; pin a release tag such as `ghcr.io/mapletechlabs/maple:v0.3.0` (the `v` is part of the tag) if you want to choose when you upgrade.
 
 ## If the container is killed
 

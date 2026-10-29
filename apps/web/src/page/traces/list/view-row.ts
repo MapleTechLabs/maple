@@ -139,6 +139,8 @@ export const traceRow = (
 					"hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),
+			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
+			h.Key(`row-${index}`),
 			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
 			h.DataAttribute("index", String(index)),
 			h.DataAttribute("slot", "table-row"),

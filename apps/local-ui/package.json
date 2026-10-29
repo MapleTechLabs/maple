@@ -25,7 +25,6 @@
 		"foldkit": "0.169.0"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@foldkit/vite-plugin": "0.28.0",
 		"@tailwindcss/vite": "catalog:tailwind",
 		"@types/node": "catalog:tooling",

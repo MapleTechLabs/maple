@@ -24,7 +24,6 @@ import { panelScope, type Trigger } from "./view-scope"
 
 type H = HtmlBuilder<Message>
 
-const TABLE_MAX_HEIGHT = "420px"
 const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
 const MONO_LINK =
@@ -128,8 +127,6 @@ const table = (
 		{
 			ariaLabel: `${dimension.column} breakdown`,
 			isWaiting: options.isWaiting,
-			maxHeight: TABLE_MAX_HEIGHT,
-			stickySurfaceClass: "bg-card",
 		},
 		[
 			head(dimension.column, "key", "w-0 flex-1 min-w-[220px]"),

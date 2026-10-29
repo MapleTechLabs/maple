@@ -19,12 +19,12 @@ import {
 } from "../../../lib/billing/controls"
 import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Cause, Duration, Effect, Option, Result, Schema } from "effect"
+import { Cause, Clock, Duration, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import { trackProduct } from "../../../data/analytics"
 import { toLoadFailure } from "../../../data/load-failure"
-import { MapleApiClient, MapleInternalApiClient } from "../../../platform/api-clients"
+import { MapleApiClient, MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
@@ -119,6 +119,24 @@ const FetchProfile = Command.define("FetchBillingProfile", {
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchProfile({ result })),
 	),
+})
+
+/** The stats endpoint reads at most 62 days back. */
+const RULE_STATS_MAX_MS = 62 * 24 * 60 * 60 * 1000
+
+/** Bytes ingest rules dropped, from the cycle start to now. */
+const FetchRuleStats = Command.define("FetchBillingRuleStats", {
+	args: { startMs: Schema.Number },
+	messages: [Message.CompletedFetchRuleStats],
+	execute: ({ startMs }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const nowMs = yield* Clock.currentTimeMillis
+			const start = new Date(Math.max(startMs, nowMs - RULE_STATS_MAX_MS)).toISOString()
+			return yield* client.ingestRules.stats({
+				query: { start_time: start, end_time: new Date(nowMs).toISOString() },
+			})
+		}).pipe(loaded((result) => Message.CompletedFetchRuleStats({ result }))),
 })
 
 // WRITES
@@ -248,6 +266,7 @@ export const init = (isAdmin: boolean, isReturning: boolean): Return => ({
 		daily: AsyncData.Loading(),
 		invoices: AsyncData.Loading(),
 		profile: AsyncData.Loading(),
+		ruleStats: AsyncData.Idle(),
 		editingCap: null,
 		capDraft: "",
 		isSavingCap: false,
@@ -319,6 +338,8 @@ export const revisit = (model: Model): Return => {
 			daily: daily.data,
 			invoices: invoices.data,
 			profile: profile.data,
+			// Back to idle so the settings page asks again for the current cycle; this is also the retry.
+			ruleStats: AsyncData.Idle(),
 		},
 		commands: [
 			...plans.commands,
@@ -347,6 +368,8 @@ export const update = (
 			same({ model: { ...model, invoices: AsyncData.settle(model.invoices, result) } }),
 		CompletedFetchProfile: ({ result }) =>
 			same({ model: { ...model, profile: AsyncData.settle(model.profile, result) } }),
+		CompletedFetchRuleStats: ({ result }) =>
+			same({ model: { ...model, ruleStats: AsyncData.settle(model.ruleStats, result) } }),
 		// The account error also stands in for failed usage or plans reads, so Retry reloads those too.
 		ClickedRetryCustomer: () =>
 			staleCustomer({
@@ -531,6 +554,22 @@ export const update = (
 			})
 		},
 	})
+
+/** The cycle is known once the customer and the clock are: then the rule stats are read, once. */
+export const requestRuleStats = (
+	model: Model,
+	customer: BillingCustomer | null,
+	nowMs: number,
+): Return | null => {
+	if (!AsyncData.isIdle(model.ruleStats) || nowMs <= 0) return null
+	const spend = spendModelOf(model, customer, nowMs)
+	return spend === null
+		? null
+		: {
+				model: { ...model, ruleStats: AsyncData.Loading() },
+				commands: [FetchRuleStats({ startMs: spend.cycle.startMs })],
+			}
+}
 
 /** The customer settled: once it carries a plan, the wait is over (`confirmed`). */
 export const customerChanged = (model: Model, customer: BillingCustomer): Step | null =>

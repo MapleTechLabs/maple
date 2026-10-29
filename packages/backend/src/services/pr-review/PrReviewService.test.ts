@@ -17,6 +17,7 @@ import {
 	PrReviewFinding,
 	PrReviewId,
 	PrReviewMergeStep,
+	PrReviewOrgSettings,
 	PrReviewReport,
 	PrReviewContractBreak,
 	type PullRequestFile,
@@ -131,6 +132,8 @@ const layerFor = (
 		readonly replyFailures?: { remaining: number }
 		/** Present and true: reading the pull request's files fails. */
 		readonly filesUnreadable?: { value: boolean }
+		/** The author's permission on the repository; `read` when absent. */
+		readonly permission?: string
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -172,7 +175,7 @@ const layerFor = (
 							return { url: "https://github.com/acme/shop/pull/1#reply" }
 						}),
 		reactToComment: unused,
-		fetchCommenterPermission: unused,
+		fetchCommenterPermission: () => Effect.succeed(options.permission ?? "read"),
 		commitFiles: unused,
 		searchCode: (_installation, _repo, query) =>
 			options.searchSnippets !== undefined
@@ -600,6 +603,130 @@ describe("PrReviewService.onPullRequestEvent", () => {
 	)
 
 	it.effect(
+		"reviews a fork pull request from an outside author once the repository opts in, then waits for a maintainer",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			const checks: Array<string> = []
+			// Shaped like MapleTechLabs/maple#1899: a first-time contributor's fork, no push access.
+			const fork = (overrides: Partial<PullRequestEventJob> = {}) =>
+				job({
+					authorLogin: "jasonkuhrt",
+					authorAssociation: "NONE",
+					headRepoFullName: "jasonkuhrt/repo",
+					...overrides,
+				})
+			return Effect.gen(function* () {
+				const repositoryId = yield* seed(true, false)
+				const repo = yield* VcsRepository
+				const reviews = yield* PrReviewService
+
+				const off = yield* reviews.onPullRequestEvent(orgId, fork())
+				assert.equal(off.skipReason, "external_author")
+				assert.equal(begun.length, 0)
+
+				yield* repo.setPrReviewConfig(
+					orgId,
+					repositoryId,
+					new PrReviewRepositoryConfig({ reviewExternalContributors: true }),
+				)
+				const on = yield* reviews.onPullRequestEvent(orgId, fork())
+				assert.equal(on.outcome, "started")
+				assert.equal(begun.length, 1)
+				yield* reviews.submitReview(
+					orgId,
+					on.reviewId!,
+					new SubmitPrReviewRequest({ report: report([]) }),
+				)
+
+				// Pushing again does not spend another review: the head waits for a maintainer.
+				const pushed = yield* reviews.onPullRequestEvent(
+					orgId,
+					fork({ action: "synchronize", headSha: HEAD_2 }),
+				)
+				assert.equal(pushed.skipReason, "automatic_limit")
+				assert.include(checks, `${HEAD_2.slice(0, 7)}:skipped`)
+				assert.equal(begun.length, 1)
+				const asked = yield* reviews.reviewNow(
+					orgId,
+					fork({ action: "synchronize", headSha: HEAD_2 }),
+				)
+				assert.equal(asked.outcome, "started")
+				assert.equal(begun.length, 2)
+			}).pipe(Effect.provide(layerFor(testDb, { begun, checks })))
+		},
+	)
+
+	it.effect(
+		"keeps an outside author at one automatic review when they push while it runs, and at three a day",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			const outsider = (overrides: Partial<PullRequestEventJob> = {}) =>
+				job({ authorLogin: "stranger", authorAssociation: "NONE", ...overrides })
+			return Effect.gen(function* () {
+				const repositoryId = yield* seed(true, false)
+				const repo = yield* VcsRepository
+				yield* repo.setPrReviewConfig(
+					orgId,
+					repositoryId,
+					new PrReviewRepositoryConfig({ reviewExternalContributors: true }),
+				)
+				const reviews = yield* PrReviewService
+				assert.equal((yield* reviews.onPullRequestEvent(orgId, outsider())).outcome, "started")
+				// The first review is still running: superseding it must not reset the cap.
+				const midRun = yield* reviews.onPullRequestEvent(
+					orgId,
+					outsider({ action: "synchronize", headSha: HEAD_2 }),
+				)
+				assert.equal(midRun.skipReason, "automatic_limit")
+				assert.equal(begun.length, 1)
+
+				// The same head opened against other base branches is a new pull request each time.
+				const opened = yield* Effect.forEach([613, 614, 615], (number) =>
+					reviews.onPullRequestEvent(orgId, outsider({ number, headSha: sha("a".repeat(40)) })),
+				)
+				assert.deepEqual(
+					opened.map((outcome) => outcome.skipReason ?? outcome.outcome),
+					["started", "started", "quota"],
+				)
+				assert.equal(begun.length, 3)
+			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
+	it.effect(
+		"takes the outside-contributor opt-in from the organization's defaults, and lets a repository opt out",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			return Effect.gen(function* () {
+				const repositoryId = yield* seed(true, false)
+				const repo = yield* VcsRepository
+				yield* repo.setPrReviewSettings(
+					orgId,
+					new PrReviewOrgSettings({
+						defaults: new PrReviewRepositoryConfig({ reviewExternalContributors: true }),
+					}),
+					asUserId("user_1"),
+				)
+				const reviews = yield* PrReviewService
+				const outsider = job({ authorLogin: "stranger", authorAssociation: "FIRST_TIME_CONTRIBUTOR" })
+				assert.equal((yield* reviews.onPullRequestEvent(orgId, outsider)).outcome, "started")
+
+				yield* repo.setPrReviewConfig(
+					orgId,
+					repositoryId,
+					new PrReviewRepositoryConfig({ reviewExternalContributors: false }),
+				)
+				const optedOut = yield* reviews.onPullRequestEvent(orgId, job({ ...outsider, number: 613 }))
+				assert.equal(optedOut.skipReason, "external_author")
+				assert.equal(begun.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
+	it.effect(
 		"reviews an outside author's head once a maintainer approves its CI, without re-reviewing it",
 		() => {
 			const testDb = createTestDb(trackedDbs)
@@ -615,6 +742,24 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				assert.equal(again.skipReason, "duplicate")
 				assert.equal(begun.length, 1)
 			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
+	it.effect(
+		"reviews a public repository's pull request by an author who can push, whatever association the webhook reports",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			return Effect.gen(function* () {
+				yield* seed(true, false)
+				const reviews = yield* PrReviewService
+				const member = yield* reviews.onPullRequestEvent(
+					orgId,
+					job({ authorAssociation: "CONTRIBUTOR" }),
+				)
+				assert.equal(member.outcome, "started")
+				assert.equal(begun.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun, permission: "write" })))
 		},
 	)
 

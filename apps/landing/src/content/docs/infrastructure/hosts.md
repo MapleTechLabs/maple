@@ -79,33 +79,35 @@ If you already run a Collector on the host for application telemetry, add the `h
 
 ## What the Hosts page shows
 
-| Metric                          | Where it appears                                                |
-| ------------------------------- | --------------------------------------------------------------- |
-| `system.cpu.utilization`        | CPU in **Usage**, **Avg CPU** card, fleet grid, CPU chart       |
-| `system.memory.utilization`     | MEM in **Usage**, **Avg memory** card, fleet grid, Memory chart |
-| `system.filesystem.utilization` | DSK in **Usage**, fleet grid, Filesystem chart (per mountpoint) |
-| `system.cpu.load_average.15m`   | **Load 15m** column and chart                                   |
-| `system.network.io`             | Network chart (per device, in and out)                          |
+| Metric                          | Where it appears                                                    |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `system.cpu.utilization`        | CPU in **Usage**, the fleet band, CPU chart                         |
+| `system.memory.utilization`     | MEM in **Usage**, the fleet band, Memory chart                      |
+| `system.filesystem.utilization` | DSK in **Usage**, the fleet band, Filesystem chart (per mountpoint) |
+| `system.cpu.load_average.15m`   | **Load 15m** column and chart                                       |
+| `system.network.io`             | Network chart (per device, in and out)                              |
 
-The list shows each host's **Status**, **Usage** (CPU, memory and disk), **Load 15m** and **Last seen**. With four or more hosts, a fleet grid shows them side by side. Filter by name, or by status:
+The list shows each host's **Usage** (CPU, MEM and DSK), **Load 15m** and **Last seen**. Search by name with **Search hosts…**. The band above the list splits the fleet by each host's busiest of CPU, memory and disk, and filters the list:
 
-| Status | Meaning                                  |
-| ------ | ---------------------------------------- |
-| Active | Last report less than 1 minute ago.      |
-| Idle   | Last report between 1 and 5 minutes ago. |
-| Ended  | No report for 5 minutes or more.         |
+| Filter                | Meaning                             |
+| --------------------- | ----------------------------------- |
+| **Saturated**         | CPU, memory or disk at 90% or more. |
+| **Elevated**          | CPU, memory or disk at 60% or more. |
+| **Stopped reporting** | No report for more than 5 minutes.  |
 
 Click a host to open its detail page: **CPU**, **Memory**, **Filesystem**, **Network** and **Load 15m** charts, and the host's `host.name`, `os.type`, `host.arch`, `cloud.provider`, `cloud.region`, and first and last seen times.
 
 ## Verify
 
-Start the Collector and open **Infrastructure → Hosts**. The host appears within about a minute, with status **Active**. CPU and memory fill in on the first report. Charts on the detail page need a few reports to draw a line.
+1. Start the Collector and open **Infrastructure → Hosts**.
+2. The host appears within about a minute. CPU and memory fill in **Usage** on the first report.
+3. Open the host. Its charts need a few reports to draw a line.
 
 ## Troubleshooting
 
 - **The host does not appear.** Check the Collector's output for exporter errors. A `401` means the ingest key is wrong or was rotated. Confirm `resourcedetection` is in the pipeline: without `host.name`, Maple cannot list the host.
 - **The host appears but CPU, memory or disk read 0.** The matching `*.utilization` metric is not enabled in the receiver config.
-- **The host shows Ended.** The Collector stopped or cannot reach Maple. Status turns **Active** again on the next report.
+- **The host is under Stopped reporting.** The Collector stopped or cannot reach Maple. The host leaves that filter on its next report.
 - **Two rows for one machine.** `host.name` changed, for example after a hostname change or a container restart. Each distinct `host.name` is its own host.
 
 ## Next steps

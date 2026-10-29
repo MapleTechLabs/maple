@@ -1,6 +1,5 @@
-import type { SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
+import type { SecurityAuditRun, SecurityAuditRunDetail, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
@@ -15,30 +14,124 @@ import {
 	formatElapsed,
 	formatUsd,
 	runTotalUsd,
+	isCancelled,
 	isLive,
-	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
 	runElapsed,
 	scopeLabel,
 	shortId,
 	refLabel,
+	runToneOf,
 } from "../kit/format"
 import { placeholderRows, repositoryName, runStatusBadge } from "../kit/parts"
-import { RUN_LIST_CAP, runsForTab, runsForTarget, targetsOf } from "./derive"
+import {
+	coverageOf,
+	latestDetailOf,
+	RUN_LIST_CAP,
+	runCountsOf,
+	runsForTab,
+	runsForTarget,
+	targetsOf,
+} from "./derive"
+import { stopSummaryOf } from "../kit/outcome"
+import { BUCKET_LABEL, type BucketCounts, SCORED_BUCKETS } from "../kit/findings"
+import { bucketDot } from "../kit/findings-view"
+import { meter } from "../../../ui/meter"
 import { Message, type Model } from "./model"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
 
 type H = HtmlBuilder<Message>
 
+/** The status, and for a run that stopped short, why in one line. */
+const statusCell = (h: H, run: SecurityAuditRun): Html => {
+	const reason =
+		isLive(run) || run.status === "complete" || isCancelled(run)
+			? null
+			: run.status === "failed"
+				? (run.error ?? "could not finish")
+				: stopSummaryOf(run.incompleteReason)
+	return h.div(
+		[h.Class("flex min-w-0 flex-col items-start gap-1")],
+		[
+			runStatusBadge(h, run),
+			...(reason === null
+				? []
+				: [
+						h.span(
+							[h.Class("max-w-48 truncate text-xs text-muted-foreground"), h.Title(reason)],
+							[reason],
+						),
+					]),
+		],
+	)
+}
+
+const muted = (h: H, text: string, title?: string): Html =>
+	h.span(
+		[h.Class("text-xs text-muted-foreground"), ...(title === undefined ? [] : [h.Title(title)])],
+		[text],
+	)
+
+/** One dot and count per non-empty severity, so two runs compare at a glance. */
+const findingsCell = (
+	h: H,
+	counts: Readonly<{ buckets: BucketCounts; unverified: number }> | null,
+	run: SecurityAuditRun,
+): Html => {
+	if (counts === null) return muted(h, "", "Findings are visible to org admins only")
+	const { buckets, unverified } = counts
+	const shown = SCORED_BUCKETS.filter((bucket) => buckets[bucket] > 0)
+	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")
+	return h.span(
+		[
+			h.Class("flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1"),
+			h.Title(
+				[
+					...shown.map((bucket) => `${buckets[bucket]} ${BUCKET_LABEL[bucket].toLowerCase()}`),
+					...(unverified === 0 ? [] : [`${unverified} of them estimated, not yet proven`]),
+				].join(", "),
+			),
+		],
+		shown.map((bucket) =>
+			h.span(
+				[h.Key(bucket), h.Class("inline-flex items-center gap-1 font-mono text-xs tabular-nums")],
+				[bucketDot(h, bucket, "size-2"), String(buckets[bucket])],
+			),
+		),
+	)
+}
+
+const coverageCell = (h: H, run: SecurityAuditRun, detail: SecurityAuditRunDetail | null): Html => {
+	if (detail === null || detail.unitTotal === 0) return muted(h, "")
+	const { closed, total } = coverageOf(detail)
+	return h.div(
+		[h.Class("flex items-center justify-end gap-2")],
+		[
+			meter(h, {
+				value: closed,
+				max: total,
+				tone: runToneOf(run),
+				className: "w-10",
+				label: `${closed} of ${total} units closed`,
+			}),
+			h.span(
+				[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+				[`${closed} / ${total}`],
+			),
+		],
+	)
+}
+
 const runRow = (
 	h: H,
+	model: Model,
 	run: SecurityAuditRun,
 	targets: ReadonlyArray<SecurityAuditTarget>,
-	nowMs: number,
 	timeZone: string,
 ): Html => {
+	const nowMs = model.nowMs
 	const href = hrefOf(AppRoute.SecurityRun({ runId: run.id }))
 	const repository = targets.find((target) => target.id === run.targetId)?.repository ?? "Removed target"
 	return tableRow(
@@ -74,34 +167,27 @@ const runRow = (
 					],
 				),
 			]),
-			tableCell(h, [runStatusBadge(h, run)]),
-			tableCell(
-				h,
-				[run.discoveryModel === null ? "" : modelLabel(run.discoveryModel)],
-				"truncate text-xs text-muted-foreground",
-			),
-			tableCell(
-				h,
-				[formatNumber(run.inputTokens + run.outputTokens)],
-				"text-right font-mono tabular-nums",
-			),
+			tableCell(h, [statusCell(h, run)]),
+			tableCell(h, [findingsCell(h, runCountsOf(model, run.id), run)], "text-right"),
+			tableCell(h, [coverageCell(h, run, latestDetailOf(model, run.id))], "text-right"),
 			tableCell(h, [formatUsd(runTotalUsd(run))], "text-right font-mono tabular-nums"),
 			tableCell(
 				h,
 				[
-					relativeTime(h, {
-						value: run.startedAt,
-						nowMs,
-						timeZone,
-						variant: "short",
-						tooltip: "title",
-					}),
+					h.span(
+						[h.Class("flex flex-col items-end")],
+						[
+							relativeTime(h, {
+								value: run.startedAt,
+								nowMs,
+								timeZone,
+								variant: "short",
+								tooltip: "title",
+							}),
+							h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
+						],
+					),
 				],
-				"text-right font-mono text-xs text-muted-foreground",
-			),
-			tableCell(
-				h,
-				[formatElapsed(runElapsed(run, nowMs))],
 				"text-right font-mono text-xs text-muted-foreground",
 			),
 		],
@@ -236,16 +322,15 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 								tableHead(h, ["Run"]),
 								tableHead(h, ["Target"]),
 								tableHead(h, ["Status"]),
-								tableHead(h, ["Model"]),
-								tableHead(h, ["Tokens"], "text-right"),
+								tableHead(h, ["Findings"], "text-right"),
+								tableHead(h, ["Coverage"], "text-right"),
 								tableHead(h, ["Cost"], "text-right"),
 								tableHead(h, ["Started"], "text-right"),
-								tableHead(h, ["Duration"], "text-right"),
 							]),
 						]),
 						tableBody(
 							h,
-							runs.map((run) => runRow(h, run, targets, model.nowMs, timeZone)),
+							runs.map((run) => runRow(h, model, run, targets, timeZone)),
 						),
 					]),
 	})

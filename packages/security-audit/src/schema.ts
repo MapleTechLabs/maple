@@ -39,6 +39,16 @@ const Condition = Schema.Struct({
 
 const Rated = Schema.Struct({ score: Score, reason: Schema.String })
 
+/** Likelihood, impact and overall severity, the shape a confirmed record's `severity` takes. */
+const SeverityRating = Schema.Struct({ likelihood: Rated, impact: Rated, overall_severity: Score })
+
+/**
+ * Maple addition: a needs_validation lead's severity estimated from source reading alone. It
+ * travels beside the upstream record, never inside it, so the skill's contract is unchanged.
+ */
+export const EstimatedSeverity = SeverityRating
+export type EstimatedSeverity = typeof EstimatedSeverity.Type
+
 const common = {
 	fingerprint: Schema.String,
 	title: Schema.String,
@@ -65,7 +75,7 @@ export const ConfirmedFinding = Schema.Struct({
 			Schema.Array(Schema.Struct({ file_name: Schema.String, fixed_code: Schema.String })),
 		),
 	}),
-	severity: Schema.Struct({ likelihood: Rated, impact: Rated, overall_severity: Score }),
+	severity: SeverityRating,
 	confidence: Schema.Struct({ score: Schema.Literals(["low", "medium", "high"]), reason: Schema.String }),
 })
 
@@ -159,6 +169,8 @@ export const CoverageUnit = Schema.Struct({
 	carried_fingerprint: Schema.optionalKey(Schema.String),
 	decisions: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	resolved_prior_leads: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Fingerprints kept without their final re-check because the record verifier failed. */
+	not_rechecked: Schema.optionalKey(Schema.Array(Schema.String)),
 	coverage_id: Schema.String,
 	canonical_refs: CanonicalRefs,
 	surface: Schema.String,

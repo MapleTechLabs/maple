@@ -96,14 +96,6 @@ export const VERDICT_LABEL = {
 	rejected: "Rejected",
 } satisfies Record<SecurityAuditVerdict, string>
 
-export const SECURITY_SEVERITY_ORDER: ReadonlyArray<SecurityAuditSeverity> = [
-	"critical",
-	"high",
-	"medium",
-	"low",
-	"informational",
-]
-
 export const SECURITY_SEVERITY_LABEL = {
 	critical: "Critical",
 	high: "High",
@@ -111,10 +103,6 @@ export const SECURITY_SEVERITY_LABEL = {
 	low: "Low",
 	informational: "Info",
 } satisfies Record<SecurityAuditSeverity, string>
-
-/** Sort rank: critical first, no severity (needs validation, rejected) last. */
-export const severityRank = (severity: SecurityAuditSeverity | null): number =>
-	severity === null ? SECURITY_SEVERITY_ORDER.length : SECURITY_SEVERITY_ORDER.indexOf(severity)
 
 /** The errors kit's four levels; informational shares the unset glyph. */
 export const issueSeverityOf = (severity: SecurityAuditSeverity | null) =>
@@ -141,12 +129,11 @@ export const scopeLabel = (scopePaths: ReadonlyArray<string>): string =>
 			: `${scopePaths.length} scope paths`
 
 /** Branch, profile and scope; a whole-repo scope is the default and says nothing, so it is left off. */
-export const targetLine = (target: SecurityAuditTarget): string =>
-	[
-		target.branch,
-		PROFILE_LABEL[target.profile],
-		...(target.scopePaths.length === 0 ? [] : [scopeLabel(target.scopePaths)]),
-	].join(" · ")
+export const targetParts = (target: SecurityAuditTarget): ReadonlyArray<string> => [
+	target.branch,
+	PROFILE_LABEL[target.profile],
+	...(target.scopePaths.length === 0 ? [] : [scopeLabel(target.scopePaths)]),
+]
 
 /** A model's name from the catalogue; an id it no longer lists reads as the id. */
 export const modelLabel = (id: string): string => securityAuditModelOption(id)?.label ?? id
@@ -155,7 +142,7 @@ export const modelLabel = (id: string): string => securityAuditModelOption(id)?.
 const INCOMPLETE_REASON_LABEL = new Map<string, string>([
 	[ORG_SPEND_LIMIT_REACHED, "reached the monthly spend limit"],
 	[ORG_NO_AI_CREDITS, "the organization ran out of AI credits"],
-	["org_budget_unavailable", "spend could not be checked"],
+	["org_budget_unavailable", "billing could not be reached, so no more agents were started"],
 	["cancelled", "cancelled"],
 ])
 
@@ -166,10 +153,6 @@ export const incompleteReasonLabel = (reason: string | null): string =>
 				.split("; ")
 				.map((part) => INCOMPLETE_REASON_LABEL.get(part) ?? part.replaceAll("_", " "))
 				.join("; ")
-
-/** The org's limit stopped the run: an admin can raise it and run again. */
-export const isSpendLimitStop = (run: Pick<SecurityAuditRun, "incompleteReason">): boolean =>
-	run.incompleteReason?.split("; ").includes(ORG_SPEND_LIMIT_REACHED) === true
 
 /** `1h 12m`, `3h 41m`, `48s`: how long a run has taken (or took). */
 export const formatElapsed = (ms: number): string => {

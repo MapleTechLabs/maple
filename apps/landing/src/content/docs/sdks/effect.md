@@ -7,31 +7,22 @@ navLabel: "Effect"
 sdk: "effect"
 ---
 
-`@maple-dev/effect-sdk` is Maple's SDK for Effect applications. It provides an Effect Layer that sets up OpenTelemetry traces, logs and metrics, fills in resource attributes from the runtime, and sends everything to Maple's ingest for your region. In most setups an ingest key from **Settings → Ingestion** is the only configuration it needs.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Node.js</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Bun</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Deno</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Browsers</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Cloudflare Workers</span>
-</div>
+`@maple-dev/effect-sdk` is Maple's SDK for Effect applications. It runs on Node.js, Bun, Deno, browsers and Cloudflare Workers, and provides an Effect Layer that sets up OpenTelemetry traces, logs and metrics, fills in resource attributes from the runtime, and sends everything to Maple's ingest for your region. In most setups an ingest key from **Settings → Ingestion** is the only configuration it needs.
 
 ## Install
 
-**Effect 4** (`effect` 4.0.0 or later)
+For Effect 4 (`effect` 4.0.0 or later):
 
 ```bash
 npm install @maple-dev/effect-sdk effect
 ```
 
-**Effect 3**
+On Effect 3, install the `effect-v3` npm tag with the platform packages it needs. That build is older than the Effect 4 release, and the options on these pages describe the Effect 4 release.
 
 ```bash
-npm install @maple-dev/effect-sdk@effect-v3 effect @effect/platform @effect/opentelemetry
+npm install @maple-dev/effect-sdk@effect-v3 effect @effect/platform \
+  @effect/opentelemetry
 ```
-
-> The Effect 3 build is published under the `effect-v3` npm tag and is older than the Effect 4 release. The options on these pages describe the Effect 4 release.
 
 ## Pick your platform
 

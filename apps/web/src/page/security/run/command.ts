@@ -7,7 +7,7 @@ import { parseMarkdownTexts } from "../../kit/markdown"
 import {
 	cancelRun,
 	getRun,
-	listFindings,
+	listRunFindings,
 	listRunEvents,
 	listRunUnits,
 	listTargets,
@@ -68,10 +68,10 @@ export const FetchRunTargets = Command.define("SecurityApiListRunTargets", {
 })
 
 export const FetchRunFindings = Command.define("SecurityApiListRunFindings", {
-	args: { key: Schema.String, targetId: SecurityAuditTargetId },
+	args: { key: Schema.String, runId: SecurityAuditRunId },
 	messages: [Message.CompletedFetchFindings],
-	execute: ({ key, targetId }) =>
-		Effect.map(listFindings(targetId), (result) => Message.CompletedFetchFindings({ key, result })),
+	execute: ({ key, runId }) =>
+		Effect.map(listRunFindings(runId), (result) => Message.CompletedFetchFindings({ key, result })),
 })
 
 export const StartAnotherRun = Command.define("SecurityApiStartAnotherRun", {

@@ -26,6 +26,16 @@ export const COMPANION_FILES: ReadonlyArray<SkillFileName> = (
 
 export const skillFile = (name: SkillFileName): string => SKILL_FILES[name]
 
+/**
+ * File names the audit's own method text goes by. Prompts cite them, so agents try to read them
+ * from the target; `RECURSION.md` is one they invent. A miss on one of these is not a target fact.
+ */
+export const SKILL_REFERENCE_FILES: ReadonlySet<string> = new Set([
+	...Object.keys(SKILL_FILES),
+	"RECURSION.md",
+	"report-schema.json",
+])
+
 export interface SkillBlock {
 	/** `FILE.md#Name`, the skill's canonical block reference. */
 	readonly ref: string
@@ -119,4 +129,13 @@ export const sectionText = (file: SkillFileName, heading: string): string | unde
 	next.lastIndex = at + heading.length
 	const match = next.exec(text)
 	return text.slice(at, match === null ? undefined : match.index).trimEnd()
+}
+
+/** The prose of `file` from `marker` to the next heading of any level. */
+export const textFrom = (file: SkillFileName, marker: string): string | undefined => {
+	const text = SKILL_FILES[file]
+	const at = text.indexOf(marker)
+	if (at < 0) return undefined
+	const next = text.indexOf("\n#", at)
+	return text.slice(at, next < 0 ? undefined : next).trimEnd()
 }

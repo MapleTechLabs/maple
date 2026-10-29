@@ -49,12 +49,19 @@ import { DateTimeUtcFromWarehouse } from "../../datetime"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
+import { UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
 
 // Local CH function declarations used by the live topology-join branch's
 // sample-weighting math. Kept here (not promoted to ch/functions/) because
 // they're niche and only this builder uses them; promote later if reused.
 const _toFloat64 = defineFn<[CH.Expr<unknown>], number>("toFloat64", T.float64)
 const _matchRegex = defineCondFn<[CH.Expr<string>, string]>("match")
+
+/**
+ * Synthetic callers kept off the service map. Uptime checks are Client spans into the
+ * user's services, so without this the map grows a `maple-uptime` node and its edges.
+ */
+const SERVICE_MAP_EXCLUDED_SERVICES: ReadonlyArray<string> = [UPTIME_SERVICE_NAME]
 
 // Service dependencies
 
@@ -173,6 +180,8 @@ function serviceMapEdgeJoinSource(opts: {
 			envFilter($.DeploymentEnv),
 			edgeOnly,
 			opts.parentServiceName ? $.ServiceName.eq(opts.parentServiceName) : undefined,
+			// Here rather than per caller, so the rollup stops sealing these edges too.
+			CH.notInList($.ServiceName, SERVICE_MAP_EXCLUDED_SERVICES),
 		])
 
 	const childSpans = from(ServiceMapChildren)
@@ -350,6 +359,8 @@ export function serviceDependenciesQueryBase(opts: {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.SourceService.eq(opts.serviceName) : undefined,
+			// Hours sealed before the join source dropped them still hold these edges.
+			CH.notInList($.SourceService, SERVICE_MAP_EXCLUDED_SERVICES),
 			involving ? $.SourceService.eq(involving).or($.TargetService.eq(involving)) : undefined,
 			...utcInteriorConditions($.Hour),
 			envFilterMv($.DeploymentEnv),

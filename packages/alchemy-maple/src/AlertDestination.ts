@@ -9,6 +9,7 @@ import { isOutput } from "alchemy/Output"
 import { listAll, MapleApi } from "./MapleApi"
 import { MapleErrorTags } from "./errors"
 import type { Providers } from "./Providers"
+import type { ExclusiveVariant } from "./variants"
 
 /** A write-only channel secret: plain string or `Redacted` (recommended). */
 type SecretInput = string | Redacted.Redacted<string>
@@ -32,13 +33,9 @@ type DestinationVariant =
 	| (DestinationBaseProps & { type: "discord"; webhook_url: SecretInput })
 	| (DestinationBaseProps & { type: "telegram"; bot_token: SecretInput; chat_id: string })
 	| (DestinationBaseProps & { type: "email"; member_user_ids: string[] })
+	/** A team in the Linear workspace connected on Maple's Integrations page. */
+	| (DestinationBaseProps & { type: "linear"; team_id: string })
 
-// Explicitly exclude other variants' fields: Input wraps the discriminant too,
-// so TypeScript's usual excess-property check alone cannot keep them separate.
-type VariantKeys<T> = T extends unknown ? keyof T : never
-type ExclusiveVariant<T, All = T> = T extends unknown
-	? T & Partial<Record<Exclude<VariantKeys<All>, keyof T>, never>>
-	: never
 export type AlertDestinationProps = ExclusiveVariant<DestinationVariant>
 
 export type AlertDestination = Resource<
@@ -56,9 +53,10 @@ export type AlertDestination = Resource<
 >
 
 /**
- * A notification channel (PagerDuty, webhook, Discord, Telegram, or
- * workspace-member email) that `Maple.AlertRule`s deliver to. Chat-connector and
- * Hazel destinations use integrations linked in Maple and are managed there.
+ * A notification channel (PagerDuty, webhook, Discord, Telegram, workspace-member
+ * email, or a Linear team) that `Maple.AlertRule`s deliver to. Linear needs the
+ * workspace connected in Maple first. Chat-connector and Hazel destinations use
+ * integrations linked in Maple and are managed there.
  *
  * @example
  * ```typescript
@@ -77,6 +75,7 @@ const WireDestination = Schema.Struct({
 	type: Schema.String,
 	enabled: Schema.Boolean,
 	channel_label: Schema.NullOr(Schema.String),
+	linear_team_id: Schema.optionalKey(Schema.String),
 })
 const decodeWireDestination = Schema.decodeUnknownEffect(WireDestination)
 
@@ -107,6 +106,9 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 		case "email":
 			body.member_user_ids = props.member_user_ids
 			break
+		case "linear":
+			body.team_id = props.team_id
+			break
 	}
 	return body
 }
@@ -118,7 +120,11 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 const drifted = (
 	props: AlertDestinationProps,
 	observed: Schema.Schema.Type<typeof WireDestination>,
-): boolean => props.name !== observed.name || (props.enabled ?? true) !== observed.enabled
+): boolean =>
+	props.name !== observed.name ||
+	(props.enabled ?? true) !== observed.enabled ||
+	// The Linear team is not a secret, so a team changed outside IaC is drift like a rename.
+	(props.type === "linear" && props.team_id !== observed.linear_team_id)
 
 const toAttributes = (observed: Schema.Schema.Type<typeof WireDestination>) => ({
 	destinationId: observed.id,

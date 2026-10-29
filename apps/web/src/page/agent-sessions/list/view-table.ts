@@ -4,13 +4,10 @@ import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { formatCount } from "../../../ui/filters/range-format"
 import { icon, type IconName } from "../../../ui/icon"
 import { loadingMoreRow } from "../../../ui/list-footer"
-import { statusDot } from "../../../ui/status-dot"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { servicePills } from "../../../ui/trace-badges"
@@ -21,6 +18,8 @@ import { sessionHeading } from "../kit/session-name"
 import { vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
+import { errorChip as sharedErrorChip, TOOL_CHIP, TURN_CHIP } from "../kit/error-chip"
+import { moreChip } from "../kit/more-chip"
 
 // The agent sessions list, windowed.
 // TODO(tooltip): every `Hint` is drawn as its trigger; the popups are not ported.
@@ -330,7 +329,7 @@ const workCount = (h: H, iconName: IconName, tone: string, count: number): Html 
 		cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : "text-muted-foreground"),
 		[
 			icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
-			formatCount(count),
+			formatNumber(count),
 		],
 	)
 
@@ -345,7 +344,7 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const total = hasBuckets ? drawnTotal : row.totalTokens
 	if (total === 0) return null
 	if (!hasBuckets) {
-		return hint(h, "font-mono text-xs tabular-nums text-muted-foreground", [formatCount(total)])
+		return hint(h, "font-mono text-xs tabular-nums text-muted-foreground", [formatNumber(total)])
 	}
 	const input = {
 		label: "in",
@@ -361,7 +360,7 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const side = (part: typeof input) =>
 		h.span(
 			[h.Class(part.count > 0 ? part.tone : "text-muted-foreground/50")],
-			[part.count > 0 ? formatCount(part.count) : EMPTY_VALUE],
+			[part.count > 0 ? formatNumber(part.count) : EMPTY_VALUE],
 		)
 	return h.span(
 		[
@@ -380,34 +379,13 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 const errorChip = (
 	h: H,
 	options: Readonly<{ iconName?: IconName; count: number; noun: string; className: string }>,
-): Html =>
-	hint(h, cn(badgeVariants({ pill: true, size: "xs", mono: true }), options.className), [
-		options.iconName === undefined
-			? statusDot(h, { tone: "custom", size: "sm", className: "bg-current" })
-			: icon(h, options.iconName, {
-					size: 10,
-					className: "shrink-0",
-					attributes: [h.AriaHidden(true)],
-				}),
-		h.span(
-			[],
-			[
-				h.span([h.Class("inline-block min-w-[2ch] text-right")], [String(options.count)]),
-				" ",
-				h.span(
-					[h.Class("inline-block min-w-[5ch]")],
-					[options.count === 1 ? options.noun : `${options.noun}s`],
-				),
-			],
-		),
-	])
-
-const TURN_CHIP = "border-severity-error/30 bg-severity-error/10 text-severity-error"
-const TOOL_CHIP = "border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
+): Html => sharedErrorChip(h, { ...options, attributes: triggerAttributes(h) })
 
 /** Tool failures apart from turn failures; an unclassified failure only when it is all there is. */
 const errorChips = (h: H, row: DisplayRow): Html => {
-	if (row.errorSpanCount === 0) return emptyCell(h)
+	// A measured zero reads "0"; the dash is kept for a value that does not apply.
+	if (row.errorSpanCount === 0)
+		return h.span([h.Class("font-mono text-xs tabular-nums text-muted-foreground/50")], ["0"])
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
 	return h.div(
@@ -455,7 +433,7 @@ const servicesCell = (h: H, services: ReadonlyArray<string>): Html | null => {
 				[
 					first,
 					...(services.length > 1
-						? [h.span([h.Class("shrink-0 tabular-nums")], ["+", String(services.length - 1)])]
+						? [moreChip(h, { count: services.length - 1, names: services.slice(1) })]
 						: []),
 				],
 			)

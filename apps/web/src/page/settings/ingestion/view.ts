@@ -18,6 +18,7 @@ import type { Model } from "./model"
 import { credentialRow, ingestKeyRows } from "./view-keys"
 import { connectInstructions, frameworkIconStrip, frameworkPicker } from "./view-setup"
 import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./view-rules"
+import { deleteRuleDialog, ingestRulesSection } from "./view-ingest-rules"
 
 // `IngestionSection`.
 
@@ -191,11 +192,17 @@ const addServiceSection = (h: H, model: Model): Html => {
 					: "Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you.",
 			],
 			padded: false,
-			actions: isOpen ? frameworkPicker(h, model.framework) : undefined,
 		},
 		[
 			isOpen
-				? connectInstructions(h, model, connection.privateKey)
+				? h.div(
+						[],
+						[
+							// Its own wrapping row, so the chips never crowd the section heading.
+							h.div([h.Class("border-b px-4 py-3")], [frameworkPicker(h, model.framework)]),
+							connectInstructions(h, model, connection.privateKey),
+						],
+					)
 				: h.div(
 						[h.Class("flex items-center gap-3 px-4 py-3")],
 						[
@@ -234,6 +241,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 		endpointAndKeysSection(h, model),
 		addServiceSection(h, model),
 		...recommendationsSection(h, model),
+		ingestRulesSection(h, model.ingestRules, model.isAdmin),
 		mappingsSection(h, model),
 		h.submodel({
 			slotId: "ingestion-mapping-dialog",
@@ -243,6 +251,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 			viewInputs: { slotId: "ingestion-mapping-dialog-popup" },
 		}),
 		deleteMappingDialog(h, model),
+		...(model.isAdmin ? [deleteRuleDialog(h, model.ingestRules)] : []),
 		...(model.isAdmin ? [rollKeyDialog(h, model)] : []),
 	]),
 )

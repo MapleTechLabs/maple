@@ -152,7 +152,7 @@ export const investigateBar = <M>(
 				),
 				h.AriaLabel("What should Maple investigate?"),
 				h.Class(
-					"min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground",
+					"min-w-0 flex-1 bg-transparent font-prose text-sm text-foreground outline-none placeholder:text-muted-foreground",
 				),
 			]),
 			button(

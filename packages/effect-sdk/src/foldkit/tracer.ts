@@ -25,6 +25,8 @@ interface Navigation {
 	readonly route: string
 	readonly path: string
 	readonly startTime: bigint
+	/** Set on the navigation's span when it is created. */
+	readonly attributes?: Readonly<Record<string, number>> | undefined
 	readonly sampled: boolean
 	span: Tracer.Span | undefined
 	pending: number
@@ -71,6 +73,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			sampled: navigation.sampled,
 		})
 		span.attribute("url.path", navigation.path)
+		for (const [key, value] of Object.entries(navigation.attributes ?? {})) span.attribute(key, value)
 		navigation.span = span
 		return span
 	}
@@ -114,6 +117,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		readonly route: string
 		readonly path: string
 		readonly startTime: bigint
+		readonly attributes?: Readonly<Record<string, number>> | undefined
 	}): number => {
 		const id = nextNavigationId++
 		const navigation: Navigation = {

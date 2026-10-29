@@ -189,7 +189,10 @@ export const apiReference = (h: H, model: Model): Html =>
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3")],
 					[
-						h.span([h.Class("text-muted-foreground w-20 shrink-0 text-xs")], ["Base URL"]),
+						h.span(
+							[h.Class("w-20 shrink-0 font-prose text-xs text-muted-foreground")],
+							["Base URL"],
+						),
 						h.div(
 							[h.Class("min-w-0 flex-1")],
 							[
@@ -217,14 +220,11 @@ export const oauthPointer = (h: H): Html =>
 			),
 		],
 		[
-			"Clients signed in with OAuth don't use keys. See and revoke them in",
-			" ",
+			"Clients signed in with OAuth don't use keys. See and revoke them in the ",
 			h.a(
-				[
-					h.Href("/settings?tab=mcp"),
-					h.Class(cn("inline-flex items-center gap-1", INLINE_LINK_CLASS)),
-				],
-				["MCP", icon(h, "ArrowRightIcon", { size: 12 }), "Connected clients"],
+				[h.Href("/settings?tab=mcp"), h.Class(INLINE_LINK_CLASS)],
+				["Connected clients section of MCP"],
 			),
+			".",
 		],
 	)

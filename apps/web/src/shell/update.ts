@@ -212,7 +212,7 @@ export const routeChanged =
 export const checklistRefreshOnNavigation = (model: Model, hasTopBar: boolean, isClerk: boolean) =>
 	isClerk && hasTopBar && model.checklist.checklist !== null ? [toChecklist(Checklist.LoadChecklist())] : []
 
-const toggleSidebar = (model: Model): UpdateReturn =>
+const toggleSidebar = (model: Model, isInstant: boolean): UpdateReturn =>
 	model.isMobile
 		? model.isMobileNavOpen
 			? { model: modifyFields(model, { isMobileNavOpen: () => false }) }
@@ -221,6 +221,7 @@ const toggleSidebar = (model: Model): UpdateReturn =>
 				// A tooltip left open on the rail would reappear on the next collapse.
 				model: modifyFields(model, {
 					isSidebarOpen: (isOpen) => !isOpen,
+					isSidebarToggleInstant: () => isInstant,
 					railTooltip: () => initRailTooltip(),
 				}),
 				commands: [SaveSidebarState({ isOpen: !model.isSidebarOpen })],
@@ -322,8 +323,8 @@ const clerkOrgMenu = (model: Model, message: ClerkOrgSwitcher.Message): UpdateRe
 
 const foldMessage = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
-		ClickedSidebarTrigger: () => toggleSidebar(model),
-		PressedSidebarShortcut: () => toggleSidebar(model),
+		ClickedSidebarTrigger: () => toggleSidebar(model, false),
+		PressedSidebarShortcut: () => toggleSidebar(model, true),
 		RequestedInfraSurfaces: () => requestInfraSurfaces(model),
 		ChangedViewport: ({ isMobile }) => {
 			const changed = modifyFields(closeMenu(model), {

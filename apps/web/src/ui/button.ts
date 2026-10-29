@@ -16,28 +16,11 @@ export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>
 
-type Variant = NonNullable<VariantProps<typeof buttonVariants>["variant"]>
-type Size = NonNullable<VariantProps<typeof buttonVariants>["size"]>
-
-// Local deltas on the shared variants: text links read as links (icon-only ones stay neutral), and
-// the small sizes keep a visible gap between the icon and its label.
-const variantOverride = (variant: Variant, size: Size): string | undefined =>
-	variant === "link" && !size.startsWith("icon") ? "text-primary" : undefined
-
 // Every variant dims to the same 50% when disabled; a loading button stays solid so its spinner shows.
 const STATE_CLASSES = "disabled:opacity-50 data-loading:disabled:opacity-100"
 
-const sizeOverride = (size: Size): string | undefined =>
-	size === "sm" ? "gap-2" : size === "xs" ? "gap-1.5" : undefined
-
 const buttonClasses = (options: VariantProps<typeof buttonVariants> & Readonly<{ className?: string }>) =>
-	cn(
-		buttonVariants({ size: options.size, variant: options.variant }),
-		STATE_CLASSES,
-		variantOverride(options.variant ?? "default", options.size ?? "default"),
-		sizeOverride(options.size ?? "default"),
-		options.className,
-	)
+	cn(buttonVariants({ size: options.size, variant: options.variant }), STATE_CLASSES, options.className)
 
 /** `<Button>`: the same class composition, attributes and loading spinner as @maple/ui. */
 export const button = <Message>(

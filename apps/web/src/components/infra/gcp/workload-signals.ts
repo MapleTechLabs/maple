@@ -175,8 +175,11 @@ function classesStrip(
 		rows: gcpClassRows(metric, points, window),
 		summary: {
 			value: formatNumber(total),
+			// The chart is a rate; the value is the window's total, so the caption says so.
 			caption:
-				total > 0 ? `${formatPercent(read.total(metric, healthy) / total)} ${healthy}` : undefined,
+				total > 0
+					? `total · ${formatPercent(read.total(metric, healthy) / total)} ${healthy}`
+					: "total",
 		},
 	}
 }

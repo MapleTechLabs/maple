@@ -1,4 +1,5 @@
 import type { SecurityAuditRunDetail } from "@maple/domain/http"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -6,21 +7,43 @@ import type { BreadcrumbEntry } from "../../../shell"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { errorState } from "../../../ui/error-state"
+import { icon } from "../../../ui/icon"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitleSkeleton } from "../../kit/detail-header"
 import { messageResponse } from "../../kit/message-response"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { gateOf, isLive, REPORT_TITLE, type ReportDoc, shortId } from "../kit/format"
+import {
+	formatElapsed,
+	formatUsd,
+	gateOf,
+	isLive,
+	REPORT_TITLE,
+	type ReportDoc,
+	runElapsed,
+	runTotalUsd,
+	shortId,
+} from "../kit/format"
 import { stack } from "../kit/layout"
 import { gateState, placeholder } from "../kit/parts"
-import { eventsOf, gapCount, phasesOf, resultsOf, runOf, targetOf, verdictsOf } from "./derive"
+import {
+	areasOf,
+	eventsOf,
+	gapCount,
+	isDetailsOpen,
+	phasesOf,
+	resultsOf,
+	runOf,
+	targetOf,
+	verdictsOf,
+} from "./derive"
 import { Message, type Model } from "./model"
 import { phaseStrip, runActions, runStats, runTitle, stopBanner } from "./view-header"
-import { eventsPanel, gapsPanel, ledgerPanel, resultsPanel } from "./view-panels"
+import { findingSheet, findingsSection } from "./view-findings"
+import { eventsPanel, gapsPanel, ledgerPanel } from "./view-panels"
 
-// `/security/runs/$runId`: header, phases, totals, then the ledger and events (live) or the gaps
-// and results (finished).
+// `/security/runs/$runId`: what the run found first, by severity; how it ran (phases, totals,
+// ledger, events) below, folded once it finished.
 
 type H = HtmlBuilder<Message>
 
@@ -69,32 +92,81 @@ const cancelDialog = (h: H, model: Model): Html =>
 		onConfirm: Message.ClickedConfirmCancel(),
 	})
 
-const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: string): Html => {
+/** How the run ran, folded under one line once it finished: phases, totals, ledger and events. */
+const runDetails = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: string): Html => {
 	const events = eventsOf(model)
-	const results = resultsOf(model)
+	const isOpen = isDetailsOpen(model)
 	const live = isLive(run)
+	const gaps = gapCount(run)
+	const summary = [
+		run.unitTotal === 0 ? null : `${run.unitTotal - gaps} of ${run.unitTotal} units closed`,
+		gaps === 0 || live ? null : `${gaps} ${gaps === 1 ? "gap" : "gaps"}`,
+		formatUsd(runTotalUsd(run)),
+		formatElapsed(runElapsed(run, model.nowMs)),
+	]
+		.filter((part) => part !== null)
+		.join(" · ")
+	return h.section(
+		[h.AriaLabel("How the run ran"), h.Class("flex flex-col gap-4")],
+		[
+			h.button(
+				[
+					h.Type("button"),
+					h.AriaExpanded(isOpen),
+					h.OnClick(Message.ToggledDetails()),
+					h.Class(
+						"flex w-full items-center gap-2.5 rounded-md border bg-card px-4 py-3 text-left hover:bg-muted/40",
+					),
+				],
+				[
+					icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
+						size: 14,
+						className: "text-muted-foreground",
+					}),
+					h.span([h.Class("text-sm font-medium")], ["How the run ran"]),
+					h.span([h.Class("truncate text-xs text-muted-foreground")], [summary]),
+					h.span(
+						[h.Class("ml-auto shrink-0 text-xs text-muted-foreground")],
+						[isOpen ? "Hide" : "Phases, coverage, cost and events"],
+					),
+				],
+			),
+			...(isOpen
+				? [
+						phaseStrip(h, phasesOf(run, events)),
+						runStats(
+							h,
+							run,
+							AsyncData.hasData(model.findings.data) ? verdictsOf(resultsOf(model)) : null,
+							Option.match(AsyncData.getData(model.units.data), {
+								onNone: () => null,
+								onSome: (response) => areasOf(response.units),
+							}),
+							model.nowMs,
+						),
+						run.unitTotal === 0
+							? eventsPanel(h, model, events, run, timeZone)
+							: h.div(
+									[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
+									[
+										!live && gaps > 0 && !model.isLedgerOpen
+											? gapsPanel(h, model, run)
+											: ledgerPanel(h, model, run),
+										eventsPanel(h, model, events, run, timeZone),
+									],
+								),
+					]
+				: []),
+		],
+	)
+}
+
+const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: string): Html => {
 	const banner = stopBanner(h, model, run)
 	const body: ReadonlyArray<Html> = [
 		...(banner === null ? [] : [banner]),
-		phaseStrip(h, phasesOf(run, events)),
-		runStats(h, run, AsyncData.hasData(model.findings.data) ? verdictsOf(results) : null),
-		live
-			? h.div(
-					[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
-					[ledgerPanel(h, model, run), eventsPanel(h, model, events, run, timeZone)],
-				)
-			: run.unitTotal === 0
-				? resultsPanel(h, model, results, run)
-				: h.div(
-						[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
-						[
-							gapCount(run) > 0 && !model.isLedgerOpen
-								? gapsPanel(h, model, run)
-								: ledgerPanel(h, model, run),
-							resultsPanel(h, model, results, run),
-						],
-					),
-		...(live ? [] : [eventsPanel(h, model, events, run, timeZone)]),
+		...findingsSection(h, model, run),
+		runDetails(h, model, run, timeZone),
 	]
 	return dashboardPage(
 		h,
@@ -103,7 +175,7 @@ const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: strin
 			actions: runActions(h, model, run),
 			scrollClassName: "pb-8",
 		},
-		[stack(h, body), cancelDialog(h, model), reportSheet(h, model, run)],
+		[stack(h, body), cancelDialog(h, model), reportSheet(h, model, run), findingSheet(h, model)],
 	)
 }
 

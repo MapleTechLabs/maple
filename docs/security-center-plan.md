@@ -194,6 +194,67 @@ that it passes on the deployed Cloudflare runtime, not only in local Docker.
 PoC discipline from the post: a `confirmed` record's reproduction is a test that fails against the
 untouched checkout. The verifier runs it itself in a fresh scratch copy.
 
+#### The executor (plan, 2026-10-27)
+
+Execution runs in its own container class, `Executor` in `apps/sandbox`, never the per-repository
+read sandbox: an executor lives for one run and is thrown away, so target code never shares a
+container with the git mirror or another run. Four platform primitives carry the design, all on
+the `Container` binding (`workers-types` 5.x):
+
+- `container.start({ enableInternet: false })`: egress denied by the platform, not by `unshare -n`
+  (whose `CAP_SYS_ADMIN` is unverified on Cloudflare).
+- `interceptOutboundHttp(host, fetcher)`: a made-up plain-HTTP host (`registry.maple.internal`)
+  routed to a Worker entrypoint, the pattern `DirectoryBackup` uses for `backups.sandbox.internal`.
+  Package managers point at it (`registry=`, `GOPROXY`, `index-url`, a Maven mirror, git
+  `url.insteadOf`), so there is no TLS interception and no CA to trust.
+- The **registry gateway** behind that host: an allowlist of public registries plus the org's
+  configured private hosts, GET/HEAD only, bounded responses, the org's read-only credential added
+  per request. The token never enters the container, so target code cannot read or leak it. Git
+  fetches need one POST: smart HTTP posts to `/git-upload-pack`. The gateway allows exactly that
+  path on allowlisted git hosts, with request and response size caps and a deadline, and never
+  `git-receive-pack`, so a git dependency can be fetched but nothing can be pushed.
+- Dependency cache: `DirectoryBackup` to R2 keyed by `(lockfile hash, toolchain)`, already proven by
+  the mirror backups. `snapshotContainer()` is the faster path if the scheduling policy allows it.
+
+A run has two container starts:
+
+1. **Prepare** (parent-run, before any agent): internet off, only the gateway intercepted. The
+   package manager reads target-controlled lockfiles and configs, so it runs under the same
+   controls as Execute (unprivileged uid, `prlimit` bounds, writes only to the cache directory),
+   never as root. Lockfile installs with install scripts off: `npm ci` /
+   `pnpm install --frozen-lockfile` / `bun install --frozen-lockfile`, each `--ignore-scripts`;
+   `uv sync --frozen --no-build`; `go mod download`; `cargo fetch --locked`. Gradle and Maven
+   resolution runs the target's build scripts, so JVM prepare is target code outright: JVM stays
+   source-only until those controls are verified on prepare, not only on execute. Toolchain
+   versions the repository pins (`.nvmrc`, `go.mod`'s `go`, `rust-toolchain.toml`,
+   `.java-version`) install through the gateway too, and the result is cached.
+2. **Execute**: the cache restored read-only, internet off, no intercepts at all; loopback only.
+   Each agent gets its own uid and a size-bounded tmpfs scratch; `prlimit` bounds address space,
+   processes, file size and CPU; the promotion helper copies evidence out after its processes exit.
+
+Private dependencies stop being a blocker per host, not per run: `scanDependencies` already names
+each private source (`.npmrc: private source npm.pkg.github.com`), so the run label becomes "no
+credential configured for npm.pkg.github.com" with a link to add one. Credentials are stored like
+`OrgOpenRouterKeyService`'s key: encrypted, write-only through the API, one row per (host, scope).
+For GitHub Packages, check first whether the GitHub App installation token can read packages;
+otherwise the org adds a token with `read:packages`.
+
+`executionProfile`'s `hasSandbox(ecosystem)` turns on per ecosystem as each ships: Node first, then
+Go and Rust (installs run no code), JVM last. One ecosystem's failed prepare leaves only it
+source-only. The measure of the whole workstream is the eval set rerun: how many `needs_validation`
+leads become `confirmed`.
+
+**Phase 0, the platform probe.** `src/executor-probe.ts` holds every check the design rests on
+(egress DNS/TCP/HTTPS blocked, loopback, the plain-HTTP and HTTPS intercepts with internet off, the
+container's CA, `unshare -n`, privilege drop, `prlimit` address-space/file-size/process limits,
+cgroups, tmpfs and read-only bind mounts, instance resources) plus `snapshotContainer()`. The
+sandbox Worker's hourly cron runs it once per probe version on prd and logs one line per check
+(`maple.executor.probe.*`, in Maple's internal org). Locally,
+`bun run --cwd apps/sandbox verify:executor-probe` runs the same script under `--network none`:
+2026-10-27, every check Docker can answer behaves as expected (egress blocked, loopback, uid drop,
+both limits enforced, tmpfs and read-only binds mount). Only the Cloudflare run answers the
+intercepts, the CA and the instance limits.
+
 ### Production reachability (our addition)
 
 Cloudflare's validation system has a "Judgment" stage that asks whether a finding is reachable in
@@ -289,7 +350,9 @@ the largest cost levers. Sandbox v2 is what turns hits into `confirmed`.
 ### Phase 1: sandbox v2
 
 Every row of the sandbox table, verified by `verify:image` on the deployed runtime. Nothing in
-phase 2 executes target code until this passes.
+phase 2 executes target code until this passes. Order: the platform probe (above) on prd, then the
+executor with prepare and the gateway for Node, then org registry credentials, then `sandbox_run`
+and promotion for agents, then Go, Rust, Python and JVM.
 
 ### Phase 2: the harness, manual trigger, internal org
 

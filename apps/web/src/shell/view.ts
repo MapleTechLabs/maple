@@ -68,20 +68,33 @@ const desktopSidebar = (
 	currentPath: string,
 	clerk: ShellClerk | null,
 ): Html => {
+	const isInstant = model.isSidebarToggleInstant
 	if (model.isSidebarOpen)
-		return sidebarDesktop(h, "expanded", sidebarRegions(h, model, currentPath, clerk))
+		return sidebarDesktop(
+			h,
+			"expanded",
+			sidebarRegions(h, model, currentPath, clerk),
+			undefined,
+			isInstant,
+		)
 	return h.submodel({
 		slotId: "shell-rail-tooltip",
 		model: model.railTooltip,
 		view: Tooltip.view,
 		viewInputs: {
 			toView: ({ trigger, portal }) =>
-				sidebarDesktop(h, "collapsed", [
-					...sidebarRegions(h, model, currentPath, clerk, (title) =>
-						trigger(`${RAIL_TIP_PREFIX}${title}`),
-					),
-					...(portal === null ? [] : [portal]),
-				]),
+				sidebarDesktop(
+					h,
+					"collapsed",
+					[
+						...sidebarRegions(h, model, currentPath, clerk, (title) =>
+							trigger(`${RAIL_TIP_PREFIX}${title}`),
+						),
+						...(portal === null ? [] : [portal]),
+					],
+					undefined,
+					isInstant,
+				),
 			toContent: (triggerId) => [triggerId.slice(RAIL_TIP_PREFIX.length)],
 			triggerIds: railTipTitles(clerk).map((title) => `${RAIL_TIP_PREFIX}${title}`),
 		},

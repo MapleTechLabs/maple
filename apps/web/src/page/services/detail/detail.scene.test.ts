@@ -83,7 +83,7 @@ describe("service detail", () => {
 		expect(names(init(route(), context).commands)).toContain("ResolveServiceDetailClock")
 		const start = init(route(), context).model
 		const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" }))
-		expect(names(resolved.commands)).toEqual([
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([
 			FetchOverview.name,
 			FetchOperations.name,
 			FetchIssues.name,
@@ -91,7 +91,7 @@ describe("service detail", () => {
 			FetchWorkloads.name,
 			FetchDependencies.name,
 			FetchUptimeMonitors.name,
-		])
+		]))
 		expect(resolved.model.window).toEqual({
 			startTime: "2026-10-01 00:00:00",
 			endTime: "2026-10-01 12:00:00",

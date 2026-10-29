@@ -6,10 +6,8 @@ import {
 	organizationRegionOpen,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { currentRegion } from "../lib/region"
-import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
-import { clerkJsUrl } from "./clerk-js-url"
+import { bootedClerk, type ClerkLoadError } from "./clerk-boot"
 import { Clock, Duration, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 
 /** The slice of clerk-js this app reads (`window.Clerk`). */
@@ -173,7 +171,7 @@ export interface ClerkOrganizationResource {
 	/** Re-reads the org, so its new public metadata reaches the listeners. */
 	readonly reload: () => Promise<ClerkOrganizationResource>
 }
-interface ClerkGlobal extends ClerkResources {
+export interface ClerkGlobal extends ClerkResources {
 	readonly load: (options: Readonly<Record<string, unknown>>) => Promise<void>
 	readonly addListener: (listener: (resources: ClerkResources) => void) => () => void
 	readonly mountSignIn: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
@@ -200,11 +198,6 @@ declare global {
 		Clerk?: ClerkGlobal
 	}
 }
-
-export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()("@maple/web/ClerkLoadError", {
-	message: Schema.String,
-	cause: Schema.Defect(),
-}) {}
 
 /**
  * An organization as the app reads it (`useOrganization`, `useOrganizationList`): its public
@@ -292,66 +285,8 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		),
 	}))
 
-const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? ""
-const signInUrl = import.meta.env.VITE_CLERK_SIGN_IN_URL?.trim() || "/sign-in"
-const signUpUrl = import.meta.env.VITE_CLERK_SIGN_UP_URL?.trim() || "/sign-up"
-
-const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
-	const script = document.createElement("script")
-	// The exact URL index.html preloads (vite.config.ts), so this runs the bytes already fetched.
-	script.src = clerkJsUrl(publishableKey)
-	script.async = true
-	script.crossOrigin = "anonymous"
-	script.setAttribute("data-clerk-js-script", "true")
-	script.setAttribute("data-clerk-publishable-key", publishableKey)
-	script.addEventListener("load", () => resume(Effect.void))
-	script.addEventListener("error", (cause) =>
-		resume(Effect.fail(new ClerkLoadError({ message: "Couldn't load Clerk", cause }))),
-	)
-	document.head.appendChild(script)
-	// Interrupted (the load deadline): a later attempt injects its own tag.
-	return Effect.sync(() => script.remove())
-})
-
-const currentClerk = Effect.suspend(() =>
-	Option.match(Option.fromNullishOr(window.Clerk), {
-		onNone: () =>
-			Effect.fail(new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined })),
-		onSome: Effect.succeed,
-	}),
-)
-
-const CLERK_LOAD_TIMEOUT = Duration.seconds(20)
-
-/** Loads clerk-js the way `<ClerkProvider>` does (unless a stub already sits on `window`). */
-export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.gen(function* () {
-	yield* Effect.promise(() => purgeForeignClerkCookies(publishableKey))
-	if (window.Clerk === undefined) {
-		yield* injectClerkJs
-	}
-	const clerk = yield* currentClerk
-	yield* Effect.tryPromise({
-		try: () =>
-			clerk.load({
-				signInUrl,
-				signUpUrl,
-				signUpFallbackRedirectUrl: "/quick-start",
-				afterSignOutUrl: signInUrl,
-				// `<ClerkProvider appearance localization>`: every Clerk surface inherits these.
-				appearance: clerkAppearance,
-				localization: clerkLocalization,
-			}),
-		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
-	})
-	return yield* toSnapshot(clerk)
-}).pipe(
-	// Without a deadline a stalled script or `clerk.load` keeps the boot splash up forever.
-	Effect.timeoutOrElse({
-		duration: CLERK_LOAD_TIMEOUT,
-		orElse: () =>
-			Effect.fail(new ClerkLoadError({ message: "Clerk did not load in time", cause: undefined })),
-	}),
-)
+/** The Clerk load `boot.ts` started (`clerk-boot.ts`), as the session it settled on. */
+export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.flatMap(bootedClerk, toSnapshot)
 
 /** Every Clerk emit (session touch, org switch, sign-out), as snapshots. */
 export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<ClerkResources>((queue) =>

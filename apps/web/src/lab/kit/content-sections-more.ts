@@ -86,7 +86,7 @@ export const traceSection = <M>(h: HtmlBuilder<M>): Html =>
 					traceTitle(h, ["Read logs"]),
 					traceDescription(h, ["query timed out"]),
 				]),
-				traceLine(h, { status: "pending" }, [traceTitle(h, ["Group by route"])]),
+				traceLine(h, { status: "pending" }, [traceIcon(h, []), traceTitle(h, ["Group by route"])]),
 			],
 			"max-w-md",
 		),

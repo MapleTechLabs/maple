@@ -3,6 +3,7 @@ import type {
 	CloudflareServiceUsage,
 	CloudflareUsageResponse,
 } from "@maple/domain/http"
+import type { ZoneChoice } from "./cloudflare"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
@@ -107,10 +108,15 @@ export const describeCloudflareError = (raw: string): CloudflareErrorInfo => {
 export const isAccountScoped = (raw: string | null): boolean =>
 	raw !== null && describeCloudflareError(raw).scope === "account"
 
+/** `watched` is optional on the wire for deploy-window compat; absent means collected. */
+const isWatched = (zone: { readonly watched?: boolean }): boolean => zone.watched ?? true
+
 export interface ZoneEntry {
 	readonly key: string
 	readonly name: string
 	readonly enabled: boolean
+	/** False when the customer paused collection for this zone. */
+	readonly watched: boolean
 	readonly lastSyncedAt: number | null
 	readonly lastError: string | null
 	readonly usage: RowUsage | null
@@ -151,6 +157,8 @@ export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number
 	const { enabled, lastError, usage, lastSyncedAt } = entry
 	const err = lastError !== null && lastError !== "" ? describeCloudflareError(lastError) : null
 	const relative = (ms: number) => formatRelativeTime(ms, nowMs)
+	if (!entry.watched)
+		return { kind: "paused", tone: "neutral", detail: text("Paused by you"), detailClass: muted }
 	if (!enabled) return { kind: "disabled", tone: "neutral", detail: text("Disabled"), detailClass: muted }
 	if (err !== null && err.scope === "account")
 		return { kind: "paused", tone: "neutral", detail: text("Paused"), detailClass: muted }
@@ -222,6 +230,7 @@ export const zoneEntriesOf = (
 			key: zone.id,
 			name: zone.name,
 			enabled: zone.enabled,
+			watched: isWatched(zone),
 			lastSyncedAt: zone.lastSyncedAt ?? null,
 			lastError: zone.lastError ?? null,
 			usage: zoneUsage(zone.name),
@@ -230,6 +239,7 @@ export const zoneEntriesOf = (
 			key: service.serviceName,
 			name: service.displayName,
 			enabled: true,
+			watched: true,
 			lastSyncedAt: null,
 			lastError: null,
 			usage: usage === null ? null : toRowUsage(usage, [service]),
@@ -247,6 +257,7 @@ export const workerEntryOf = (
 		key: "workers",
 		name: "Workers",
 		enabled: status.workers?.enabled ?? true,
+		watched: true,
 		lastSyncedAt: status.workers?.lastSyncedAt ?? null,
 		lastError: status.workers?.lastError ?? null,
 		usage: usage === null ? null : services.length > 0 ? toRowUsage(usage, services) : EMPTY_USAGE,
@@ -297,3 +308,44 @@ export const connectedAccountsOf = (
 				},
 			]
 }
+
+/** The stored zone choice per account; a pre-`accounts` status reads as its single account. */
+export const zoneChoicesOf = (status: CloudflareIntegrationStatus): ReadonlyArray<ZoneChoice> => {
+	const toZones = (zones: CloudflareIntegrationStatus["zones"]) =>
+		zones
+			.map((zone) => ({ id: zone.id, name: zone.name, watched: isWatched(zone) }))
+			.toSorted((a, b) => a.name.localeCompare(b.name))
+	const accounts = status.accounts ?? []
+	if (accounts.length > 0)
+		return accounts.map((account) => ({
+			accountId: account.accountId,
+			accountName: account.accountName,
+			watchNewZones: account.watchNewZones ?? true,
+			zones: toZones(account.zones),
+		}))
+	return status.accountId === null || status.accountId === undefined
+		? []
+		: [
+				{
+					accountId: status.accountId,
+					accountName: status.accountName,
+					watchNewZones: true,
+					zones: toZones(status.zones),
+				},
+			]
+}
+
+/** The accounts whose draft differs from what is stored: only those are saved. */
+export const changedZoneChoices = (
+	stored: ReadonlyArray<ZoneChoice>,
+	draft: ReadonlyArray<ZoneChoice>,
+): ReadonlyArray<ZoneChoice> =>
+	draft.filter((account) => {
+		const before = stored.find((entry) => entry.accountId === account.accountId)
+		if (before === undefined) return true
+		const watchedBefore = new Map(before.zones.map((zone) => [zone.id, zone.watched]))
+		return (
+			before.watchNewZones !== account.watchNewZones ||
+			account.zones.some((zone) => watchedBefore.get(zone.id) !== zone.watched)
+		)
+	})

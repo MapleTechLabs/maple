@@ -47,6 +47,10 @@ export const listRunEvents = (
 	page: Readonly<{ limit: number; beforeAt?: number; beforeId?: string }>,
 ) => call((api) => api.securityAudit.listRunEvents({ params: { runId }, query: page }))
 
+/** What one run reported, rejected included, each with its finding's current triage. */
+export const listRunFindings = (runId: SecurityAuditRunId) =>
+	call((api) => api.securityAudit.listRunFindings({ params: { runId } }))
+
 /** Rejected records ride along; the views decide whether to show them. */
 export const listFindings = (targetId: SecurityAuditTargetId) =>
 	call((api) =>
@@ -124,7 +128,10 @@ export const toStartFailure = (error: unknown): LoadFailure => {
 			message: `${error.message} It resets on ${resetDay(error.resetsAt)}, or an admin can raise it under Spend & models.`,
 		}
 	if (isNotInPlan(error))
-		return { ...failure, message: `${error.message} Change the plan under Settings, Billing.` }
+		return {
+			...failure,
+			message: `${error.message} Change the plan under Settings, Billing, or add an OpenRouter key under Settings, AI.`,
+		}
 	if (isCreditsUsedUp(error))
 		return {
 			...failure,

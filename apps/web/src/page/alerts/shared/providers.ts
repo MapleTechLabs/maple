@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 import { manifestGlyph } from "../../../ui/manifest-glyph"
+import { LINEAR_ACCENT } from "../../integrations/catalog"
 
 // `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
 
@@ -74,6 +75,19 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 			fallbackIcon: "HazelIcon",
 			docsUrl: "https://hazel.sh/docs/integrations/maple",
 			docsLabel: "Hazel integration guide",
+		},
+	],
+	[
+		"linear",
+		{
+			type: "linear",
+			label: "Linear",
+			description: "Open one Linear issue per alert rule in a team, and comment on it as it changes.",
+			accent: LINEAR_ACCENT,
+			accentBg: "rgba(94,106,213,0.18)",
+			accentText: "light-dark(#4651B8, #A9B0F0)",
+			accentOn: INK_ON_DARK_ACCENT,
+			fallbackIcon: "LinearIcon",
 		},
 	],
 	[
@@ -158,13 +172,23 @@ const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
 )
 
 /** `destinationProvider`: a `chat` destination's connector, else the type's provider. */
-export const destinationProvider = (type: AlertDestinationType, chatConnector?: string): DestinationProvider =>
+export const destinationProvider = (
+	type: AlertDestinationType,
+	chatConnector?: string,
+): DestinationProvider =>
 	(type === "chat" && chatConnector !== undefined ? CHAT_PROVIDERS.get(chatConnector) : undefined) ??
 	providerOf(type)
 
 export const providerOf = (type: AlertDestinationType): DestinationProvider =>
 	PROVIDERS.get(type) ??
-	WEBHOOK ?? { type, label: type, description: "", accent: "currentColor", accentBg: "transparent", accentOn: "" }
+	WEBHOOK ?? {
+		type,
+		label: type,
+		description: "",
+		accent: "currentColor",
+		accentBg: "transparent",
+		accentOn: "",
+	}
 
 /** `DESTINATION_TYPES` / `destinationTypesFor`: the provider tiles, in the order people reach for them. */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
@@ -173,6 +197,7 @@ export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"webhook",
 	"telegram",
 	"hazel-oauth",
+	"linear",
 ]
 export const destinationTypesFor = (isDiscordLinked: boolean): ReadonlyArray<AlertDestinationType> =>
 	isDiscordLinked ? [...DESTINATION_TYPES, "discord"] : ["discord", ...DESTINATION_TYPES]
@@ -253,7 +278,8 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 			]
 		return []
 	})()
-	if (options.isBare === true) return h.span(options.className === undefined ? [] : [h.Class(options.className)], content)
+	if (options.isBare === true)
+		return h.span(options.className === undefined ? [] : [h.Class(options.className)], content)
 	return h.span(
 		[
 			h.Class(
@@ -268,7 +294,9 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 			h.span([
 				h.AriaHidden(true),
 				h.Class("absolute inset-0 rounded-lg opacity-70"),
-				h.Style({ background: `radial-gradient(circle at 30% 20%, ${provider.accentBg}, transparent 70%)` }),
+				h.Style({
+					background: `radial-gradient(circle at 30% 20%, ${provider.accentBg}, transparent 70%)`,
+				}),
 			]),
 			h.span([h.Class("relative")], content),
 		],

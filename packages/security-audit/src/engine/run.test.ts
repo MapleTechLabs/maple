@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { Findings, Ledger } from "../schema"
-import { ledgerErrors } from "../validators"
+import { findingsErrors, ledgerErrors } from "../validators"
 import {
+	agentFailure,
 	baseInput,
 	confirmed,
 	emptyCritic,
+	estimate,
 	EXPORT,
 	FINGERPRINT,
 	hunterAnswer,
@@ -13,6 +15,8 @@ import {
 	json,
 	KEYS,
 	keysCandidate,
+	keysLead,
+	leadRecord,
 	lowered,
 	rejectedRecord,
 	runScripted,
@@ -707,5 +711,258 @@ describe("runAudit, fifth review regressions", () => {
 		expect(recorded.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT])
 		expect(result.status).toBe("incomplete")
 		expect(result.gaps.some((gap) => gap.includes("search/old"))).toBe(true)
+	})
+})
+
+describe("runAudit, record verifier failures", () => {
+	it("keeps a record whose final re-check failed and marks it not re-checked", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "record-1-0"
+				? agentFailure(i)
+				: i.agentId === "record-1-0-r1"
+					? "I could not finish the review."
+					: happy()(i),
+		)
+		expect(result.findings.map((f) => [f.fingerprint, f.verdict])).toEqual([[FINGERPRINT, "confirmed"]])
+		expect(recorded.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT])
+		const keys = result.ledger.find((u) => u.coverage_id === idOf(KEYS))
+		expect(keys?.not_rechecked).toEqual([FINGERPRINT])
+		expect(ledgerErrors(result.ledger)).toEqual([])
+		expect(Schema.decodeUnknownSync(Ledger)(Schema.encodeSync(Ledger)(result.ledger))).toEqual(
+			result.ledger,
+		)
+		expect(result.incompleteReasons).toEqual(["record_verification_incomplete"])
+		expect(
+			result.gaps.some((gap) =>
+				gap.includes(`${FINGERPRINT} kept as confirmed without its final re-check`),
+			),
+		).toBe(true)
+	})
+})
+
+describe("runAudit, answers without a tool call", () => {
+	const unread = { text: "I'll start by mapping the repository structure.", toolCalls: 0 }
+
+	it("retries a reconnaissance agent that answered without reading, and uses the retry's facts", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "recon-1c"
+				? unread
+				: i.agentId === "recon-1c-r1"
+					? { text: "entry surfaces: POST /keys", toolCalls: 7 }
+					: happy()(i),
+		)
+		const retry = recorded.invocations.find((i) => i.agentId === "recon-1c-r1")
+		expect(retry?.prompt).toContain("without reading the repository")
+		const synthesis = recorded.invocations.find((i) => i.role === "synthesis")?.prompt ?? ""
+		expect(synthesis).toContain("entry surfaces: POST /keys")
+		expect(synthesis).not.toContain(unread.text)
+		expect(result.gaps).toEqual([])
+	})
+
+	it("records a gap when the retry also answers without reading", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId.startsWith("recon-1c") ? unread : happy()(i),
+		)
+		expect(
+			recorded.invocations.filter((i) => i.agentId.startsWith("recon-1c")).map((i) => i.agentId),
+		).toEqual(["recon-1c", "recon-1c-r1"])
+		expect(recorded.invocations.find((i) => i.role === "synthesis")?.prompt).not.toContain(unread.text)
+		expect(result.gaps).toContain("recon-1c answered twice without reading the repository")
+	})
+})
+
+describe("runAudit, critic repair", () => {
+	const broken = json({ ...emptyCritic, missing_units: "secret-XYZ789" })
+
+	it("gives a critic whose JSON breaks its contract one repair turn naming where it broke", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post" ? broken : happy()(i),
+		)
+		const repair = recorded.invocations.find((i) => i.agentId === "critic-w1-post-r1")
+		expect(repair?.prompt).toContain("broke its contract at: missing_units")
+		expect(repair?.prompt).not.toContain("XYZ789")
+		expect(result.status).toBe("complete")
+	})
+
+	it("ends the run incomplete only when the repair breaks its contract too", async () => {
+		const { result } = await runScripted(baseInput(), (i) =>
+			i.agentId.startsWith("critic-w1-post") ? broken : happy()(i),
+		)
+		expect(result.incompleteReasons).toContain("critic_unavailable: post-wave critic after wave 1")
+	})
+})
+
+describe("runAudit, repository layout", () => {
+	it("gives hunters and critics the run's directory tree", async () => {
+		const tree = "src/\n  routes/\n  services/"
+		const { recorded } = await runScripted(baseInput({ repoTree: tree }), happy())
+		const prompts = recorded.invocations.filter((i) => i.role === "hunter" || i.role === "critic")
+		expect(prompts.length).toBeGreaterThan(0)
+		expect(prompts.every((i) => i.prompt.includes(tree))).toBe(true)
+	})
+})
+
+describe("runAudit, estimated severity", () => {
+	/** The happy run where the keys hunter proposes a lead and its verifier keeps it at `verified`. */
+	const leads =
+		(verified: (i: AgentInvocation) => string | undefined = () => undefined) =>
+		(i: AgentInvocation) => {
+			if (i.role === "hunter") return json(hunterAnswer(i, ALL, keysLead))
+			if (i.role === "candidate-verifier")
+				return (
+					verified(i) ??
+					json({
+						decision: "needs_validation",
+						record: leadRecord,
+						estimated_severity: estimate("medium"),
+					})
+				)
+			return happy()(i)
+		}
+
+	it("stores the verifier's revised estimate beside a lead whose record stays the skill's shape", async () => {
+		const { result, recorded } = await runScripted(baseInput(), leads())
+		const verifier = recorded.invocations.find((i) => i.agentId === "verify-1")
+		// The hunter's estimate reaches its verifier inside the candidate it checks.
+		expect(verifier?.prompt).toContain('"overall_severity": "high"')
+		expect(recorded.findings).toEqual([leadRecord])
+		expect(findingsErrors(recorded.findings)).toEqual([])
+		expect(recorded.estimates.get(FINGERPRINT)).toEqual(estimate("medium"))
+		expect(result.estimates.get(FINGERPRINT)?.overall_severity).toBe("medium")
+		expect(recorded.reports?.needsValidation).toContain("Estimated severity: medium (unverified;")
+	})
+
+	it("keeps a hunter's lead that has no estimate, unscored, without re-hunting its unit", async () => {
+		const { estimated_severity: _dropped, ...bare } = keysLead
+		const { recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "hunter-w1-1"
+				? json({ ...hunterAnswer(i, ALL, keysLead), candidates: [bare] })
+				: leads((v) =>
+						v.agentId === "verify-1"
+							? json({ decision: "needs_validation", record: leadRecord })
+							: undefined,
+					)(i),
+		)
+		expect(
+			recorded.invocations
+				.filter((i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`))
+				.map((i) => i.agentId),
+		).toEqual(["hunter-w1-1"])
+		expect(recorded.findings).toEqual([leadRecord])
+		expect(recorded.estimates.get(FINGERPRINT) ?? null).toBeNull()
+	})
+
+	it("keeps the hunter's estimate when the verifier gives none", async () => {
+		const { recorded } = await runScripted(
+			baseInput(),
+			leads((i) =>
+				i.agentId === "verify-1"
+					? json({ decision: "needs_validation", record: leadRecord })
+					: undefined,
+			),
+		)
+		expect(roles(recorded.invocations).filter((id) => id.startsWith("verify-"))).toEqual(["verify-1"])
+		expect(recorded.estimates.get(FINGERPRINT)?.overall_severity).toBe("high")
+	})
+
+	it("keeps a lead whose estimate is malformed, unscored, without re-hunting its unit", async () => {
+		const { recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "hunter-w1-1"
+				? json({
+						...hunterAnswer(i, ALL, keysLead),
+						candidates: [{ ...keysLead, estimated_severity: { overall_severity: "moderate" } }],
+					})
+				: leads((v) =>
+						v.agentId === "verify-1"
+							? json({
+									decision: "needs_validation",
+									record: leadRecord,
+									estimated_severity: "very high",
+								})
+							: undefined,
+					)(i),
+		)
+		expect(
+			recorded.invocations
+				.filter((i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`))
+				.map((i) => i.agentId),
+		).toEqual(["hunter-w1-1"])
+		expect(recorded.findings).toEqual([leadRecord])
+		expect(recorded.estimates.get(FINGERPRINT) ?? null).toBeNull()
+	})
+
+	it("a lead carried from the last run keeps its level when its re-check gives no estimate", async () => {
+		const { result: first } = await runScripted(baseInput(), leads())
+		const noEstimate = leads((i) =>
+			i.role === "candidate-verifier"
+				? json({ decision: "needs_validation", record: leadRecord })
+				: undefined,
+		)
+		const { recorded } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior: {
+					runId: "run-1",
+					sourceRef: "abc123",
+					ledger: first.ledger,
+					findings: first.findings,
+					estimates: new Map([[FINGERPRINT, "medium"]]),
+				},
+			}),
+			(i) => (i.role === "hunter" ? happy()(i) : noEstimate(i)),
+		)
+		const verifier = recorded.invocations.find((i) => i.role === "candidate-verifier")
+		expect(verifier?.prompt).toContain("The previous run estimated this lead at `medium` (unverified).")
+		expect(recorded.estimates.get(FINGERPRINT)?.overall_severity).toBe("medium")
+	})
+
+	it("a lead a hunter raises again without an estimate keeps the last run's level", async () => {
+		const { estimated_severity: _dropped, ...bare } = keysLead
+		const { recorded } = await runScripted(
+			baseInput({
+				prior: {
+					runId: "run-0",
+					sourceRef: "abc123",
+					ledger: [],
+					findings: [],
+					estimates: new Map([[FINGERPRINT, "critical"]]),
+				},
+			}),
+			(i) =>
+				i.agentId === "hunter-w1-1"
+					? json({ ...hunterAnswer(i, ALL, keysLead), candidates: [bare] })
+					: leads((v) =>
+							v.agentId === "verify-1"
+								? json({ decision: "needs_validation", record: leadRecord })
+								: undefined,
+						)(i),
+		)
+		expect(recorded.estimates.get(FINGERPRINT)?.overall_severity).toBe("critical")
+	})
+
+	it("applies a record verifier's revised estimate directly: it is not a material change", async () => {
+		const { recorded } = await runScripted(baseInput(), (i) =>
+			i.role === "record-verifier"
+				? json({
+						decision: "replace",
+						reason: "the estimate overstates impact",
+						record: leadRecord,
+						estimated_severity: estimate("low"),
+					})
+				: leads()(i),
+		)
+		const record = recorded.invocations.find((i) => i.agentId === "record-1-0")
+		expect(record?.prompt).toContain(JSON.stringify(estimate("medium")))
+		expect(roles(recorded.invocations).filter((id) => id.startsWith("record-"))).toEqual(["record-1-0"])
+		expect(recorded.estimates.get(FINGERPRINT)).toEqual(estimate("low"))
+	})
+
+	it("drops the estimate when a verifier confirms the lead", async () => {
+		const { recorded } = await runScripted(
+			baseInput(),
+			leads(() => json({ decision: "confirmed", record: confirmed() })),
+		)
+		expect(recorded.findings.map((f) => f.verdict)).toEqual(["confirmed"])
+		expect(recorded.estimates.size).toBe(0)
 	})
 })

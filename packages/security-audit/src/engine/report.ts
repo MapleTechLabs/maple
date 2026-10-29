@@ -3,7 +3,7 @@
  * records and the ledger. Prose never changes a verdict, severity, blocker or impact.
  */
 import { executionModeLine } from "../ecosystems"
-import type { Finding } from "../schema"
+import type { EstimatedSeverity, Finding } from "../schema"
 import type { LedgerUnit } from "./ledger"
 import type { AuditReports } from "./ports"
 import type { AuditRunInput, EngineState } from "./state"
@@ -51,9 +51,14 @@ const confirmedDetail = (record: Confirmed) =>
 		`Smallest fix: ${record.remediation.strategy}`,
 	].join("\n\n")
 
-const needsValidationDetail = (record: NeedsValidation) =>
+const needsValidationDetail = (record: NeedsValidation, estimate: EstimatedSeverity | undefined) =>
 	[
 		`### ${record.title}`,
+		...(estimate === undefined
+			? []
+			: [
+					`Estimated severity: ${estimate.overall_severity} (unverified; likelihood ${estimate.likelihood.score}: ${estimate.likelihood.reason}; impact ${estimate.impact.score}: ${estimate.impact.reason}).`,
+				]),
 		`Claimed root cause: ${record.claimed_root_cause}`,
 		`Trace:\n${traceLines(record)}`,
 		`Evidence:\n${record.evidence.map((e) => `- \`${e.file}:${e.line}\` ${e.description}`).join("\n")}`,
@@ -173,6 +178,6 @@ export const buildReports = (
 		["critical", "high", "medium"].includes(f.severity.overall_severity),
 	)
 	const findingsDetail = `# Findings detail\n\n${detailed.length === 0 ? "No confirmed medium, high or critical findings." : detailed.map(confirmedDetail).join("\n\n")}`
-	const needsValidation = `# Needs validation\n\n${executionNote}${pending.length === 0 ? "No unresolved leads." : pending.map(needsValidationDetail).join("\n\n")}`
+	const needsValidation = `# Needs validation\n\n${executionNote}${pending.length === 0 ? "No unresolved leads." : pending.map((f) => needsValidationDetail(f, s.estimates.get(f.fingerprint))).join("\n\n")}`
 	return { report, findingsDetail, needsValidation }
 }

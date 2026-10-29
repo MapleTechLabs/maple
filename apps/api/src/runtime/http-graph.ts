@@ -46,6 +46,7 @@ import { HttpV2AlertRulesLive } from "@/routes/v2/alert-rules.http"
 import { HttpV2AnomaliesLive } from "@/routes/v2/anomalies.http"
 import { HttpV2ApiKeysLive } from "@/routes/v2/api-keys.http"
 import { HttpV2AttributeMappingsLive } from "@/routes/v2/attribute-mappings.http"
+import { HttpV2IngestRulesLive } from "@/routes/v2/ingest-rules.http"
 import { HttpV2DashboardsLive } from "@/routes/v2/dashboards.http"
 import { V2TransportErrorBoundaryLive } from "@/routes/v2/error-envelope"
 import { HttpV2ErrorIssuesLive } from "@/routes/v2/error-issues.http"
@@ -178,6 +179,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AwsIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
+			HttpV2IngestRulesLive,
 			HttpV2AuditLogLive,
 			HttpV2ScrapeTargetsLive,
 			HttpV2UptimeMonitorsLive,

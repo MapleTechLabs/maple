@@ -53,7 +53,12 @@ export const visibilityOf = (model: Model): Visibility => {
 			)
 		: true
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
-	return { isClerk: isClerkAuthEnabled, isAdmin, canAccessDataPlatform: isAdmin && hasByoc }
+	return {
+		isClerk: isClerkAuthEnabled,
+		isAdmin,
+		canAccessDataPlatform: isAdmin && hasByoc,
+		isDataPlatformLocked: isClerkAuthEnabled && isAdmin && !hasByoc,
+	}
 }
 
 /** The session read answered and says the viewer is a member, not an admin: only then do notices say so. */
@@ -396,6 +401,9 @@ const syncTab = (model: Model, context: PageContext): Return => {
 			}),
 		}
 	}
+	// The locked page reads nothing; the tab mounts once the customer shows the add-on.
+	if (tab === "data-platform" && visibilityOf(model).isDataPlatformLocked === true)
+		return { model: leaveTab(model) }
 	if (!isTabCurrent(model.tab, tab)) return enterTab(model, tab, context)
 	// The audit log's filters live in the search: a change restarts its list.
 	if (model.tab !== null && model.tab._tag === "AuditLog") {
@@ -473,6 +481,9 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 
 // Only the denied link's own rewrite (no `tab`) keeps its note; picking a tab clears it.
 export const routeChanged = (model: Model, route: SettingsRoute, context: PageContext): Return =>
+	withRuleStats(changedRoute(model, route, context))
+
+const changedRoute = (model: Model, route: SettingsRoute, context: PageContext): Return =>
 	enter(
 		{
 			...model,
@@ -583,7 +594,21 @@ const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
 	}
 }
 
+/** A Billing tab on screen reads the rule stats once the customer and clock give it a cycle. */
+const withRuleStats = (ret: Return): Return => {
+	const billing = tabNamed(ret.model, "Billing")
+	if (billing === undefined) return ret
+	const customer = AsyncData.getOrElse(ret.model.customer, () => null)
+	const step = Billing.requestRuleStats(billing.model, customer, ret.model.nowMs)
+	if (step === null) return ret
+	const lifted = liftBilling(ret.model, { step, isCustomerStale: false })
+	return { ...ret, model: lifted.model, commands: [...(ret.commands ?? []), ...(lifted.commands ?? [])] }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	withRuleStats(updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedFetchSession: ({ result }) =>

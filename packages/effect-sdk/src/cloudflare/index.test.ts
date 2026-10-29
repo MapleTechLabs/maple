@@ -149,7 +149,7 @@ describe("MapleCloudflareSDK.make", () => {
 		expect(calls.length).toBe(0)
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
 		expect(consoleInfoSpy.mock.calls[0][0]).toContain("no ingest key configured")
-		expect(consoleInfoSpy.mock.calls[0][0]).toContain("set MAPLE_INGEST_KEY to enable")
+		expect(consoleInfoSpy.mock.calls[0][0]).toContain("set MAPLE_INGEST_KEY")
 
 		// A second flush within the same isolate should stay silent —
 		// the info log is one-shot.
@@ -159,6 +159,26 @@ describe("MapleCloudflareSDK.make", () => {
 		await telemetry.flush({})
 		expect(calls.length).toBe(0)
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("exports without Authorization to a custom endpoint when no ingest key is configured", async () => {
+		const consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+		const { calls, restore: r } = setupFetch()
+		restore = () => {
+			r()
+			consoleInfoSpy.mockRestore()
+		}
+		const telemetry = make({ serviceName: "unit-test" })
+
+		await Effect.runPromise(
+			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
+		)
+		await telemetry.flush({ MAPLE_ENDPOINT: "http://localhost:4318" })
+
+		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
+		expect(tracesCall?.body).toBeDefined()
+		expect(tracesCall?.headers).not.toHaveProperty("authorization")
+		expect(consoleInfoSpy).not.toHaveBeenCalled()
 	})
 
 	it("no-op flush still drains buffers (resolution is one-shot per isolate)", async () => {

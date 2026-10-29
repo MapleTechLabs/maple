@@ -39,6 +39,7 @@ export const PublicIdPrefixes = {
 	ingestKey: "ingk",
 	source: "src",
 	attributeMapping: "amap",
+	ingestRule: "irule",
 	sessionReplay: "srep",
 	mobileDevice: "mdev",
 	chatWorkspace: "chatw",

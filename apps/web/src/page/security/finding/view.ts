@@ -24,21 +24,20 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { SEVERITY_TONE } from "../../errors/kit/severity"
 import {
 	FINDING_STATUS_LABEL,
 	gateOf,
-	issueSeverityOf,
 	SECURITY_SEVERITY_LABEL,
 	shortId,
 	refLabel,
 	VERDICT_LABEL,
 } from "../kit/format"
 import { stack } from "../kit/layout"
-import { gateState, metaItem, placeholder } from "../kit/parts"
+import { gateState, metaItem, placeholder, securitySeverityBadge } from "../kit/parts"
 import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } from "./derive"
 import { Message, type Model } from "./model"
-import { findingBody } from "./view-body"
+import { findingBody } from "../kit/finding-body"
+import { findingBadge } from "../kit/findings-view"
 
 // `/security/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
 
@@ -53,17 +52,12 @@ const TRIAGE_OPTIONS: ReadonlyArray<{ value: SecurityAuditFindingTriageStatus; l
 const runHref = (runId: SecurityAuditRunId) => hrefOf(AppRoute.SecurityRun({ runId }))
 
 const headerBadges = (h: H, finding: SecurityAuditFinding): ReadonlyArray<Html> => {
-	const level = issueSeverityOf(finding.overallSeverity)
 	return [
-		...(finding.overallSeverity === null
-			? []
-			: [
-					badge(
-						h,
-						{ variant: "outline", className: level === null ? undefined : SEVERITY_TONE[level] },
-						[SECURITY_SEVERITY_LABEL[finding.overallSeverity]],
-					),
-				]),
+		...(finding.overallSeverity !== null
+			? [securitySeverityBadge(h, finding.overallSeverity)]
+			: finding.estimatedSeverity !== null
+				? [findingBadge(h, finding)]
+				: []),
 		badge(
 			h,
 			{

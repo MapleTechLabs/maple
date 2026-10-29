@@ -24,7 +24,7 @@ export const underlineTabStrip = <M>(
 		h.AriaLabel(options.label),
 		h.Class(
 			cn(
-				"flex items-center gap-6 overflow-x-auto",
+				"flex items-center gap-6 overflow-x-auto overflow-y-hidden",
 				(options.divided ?? true) && "border-b",
 				(options.bleed ?? true) ? "-mx-4 -mb-4 px-4" : "px-0",
 				options.className,
@@ -36,7 +36,7 @@ export const underlineTabStrip = <M>(
 
 export const underlineTabClass = (isActive: boolean): string =>
 	cn(
-		"-mb-px flex h-[34px] shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
+		"-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
 		isActive
 			? "border-primary font-medium text-foreground"
 			: "border-transparent text-muted-foreground hover:text-foreground",

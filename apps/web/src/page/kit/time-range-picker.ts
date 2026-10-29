@@ -353,10 +353,13 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 					h.Type("button"),
 					h.OnClick(Message.ClickedCustomRange(customSeed(inputs))),
 					h.Class(
-						"mt-1 flex h-7 items-center pl-3 pr-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground",
+						"mt-1 flex h-7 items-center gap-2 pl-3 pr-2 text-left text-xs text-foreground/80 transition-colors hover:bg-muted/50 hover:text-foreground",
 					),
 				],
-				["Custom range…"],
+				[
+					icon(h, "CalendarIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
+					"Custom range…",
+				],
 			),
 		],
 	)
@@ -427,7 +430,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 								? Option.some(Message.PressedShorthandEnter(withMax(inputs)))
 								: Option.none(),
 						),
-						h.Placeholder("1m · 2h · 4d · 6w · today"),
+						h.Placeholder("Any duration, e.g. 90m"),
 						h.Class(
 							"flex-1 bg-transparent font-mono text-sm tracking-tight text-foreground placeholder:text-muted-foreground/50 focus:outline-none",
 						),
@@ -447,16 +450,12 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"px-1 font-mono text-3xs transition-colors",
-							model.isShorthandInvalid ? TONE_TEXT.crit : "text-muted-foreground/60",
+							"px-1 font-prose text-xs transition-colors",
+							model.isShorthandInvalid ? TONE_TEXT.crit : "text-muted-foreground",
 						),
 					),
 				],
-				[
-					model.isShorthandInvalid
-						? "Try 5m, 2h, 4d, 1w, 2mo, or today"
-						: "Type a duration and press enter",
-				],
+				[model.isShorthandInvalid ? "Try 5m, 2h, 4d, 1w, 2mo, or today" : "Press Enter to apply"],
 			),
 		],
 	)

@@ -21,7 +21,7 @@
 	},
 	"devDependencies": {
 		"@tailwindcss/vite": "catalog:tailwind",
-		"@types/bun": "^1.4.2",
+		"@types/bun": "^1.4.4",
 		"@types/node": "catalog:tooling",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",

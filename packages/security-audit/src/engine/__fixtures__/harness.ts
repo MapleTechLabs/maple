@@ -3,10 +3,18 @@
  * coverage ids a hunter prompt carries, the way a real agent sees only its own prompt.
  */
 import { Effect, Layer } from "effect"
-import type { HunterResult, SeedUnit } from "../../results"
-import type { CoverageUnit, Finding } from "../../schema"
+import type { Candidate, HunterResult, SeedUnit } from "../../results"
+import type { CoverageUnit, EstimatedSeverity, Finding, Severity } from "../../schema"
 import { coverageId } from "../../validators"
-import { type AgentInvocation, AuditAgents, type AuditEvent, type AuditReports, AuditStore } from "../ports"
+import {
+	type AgentAnswer,
+	type AgentInvocation,
+	AuditAgentError,
+	AuditAgents,
+	type AuditEvent,
+	type AuditReports,
+	AuditStore,
+} from "../ports"
 import { runAudit } from "../run"
 import type { AuditRunInput } from "../state"
 
@@ -102,8 +110,39 @@ export const rejectedRecord: Finding = {
 const { verdict: _verdict, ...candidateFields } = confirmed() as Extract<Finding, { verdict: "confirmed" }>
 export const keysCandidate = { proposed_verdict: "confirmed" as const, ...candidateFields }
 
-/** A hunter's answer covering every unit it owns, with a candidate on the keys unit. */
-export const hunterAnswer = (invocation: AgentInvocation, ids: ReadonlyArray<string>): HunterResult => {
+/** An estimated severity whose impact and overall score are `overall`. */
+export const estimate = (overall: Severity): EstimatedSeverity => ({
+	likelihood: { score: "medium", reason: "any org member reaches the route" },
+	impact: { score: overall, reason: "another org's key would roll" },
+	overall_severity: overall,
+})
+
+/** The keys claim as a lead: whether the gateway scopes keys is deployment configuration. */
+export const leadRecord: Extract<Finding, { verdict: "needs_validation" }> = {
+	verdict: "needs_validation",
+	fingerprint: FINGERPRINT,
+	title: "Key roll may cross orgs",
+	description: "rollKey looks the key up by id alone.",
+	claimed_root_cause: "rollKey omits the org_id predicate.",
+	trace: [...trace],
+	evidence: [{ file: "src/services/keys.ts", line: 40, description: "lookup by id only" }],
+	blockers: ["whether the gateway injects an org filter is deployment configuration"],
+	validation_plan: { deployment: "owner confirms the gateway's key routes carry no org filter" },
+}
+
+const { verdict: _leadVerdict, ...leadFields } = leadRecord
+export const keysLead: Extract<Candidate, { proposed_verdict: "needs_validation" }> = {
+	proposed_verdict: "needs_validation" as const,
+	...leadFields,
+	estimated_severity: estimate("high"),
+}
+
+/** A hunter's answer covering every unit it owns, with `candidate` (by default confirmed) on the keys unit. */
+export const hunterAnswer = (
+	invocation: AgentInvocation,
+	ids: ReadonlyArray<string>,
+	candidate: Candidate = keysCandidate,
+): HunterResult => {
 	const owned = ids.filter((id) => invocation.prompt.includes(`"coverage_id": "${id}"`))
 	const keys = idOf(KEYS)
 	return {
@@ -124,7 +163,7 @@ export const hunterAnswer = (invocation: AgentInvocation, ids: ReadonlyArray<str
 			candidate_fingerprints: id === keys ? [FINGERPRINT] : [],
 			unresolved: [],
 		})),
-		candidates: owned.includes(keys) ? [keysCandidate] : [],
+		candidates: owned.includes(keys) ? [candidate] : [],
 		hardening: [],
 		uncovered: [],
 	}
@@ -139,6 +178,7 @@ export interface Recorded {
 	readonly events: Array<AuditEvent>
 	ledger: ReadonlyArray<CoverageUnit>
 	findings: ReadonlyArray<Finding>
+	estimates: ReadonlyMap<string, EstimatedSeverity>
 	reports: AuditReports | undefined
 }
 
@@ -158,21 +198,51 @@ export const baseInput = (overrides: Partial<AuditRunInput> = {}): AuditRunInput
 	...overrides,
 })
 
-/** Runs the engine against a scripted answer function and records what it did. */
-export const runScripted = (input: AuditRunInput, answer: (invocation: AgentInvocation) => string) => {
-	const recorded: Recorded = { invocations: [], events: [], ledger: [], findings: [], reports: undefined }
+/** An agent that failed outright (a transport error, a dead step), not one that answered badly. */
+export const agentFailure = (invocation: AgentInvocation) =>
+	new AuditAgentError({
+		message: "upstream closed the stream",
+		role: invocation.role,
+		agentId: invocation.agentId,
+	})
+
+/**
+ * Runs the engine against a scripted answer function and records what it did. A string is the
+ * answer's text; an `AgentAnswer` adds its tool-call count; an `AuditAgentError` fails the agent.
+ */
+export const runScripted = (
+	input: AuditRunInput,
+	answer: (invocation: AgentInvocation) => string | AgentAnswer | AuditAgentError,
+) => {
+	const recorded: Recorded = {
+		invocations: [],
+		events: [],
+		ledger: [],
+		findings: [],
+		estimates: new Map(),
+		reports: undefined,
+	}
 	const agents = Layer.succeed(AuditAgents, {
 		run: (invocation) =>
-			Effect.sync(() => {
+			Effect.suspend((): Effect.Effect<AgentAnswer, AuditAgentError> => {
 				recorded.invocations.push(invocation)
-				return { text: answer(invocation) }
+				const scripted = answer(invocation)
+				return typeof scripted === "string"
+					? Effect.succeed({ text: scripted })
+					: scripted instanceof AuditAgentError
+						? Effect.fail(scripted)
+						: Effect.succeed(scripted)
 			}),
 	})
 	const store = Layer.succeed(AuditStore, {
 		saveMetadata: () => Effect.void,
 		saveArchitecture: () => Effect.void,
 		saveLedger: (_, ledger) => Effect.sync(() => void (recorded.ledger = ledger)),
-		saveFindings: (_, findings) => Effect.sync(() => void (recorded.findings = findings)),
+		saveFindings: (_, findings, estimates) =>
+			Effect.sync(() => {
+				recorded.findings = findings
+				recorded.estimates = estimates
+			}),
 		saveReports: (_, reports) => Effect.sync(() => void (recorded.reports = reports)),
 		recordEvent: (_, event) => Effect.sync(() => void recorded.events.push(event)),
 	})

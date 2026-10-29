@@ -1,10 +1,10 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { filterChip } from "../../../ui/filter-chip"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
 import { searchInput } from "../../../ui/search-input"
+import { switchControl } from "../../../ui/switch"
 
 // The tool filter toolbar and its facet selects.
 
@@ -107,16 +107,21 @@ export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>
 				],
 				[
 					...config.selects,
-					filterChip(
-						h,
-						{
-							isPressed: config.isFailingOnly,
-							onClick: config.onToggleFailingOnly,
-							tone: "crit",
-							hasDot: true,
-							className: "font-mono",
-						},
-						["Failing only"],
+					// The same switch as "With errors" on the sessions list, so it reads as a filter.
+					h.label(
+						[h.Class("inline-flex cursor-pointer items-center gap-2 text-xs font-medium")],
+						[
+							...switchControl(h, {
+								id: "agent-tools-failing-switch",
+								inputId: "agent-tools-failing-input",
+								isChecked: config.isFailingOnly,
+								ariaLabel: "Failing only",
+								className:
+									"[--thumb-size:--spacing(3.5)] data-checked:bg-severity-error sm:[--thumb-size:--spacing(3.5)]",
+								onToggle: config.onToggleFailingOnly,
+							}),
+							"Failing only",
+						],
 					),
 				],
 			),

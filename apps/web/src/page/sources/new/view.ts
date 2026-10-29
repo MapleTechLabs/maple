@@ -4,6 +4,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
@@ -68,10 +69,7 @@ export const titleContent = (h: H, model: Model, titleId?: string): Html => {
 }
 
 const cancel = (h: H): Html =>
-	h.a(
-		[h.Href(hrefOf(AppRoute.Sources())), h.Class("text-xs text-muted-foreground hover:text-foreground")],
-		["Cancel"],
-	)
+	linkButton(h, { href: hrefOf(AppRoute.Sources()), size: "sm", variant: "ghost" }, ["Cancel"])
 
 /** The current step: the token once a source exists, the push form, an integration's step, or the picker. */
 export const stepBody = (h: H, model: Model, timeZone: string, host: FlowHost): Html =>

@@ -348,6 +348,9 @@ export const IngestMappingOperation = Schema.Literals(["move", "copy"]).annotate
 })
 export type IngestMappingOperation = Schema.Schema.Type<typeof IngestMappingOperation>
 
+export const IngestRuleId = MapleUuidId("@maple/IngestRuleId", "Ingest Rule ID")
+export type IngestRuleId = Schema.Schema.Type<typeof IngestRuleId>
+
 export const SourceId = MapleUuidId("@maple/SourceId", "Source ID")
 export type SourceId = Schema.Schema.Type<typeof SourceId>
 

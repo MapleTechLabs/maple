@@ -208,7 +208,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 		}),
 		dataTable(
 			h,
-			{ ariaLabel: "PlanetScale branch breakdown", isWaiting: inputs.isWaiting, maxHeight: "420px" },
+			{ ariaLabel: "PlanetScale branch breakdown", isWaiting: inputs.isWaiting },
 			[
 				columnHead(h, {
 					label: "Branch",

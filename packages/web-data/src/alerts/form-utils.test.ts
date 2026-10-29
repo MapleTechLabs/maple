@@ -14,6 +14,7 @@ import {
 	buildRuleCreateParamsV2,
 	chatDestinationForm,
 	defaultDestinationForm,
+	destinationToFormState,
 	defaultRuleForm,
 	ruleFormIsGrouped,
 	deriveRuleQueryIssues,
@@ -470,6 +471,50 @@ describe("alert on no data", () => {
 		expect(ruleFormIsGrouped(grouped)).toBe(true)
 		expect(buildRuleCreateParamsV2(grouped).alert_on_no_data).toBe(false)
 		expect(ruleFormIsGrouped({ ...grouped, signalType: "raw_query" })).toBe(false)
+	})
+})
+
+describe("linear destination params", () => {
+	const TEAM = "9cfb482a-81e3-4154-b5b9-2c805e70a02d"
+
+	it("sends the picked team; the server reads its key and name from Linear", () => {
+		const params = buildDestinationCreateParamsV2({
+			...defaultDestinationForm("linear"),
+			name: " Platform tickets ",
+			linearTeamId: TEAM,
+			linearTeamName: "Platform",
+		})
+		expect(params).toEqual({ type: "linear", name: "Platform tickets", enabled: true, team_id: TEAM })
+	})
+
+	it("keeps the stored team on update until another is picked", () => {
+		const params = buildDestinationUpdateParamsV2({
+			...defaultDestinationForm("linear"),
+			name: "Renamed",
+		})
+		expect(params).toEqual({ type: "linear", enabled: true, name: "Renamed" })
+	})
+
+	it("an edit preselects the stored team and names it from the summary", () => {
+		const destination = Schema.decodeUnknownSync(AlertDestinationDocument)({
+			id: "0199a001-0000-7000-8000-0000000000aa",
+			name: "Platform tickets",
+			type: "linear",
+			enabled: true,
+			summary: "Linear · Platform",
+			channelLabel: "PLT",
+			memberUserIds: null,
+			linearTeamId: TEAM,
+			lastTestedAt: null,
+			lastTestError: null,
+			disabledAt: null,
+			disabledReason: null,
+			createdAt: "2026-10-06T00:00:00.000Z",
+			updatedAt: "2026-10-06T00:00:00.000Z",
+		})
+		const form = destinationToFormState(destination)
+		expect([form.linearTeamId, form.linearTeamName]).toEqual([TEAM, "Platform"])
+		expect(suggestedDestinationName(form)).toBe("Linear Platform")
 	})
 })
 

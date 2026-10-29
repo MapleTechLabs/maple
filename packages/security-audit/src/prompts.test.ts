@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { plannedUnit } from "./__fixtures__/records"
-import { type AgentContext, companionFileOf, hunterPrompt, unknownBlockRefs, VERBATIM } from "./prompts"
+import { confirmedRecord, needsValidationRecord } from "./__fixtures__/records"
+import {
+	type AgentContext,
+	candidateVerifierPrompt,
+	companionFileOf,
+	hunterPrompt,
+	recordVerifierPrompt,
+	unknownBlockRefs,
+	VERBATIM,
+} from "./prompts"
 import {
 	COMPANION_FILES,
 	COMPANION_REQUIRED_SECTIONS,
@@ -95,6 +104,28 @@ describe("hunterPrompt", () => {
 		expect([...positions].sort((a, b) => a - b)).toEqual(positions)
 	})
 
+	it("leaves execution scaffolding out when execution is unavailable and asks for a validation plan", () => {
+		const available = hunterPrompt(
+			{
+				architectureMd: "ARCHITECTURE-SUMMARY",
+				units: [plannedUnit],
+				carriedExclusions: [],
+				peerCoverageIds: [],
+				scratchPath: "agents/hunter-1/scratch",
+				artifactsPath: "agents/hunter-1/artifacts",
+				promotionAllowlist: "declared per check",
+			},
+			{ ...context, execution: { _tag: "Available", limits: "60s, 512 MiB" } },
+		)
+		const confirmedBranch = '"const": "confirmed"'
+		for (const scaffold of ["agents/hunter-1/scratch", "agents/hunter-1/artifacts", confirmedBranch]) {
+			expect(available).toContain(scaffold)
+			expect(prompt).not.toContain(scaffold)
+		}
+		expect(prompt).toContain("Propose every lead as needs_validation")
+		expect(prompt).toContain("concrete validation_plan")
+	})
+
 	it("tells the hunter not to execute when the sandbox is unavailable", () => {
 		expect(prompt).toContain(
 			"No target-controlled execution is available in this run: no OS-enforced sandbox",
@@ -119,5 +150,47 @@ describe("unknownBlockRefs", () => {
 				selected_companion_blocks: ["DATA-ISOLATION-AND-LIFECYCLE.md#tenant-isolation"],
 			}),
 		).toEqual(["DATA-ISOLATION-AND-LIFECYCLE.md#tenant-isolation"])
+	})
+})
+
+describe("estimated severity", () => {
+	const estimate = {
+		likelihood: { score: "low", reason: "needs a leaked key id" },
+		impact: { score: "high", reason: "cross-tenant key roll" },
+		overall_severity: "low",
+	} as const
+
+	it("asks hunters for an estimate beside each lead, calibrated by the skill's anchors", () => {
+		expect(prompt).toContain(
+			"Every needs_validation candidate therefore also carries `estimated_severity`",
+		)
+		// The skill's calibration anchors through its high/medium discriminator, verbatim.
+		expect(prompt).toContain(VERBATIM.severityAnchors)
+		expect(prompt).toContain("The high/medium discriminator")
+	})
+
+	it("asks a candidate verifier for its own estimate at the top level of a needs_validation decision", () => {
+		const verifier = candidateVerifierPrompt(
+			{
+				candidate: needsValidationRecord,
+				linkedChecks: [],
+				architectureFacts: "",
+				companionValidationBlocks: [],
+				priorRecords: [],
+			},
+			context,
+		)
+		expect(verifier).toContain(
+			'{"decision": "needs_validation", "record": {...}, "estimated_severity": {...}}',
+		)
+	})
+
+	it("shows a record verifier a lead's current estimate, and none for a confirmed record", () => {
+		expect(recordVerifierPrompt(needsValidationRecord, context, estimate)).toContain(
+			JSON.stringify(estimate),
+		)
+		const confirmedPrompt = recordVerifierPrompt(confirmedRecord, context, null)
+		expect(confirmedPrompt).not.toContain("The record's current estimate")
+		expect(confirmedPrompt).not.toContain("The record carries no estimate yet")
 	})
 })

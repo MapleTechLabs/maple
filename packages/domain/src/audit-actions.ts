@@ -35,6 +35,7 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.attributeMapping,
 		verbs: ["created", "updated", "deleted"],
 	},
+	ingest_rule: { prefix: PublicIdPrefixes.ingestRule, verbs: ["created", "updated", "deleted"] },
 	dashboard: {
 		prefix: PublicIdPrefixes.dashboard,
 		verbs: ["created", "updated", "deleted", "version_restored"],
@@ -103,6 +104,8 @@ export const AuditResources = {
 	planetscale_integration: {
 		verbs: ["connect_started", "organization_selected", "metrics_token_set", "disconnected"],
 	},
+	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
+	cloudflare_integration: { verbs: ["zones_updated"] },
 	/**
 	 * Org membership, learned from Clerk's webhook; the web app changes members
 	 * in Clerk directly, so nothing reaches Maple's own API. The member is the
@@ -165,6 +168,7 @@ export const AuditResourceLabels = {
 	api: "API",
 	api_key: "API key",
 	attribute_mapping: "Attribute mapping",
+	ingest_rule: "Ingest rule",
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
 	dashboard_share: "Dashboard share",
@@ -178,6 +182,7 @@ export const AuditResourceLabels = {
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
+	cloudflare_integration: "Cloudflare integration",
 	member: "Member",
 	organization: "Organization",
 	scrape_target: "Scrape target",
@@ -214,6 +219,9 @@ export const AuditActionLabels = {
 	"attribute_mapping.created": "Created attribute mapping",
 	"attribute_mapping.updated": "Updated attribute mapping",
 	"attribute_mapping.deleted": "Deleted attribute mapping",
+	"ingest_rule.created": "Created ingest rule",
+	"ingest_rule.updated": "Updated ingest rule",
+	"ingest_rule.deleted": "Deleted ingest rule",
 	"dashboard.created": "Created dashboard",
 	"dashboard.updated": "Updated dashboard",
 	"dashboard.deleted": "Deleted dashboard",
@@ -272,6 +280,7 @@ export const AuditActionLabels = {
 	"planetscale_integration.organization_selected": "Selected PlanetScale organization",
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
+	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
 	"member.added": "Added member",
 	"member.role_changed": "Changed member role",
 	"member.removed": "Removed member",

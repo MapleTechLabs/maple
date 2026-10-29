@@ -26,12 +26,12 @@ export const deviceIconFor = (type: string): IconName => {
 	const t = type.toLowerCase()
 	if (t === "mobile" || t === "phone") return "MobileIcon"
 	if (t === "tablet") return "TabletIcon"
-	return "ComputerIcon"
+	return "MonitorIcon"
 }
 
 export const COLUMNS = {
-	org: "hidden w-36 shrink-0 @3xl:flex",
-	tags: "hidden w-44 shrink-0 @2xl:flex",
+	org: "hidden w-44 shrink-0 @3xl:flex",
+	tags: "hidden w-40 shrink-0 @2xl:flex",
 	activity: "hidden w-[12.5rem] shrink-0 @5xl:flex",
 	device: "hidden w-[6.5rem] shrink-0 @6xl:flex",
 	signals: "hidden w-[10rem] shrink-0 @2xl:flex",

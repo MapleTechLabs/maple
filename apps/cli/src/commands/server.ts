@@ -49,6 +49,7 @@ import {
 	restoreCheckpoint,
 	writeBackupConfig,
 } from "../server/checkpoints"
+import { writeIngestConfig } from "../server/chdb"
 import { resolveUiAssets } from "../server/ui-assets"
 import { clearStartFailures, guardStartFailures } from "./start-failures"
 import {
@@ -684,9 +685,14 @@ export const chdbConfigPath = (dataDir: string): string => dataDirSidecarPath(da
  * held for the process lifetime, and `maple checkpoint` is a separate process
  * talking over HTTP: it cannot inject config into a live connection. So a server
  * started without a backups config can never checkpoint. A user-supplied
- * `--chdb-config-file` is honoured untouched.
+ * `--chdb-config-file` is honoured untouched. An in-memory store is never
+ * checkpointed, so it gets only the MergeTree ingest defaults (`backups: false`).
  */
-export const resolveChdbConfigFile = (dataDir: string, supplied: string | undefined) =>
+export const resolveChdbConfigFile = (
+	dataDir: string,
+	supplied: string | undefined,
+	{ backups }: { readonly backups: boolean } = { backups: true },
+) =>
 	Effect.gen(function* () {
 		if (supplied !== undefined) return supplied
 		const fs = yield* FileSystem
@@ -697,7 +703,8 @@ export const resolveChdbConfigFile = (dataDir: string, supplied: string | undefi
 		yield* fs.makeDirectory(dirname(path), { recursive: true }).pipe(Effect.ignore)
 		return yield* Effect.try({
 			try: () => {
-				writeBackupConfig(path)
+				if (backups) writeBackupConfig(path)
+				else writeIngestConfig(path)
 				return path
 			},
 			catch: (error) => error,
@@ -1532,10 +1539,11 @@ export const start = Command.make("start", {
 
 					const requestedRetentionDays = Option.getOrUndefined(a.minimumRawTelemetryRetentionDays)
 					// No backups config in memory: nothing is ever checkpointed.
-					const chdbConfigFile =
-						inMemory === undefined
-							? yield* resolveChdbConfigFile(dataDir, Option.getOrUndefined(a.chdbConfigFile))
-							: Option.getOrUndefined(a.chdbConfigFile)
+					const chdbConfigFile = yield* resolveChdbConfigFile(
+						dataDir,
+						Option.getOrUndefined(a.chdbConfigFile),
+						{ backups: inMemory === undefined },
+					)
 
 					yield* Effect.sync(() =>
 						process.stderr.write(

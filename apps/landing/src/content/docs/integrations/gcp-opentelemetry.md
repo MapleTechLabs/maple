@@ -65,7 +65,7 @@ Other places your code runs have no tick and are always forwarded: Compute Engin
 
 ## Change the filter
 
-On the connection's row, click **Configure**. Under **Log filter**, choose **Replace filter**. To forward application output, click **Can't forward via OpenTelemetry** and tick its runtimes. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
+Open the menu on the connection's row and choose **Edit data**. Under **Log filter**, choose **Replace filter**. To forward application output, click **Can't forward via OpenTelemetry** and tick its runtimes. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
 
 | Log filter              | The sink forwards                                                                     |
 | ----------------------- | ------------------------------------------------------------------------------------- |

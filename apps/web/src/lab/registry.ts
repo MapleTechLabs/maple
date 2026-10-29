@@ -45,6 +45,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/uptime",
+		title: "Uptime monitor",
+		description:
+			"An HTTP monitor's response time, phase breakdown and every-check charts over a fixture shaped like production checks.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp",
 		title: "Google Cloud log filter",
 		description:

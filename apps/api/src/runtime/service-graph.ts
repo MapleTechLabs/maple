@@ -14,6 +14,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
@@ -64,6 +65,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { DemoService } from "@maple/backend/services/org/DemoService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
+import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -108,6 +110,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
 	HazelOAuthService.layer,
+	LinearOAuthService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,
 	SupportChannelService.layer,
@@ -128,6 +131,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	PlanetScaleService.layer,
 	PlanetScaleWebhookService.layer,
 	IngestAttributeMappingService.layer,
+	IngestRuleService.layer,
 	AutumnClient.layer,
 	StripeClient.layer,
 	ProductEventsService.layer,
