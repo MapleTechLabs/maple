@@ -183,21 +183,24 @@ export const calendarDays = (
 	entries: ReadonlyArray<CalendarEntry>,
 	nowMs: number,
 ): ReadonlyMap<string, CalendarDay> => {
-	const today = utcDay(nowMs)
-	const oldest = shiftDay(today, 1 - STATUS_PAGE_HISTORY_DAYS)
-	return entries.reduce((days, entry, index) => {
-		const first = utcDay(entry.startedAt) < oldest ? oldest : utcDay(entry.startedAt)
-		const endDay = utcDay(Math.min(entry.resolvedAt ?? nowMs, nowMs))
-		const span = Math.max(0, Math.round((dayMs(endDay) - dayMs(first)) / DAY_MS)) + 1
-		return Array.from({ length: span }, (_, offset) => shiftDay(first, offset))
-			.filter((day) => day <= today)
-			.reduce((acc, day) => {
-				const current = acc.get(day)
-				const tone =
-					current === undefined || TONE_RANK[entry.tone] > TONE_RANK[current.tone]
-						? entry.tone
-						: current.tone
-				return new Map(acc).set(day, { tone, entries: [...(current?.entries ?? []), index] })
-			}, days)
-	}, new Map<string, CalendarDay>())
+	// Days as integers while counting, strings only once per distinct day: this runs on every render.
+	const todayN = Math.floor(nowMs / DAY_MS)
+	const oldestN = todayN + 1 - STATUS_PAGE_HISTORY_DAYS
+	const byDay = new Map<number, { tone: CalendarTone; entries: Array<number> }>()
+	entries.forEach((entry, index) => {
+		const firstN = Math.max(Math.floor(entry.startedAt / DAY_MS), oldestN)
+		const endN = Math.min(Math.floor(Math.min(entry.resolvedAt ?? nowMs, nowMs) / DAY_MS), todayN)
+		Array.from({ length: Math.max(0, endN - firstN + 1) }, (_, offset) => firstN + offset).forEach(
+			(dayN) => {
+				const current = byDay.get(dayN)
+				if (current === undefined) {
+					byDay.set(dayN, { tone: entry.tone, entries: [index] })
+					return
+				}
+				if (TONE_RANK[entry.tone] > TONE_RANK[current.tone]) current.tone = entry.tone
+				current.entries.push(index)
+			},
+		)
+	})
+	return new Map(Array.from(byDay, ([dayN, day]) => [utcDay(dayN * DAY_MS), day] as const))
 }
