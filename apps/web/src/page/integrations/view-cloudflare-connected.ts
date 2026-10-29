@@ -27,6 +27,7 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { workersCard, zoneBoard } from "./view-cloudflare-board"
+import { zonesDialog } from "./view-cloudflare-zones"
 
 // The connected `CloudflareAccountCard` and `CloudflareStatCards`.
 
@@ -254,6 +255,7 @@ export const cloudflareConnected = (
 								]
 							: []),
 					]),
+			zonesDialog(h, model),
 		],
 	)
 }

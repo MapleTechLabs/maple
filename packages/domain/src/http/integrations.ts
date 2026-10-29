@@ -185,6 +185,11 @@ export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyt
 	 * it, and once history is complete. optionalKey only for deploy-window compat; always sent.
 	 */
 	backfillAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	/**
+	 * False when the customer turned collection off for this zone. Separate from `enabled`, which
+	 * is the poller's own state. optionalKey only for deploy-window compat; always sent.
+	 */
+	watched: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Account-level Workers invocation-metrics collection state. */
@@ -218,6 +223,8 @@ export class CloudflareConnectedAccountStatus extends Schema.Class<CloudflareCon
 	revoked: Schema.Boolean,
 	zones: Schema.Array(CloudflareAnalyticsZoneStatus),
 	workers: Schema.NullOr(CloudflareAnalyticsWorkersStatus),
+	/** Whether zones discovered later are collected. optionalKey only for deploy-window compat. */
+	watchNewZones: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /**
@@ -355,6 +362,25 @@ export class CloudflareStartConnectResponse extends Schema.Class<CloudflareStart
 )({
 	redirectUrl: Schema.String,
 	state: Schema.String,
+}) {}
+
+export class CloudflareZoneWatchSetting extends Schema.Class<CloudflareZoneWatchSetting>(
+	"CloudflareZoneWatchSetting",
+)({
+	zoneId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watched: Schema.Boolean,
+}) {}
+
+/**
+ * Replaces one account's zone selection. `zones` lists explicit choices; a zone it leaves out
+ * follows `watchNewZones`.
+ */
+export class CloudflareZoneSettingsRequest extends Schema.Class<CloudflareZoneSettingsRequest>(
+	"CloudflareZoneSettingsRequest",
+)({
+	accountId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watchNewZones: Schema.Boolean,
+	zones: Schema.Array(CloudflareZoneWatchSetting).check(Schema.isMaxLength(5000)),
 }) {}
 
 export class CloudflareDisconnectResponse extends Schema.Class<CloudflareDisconnectResponse>(
@@ -1568,6 +1594,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("cloudflareZoneSettings", "/cloudflare/zones", {
+			payload: CloudflareZoneSettingsRequest,
+			success: CloudflareIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(
