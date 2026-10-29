@@ -30,7 +30,6 @@ import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
 import * as DashboardWidget from "./dashboards/widget"
-import * as Chat from "./chat/page"
 import * as CodeReview from "./code-review"
 import * as SecurityFinding from "./security/finding"
 import * as SecurityRun from "./security/run"
@@ -167,7 +166,6 @@ export const pages = [
 	ReplayDetail.page,
 	Share.page,
 	Analytics.page,
-	Chat.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */

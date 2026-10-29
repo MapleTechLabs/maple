@@ -2,12 +2,12 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 /**
  * Every route the AI Worker serves, as one layer.
  *
- * Three surfaces, and they are deliberately different shapes:
+ * Several surfaces, and they are deliberately different shapes:
  *
  *   - `/mcp` — the public MCP transport, a raw router because the protocol is
  *     JSON-RPC over one POST rather than a set of typed endpoints.
- *   - `/api/chat/sessions/*` — the dashboard's chat transport, raw because
- *     `HttpApi` cannot model an open `text/event-stream`.
+ *   - `/api/chat/sessions/*`: the transport for an investigation's follow-up
+ *     conversation, raw because `HttpApi` cannot model an open `text/event-stream`.
  *   - `/internal/chat/apply` — a typed `HttpApi` group, because deciding an
  *     approval-gated proposal is an ordinary request/response with a schema
  *     worth pinning.
@@ -19,7 +19,7 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *     gate, typed for the same reason. Reached only over a service binding: api
  *     does not forward it, and the callers are the Workers that open incidents.
  *
- * The api still owns the hostname. It forwards all three here over a service
+ * The api still owns the hostname. It forwards the public ones here over a service
  * binding, which is what keeps `/mcp`'s OAuth issuer and RFC 8707 resource
  * identifiers on api's origin — moving them would invalidate every registered
  * MCP client.

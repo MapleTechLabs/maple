@@ -172,7 +172,7 @@ export const statScenarios: WidgetScenario[] = [
 		display: { title: "Active spans", unit: "number" },
 	},
 	{
-		label: "Error: decode (Fix with AI)",
+		label: "Error: decode",
 		dataState: decodeErrorState,
 		display: { title: "Active spans", unit: "number" },
 	},

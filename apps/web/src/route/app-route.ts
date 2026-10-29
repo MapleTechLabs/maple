@@ -10,7 +10,6 @@ const WorkloadKind = Search.InfraKubernetesWorkloadParams.fields.kind
 export const AppRoute = defineRouteUnion({
 	Home: { search: Search.HomeSearch },
 	Account: { search: Search.AccountSearch },
-	Chat: { search: Search.ChatSearch },
 	CliLogin: { search: Search.CliLoginSearch },
 	Connectors: { search: Search.ConnectorsSearch },
 	Developer: { search: Search.DeveloperSearch },

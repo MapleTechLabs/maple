@@ -10,9 +10,7 @@ import {
 	breadcrumbPage,
 	breadcrumbSeparator,
 } from "../ui/breadcrumb"
-import { button } from "../ui/button"
 import { separator } from "../ui/display"
-import { icon } from "../ui/icon"
 import { sidebarTrigger } from "../ui/sidebar"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -35,23 +33,6 @@ const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry): Html =>
 			? breadcrumbPage(h, CRUMB_LABEL, [entry.label])
 			: breadcrumbLink(h, { className: CRUMB_LABEL, href: entry.href }, [entry.label]),
 	])
-
-/** `IconButton variant="outline" label="Ask Maple AI" shortcut="C"`: opens the global chat sheet. */
-const askMapleButton = (h: HtmlBuilder<Message>): Html =>
-	button(
-		h,
-		{
-			size: "icon-sm",
-			variant: "outline",
-			slot: "icon-button",
-			attributes: [
-				h.AriaLabel("Ask Maple AI"),
-				h.DataAttribute("base-ui-tooltip-trigger", ""),
-				h.OnClick(Message.ClickedAskMapleAi()),
-			],
-		},
-		[icon(h, "ChatBubbleSparkleIcon")],
-	)
 
 /** `ConnectButton`: the ingest endpoint, keys and MCP popover. */
 const connectButton = (h: HtmlBuilder<Message>, model: Model): Html =>
@@ -112,7 +93,6 @@ export const topbar = (
 			h.div(
 				[h.Class("ml-auto flex shrink-0 items-center gap-2")],
 				[
-					askMapleButton(h),
 					...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
 					...(showsConnect ? [connectButton(h, model)] : []),
 					...railTriggers,

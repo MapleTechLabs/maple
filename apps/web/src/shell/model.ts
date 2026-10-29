@@ -1,5 +1,4 @@
 import { InfraSurfaceLiteral } from "@maple/domain/http"
-import { OrgId } from "@maple/domain"
 import type { BillingCustomer } from "@maple/domain/http"
 import type { ClerkOrganization, ClerkUser } from "../platform/clerk"
 import { Option, Schema } from "effect"
@@ -27,7 +26,6 @@ import {
 /** A loader that failed reads as its fallback; the reason is not shown anywhere. */
 export const LoadFailure = Schema.Literal("Failed")
 
-export const TenantData = AsyncData.Schema(OrgId, LoadFailure)
 export const InfraPresenceData = AsyncData.Schema(Schema.Array(InfraSurfaceLiteral), LoadFailure)
 export const DashboardsData = AsyncData.Schema(Schema.Array(PinnedDashboardRow), LoadFailure)
 export const NamespacesData = AsyncData.Schema(Schema.Array(Schema.String), LoadFailure)
@@ -69,7 +67,6 @@ export const Model = Schema.Struct({
 	pinnedNamespaces: Schema.Record(Schema.String, Schema.String),
 	/** `maple.dashboards.favorites`. */
 	dashboardFavorites: Schema.Array(Schema.String),
-	tenant: TenantData.schema,
 	infraPresence: InfraPresenceData.schema,
 	integrations: Integrations,
 	/** `maple.infra-surfaces.<orgId>`: each org's last settled surfaces, so the sidebar lays out once. */
@@ -149,7 +146,6 @@ export const init = (flags: ShellFlags): Model => ({
 	maybeOrgId: Option.none(),
 	pinnedNamespaces: flags.pinnedNamespaces,
 	dashboardFavorites: flags.dashboardFavorites,
-	tenant: TenantData.Idle(),
 	infraPresence: InfraPresenceData.Idle(),
 	integrations: PENDING_INTEGRATIONS,
 	rememberedSurfaces: flags.rememberedSurfaces ?? {},

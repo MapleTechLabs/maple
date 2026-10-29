@@ -11,7 +11,6 @@ import {
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { buildAlertChatUrl } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
 import {
@@ -178,10 +177,8 @@ const make: Effect.Effect<
 			value: request.value,
 			sampleCount: request.sampleCount,
 		}
-		const chatUrl = buildAlertChatUrl(env.MAPLE_APP_BASE_URL, {
-			...request,
-			thresholdUpper: request.thresholdUpper ?? null,
-		})
+		// Every request here is an error issue or its escalation, which no alert incident or rule page has.
+		const chatUrl = request.linkUrl
 		const payloadJson = JSON.stringify({
 			eventType: request.escalation ? "escalation" : request.eventType,
 			...(request.escalation ? { escalation: request.escalation } : undefined),

@@ -44,7 +44,7 @@ const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-38
 
 const SENT_AT_MS = Date.parse("2026-06-02T00:00:00.000Z")
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat?mode=alert"
+const CHAT = "https://web.localhost/alerts/incidents/inc_1"
 
 const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDestinationRow => ({
 	id: DESTINATION_ID,
@@ -153,7 +153,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			assert.strictEqual(body.payload.severity, "critical")
 			assert.deepStrictEqual(body.links, [
 				{ href: LINK, text: "Open in Maple" },
-				{ href: CHAT, text: "Ask Maple AI" },
+				{ href: CHAT, text: "View alert" },
 			])
 			// custom_details carries RAW numbers, not the formatted strings the chat
 			// providers render — a PagerDuty payload is machine-facing.

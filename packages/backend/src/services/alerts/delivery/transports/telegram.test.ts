@@ -18,7 +18,7 @@ const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-38
 const BOT_TOKEN = "123456789:AAHqwertyuiopasdfghjklzxcvbnm123456"
 const CHAT_ID = "-1001234567890"
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/incidents/inc_1"
 
 /** Runs a Bot API call on the fetch client with `fetchFn` as the wire. */
 const withFetch = <A>(effect: Effect.Effect<A, never, HttpClient.HttpClient>, fetchFn: typeof fetch) =>

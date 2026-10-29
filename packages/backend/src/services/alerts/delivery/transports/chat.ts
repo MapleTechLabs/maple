@@ -39,7 +39,7 @@ export const buildChatAlertBlocks = (input: RenderInput<Config>): ReadonlyArray<
 		imageAlt: `${context.ruleName} over the alert window`,
 		links: [
 			{ label: "Open in Maple", url: linkUrl, primary: true },
-			{ label: "✨ Ask Maple AI", url: chatUrl, primary: false },
+			{ label: "View alert", url: chatUrl, primary: false },
 		],
 		footer: [
 			"\u{1F341} Maple Alerts",

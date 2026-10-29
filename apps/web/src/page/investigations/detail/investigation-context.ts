@@ -1,62 +1,27 @@
-
-// The investigation context type, `investigationNoun` and `investigationSuggestions`. The alert
-// half lives in components/chat/alert-context.ts.
+// The investigation conversation's starter suggestions and the noun for its subject's kind.
 
 import { Schema } from "effect"
-import { signalLabel } from "../../../components/chat/alert-context"
+import { signalLabel } from "../../alerts/kit/alert-context"
 
-/** The three things Maple can investigate. Kind is carried by the attached resource, not the URL. */
+/** What Maple can investigate, read off the investigation's subject. */
 const InvestigationKindSchema = Schema.Literals(["alert", "anomaly", "error", "freeform"])
 export type InvestigationKind = typeof InvestigationKindSchema.Type
 
-/** A single labelled fact — shown on the attachment card and folded into the chat preamble. */
-export interface InvestigationFact {
-	/** Stable machine key for the preamble YAML (e.g. `observed`). */
-	key: string
-	/** Human label for the attachment card (e.g. `Observed`). */
-	label: string
-	value: string
-}
-
-/**
- * Kind-agnostic context for an investigation chat: the normalized facts a chat
- * thread is seeded with, regardless of whether the subject is an alert, an
- * anomaly, or an error. Drives the pinned attachment card, the first-message
- * preamble, and the starter suggestions.
- */
+/** The subject as the starter suggestions read it, whatever its kind. */
 export interface InvestigationContext {
 	kind: InvestigationKind
-	/** Focal resource id (alert incident / anomaly incident / error issue). */
-	id: string
-	/** Human title — rule name, "p95 latency · svc", or the exception type. */
+	/** Rule name, "p95 latency · svc", or the exception message. */
 	title: string
-	/** Severity token (`critical` | `warning` | `high` | `medium` | `low` | …). */
-	severity: string
-	/** Short status label, e.g. `Firing` | `Open` | `Resolved`. */
-	status: string
-	/** Signal type when applicable (alert/anomaly) — drives tool hints + suggestions. */
+	/** The alert or anomaly's signal (the snapshot's `Signal` fact). */
 	signalType?: string
-	/** Primary scope for suggestions/preamble (group key or service name). */
+	/** The group key or service name the suggestions name. */
 	scope?: string
-	/** Alert/anomaly evaluation window in minutes (time-scoping hint). */
-	windowMinutes?: number
-	/** Compact facts shown on the card and emitted as preamble YAML. */
-	facts: InvestigationFact[]
-	/** Entity references for the preamble + deep links. */
-	refs?: {
-		serviceName?: string
-		ruleId?: string
-		ruleName?: string
-		detectorKey?: string
-		issueId?: string
-		incidentId?: string
-	}
-	/** Prior AI-triage findings, folded into the preamble so the agent builds on them. */
-	aiSummary?: string
+	/** The report's suspected cause, once a diagnosis is on screen. */
 	aiSuspectedCause?: string
 }
 
-/** Stable chat tab id. Alerts keep their legacy `alert-…` id so notification threads continue. */
+/** The time window the suggestions name, in minutes. */
+const WINDOW_MINUTES = 15
 
 const KIND_NOUN = {
 	alert: "alert",
@@ -68,12 +33,9 @@ const KIND_NOUN = {
 export const investigationNoun = (kind: InvestigationKind): string => KIND_NOUN[kind]
 
 /**
- * A scope short enough to sit inside a chip. `scope` is free text: an alert group
- * key is a handful of characters, but a system-seeded investigation can carry a
- * whole sentence the model wrote, and `Slowest traces in ${scope}` then renders a
- * paragraph as a button. Cut at the first clause boundary — the head of such a
- * sentence is reliably the subject ("subscriptions-api public endpoints (GET …)"
- * → "subscriptions-api") — then hard-cap whatever survives.
+ * A scope short enough for a suggestion button. `scope` is free text: a system-seeded
+ * investigation can carry a whole sentence, so cut at the first clause boundary (its head is
+ * the subject, "subscriptions-api public endpoints (GET …)" to "subscriptions-api"), then cap it.
  */
 const CHIP_SCOPE_MAX = 32
 
@@ -81,9 +43,8 @@ export const chipScope = (raw: string): string => {
 	const head = raw.split(/[(\n,;—]/)[0]!.trim()
 	const text = head.length > 0 ? head : raw.trim()
 	if (text.length <= CHIP_SCOPE_MAX) return text
-	// A clause this long isn't a scope, it's a sentence — and the subject of that
-	// sentence is its first word ("subscriptions-api public endpoints …" →
-	// "subscriptions-api"). Prefer that whole word over a mid-word ellipsis.
+	// A clause this long is a sentence, whose subject is its first word: prefer that
+	// whole word over a mid-word ellipsis.
 	const first = text.split(/\s+/)[0]!
 	return first.length > CHIP_SCOPE_MAX ? `${first.slice(0, CHIP_SCOPE_MAX - 1).trimEnd()}…` : first
 }
@@ -91,11 +52,8 @@ export const chipScope = (raw: string): string => {
 const CHIP_PHRASE_MAX = 36
 
 /**
- * The same problem as {@link chipScope} for a different field. An error
- * investigation's title is the exception message, which is routinely a sentence
- * and sometimes a blob of JSON, and `Sample stack traces for ${title}` inherits
- * whatever it is. Unlike a scope there is no subject word to lift out — the
- * front of a message *is* the identifying part — so this truncates instead.
+ * {@link chipScope} for an error's title, the exception message (a sentence, sometimes JSON).
+ * Its front is the identifying part, so this truncates instead of lifting a subject word.
  */
 export const chipPhrase = (raw: string): string => {
 	const text = raw.split("\n")[0]!.trim()
@@ -104,13 +62,11 @@ export const chipPhrase = (raw: string): string => {
 
 /** Starter prompts tuned to the kind + signal + scope of the investigation. */
 export const investigationSuggestions = (ctx: InvestigationContext): string[] => {
-	const rawScope = ctx.scope ?? ctx.refs?.serviceName
-	const scope = rawScope ? chipScope(rawScope) : "the affected service"
-	const windowM = ctx.windowMinutes ?? 15
+	const scope = ctx.scope ? chipScope(ctx.scope) : "the affected service"
+	const windowM = WINDOW_MINUTES
 
-	// A diagnosis is already on screen, so "Diagnose X" is the one thing left to
-	// ask. Push on the report instead: the useful next move against an AI
-	// conclusion is corroborating or breaking it.
+	// A diagnosis is already on screen: push on the report, corroborating or breaking it,
+	// instead of asking for one.
 	if (ctx.aiSuspectedCause) {
 		return [
 			"What would confirm this?",

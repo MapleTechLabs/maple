@@ -5,7 +5,6 @@ import { lastHourWindow, loadInfraPresence } from "../data/infra-surfaces"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { MapleApiV2Client } from "../platform/api-clients"
 import { loadServicesFacets } from "../data/services-facets-probe"
-import { SessionTenant } from "../data/session-tenant"
 import { Message } from "./message"
 
 /**
@@ -18,15 +17,6 @@ const failed =
 	<A>(message: A) =>
 	<B, E, R>(effect: Effect.Effect<B, E, R>): Effect.Effect<A | B, never, R> =>
 		Effect.orElseSucceed(effect, () => message)
-
-/** `GET /api/auth/session` through the app client: `GlobalChatSheet`'s org lookup on every page. */
-export const LoadTenant = Command.define("LoadTenant", {
-	messages: [Message.SucceededLoadTenant, Message.FailedLoadTenant],
-	execute: Effect.gen(function* () {
-		const tenant = yield* (yield* SessionTenant).get
-		return Message.SucceededLoadTenant({ orgId: tenant.orgId })
-	}).pipe(failed(Message.FailedLoadTenant())),
-})
 
 /** `infraPresenceResultAtom`: which OTel infrastructure surfaces reported in the last hour. */
 export const LoadInfraPresence = Command.define("LoadInfraPresence", {

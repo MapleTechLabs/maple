@@ -221,16 +221,6 @@ export const AccountSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals(accountTabValues)),
 })
 
-export const ChatSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
-	mode: Schema.optional(Schema.Literals(["alert", "widget-fix"])),
-	alert: Schema.optional(Schema.String),
-	widget: Schema.optional(Schema.String),
-	shared: Schema.optional(Schema.String),
-	title: Schema.optional(Schema.String),
-	m: Schema.optional(Schema.String),
-})
-
 export const CliLoginSearch = Schema.Struct({
 	user_code: Schema.optional(Schema.String),
 })

@@ -86,22 +86,6 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		budget: CHAT_BUDGET,
 		model: "triage",
 	},
-	alert: {
-		name: "alert",
-		description: "Assists with an alert in context.",
-		prompt: SYSTEM_PROMPT,
-		permission: DEFAULT_RULESET,
-		budget: CHAT_BUDGET,
-		model: "triage",
-	},
-	"widget-fix": {
-		name: "widget-fix",
-		description: "Repairs a dashboard widget in context.",
-		prompt: SYSTEM_PROMPT,
-		permission: DEFAULT_RULESET,
-		budget: CHAT_BUDGET,
-		model: "triage",
-	},
 	investigate: {
 		name: "investigate",
 		description: "Runs an autonomous investigation.",

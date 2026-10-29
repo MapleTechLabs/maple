@@ -14,7 +14,7 @@ import { navGroups } from "../nav"
 export const GROUP_ORDER = ["Navigation", "Services", "Dashboards", "Integrations", "Actions"] as const
 export type Group = (typeof GROUP_ORDER)[number]
 
-export const PaletteAction = Schema.Literals(["AskMapleAi", "ToggleTheme", "ShowShortcuts"])
+export const PaletteAction = Schema.Literals(["ToggleTheme", "ShowShortcuts"])
 export type PaletteAction = typeof PaletteAction.Type
 
 export type Glyph =
@@ -181,15 +181,6 @@ const dashboardEntries = (inputs: EntryInputs): ReadonlyArray<PaletteEntry> => {
 const actionEntries = (theme: Theme): ReadonlyArray<PaletteEntry> => {
 	const isDark = theme === "dark"
 	return [
-		{
-			id: "action:ask-maple-ai",
-			title: "Ask Maple AI",
-			group: "Actions",
-			keywords: "chat ai assistant maple ask question",
-			glyph: icon("ChatBubbleSparkleIcon"),
-			target: { _tag: "Action", action: "AskMapleAi" },
-			shortcut: "C",
-		},
 		{
 			id: "action:toggle-theme",
 			title: isDark ? "Switch to light mode" : "Switch to dark mode",

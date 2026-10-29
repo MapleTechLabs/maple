@@ -109,9 +109,9 @@ export const handleRequest = async (
 			: renderShareOgImage(api, ogId, env.ASSETS)
 	}
 
-	// Also ahead of the assets lookup, and for the same reason: `/alerts/…` and
-	// `/chat/…` are real SPA routes, so the shell would answer these paths with
-	// HTML in an `<img>` slot rather than a 404 anyone could diagnose.
+	// Also ahead of the assets lookup, and for the same reason: the SPA shell
+	// answers `/alerts/…` and `/chat/chart/…` with HTML, which in an `<img>` slot is no
+	// 404 anyone could diagnose.
 	const chart = chartRequestFromPath(url.pathname)
 	if (chart !== undefined) {
 		return api === undefined

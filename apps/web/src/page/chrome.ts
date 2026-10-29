@@ -10,7 +10,7 @@ import { resolveLegacySettingsTab } from "./settings/nav"
 
 /**
  * Signed-in routes rendered without `DashboardLayout`: onboarding and auth handoffs with
- * their own layouts. `/chat` keeps the shell, without its top bar (`view.ts`).
+ * their own layouts.
  */
 const isBareRoute = AppRoute.isAnyOf(["CliLogin", "McpAuthorize", "QuickStart", "SelectPlan"])
 

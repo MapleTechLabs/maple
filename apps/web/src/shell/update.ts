@@ -11,7 +11,6 @@ import {
 	FocusSiblingMenuItem,
 	FocusShortcutSearch,
 	LogOut,
-	OpenGlobalChat,
 	SaveInfraSurfaces,
 	SaveNamespace,
 	SaveSidebarState,
@@ -26,7 +25,6 @@ import {
 	LoadPlanetscaleStatus,
 	LoadRailwayStatus,
 	LoadSupabaseStatus,
-	LoadTenant,
 } from "./data"
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
@@ -46,7 +44,6 @@ import {
 	type Model,
 	NamespacesData,
 	shellProbe,
-	TenantData,
 } from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
@@ -67,7 +64,6 @@ export const enter =
 		if (Option.contains(model.maybeOrgId, orgId)) return { model }
 		const entered = modifyFields(model, {
 			maybeOrgId: () => Option.some(orgId),
-			tenant: () => TenantData.Loading(),
 			hasRequestedSidebarData: () => false,
 			// Nothing read for the previous org (an in-place org change) carries over.
 			infraPresence: () => InfraPresenceData.Idle(),
@@ -79,7 +75,6 @@ export const enter =
 		return {
 			model: sidebar.model,
 			commands: [
-				LoadTenant(),
 				...(sidebar.commands ?? []),
 				// Clerk: the reward pill (`OnboardingChecklistButton`) and who is looking at it.
 				...(isClerkAuthEnabled
@@ -196,15 +191,6 @@ export const connectPollTicked = (): Message =>
 	Message.GotConnectMessage({ message: ConnectPanel.Message.TickedPoll() })
 
 /**
- * A signed-in route outside the shell (`/cli-login`, `/quick-start`): the root still mounts
- * the global chat sheet, whose org lookup is the only request of the shell's that it sends.
- */
-export const enterBare = (model: Model): UpdateReturn =>
-	AsyncData.isIdle(model.tenant)
-		? { model: modifyFields(model, { tenant: () => TenantData.Loading() }), commands: [LoadTenant()] }
-		: { model }
-
-/**
  * Navigation closes every menu and the mobile sheet. The page
  * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
  */
@@ -221,7 +207,7 @@ export const routeChanged =
 
 /**
  * Every checklist step is done on another page: a navigation re-reads it (`onResolved`), but only
- * where the top bar's pill is mounted. `/chat` has no top bar, so it never re-reads there.
+ * where the top bar's pill is mounted.
  */
 export const checklistRefreshOnNavigation = (model: Model, hasTopBar: boolean, isClerk: boolean) =>
 	isClerk && hasTopBar && model.checklist.checklist !== null ? [toChecklist(Checklist.LoadChecklist())] : []
@@ -338,7 +324,6 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		ClickedSidebarTrigger: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
-		ClickedPageSidebarTrigger: () => (model.isMobile ? toggleSidebar(model) : { model }),
 		RequestedInfraSurfaces: () => requestInfraSurfaces(model),
 		ChangedViewport: ({ isMobile }) => {
 			const changed = modifyFields(closeMenu(model), {
@@ -410,14 +395,6 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 		}),
 		ClickedReload: () => ({ model, commands: [ReloadPage()] }),
 		CompletedReloadPage: () => ({ model }),
-		ClickedAskMapleAi: () => ({ model, commands: [OpenGlobalChat({ isFocusVisible: false })] }),
-		CompletedOpenGlobalChat: () => ({ model }),
-		SucceededLoadTenant: ({ orgId }) => ({
-			model: modifyFields(model, { tenant: () => TenantData.Success({ data: orgId }) }),
-		}),
-		FailedLoadTenant: () => ({
-			model: modifyFields(model, { tenant: () => TenantData.Failure({ error: "Failed" }) }),
-		}),
 		// Org-stamped answers: one for an org the shell has left is dropped.
 		SucceededLoadInfraPresence: ({ orgId, surfaces }) =>
 			surfacesAnswered(model, orgId, (current) =>

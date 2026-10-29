@@ -10,7 +10,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect, Fiber, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import {
-	buildAlertChatUrl,
+	buildAlertOpenUrl,
 	buildDiscordEmbedsFromTemplate,
 	buildSummaryLine,
 	buildTemplateContext,
@@ -76,7 +76,7 @@ const rangeContext: TemplateRenderContext = {
 }
 
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat?mode=alert"
+const CHAT = "https://web.localhost/alerts/incidents/inc_1"
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 /** Dispatch deps for non-email destinations — email sends must not happen. */
@@ -86,16 +86,24 @@ const noEmailDeps: EffectTransportDeps = {
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 }
 
-describe("buildAlertChatUrl (Ask Maple AI link)", () => {
-	it("targets the incident diagnosis page when an incident exists", () => {
-		const url = buildAlertChatUrl("https://web.localhost", baseContext)
+describe("buildAlertOpenUrl (View alert link)", () => {
+	it("targets the incident page when an incident exists", () => {
+		const url = buildAlertOpenUrl("https://web.localhost", baseContext)
 		assert.isTrue(url.startsWith("https://web.localhost/alerts/incidents/inc_1?alert="), url)
 	})
 
-	it("falls back to the chat surface when there is no incident row", () => {
-		const url = buildAlertChatUrl("https://web.localhost", { ...baseContext, incidentId: null })
-		assert.isTrue(url.startsWith("https://web.localhost/chat?"), url)
-		assert.include(url, "mode=alert")
+	it("opens the rule when there is no incident row", () => {
+		const url = buildAlertOpenUrl("https://web.localhost", { ...baseContext, incidentId: null })
+		assert.equal(url, "https://web.localhost/alerts/rule_1")
+	})
+
+	it("opens the alerts list for a test notification, whose rule does not exist", () => {
+		const url = buildAlertOpenUrl("https://web.localhost", {
+			...baseContext,
+			incidentId: null,
+			eventType: "test",
+		})
+		assert.equal(url, "https://web.localhost/alerts")
 	})
 })
 

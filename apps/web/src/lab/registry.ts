@@ -188,14 +188,6 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
-		path: "/lab/chat",
-		title: "Chat transcript",
-		description:
-			"The chat transcript over a fixture thread: a merged tool run, prose carrying every inline reference card, an approval prompt, and two-character turns that expose the vertical rhythm.",
-		kind: "lab",
-		session: "none",
-	},
-	{
 		path: "/lab/logs",
 		title: "Logs stream",
 		description:

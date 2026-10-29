@@ -33,7 +33,7 @@ export const forwardsToAi = (path: string): boolean =>
 	path.startsWith("/internal/mcp/") ||
 	path.startsWith("/api/security-audit/")
 
-/** maple-ai could not be reached. CORS headers included: the dashboard's chat calls this from a browser. */
+/** maple-ai could not be reached. CORS headers included: an investigation's conversation calls this from a browser. */
 export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =>
 	HttpServerResponse.text("maple-ai is unavailable", {
 		status: 503,
@@ -72,9 +72,9 @@ const recordAiIsolate = (response: HttpServerResponse.HttpServerResponse) =>
  *
  * Byte-transparent but for one header: the same method, the original `Host`
  * (which is what keeps `/mcp`'s OAuth `resource_metadata` pointing at this
- * origin's well-known), every other header, and both bodies as streams. The
- * chat tail is an open `text/event-stream`, so buffering either side would turn
- * a live transcript into a hang.
+ * origin's well-known), every other header, and both bodies as streams. An
+ * investigation conversation's tail is an open `text/event-stream`, so buffering
+ * either side would turn a live transcript into a hang.
  *
  * The exception is `traceparent`, which is replaced with THIS hop's server
  * span. Without it maple-ai starts a new root trace and one `/mcp` call reads

@@ -2,7 +2,6 @@ import { writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { load } from "foldkit/navigation"
-import { openGlobalChat } from "../page/chat/sheet/subscription"
 import { clearSessionToken } from "../platform/auth-api"
 import { Message, Theme } from "./message"
 
@@ -116,15 +115,4 @@ export const FocusShortcutSearch = Command.define("FocusShortcutSearch", {
 		} else if (target instanceof HTMLElement) target.click()
 		return Message.CompletedFocusShortcutSearch()
 	}),
-})
-
-/** `openGlobalChat()`: the root's chat sheet (`page/chat/sheet`) listens for its document event. */
-export const OpenGlobalChat = Command.define("OpenGlobalChat", {
-	args: { isFocusVisible: Schema.Boolean },
-	messages: [Message.CompletedOpenGlobalChat],
-	execute: ({ isFocusVisible }) =>
-		Effect.sync(() => {
-			openGlobalChat({ isFocusVisible })
-			return Message.CompletedOpenGlobalChat()
-		}),
 })

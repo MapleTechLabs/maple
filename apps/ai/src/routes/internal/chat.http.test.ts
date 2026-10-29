@@ -28,7 +28,7 @@ const TENANT = new CurrentTenant.TenantSchema({
 	authMode: "clerk",
 })
 
-const SESSION_ID = `${TENANT.orgId}:tab-1`
+const SESSION_ID = `${TENANT.orgId}:inv-1`
 
 const AuthorizationStubLayer = Layer.succeed(
 	CurrentTenant.SessionAuthorization,
@@ -236,7 +236,22 @@ describe("POST /internal/chat/apply", () => {
 	it("answers 404 for another org's conversation without reaching it", async () => {
 		const harness = makeHarness({})
 		try {
-			const response = await harness.apply({ ...byReference("approve"), sessionId: "org_other:tab-1" })
+			const response = await harness.apply({ ...byReference("approve"), sessionId: "org_other:inv-1" })
+
+			expect(response.status).toBe(404)
+			expect(harness.settlements).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers 404 for a connector thread of the caller's own org without reaching it", async () => {
+		const harness = makeHarness({})
+		try {
+			const response = await harness.apply({
+				...byReference("approve"),
+				sessionId: `${TENANT.orgId}:bot-slack-C1`,
+			})
 
 			expect(response.status).toBe(404)
 			expect(harness.settlements).toEqual([])

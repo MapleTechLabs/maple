@@ -145,10 +145,9 @@ sheet, the nav and org switcher sheets, the top pages' loading and error states)
   not on screen mounts nothing, so its own reads (facets, model detection, GitHub status) go out
   from a Mount on the rail (`MountFilterRail`), as legacy's sidebar reads as it renders.
 - **Sidebar.** Below `md` the sidebar's reads wait for its sheet to open. A page that reads
-  `useInfraSurfaces` itself returns `RequestedInfraSurfaces`; `/chat`'s own trigger returns
-  `RequestedSidebarToggle`.
+  `useInfraSurfaces` itself returns `RequestedInfraSurfaces`.
 - **Branching layouts.** `PageViewInputs.isMobile` (`max-md`) and `isBelowSm` (`max-sm`) for the
-  few views that branch in JSX (`/chat`'s header, the analytics chart margin).
+  few views that branch in JSX (the analytics chart margin).
 
 ## Gotchas
 

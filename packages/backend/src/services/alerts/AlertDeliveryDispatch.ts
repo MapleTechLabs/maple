@@ -1,5 +1,5 @@
 /**
- * Message RENDERING for the chat-style providers, plus the "Ask Maple AI"
+ * Message RENDERING for the chat-style providers, plus the "View alert"
  * deep-link and the template resolver.
  *
  * Transport — which provider gets which request, how it is sent, how failures
@@ -44,14 +44,13 @@ import {
 } from "./alert-templating/renderer"
 
 /* -------------------------------------------------------------------------- */
-/*  Chat deep-link helper                                                     */
+/*  Alert deep-link helper                                                    */
 /* -------------------------------------------------------------------------- */
 
-export interface ChatUrlContext {
+export interface AlertOpenUrlContext {
 	readonly ruleId: string
 	readonly ruleName: string
 	readonly incidentId: string | null
-	readonly dedupeKey: string
 	readonly eventType: AlertEventType
 	readonly signalType: AlertSignalType
 	readonly severity: AlertSeverity
@@ -68,38 +67,34 @@ const toBase64Url = (raw: string): string =>
 	Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 
 /**
- * "Ask Maple AI" deep-link. Points at the incident-scoped diagnosis page, which
- * auto-generates the AI diagnosis and hosts the alert chat alongside it. The
- * encoded alert context is carried so the page renders + seeds the chat without
- * a round-trip. When there is no incident row yet (e.g. a `test` notification)
- * we fall back to the generic chat surface.
+ * "View alert" deep-link (the webhook's `chatUrl`). Points at the incident page; its `?alert=`
+ * context gives the page a rule to link back to when the incident is gone. With no incident row
+ * it opens the rule, or the alerts list for a `test` notification, whose rule id is made up.
  */
-export const buildAlertChatUrl = (baseUrl: string, context: ChatUrlContext): string => {
-	const alertJson = JSON.stringify({
-		ruleId: context.ruleId,
-		ruleName: context.ruleName,
-		incidentId: context.incidentId,
-		eventType: context.eventType,
-		signalType: context.signalType,
-		severity: context.severity,
-		comparator: context.comparator,
-		threshold: context.threshold,
-		thresholdUpper: context.thresholdUpper,
-		value: context.value,
-		windowMinutes: context.windowMinutes,
-		groupKey: context.groupKey,
-		sampleCount: context.sampleCount,
-	})
-	const encoded = toBase64Url(alertJson)
-	if (context.incidentId) {
-		return `${baseUrl}/alerts/incidents/${encodeURIComponent(context.incidentId)}?alert=${encoded}`
+export const buildAlertOpenUrl = (baseUrl: string, context: AlertOpenUrlContext): string => {
+	if (context.incidentId === null) {
+		return context.eventType === "test"
+			? `${baseUrl}/alerts`
+			: `${baseUrl}/alerts/${encodeURIComponent(context.ruleId)}`
 	}
-	const params = new URLSearchParams({
-		mode: "alert",
-		tab: `alert-${context.dedupeKey}`,
-		alert: encoded,
-	})
-	return `${baseUrl}/chat?${params.toString()}`
+	const encoded = toBase64Url(
+		JSON.stringify({
+			ruleId: context.ruleId,
+			ruleName: context.ruleName,
+			incidentId: context.incidentId,
+			eventType: context.eventType,
+			signalType: context.signalType,
+			severity: context.severity,
+			comparator: context.comparator,
+			threshold: context.threshold,
+			thresholdUpper: context.thresholdUpper,
+			value: context.value,
+			windowMinutes: context.windowMinutes,
+			groupKey: context.groupKey,
+			sampleCount: context.sampleCount,
+		}),
+	)
+	return `${baseUrl}/alerts/incidents/${encodeURIComponent(context.incidentId)}?alert=${encoded}`
 }
 
 /**
@@ -172,7 +167,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, ch
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl}) · [View alert](${chatUrl})`,
 				inline: false,
 			},
 		],
@@ -363,7 +358,7 @@ export const buildDiscordEmbedsFromTemplate = (
 		fields: [
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl}) · [View alert](${chatUrl})`,
 				inline: false,
 			},
 		],

@@ -7,7 +7,6 @@ import { describe, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; the scene never touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
-import * as ChatSheet from "./page/chat/sheet"
 import type { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
@@ -36,7 +35,6 @@ const signedIn = (): Model => ({
 	toasts: Toast.init("toasts"),
 	toastActions: {},
 	toastRootActions: {},
-	chatSheet: ChatSheet.init(),
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
@@ -75,8 +73,14 @@ describe("root view", () => {
 			expectView(role("dialog")).not.toExist(),
 			click(role("button", { name: /Advanced filter/ })),
 			expectView(role("dialog")).toExist(),
-			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
-			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 1 }),
+			),
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			Mount.resolve(MountWhereEditor, TracesMessage.FocusedAdvanced({ cursor: 0 })),
 			Mount.resolve(MountSuggestions, TracesMessage.CompletedPlaceAdvancedCursor()),

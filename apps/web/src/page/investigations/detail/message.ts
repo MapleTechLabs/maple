@@ -5,10 +5,13 @@ import * as Canvas from "../../../service-map/xyflow/canvas"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tooltip from "../../../ui/tooltip"
-import { Message as ConversationMessage } from "../../chat/conversation/message"
+import { Message as ConversationMessage } from "../conversation/message"
 import { Escalation, LogBucket, OverviewRow, Sync } from "./model"
 
-const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
+const result = <A extends Schema.Top>(schema: A) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
