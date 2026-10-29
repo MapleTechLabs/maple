@@ -46,6 +46,8 @@ export const StatusPages = PG.table("status_pages", {
 		/** SHA-256 (base64url) of the break-glass token, published so the edge can check it. */
 		breakGlassTokenSha256: PG.column(PG.nullable(PG.text), { name: "break_glass_token_sha256" }),
 		breakGlassTokenSuffix: PG.column(PG.nullable(PG.text), { name: "break_glass_token_suffix" }),
+		/** A draft is never published: the publisher skips it until it is made public. */
+		draft: PG.column(PG.bool, { default: false }),
 		revision: PG.column(PG.int8, { default: 1 }),
 		publishedRevision: PG.column(PG.int8, { name: "published_revision", default: 0 }),
 		publishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "published_at" }),

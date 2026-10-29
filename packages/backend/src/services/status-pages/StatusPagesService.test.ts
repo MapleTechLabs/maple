@@ -946,4 +946,88 @@ describe("StatusPagesService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 	})
+
+	describe("create with components and drafts", () => {
+		const pageCount = (testDb: TestDb) =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ count: number }>(`SELECT count(*)::int AS count FROM status_pages`),
+			).pipe(Effect.map((result) => result.rows[0]?.count))
+
+		it.effect("writes the page and its components in list order, as a draft when asked", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* seedMonitor(testDb, ORG, MONITOR)
+				const service = yield* StatusPagesService
+				const page = yield* service.create(ORG, {
+					name: "Acme",
+					slug: "acme-draft",
+					components: [
+						{ name: " API ", monitor_id: MONITOR, group: "Core" },
+						{ name: "Docs", show_uptime: false, manual_status: "degraded" },
+					],
+					draft: true,
+					createdBy: USER,
+				})
+				assert.isTrue(page.draft)
+				const components = yield* service.listComponents(ORG, page.id)
+				assert.deepStrictEqual(
+					components.map((c) => [c.name, c.position, c.monitorId, c.groupName, c.showUptime]),
+					[
+						["API", 0, MONITOR, "Core", true],
+						["Docs", 1, null, null, false],
+					],
+				)
+				const plain = yield* createPage("acme-public")
+				assert.isFalse(plain.draft)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("creates nothing when a component is invalid or names another org's monitor", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* seedMonitor(testDb, OTHER_ORG, OTHER_MONITOR)
+				const service = yield* StatusPagesService
+				const foreign = yield* Effect.flip(
+					service.create(ORG, {
+						name: "Acme",
+						slug: "acme-foreign",
+						components: [{ name: "API" }, { name: "Stolen", monitor_id: OTHER_MONITOR }],
+						createdBy: USER,
+					}),
+				)
+				assert.strictEqual(foreign._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.include(foreign.message, "upm_")
+				const blank = yield* Effect.flip(
+					service.create(ORG, {
+						name: "Acme",
+						slug: "acme-blank",
+						components: [{ name: "API" }, { name: "   " }],
+						createdBy: USER,
+					}),
+				)
+				assert.include(blank.message, "components[1].name")
+				assert.strictEqual(yield* pageCount(testDb), 0)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("makePublic clears a draft once and bumps its revision only then", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* StatusPagesService
+				const page = yield* service.create(ORG, {
+					name: "Acme",
+					slug: "acme-public-later",
+					draft: true,
+					createdBy: USER,
+				})
+				const crossOrg = yield* Effect.flip(service.makePublic(OTHER_ORG, page.id))
+				assert.strictEqual(crossOrg._tag, "@maple/http/errors/StatusPageNotFoundError")
+				const published = yield* service.makePublic(ORG, page.id)
+				assert.isFalse(published.draft)
+				assert.strictEqual(published.revision, page.revision + 1)
+				const again = yield* service.makePublic(ORG, page.id)
+				assert.strictEqual(again.revision, published.revision)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+	})
 })

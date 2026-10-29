@@ -29,12 +29,16 @@ import type {
 	StatusPageIncidentStatus,
 } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
-import { Effect, Option } from "effect"
+import { Clock, Effect, Option } from "effect"
 import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { timestampMs } from "@maple/backend/platform/time"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import {
+	StatusPageSnapshotBuilder,
+	toStatusPageDraft,
+} from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 
@@ -57,6 +61,7 @@ export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
 	break_glass_token_suffix: page.breakGlassTokenSuffix,
+	draft: page.draft,
 	revision: page.revision,
 	published_revision: page.publishedRevision,
 	published_at: isoTimestampOrNull(page.publishedAt),
@@ -146,6 +151,7 @@ const publishFailed = (message: string) => new StatusPagePersistenceError({ mess
 export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPages", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* StatusPagesService
+		const snapshotBuilder = yield* StatusPageSnapshotBuilder
 
 		/** The component, only when it is on this page; anything else reads as not found. */
 		const requireComponentOnPage = (
@@ -174,6 +180,19 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					const pages = yield* service.list(tenant.orgId)
 					const page = yield* paginateArray(pages.map(toV2StatusPage), query)
 					return { object: "list" as const, ...page }
+				}),
+			)
+			.handle("preview", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const nowMs = yield* Clock.currentTimeMillis
+					return yield* snapshotBuilder
+						.buildDraft(tenant.orgId, toStatusPageDraft(payload), nowMs)
+						.pipe(
+							Effect.catchTag("@maple/backend/status-pages/StatusPagePublishDbError", (error) =>
+								Effect.fail(publishFailed(error.message)),
+							),
+						)
 				}),
 			)
 			.handle("retrieve", ({ params }) =>
@@ -209,13 +228,40 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						...(payload.auto_incidents === undefined
 							? undefined
 							: { autoIncidents: payload.auto_incidents }),
+						...(payload.components === undefined
+							? undefined
+							: { components: payload.components }),
+						draft: payload.publish === false,
 						createdBy: tenant.userId,
 					})
 					yield* recordHttpAudit("status_page.created", {
 						resourceId: created.id,
 						metadata: { name: created.name, slug: created.slug },
 					})
-					return toV2StatusPage(created)
+					if (payload.publish !== true) return toV2StatusPage(created)
+					// The page is created either way: a failed publish leaves it queued for the minutely sweep.
+					const publisher = yield* Effect.serviceOption(StatusPagePublisher)
+					if (Option.isNone(publisher)) return toV2StatusPage(created)
+					yield* publisher.value.publish(created.id).pipe(
+						Effect.catch((error) =>
+							Effect.logWarning("Status page publish after create failed").pipe(
+								Effect.annotateLogs({
+									"maple.status_page.id": created.id,
+									"error.type": error._tag,
+									"error.message": error.message,
+								}),
+							),
+						),
+					)
+					// Re-read for the publish state; a page deleted meanwhile answers as created.
+					const current = yield* service
+						.get(tenant.orgId, created.id)
+						.pipe(
+							Effect.catchTag("@maple/http/errors/StatusPageNotFoundError", () =>
+								Effect.succeed(created),
+							),
+						)
+					return toV2StatusPage(current)
 				}),
 			)
 			.handle("update", ({ params, payload }) =>
@@ -293,7 +339,8 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly("publish"))
-					const page = yield* service.get(tenant.orgId, params.id)
+					// A draft goes public first, so the publish below writes it.
+					const page = yield* service.makePublic(tenant.orgId, params.id)
 					const publisher = yield* Effect.serviceOption(StatusPagePublisher)
 					// Without edge storage bound here the minutely sweep publishes it.
 					const outcome = Option.isNone(publisher)

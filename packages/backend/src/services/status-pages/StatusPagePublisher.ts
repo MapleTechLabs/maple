@@ -21,7 +21,7 @@ const SWEEP_CONCURRENCY = 4
 export interface StatusPagePublishResult {
 	readonly pageId: StatusPageId
 	readonly revision: number
-	/** False when the content matched the last publish and the edge write was skipped. */
+	/** False when the content matched the last publish, or the page is a draft, and nothing was written. */
 	readonly written: boolean
 }
 
@@ -38,6 +38,7 @@ export interface StatusPageSweepResult {
 export type StatusPagePublishError = StatusPageGoneError | StatusPagePublishDbError | StatusPageStoreError
 
 export interface StatusPagePublisherApi {
+	/** A draft page is a no-op: nothing reaches the edge until it is made public. */
 	readonly publish: (pageId: StatusPageId) => Effect.Effect<StatusPagePublishResult, StatusPagePublishError>
 	/**
 	 * Drains edge cleanups, publishes pages whose revision lags or whose last publish is stale
@@ -90,6 +91,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 								revision: $.revision,
 								publishedRevision: $.publishedRevision,
 								publishedHash: $.publishedHash,
+								draft: $.draft,
 							}))
 							.where(($) => [$.id.eq(pageId)])
 							.limit(1),
@@ -100,6 +102,10 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 						message: `Status page ${pageId} not found`,
 						pageId,
 					})
+				}
+				if (current.draft) {
+					yield* Effect.annotateCurrentSpan({ "maple.status_page.draft": true })
+					return { pageId, revision: current.revision, written: false }
 				}
 				const nowMs = yield* Clock.currentTimeMillis
 				const snapshot = yield* builder.build(pageId, nowMs)
@@ -252,6 +258,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 						PG.from(StatusPages)
 							.select(($) => ({ id: $.id }))
 							.where(($) => [
+								$.draft.eq(false),
 								PG.or(
 									$.revision.gt($.publishedRevision),
 									$.publishedAt.isNull(),

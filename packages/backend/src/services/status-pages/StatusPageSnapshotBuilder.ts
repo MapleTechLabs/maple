@@ -1,4 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleDb } from "@maple/db/client"
 import {
 	StatusPageComponents,
 	StatusPageIncidentComponents,
@@ -9,20 +10,23 @@ import {
 	UptimeMonitors,
 	UptimeMonitorStates,
 } from "@maple/db/tables"
-import type {
-	OrgId,
+import type { StatusPageValidationError } from "@maple/domain/http"
+import { normalizeStatusPageConfig, type StatusPagePreviewParams } from "@maple/domain/http/v2"
+import {
 	StatusPageComponentId,
-	StatusPageComponentStatus,
 	StatusPageId,
-	StatusPageIncidentId,
-	StatusPageIncidentImpact,
-	StatusPageIncidentKind,
-	StatusPageIncidentStatus,
-	StatusPageUpdateSource,
-	UptimeMonitorId,
-	UptimeMonitorStatus,
+	type OrgId,
+	type StatusPageComponentStatus,
+	type StatusPageIncidentId,
+	type StatusPageIncidentImpact,
+	type StatusPageIncidentKind,
+	type StatusPageIncidentStatus,
+	type StatusPageUpdateSource,
+	type UptimeMonitorId,
+	type UptimeMonitorStatus,
 } from "@maple/domain/primitives"
 import {
+	DEFAULT_STATUS_PAGE_THEME,
 	deriveComponentStatus,
 	fillDays,
 	incidentComponentStatus,
@@ -31,15 +35,18 @@ import {
 	STATUS_PAGE_HISTORY_DAYS,
 	STATUS_PAGE_INCIDENT_HISTORY_DAYS,
 	STATUS_PAGE_SNAPSHOT_VERSION,
+	StatusPageSlug,
+	StatusPageTheme,
+	themeContrastIssue,
 	type StatusPageSnapshot,
 	type StatusPageIncidentHistoryEntry,
 	type StatusPageSnapshotIncident,
-	type StatusPageTheme,
 	utcDay,
 } from "@maple/domain/status-page"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+import { ensureMonitorsInOrg } from "./monitors"
 import { StatusPageGoneError, StatusPagePublishDbError } from "./publish-errors"
 
 /** Most resolved incidents one snapshot indexes for the calendar: about one a day for a year. */
@@ -252,12 +259,102 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 	}
 }
 
+/** A page that has no row yet: what the builder previews before anything is saved. */
+export interface StatusPageDraft {
+	readonly page: Omit<SnapshotPageInput, "id" | "breakGlassTokenSha256" | "revision">
+	readonly components: ReadonlyArray<Omit<SnapshotComponentInput, "id" | "monitorStatus">>
+}
+
+/** Synthetic ids for a draft: fixed UUIDs, the page's ending in 0 and component `i`'s in `i + 1`. */
+const draftUuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`
+export const DRAFT_PAGE_ID = StatusPageId.make(draftUuid(0))
+export const draftComponentId = (index: number) => StatusPageComponentId.make(draftUuid(index + 1))
+
+const DRAFT_PLACEHOLDER_NAME = "Status page"
+const DRAFT_PLACEHOLDER_SLUG = "preview"
+const isSlug = Schema.is(StatusPageSlug)
+const isTheme = Schema.is(StatusPageTheme)
+
+const httpsOrNull = (value: string | null) =>
+	value !== null && URL.canParse(value) && new URL(value).protocol === "https:" ? value : null
+
+/** A config as typed so far, as a draft: blanks, an invalid slug and an unreadable theme fall back. */
+export const toStatusPageDraft = (params: StatusPagePreviewParams): StatusPageDraft => {
+	const config = normalizeStatusPageConfig(params)
+	const theme =
+		isTheme(config.theme) && themeContrastIssue(config.theme) === null
+			? config.theme
+			: DEFAULT_STATUS_PAGE_THEME
+	return {
+		page: {
+			name: config.name.length === 0 ? DRAFT_PLACEHOLDER_NAME : config.name,
+			slug: isSlug(config.slug) ? config.slug : DRAFT_PLACEHOLDER_SLUG,
+			description: config.description,
+			websiteUrl: httpsOrNull(config.website_url),
+			logoUrl: httpsOrNull(config.logo_url),
+			privacyUrl: httpsOrNull(config.privacy_url),
+			termsUrl: httpsOrNull(config.terms_url),
+			theme,
+			showPoweredBy: config.show_powered_by,
+		},
+		components: config.components.map((component) => ({
+			name: component.name,
+			description: component.description,
+			groupName: component.group,
+			monitorId: component.monitor_id,
+			manualStatus: component.manual_status,
+			showUptime: component.show_uptime,
+		})),
+	}
+}
+
+/** One org's daily rows since `firstDay` and current statuses for these monitors. Read-only. */
+const readMonitorData = Effect.fnUntraced(function* (
+	db: MapleDb,
+	orgId: OrgId,
+	monitorIds: ReadonlyArray<UptimeMonitorId>,
+	firstDay: string,
+) {
+	if (monitorIds.length === 0)
+		return { daily: [], statuses: new Map<UptimeMonitorId, UptimeMonitorStatus>() }
+	const daily = yield* db.run(
+		PG.from(UptimeMonitorDaily)
+			.select(($) => ({
+				monitorId: $.monitorId,
+				day: $.day,
+				checks: $.checks,
+				failures: $.failures,
+				downChecks: $.downChecks,
+			}))
+			.where(($) => [$.orgId.eq(orgId), PG.inList($.monitorId, monitorIds), $.day.gte(firstDay)]),
+	)
+	const states = yield* db.run(
+		PG.from(UptimeMonitorStates)
+			.select(($) => ({ monitorId: $.monitorId, status: $.status }))
+			.where(($) => [$.orgId.eq(orgId), PG.inList($.monitorId, monitorIds)]),
+	)
+	return { daily, statuses: new Map(states.map((state) => [state.monitorId, state.status])) }
+})
+
+const uniqueMonitorIds = (components: ReadonlyArray<{ readonly monitorId: UptimeMonitorId | null }>) => [
+	...new Set(components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId]))),
+]
+
 export interface StatusPageSnapshotBuilderApi {
 	/** Reads the page by id (a system path: every later query is scoped to its org). */
 	readonly build: (
 		pageId: StatusPageId,
 		nowMs: number,
 	) => Effect.Effect<StatusPageSnapshot, StatusPageGoneError | StatusPagePublishDbError>
+	/**
+	 * The snapshot a draft would publish, over the org's real uptime history; no incidents and no
+	 * writes. A monitor outside the org fails validation.
+	 */
+	readonly buildDraft: (
+		orgId: OrgId,
+		draft: StatusPageDraft,
+		nowMs: number,
+	) => Effect.Effect<StatusPageSnapshot, StatusPageValidationError | StatusPagePublishDbError>
 	/**
 	 * Newest scheduled check (the prober's pulse); null when none ran lately. Across all orgs for the
 	 * edge heartbeat (a system read), or one org's monitors when `orgId` is given.
@@ -311,11 +408,8 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 					)
 					if (page === undefined) return null
 					const orgId = page.orgId
-					const components = yield* db.run(
-						PG.from(StatusPageComponents, "c")
-							.leftJoin(UptimeMonitorStates, "s", (c, s) =>
-								c.monitorId.eq(s.monitorId).and(c.orgId.eq(s.orgId)),
-							)
+					const rows = yield* db.run(
+						PG.from(StatusPageComponents)
 							.select(($) => ({
 								id: $.id,
 								name: $.name,
@@ -324,31 +418,21 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 								monitorId: $.monitorId,
 								manualStatus: $.manualStatus,
 								showUptime: $.showUptime,
-								monitorStatus: $.s.status,
 								position: $.position,
 							}))
 							.where(($) => [$.orgId.eq(orgId), $.pageId.eq(pageId)])
 							.orderBy(["position", "asc"], ["id", "asc"]),
 					)
-					const monitorIds = components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId]))
-					const daily =
-						monitorIds.length === 0
-							? []
-							: yield* db.run(
-									PG.from(UptimeMonitorDaily)
-										.select(($) => ({
-											monitorId: $.monitorId,
-											day: $.day,
-											checks: $.checks,
-											failures: $.failures,
-											downChecks: $.downChecks,
-										}))
-										.where(($) => [
-											$.orgId.eq(orgId),
-											PG.inList($.monitorId, monitorIds),
-											$.day.gte(firstDay),
-										]),
-								)
+					const { daily, statuses } = yield* readMonitorData(
+						db,
+						orgId,
+						uniqueMonitorIds(rows),
+						firstDay,
+					)
+					const components = rows.map((row) => ({
+						...row,
+						monitorStatus: row.monitorId === null ? null : (statuses.get(row.monitorId) ?? null),
+					}))
 					const incidentFields = PG.from(StatusPageIncidents).select(($) => ({
 						id: $.id,
 						kind: $.kind,
@@ -431,6 +515,38 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 			return toSnapshot({ ...input, nowMs })
 		})
 
+		const buildDraft = Effect.fn("StatusPageSnapshotBuilder.buildDraft")(function* (
+			orgId: OrgId,
+			draft: StatusPageDraft,
+			nowMs: number,
+		) {
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.status_page.components": draft.components.length,
+			})
+			const firstDay = lastDays(nowMs, STATUS_PAGE_HISTORY_DAYS)[0] ?? ""
+			const monitorIds = uniqueMonitorIds(draft.components)
+			const { daily, statuses } = yield* dbExecute((db) =>
+				ensureMonitorsInOrg(db, orgId, monitorIds).pipe(
+					Effect.andThen(readMonitorData(db, orgId, monitorIds, firstDay)),
+				),
+			)
+			return toSnapshot({
+				page: { ...draft.page, id: DRAFT_PAGE_ID, breakGlassTokenSha256: null, revision: 0 },
+				components: draft.components.map((component, index) => ({
+					...component,
+					id: draftComponentId(index),
+					monitorStatus:
+						component.monitorId === null ? null : (statuses.get(component.monitorId) ?? null),
+				})),
+				daily,
+				incidents: [],
+				updates: [],
+				incidentComponents: [],
+				nowMs,
+			})
+		})
+
 		const probesSeenAt = Effect.fn("StatusPageSnapshotBuilder.probesSeenAt")(function* (
 			nowMs: number,
 			orgId?: OrgId,
@@ -455,7 +571,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 			return seen?.at ?? null
 		})
 
-		return { build, probesSeenAt }
+		return { build, buildDraft, probesSeenAt }
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

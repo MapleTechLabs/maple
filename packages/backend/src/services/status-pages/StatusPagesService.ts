@@ -35,7 +35,7 @@ import {
 	statusPageConfigVersion,
 	type StatusPageConfig,
 	type StatusPageConfigChangeSet,
-	UptimeMonitorPublicId,
+	type StatusPageDraftComponent,
 } from "@maple/domain/http/v2"
 import {
 	StatusPageComponentId,
@@ -66,6 +66,7 @@ import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
+import { ensureMonitorsInOrg } from "./monitors"
 import { bumpPage, queuePageRemoval, queueSlugRemoval } from "./outbox"
 
 export interface CreateStatusPageInput {
@@ -79,6 +80,10 @@ export interface CreateStatusPageInput {
 	readonly theme?: StatusPageTheme
 	readonly showPoweredBy?: boolean
 	readonly autoIncidents?: StatusPageAutoIncidents
+	/** Written with the page in its transaction; list order is display order. */
+	readonly components?: ReadonlyArray<StatusPageDraftComponent>
+	/** A draft is not published until `makePublic`. */
+	readonly draft?: boolean
 	readonly createdBy: UserId
 }
 
@@ -178,6 +183,8 @@ export interface StatusPagesServiceApi {
 		patch: UpdateStatusPageInput,
 	) => Effect.Effect<StatusPageRecord, PageWriteError | StatusPageSlugTakenError>
 	readonly remove: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<StatusPageId, PageError>
+	/** Clears `draft` so the publisher takes the page; a page already public is unchanged. */
+	readonly makePublic: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<StatusPageRecord, PageError>
 	/** Returns the new raw token; only its hash and last 6 characters are stored. */
 	readonly rotateBreakGlassToken: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<string, PageError>
 	readonly revokeBreakGlassToken: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<void, PageError>
@@ -401,6 +408,7 @@ const toPageRecord = (row: StatusPageRow): StatusPageRecord => ({
 	showPoweredBy: row.showPoweredBy,
 	autoIncidents: row.autoIncidents,
 	breakGlassTokenSuffix: row.breakGlassTokenSuffix,
+	draft: row.draft,
 	revision: row.revision,
 	publishedRevision: row.publishedRevision,
 	publishedAt: row.publishedAt,
@@ -612,25 +620,6 @@ const replaceIncidentComponents = Effect.fnUntraced(function* (
 })
 
 const encodeComponentId = Schema.encodeSync(StatusPageComponentPublicId)
-const encodeMonitorId = Schema.encodeSync(UptimeMonitorPublicId)
-
-/** Every monitor must belong to the org; the error names the first that does not by its public id. */
-const ensureMonitorsInOrg = Effect.fnUntraced(function* (
-	db: MapleDb,
-	orgId: OrgId,
-	monitorIds: ReadonlyArray<UptimeMonitorId>,
-) {
-	const [first, ...rest] = monitorIds
-	if (first === undefined) return
-	const found = yield* db.run(
-		PG.from(UptimeMonitors)
-			.select("id")
-			.where(($) => [$.orgId.eq(orgId), $.id.in_(first, ...rest)]),
-	)
-	const known = new Set(found.map((row) => row.id))
-	const missing = monitorIds.find((id) => !known.has(id))
-	if (missing !== undefined) return yield* invalid(`Unknown uptime monitor ${encodeMonitorId(missing)}`)
-})
 
 const contentOf = (
 	page: StatusPageRow,
@@ -747,12 +736,19 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const privacyUrl = yield* validateHttpsUrl(input.privacyUrl ?? null, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.termsUrl ?? null, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme ?? DEFAULT_STATUS_PAGE_THEME)
+				const draftComponents = input.components ?? []
+				if (draftComponents.length > MAX_STATUS_PAGE_COMPONENTS) return yield* tooManyComponents()
+				const components = yield* Effect.forEach(draftComponents, validateConfigComponent)
+				const monitorIds = [
+					...new Set(components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId]))),
+				]
 				const now = yield* Clock.currentTimeMillis
 				const id = StatusPageId.make(randomUUID())
 				yield* dbExecuteSlug(slug)((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							yield* ensureSlugFree(db, slug, null)
+							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
 							// A new page starts at revision 1 > published 0, so the publisher picks it up.
 							yield* db.run(
 								PG.insertInto(StatusPages).values({
@@ -770,6 +766,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									autoIncidents: input.autoIncidents ?? "off",
 									breakGlassTokenSha256: null,
 									breakGlassTokenSuffix: null,
+									draft: input.draft ?? false,
 									publishedAt: null,
 									lastPublishError: null,
 									createdBy: input.createdBy,
@@ -777,6 +774,22 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									updatedAt: now,
 								}),
 							)
+							const rows = components.map((component, position) => ({
+								id: StatusPageComponentId.make(randomUUID()),
+								orgId,
+								pageId: id,
+								name: component.name,
+								description: component.description,
+								groupName: component.groupName,
+								position,
+								monitorId: component.monitorId,
+								manualStatus: component.manualStatus,
+								showUptime: component.showUptime,
+								createdAt: now,
+								updatedAt: now,
+							}))
+							if (rows.length > 0)
+								yield* db.run(PG.insertInto(StatusPageComponents).values(rows))
 						}),
 					),
 				)
@@ -881,6 +894,29 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				)
 				if (removed.length === 0) return yield* pageNotFound(pageId)
 				return pageId
+			})
+
+			const makePublic = Effect.fn("StatusPagesService.makePublic")(function* (
+				orgId: OrgId,
+				pageId: StatusPageId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.status_page.id": pageId })
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* findPage(db, orgId, pageId)
+							const cleared = yield* db.run(
+								PG.update(StatusPages)
+									.set({ draft: false, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId), $.draft.eq(true)])
+									.returning("id"),
+							)
+							if (cleared.length > 0) yield* bumpPage(db, orgId, pageId)
+						}),
+					),
+				)
+				return yield* requirePage(orgId, pageId)
 			})
 
 			const rotateBreakGlassToken = Effect.fn("StatusPagesService.rotateBreakGlassToken")(function* (
@@ -1597,6 +1633,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				create,
 				update,
 				remove,
+				makePublic,
 				rotateBreakGlassToken,
 				revokeBreakGlassToken,
 				listComponents,

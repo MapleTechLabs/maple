@@ -122,6 +122,22 @@ describe("StatusPagePublisher.publish", () => {
 		),
 	)
 
+	it.effect("writes nothing for a draft page", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-draft", revision: 2, draft: true })
+				const result = yield* publisher.publish(pageId)
+				assert.isFalse(result.written)
+				const { kv, objects } = yield* store.contents
+				assert.strictEqual(kv.size + objects.size, 0)
+				const row = yield* readPage(testDb, pageId)
+				assert.strictEqual(row?.published_revision, "0")
+				assert.isNull(row?.published_at)
+			}),
+		),
+	)
+
 	it.effect("rewrites a slug route lost at the edge even when the content is unchanged", () =>
 		withPublisher(({ testDb, store, publisher }) =>
 			Effect.gen(function* () {
@@ -255,6 +271,24 @@ describe("StatusPagePublisher.sweep", () => {
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(lagging)))
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(stale)))
 				assert.isFalse(kv.has(StatusPageKeys.snapshot(current)))
+			}),
+		),
+	)
+
+	it.effect("never takes a draft page, however far its revision lags", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const draft = newPageId()
+				const live = newPageId()
+				yield* seedPage(testDb, { id: draft, slug: "sweep-draft", revision: 5, draft: true })
+				yield* seedPage(testDb, { id: live, slug: "sweep-live", revision: 1 })
+
+				const result = yield* publisher.sweep(NOW)
+				assert.strictEqual(result.due, 1)
+				const { kv } = yield* store.contents
+				assert.isTrue(kv.has(StatusPageKeys.snapshot(live)))
+				assert.isFalse(kv.has(StatusPageKeys.snapshot(draft)))
+				assert.isFalse(kv.has(StatusPageKeys.slug("sweep-draft")))
 			}),
 		),
 	)
