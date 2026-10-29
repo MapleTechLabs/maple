@@ -245,6 +245,23 @@ describe("AutumnClient request construction", () => {
 		})
 	})
 
+	it("cancelPlans cancels every plan in one multi-update request", async () => {
+		const { captured } = await withFetch({ body: JSON.stringify({}) }, (autumn) =>
+			autumn.cancelPlans(ORG, [
+				{ planId: "startup", action: "cancel_end_of_cycle" },
+				{ planId: "hobby", action: "cancel_immediately" },
+			]),
+		)
+		assert.strictEqual(captured?.url, "https://api.useautumn.com/v1/billing.multi_update")
+		assert.deepStrictEqual(captured?.body, {
+			customer_id: ORG,
+			updates: [
+				{ plan_id: "startup", cancel_action: "cancel_end_of_cycle" },
+				{ plan_id: "hobby", cancel_action: "cancel_immediately" },
+			],
+		})
+	})
+
 	it("strips trailing slashes from the configured API url", async () => {
 		let url: string | undefined
 		const fetch = (async (input) => {

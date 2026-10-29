@@ -6,6 +6,7 @@ import {
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
 import { OrgBillingLinks } from "@maple/db/tables"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -40,7 +41,8 @@ export interface BillingCustomerResolverApi {
 	) => Effect.Effect<BillingCustomerId, BillingManagedByBillingOrgError | BillingAccountPersistenceError>
 	/**
 	 * The org's billing org straight from Postgres, `None` when it bills as itself. For decisions
-	 * made right after a link changes, which the cache may not have seen yet.
+	 * made right after a link changes, which the cache may not have seen yet. Waits for a link
+	 * in flight to commit or roll back.
 	 */
 	readonly readLink: (orgId: OrgId) => Effect.Effect<Option.Option<OrgId>, BillingAccountPersistenceError>
 	/** Drops the cached answer for `orgId`, after its link changed. */
@@ -56,13 +58,25 @@ export class BillingCustomerResolver extends Context.Service<
 		const edgeCache = yield* EdgeCacheService
 		const dbExecute = makeDbExecute(database, "BillingCustomerResolver", toBillingAccountPersistenceError)
 
+		const linkQuery = (orgId: OrgId) =>
+			PG.from(OrgBillingLinks)
+				.select(($) => ({ billingOrgId: $.billingOrgId }))
+				.where(($) => [$.orgId.eq(orgId)])
+				.limit(1)
+
 		const readLink = (orgId: OrgId) =>
+			dbExecute((db) => db.run(linkQuery(orgId))).pipe(
+				Effect.map((rows) => rows[0]?.billingOrgId ?? null),
+			)
+
+		// Waits out a link in flight, which cancels the org's own plans before it commits: a
+		// decision made while it runs would see neither the old state nor the new one.
+		const readSettledLink = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db.run(
-					PG.from(OrgBillingLinks)
-						.select(($) => ({ billingOrgId: $.billingOrgId }))
-						.where(($) => [$.orgId.eq(orgId)])
-						.limit(1),
+				db.transaction(
+					db
+						.execute(Orm.sql`select pg_advisory_xact_lock_shared(hashtext('org_billing_links'))`)
+						.pipe(Effect.andThen(db.run(linkQuery(orgId)))),
 				),
 			).pipe(Effect.map((rows) => rows[0]?.billingOrgId ?? null))
 
@@ -89,7 +103,7 @@ export class BillingCustomerResolver extends Context.Service<
 			orgId: OrgId,
 		) {
 			// Uncached: a write the cache let through would start a plan the billing org never sees.
-			const payer = (yield* readLink(orgId)) ?? orgId
+			const payer = (yield* readSettledLink(orgId)) ?? orgId
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.billing.linked": payer !== orgId })
 			if (payer === orgId) return ownBillingCustomer(orgId)
 			return yield* new BillingManagedByBillingOrgError({
@@ -102,7 +116,7 @@ export class BillingCustomerResolver extends Context.Service<
 			billingOrgId,
 			customerFor: (orgId) => billingOrgId(orgId).pipe(Effect.map(ownBillingCustomer)),
 			requireOwnBilling,
-			readLink: (orgId) => readLink(orgId).pipe(Effect.map(Option.fromNullishOr)),
+			readLink: (orgId) => readSettledLink(orgId).pipe(Effect.map(Option.fromNullishOr)),
 			forget: (orgId) => edgeCache.invalidate({ bucket: BILLING_ORG_CACHE_BUCKET, key: orgId }),
 		} satisfies BillingCustomerResolverApi
 	}),

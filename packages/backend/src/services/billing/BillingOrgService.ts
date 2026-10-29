@@ -32,7 +32,7 @@ import {
 	decodeUpstream,
 	ensureOk,
 } from "@maple/backend/services/billing/autumn-client"
-import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { AutumnClient, type AutumnPlanCancel } from "@maple/backend/services/billing/autumn-http"
 import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import {
@@ -55,6 +55,9 @@ const LINK_REJECTION_MESSAGES = {
 		"That organization's plan does not include billing for other organizations. Contact us to turn it on.",
 	not_a_member: "That organization is not billed through this one.",
 } satisfies Record<BillingLinkRejection, string>
+
+// Bounds how long the link lock is held across Autumn calls; monitor writes wait on it.
+const CANCEL_TIMEOUT = "10 seconds"
 
 const reject = (reason: BillingLinkRejection) =>
 	Effect.fail(new BillingLinkRejectedError({ reason, message: LINK_REJECTION_MESSAGES[reason] }))
@@ -203,8 +206,10 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				})
 
 			/**
-			 * The org's own subscriptions stop at the end of the period it already paid for. Usage
-			 * from before the link stays on that final invoice; usage after it is the billing org's.
+			 * The org's own plans stop: a running one at the end of the period it already paid for,
+			 * a scheduled one before it starts. Usage from before the link stays on that final
+			 * invoice; usage after it is the billing org's. One Autumn call, so a failure cancels
+			 * nothing, and plans already cancelled are skipped, so a retry repeats nothing.
 			 */
 			const cancelOwnSubscriptions = Effect.fn("BillingOrgService.cancelOwnSubscriptions")(function* (
 				orgId: OrgId,
@@ -215,25 +220,23 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 						Effect.flatMap(ensureOk),
 						Effect.flatMap((response) => decodeUpstream(BillingCustomer, response)),
 					)
-				const running = customer.subscriptions.filter(
+				const cancels = customer.subscriptions.flatMap((sub): ReadonlyArray<AutumnPlanCancel> => {
 					// An auto-enabled free plan is Autumn's default, not something the org bought.
-					(sub) =>
-						(sub.status === "active" || sub.status === "trialing") &&
-						sub.canceledAt == null &&
-						sub.autoEnable !== true,
-				)
+					if (sub.autoEnable === true || sub.canceledAt != null) return []
+					if (sub.status === "scheduled")
+						return [{ planId: sub.planId, action: "cancel_immediately" }]
+					return sub.status === "active" || sub.status === "trialing"
+						? [{ planId: sub.planId, action: "cancel_end_of_cycle" }]
+						: []
+				})
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"maple.billing.cancelled_plans": running.map((sub) => sub.planId).join(","),
+					"maple.billing.cancelled_plans": cancels.map((cancel) => cancel.planId).join(","),
 				})
-				yield* Effect.forEach(
-					running,
-					(sub) =>
-						autumn
-							.cancelAtPeriodEnd(ownBillingCustomer(orgId), { planId: sub.planId })
-							.pipe(Effect.flatMap(classifyAutumn)),
-					{ discard: true },
-				)
+				if (cancels.length === 0) return
+				yield* autumn
+					.cancelPlans(ownBillingCustomer(orgId), cancels)
+					.pipe(Effect.flatMap(classifyAutumn), Effect.asVoid)
 			})
 
 			/**
@@ -313,6 +316,10 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				}
 
 				const now = yield* Clock.currentTimeMillis
+				// The cancel runs inside the transaction, under the lock: the link commits only once the
+				// org's own plans are cancelled, and a failed cancel leaves no link behind. A concurrent
+				// retry waits on the lock and then finds the work done. The webhook for the cancel reads
+				// the link under the same lock (`readLink`), so it sees this link once it commits.
 				const written = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
@@ -322,6 +329,17 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 							)
 							const current = yield* checkLinkable(db, orgId, payer)
 							const monitors = yield* countMonitors(db, orgId)
+							yield* cancelOwnSubscriptions(orgId).pipe(
+								Effect.timeoutOrElse({
+									duration: CANCEL_TIMEOUT,
+									orElse: () =>
+										Effect.fail(
+											new BillingAccountPersistenceError({
+												message: "Cancelling the organization's own plan timed out",
+											}),
+										),
+								}),
+							)
 							if (current !== null) return { row: current, monitors }
 							const [inserted] = yield* db.run(
 								PG.insertInto(OrgBillingLinks)
@@ -345,34 +363,6 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				}
 				yield* forgetOrg(orgId)
 
-				// After the link commits, so a refused link never cancels anything. Both steps are safe
-				// to repeat: a retry of the same link lands here again and finishes them. A link this
-				// call wrote is taken back when the cancel fails, so the org is never billed twice.
-				yield* cancelOwnSubscriptions(orgId).pipe(
-					Effect.tapError(() =>
-						row.createdAt === now
-							? dbExecute((db) =>
-									db.run(
-										PG.deleteFrom(OrgBillingLinks).where(($) => [
-											$.orgId.eq(orgId),
-											$.createdAt.eq(now),
-										]),
-									),
-								).pipe(
-									Effect.andThen(forgetOrg(orgId)),
-									Effect.catch((error) =>
-										Effect.logError("Could not take back a half-made billing link").pipe(
-											Effect.annotateLogs({
-												orgId,
-												billingOrgId: payer,
-												error: error.message,
-											}),
-										),
-									),
-								)
-							: Effect.void,
-					),
-				)
 				yield* trackMonitorMove(orgId, written.monitors, {
 					from: orgId,
 					to: payer,
@@ -393,8 +383,8 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 					})
 				}
 				// Read, checked, counted and deleted under the exclusive link lock, so a relink racing
-				// this unlink is never the row removed. The tracks after it cannot fail: a failed unlink
-				// changes nothing and a retry finishes it.
+				// this unlink is never the row removed. The tracks after the commit never fail; an
+				// invocation that dies between the two leaves the monitor count on the payer.
 				const { link, count } = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {

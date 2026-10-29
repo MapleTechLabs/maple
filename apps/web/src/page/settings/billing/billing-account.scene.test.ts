@@ -125,6 +125,38 @@ describe("billing account", () => {
 		)
 	})
 
+	test("a failed unlink reads the account again and shows the unlink that landed", () => {
+		const read = run(init(true, false, true).model, accountRead(member))
+		const opened = step(read, Message.ClickedUnlink({ orgId: orgId("org_acme") }))
+		const confirmed = step(opened.model, Message.ClickedConfirmUnlink())
+		const failed = step(
+			confirmed.model,
+			Message.CompletedUnlink({
+				isSelf: true,
+				result: Result.fail({ rejection: null, failure: toLoadFailure(new Error("timeout")) }),
+			}),
+		)
+		expect(names(failed.commands)).toContain("FetchBillingAccount")
+		const reread = update(
+			failed.model,
+			accountRead(
+				account({
+					orgId: "org_member",
+					role: "standalone",
+					billingOrg: { ...acme, orgId: "org_member" },
+					members: [],
+				}),
+			),
+			customer,
+			NOW,
+		)
+		// The link was gone after all: billing reloads as this org's own.
+		expect(reread.isCustomerStale).toBe(true)
+		expect(names(reread.step.commands)).toEqual(
+			expect.arrayContaining(["FetchBillingInvoices", "FetchBillingProfile", "FetchBillingOrgChoices"]),
+		)
+	})
+
 	test("a billing org lists the orgs it pays for with this cycle's volume", () => {
 		const read = step(init(true, false, true).model, accountRead(payer))
 		expect(names(read.commands)).toEqual(

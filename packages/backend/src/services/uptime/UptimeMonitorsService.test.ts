@@ -779,8 +779,13 @@ describe("UptimeMonitorsService", () => {
 
 	it.effect("counts a billing org's members against its one allowance", () => {
 		const testDb = createTestDb(trackedDbs)
+		const capsRead: Array<string> = []
 		const allowance = Layer.succeed(UptimeMonitorAllowance, {
-			limit: () => Effect.succeed(Option.some(2)),
+			limit: (customerId) =>
+				Effect.sync(() => {
+					capsRead.push(customerId)
+					return Option.some(2)
+				}),
 			track: () => Effect.void,
 		})
 		return Effect.gen(function* () {
@@ -805,6 +810,8 @@ describe("UptimeMonitorsService", () => {
 					"@maple/http/errors/UptimeMonitorLimitReachedError",
 				],
 			)
+			// Every create, the member's too, is capped by the plan of the org that pays.
+			assert.deepStrictEqual(capsRead, [ORG, ORG, ORG, ORG])
 		}).pipe(Effect.provide(makeLayer(testDb, { allowance })))
 	})
 

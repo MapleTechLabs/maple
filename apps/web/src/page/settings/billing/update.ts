@@ -734,7 +734,17 @@ export const update = (
 		},
 		CompletedFetchAccount: ({ result }) =>
 			Result.match(result, {
-				onSuccess: (account) => same(applyAccount(model, account, false)),
+				onSuccess: (account) => {
+					const previous = accountOf(model)
+					// A re-read after a failed link or unlink can find that it landed after all.
+					const moved =
+						previous !== null &&
+						(previous.role !== account.role ||
+							previous.billingOrg.orgId !== account.billingOrg.orgId)
+					return moved
+						? staleCustomer(afterLinkChange(model, account))
+						: same(applyAccount(model, account, false))
+				},
 				onFailure: () =>
 					same({ model: { ...model, account: AsyncData.settle(model.account, result) } }),
 			}),
@@ -778,8 +788,9 @@ export const update = (
 						outMessage: toast("success", `Now billed through ${orgName}`),
 					})
 				},
+				// Either way, read where billing stands now: an unexplained failure may have landed
+				// after all, and a rejection can mean another session changed the link.
 				onFailure: ({ rejection, failure }) =>
-					// An unexplained failure may have landed half-way: read where billing stands now.
 					rejection === null
 						? same({
 								...closed,
@@ -790,7 +801,10 @@ export const update = (
 									failure.message,
 								),
 							})
-						: same({ ...closed, model: { ...closed.model, linkRejection: rejection } }),
+						: same({
+								model: { ...closed.model, linkRejection: rejection },
+								commands: [...(closed.commands ?? []), FetchAccount()],
+							}),
 			})
 		},
 		ClickedUnlink: ({ orgId }) =>
@@ -831,9 +845,12 @@ export const update = (
 					// Only this org's own payer changes when it leaves; a removed member's is not ours.
 					return isSelf ? staleCustomer(step) : same(step)
 				},
+				// The unlink may have committed before the failure, or another session may have
+				// removed the link already: read where billing stands now.
 				onFailure: ({ rejection, failure }) =>
 					same({
 						...closed,
+						commands: [...(closed.commands ?? []), FetchAccount()],
 						outMessage: toast(
 							"error",
 							"Couldn't stop the billing link",

@@ -63,6 +63,12 @@ export type CustomerExpand =
 	| "flags.feature"
 	| "billing_controls.auto_topups.purchase_limit"
 
+export interface AutumnPlanCancel {
+	readonly planId: string
+	/** A running plan ends with the period it paid for; a scheduled one never starts. */
+	readonly action: "cancel_end_of_cycle" | "cancel_immediately"
+}
+
 type AutumnRoute =
 	| "getOrCreateCustomer"
 	| "aggregateEvents"
@@ -71,6 +77,7 @@ type AutumnRoute =
 	| "openCustomerPortal"
 	| "listPlans"
 	| "updateSubscription"
+	| "updateSubscriptions"
 	| "updateCustomer"
 
 const ROUTE_PATHS: Record<AutumnRoute, string> = {
@@ -81,6 +88,7 @@ const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	openCustomerPortal: "/v1/billing.open_customer_portal",
 	listPlans: "/v1/plans.list",
 	updateSubscription: "/v1/billing.update",
+	updateSubscriptions: "/v1/billing.multi_update",
 	updateCustomer: "/v1/customers.update",
 } satisfies Record<AutumnRoute, string>
 
@@ -329,10 +337,10 @@ export interface AutumnClientApi {
 		customerId: BillingCustomerId,
 		options: { readonly planId: string; readonly rewardId: string },
 	) => AutumnCall
-	/** Cancel the customer's `planId` subscription at the end of its current period. */
-	readonly cancelAtPeriodEnd: (
+	/** Cancels several of the customer's plans in one request: all of them, or none. */
+	readonly cancelPlans: (
 		customerId: BillingCustomerId,
-		options: { readonly planId: string },
+		cancels: ReadonlyArray<AutumnPlanCancel>,
 	) => AutumnCall
 	/**
 	 * Customer billing controls live on the canonical REST surface — `autumnHandler`
@@ -516,11 +524,13 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 						discounts: [{ reward_id: rewardId }],
 					}),
 
-				cancelAtPeriodEnd: (customerId, { planId }) =>
-					call("updateSubscription", {
+				cancelPlans: (customerId, cancels) =>
+					call("updateSubscriptions", {
 						customer_id: customerId,
-						plan_id: planId,
-						cancel_action: "cancel_end_of_cycle",
+						updates: cancels.map((cancel) => ({
+							plan_id: cancel.planId,
+							cancel_action: cancel.action,
+						})),
 					}),
 
 				updateCustomerBillingControls: (customerId, controls) =>

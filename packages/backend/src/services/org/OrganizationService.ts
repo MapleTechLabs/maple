@@ -22,6 +22,7 @@ import {
 	organizationRegionMetadata,
 	organizationRegionOpen,
 } from "@maple/domain/organization-regions"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	Actors,
@@ -530,40 +531,46 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				yield* requireAdmin(roles, "delete the organization")
-				// Its members would be left billed to a customer nobody can reach.
-				const members = yield* dbExecute((db) =>
-					db.run(
-						PG.from(OrgBillingLinks)
-							.select(($) => ({ orgId: $.orgId }))
-							.where(($) => [$.billingOrgId.eq(orgId)])
-							.limit(1),
+				// Under the link lock, like every link write and monitor create or delete: the member
+				// check, the monitor count and the link's removal see one state. Once the link is gone,
+				// monitors made before the purge bill to the org itself.
+				const { link, monitorCount } = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
+							)
+							// Its members would be left billed to a customer nobody can reach.
+							const members = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ orgId: $.orgId }))
+									.where(($) => [$.billingOrgId.eq(orgId)])
+									.limit(1),
+							)
+							if (members.length > 0) {
+								return yield* new OrganizationForbiddenError({
+									message:
+										"Other organizations are billed through this one. Unlink them in billing settings before deleting it.",
+								})
+							}
+							// A member's monitors count against its billing org; purging them must give the count back.
+							const [current] = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ billingOrgId: $.billingOrgId }))
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							)
+							if (current === undefined) return { link: current, monitorCount: 0 }
+							const [counted] = yield* db.run(
+								PG.from(UptimeMonitors)
+									.select(() => ({ count: PG.count() }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							yield* db.run(PG.deleteFrom(OrgBillingLinks).where(($) => [$.orgId.eq(orgId)]))
+							return { link: current, monitorCount: Number(counted?.count ?? 0) }
+						}),
 					),
 				)
-				if (members.length > 0) {
-					return yield* new OrganizationForbiddenError({
-						message:
-							"Other organizations are billed through this one. Unlink them in billing settings before deleting it.",
-					})
-				}
-				// A member's monitors count against its billing org; purging them must give the count back.
-				const [link] = yield* dbExecute((db) =>
-					db.run(
-						PG.from(OrgBillingLinks)
-							.select(($) => ({ billingOrgId: $.billingOrgId }))
-							.where(($) => [$.orgId.eq(orgId)])
-							.limit(1),
-					),
-				)
-				const monitorCount =
-					link === undefined
-						? 0
-						: yield* dbExecute((db) =>
-								db.run(
-									PG.from(UptimeMonitors)
-										.select(() => ({ count: PG.count() }))
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-							).pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
 				yield* purgeOrgScopedRows(orgId)
 				if (link !== undefined && monitorCount > 0) {
 					yield* trackFeatureUsage({

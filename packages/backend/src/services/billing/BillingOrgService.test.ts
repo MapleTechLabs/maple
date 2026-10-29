@@ -33,7 +33,11 @@ interface World {
 	elsewhere: Set<string>
 	/** Each org's own subscriptions, as Autumn returns them. */
 	subscriptions: Map<string, ReadonlyArray<Record<string, unknown>>>
-	cancelled: Array<{ customerId: string; planId: string }>
+	cancelled: Array<{ customerId: string; planId: string; action: string }>
+	/** Autumn calls that cancel plans, each one request. */
+	cancelCalls: number
+	/** Fail every cancel request, the way an Autumn outage would. */
+	cancelFails: boolean
 	/** Every usage track sent to Autumn: customer, feature, value. */
 	tracked: Array<{ customer: string; feature: string; value: number }>
 }
@@ -48,6 +52,8 @@ const makeWorld = (overrides: Partial<World> = {}): World => ({
 	elsewhere: new Set(),
 	subscriptions: new Map(),
 	cancelled: [],
+	cancelCalls: 0,
+	cancelFails: false,
 	tracked: [],
 	...overrides,
 })
@@ -70,14 +76,18 @@ const layerFor = (testDb: TestDb, world: World) =>
 			Layer.mergeAll(
 				Layer.succeed(AutumnClient, {
 					getOrCreateCustomer: (customerId) => Effect.sync(() => customer(world, customerId)),
-					cancelAtPeriodEnd: (customerId, { planId }) =>
-						Effect.sync(() => {
-							world.cancelled.push({ customerId, planId })
+					cancelPlans: (customerId, cancels) =>
+						Effect.sync((): AutumnResult => {
+							world.cancelCalls += 1
+							if (world.cancelFails) return { statusCode: 503, response: { message: "down" } }
+							world.cancelled.push(...cancels.map((cancel) => ({ customerId, ...cancel })))
 							// Autumn stamps the cancellation, so the next read skips it.
 							world.subscriptions.set(
 								customerId,
 								(world.subscriptions.get(customerId) ?? []).map((sub) =>
-									sub.planId === planId ? { ...sub, canceledAt: 1 } : sub,
+									cancels.some((cancel) => cancel.planId === sub.planId)
+										? { ...sub, canceledAt: 1 }
+										: sub,
 								),
 							)
 							return { statusCode: 200, response: {} }
@@ -209,7 +219,7 @@ describe("BillingOrgService", () => {
 		),
 	)
 
-	it.effect("cancels the linked org's own running plans at period end, once", () => {
+	it.effect("cancels the linked org's own plans in one request, once", () => {
 		const world = makeWorld({
 			subscriptions: new Map([
 				[
@@ -218,6 +228,8 @@ describe("BillingOrgService", () => {
 						{ planId: "startup", status: "active" },
 						{ planId: "openrouter_byok", status: "active", addOn: true },
 						{ planId: "old", status: "active", canceledAt: 1 },
+						// A downgrade the org scheduled before linking would start on its own card.
+						{ planId: "hobby", status: "scheduled" },
 						{ planId: "older", status: "expired" },
 						{ planId: "free", status: "active", autoEnable: true },
 					],
@@ -231,9 +243,58 @@ describe("BillingOrgService", () => {
 				// The same link again is a no-op, not a second round of cancellations.
 				yield* linkMember()
 				assert.deepStrictEqual(world.cancelled, [
-					{ customerId: MEMBER, planId: "startup" },
-					{ customerId: MEMBER, planId: "openrouter_byok" },
+					{ customerId: MEMBER, planId: "startup", action: "cancel_end_of_cycle" },
+					{ customerId: MEMBER, planId: "openrouter_byok", action: "cancel_end_of_cycle" },
+					{ customerId: MEMBER, planId: "hobby", action: "cancel_immediately" },
 				])
+				assert.strictEqual(world.cancelCalls, 1)
+			}),
+		)
+	})
+
+	it.effect("leaves no link behind when the cancel fails, and a retry finishes it", () => {
+		const world = makeWorld({
+			cancelFails: true,
+			subscriptions: new Map([[MEMBER, [{ planId: "startup", status: "active" }]]]),
+		})
+		return run(
+			world,
+			Effect.gen(function* () {
+				const resolver = yield* BillingCustomerResolver
+				const failed = yield* Effect.exit(linkMember())
+				assert.isTrue(Exit.isFailure(failed))
+				assert.isTrue(Option.isNone(yield* resolver.readLink(MEMBER)))
+				// No link, so the member's monitors never left it.
+				assert.deepStrictEqual(world.tracked, [])
+
+				world.cancelFails = false
+				assert.strictEqual((yield* linkMember()).role, "member")
+				assert.deepStrictEqual(world.cancelled, [
+					{ customerId: MEMBER, planId: "startup", action: "cancel_end_of_cycle" },
+				])
+			}),
+			(testDb) => seedOrgRow(testDb, "uptime_monitors", "org_id", MEMBER).pipe(Effect.orDie),
+		)
+	})
+
+	it.effect("serialises concurrent links: one cancel, one link, one monitor move", () => {
+		const world = makeWorld({
+			subscriptions: new Map([[MEMBER, [{ planId: "startup", status: "active" }]]]),
+		})
+		return run(
+			world,
+			Effect.gen(function* () {
+				const results = yield* Effect.all([linkMember(), linkMember()], { concurrency: 2 })
+				assert.deepStrictEqual(
+					results.map((account) => account.role),
+					["member", "member"],
+				)
+				assert.strictEqual(world.cancelCalls, 1)
+				const service = yield* BillingOrgService
+				assert.deepStrictEqual(
+					(yield* service.members(PAYER)).map((row) => row.orgId),
+					[MEMBER],
+				)
 			}),
 		)
 	})

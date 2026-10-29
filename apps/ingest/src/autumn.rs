@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tracing::{error, info, warn, Instrument};
+use tracing::{debug, error, info, warn, Instrument};
 use uuid::Uuid;
 
 const AUTUMN_API_VERSION: &str = "2.3.0";
@@ -86,17 +86,24 @@ impl BillingOrgResolver {
                 let looked_up = self
                     .customers
                     .try_get_with_by_ref(org_id, async {
-                        tokio::time::timeout(
+                        let customer_id = tokio::time::timeout(
                             BILLING_LOOKUP_TIMEOUT,
                             self.lookup.fetch_billing_org_id(org_id),
                         )
                         .await
-                        .map_err(|_| "billing org lookup timed out".to_owned())?
-                        .map(|linked| linked.unwrap_or_else(|| org_id.to_owned()))
+                        .map_err(|_| "billing org lookup timed out".to_owned())??
+                        .unwrap_or_else(|| org_id.to_owned());
+                        // Only on a real lookup: a cache hit on the request path writes nothing.
+                        self.last_known
+                            .insert(org_id.to_owned(), customer_id.clone())
+                            .await;
+                        Ok::<_, String>(customer_id)
                     })
                     .await
                     .map_err(|error| error.as_ref().clone());
                 if let Err(error) = &looked_up {
+                    // Once per failure window, not per request.
+                    warn!(org_id, error = %error, "Billing org lookup failed");
                     self.recent_failures
                         .insert(org_id.to_owned(), error.clone())
                         .await;
@@ -105,15 +112,11 @@ impl BillingOrgResolver {
             }
         };
         match fresh {
-            Ok(customer_id) => {
-                self.last_known
-                    .insert(org_id.to_owned(), customer_id.clone())
-                    .await;
-                Ok(customer_id)
-            }
+            Ok(customer_id) => Ok(customer_id),
             Err(error) => match self.last_known.get(org_id).await {
                 Some(stale) => {
-                    warn!(org_id, error = %error, "Billing org lookup failed; serving last-known");
+                    // Per request while Postgres is down; the failure is logged once per window above.
+                    debug!(org_id, error = %error, "Billing org lookup failed; serving last-known");
                     Ok(stale)
                 }
                 None => Err(error),
@@ -551,7 +554,7 @@ impl AutumnEntitlements {
             Err(error) => {
                 // A sub-org has no plan of its own, so checking it as itself
                 // would 402 its data. Fail open like any other billing outage.
-                warn!(
+                debug!(
                     org_id,
                     feature_id,
                     error = %error,

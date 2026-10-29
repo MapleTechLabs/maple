@@ -37,12 +37,15 @@ caller is an admin of both orgs, that both are in the same data region, and the 
 
 ## What linking does
 
-- The link is written first. Then the member's own running subscriptions (not an auto-enabled free
-  plan) are cancelled at the end of the period it already paid for. Usage from before the link
-  stays on that final invoice; usage after it is the billing org's. A retried link finishes both
-  steps; neither repeats.
+- The member's own plans are cancelled inside the link's transaction, under the link lock, in one
+  Autumn request (`billing.multi_update`): a running plan at the end of the period it already paid
+  for, a scheduled one (a downgrade booked earlier) before it starts. An auto-enabled free plan is
+  left alone. The link commits only after that request succeeds, so a failed cancel leaves no link.
+  Usage from before the link stays on the member's final invoice; usage after it is the billing
+  org's. A retried link skips plans already cancelled, and a concurrent one waits on the lock.
 - The `billing.updated` webhooks for those cancellations post no cancellation review and emit no
-  plan events: billing moved, the customer did not churn.
+  plan events: billing moved, the customer did not churn. The webhook reads the link under the
+  link lock, so it waits for the link to commit before deciding.
 - The member's uptime monitor count moves to the billing org's customer (continuous-use meter),
   keyed by the link so a retry moves it once. The monitor cap counts the whole pool: the billing
   org's monitors and every member's.
@@ -59,5 +62,10 @@ A billing org cannot be deleted while it has members; a member's link is purged 
 - A link takes up to 60s to reach every colo and the ingest gateway (both caches).
 - Plan webhooks (`billing.updated`) carry the billing org's id, so plan events land on it.
 - The uptime monitor move is fire-and-forget like every usage track: if Autumn drops one half, the
-  counts drift until reconciled by hand.
+  counts drift until reconciled by hand. It runs after the commit, so an invocation that dies in
+  between leaves the count where it was; nothing finishes it later.
+- The cancel request can time out after Autumn applied it (the link waits 10s, holding the link
+  lock). The org is then unlinked with its plans ending; linking again finishes the job.
+- An org deleted while someone links it, or links to it, can leave a link row to a deleted org.
+  The delete checks and removes links under the lock, but the rest of its purge does not.
 - Links never span regions: usage meters and Postgres rows are per region.

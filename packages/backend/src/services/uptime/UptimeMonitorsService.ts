@@ -655,9 +655,6 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const failuresToDown = yield* validateFailuresToDown(
 					input.failuresToDown ?? DEFAULT_FAILURES_TO_DOWN,
 				)
-				// Read before the transaction; the count is checked against it under the org lock.
-				const limit = yield* allowance.limit(orgId)
-
 				const now = yield* Clock.currentTimeMillis
 				const id = UptimeMonitorId.make(randomUUID())
 				const ruleId = AlertRuleId.make(randomUUID())
@@ -670,7 +667,9 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							// One lock for the count and the rule checks: concurrent creates cannot both pass a full plan.
 							yield* lockOrgMonitors(db, orgId)
 							const pooled = yield* countPooledMonitors(db, orgId)
-							yield* ensureWithinLimit(limit, pooled.count)
+							// The cap of the payer read under the link lock: a link landing a moment ago
+							// changes both the pool and whose plan caps it.
+							yield* ensureWithinLimit(yield* allowance.limit(pooled.payer), pooled.count)
 							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
 							yield* db.run(
 								PG.insertInto(AlertRules).values({
