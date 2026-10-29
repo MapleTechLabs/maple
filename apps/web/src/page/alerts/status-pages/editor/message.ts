@@ -1,5 +1,6 @@
 import { StatusPageComponentId, StatusPageIncidentId, StatusPageIncidentKind } from "@maple/domain"
 import {
+	StatusPageConfig,
 	V2StatusPage,
 	V2StatusPageBreakGlassToken,
 	V2StatusPageComponent,
@@ -89,5 +90,13 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeletePage: {},
 	CompletedDeletePage: { result: outcome(Schema.Void) },
 	GotDeletePageDialogMessage: { message: Dialog.Message },
+	// JSON
+	ClickedEditJson: {},
+	ChangedJson: { value: Schema.String },
+	ClickedResetJson: {},
+	ClickedCancelJson: {},
+	ClickedApplyJson: {},
+	CompletedApplyJson: { result: outcome(StatusPageConfig) },
+	GotJsonCopyMessage: { message: CopyButton.Message },
 })
 export type Message = typeof Message.Type

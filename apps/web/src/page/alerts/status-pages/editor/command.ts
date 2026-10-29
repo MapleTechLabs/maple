@@ -1,5 +1,6 @@
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
+	StatusPageConfig,
 	V2StatusPageComponentCreateParams,
 	V2StatusPageIncidentCreateParams,
 	V2StatusPageIncidentPostUpdateParams,
@@ -9,6 +10,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readIsAdmin } from "../../shared/commands"
 import {
+	applyPageConfig,
 	createIncident,
 	deleteComponent,
 	deletePage,
@@ -180,6 +182,16 @@ export const RevokeToken = Command.define("RevokeStatusPageBreakGlassToken", {
 		revokeBreakGlass(pageId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedRevokeToken({ result })),
+		),
+})
+
+export const ApplyConfig = Command.define("ApplyStatusPageConfig", {
+	args: { pageId: StatusPageId, config: StatusPageConfig },
+	messages: [Message.CompletedApplyJson],
+	execute: ({ pageId, config }) =>
+		applyPageConfig(pageId, config).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedApplyJson({ result })),
 		),
 })
 

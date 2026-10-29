@@ -72,5 +72,11 @@ export const Model = Schema.Struct({
 	tokenCopy: CopyButton.Model,
 	deletePageDialog: Dialog.Model,
 	isDeletingPage: Schema.Boolean,
+	// JSON
+	/** The edited document; `null` while the tab shows the page as saved. */
+	jsonDraft: Schema.NullOr(Schema.String),
+	isApplyingJson: Schema.Boolean,
+	jsonFailure: Schema.NullOr(LoadFailure),
+	jsonCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type

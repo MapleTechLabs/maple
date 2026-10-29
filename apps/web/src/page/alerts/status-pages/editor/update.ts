@@ -56,12 +56,13 @@ import {
 	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
+import { appliedJson, applyJson, cancelJson, changeJson, editJson, updateJsonCopy } from "./update-json"
 
 type EditorRoute = Extract<AppRoute, { readonly _tag: "AlertsStatusPage" }>
 
 /** Unknown `tab` values open Components, so an old or mistyped link still lands. */
 export const resolveTab = (tab: string | undefined): EditorTab =>
-	tab === "incidents" || tab === "settings" ? tab : "components"
+	tab === "incidents" || tab === "settings" || tab === "json" ? tab : "components"
 
 export const init = (route: EditorRoute, context: PageContext): Return => {
 	const model: Model = {
@@ -104,6 +105,10 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		tokenCopy: CopyButton.init(),
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
+		jsonDraft: null,
+		isApplyingJson: false,
+		jsonFailure: null,
+		jsonCopy: CopyButton.init(),
 	}
 	const reads = chain(
 		model,
@@ -240,4 +245,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			whenIdle(model.isDeletingPage, model, () =>
 				deletePageDialog(model, Dialog.update(model.deletePageDialog, child)),
 			),
+		// JSON
+		ClickedEditJson: () => editJson(model),
+		ChangedJson: ({ value }) => changeJson(model, value),
+		ClickedResetJson: () => editJson(model),
+		ClickedCancelJson: () => cancelJson(model),
+		ClickedApplyJson: () => applyJson(model),
+		CompletedApplyJson: ({ result }) => appliedJson(model, result, context),
+		GotJsonCopyMessage: ({ message: child }) => updateJsonCopy(model, child),
 	})
