@@ -152,6 +152,7 @@ import { chartImageUrl, chartWindow, loadChartSeries } from "./alert-chart-serie
 import { systemTenant } from "./system-tenant"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
 import { ChatAlertPoster } from "./ChatAlertPoster"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
@@ -624,6 +625,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				httpClient,
 				email,
 				postChatAlert: chatAlertPoster.post,
+				linear: yield* LinearIssueTracker,
 			})
 			const {
 				hydrateDestination,
@@ -5205,6 +5207,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 		Layer.provide(
 			Layer.mergeAll(
 				ChatAlertPoster.layer,
+				LinearIssueTracker.layer,
 				MobilePushService.layer,
 				OrgClickHouseSettingsService.layer,
 				WarehouseQueryService.layer,

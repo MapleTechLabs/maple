@@ -80,7 +80,8 @@ export const validationIssues = (form: RuleForm): ReadonlyArray<string> => {
 	const issues: Array<string> = []
 	if (form.name.trim().length === 0) issues.push("Rule name")
 	if (!isFilledNumber(form.threshold)) issues.push("Threshold")
-	if (isRangeComparator(form.comparator) && !isFilledNumber(form.thresholdUpper)) issues.push("Upper threshold")
+	if (isRangeComparator(form.comparator) && !isFilledNumber(form.thresholdUpper))
+		issues.push("Upper threshold")
 	const timing: ReadonlyArray<readonly [string, string]> = [
 		["Window", form.windowMinutes],
 		["Checks to fire", form.consecutiveBreachesRequired],
@@ -164,7 +165,9 @@ export const groupBySummary = (form: RuleForm): string | null => {
 }
 
 /** `destinationTarget`: where a destination delivers, ahead of its name. */
-export const destinationTarget = (destination: AlertDestinationDocument): { primary: string; secondary: string } => {
+export const destinationTarget = (
+	destination: AlertDestinationDocument,
+): { primary: string; secondary: string } => {
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined).label
 	const primary =
 		destination.type === "chat" || destination.type === "hazel-oauth"
@@ -173,7 +176,9 @@ export const destinationTarget = (destination: AlertDestinationDocument): { prim
 				? destination.summary.replace(/^POST /, "")
 				: destination.type === "email" || destination.type === "telegram"
 					? destination.summary
-					: destination.name
+					: destination.type === "linear"
+						? destination.summary.replace(/^Linear · /, "")
+						: destination.name
 	const where = destination.type === "chat" ? destination.summary : null
 	const secondary = [provider, where, primary.includes(destination.name) ? null : destination.name]
 		.filter((part): part is string => part !== null && part.length > 0)

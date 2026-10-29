@@ -186,7 +186,7 @@ export const INTEGRATION_FEEDS = {
 		"query insights and deploy-request events",
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
-	chat: ["the Maple bot in chat workspaces"],
+	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
 } satisfies Record<IntegrationProvider, ReadonlyArray<string>>
 
 /** The newest attempt decides: an error newer than the last success is failing. */

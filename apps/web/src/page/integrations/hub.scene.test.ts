@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
 import { integrationOfSearch } from "./catalog"
+import { cardStatusOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -313,6 +314,34 @@ describe("linear card", () => {
 			expectView(text("Revoked")).toExist(),
 			expectView(role("button", { name: "Reconnect" })).toExist(),
 		)
+	})
+
+	test("a member cannot start a Linear connect from the header or the card", () => {
+		const member = steps(withLinear("absent"), [Message.CompletedLoadSession({ isAdmin: false })])
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("button", { name: "Connect Linear" })).toBeDisabled(),
+		)
+		expect(pageUpdate(member, Message.ClickedConnect()).model.connect.active).toBeNull()
+	})
+
+	test("a connected workspace without a name reads Connected", () => {
+		const model = entered({ integration: "linear" })
+		const unnamed = steps(model, [
+			Message.CompletedLoadLinear({
+				key: model.statuses.linear.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(LinearIntegrationStatus)({
+						connected: true,
+						workspaceName: "",
+						connectedByUserId: null,
+						revoked: false,
+					}),
+				),
+			}),
+		])
+		expect(cardStatusOf(unnamed.statuses, "linear", 0)?.label).toBe("Connected")
 	})
 
 	test("disconnect toasts and re-reads the Linear status", () => {
