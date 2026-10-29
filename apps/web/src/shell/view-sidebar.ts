@@ -5,7 +5,8 @@ import { initialsFrom } from "@maple/ui/lib/initials"
 import { hasMultipleRegions } from "../lib/region"
 import { Option, Record } from "effect"
 import { AsyncData } from "foldkit"
-import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import type { ChildAttribute, Html } from "foldkit/html"
+import { ClerkOrgMenuBinding, type ShellViewBuilder } from "./composition"
 import { warmAvatarTone } from "../ui/avatar-tone"
 import { avatarFallback, badge, kbd } from "../ui/display"
 import { menuTriggerAttributes } from "../ui/dropdown-menu"
@@ -21,7 +22,6 @@ import {
 import { isSameMenu, triggerIdOf } from "./menus"
 import { Menu, Message } from "./message"
 import type { Model, ShellClerk } from "./model"
-import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
 
 /** The selected row's rail: a 2px lane every row reserves, painted only when active. */
@@ -42,7 +42,7 @@ export const NO_TIP: RailTip = () => []
 export const isMenuOpen = (model: Model, menu: Menu): boolean =>
 	Option.exists(model.openMenu, (open) => isSameMenu(open.menu, menu))
 
-export const triggerFor = (h: HtmlBuilder<Message>, model: Model, menu: Menu) =>
+export const triggerFor = (h: ShellViewBuilder, model: Model, menu: Menu) =>
 	menuTriggerAttributes(h, {
 		id: triggerIdOf(menu),
 		isOpen: isMenuOpen(model, menu),
@@ -54,7 +54,7 @@ export const pinnedNamespaceOf = (model: Model): Option.Option<string> =>
 	Option.flatMap(model.maybeOrgId, (orgId) => Record.get(model.pinnedNamespaces, orgId))
 
 /** `SelfHostedOrgSwitcher`'s trigger: the server tile, "Self Hosted" and the pinned namespace. */
-const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
+const orgSwitcher = (h: ShellViewBuilder, model: Model): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
 			sidebarMenuButton(
@@ -96,7 +96,7 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 	])
 
 /** `SearchRow`: the ⌘K entry, the palette's only discoverable way in. */
-const searchRow = (h: HtmlBuilder<Message>, tip: RailTip): Html =>
+const searchRow = (h: ShellViewBuilder, tip: RailTip): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
 			sidebarMenuButton(
@@ -117,7 +117,7 @@ const searchRow = (h: HtmlBuilder<Message>, tip: RailTip): Html =>
 	])
 
 /** `ClerkOrgSwitcher`: the active org's avatar, name and pin, opening the Clerk org menu. */
-const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellClerk): Html => {
+const clerkOrgSwitcher = (h: ShellViewBuilder, model: Model, clerk: ShellClerk): Html => {
 	const orgName = Option.match(clerk.maybeOrganization, {
 		onNone: () => "Select Organization",
 		onSome: (organization) => organization.name,
@@ -129,89 +129,93 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 			hasMultipleRegions ? ` · ${MAPLE_REGION_LABELS[organization.homeRegion].short}` : "",
 	})
 	const pinned = pinnedNamespaceOf(model)
-	return h.submodel({
-		slotId: "shell-clerk-org-switcher",
-		model: model.clerkOrgMenu,
-		view: ClerkOrgSwitcherView.view,
-		viewInputs: {
-			memberships: clerk.memberships,
-			activeOrgId: Option.map(clerk.maybeOrganization, (organization) => organization.id),
-			side: "right",
-			align: "start",
-			namespaceScope: {
-				pinned,
-				observed: AsyncData.getOrElse(model.namespaces, (): ReadonlyArray<string> => []),
-				isLoading: AsyncData.isIdle(model.namespaces) || AsyncData.isLoading(model.namespaces),
-			},
-			toView: ({ trigger, withTrigger }) =>
-				sidebarMenu(h, undefined, [
-					sidebarMenuItem(
-						h,
-						undefined,
-						withTrigger(
-							sidebarMenuButton(
-								h,
-								{
-									size: "lg",
-									className: OPEN_STATE,
-									slot: "dropdown-menu-trigger",
-									attributes: trigger,
-								},
-								[
-									orgAvatar(
-										h,
-										orgName,
-										undefined,
-										Option.match(clerk.maybeOrganization, {
-											onNone: () => "",
-											onSome: (org) => org.imageUrl,
-										}),
-									),
-									h.div(
-										[h.Class("grid flex-1 text-left text-sm leading-tight")],
-										[
-											h.span(
-												[h.Class("truncate font-medium"), h.Title(orgName)],
-												[orgName],
-											),
-											Option.match(pinned, {
-												onNone: () =>
-													h.span(
-														[h.Class("truncate text-xs text-muted-foreground")],
-														regionSuffix === ""
-															? ["Organization"]
-															: ["Organization", regionSuffix],
-													),
-												onSome: (namespace) =>
-													h.span(
-														[h.Class("truncate text-xs")],
-														[
-															h.span(
-																[h.Class("font-medium text-primary")],
-																[namespace],
-															),
-															h.span(
-																[h.Class("text-muted-foreground")],
-																[regionSuffix],
-															),
-														],
-													),
+	return h.block(
+		ClerkOrgMenuBinding.embedView({
+			slotId: "shell-clerk-org-switcher",
+			model: model.clerkOrgMenu,
+			viewInputs: {
+				memberships: clerk.memberships,
+				activeOrgId: Option.map(clerk.maybeOrganization, (organization) => organization.id),
+				side: "right",
+				align: "start",
+				namespaceScope: {
+					pinned,
+					observed: AsyncData.getOrElse(model.namespaces, (): ReadonlyArray<string> => []),
+					isLoading: AsyncData.isIdle(model.namespaces) || AsyncData.isLoading(model.namespaces),
+				},
+				toView: ({ trigger, withTrigger }) =>
+					sidebarMenu(h, undefined, [
+						sidebarMenuItem(
+							h,
+							undefined,
+							withTrigger(
+								sidebarMenuButton(
+									h,
+									{
+										size: "lg",
+										className: OPEN_STATE,
+										slot: "dropdown-menu-trigger",
+										attributes: trigger,
+									},
+									[
+										orgAvatar(
+											h,
+											orgName,
+											undefined,
+											Option.match(clerk.maybeOrganization, {
+												onNone: () => "",
+												onSome: (org) => org.imageUrl,
 											}),
-										],
-									),
-									icon(h, "ChevronExpandYIcon", { size: 16, className: "ml-auto" }),
-								],
+										),
+										h.div(
+											[h.Class("grid flex-1 text-left text-sm leading-tight")],
+											[
+												h.span(
+													[h.Class("truncate font-medium"), h.Title(orgName)],
+													[orgName],
+												),
+												Option.match(pinned, {
+													onNone: () =>
+														h.span(
+															[
+																h.Class(
+																	"truncate text-xs text-muted-foreground",
+																),
+															],
+															regionSuffix === ""
+																? ["Organization"]
+																: ["Organization", regionSuffix],
+														),
+													onSome: (namespace) =>
+														h.span(
+															[h.Class("truncate text-xs")],
+															[
+																h.span(
+																	[h.Class("font-medium text-primary")],
+																	[namespace],
+																),
+																h.span(
+																	[h.Class("text-muted-foreground")],
+																	[regionSuffix],
+																),
+															],
+														),
+												}),
+											],
+										),
+										icon(h, "ChevronExpandYIcon", { size: 16, className: "ml-auto" }),
+									],
+								),
 							),
 						),
-					),
-				]),
-		},
-		toParentMessage: (message) => Message.GotClerkOrgMenuMessage({ message }),
-	})
+					]),
+			},
+		}),
+	)
 }
 
 export const shellSidebarHeader = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	clerk: ShellClerk | null,
 	tip: RailTip = NO_TIP,
@@ -223,7 +227,7 @@ export const shellSidebarHeader = (
 // FOOTER
 
 const footerNavRow = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	currentPath: string,
 	options: Readonly<{
 		href: string
@@ -252,7 +256,7 @@ const footerNavRow = (
 
 /** The user avatar: the Clerk image over the initials on a warm tile keyed by the name. */
 export const userAvatar = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	initials: string,
 	className?: string,
 	image?: Readonly<{ url: string; label: string }>,
@@ -285,7 +289,7 @@ const initialsOf = (clerk: ShellClerk | null): string =>
 export const userImageOf = (clerk: ShellClerk | null): string =>
 	clerk === null ? "" : Option.match(clerk.maybeUser, { onNone: () => "", onSome: (user) => user.imageUrl })
 
-const footerCluster = (h: HtmlBuilder<Message>, model: Model, avatar: Html, name: string): Html =>
+const footerCluster = (h: ShellViewBuilder, model: Model, avatar: Html, name: string): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, "flex items-center gap-1 group-data-[collapsible=icon]:flex-col", [
 			h.div(
@@ -327,7 +331,7 @@ const footerCluster = (h: HtmlBuilder<Message>, model: Model, avatar: Html, name
 	])
 
 export const shellSidebarFooter = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	currentPath: string,
 	clerk: ShellClerk | null,
@@ -371,7 +375,7 @@ export const shellSidebarFooter = (
 	])
 
 /** `Code Review`'s "Beta" tag. */
-export const navBadge = (h: HtmlBuilder<Message>, label: string): Html =>
+export const navBadge = (h: ShellViewBuilder, label: string): Html =>
 	sidebarMenuBadge(h, [
 		badge(
 			h,

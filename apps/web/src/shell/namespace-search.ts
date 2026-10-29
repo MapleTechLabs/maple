@@ -28,17 +28,22 @@ export const namespaceRows = (
 		pinned,
 		(name) => !observed.includes(name) && (trimmed === "" || name.toLowerCase().includes(trimmed)),
 	)
-	return { isFiltered: trimmed !== "", matches, unseenPin, isNoMatch: matches.length === 0 && trimmed !== "" }
+	return {
+		isFiltered: trimmed !== "",
+		matches,
+		unseenPin,
+		isNoMatch: matches.length === 0 && trimmed !== "",
+	}
 }
 
 /** `<div className="p-1 pb-1.5"><Input autoFocus placeholder size="sm" /></div>`. */
-export const namespaceSearchRow = <Message>(
-	h: HtmlBuilder<Message>,
+export const namespaceSearchRow = <Message, R = never>(
+	h: HtmlBuilder<Message, R>,
 	options: Readonly<{
 		id: string
 		query: string
 		/** The row's own attributes (its Mount); `attributes` go on the input. */
-		rowAttributes: ReadonlyArray<Attribute<Message>>
+		rowAttributes: ReadonlyArray<Attribute<Message, R>>
 		attributes: ReadonlyArray<Attribute<Message>>
 	}>,
 ): Html =>
@@ -48,7 +53,11 @@ export const namespaceSearchRow = <Message>(
 			input(h, {
 				id: options.id,
 				size: "sm",
-				attributes: [h.Placeholder("Search namespaces…"), h.Value(options.query), ...options.attributes],
+				attributes: [
+					h.Placeholder("Search namespaces…"),
+					h.Value(options.query),
+					...options.attributes,
+				],
 			}),
 		],
 	)

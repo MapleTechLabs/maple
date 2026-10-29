@@ -1,6 +1,7 @@
 import { Clock, Duration, Effect, Option, Schedule, Schema, Stream } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
-import { Command, Dom } from "foldkit"
+import { Dom } from "foldkit"
+import { ShellDefinition } from "./definition"
 import { Message } from "./message"
 
 // Notice when the server serves a newer build than this tab runs.
@@ -13,28 +14,34 @@ const POLL_INTERVAL = Duration.minutes(15)
 const VersionFile = Schema.Struct({ commit: Schema.String })
 
 /** `fetchDeployedCommit`: `/version.json`, uncached; a hidden tab or any failure reports nothing. */
-export const CheckDeployedCommit = Command.define("CheckDeployedCommit", {
+export const CheckDeployedCommit = ShellDefinition.makeCommand("CheckDeployedCommit", {
 	messages: [Message.CheckedDeployedCommit],
-	execute: Effect.gen(function* () {
-		if (document.hidden) return Message.CheckedDeployedCommit({ maybeCommit: Option.none() })
-		const now = yield* Clock.currentTimeMillis
-		const client = yield* HttpClient.HttpClient
-		// The timestamp busts every cache.
-		const response = yield* client.get(`/version.json?t=${now}`)
-		const { commit } = yield* HttpClientResponse.schemaBodyJson(VersionFile)(response)
-		return Message.CheckedDeployedCommit({
-			maybeCommit: commit.length > 0 ? Option.some(commit) : Option.none(),
-		})
-	}).pipe(Effect.orElseSucceed(() => Message.CheckedDeployedCommit({ maybeCommit: Option.none() }))),
+	handler: function* () {
+		return () =>
+			Effect.gen(function* () {
+				if (document.hidden) return Message.CheckedDeployedCommit({ maybeCommit: Option.none() })
+				const now = yield* Clock.currentTimeMillis
+				const client = yield* HttpClient.HttpClient
+				// The timestamp busts every cache.
+				const response = yield* client.get(`/version.json?t=${now}`)
+				const { commit } = yield* HttpClientResponse.schemaBodyJson(VersionFile)(response)
+				return Message.CheckedDeployedCommit({
+					maybeCommit: commit.length > 0 ? Option.some(commit) : Option.none(),
+				})
+			}).pipe(Effect.orElseSucceed(() => Message.CheckedDeployedCommit({ maybeCommit: Option.none() })))
+	},
 })
 
 /** The banner's Reload button. */
-export const ReloadPage = Command.define("ReloadPage", {
+export const ReloadPage = ShellDefinition.makeCommand("ReloadPage", {
 	messages: [Message.CompletedReloadPage],
-	execute: Effect.sync(() => {
-		window.location.reload()
-		return Message.CompletedReloadPage()
-	}),
+	handler: function* () {
+		return () =>
+			Effect.sync(() => {
+				window.location.reload()
+				return Message.CompletedReloadPage()
+			})
+	},
 })
 
 /** Every 15 minutes, and whenever the tab becomes visible again. */

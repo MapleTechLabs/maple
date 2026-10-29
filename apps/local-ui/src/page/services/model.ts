@@ -1,7 +1,7 @@
+import * as CopyButton from "@maple/web/ui/copy-button"
 import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
-import { Copies } from "../kit/copies"
 import { Draft } from "../traces/model"
 
 // The service catalog, as Schemas.
@@ -35,8 +35,10 @@ export const Model = Schema.TaggedStruct("ServicesPage", {
 	/** `dataUpdatedAt` of the rows, for the "New data" pill. */
 	catalogUpdatedAtMs: Schema.Number,
 	search: Draft,
-	sections: FilterSections.Model,
+	sections: FilterSections.FilterSectionsBlock.Model,
 	isRefreshing: Schema.Boolean,
-	copies: Copies,
+	/** The empty state's connect guide: its endpoint and exporter environment copy buttons. */
+	endpointCopy: CopyButton.CopyButtonBlock.Model,
+	envCopy: CopyButton.CopyButtonBlock.Model,
 })
 export type Model = typeof Model.Type

@@ -1,5 +1,5 @@
 import { Effect, Queue, Stream } from "effect"
-import { Mount } from "foldkit"
+import { LogsDefinition } from "./definition"
 import { Message } from "./message"
 import type { Viewport } from "./model"
 
@@ -30,24 +30,26 @@ export const reachesEnd = (count: number, viewport: Viewport): boolean => {
 const viewportOf = (element: HTMLElement): Viewport => ({ scrollTop: element.scrollTop, height: element.offsetHeight })
 
 /** `observeElementRect` and `observeElementOffset` on the stream's scroller. */
-export const ObserveLogsViewport = Mount.defineStream("ObserveLogsViewport", {
+export const ObserveLogsViewport = LogsDefinition.makeMountStream("ObserveLogsViewport", {
 	messages: [Message.ChangedViewport],
-	execute: ({ element }) =>
-		Stream.callback<typeof Message.ChangedViewport.Type>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					if (!(element instanceof HTMLElement)) return () => undefined
-					const emit = () => Queue.offerUnsafe(queue, Message.ChangedViewport({ viewport: viewportOf(element) }))
-					const resize = new ResizeObserver(emit)
-					resize.observe(element)
-					element.addEventListener("scroll", emit, { passive: true })
-					emit()
-					return () => {
-						resize.disconnect()
-						element.removeEventListener("scroll", emit)
-					}
-				}),
-				(cleanup) => Effect.sync(cleanup),
-			).pipe(Effect.flatMap(() => Effect.never)),
-		),
+	handler: function* () {
+		return ({ element }) =>
+			Stream.callback<typeof Message.ChangedViewport.Type>((queue) =>
+				Effect.acquireRelease(
+					Effect.sync(() => {
+						if (!(element instanceof HTMLElement)) return () => undefined
+						const emit = () => Queue.offerUnsafe(queue, Message.ChangedViewport({ viewport: viewportOf(element) }))
+						const resize = new ResizeObserver(emit)
+						resize.observe(element)
+						element.addEventListener("scroll", emit, { passive: true })
+						emit()
+						return () => {
+							resize.disconnect()
+							element.removeEventListener("scroll", emit)
+						}
+					}),
+					(cleanup) => Effect.sync(cleanup),
+				).pipe(Effect.flatMap(() => Effect.never)),
+			)
+	},
 })

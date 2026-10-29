@@ -1,13 +1,11 @@
-import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
-import { AsyncData, type Command } from "foldkit"
+import { AsyncData } from "foldkit"
 import { keyOf, request } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
-import { FetchLogs, FetchPatterns, FetchServices, FetchSeverities } from "./command"
+import { FetchLogs, FetchPatterns, FetchServices, FetchSeverities, type LogsCommand } from "./command"
 import { filtersOf, modeOf } from "./filters"
-import type { Message } from "./message"
 import type { Model } from "./model"
 
 export const boundsOf = (model: Model, context: PageContext): Option.Option<TimeBounds> =>
@@ -23,7 +21,7 @@ export const load = (
 	model: Model,
 	context: PageContext,
 	force = false,
-): Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }> =>
+): Readonly<{ model: Model; commands?: ReadonlyArray<LogsCommand> }> =>
 	Option.match(boundsOf(model, context), {
 		onNone: () => ({ model }),
 		onSome: (bounds) => {
@@ -71,7 +69,7 @@ export const fetchAfterCache = (
 	context: PageContext,
 	which: CachedSlot,
 	isFresh: boolean,
-): ReadonlyArray<Command.Command<Message, never, Resources>> =>
+): ReadonlyArray<LogsCommand> =>
 	isFresh
 		? []
 		: Option.match(boundsOf(model, context), {

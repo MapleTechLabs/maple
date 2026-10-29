@@ -1,4 +1,4 @@
-import * as Chart from "@maple/web/charts/chart"
+import { ChartBlock } from "@maple/web/charts/chart"
 import { ChartRuntime } from "@maple/web/charts/chart-runtime"
 import { ThemeColors } from "@maple/web/charts/theme-colors"
 import { Schema } from "effect"
@@ -28,7 +28,11 @@ export const OperationRow = Schema.Struct({
 export type OperationRow = typeof OperationRow.Type
 
 /** `SeriesPoint` (lib/chart-series.ts): one long-form (bucket, series, value) row. */
-export const SeriesPoint = Schema.Struct({ bucket: Schema.String, series: Schema.String, value: Schema.Number })
+export const SeriesPoint = Schema.Struct({
+	bucket: Schema.String,
+	series: Schema.String,
+	value: Schema.Number,
+})
 export type SeriesPoint = typeof SeriesPoint.Type
 
 /** `GoldenSignalRow` (lib/golden-signals.ts): one warehouse bucket of entry-span signals. */
@@ -57,6 +61,11 @@ export const Model = Schema.TaggedStruct("ServiceDetailPage", {
 	isRefreshing: Schema.Boolean,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
-	charts: Schema.Record(Schema.String, Chart.Model),
+	/** The golden signal tiles and the operations chart, one ChartBlock each (see composition.ts). */
+	latencyChart: ChartBlock.Model,
+	throughputChart: ChartBlock.Model,
+	apdexChart: ChartBlock.Model,
+	errorRateChart: ChartBlock.Model,
+	operationsChart: ChartBlock.Model,
 })
 export type Model = typeof Model.Type

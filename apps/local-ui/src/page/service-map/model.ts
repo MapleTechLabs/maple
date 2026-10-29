@@ -2,7 +2,7 @@ import * as ServiceMap from "@maple/web/service-map/map/service-map"
 import { Snapshot, ViewPrefs } from "@maple/web/service-map/map/state"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
-import { Copies } from "../kit/copies"
+import * as CopyButton from "@maple/web/ui/copy-button"
 import { LocalServiceMapData } from "./data"
 
 // The service map page.
@@ -22,6 +22,8 @@ export const Model = Schema.TaggedStruct("ServiceMapPage", {
 	maybeStored: Schema.Option(Stored),
 	maybeMap: Schema.Option(ServiceMap.Model),
 	isRefreshing: Schema.Boolean,
-	copies: Copies,
+	/** The connect guide's copy buttons: the OTLP endpoint and the exporter environment. */
+	guideEndpointCopy: CopyButton.Model,
+	guideEnvCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type

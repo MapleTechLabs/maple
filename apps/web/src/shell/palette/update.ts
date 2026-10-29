@@ -1,27 +1,25 @@
-import { Array as Arr, Option } from "effect"
-import { Command, type Update } from "foldkit"
+import { Array as Arr, Function, Layer, Option } from "effect"
+import { Block, Update } from "foldkit"
 import Fuse from "fuse.js"
 import * as Combobox from "../../ui/combobox"
+import { ComboboxBlock } from "../../ui/combobox-view"
 import * as Dialog from "../../ui/dialog"
-import type { Resources } from "../../platform/resources"
+import { DialogBlock } from "../../ui/dialog-view"
 import {
 	browseEntries,
 	type EntryInputs,
-	groupEntries,
 	MAX_RESULTS,
 	type PaletteEntry,
 	paletteEntries,
 	searchEntriesOf,
 } from "./entries"
-import { LoadPaletteServices, ScrollHighlighted } from "./command"
-import { init, Message, type Model, OutMessage } from "./model"
-
-export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
+import { DelayClose, LoadPaletteServices, MeasurePaletteList } from "./command"
+import { Message, type Model, OutMessage, PALETTE_ID, PaletteDefinition } from "./model"
 
 /** What the entries read from the shell (the palette's own services read is in its Model). */
 export type Context = Omit<EntryInputs, "serviceNames">
 
-const entriesOf = (model: Model, context: Context) =>
+export const entriesOf = (model: Model, context: Context) =>
 	paletteEntries({ ...context, serviceNames: model.serviceNames })
 
 export type Shown = Readonly<{ entries: ReadonlyArray<PaletteEntry>; isSearch: boolean }>
@@ -79,77 +77,79 @@ export const shownEntries = (
 	return { entries: ranked, isSearch: true }
 }
 
-/** The entries in list order (grouped), what the highlight indexes. */
-const listedEntries = (model: Model, context: Context, visibleFlagged: ReadonlyArray<string>) =>
-	groupEntries(shownEntries(model, context, visibleFlagged).entries).flatMap((section) => section.entries)
-
-/** Opening mounts the palette, whose services read goes out with it. */
-export const open = (): UpdateReturn => ({ model: init(), commands: [LoadPaletteServices()] })
-
-/** A pick: links navigate, actions run; either way the palette closes. */
-const picked = (model: Model, entry: PaletteEntry | undefined): UpdateReturn =>
-	entry === undefined
-		? { model }
-		: {
-				model,
-				outMessage:
-					entry.target._tag === "Href"
-						? OutMessage.Navigated({ href: entry.target.href })
-						: OutMessage.RanAction({ action: entry.target.action }),
-			}
-
-const findEntry = (model: Model, context: Context, id: string) =>
+/** An entry by id, what the shell resolves a pick against. */
+export const findEntry = (model: Model, context: Context, id: string): PaletteEntry | undefined =>
 	Option.getOrUndefined(Arr.findFirst(entriesOf(model, context), (entry) => entry.id === id))
 
-const toList = Command.mapMessage((message: Combobox.Message) => Message.GotListMessage({ message }))
-const toDialog = Command.mapMessage((message: Dialog.Message) => Message.GotDialogMessage({ message }))
+const { makeStep, makeNoopStep, makeOutMessageStep } = PaletteDefinition
 
-/** Base UI's Enter: the highlighted entry is picked. */
-const enter = (model: Model, context: Context, visibleFlagged: ReadonlyArray<string>): UpdateReturn =>
-	picked(model, listedEntries(model, context, visibleFlagged)[model.list.highlighted ?? -1])
+/** Both children start open with the palette; a closing palette only waits for its delay. */
+export const DialogBinding = PaletteDefinition.makeBinding(DialogBlock, {
+	field: "dialog",
+	init: false,
+	delivery: { when: (model) => !model.isClosing },
+}).withOutMessagePolicy({
+	fold: PaletteDefinition.makeOutMessageFold(DialogBlock, {
+		Opened: makeNoopStep,
+		Closed: () => makeOutMessageStep(() => OutMessage.Closed()),
+	}),
+})
 
-/** The inline autocomplete: typing searches, arrows move the highlight into view, Enter picks. */
-const listStep = (model: Model, child: Combobox.Message, context: Context): UpdateReturn => {
-	const next = Combobox.update(model.list, child)
-	const out = next.outMessage
-	if (out !== undefined && out._tag === "ChangedValue")
-		return picked(model, findEntry(model, context, out.value))
-	const stepped: Model = { ...model, list: next.model }
-	const commands = (next.commands ?? []).map(toList)
-	const highlighted = stepped.list.highlighted
-	const isMove =
-		child._tag === "PressedInputKey" && highlighted !== null && highlighted !== model.list.highlighted
-	return {
-		model: stepped,
-		commands: isMove
-			? [...commands, ScrollHighlighted({ itemId: Combobox.itemId(stepped.list.id, highlighted) })]
-			: commands,
-	}
-}
+/** The inline autocomplete: typing searches, arrows move the highlight, Enter picks. */
+export const ListBinding = PaletteDefinition.makeBinding(ComboboxBlock, {
+	field: "list",
+	init: false,
+	delivery: { when: (model) => !model.isClosing },
+})
 
-export const update = (model: Model, message: Message, context: Context): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		GotDialogMessage: ({ message: child }) => {
-			const next = Dialog.update(model.dialog, child)
-			return {
-				model: { ...model, dialog: next.model },
-				commands: (next.commands ?? []).map(toDialog),
-				outMessage: next.outMessage?._tag === "Closed" ? OutMessage.Closed() : undefined,
-			}
-		},
-		GotListMessage: ({ message: child }) => listStep(model, child, context),
-		PressedEnter: ({ visibleFlagged }) => enter(model, context, visibleFlagged),
-		ClickedEntry: ({ id }) => {
-			const entry = findEntry(model, context, id)
-			// A link's own click navigates (the root routes it), so only the palette closes.
-			return entry?.target._tag === "Href"
-				? { model, outMessage: OutMessage.Closed() }
-				: picked(model, entry)
-		},
-		SucceededLoadServices: ({ serviceNames }) => ({ model: { ...model, serviceNames } }),
-		FailedLoadServices: () => ({ model }),
-		CompletedReleaseServices: () => ({ model }),
-		ElapsedCloseDelay: () => ({ model, outMessage: OutMessage.Closed() }),
-		CompletedMeasureList: () => ({ model }),
-		CompletedScrollHighlighted: () => ({ model }),
-	})
+/** A pick fills the input with the entry id; the query is put back while the palette goes. */
+export const ListBindingWithOutMessagePolicy = ListBinding.withOutMessagePolicy({
+	fold: PaletteDefinition.makeOutMessageFold(ComboboxBlock, {
+		ChangedSelection: makeNoopStep,
+		ChangedValue: ({ value }, { modelBeforeUpdate }) =>
+			makeStep(() =>
+				Function.compose(
+					ListBinding.informOfInput({ value: modelBeforeUpdate.list.inputValue }),
+					Update.withOutMessage(OutMessage.PickedEntry({ id: value })),
+				),
+			),
+	}),
+})
+
+export const PaletteComposition = PaletteDefinition.makeComposition({
+	bindings: [DialogBinding, ListBindingWithOutMessagePolicy],
+	mounts: [MeasurePaletteList],
+})
+export type PaletteViewBuilder = Block.ViewBuilderFor<typeof PaletteComposition>
+
+/** Opening mounts the palette, whose services read goes out with it. */
+export const init = PaletteComposition.makeInit(() => ({
+	model: {
+		dialog: Dialog.initialModel(PALETTE_ID, "command-dialog", { isOpen: true }),
+		list: Combobox.init(`${PALETTE_ID}-list`, "autocomplete", { isOpen: true, autoHighlight: true })
+			.model,
+		serviceNames: [],
+		isClosing: false,
+	},
+	commands: [LoadPaletteServices()],
+}))
+
+export const update = PaletteComposition.makeUpdate({
+	ClickedEntry: (model, { id }) =>
+		model.isClosing ? { model } : { model, outMessage: OutMessage.ClickedEntry({ id }) },
+	SucceededLoadServices: (model, { serviceNames }) =>
+		model.isClosing ? { model } : { model: { ...model, serviceNames } },
+	FailedLoadServices: (model) => ({ model }),
+	ElapsedCloseDelay: (model) => ({ model, outMessage: OutMessage.Closed() }),
+	CompletedMeasureList: (model) => ({ model }),
+	RequestedDelayedClose: (model) => ({ model: { ...model, isClosing: true }, commands: [DelayClose()] }),
+})
+
+/** Parent-initiated: an action that opened another overlay closes the palette after it. */
+export const operations = { requestDelayedClose: Message.RequestedDelayedClose }
+
+export const EffectsLayer = Layer.mergeAll(
+	LoadPaletteServices.layer,
+	DelayClose.layer,
+	MeasurePaletteList.layer,
+)

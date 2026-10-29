@@ -1,5 +1,3 @@
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
-import * as CopyButton from "@maple/web/ui/copy-button"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
@@ -21,7 +19,11 @@ export const Message = defineMessageUnion({
 	ClickedWidenRange: {},
 	CompletedSaveLayout: {},
 	CompletedSaveViewPrefs: {},
-	GotMapMessage: { message: ServiceMap.Message },
-	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	/** The detail panel's close button: the map clears its selection. */
+	ClickedCloseDetail: {},
+	/** The service panel's focus button: the map focuses the selected service. */
+	ClickedFocusSelected: {},
+	/** The root saw the fragment change under the open page: a new range re-keys the query. */
+	InformedOfLocationChange: {},
 })
 export type Message = typeof Message.Type

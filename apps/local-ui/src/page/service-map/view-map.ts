@@ -1,25 +1,38 @@
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
-import { view as mapView } from "@maple/web/service-map/map/view"
+import type * as ServiceMap from "@maple/web/service-map/map/service-map"
 import { serviceMapLoading } from "@maple/web/service-map/map/loading"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import type { PageViewInputs } from "../kit/inputs"
-import { signalEmptyState } from "../kit/signal-empty-state"
+import type * as CopyButton from "@maple/web/ui/copy-button"
+import { Option } from "effect"
+import type { Html } from "foldkit/html"
+import { presenceOf } from "../../data/signal-presence"
 import { rangeOf } from "../contract"
+import { signalEmptyState } from "../kit/signal-empty-state"
+import {
+	GuideEndpointCopyBinding,
+	GuideEnvCopyBinding,
+	MapBinding,
+	type ServiceMapPageViewBuilder,
+} from "./composition"
 import type { LocalServiceMapData } from "./data"
 import { durationSecondsOf } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
+import type { ServiceMapViewInputs } from "./view-inputs"
 import { databasePanel } from "./view-db-panel"
 import { servicePanel } from "./view-service-panel"
 
 // `ServiceMapFlowCanvas` with local mode's empty state and detail panels.
 
-const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message })
+const GUIDE_ID = "service-map-empty"
 
 /** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
 const detailPanel =
-	(h: HtmlBuilder<Message>, data: LocalServiceMapData, map: ServiceMap.Model, inputs: PageViewInputs) =>
+	(
+		h: ServiceMapPageViewBuilder,
+		data: LocalServiceMapData,
+		map: ServiceMap.Model,
+		inputs: ServiceMapViewInputs,
+	) =>
 	(selectedId: string): Html => {
 		const durationSeconds = durationSecondsOf(inputs.context)
 		const range = rangeOf(inputs.context)
@@ -29,7 +42,7 @@ const detailPanel =
 				data,
 				durationSeconds,
 				range,
-				onClose: toMap(ServiceMap.Message.ClickedCloseDetail()),
+				onClose: Message.ClickedCloseDetail(),
 			})
 		return servicePanel(h, {
 			serviceName: selectedId,
@@ -38,36 +51,60 @@ const detailPanel =
 			durationSeconds,
 			range,
 			actions: {
-				onFocus: toMap(ServiceMap.Message.ClickedFocusSelected()),
-				onClose: toMap(ServiceMap.Message.ClickedCloseDetail()),
+				onFocus: Message.ClickedFocusSelected(),
+				onClose: Message.ClickedCloseDetail(),
 			},
 		})
 	}
 
+/** The connect guide's two copy buttons, by the id the guide gives each. */
+const embedGuideCopy =
+	(h: ServiceMapPageViewBuilder, model: Model) =>
+	(copyId: string, viewInputs: CopyButton.CopyButtonViewInputs): Html =>
+		copyId === `${GUIDE_ID}-endpoint`
+			? h.block(
+					GuideEndpointCopyBinding.embedView({
+						slotId: copyId,
+						model: model.guideEndpointCopy,
+						viewInputs,
+					}),
+				)
+			: h.block(
+					GuideEnvCopyBinding.embedView({ slotId: copyId, model: model.guideEnvCopy, viewInputs }),
+				)
+
 export const mapCanvas = (
-	h: HtmlBuilder<Message>,
+	h: ServiceMapPageViewBuilder,
 	model: Model,
 	data: LocalServiceMapData,
-	map: ServiceMap.Model | undefined,
-	inputs: PageViewInputs,
-): Html => {
-	if (map === undefined) return serviceMapLoading(h)
-	const range = rangeOf(inputs.context)
-	return mapView(h, map, toMap, {
-		emptyState: signalEmptyState(h, {
-			signal: "traces",
-			noun: "services",
-			range,
-			onWidenRange: Message.ClickedWidenRange(),
-			maybePresence: inputs.presenceOf("traces"),
-			nowMs: inputs.presenceNowMs,
-			guide: {
-				id: "service-map-empty",
-				endpoint: inputs.context.env.otlpEndpoint,
-				copies: model.copies,
-				toCopyMessage: (id, message) => Message.GotCopyMessage({ id, message }),
-			},
-		}),
-		detailPanel: detailPanel(h, data, map, inputs),
+	inputs: ServiceMapViewInputs,
+): Html =>
+	Option.match(model.maybeMap, {
+		onNone: () => serviceMapLoading(h),
+		onSome: (map) =>
+			h.block(
+				MapBinding.embedView({
+					slotId: "service-map",
+					model: map,
+					viewInputs: {
+						emptyState: signalEmptyState(h, {
+							signal: "traces",
+							noun: "services",
+							range: rangeOf(inputs.context),
+							onWidenRange: Message.ClickedWidenRange(),
+							maybePresence: presenceOf(inputs.maybePresence, "traces"),
+							nowMs: Option.match(inputs.maybePresence, {
+								onNone: () => 0,
+								onSome: (result) => result.nowMs,
+							}),
+							guide: {
+								id: GUIDE_ID,
+								endpoint: inputs.context.env.otlpEndpoint,
+								embedCopy: embedGuideCopy(h, model),
+							},
+						}),
+						detailPanel: detailPanel(h, data, map, inputs),
+					},
+				}),
+			),
 	})
-}

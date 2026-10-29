@@ -8,7 +8,8 @@ import { badge } from "@maple/web/ui/display"
 import { CHIP_CLASS, CHIP_TONE_CLASSES } from "@maple/web/ui/logs/styles"
 import { serviceDot } from "@maple/web/ui/values"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { LogsViewBuilder } from "./composition"
 import { firstLineOf, rowChips, severityLabel } from "./derive"
 import { Message } from "./message"
 import type { ChipRef, LocalLog } from "./model"
@@ -32,7 +33,7 @@ const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
 /** The anchor a chip's hover card is placed under. */
 export const chipId = (chip: ChipRef): string => `log-chip-${chip.index}-${chip.key}`
 
-const chipsView = (h: HtmlBuilder<Message>, log: LocalLog, index: number): ReadonlyArray<Html> => {
+const chipsView = (h: LogsViewBuilder, log: LocalLog, index: number): ReadonlyArray<Html> => {
 	const chips = rowChips(log)
 	const key = logKey(log)
 	if (chips.length === 0) return []
@@ -68,7 +69,7 @@ const chipsView = (h: HtmlBuilder<Message>, log: LocalLog, index: number): Reado
 }
 
 export const logRow = (
-	h: HtmlBuilder<Message>,
+	h: LogsViewBuilder,
 	options: Readonly<{ log: LocalLog; index: number; search: string | undefined; top: number; isSelected: boolean; nowMs: number; timeFormat: TimeFormat }>,
 ): Html => {
 	const { log, search } = options

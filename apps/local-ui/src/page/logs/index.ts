@@ -1,6 +1,4 @@
-export { init, locationChanged } from "./update"
-export { update } from "./update-main"
-export { Message } from "./message"
+export { LogsBlock } from "./block"
 export { Model } from "./model"
-export { view } from "./view"
+export type { LogsViewInputs } from "./view"
 export { lanes } from "./lanes"

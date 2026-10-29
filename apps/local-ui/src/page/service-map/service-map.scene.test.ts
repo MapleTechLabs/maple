@@ -1,15 +1,17 @@
 import * as ServiceMap from "@maple/web/service-map/map/service-map"
 import { Option } from "effect"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { toParentMessage } from "foldkit/test"
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
+import type { ServiceMapPageBlock } from "./block"
 import { FetchServiceMap, ReadClock, ReadStored, SaveViewPrefs } from "./command"
+import { MapBinding } from "./composition"
 import type { LocalServiceMapData } from "./data"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
-import { view as pageView } from "./view"
+import { type ServiceMapViewInputs, view as pageView } from "./view"
 
 const NOW = Date.parse("2026-10-01T12:00:30Z")
 
@@ -20,15 +22,22 @@ const context: PageContext = {
 	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
-const inputs: PageViewInputs = {
+const inputs: ServiceMapViewInputs = {
 	context,
-	presenceOf: () => Option.some({ signal: "traces", status: "absent", lastSeenMs: null }),
-	presenceNowMs: NOW,
-	clockMs: 0,
-	hasNewDataSince: () => false,
+	maybePresence: Option.some({
+		rows: [{ signal: "traces", status: "absent", lastSeenMs: null }],
+		nowMs: NOW,
+	}),
+	lastIngestAtMs: Option.none(),
 }
 const view = withViewInputs(pageView, inputs)()
-const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+/** Every Message the page's graph accepts: its own and its children's generated delivery. */
+type PageMessage = typeof ServiceMapPageBlock.Message.Type
+const pageUpdate = (model: Model, message: PageMessage) => update(model, message, context)
+/** A map fact, delivered the way the embedded map's own view would send it. */
+const toMap = (message: ServiceMap.Message) => toParentMessage(MapBinding, message)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 
 const edge = (sourceService: string, targetService: string) => ({
 	sourceService,
@@ -56,26 +65,39 @@ const noServices = mapData([])
 /** Entered, anchored and the stored state read: the map request in flight. */
 const requested = (): Model => {
 	const anchored = pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW })).model
-	return pageUpdate(anchored, Message.CompletedReadStored({ stored: { prefs: { minTrafficPct: 0, collapsedNamespaces: [] }, snapshots: [] } })).model
+	return pageUpdate(
+		anchored,
+		Message.CompletedReadStored({
+			stored: { prefs: { minTrafficPct: 0, collapsedNamespaces: [] }, snapshots: [] },
+		}),
+	).model
 }
 
 const answered = (data: LocalServiceMapData) => {
 	const base = requested()
-	return pageUpdate(base, Message.SucceededFetchServiceMap({ key: base.data.key ?? "", data, fetchedAtMs: NOW }))
+	return pageUpdate(
+		base,
+		Message.SucceededFetchServiceMap({ key: base.data.key ?? "", data, fetchedAtMs: NOW }),
+	)
 }
 
 const mapOf = (model: Model) => Option.getOrThrow(model.maybeMap)
 
 describe("local service map", () => {
 	test("entry reads the clock and the stored layout, then asks the map once", () => {
-		expect(init(context).commands.map(({ name }) => name)).toEqual(expect.arrayContaining([ReadClock.name, ReadStored.name]))
+		expect(names(init(context).commands)).toEqual(
+			expect.arrayContaining([ReadClock.name, ReadStored.name]),
+		)
 		const anchored = pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW }))
 		expect((anchored.commands ?? []).map(({ name }) => name)).toEqual([FetchServiceMap.name])
 	})
 
 	test("an answer for a superseded key is dropped and builds no map", () => {
 		const base = requested()
-		const stale = pageUpdate(base, Message.SucceededFetchServiceMap({ key: "stale", data: twoServices, fetchedAtMs: NOW }))
+		const stale = pageUpdate(
+			base,
+			Message.SucceededFetchServiceMap({ key: "stale", data: twoServices, fetchedAtMs: NOW }),
+		)
 		expect(stale.model.data).toEqual(base.data)
 		expect(Option.isNone(stale.model.maybeMap)).toBe(true)
 	})
@@ -109,17 +131,26 @@ describe("local service map", () => {
 	test("an empty map asks for signal presence and renders the on-ramp", () => {
 		const result = answered(noServices)
 		expect(result.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
-		scene({ update: pageUpdate, view }, given(result.model), expectView(text("No services yet")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(result.model),
+			expectView(text("No services yet")).toExist(),
+		)
 	})
 
 	test("focusing a selected service keeps the prefs; showing all traffic is saved", () => {
 		const loaded = answered(twoServices).model
-		const selected = pageUpdate(loaded, Message.GotMapMessage({ message: ServiceMap.Message.ClickedNode({ nodeId: "storefront" }) }))
-		const focused = pageUpdate(selected.model, Message.GotMapMessage({ message: ServiceMap.Message.ClickedFocusSelected() }))
-		expect(Option.map(mapOf(focused.model).focus, (focus) => focus.serviceId)).toEqual(Option.some("storefront"))
+		const selected = pageUpdate(loaded, toMap(ServiceMap.Message.ClickedNode({ nodeId: "storefront" })))
+		const focused = pageUpdate(selected.model, Message.ClickedFocusSelected())
+		expect(Option.map(mapOf(focused.model).focus, (focus) => focus.serviceId)).toEqual(
+			Option.some("storefront"),
+		)
 		expect((focused.commands ?? []).map(({ name }) => name)).not.toContain(SaveViewPrefs.name)
-		const filtered = { ...focused.model, maybeMap: Option.some({ ...mapOf(focused.model), minTrafficPct: 5 }) }
-		const reset = pageUpdate(filtered, Message.GotMapMessage({ message: ServiceMap.Message.ClickedShowAllTraffic() }))
+		const filtered = {
+			...focused.model,
+			maybeMap: Option.some({ ...mapOf(focused.model), minTrafficPct: 5 }),
+		}
+		const reset = pageUpdate(filtered, toMap(ServiceMap.Message.ClickedShowAllTraffic()))
 		expect(mapOf(reset.model).minTrafficPct).toBe(0)
 		expect((reset.commands ?? []).map(({ name }) => name)).toContain(SaveViewPrefs.name)
 	})

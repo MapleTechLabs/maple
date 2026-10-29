@@ -4,14 +4,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
 import { PopupPosition } from "../ui/anchor"
-import * as Dialog from "../ui/dialog"
-import * as Tooltip from "../ui/tooltip"
-import * as ClerkOrgSwitcher from "./clerk-org-switcher"
-import * as Checklist from "./onboarding-checklist"
-import * as ConnectPanel from "./connect-panel"
-import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
-import * as Palette from "./palette/model"
 
 /** The shell's dropdown menus; a collapsed-rail section menu is keyed by its section title. */
 export const Menu = defineTaggedUnion({
@@ -42,8 +35,6 @@ export const Message = defineMessageUnion({
 	/** The top bar's "Open filters" / "Open context" (`FilterSidebarTrigger`, `RightSidebarTrigger`). */
 	ClickedOpenFilters: {},
 	ClickedOpenContext: {},
-	GotFilterSheetMessage: { message: Dialog.Message },
-	GotRightSheetMessage: { message: Dialog.Message },
 	ClickedMenuTrigger: { menu: Menu },
 	DismissedMenu: {},
 	MeasuredMenuPopup: { menu: Menu, position: PopupPosition },
@@ -83,11 +74,6 @@ export const Message = defineMessageUnion({
 	ChangedDashboardFavorites: { favorites: Schema.Array(Schema.String) },
 	SucceededLoadNamespaces: { orgId: Schema.String, namespaces: Schema.Array(Schema.String) },
 	FailedLoadNamespaces: { orgId: Schema.String },
-	GotRailTooltipMessage: { message: Tooltip.Message },
-	GotClerkOrgMenuMessage: { message: ClerkOrgSwitcher.Message },
-	GotChecklistMessage: { message: Checklist.Message },
-	GotConnectMessage: { message: ConnectPanel.Message },
-	GotSupportChannelMessage: { message: SupportChannel.Message },
 	ClickedSupportChannel: {},
 	ClickedUpdatePaymentMethod: {},
 	CompletedOpenCustomerPortal: {},
@@ -103,11 +89,23 @@ export const Message = defineMessageUnion({
 	PressedThemeKey: {},
 	PressedFocusSearchKey: {},
 	CompletedFocusShortcutSearch: {},
-	GotPaletteMessage: { message: Palette.Message },
-	GotShortcutsDialogMessage: { message: Dialog.Message },
 	MeasuredShortcutsPanel: {},
 	/** A menu's "Keyboard shortcuts" item (`showKeyboardShortcuts`). */
 	ClickedKeyboardShortcuts: {},
+	/** The palette unmounted: its services read's idle TTL started. */
+	CompletedReleasePaletteServices: {},
+	/** Operation: a shell route rendered for a signed-in org (see `update.ts` `enter`). */
+	RequestedEnter: { orgId: Schema.String },
+	/** Operation: a signed-in route outside the shell (`/cli-login`, `/quick-start`). */
+	RequestedEnterBare: {},
+	/** Operation: the route changed; `isSamePage` keeps the page rails' sheets, `hasTopBar` the pill's re-read. */
+	ChangedRoute: { isSamePage: Schema.Boolean, hasTopBar: Schema.Boolean },
+	/** Operation: the reward pill's one-second clock (`useLiveClock`). */
+	TickedChecklistClock: { nowMs: Schema.Number },
+	/** Operation: the Connect panel's 15 s poll. */
+	TickedConnectPoll: {},
+	/** Operation: the root resolved an org switch (`setActive`, then reload or the org's region). */
+	RequestedSwitchOrganization: { orgId: Schema.String, targetUrl: Schema.NullOr(Schema.String) },
 })
 export type Message = typeof Message.Type
 

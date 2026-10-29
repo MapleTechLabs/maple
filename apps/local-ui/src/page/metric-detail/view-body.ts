@@ -8,19 +8,21 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { serviceDot } from "@maple/web/ui/values"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import * as AreaChart from "@maple/web/charts/area-chart"
 import { failureWithoutData, isPending } from "../../data/slot"
-import { seriesChart } from "../kit/series-chart"
+import { seriesChart, seriesChartSlotId } from "../kit/series-chart"
 import { errorState } from "../kit/view-states"
 import type { MetricEntry } from "../metrics/catalog"
 import type { BreakdownRow } from "./fetch"
+import { ChartBinding, type MetricDetailViewBuilder } from "./composition"
 import { chartOf } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
 
 // The body of `MetricDetailView`: the chart section and the per-service breakdown.
 
-type H = HtmlBuilder<Message>
+type H = MetricDetailViewBuilder
 
 const relative = (value: string, nowMs: number): string => {
 	const ms = parseClickHouseDateTime(value)
@@ -67,8 +69,15 @@ const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds
 						heightClassName: "h-64",
 						unit: chartUnit,
 						fitYAxisToData: !counter,
-						chart: model.chart,
-						toChartMessage: (message) => Message.GotChartMessage({ message }),
+						renderChart: (viewInputs) =>
+							h.block(
+								ChartBinding.embedView({
+									slotId: seriesChartSlotId("local-metric-detail"),
+									model: model.chart,
+									view: AreaChart.view,
+									viewInputs,
+								}),
+							),
 						theme: isChartRuntimeReady(model.chartRuntime) ? model.themeColors : null,
 						nowMs: model.nowMs,
 					}),

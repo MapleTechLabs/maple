@@ -3,17 +3,17 @@ import { cn } from "@maple/ui/lib/utils"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/web/ui/table"
 import { tableSkeleton } from "@maple/web/ui/table-skeleton"
 import { errorRateValue, latencyValue, serviceDot } from "@maple/web/ui/values"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { hrefFor } from "../../route"
 import { linkRow, rowLink } from "../kit/row-link"
-import type { Message } from "./message"
+import type { ServicesViewBuilder } from "./composition"
 import type { ServiceCatalogEntry } from "./model"
 
 // The table of `ServicesListView` and its `ServiceRow`.
 
 const NUMBER_COLUMNS = ["Spans", "Errors", "Error rate", "p50", "p95", "Logs"]
 
-export const servicesSkeleton = (h: HtmlBuilder<Message>): Html =>
+export const servicesSkeleton = (h: ServicesViewBuilder): Html =>
 	h.div(
 		[h.Class("p-4")],
 		[
@@ -27,7 +27,7 @@ export const servicesSkeleton = (h: HtmlBuilder<Message>): Html =>
 		],
 	)
 
-const serviceRow = (h: HtmlBuilder<Message>, entry: ServiceCatalogEntry, query: URLSearchParams): Html =>
+const serviceRow = (h: ServicesViewBuilder, entry: ServiceCatalogEntry, query: URLSearchParams): Html =>
 	linkRow(h, undefined, [
 		tableCell(h, [
 			rowLink(h, { href: hrefFor(`/services/${encodeURIComponent(entry.serviceName)}`, query), className: "flex items-center gap-2" }, [
@@ -47,7 +47,7 @@ const serviceRow = (h: HtmlBuilder<Message>, entry: ServiceCatalogEntry, query: 
 	])
 
 export const servicesTable = (
-	h: HtmlBuilder<Message>,
+	h: ServicesViewBuilder,
 	entries: ReadonlyArray<ServiceCatalogEntry>,
 	query: URLSearchParams,
 	isPlaceholder: boolean,

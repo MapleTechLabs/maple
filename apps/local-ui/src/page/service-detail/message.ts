@@ -1,4 +1,3 @@
-import * as Chart from "@maple/web/charts/chart"
 import { ThemeColors } from "@maple/web/charts/theme-colors"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -12,13 +11,25 @@ export const Message = defineMessageUnion({
 	FailedFetchOverview: { key: Schema.String, failure: LoadFailure },
 	/** The result cache answered a slot (or an older window of it) before the fetch ran. */
 	FoundCachedOverview: { key: Schema.String, cached: CachedOf(Overview) },
-	SucceededFetchOperations: { key: Schema.String, operations: Schema.Array(OperationRow), fetchedAtMs: Schema.Number },
+	SucceededFetchOperations: {
+		key: Schema.String,
+		operations: Schema.Array(OperationRow),
+		fetchedAtMs: Schema.Number,
+	},
 	FailedFetchOperations: { key: Schema.String, failure: LoadFailure },
 	FoundCachedOperations: { key: Schema.String, cached: CachedOf(Schema.Array(OperationRow)) },
-	SucceededFetchTimeseries: { key: Schema.String, points: Schema.Array(SeriesPoint), fetchedAtMs: Schema.Number },
+	SucceededFetchTimeseries: {
+		key: Schema.String,
+		points: Schema.Array(SeriesPoint),
+		fetchedAtMs: Schema.Number,
+	},
 	FailedFetchTimeseries: { key: Schema.String, failure: LoadFailure },
 	FoundCachedTimeseries: { key: Schema.String, cached: CachedOf(Schema.Array(SeriesPoint)) },
-	SucceededFetchGoldenSignals: { key: Schema.String, rows: Schema.Array(GoldenSignalRow), fetchedAtMs: Schema.Number },
+	SucceededFetchGoldenSignals: {
+		key: Schema.String,
+		rows: Schema.Array(GoldenSignalRow),
+		fetchedAtMs: Schema.Number,
+	},
 	FailedFetchGoldenSignals: { key: Schema.String, failure: LoadFailure },
 	FoundCachedGoldenSignals: { key: Schema.String, cached: CachedOf(Schema.Array(GoldenSignalRow)) },
 	ClickedRetryOverview: {},
@@ -32,6 +43,6 @@ export const Message = defineMessageUnion({
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
-	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
+	InformedOfLocationChange: {},
 })
 export type Message = typeof Message.Type

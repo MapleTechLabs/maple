@@ -3,31 +3,113 @@ import { cn } from "@maple/ui/lib/utils"
 import { ingestUrl } from "../lib/services/common/ingest-url"
 import { mcpUrl } from "../lib/services/common/mcp-url"
 import { ONBOARD_SKILL_COMMAND } from "../components/ingest/onboard-skill"
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import {
+	copyableFieldInputStyles,
+	copyableFieldLabelStyles,
+	copyableFieldRevealVisibleStyles,
+	copyableFieldStyles,
+} from "@maple/ui/styles/ui/copyable-field"
+import { Block } from "foldkit"
+import type { ChildAttribute, Html } from "foldkit/html"
 import { AppRoute, hrefOf } from "../route"
 import { button } from "../ui/button"
-import * as CopyButton from "../ui/copy-button"
-import { copyableField } from "../ui/copyable-field"
+import { maskKey } from "../ui/copyable-field"
+import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../ui/input-group"
 import { badge, separator } from "../ui/display"
 import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
 import { inlineCode } from "../ui/inline-code"
 import { panel } from "../ui/panel"
-import * as PopoverView from "../ui/popover"
+import * as Popover from "../ui/popover"
 import { skeleton } from "../ui/skeleton"
 import { statusDot } from "../ui/status-dot"
-import { type CopyField, Message, type Model, POPOVER_ID, realServices } from "./connect-panel"
+import {
+	ConnectPanelComposition,
+	type ConnectPanelViewBuilder,
+	CopyEndpointBinding,
+	CopyMcpBinding,
+	CopyPrivateKeyBinding,
+	CopyPublicKeyBinding,
+	CopySkillBinding,
+	EffectsLayer,
+	init,
+	Message,
+	Model,
+	operations,
+	POPOVER_ID,
+	PopoverBinding,
+	realServices,
+	update,
+} from "./connect-panel"
 
-type H = HtmlBuilder<Message>
+type H = ConnectPanelViewBuilder
 
 const MCP_ENDPOINT = `${mcpUrl}/mcp`
 
 /** The endpoint field's input-group glyph size, so every copy button in the panel matches it. */
 const COPY_CLASS = "shrink-0 [&_svg:not([class*='size-'])]:size-4"
 
-const toCopy = (field: CopyField) => (message: CopyButton.Message) =>
-	Message.GotCopyMessage({ field, message })
+/** `render={<InputGroupButton />}`: the xs input-group size classes join CopyButton's own. */
+const INPUT_GROUP_COPY_CLASS = "px-[calc(--spacing(2)-1px)] [&_svg:not([class*='size-'])]:size-3"
+
+/** The popover's trigger state, without its own toggle: the button's click is this Block's. */
+const withoutToggle = (trigger: ReadonlyArray<ChildAttribute>): ReadonlyArray<ChildAttribute> =>
+	trigger.filter((attribute) => attribute.attribute._tag !== "OnClick")
+
+/** `CopyableField` (`ui/copyable-field`) around this panel's own bound copy button. */
+const credentialField = (
+	h: H,
+	options: Readonly<{
+		id: string
+		label: string
+		value: string
+		masked?: Readonly<{ isVisible: boolean; onToggle: Message }>
+	}>,
+	copy: Html,
+): Html => {
+	const masked = options.masked
+	const isHidden = masked !== undefined && !masked.isVisible
+	return h.div(
+		[h.Class(copyableFieldStyles)],
+		[
+			h.label([h.Class(copyableFieldLabelStyles)], [options.label]),
+			inputGroup(h, {}, [
+				inputGroupInput(h, {
+					id: options.id,
+					className: copyableFieldInputStyles,
+					attributes: [
+						h.Readonly(true),
+						h.Value(isHidden ? maskKey(options.value) : options.value),
+					],
+				}),
+				inputGroupAddon(h, { align: "inline-end" }, [
+					...(masked === undefined
+						? []
+						: [
+								inputGroupButton(
+									h,
+									{
+										attributes: [
+											h.OnClick(masked.onToggle),
+											h.AriaLabel(masked.isVisible ? "Hide key" : "Reveal key"),
+										],
+									},
+									[
+										icon(h, "EyeIcon", {
+											size: 14,
+											className: masked.isVisible
+												? copyableFieldRevealVisibleStyles
+												: undefined,
+										}),
+									],
+								),
+							]),
+					copy,
+				]),
+			]),
+		],
+	)
+}
 
 /** `ConnectionStatusPill`: amber while waiting, green once telemetry is observed, grey when the read failed. */
 const statusPill = (h: H, model: Model): Html => {
@@ -96,39 +178,71 @@ const credentials = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("space-y-3")],
 		[
-			copyableField(h, {
-				id: "connect-ingest-endpoint",
-				label: "Ingest endpoint",
-				value: ingestUrl,
-				copy: model.copies.endpoint,
-				toCopyMessage: toCopy("endpoint"),
-			}),
+			credentialField(
+				h,
+				{ id: "connect-ingest-endpoint", label: "Ingest endpoint", value: ingestUrl },
+				h.block(
+					CopyEndpointBinding.embedView({
+						slotId: "connect-copy-endpoint",
+						model: model.copyEndpoint,
+						viewInputs: {
+							value: ingestUrl,
+							label: "Ingest endpoint",
+							className: INPUT_GROUP_COPY_CLASS,
+						},
+					}),
+				),
+			),
 			...(model.keys._tag === "Failed"
 				? [keysUnavailable(h)]
 				: model.keys._tag === "Ready"
 					? [
-							copyableField(h, {
-								id: "connect-public-key",
-								label: "Public key",
-								value: model.keys.publicKey,
-								copy: model.copies.publicKey,
-								toCopyMessage: toCopy("publicKey"),
-								masked: {
-									isVisible: model.isPublicKeyVisible,
-									onToggle: Message.ClickedRevealPublicKey(),
+							credentialField(
+								h,
+								{
+									id: "connect-public-key",
+									label: "Public key",
+									value: model.keys.publicKey,
+									masked: {
+										isVisible: model.isPublicKeyVisible,
+										onToggle: Message.ClickedRevealPublicKey(),
+									},
 								},
-							}),
-							copyableField(h, {
-								id: "connect-private-key",
-								label: "Private key",
-								value: model.keys.privateKey,
-								copy: model.copies.privateKey,
-								toCopyMessage: toCopy("privateKey"),
-								masked: {
-									isVisible: model.isPrivateKeyVisible,
-									onToggle: Message.ClickedRevealPrivateKey(),
+								h.block(
+									CopyPublicKeyBinding.embedView({
+										slotId: "connect-copy-public-key",
+										model: model.copyPublicKey,
+										viewInputs: {
+											value: model.keys.publicKey,
+											label: "Public key",
+											className: INPUT_GROUP_COPY_CLASS,
+										},
+									}),
+								),
+							),
+							credentialField(
+								h,
+								{
+									id: "connect-private-key",
+									label: "Private key",
+									value: model.keys.privateKey,
+									masked: {
+										isVisible: model.isPrivateKeyVisible,
+										onToggle: Message.ClickedRevealPrivateKey(),
+									},
 								},
-							}),
+								h.block(
+									CopyPrivateKeyBinding.embedView({
+										slotId: "connect-copy-private-key",
+										model: model.copyPrivateKey,
+										viewInputs: {
+											value: model.keys.privateKey,
+											label: "Private key",
+											className: INPUT_GROUP_COPY_CLASS,
+										},
+									}),
+								),
+							),
 						]
 					: [fieldSkeleton(h, "Public key"), fieldSkeleton(h, "Private key")]),
 		],
@@ -187,13 +301,13 @@ const mcpCard = (h: H, model: Model): Html =>
 					],
 					[MCP_ENDPOINT],
 				),
-				CopyButton.view(h, {
-					model: model.copies.mcp,
-					toParentMessage: toCopy("mcp"),
-					value: MCP_ENDPOINT,
-					label: "MCP endpoint",
-					className: COPY_CLASS,
-				}),
+				h.block(
+					CopyMcpBinding.embedView({
+						slotId: "connect-copy-mcp",
+						model: model.copyMcp,
+						viewInputs: { value: MCP_ENDPOINT, label: "MCP endpoint", className: COPY_CLASS },
+					}),
+				),
 			],
 		),
 	])
@@ -223,13 +337,13 @@ const commandBlock = (h: H, model: Model): Html =>
 					h.span([h.Class("inline-block whitespace-nowrap")], [part]),
 				]),
 			),
-			CopyButton.view(h, {
-				model: model.copies.skill,
-				toParentMessage: toCopy("skill"),
-				value: ONBOARD_SKILL_COMMAND,
-				label: "Command",
-				className: COPY_CLASS,
-			}),
+			h.block(
+				CopySkillBinding.embedView({
+					slotId: "connect-copy-skill",
+					model: model.copySkill,
+					viewInputs: { value: ONBOARD_SKILL_COMMAND, label: "Command", className: COPY_CLASS },
+				}),
+			),
 		],
 	)
 
@@ -239,7 +353,8 @@ const LINK_CLASS = "font-prose text-muted-foreground underline underline-offset-
 /** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 	h.div(
-		[h.Class("space-y-4")],
+		// The panel renders only while open, so its removal is the close.
+		[h.Class("space-y-4"), h.OnUnmount(Message.UnmountedPanel())],
 		[
 			h.div(
 				[h.Class("space-y-1.5")],
@@ -247,11 +362,11 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 					h.div(
 						[h.Class("flex items-start justify-between gap-2")],
 						[
-							PopoverView.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"),
+							Popover.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"),
 							statusPill(h, model),
 						],
 					),
-					PopoverView.popoverDescription(
+					Popover.popoverDescription(
 						h,
 						POPOVER_ID,
 						"Point your OpenTelemetry SDK at this endpoint to start streaming telemetry into Maple.",
@@ -297,34 +412,41 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 ]
 
 /** `ConnectButton`: the popover trigger and, while open, the panel. */
-export const view = Submodel.defineView<Model, Message>((model, h) =>
-	h.submodel({
-		slotId: "shell-connect-popover",
-		model: model.popover,
-		view: PopoverView.view,
-		viewInputs: {
-			// Wide enough to cover the page header actions under it, not leave a sliver of one showing.
-			className: "w-[27.5rem] max-w-[calc(100vw-1rem)]",
-			toContent: () => (model.popover.isOpen ? connectPanel(h, model) : []),
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("contents")],
-					withTrigger(
-						button(
-							h,
-							// Outline: each page's own primary action keeps the orange; empty states carry the on-ramp.
-							{
-								size: "sm",
-								variant: "outline",
-								className: "gap-2",
-								slot: "popover-trigger",
-								attributes: trigger,
-							},
-							[icon(h, "ConnectionIcon", { className: "text-primary" }), "Connect"],
+export const view = ConnectPanelComposition.makeView((model, h) =>
+	h.block(
+		PopoverBinding.embedView({
+			slotId: "shell-connect-popover",
+			model: model.popover,
+			viewInputs: {
+				// Wide enough to cover the page header actions under it, not leave a sliver of one showing.
+				className: "w-[27.5rem] max-w-[calc(100vw-1rem)]",
+				toContent: () => (model.popover.isOpen ? connectPanel(h, model) : []),
+				toView: ({ trigger, withTrigger }) =>
+					h.div(
+						[h.Class("contents")],
+						withTrigger(
+							button(
+								h,
+								// Outline: each page's own primary action keeps the orange; empty states carry the on-ramp.
+								{
+									size: "sm",
+									variant: "outline",
+									className: "gap-2",
+									slot: "popover-trigger",
+									attributes: [
+										...withoutToggle(trigger),
+										h.OnClick(Message.ClickedTrigger()),
+									],
+								},
+								[icon(h, "ConnectionIcon", { className: "text-primary" }), "Connect"],
+							),
 						),
 					),
-				),
-		},
-		toParentMessage: (message) => Message.GotPopoverMessage({ message }),
-	}),
+			},
+		}),
+	),
 )
+
+const prepare = () => ConnectPanelComposition.prepareBlock({ init, update, view, operations, EffectsLayer })
+export const ConnectPanelBlock: Block.FromAssemblyWithView<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

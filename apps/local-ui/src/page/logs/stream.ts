@@ -6,7 +6,7 @@ import { FetchNextPage } from "./command"
 import { nextCursor } from "./fetch"
 import { boundsOf } from "./load"
 import type { LocalLog, Model } from "./model"
-import type { UpdateReturn } from "./update"
+import type { StepReturn } from "./update"
 import { reachesEnd } from "./virtualize"
 
 /** Every loaded row, newest first (`logs.data?.pages.flat()`). */
@@ -14,7 +14,7 @@ export const rowsOf = (model: Model): ReadonlyArray<LocalLog> =>
 	Option.match(AsyncData.getData(model.logs.data), { onNone: () => [], onSome: (data) => data.pages.flat() })
 
 /** The virtualizer's `onChange`: the last rendered row is the last loaded, so fetch the next page. */
-export const loadMoreIfAtEnd = (model: Model, context: PageContext): UpdateReturn => {
+export const loadMoreIfAtEnd = (model: Model, context: PageContext): StepReturn => {
 	const data = Option.getOrNull(AsyncData.getData(model.logs.data))
 	const maybeBounds = boundsOf(model, context)
 	if (data === null || !data.hasNextPage || model.isFetchingNextPage || !canExtend(model.logs) || model.logs.key === null) return { model }

@@ -3,7 +3,8 @@ import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { ShellViewBuilder } from "./composition"
 import { kbd } from "../ui/display"
 import { menuGroup, menuItem, menuLabel, menuSeparator, menuShortcut } from "../ui/dropdown-menu"
 import { icon, iconColor } from "../ui/icon"
@@ -28,7 +29,7 @@ type Item = Readonly<{
 }>
 
 const items = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	menu: Menu,
 	entries: ReadonlyArray<Item>,
 	offset = 0,
@@ -59,13 +60,13 @@ const items = (
 		)
 	})
 
-const keyboardShortcuts = (h: HtmlBuilder<Message>): Item => ({
+const keyboardShortcuts = (h: ShellViewBuilder): Item => ({
 	content: [icon(h, "KeyboardIcon"), "Keyboard shortcuts", menuShortcut(h, ["?"])],
 	onSelect: Message.ClickedKeyboardShortcuts(),
 })
 
 /** `ThemeToggle`: a plain row, not an item, so flipping the switch keeps the menu open. */
-const themeToggle = (h: HtmlBuilder<Message>, model: Model): Html =>
+const themeToggle = (h: ShellViewBuilder, model: Model): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2 rounded-md px-2 py-2 text-xs select-none")],
 		[
@@ -90,7 +91,7 @@ const themeToggle = (h: HtmlBuilder<Message>, model: Model): Html =>
 		],
 	)
 
-const guestMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyArray<Html> => [
+const guestMenu = (h: ShellViewBuilder, model: Model, menu: Menu): ReadonlyArray<Html> => [
 	menuGroup(h, undefined, [themeToggle(h, model)]),
 	menuSeparator(h),
 	menuGroup(
@@ -114,14 +115,19 @@ const guestMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyA
 	),
 ]
 
-const supportMenu = (h: HtmlBuilder<Message>, menu: Menu, isClerk: boolean): ReadonlyArray<Html> => [
+const supportMenu = (h: ShellViewBuilder, menu: Menu, isClerk: boolean): ReadonlyArray<Html> => [
 	menuGroup(
 		h,
 		undefined,
 		items(h, menu, [
 			// The channel is created in Maple's Slack for a Clerk org; self-hosted has neither.
 			...(isClerk
-				? [{ content: [icon(h, "SlackIcon"), "Shared Slack channel"], onSelect: Message.ClickedSupportChannel() }]
+				? [
+						{
+							content: [icon(h, "SlackIcon"), "Shared Slack channel"],
+							onSelect: Message.ClickedSupportChannel(),
+						},
+					]
 				: []),
 			{
 				content: [icon(h, "DiscordIcon"), "Community Discord"],
@@ -139,10 +145,10 @@ const supportMenu = (h: HtmlBuilder<Message>, menu: Menu, isClerk: boolean): Rea
 ]
 // NAMESPACES
 
-const checkIcon = (h: HtmlBuilder<Message>): Html => icon(h, "CheckIcon", { className: "ml-auto" })
+const checkIcon = (h: ShellViewBuilder): Html => icon(h, "CheckIcon", { className: "ml-auto" })
 
 const namespaceItem = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	label: string,
 	maybeNamespace: Option.Option<string>,
 	isPinned: boolean,
@@ -152,7 +158,7 @@ const namespaceItem = (
 })
 
 /** `NamespaceScopeList emptyNotice`: the search row appears from eight namespaces. */
-const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyArray<Html> => {
+const namespaceList = (h: ShellViewBuilder, model: Model, menu: Menu): ReadonlyArray<Html> => {
 	const pinned = pinnedNamespaceOf(model)
 	const observed: ReadonlyArray<string> = AsyncData.getOrElse(
 		model.namespaces,
@@ -176,8 +182,12 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 		return [h.div([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No namespaces detected"])]
 	const rows = namespaceRows(observed, pinned, model.namespaceQuery)
 	const entries: ReadonlyArray<Item> = [
-		...(rows.isFiltered ? [] : [namespaceItem(h, "All namespaces", Option.none(), Option.isNone(pinned))]),
-		...rows.matches.map((name) => namespaceItem(h, name, Option.some(name), Option.contains(pinned, name))),
+		...(rows.isFiltered
+			? []
+			: [namespaceItem(h, "All namespaces", Option.none(), Option.isNone(pinned))]),
+		...rows.matches.map((name) =>
+			namespaceItem(h, name, Option.some(name), Option.contains(pinned, name)),
+		),
 		...Option.match(rows.unseenPin, {
 			onNone: () => [],
 			onSome: (name): ReadonlyArray<Item> => [
@@ -208,14 +218,14 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 	]
 }
 
-const orgMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyArray<Html> => {
+const orgMenu = (h: ShellViewBuilder, model: Model, menu: Menu): ReadonlyArray<Html> => {
 	const labelId = `${popupIdOf(menu)}-label`
 	return [menuGroup(h, labelId, [menuLabel(h, labelId, ["Namespace"]), ...namespaceList(h, model, menu)])]
 }
 
 /** The collapsed rail's section menu: every child, the ones the org lacks after a separator. */
 const navSectionMenu = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	menu: Menu,
 	title: string,
@@ -244,9 +254,17 @@ const navSectionMenu = (
 }
 
 /** `UserMenu` (Clerk): who is signed in, the theme, Account, Settings, shortcuts, Log out. */
-const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk: ShellClerk): ReadonlyArray<Html> => {
+const clerkUserMenu = (
+	h: ShellViewBuilder,
+	model: Model,
+	menu: Menu,
+	clerk: ShellClerk,
+): ReadonlyArray<Html> => {
 	const name = userNameOf(clerk)
-	const email = Option.getOrElse(Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email), () => "")
+	const email = Option.getOrElse(
+		Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email),
+		() => "",
+	)
 	const labelId = `${popupIdOf(menu)}-label`
 	return [
 		menuGroup(h, labelId, [
@@ -254,14 +272,25 @@ const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk:
 				h.div(
 					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
 					[
-						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", { url: userImageOf(clerk), label: name }),
+						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", {
+							url: userImageOf(clerk),
+							label: name,
+						}),
 						h.div(
 							[h.Class("grid flex-1 text-left text-sm leading-tight")],
 							[
 								h.span([h.Class("truncate font-medium"), h.Title(name)], [name]),
 								...(email === ""
 									? []
-									: [h.span([h.Class("truncate text-muted-foreground text-xs"), h.Title(email)], [email])]),
+									: [
+											h.span(
+												[
+													h.Class("truncate text-muted-foreground text-xs"),
+													h.Title(email),
+												],
+												[email],
+											),
+										]),
 							],
 						),
 					],
@@ -284,13 +313,18 @@ const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk:
 		menuGroup(
 			h,
 			undefined,
-			items(h, menu, [{ content: [icon(h, "LogoutIcon"), "Log out"], onSelect: Message.ClickedLogOut() }], 3),
+			items(
+				h,
+				menu,
+				[{ content: [icon(h, "LogoutIcon"), "Log out"], onSelect: Message.ClickedLogOut() }],
+				3,
+			),
 		),
 	]
 }
 
 export const menuContent = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	menu: Menu,
 	currentPath: string,

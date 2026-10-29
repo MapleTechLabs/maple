@@ -1,26 +1,43 @@
 import { cn } from "@maple/ui/lib/utils"
 import * as A from "@maple/ui/styles/ui/autocomplete"
 import * as CommandStyles from "@maple/ui/styles/ui/command"
-import { Mount } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../ui/combobox"
+import { Array } from "effect"
+import { Block } from "foldkit"
+import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
+import {
+	ComboboxComposition,
+	type ComboboxViewBuilder,
+	itemId,
+	listId,
+	Message as ListMessage,
+	type Model as ListModel,
+} from "../../ui/combobox"
 import {
 	type CommandGroup,
+	type CommandItem,
 	commandFooter,
 	commandHiddenInput,
 	commandInput,
-	commandList,
 } from "../../ui/command"
-import type * as Dialog from "../../ui/dialog"
-import { view as dialogView } from "../../ui/dialog-view"
 import { kbd } from "../../ui/display"
 import { icon } from "../../ui/icon"
 import { manifestGlyph } from "../../ui/manifest-glyph"
 import { serviceDot } from "../../ui/values"
 import { type Glyph, groupEntries, type PaletteEntry } from "./entries"
 import { MeasurePaletteList } from "./command"
-import { Message, type Model } from "./model"
-import { type Context, shownEntries } from "./update"
+import { Message, Model } from "./model"
+import {
+	type Context,
+	DialogBinding,
+	EffectsLayer,
+	init,
+	ListBinding,
+	operations,
+	PaletteComposition,
+	shownEntries,
+	update,
+} from "./update"
+import { scrollArea } from "../../ui/scroll-area"
 
 /**
  * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
@@ -79,54 +96,179 @@ const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
 
 const PLACEHOLDER = "Search pages, dashboards, actions…"
 
-/** The palette's dialog portal, placed by the shell's overlay layer. */
-export const paletteView = <M>(
-	h: HtmlBuilder<M>,
-	model: Model,
-	inputs: ViewInputs,
-	toMessage: (message: Message) => M,
+// THE LIST: alternate Combobox views, so the input's and the list's events reach the list's Block.
+
+/** The large borderless autocomplete input, focused when the dialog opens. */
+const listInputView = ComboboxComposition.makeView.withInputs<
+	Readonly<{ groups: ReadonlyArray<CommandGroup> }>
+>((model, inputs, h) =>
+	commandInput(
+		h,
+		model,
+		{ placeholder: PLACEHOLDER, groups: inputs.groups, hasDismissButton: true, isUnfiltered: true },
+		(message) => message,
+	),
+)
+
+/** The autocomplete's hidden input, last in the popup. */
+const listHiddenInputView = ComboboxComposition.makeView((model, h) => commandHiddenInput(h, model))
+
+type ListInputs = Readonly<{
+	groups: ReadonlyArray<CommandGroup>
+	empty: Html
+	/** The palette's own click on an entry (its value), spread on the entry. */
+	entryClick: (value: string) => ReadonlyArray<ChildAttribute>
+}>
+
+const valueOf = (item: CommandItem): string => item.value ?? item.title
+
+/** `CommandItem`: keyed like cmdk's items, so a re-ranked row keeps its node (a pending click stays on it). */
+const listItem = (
+	h: ComboboxViewBuilder,
+	model: ListModel,
+	item: CommandItem,
+	index: number,
+	inputs: ListInputs,
 ): Html => {
-	const toList = (message: Combobox.Message) =>
-		toMessage(
-			message._tag === "PressedInputKey" && message.key === "Enter"
-				? Message.PressedEnter({ visibleFlagged: inputs.visibleFlagged })
-				: Message.GotListMessage({ message }),
-		)
+	const attributes = [
+		h.Key(valueOf(item)),
+		h.Class(cn(A.autocompleteItemStyles, CommandStyles.commandItemStyles, "flex items-center gap-2")),
+		...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
+		h.DataAttribute("slot", "command-item"),
+		...(item.href === undefined ? [] : [h.Href(item.href)]),
+		h.Id(itemId(model.id, index)),
+		h.Role("option"),
+		h.OnMouseMove(ListMessage.HighlightedItem({ index })),
+		...inputs.entryClick(valueOf(item)),
+	]
+	const children = [
+		...(item.leading === undefined ? [] : [item.leading]),
+		h.span([h.Class("truncate text-sm")], [item.title]),
+		...(item.shortcut === undefined
+			? []
+			: [
+					h.kbd(
+						[
+							h.Class(CommandStyles.commandShortcutStyles),
+							h.DataAttribute("slot", "command-shortcut"),
+						],
+						[item.shortcut],
+					),
+				]),
+	]
+	return item.href === undefined ? h.div(attributes, children) : h.a(attributes, children)
+}
+
+/** `CommandList` in its ScrollArea, unfiltered (the groups are what the query matched), numbered in order. */
+const listView = ComboboxComposition.makeView.withInputs<ListInputs>((model, inputs, h) => {
+	const groups = Array.filter(inputs.groups, (group) => group.items.length > 0)
+	const rendered = Array.mapAccum(groups, 0, (start, group, groupIndex): [number, Html] => {
+		const labelId = `${model.id}-group-${groupIndex}`
+		return [
+			start + group.items.length,
+			h.div(
+				[
+					h.Key(group.label),
+					h.AriaLabelledBy(labelId),
+					h.Class(cn(A.autocompleteGroupStyles)),
+					h.DataAttribute("slot", "command-group"),
+					h.Role("group"),
+				],
+				[
+					h.div(
+						[
+							h.AriaHidden(true),
+							h.Class(cn(A.autocompleteGroupLabelStyles)),
+							h.DataAttribute("slot", "command-group-label"),
+							h.Id(labelId),
+						],
+						[group.label],
+					),
+					...group.items.map((item, offset) => listItem(h, model, item, start + offset, inputs)),
+				],
+			),
+		]
+	})[1]
+	const body = rendered.length === 0 && inputs.empty !== null ? [inputs.empty] : rendered
+	return scrollArea(
+		h,
+		{
+			idPrefix: `${model.id}-scroll`,
+			scrollFade: true,
+			scrollbarGutter: true,
+			hasMeasuredScrollbar: true,
+		},
+		[
+			h.div(
+				[
+					...(model.highlighted === null
+						? []
+						: [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]),
+					h.Class(cn(A.autocompleteListStyles, CommandStyles.commandListStyles)),
+					h.DataAttribute("empty", ""),
+					h.DataAttribute("slot", "command-list"),
+					h.Id(listId(model.id)),
+					h.Role("listbox"),
+					h.Tabindex(-1),
+				],
+				body,
+			),
+		],
+	)
+})
+
+/** The palette's dialog portal, placed by the shell's overlay layer. */
+export const view = PaletteComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const shown = shownEntries(model, inputs.context, inputs.visibleFlagged)
 	const groups = groupsOf(h, shown.entries)
-	return h.submodel({
-		slotId: "command-palette",
-		model: model.dialog,
-		view: dialogView,
-		viewInputs: {
-			hasTrigger: false,
-			toView: ({ portal }) => portal,
-			toContent: () => [
-				commandInput(
-					h,
-					model.list,
-					{ placeholder: PLACEHOLDER, groups, hasDismissButton: true, isUnfiltered: true },
-					toList,
-				),
-				h.div(
-					[h.Class(PALETTE_LIST_CLASS)],
-					[
-						commandList(h, model.list, groups, toList, {
-							isUnfiltered: true,
-							itemClassName: "flex items-center gap-2",
-							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
-							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
-							viewportAttributes: [
-								h.OnMount(Mount.mapMessage(MeasurePaletteList(), toMessage)),
-							],
-							hasMeasuredScrollbar: true,
+	return h.block(
+		DialogBinding.embedView({
+			slotId: "command-palette",
+			model: model.dialog,
+			viewInputs: {
+				hasTrigger: false,
+				toView: ({ portal }) => portal,
+				toContent: () => [
+					h.block(
+						ListBinding.embedView({
+							slotId: "command-palette-input",
+							model: model.list,
+							view: listInputView,
+							viewInputs: { groups },
 						}),
-					],
-				),
-				commandFooter(h, [hint(h, "↵", " to open"), hint(h, "Esc", " to close")]),
-				commandHiddenInput(h, model.list),
-			],
-		},
-		toParentMessage: (message: Dialog.Message) => toMessage(Message.GotDialogMessage({ message })),
-	})
-}
+					),
+					h.div(
+						[h.Class(PALETTE_LIST_CLASS), h.OnMount(MeasurePaletteList())],
+						[
+							h.block(
+								ListBinding.embedView({
+									slotId: "command-palette-list",
+									model: model.list,
+									view: listView,
+									viewInputs: {
+										groups,
+										empty: shown.isSearch ? empty(h, model.list.inputValue) : null,
+										entryClick: (id) =>
+											childAttributes([h.OnClick(Message.ClickedEntry({ id }))]),
+									},
+								}),
+							),
+						],
+					),
+					commandFooter(h, [hint(h, "↵", " to open"), hint(h, "Esc", " to close")]),
+					h.block(
+						ListBinding.embedView({
+							slotId: "command-palette-hidden-input",
+							model: model.list,
+							view: listHiddenInputView,
+						}),
+					),
+				],
+			},
+		}),
+	)
+})
+
+const prepare = () => PaletteComposition.prepareBlock({ init, update, view, operations, EffectsLayer })
+export const PaletteBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

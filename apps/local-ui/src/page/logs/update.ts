@@ -1,54 +1,60 @@
-import type { Resources } from "../../platform/resources"
 import { patternSearchTerm } from "../../lib/log-patterns"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import * as ToggleGroup from "@maple/web/ui/toggle-group"
 import { Option } from "effect"
-import { AsyncData, Command, type Update } from "foldkit"
+import { AsyncData } from "foldkit"
 import { idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
-import { ReadClock } from "./command"
+import type { updateCopy } from "../kit/copies"
+import { type LogsCommand, ReadClock } from "./command"
+import { LogsComposition } from "./composition"
 import { filtersOf, modeOf } from "./filters"
 import { load } from "./load"
-import { Message } from "./message"
-import { initChipJsonTooltip, type Model } from "./model"
+import type { Message } from "./message"
+import type { Model } from "./model"
+import type { WaitChipDelay } from "./update-chips"
 
-export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
-export type InitReturn = Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }>
+/** Every Command the page's own update returns. */
+export type PageCommand =
+	| LogsCommand
+	| ReturnType<typeof WaitChipDelay>
+	| ReturnType<typeof updateCopy<Message>>["commands"][number]
 
-export const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
+/** A result without an ask to the root, so it can be combined with the Bindings' operations. */
+export type StepReturn = Readonly<{ model: Model; commands?: ReadonlyArray<PageCommand> }>
+export type UpdateReturn = StepReturn & Readonly<{ outMessage?: PageOutMessage }>
 
 export const MODE_LABEL = "Logs view"
 
-export const init = (context: PageContext): InitReturn => {
+/** The page's own fields; the filter sections and the card's tooltip start from their Bindings. */
+type PageFields = Omit<Model, "sections" | "chipJsonTooltip">
+
+/** The filter sections, the log sheet's absence and the card's tooltip are assembled by their Bindings. */
+export const init = LogsComposition.makeInit((context: PageContext) => {
 	const query = queryOf(context.location)
 	const q = query.get("q") ?? ""
-	return {
-		model: {
-			_tag: "LogsPage",
-			maybeAnchorMs: Option.none(),
-			nowMs: 0,
-			logs: idle(),
-			isFetchingNextPage: false,
-			pageGeneration: 0,
-			logsUpdatedAtMs: 0,
-			patternsUpdatedAtMs: 0,
-			patterns: idle(),
-			services: idle(),
-			severities: idle(),
-			viewport: { scrollTop: 0, height: 0 },
-			search: { text: q, version: 0, sent: q },
-			modeToggle: ToggleGroup.init({ label: MODE_LABEL, values: [modeOf(query)] }),
-			sections: FilterSections.init(),
-			maybeDetail: Option.none(),
-			isRefreshing: false,
-			copies: {},
-			chipCard: { visible: Option.none(), pendingOpen: Option.none(), pendingClose: Option.none(), generation: 0, isJsonExpanded: false },
-			chipJsonTooltip: initChipJsonTooltip(),
-		},
-		commands: [ReadClock(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
+	const model: PageFields = {
+		_tag: "LogsPage",
+		maybeAnchorMs: Option.none(),
+		nowMs: 0,
+		logs: idle(),
+		isFetchingNextPage: false,
+		pageGeneration: 0,
+		logsUpdatedAtMs: 0,
+		patternsUpdatedAtMs: 0,
+		patterns: idle(),
+		services: idle(),
+		severities: idle(),
+		viewport: { scrollTop: 0, height: 0 },
+		search: { text: q, version: 0, sent: q },
+		modeToggle: ToggleGroup.initialModel({ label: MODE_LABEL, values: [modeOf(query)] }),
+		maybeDetail: Option.none(),
+		isRefreshing: false,
+		copies: {},
+		chipCard: { visible: Option.none(), pendingOpen: Option.none(), pendingClose: Option.none(), generation: 0, isJsonExpanded: false },
 	}
-}
+	return { model, commands: [ReadClock()] }
+})
 
 /** The hash changed: sync the search input (unless it is our own echo), then request. */
 export const locationChanged = (model: Model, context: PageContext): UpdateReturn => {

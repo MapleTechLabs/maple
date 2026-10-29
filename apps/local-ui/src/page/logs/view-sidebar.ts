@@ -1,15 +1,16 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { filterSection } from "@maple/web/ui/filters/filter-section"
 import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import { FilterSectionsBinding, type LogsViewBuilder } from "./composition"
 import type { Slot } from "../../data/slot"
 import { activeFilterCount, type LogFilters } from "./filters"
 import { Message } from "./message"
 import type { FacetOption, Model } from "./model"
-import { toSections } from "./update"
 
 // The Logs page's filter rail.
 
@@ -21,7 +22,13 @@ const isFetching = (slot: Slot<unknown>) => AsyncData.isLoading(slot.data) || As
 const severityColor = (name: string): string | undefined =>
 	Object.hasOwn(SEVERITY_COLORS, name) ? SEVERITY_COLORS[name] : undefined
 
-export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: LogFilters): Html =>
+/** Each section's open state and search live in the page's FilterSections Block. */
+const embedSection = (h: LogsViewBuilder, model: Model) => (viewInputs: FilterSections.ViewInputs) =>
+	h.block(
+		FilterSectionsBinding.embedView({ slotId: `filter-section-${viewInputs.key}`, model: model.sections, viewInputs }),
+	)
+
+export const sidebar = (h: LogsViewBuilder, model: Model, filters: LogFilters): Html =>
 	filterSidebarFrame(
 		h,
 		{ className: "w-56 shrink-0 px-4", isWaiting: isFetching(model.services) || isFetching(model.severities) },
@@ -36,8 +43,7 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: LogFilte
 						options: optionsOf(model.severities),
 						selected: filters.severity ? [filters.severity] : [],
 						colorOf: severityColor,
-						sections: model.sections,
-						toSectionsMessage: toSections,
+						embedSection: embedSection(h, model),
 						onToggle: (name) => Message.ToggledFacetOption({ param: "severity", name }),
 					}),
 					filterSection(h, {
@@ -46,8 +52,7 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: LogFilte
 						selected: filters.service ? [filters.service] : [],
 						isSearchable: true,
 						colorOf: getServiceColor,
-						sections: model.sections,
-						toSectionsMessage: toSections,
+						embedSection: embedSection(h, model),
 						onToggle: (name) => Message.ToggledFacetOption({ param: "service", name }),
 					}),
 				].filter((section) => section !== null),

@@ -1,7 +1,8 @@
 import { rankCounts, severityBreakdown, splitTemplate } from "../../lib/log-patterns"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { LogsViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { LogPattern } from "./model"
 
@@ -9,7 +10,7 @@ import type { LogPattern } from "./model"
 
 const VISIBLE_SERVICES = 2
 
-const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number): Html => {
+const patternRow = (h: LogsViewBuilder, pattern: LogPattern, share: number): Html => {
 	const services = rankCounts(pattern.serviceCounts)
 	const dominant = rankCounts(pattern.severityCounts)[0]?.name ?? "UNKNOWN"
 	const percent = share * 100
@@ -82,7 +83,7 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 	)
 }
 
-const shareColumn = (h: HtmlBuilder<Message>, count: number, percent: number): Html =>
+const shareColumn = (h: LogsViewBuilder, count: number, percent: number): Html =>
 	h.div(
 		[h.Class("flex w-28 shrink-0 flex-col items-end gap-1")],
 		[
@@ -104,7 +105,7 @@ const shareColumn = (h: HtmlBuilder<Message>, count: number, percent: number): H
 	)
 
 export const patternsList = (
-	h: HtmlBuilder<Message>,
+	h: LogsViewBuilder,
 	options: Readonly<{ patterns: ReadonlyArray<LogPattern>; totalSampled: number; isDimmed: boolean }>,
 ): Html =>
 	h.ul(

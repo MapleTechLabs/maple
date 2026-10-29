@@ -3,7 +3,8 @@ import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { Option } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { ShellViewBuilder } from "./composition"
 import { icon, iconColor } from "../ui/icon"
 import {
 	sidebarGroup,
@@ -17,7 +18,7 @@ import {
 	sidebarMenuSubItem,
 } from "../ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
-import { Menu, Message } from "./message"
+import { Menu } from "./message"
 import { type Model, type ShellClerk, shellProbe, shellSurfaces } from "./model"
 import {
 	isNavItemActive,
@@ -76,7 +77,7 @@ const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: strin
 	}, undefined)?.href
 // ROWS
 
-const collapsedSectionRow = (h: HtmlBuilder<Message>, model: Model, item: NavItem, isActive: boolean): Html =>
+const collapsedSectionRow = (h: ShellViewBuilder, model: Model, item: NavItem, isActive: boolean): Html =>
 	sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
 			h,
@@ -90,7 +91,7 @@ const collapsedSectionRow = (h: HtmlBuilder<Message>, model: Model, item: NavIte
 		),
 	])
 
-const subList = (h: HtmlBuilder<Message>, subItems: ReadonlyArray<NavSubItem>, currentPath: string): Html => {
+const subList = (h: ShellViewBuilder, subItems: ReadonlyArray<NavSubItem>, currentPath: string): Html => {
 	const activeSubHref = activeSubHrefOf(subItems, currentPath)
 	return sidebarMenuSub(
 		h,
@@ -130,7 +131,7 @@ const subList = (h: HtmlBuilder<Message>, subItems: ReadonlyArray<NavSubItem>, c
 
 /** `NavRow`: a link, a section with its children while active, or on the collapsed rail a menu. */
 const navRow = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	item: NavItem,
 	currentPath: string,
@@ -180,7 +181,12 @@ const navRow = (
 												],
 									),
 									...(preview.overflow > 0
-										? [h.span([h.Class("ms-0.5 text-2xs tabular-nums")], [`+${preview.overflow}`])]
+										? [
+												h.span(
+													[h.Class("ms-0.5 text-2xs tabular-nums")],
+													[`+${preview.overflow}`],
+												),
+											]
 										: []),
 								],
 							),
@@ -195,11 +201,7 @@ const navRow = (
 const MAX_PINNED = 5
 
 /** `PinnedGroup`: starred dashboards (device-local favorites), capped, hidden on the collapsed rail. */
-export const pinnedGroup = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	currentPath: string,
-): ReadonlyArray<Html> => {
+export const pinnedGroup = (h: ShellViewBuilder, model: Model, currentPath: string): ReadonlyArray<Html> => {
 	const dashboards: ReadonlyArray<PinnedDashboardRow> = AsyncData.getOrElse(
 		model.dashboards,
 		(): ReadonlyArray<PinnedDashboardRow> => [],
@@ -264,7 +266,7 @@ export const pinnedGroup = (
 }
 
 export const navGroupSections = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	currentPath: string,
 	tip: RailTip = NO_TIP,

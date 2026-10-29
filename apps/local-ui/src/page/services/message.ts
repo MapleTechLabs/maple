@@ -1,5 +1,3 @@
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
@@ -27,7 +25,7 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ChangedRange: { range: Schema.String },
 	ClickedWidenRange: {},
-	GotFilterSectionsMessage: { message: FilterSections.Message },
-	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	/** The root saw the fragment change under the open page: sync the search, load what it needs. */
+	InformedOfLocationChange: {},
 })
 export type Message = typeof Message.Type

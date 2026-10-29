@@ -2,24 +2,40 @@ import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/do
 import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Block } from "foldkit"
+import type { ChildAttribute, Html } from "foldkit/html"
 import { button } from "../ui/button"
 import { badge } from "../ui/display"
 import { icon } from "../ui/icon"
 import { iconButton } from "../ui/icon-button"
 import { meter } from "../ui/meter"
-import * as PopoverView from "../ui/popover"
-import { Message, type Model } from "./onboarding-checklist"
+import {
+	ChecklistComposition,
+	type ChecklistViewBuilder,
+	EffectsLayer,
+	init,
+	Message,
+	Model,
+	operations,
+	PopoverBinding,
+	update,
+} from "./onboarding-checklist"
 
-type H = HtmlBuilder<Message>
+type H = ChecklistViewBuilder
+
+/** The popover's trigger state, without its own toggle: the pill's click is this Block's. */
+const withoutToggle = (trigger: ReadonlyArray<ChildAttribute>): ReadonlyArray<ChildAttribute> =>
+	trigger.filter((attribute) => attribute.attribute._tag !== "OnClick")
 
 const credits = (checklist: V2OnboardingChecklist): string => `$${checklist.reward_amount_usd}`
 
 const deadlineOf = (checklist: V2OnboardingChecklist): number | null =>
 	checklist.deadline_at === null
 		? null
-		: Option.match(DateTime.make(checklist.deadline_at), { onNone: () => null, onSome: DateTime.toEpochMillis })
+		: Option.match(DateTime.make(checklist.deadline_at), {
+				onNone: () => null,
+				onSome: DateTime.toEpochMillis,
+			})
 
 /** `ProgressChip`: `2/5`, written out. */
 const progressChip = (h: H, completed: number, total: number): Html =>
@@ -49,7 +65,9 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 		[
 			h.span(
 				[
-					h.Class("absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l border-primary/40 bg-popover"),
+					h.Class(
+						"absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l border-primary/40 bg-popover",
+					),
 					h.AriaHidden(true),
 				],
 				[],
@@ -66,7 +84,10 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 							),
 						],
 						[
-							h.span([h.Class("block whitespace-nowrap text-sm font-semibold")], ["Finish the onboarding list"]),
+							h.span(
+								[h.Class("block whitespace-nowrap text-sm font-semibold")],
+								["Finish the onboarding list"],
+							),
 							h.span(
 								[h.Class("mt-0.5 block text-xs text-muted-foreground")],
 								["and get ", credits(checklist), " in credits."],
@@ -140,12 +161,14 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep, index: number): Html =>
 const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyArray<Html> => {
 	const isClaimed = model.isJustClaimed || checklist.status === "claimed"
 	const deadlineMs = deadlineOf(checklist)
-	const timeLeft = deadlineMs === null ? null : formatCountdown(deadlineMs - model.nowMs, { fixedHours: true })
+	const timeLeft =
+		deadlineMs === null ? null : formatCountdown(deadlineMs - model.nowMs, { fixedHours: true })
 	const progress = checklist.total_count === 0 ? 0 : checklist.completed_count / checklist.total_count
 	const amount = credits(checklist)
 	return [
 		h.div(
-			[],
+			// The panel renders only while open, so its removal is the close.
+			[h.OnUnmount(Message.UnmountedPanel())],
 			[
 				h.div(
 					[h.Class("relative space-y-3 border-b bg-primary/[0.06] px-4 pt-4 pb-3")],
@@ -166,7 +189,11 @@ const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyAr
 									[
 										h.h3(
 											[h.Class("text-base font-semibold leading-tight")],
-											[isClaimed ? `${amount} in credits added` : `Get ${amount} in credits`],
+											[
+												isClaimed
+													? `${amount} in credits added`
+													: `Get ${amount} in credits`,
+											],
 										),
 										h.p(
 											[h.Class("text-xs leading-relaxed text-muted-foreground")],
@@ -180,10 +207,18 @@ const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyAr
 								),
 							],
 						),
-						meter(h, { value: progress, minVisible: 0, className: "bg-primary/15", fillClassName: "bg-primary" }),
+						meter(h, {
+							value: progress,
+							minVisible: 0,
+							className: "bg-primary/15",
+							fillClassName: "bg-primary",
+						}),
 					],
 				),
-				h.ol([h.Class("space-y-0.5 p-2")], checklist.steps.map((step, index) => stepRow(h, step, index + 1))),
+				h.ol(
+					[h.Class("space-y-0.5 p-2")],
+					checklist.steps.map((step, index) => stepRow(h, step, index + 1)),
+				),
 				h.div(
 					[h.Class("flex items-center justify-between gap-3 border-t px-4 py-3 text-xs")],
 					panelFooter(h, model, checklist, isClaimed, timeLeft),
@@ -194,59 +229,73 @@ const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyAr
 }
 
 /** The pill: shown while the window is open (or the credit just claimed in this popover). */
-export const view = Submodel.defineView<Model, Message>((model, h) => {
+export const view = ChecklistComposition.makeView((model, h) => {
 	const checklist = model.checklist
 	if (checklist === null) return null
 	const isActive = checklist.status === "in_progress" || checklist.status === "claimable"
 	const deadlineMs = deadlineOf(checklist)
-	const isWindowOpen = checklist.status === "claimable" || (deadlineMs !== null && deadlineMs >= model.nowMs)
+	const isWindowOpen =
+		checklist.status === "claimable" || (deadlineMs !== null && deadlineMs >= model.nowMs)
 	if (!model.isJustClaimed && !(isActive && isWindowOpen)) return null
 	const isClaimable = checklist.status === "claimable"
-	return h.submodel({
-		slotId: "onboarding-checklist-popover",
-		model: model.popover,
-		view: PopoverView.view,
-		viewInputs: {
-			className: "w-[22rem] max-w-[calc(100vw-1rem)] p-0",
-			toContent: () => (model.popover.isOpen ? panel(h, model, checklist) : []),
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("relative")],
-					[
-						...withTrigger(
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									className: cn(
-										"gap-2 border-primary/40 bg-primary/10 text-foreground hover:bg-primary/15",
-										isClaimable && "border-primary bg-primary/20",
-									),
-									slot: "popover-trigger",
-									attributes: trigger,
-								},
-								[
-									icon(h, "StarIcon", { className: "text-primary" }),
-									isClaimable || deadlineMs === null
-										? h.span([], ["Claim ", credits(checklist), " credits"])
-										: h.span(
-												[h.Class("font-mono tabular-nums")],
-												[formatCountdown(deadlineMs - model.nowMs, { fixedHours: true })],
-											),
-									progressChip(h, checklist.completed_count, checklist.total_count),
-								],
+	return h.block(
+		PopoverBinding.embedView({
+			slotId: "onboarding-checklist-popover",
+			model: model.popover,
+			viewInputs: {
+				className: "w-[22rem] max-w-[calc(100vw-1rem)] p-0",
+				toContent: () => (model.popover.isOpen ? panel(h, model, checklist) : []),
+				toView: ({ trigger, withTrigger }) =>
+					h.div(
+						[h.Class("relative")],
+						[
+							...withTrigger(
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										className: cn(
+											"gap-2 border-primary/40 bg-primary/10 text-foreground hover:bg-primary/15",
+											isClaimable && "border-primary bg-primary/20",
+										),
+										slot: "popover-trigger",
+										attributes: [
+											...withoutToggle(trigger),
+											h.OnClick(Message.ClickedTrigger()),
+										],
+									},
+									[
+										icon(h, "StarIcon", { className: "text-primary" }),
+										isClaimable || deadlineMs === null
+											? h.span([], ["Claim ", credits(checklist), " credits"])
+											: h.span(
+													[h.Class("font-mono tabular-nums")],
+													[
+														formatCountdown(deadlineMs - model.nowMs, {
+															fixedHours: true,
+														}),
+													],
+												),
+										progressChip(h, checklist.completed_count, checklist.total_count),
+									],
+								),
 							),
-						),
-						...(!model.isSeen && !model.popover.isOpen ? [rewardCallout(h, checklist)] : []),
-					],
-				),
-		},
-		toParentMessage: (message) => Message.GotPopoverMessage({ message }),
-	})
+							...(!model.isSeen && !model.popover.isOpen ? [rewardCallout(h, checklist)] : []),
+						],
+					),
+			},
+		}),
+	)
 })
 
-const panelFooter = (h: H, model: Model, checklist: V2OnboardingChecklist, isClaimed: boolean, timeLeft: string | null): ReadonlyArray<Html> => {
+const panelFooter = (
+	h: H,
+	model: Model,
+	checklist: V2OnboardingChecklist,
+	isClaimed: boolean,
+	timeLeft: string | null,
+): ReadonlyArray<Html> => {
 	if (isClaimed)
 		return [
 			h.span([h.Class("text-muted-foreground")], ["You're all set."]),
@@ -256,16 +305,32 @@ const panelFooter = (h: H, model: Model, checklist: V2OnboardingChecklist, isCla
 		return model.isAdmin
 			? [
 					h.span(
-						[h.Class(cn("text-muted-foreground", model.claimError !== null && "text-severity-error"))],
+						[
+							h.Class(
+								cn(
+									"text-muted-foreground",
+									model.claimError !== null && "text-severity-error",
+								),
+							),
+						],
 						[model.claimError ?? "Every step is done."],
 					),
-					button(h, { size: "sm", isLoading: model.isClaimPending, attributes: [h.OnClick(Message.ClickedClaim())] }, [
-						"Claim ",
-						credits(checklist),
-						" credits",
-					]),
+					button(
+						h,
+						{
+							size: "sm",
+							isLoading: model.isClaimPending,
+							attributes: [h.OnClick(Message.ClickedClaim())],
+						},
+						["Claim ", credits(checklist), " credits"],
+					),
 				]
-			: [h.span([h.Class("text-muted-foreground")], ["All done. Ask an org admin to claim the credits."])]
+			: [
+					h.span(
+						[h.Class("text-muted-foreground")],
+						["All done. Ask an org admin to claim the credits."],
+					),
+				]
 	return [
 		h.span(
 			[h.Class("font-mono tabular-nums text-muted-foreground")],
@@ -275,9 +340,17 @@ const panelFooter = (h: H, model: Model, checklist: V2OnboardingChecklist, isCla
 			? []
 			: [
 					h.span(
-						[h.Class("inline-flex items-center gap-1 font-mono font-medium tabular-nums text-primary")],
+						[
+							h.Class(
+								"inline-flex items-center gap-1 font-mono font-medium tabular-nums text-primary",
+							),
+						],
 						[icon(h, "ClockIcon", { size: 12 }), timeLeft],
 					),
 				]),
 	]
 }
+
+const prepare = () => ChecklistComposition.prepareBlock({ init, update, view, operations, EffectsLayer })
+export const ChecklistBlock: Block.FromAssemblyWithView<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

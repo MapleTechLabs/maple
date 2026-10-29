@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import { currentRegion, hasMultipleRegions } from "../lib/region"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
+import { Block } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ClerkOrganization } from "../platform/clerk"
 import { warmAvatarTone } from "../ui/avatar-tone"
@@ -19,13 +19,23 @@ import * as RadioGroup from "../ui/radio-group"
 import type { Align, Side } from "../ui/overlay/position"
 import {
 	ALL_NAMESPACES,
+	ClerkOrgSwitcherComposition,
+	type ClerkOrgSwitcherViewBuilder,
 	CREATE_VALUE,
+	CreateDialogBinding,
+	EffectsLayer,
+	init,
+	MenuBinding,
 	Message,
-	type Model,
+	Model,
 	MountNamespaceSearch,
+	MountNamespaceSubmenu,
 	NAMESPACE_PREFIX,
 	NAMESPACE_SUBMENU,
+	operations,
 	ORG_PREFIX,
+	RegionBinding,
+	update,
 } from "./clerk-org-switcher"
 import { hasNamespaceSearch, namespaceRows, namespaceSearchRow, noNamespacesMatch } from "./namespace-search"
 
@@ -50,7 +60,7 @@ export type ViewInputs = Readonly<{
 	) => Html
 }>
 
-type H = HtmlBuilder<Message>
+type H = ClerkOrgSwitcherViewBuilder
 
 /** `OrgAvatar`: the org's logo over its initials on a warm tile keyed by the name. */
 export const orgAvatar = <M>(h: HtmlBuilder<M>, name: string, className?: string, imageUrl?: string): Html =>
@@ -136,7 +146,7 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 			],
 		}),
 	]
-	const header = hasNamespaceSearch(observed)
+	const search = hasNamespaceSearch(observed)
 		? [
 				namespaceSearchRow(h, {
 					id: `${model.menu.id}-namespace-search`,
@@ -148,6 +158,8 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 		: []
 	const isLoadingEmpty = scope.isLoading && observed.length === 0
 	const isEmpty = observed.length === 0 && Option.isNone(pinned)
+	// Always first in the header, so it is inserted once each time the submenu opens.
+	const opened = h.span([h.Hidden(true), h.OnMount(MountNamespaceSubmenu())], [])
 	return {
 		_tag: "Submenu",
 		value: NAMESPACE_SUBMENU,
@@ -163,7 +175,7 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 		],
 		entries: isLoadingEmpty || isEmpty ? [] : entries,
 		itemsClassName: "max-h-72 overflow-y-auto",
-		header: isLoadingEmpty || isEmpty ? [] : header,
+		header: [opened, ...(isLoadingEmpty || isEmpty ? [] : search)],
 		placeholder: rows.isNoMatch
 			? [noNamespacesMatch(h)]
 			: isLoadingEmpty
@@ -205,56 +217,56 @@ const entriesOf = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<MenuVi
 const createDialog = (h: H, model: Model): Html => {
 	const id = model.createDialog.id
 	const isBlank = model.name.trim() === ""
-	return h.submodel({
-		slotId: id,
-		model: model.createDialog,
-		view: DialogView.view,
-		viewInputs: {
-			hasTrigger: false,
-			hasDescription: true,
-			className: "sm:max-w-md",
-			toView: ({ portal }) => portal,
-			toContent: (close) => [
-				h.form(
-					[h.Class("contents"), h.OnSubmit(Message.SubmittedCreateOrganization())],
-					[
-						DialogView.dialogHeader(h, "dialog", [
-							DialogView.dialogTitle(h, "dialog", id, "Create Organization"),
-							DialogView.dialogDescription(
-								h,
-								"dialog",
-								id,
-								"Create a new organization to collaborate with your team.",
-							),
-						]),
-						DialogView.dialogPanel(h, "dialog", id, createFields(h, model), "space-y-4"),
-						DialogView.dialogFooter(h, "dialog", [
-							button(
-								h,
-								{
-									variant: "outline",
-									isDisabled: model.isCreating,
-									slot: "dialog-close",
-									attributes: model.isCreating ? [] : close,
-								},
-								["Cancel"],
-							),
-							button(
-								h,
-								{
-									type: "submit",
-									isLoading: model.isCreating,
-									isDisabled: model.isCreating || isBlank,
-								},
-								["Create"],
-							),
-						]),
-					],
-				),
-			],
-		},
-		toParentMessage: (message) => Message.GotCreateDialogMessage({ message }),
-	})
+	return h.block(
+		CreateDialogBinding.embedView({
+			slotId: id,
+			model: model.createDialog,
+			viewInputs: {
+				hasTrigger: false,
+				hasDescription: true,
+				className: "sm:max-w-md",
+				toView: ({ portal }) => portal,
+				toContent: (close) => [
+					h.form(
+						[h.Class("contents"), h.OnSubmit(Message.SubmittedCreateOrganization())],
+						[
+							DialogView.dialogHeader(h, "dialog", [
+								DialogView.dialogTitle(h, "dialog", id, "Create Organization"),
+								DialogView.dialogDescription(
+									h,
+									"dialog",
+									id,
+									"Create a new organization to collaborate with your team.",
+								),
+							]),
+							DialogView.dialogPanel(h, "dialog", id, createFields(h, model), "space-y-4"),
+							DialogView.dialogFooter(h, "dialog", [
+								button(
+									h,
+									{
+										variant: "outline",
+										isDisabled: model.isCreating,
+										slot: "dialog-close",
+										attributes: model.isCreating ? [] : close,
+									},
+									["Cancel"],
+								),
+								button(
+									h,
+									{
+										type: "submit",
+										isLoading: model.isCreating,
+										isDisabled: model.isCreating || isBlank,
+									},
+									["Create"],
+								),
+							]),
+						],
+					),
+				],
+			},
+		}),
+	)
 }
 
 const createFields = (h: H, model: Model): ReadonlyArray<Html> => [
@@ -291,16 +303,12 @@ const NO_FIELD_STATE = {
 
 /** The "Data region" radio: fixed at creation, so it is chosen here. */
 const regionField = (h: H, model: Model): Html => {
-	const config: RadioGroup.RadioGroupViewConfig<Message> = {
-		model: RadioGroup.init(model.region),
-		toParentMessage: (message) => Message.GotRegionMessage({ message }),
-		items: MapleRegion.literals.map((region) => ({
-			value: region,
-			id: regionIdOf(model, region),
-			inputId: `${regionIdOf(model, region)}-input`,
-			isDisabled: model.isCreating,
-		})),
-	}
+	const items = MapleRegion.literals.map((region) => ({
+		value: region,
+		id: regionIdOf(model, region),
+		inputId: `${regionIdOf(model, region)}-input`,
+		isDisabled: model.isCreating,
+	}))
 	const descriptionId = `${model.createDialog.id}-region-description`
 	const ids = {
 		control: regionIdOf(model, currentRegion),
@@ -308,51 +316,70 @@ const regionField = (h: H, model: Model): Html => {
 		error: `${model.createDialog.id}-region-error`,
 		description: descriptionId,
 	}
-	return field(h, { className: "w-full items-stretch", state: NO_FIELD_STATE }, [
-		fieldLabel(h, { ids, state: NO_FIELD_STATE }, "Data region"),
-		RadioGroup.radioGroup(
-			h,
-			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
-			MapleRegion.literals.map((region) =>
-				h.label(
-					[
-						h.Id(RadioGroup.labelId(`${regionIdOf(model, region)}-input`)),
-						h.Class(
-							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-[[data-checked]]:bg-accent/64",
+	return h.block(
+		RegionBinding.embedView({
+			slotId: `${model.createDialog.id}-region`,
+			model: model.regionRadio,
+			viewInputs: {
+				items,
+				selectedValue: Option.some(model.region),
+				toView: ({ radio }) =>
+					field(h, { className: "w-full items-stretch", state: NO_FIELD_STATE }, [
+						fieldLabel(h, { ids, state: NO_FIELD_STATE }, "Data region"),
+						RadioGroup.radioGroup(
+							h,
+							{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
+							MapleRegion.literals.map((region) =>
+								h.label(
+									[
+										h.Id(RadioGroup.labelId(`${regionIdOf(model, region)}-input`)),
+										h.Class(
+											"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-[[data-checked]]:bg-accent/64",
+										),
+									],
+									[
+										regionBadge(h, region),
+										h.span(
+											[h.Class("min-w-0 flex-1 text-sm")],
+											[MAPLE_REGION_LABELS[region].name],
+										),
+										...radio(region),
+									],
+								),
+							),
 						),
-					],
-					[
-						regionBadge(h, region),
-						h.span([h.Class("min-w-0 flex-1 text-sm")], [MAPLE_REGION_LABELS[region].name]),
-						...RadioGroup.radio(h, config, region),
-					],
-				),
-			),
-		),
-		fieldDescription(
-			h,
-			{ ids, state: NO_FIELD_STATE },
-			"Telemetry is stored and processed only in this region. It cannot be changed later.",
-		),
-	])
+						fieldDescription(
+							h,
+							{ ids, state: NO_FIELD_STATE },
+							"Telemetry is stored and processed only in this region. It cannot be changed later.",
+						),
+					]),
+			},
+		}),
+	)
 }
 
 /** `<DropdownMenuContent side align sideOffset={4} className="min-w-56">` around the entries. */
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const view = ClerkOrgSwitcherComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const dialog = createDialog(h, model)
-	return h.submodel({
-		slotId: model.menu.id,
-		model: model.menu,
-		view: MenuView.view,
-		viewInputs: {
-			entries: entriesOf(h, model, inputs),
-			className: "min-w-56",
-			side: inputs.side ?? "bottom",
-			align: inputs.align ?? "start",
-			sideOffset: 4,
-			toView: ({ trigger, withTrigger }) =>
-				inputs.toView({ trigger, withTrigger: (button) => [...withTrigger(button), dialog] }),
-		},
-		toParentMessage: (message) => Message.GotMenuMessage({ message }),
-	})
+	return h.block(
+		MenuBinding.embedView({
+			slotId: model.menu.id,
+			model: model.menu,
+			viewInputs: {
+				entries: entriesOf(h, model, inputs),
+				className: "min-w-56",
+				side: inputs.side ?? "bottom",
+				align: inputs.align ?? "start",
+				sideOffset: 4,
+				toView: ({ trigger, withTrigger }) =>
+					inputs.toView({ trigger, withTrigger: (button) => [...withTrigger(button), dialog] }),
+			},
+		}),
+	)
 })
+
+const prepare = () =>
+	ClerkOrgSwitcherComposition.prepareBlock({ init, update, view, operations, EffectsLayer })
+export const ClerkOrgSwitcherBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

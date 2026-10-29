@@ -1,13 +1,12 @@
 import { V2OnboardingChecklist } from "@maple/domain/http/v2"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Clock, Effect, Option, Schema } from "effect"
-import { Command, type Update } from "foldkit"
+import { Clock, Effect, Layer, Option, Schema } from "effect"
+import { Block, Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../data/analytics"
 import { SessionTenant } from "../data/session-tenant"
 import { MapleApiV2Client } from "../platform/api-clients"
-import type { Resources } from "../platform/resources"
 import * as Popover from "../ui/popover"
 
 // The onboarding checklist button:
@@ -21,7 +20,7 @@ export const Model = Schema.Struct({
 	/** `maple-onboarding-reward-seen-v3-<org>:<user>`: the pointer is retired once true. */
 	seenKey: Schema.NullOr(Schema.String),
 	isSeen: Schema.Boolean,
-	popover: Popover.Model,
+	popover: Popover.PopoverBlock.Model,
 	/** Keeps the popover on its "credits added" beat after a claim, until it closes. */
 	isJustClaimed: Schema.Boolean,
 	isClaimPending: Schema.Boolean,
@@ -31,7 +30,7 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const init = (): Model => ({
+const initialModel = (): Model => ({
 	checklist: null,
 	isAdmin: false,
 	seenKey: null,
@@ -47,7 +46,14 @@ export const Message = defineMessageUnion({
 	SucceededLoadChecklist: { checklist: V2OnboardingChecklist, nowMs: Schema.Number },
 	FailedLoadChecklist: {},
 	LoadedViewer: { isAdmin: Schema.Boolean, seenKey: Schema.String, isSeen: Schema.Boolean },
-	GotPopoverMessage: { message: Popover.Message },
+	/** The pill itself: it opens the popover (re-reading the checklist) or closes it. */
+	ClickedTrigger: {},
+	/** The panel left the popover: it closed, whatever closed it. */
+	UnmountedPanel: {},
+	/** Operation: the shell entered an org; the checklist and its viewer are read. */
+	RequestedLoad: {},
+	/** Operation: a navigation re-reads the checklist (`onResolved`). */
+	RequestedRefresh: {},
 	ClickedPointer: {},
 	ClickedGotIt: {},
 	ClickedStep: {},
@@ -61,103 +67,151 @@ export const Message = defineMessageUnion({
 export type Message = typeof Message.Type
 
 /** `onboardingChecklistAtom`: `GET /v2/onboarding/checklist`, with the clock it was read at. */
-export const LoadChecklist = Command.define("LoadOnboardingChecklist", {
+export const ChecklistDefinition = Block.makeDefinition("OnboardingChecklist", { Model, Message })
+const { makeStep, makeFieldsStep, makeNoopStep } = ChecklistDefinition
+
+export const LoadChecklist = ChecklistDefinition.makeCommand("LoadOnboardingChecklist", {
 	messages: [Message.SucceededLoadChecklist, Message.FailedLoadChecklist],
-	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		const checklist = yield* client.onboardingChecklist.retrieve()
-		const nowMs = yield* Clock.currentTimeMillis
-		return Message.SucceededLoadChecklist({ checklist, nowMs })
-	}).pipe(Effect.orElseSucceed(() => Message.FailedLoadChecklist())),
+	handler: function* () {
+		return () =>
+			Effect.gen(function* () {
+				const client = yield* MapleApiV2Client
+				const checklist = yield* client.onboardingChecklist.retrieve()
+				const nowMs = yield* Clock.currentTimeMillis
+				return Message.SucceededLoadChecklist({ checklist, nowMs })
+			}).pipe(Effect.orElseSucceed(() => Message.FailedLoadChecklist()))
+	},
 })
 
 const SEEN_PREFIX = "maple-onboarding-reward-seen-v3-"
 
 /** The session's roles (admin) and this viewer's pointer memory for the org. */
-export const LoadViewer = Command.define("LoadOnboardingChecklistViewer", {
+export const LoadViewer = ChecklistDefinition.makeCommand("LoadOnboardingChecklistViewer", {
 	messages: [Message.LoadedViewer],
-	execute: Effect.gen(function* () {
-		const tenant = yield* (yield* SessionTenant).get
-		const seenKey = `${SEEN_PREFIX}${tenant.orgId}:${tenant.userId}`
-		return Message.LoadedViewer({
-			isAdmin: tenant.roles.some((role) => role === "root" || role === "org:admin"),
-			seenKey,
-			isSeen: Option.contains(readLocalStorage(seenKey), "true"),
-		})
-	}).pipe(Effect.orElseSucceed(() => Message.LoadedViewer({ isAdmin: false, seenKey: "", isSeen: true }))),
+	handler: function* () {
+		return () =>
+			Effect.gen(function* () {
+				const tenant = yield* (yield* SessionTenant).get
+				const seenKey = `${SEEN_PREFIX}${tenant.orgId}:${tenant.userId}`
+				return Message.LoadedViewer({
+					isAdmin: tenant.roles.some((role) => role === "root" || role === "org:admin"),
+					seenKey,
+					isSeen: Option.contains(readLocalStorage(seenKey), "true"),
+				})
+			}).pipe(
+				Effect.orElseSucceed(() =>
+					Message.LoadedViewer({ isAdmin: false, seenKey: "", isSeen: true }),
+				),
+			)
+	},
 })
 
-export const SaveSeen = Command.define("SaveOnboardingRewardSeen", {
+export const SaveSeen = ChecklistDefinition.makeCommand("SaveOnboardingRewardSeen", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedSaveSeen],
-	execute: ({ key }) =>
-		Effect.sync(() => writeLocalStorage(key, "true")).pipe(Effect.as(Message.CompletedSaveSeen())),
+	handler: function* () {
+		return ({ key }) =>
+			Effect.sync(() => writeLocalStorage(key, "true")).pipe(Effect.as(Message.CompletedSaveSeen()))
+	},
 })
 
-type UpdateReturn = Update.Return<Model, Message, Resources>
+/** `claimOnboardingRewardMutation`: `POST /v2/onboarding/checklist/claim`. */
+export const ClaimReward = ChecklistDefinition.makeCommand("ClaimOnboardingReward", {
+	messages: [Message.SucceededClaim, Message.FailedClaim],
+	handler: function* () {
+		return () =>
+			Effect.gen(function* () {
+				const client = yield* MapleApiV2Client
+				yield* client.onboardingChecklist.claim()
+				// `onboarding_reward_claimed` once the credit landed.
+				yield* trackProduct("onboarding_reward_claimed")
+				return Message.SucceededClaim()
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.succeed(Message.FailedClaim({ message: displayError(error).message })),
+				),
+			)
+	},
+})
 
-const toPopover = (message: Popover.Message) => Message.GotPopoverMessage({ message })
+/** The popover's own init builds the field; its open and close are this Block's to ask for. */
+export const PopoverBinding = ChecklistDefinition.makeBinding(Popover.PopoverBlock, {
+	field: "popover",
+	init: false,
+})
 
-/** `handleOpenChange`: opening re-reads the checklist and retires the pointer; closing ends the claimed beat. */
-const popoverStep = (model: Model, message: Popover.Message): UpdateReturn => {
-	const next = Popover.update(model.popover, message)
-	const commands = Command.mapMessages(next.commands ?? [], toPopover)
-	const isOpening = !model.popover.isOpen && next.model.isOpen
-	const isClosing = model.popover.isOpen && !next.model.isOpen
-	if (isOpening) {
-		const seen = markSeen(model)
-		return {
-			model: { ...seen.model, popover: next.model },
-			commands: [...commands, LoadChecklist(), ...(seen.commands ?? [])],
-		}
-	}
-	return {
-		model: { ...model, popover: next.model, isJustClaimed: isClosing ? false : model.isJustClaimed },
-		commands,
-	}
-}
+export const ChecklistComposition = ChecklistDefinition.makeComposition({ bindings: [PopoverBinding] })
+export type ChecklistViewBuilder = Block.ViewBuilderFor<typeof ChecklistComposition>
 
-const markSeen = (model: Model): UpdateReturn =>
+type StepReturn = Readonly<{
+	model: Model
+	commands?: ReadonlyArray<ReturnType<typeof LoadChecklist> | ReturnType<typeof SaveSeen>>
+}>
+
+const markSeen = (model: Model): StepReturn =>
 	model.isSeen || model.seenKey === null
 		? { model: { ...model, isSeen: true } }
 		: { model: { ...model, isSeen: true }, commands: [SaveSeen({ key: model.seenKey })] }
 
-export const update = (model: Model, message: Message): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		SucceededLoadChecklist: ({ checklist, nowMs }) => ({ model: { ...model, checklist, nowMs } }),
-		FailedLoadChecklist: () => ({ model }),
-		LoadedViewer: ({ isAdmin, seenKey, isSeen }) => ({
-			model: { ...model, isAdmin, seenKey: seenKey === "" ? null : seenKey, isSeen },
-		}),
-		GotPopoverMessage: ({ message: child }) => popoverStep(model, child),
-		ClickedPointer: () => (model.popover.isOpen ? { model } : popoverStep(model, Popover.Message.ClickedTrigger())),
-		ClickedGotIt: () => markSeen(model),
-		ClickedStep: () => popoverStep(model, Popover.Message.ClickedClose()),
-		ClickedDone: () => popoverStep(model, Popover.Message.ClickedClose()),
-		ClickedClaim: () =>
-			model.isClaimPending
-				? { model }
-				: { model: { ...model, isClaimPending: true, claimError: null }, commands: [ClaimReward()] },
-		SucceededClaim: () => ({
-			model: { ...model, isClaimPending: false, isJustClaimed: true },
-			commands: [LoadChecklist()],
-		}),
-		FailedClaim: ({ message: failure }) => ({ model: { ...model, isClaimPending: false, claimError: failure } }),
-		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedSaveSeen: () => ({ model }),
-	})
+/** `handleOpenChange(true)`: opening re-reads the checklist and retires the pointer. */
+const openStep = makeStep((model) => {
+	const seen = markSeen(model)
+	return Update.combineSteps([
+		makeStep(() => ({ model: seen.model, commands: [LoadChecklist(), ...(seen.commands ?? [])] })),
+		PopoverBinding.requestOpen({ isPressOpened: true }),
+	])
+})
+
+/** `handleOpenChange(false)`: closing ends the claimed beat. */
+const closeStep = Update.combineSteps([
+	makeFieldsStep(() => ({ isJustClaimed: () => false })),
+	PopoverBinding.requestClose(),
+])
+
+export const init = ChecklistComposition.makeInit(() => ({ model: initialModel() }))
+
+export const update = ChecklistComposition.makeUpdate({
+	SucceededLoadChecklist: (model, { checklist, nowMs }) => ({ model: { ...model, checklist, nowMs } }),
+	FailedLoadChecklist: (model) => ({ model }),
+	LoadedViewer: (model, { isAdmin, seenKey, isSeen }) => ({
+		model: { ...model, isAdmin, seenKey: seenKey === "" ? null : seenKey, isSeen },
+	}),
+	ClickedTrigger: (model) => (model.popover.isOpen ? closeStep(model) : openStep(model)),
+	UnmountedPanel: makeFieldsStep(() => ({ isJustClaimed: () => false })),
+	RequestedLoad: (model) => ({ model, commands: [LoadChecklist(), LoadViewer()] }),
+	RequestedRefresh: (model) => ({ model, commands: [LoadChecklist()] }),
+	ClickedPointer: (model) => (model.popover.isOpen ? makeNoopStep()(model) : openStep(model)),
+	ClickedGotIt: (model) => markSeen(model),
+	ClickedStep: closeStep,
+	ClickedDone: closeStep,
+	ClickedClaim: (model) =>
+		model.isClaimPending
+			? { model }
+			: { model: { ...model, isClaimPending: true, claimError: null }, commands: [ClaimReward()] },
+	SucceededClaim: (model) => ({
+		model: { ...model, isClaimPending: false, isJustClaimed: true },
+		commands: [LoadChecklist()],
+	}),
+	FailedClaim: (model, { message: failure }) => ({
+		model: { ...model, isClaimPending: false, claimError: failure },
+	}),
+	TickedClock: (model, { nowMs }) => ({ model: { ...model, nowMs } }),
+	CompletedSaveSeen: (model) => ({ model }),
+})
 
 /** The pill counts down each second while the checklist is in progress. */
 export const isCounting = (model: Model): boolean => model.checklist?.status === "in_progress"
 
-/** `claimOnboardingRewardMutation`: `POST /v2/onboarding/checklist/claim`. */
-export const ClaimReward = Command.define("ClaimOnboardingReward", {
-	messages: [Message.SucceededClaim, Message.FailedClaim],
-	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		yield* client.onboardingChecklist.claim()
-		// `onboarding_reward_claimed` once the credit landed.
-		yield* trackProduct("onboarding_reward_claimed")
-		return Message.SucceededClaim()
-	}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedClaim({ message: displayError(error).message })))),
-})
+/** Parent-initiated transitions; each enters `update`. */
+export const operations = {
+	requestLoad: Message.RequestedLoad,
+	requestRefresh: Message.RequestedRefresh,
+	informOfClock: Message.TickedClock,
+}
+
+export const EffectsLayer = Layer.mergeAll(
+	LoadChecklist.layer,
+	LoadViewer.layer,
+	SaveSeen.layer,
+	ClaimReward.layer,
+)

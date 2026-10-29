@@ -3,22 +3,33 @@ import { ResolveThemeColors } from "@maple/web/charts/theme-colors"
 import { button } from "@maple/web/ui/button"
 import { spinner } from "@maple/web/ui/spinner"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
-import { rangeOf } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
+import { type PageContext, rangeOf } from "../contract"
 import { SERIES_CHART_TOKENS } from "../kit/series-chart"
 import { emptyState, errorState } from "../kit/view-states"
+import { MetricDetailComposition } from "./composition"
 import { boundsOf, entryOf } from "./load"
 import { Message } from "./message"
-import type { Model } from "./model"
 import { detailBody } from "./view-body"
 import { detailHeader } from "./view-header"
 
 // The metric detail page: one metric's chart and its per-service breakdown.
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+/** What the view reads from the root: data only, as Block view inputs carry no callbacks. */
+export type MetricDetailViewInputs = Readonly<{
+	context: PageContext
+	/** The root's latest clock read (each server probe): legacy's per-render `Date.now()` for relative times. */
+	clockMs: number
+	/** The server's last ingest, for `useNewDataSince`'s "New data" pill. */
+	lastIngestAtMs: Option.Option<number>
+}>
+
+/** `useNewDataSince(sinceMs)`: telemetry arrived after the entry loaded. */
+const hasNewDataSince = (inputs: MetricDetailViewInputs, sinceMs: number): boolean =>
+	sinceMs > 0 && Option.exists(inputs.lastIngestAtMs, (last) => last > sinceMs)
+
+export const view = MetricDetailComposition.makeView.withInputs<MetricDetailViewInputs>((model, inputs, h) => {
 	const { context } = inputs
 	const range = rangeOf(context)
 	const entry = entryOf(model)
@@ -56,7 +67,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				entry,
 				backLabel: context.canGoBack ? "Back" : "Metrics",
 				range,
-				hasNewData: inputs.hasNewDataSince(model.entryUpdatedAtMs),
+				hasNewData: hasNewDataSince(inputs, model.entryUpdatedAtMs),
 			}),
 			h.div([h.Class("min-h-0 flex-1 overflow-auto")], [content()]),
 		],

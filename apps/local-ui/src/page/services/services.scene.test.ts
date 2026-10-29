@@ -2,12 +2,12 @@ import { Option } from "effect"
 import { click, expect as expectView, expectOutMessage, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
-import { FetchCatalog } from "./command"
+import { FetchCatalog, ReadClock } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceCatalogEntry } from "./model"
+import type { ServicesBlock } from "./block"
 import { init, update } from "./update"
-import { view as pageView } from "./view"
+import { view as pageView, type ServicesViewInputs } from "./view"
 
 const NOW = Date.parse("2026-10-01T12:00:30Z")
 
@@ -19,15 +19,15 @@ const contextAt = (search: string): PageContext => ({
 	canGoBack: false,
 })
 const context = contextAt("")
-const inputs: PageViewInputs = {
+const inputs: ServicesViewInputs = {
 	context,
-	presenceOf: () => Option.some({ signal: "traces", status: "absent", lastSeenMs: null }),
-	presenceNowMs: NOW,
-	clockMs: 0,
-	hasNewDataSince: () => false,
+	maybePresence: Option.some({ rows: [{ signal: "traces", status: "absent", lastSeenMs: null }], nowMs: NOW }),
+	lastIngestAtMs: Option.none(),
 }
 const view = withViewInputs(pageView, inputs)()
-const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+/** Every Message the page's graph accepts: its own and its child Blocks' generated delivery. */
+type PageMessage = typeof ServicesBlock.Message.Type
+const pageUpdate = (model: Model, message: PageMessage) => update(model, message, context)
 
 const entry = (serviceName: string): ServiceCatalogEntry => ({
 	serviceName,
@@ -52,7 +52,7 @@ const loaded = (catalog: ReadonlyArray<ServiceCatalogEntry>): Model => {
 
 describe("local services list", () => {
 	test("entry reads the clock, then asks one catalog: unfiltered rows and facets are one key", () => {
-		expect(init(context).commands.map(({ name }) => name)).toContain("ReadServicesClock")
+		expect((init(context).commands ?? []).map(({ name }) => name)).toContain(ReadClock.name)
 		const { commands } = anchored()
 		expect((commands ?? []).map(({ name }) => name)).toEqual([FetchCatalog.name])
 	})

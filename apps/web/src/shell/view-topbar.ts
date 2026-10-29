@@ -1,7 +1,6 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import * as ChecklistView from "./onboarding-checklist-view"
-import * as ConnectPanelView from "./connect-panel-view"
+import type { Html } from "foldkit/html"
+import { ChecklistBinding, ConnectBinding, type ShellViewBuilder } from "./composition"
 import {
 	breadcrumb,
 	breadcrumbItem,
@@ -17,6 +16,8 @@ import { sidebarTrigger } from "../ui/sidebar"
 import { Message } from "./message"
 import type { Model } from "./model"
 
+type H = ShellViewBuilder
+
 // The top bar's breadcrumbs.
 
 /** A page's trail: data, so it stays a page input (`DashboardPage`'s `breadcrumbs`). */
@@ -29,7 +30,7 @@ export type BreadcrumbEntry = Readonly<{
 
 const CRUMB_LABEL = "block max-w-[40ch] truncate"
 
-const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry): Html =>
+const crumb = (h: H, entry: BreadcrumbEntry): Html =>
 	breadcrumbItem(h, { className: "min-w-0", title: entry.label }, [
 		entry.href === undefined
 			? breadcrumbPage(h, CRUMB_LABEL, [entry.label])
@@ -37,7 +38,7 @@ const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry): Html =>
 	])
 
 /** `IconButton variant="outline" label="Ask Maple AI" shortcut="C"`: opens the global chat sheet. */
-const askMapleButton = (h: HtmlBuilder<Message>): Html =>
+const askMapleButton = (h: H): Html =>
 	button(
 		h,
 		{
@@ -54,22 +55,12 @@ const askMapleButton = (h: HtmlBuilder<Message>): Html =>
 	)
 
 /** `ConnectButton`: the ingest endpoint, keys and MCP popover. */
-const connectButton = (h: HtmlBuilder<Message>, model: Model): Html =>
-	h.submodel({
-		slotId: "connect-panel",
-		model: model.connect,
-		view: ConnectPanelView.view,
-		toParentMessage: (message) => Message.GotConnectMessage({ message }),
-	})
+const connectButton = (h: H, model: Model): Html =>
+	h.block(ConnectBinding.embedView({ slotId: "connect-panel", model: model.connect }))
 
 /** `OnboardingChecklistButton`: Clerk only, self-hosted has no billing to credit. */
-const checklistPill = (h: HtmlBuilder<Message>, model: Model): Html =>
-	h.submodel({
-		slotId: "onboarding-checklist",
-		model: model.checklist,
-		view: ChecklistView.view,
-		toParentMessage: (message) => Message.GotChecklistMessage({ message }),
-	})
+const checklistPill = (h: H, model: Model): Html =>
+	h.block(ChecklistBinding.embedView({ slotId: "onboarding-checklist", model: model.checklist }))
 
 /** The Sources list and /sources/new draw their own "Connect source", so the top bar's would repeat it. */
 export const hidesTopbarConnect = (currentPath: string): boolean => /^\/sources(\/new)?\/?$/.test(currentPath)
@@ -79,7 +70,7 @@ const isTitleOnly = (breadcrumbs: ReadonlyArray<BreadcrumbEntry>): boolean =>
 	breadcrumbs.length === 1 && breadcrumbs[0]?.isPageHeading === true
 
 export const topbar = (
-	h: HtmlBuilder<Message>,
+	h: H,
 	model: Model,
 	breadcrumbs: ReadonlyArray<BreadcrumbEntry>,
 	pageActions: Html,

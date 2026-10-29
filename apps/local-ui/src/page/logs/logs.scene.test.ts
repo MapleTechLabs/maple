@@ -1,21 +1,23 @@
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import * as Animation from "@foldkit/ui/animation"
+import * as Dialog from "@maple/web/ui/dialog"
+import * as Tabs from "@maple/web/ui/tabs"
+import { click, Command, expect as expectView, expectOutMessage, given, Mount, role, scene, text, title, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import type { PageContext } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
-import { FetchLogs, FetchServices, FetchSeverities, FetchNextPage } from "./command"
+import { type PageContext, PageOutMessage } from "../contract"
+import type { LogsBlock } from "./block"
+import { FetchLogs, FetchNextPage, FetchPatterns, FetchServices, FetchSeverities, ReadClock, RelayModeChoice } from "./command"
 import { PAGE_SIZE } from "./fetch"
-import { Message as LogSheetMessage } from "../kit/log-sheet/message"
 import { Message } from "./message"
 import type { LocalLog, Model } from "./model"
-import { init, locationChanged } from "./update"
+import { PlaceLocalChipCard } from "./mount"
+import { init } from "./update"
 import { update } from "./update-main"
-import { view as pageView } from "./view"
+import { type LogsViewInputs, view as pageView } from "./view"
 import { ObserveLogsViewport } from "./virtualize"
 import { logKey } from "./stream"
 import { WaitChipDelay } from "./update-chips"
-import { PlaceLocalChipCard } from "./view-chip-card"
 
 const context: PageContext = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
@@ -26,15 +28,15 @@ const context: PageContext = {
 }
 const NOW = Date.parse("2026-10-01T12:00:30Z")
 
-const inputs: PageViewInputs = {
+const inputs: LogsViewInputs = {
 	context,
-	presenceOf: () => Option.none(),
-	presenceNowMs: NOW,
-	clockMs: 0,
-	hasNewDataSince: () => false,
+	maybePresence: Option.none(),
+	lastIngestAtMs: Option.none(),
 }
 
-const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+/** Every Message the page's graph accepts: its own and its child Blocks' generated delivery. */
+type PageMessage = typeof LogsBlock.Message.Type
+const pageUpdate = (model: Model, message: PageMessage) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
@@ -64,7 +66,7 @@ const loaded = (rows: ReadonlyArray<LocalLog>): Model => {
 
 describe("local logs", () => {
 	test("entry reads the clock, then asks for the list and both facets", () => {
-		expect(names(init(context).commands)).toContain("ReadLogsClock")
+		expect(names(init(context).commands)).toContain(ReadClock.name)
 		const resolved = pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW }))
 		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchLogs.name, FetchServices.name, FetchSeverities.name]))
 	})
@@ -100,27 +102,55 @@ describe("local logs", () => {
 		expect((tall.commands ?? []).map(({ args }) => args)).toMatchObject([{ pages: [model.logs.data._tag === "Success" ? model.logs.data.data.pages[0] : []] }])
 	})
 
-	test("a row click opens the detail sheet on that log", () => {
+	test("a row click opens the detail sheet on that log; its trace link closes it", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([log(1, "pool exhausted")])),
 			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
 			expectView(role("listitem", { name: "INFO storefront: pool exhausted" })).toExist(),
 		)
-		const opened = pageUpdate(loaded([log(1, "pool exhausted")]), Message.ClickedLog({ log: log(1, "pool exhausted") }))
+		const traced = { ...log(1, "pool exhausted"), traceId: "0eab694ff33721d5a836ce7444afadcc" }
+		const opened = pageUpdate(loaded([traced]), Message.ClickedLog({ log: traced }))
 		expect(Option.map(opened.model.maybeDetail, (sheet) => [sheet.dialog.isOpen, sheet.log.body])).toEqual(
 			Option.some([true, "pool exhausted"]),
 		)
-		const closed = pageUpdate(opened.model, Message.GotLogSheetMessage({ message: LogSheetMessage.ClosedSheet() }))
-		expect(Option.map(closed.model.maybeDetail, (sheet) => sheet.dialog.isOpen)).toEqual(Option.some(false))
+		scene(
+			{ update: pageUpdate, view },
+			given(opened.model),
+			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: { left: 0, right: 80, top: 0, bottom: 32, width: 80, height: 32 } })),
+			expectView(role("dialog")).toHaveAttr("data-open"),
+			click(title(`View trace ${traced.traceId}`)),
+			expectView(role("dialog")).toHaveAttr("data-closed"),
+			Command.resolve(Animation.test.WaitForPaint, Animation.AnimationBlock.Message.CompletedWaitForPaint({ generation: 2 })),
+			Command.resolve(Animation.test.WaitForAnimationSettled, Animation.AnimationBlock.Message.EndedAnimation({ generation: 2 })),
+			Mount.expectEnded(Dialog.MountDialog),
+			Mount.expectEnded(Tabs.MeasureTabIndicator),
+			// The sheet stays in the page, closed, so the row stays selected.
+			expectView(role("listitem", { name: "INFO storefront: pool exhausted" })).toHaveAttr("data-selected", "true"),
+		)
 	})
 
 	test("switching to patterns drops the list's sheet and requests the clusters", () => {
 		const opened = pageUpdate(loaded([log(1)]), Message.ClickedLog({ log: log(1) })).model
-		const patterns = locationChanged(opened, { ...context, location: { path: "/logs", search: "mode=patterns" } })
+		const patterns = update(opened, Message.InformedOfLocationChange(), { ...context, location: { path: "/logs", search: "mode=patterns" } })
 		expect(Option.isNone(patterns.model.maybeDetail)).toBe(true)
-		expect(names(patterns.commands)).toEqual(["FetchLocalLogPatterns"])
+		expect(names(patterns.commands)).toEqual([FetchPatterns.name])
 		expect(AsyncData.isLoading(patterns.model.patterns.data)).toBe(true)
+	})
+
+	test("pressing Patterns asks for the patterns mode; pressing the shown mode asks for nothing", () => {
+		const model = pageUpdate(loaded([log(1)]), Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
+			click(role("button", { name: "Patterns" })),
+			Command.resolve(RelayModeChoice, Message.ChoseMode({ value: "patterns" })),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ hash: "#/logs?mode=patterns", isReplace: true })),
+		)
+		expect(pageUpdate(model, Message.ChoseMode({ value: "list" })).outMessage).toBeUndefined()
 	})
 
 	test("resting on a chip opens its card after the delay; leaving closes it after the grace period", () => {

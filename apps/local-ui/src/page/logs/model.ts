@@ -73,6 +73,7 @@ export const Model = Schema.TaggedStruct("LogsPage", {
 	severities: SlotSchema(Schema.Array(FacetOption)),
 	viewport: Viewport,
 	search: Draft,
+	/** The List / Patterns toggle; the pressed value shown is the hash's mode. */
 	modeToggle: ToggleGroup.Model,
 	sections: FilterSections.Model,
 	/** The log sheet, once a row was opened; it stays (closed) so the row stays selected. */
@@ -87,4 +88,3 @@ export type Model = typeof Model.Type
 
 export const CHIP_JSON_TOOLTIP_ID = "local-chip-json-copy"
 export const CHIP_JSON_COPY_ID = "chip-json"
-export const initChipJsonTooltip = (): Tooltip.Model => Tooltip.init(CHIP_JSON_TOOLTIP_ID)

@@ -1,19 +1,19 @@
 import { Option } from "effect"
-import { AsyncData, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { AsyncData } from "foldkit"
+import type { Html } from "foldkit/html"
+import { type PresenceResult, presenceOf } from "../../data/signal-presence"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
-import { rangeOf } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
+import { type PageContext, rangeOf } from "../contract"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { errorState, listSkeleton } from "../kit/view-states"
+import { LogSheetBinding, LogsComposition, type LogsViewBuilder } from "./composition"
 import { activeFilterCount, filtersOf, type LogFilters, modeOf } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { rowsOf } from "./stream"
 import { patternsList } from "./view-patterns"
-import * as LogSheetView from "../kit/log-sheet/view"
 import { logsToolbar } from "./view-toolbar"
 import { sidebar } from "./view-sidebar"
 import { chipCard } from "./view-chip-card"
@@ -21,32 +21,47 @@ import { logStream } from "./view-stream"
 
 // The Logs page: the list or the patterns mode.
 
-const toCopy = (id: string, message: Parameters<typeof Message.GotCopyMessage>[0]["message"]) =>
-	Message.GotCopyMessage({ id, message })
+/** What the view reads from the root: data only, as Block view inputs carry no callbacks. */
+export type LogsViewInputs = Readonly<{
+	context: PageContext
+	/** The shared signal presence read (`useSignalPresence`): none while loading or unreadable. */
+	maybePresence: Option.Option<PresenceResult>
+	/** The server's last ingest, for `useNewDataSince`'s "New data" pill. */
+	lastIngestAtMs: Option.Option<number>
+}>
 
-const emptyState = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): Html =>
+/** `useNewDataSince(sinceMs)`: telemetry arrived after the list loaded. */
+const hasNewDataSince = (inputs: LogsViewInputs, sinceMs: number): boolean =>
+	sinceMs > 0 && Option.exists(inputs.lastIngestAtMs, (last) => last > sinceMs)
+
+const emptyState = (h: LogsViewBuilder, model: Model, inputs: LogsViewInputs, filters: LogFilters): Html =>
 	signalEmptyState(h, {
 		signal: "logs",
 		isFiltered: activeFilterCount(filters) > 0 || filters.search !== undefined,
 		onClearFilters: Message.ClickedClearFilters(),
 		range: rangeOf(inputs.context),
 		onWidenRange: Message.ClickedWidenRange(),
-		maybePresence: inputs.presenceOf("logs"),
-		nowMs: inputs.presenceNowMs,
-		guide: { id: "logs-empty", endpoint: inputs.context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+		maybePresence: presenceOf(inputs.maybePresence, "logs"),
+		nowMs: Option.match(inputs.maybePresence, { onNone: () => 0, onSome: (result) => result.nowMs }),
+		guide: {
+			id: "logs-empty",
+			endpoint: inputs.context.env.otlpEndpoint,
+			copies: model.copies,
+			toCopyMessage: (message) => Message.ReceivedCopyMessage({ message }),
+		},
 	})
 
-const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): ReadonlyArray<Html> => {
+const listContent = (h: LogsViewBuilder, model: Model, inputs: LogsViewInputs, filters: LogFilters): ReadonlyArray<Html> => {
 	const sheet = Option.match(model.maybeDetail, {
 		onNone: () => [],
 		onSome: (sheet) => [
-			h.submodel({
-				slotId: "log-detail-sheet",
-				model: sheet,
-				view: LogSheetView.view,
-				viewInputs: { timeFormat: inputs.context.timeFormat },
-				toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
-			}),
+			h.block(
+				LogSheetBinding.embedView({
+					slotId: "log-detail-sheet",
+					model: sheet,
+					viewInputs: { timeFormat: inputs.context.timeFormat },
+				}),
+			),
 		],
 	})
 	if (isPending(model.logs)) return [listSkeleton(h, { variant: "table" }), ...sheet]
@@ -57,7 +72,7 @@ const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInpu
 	return [logStream(h, model, filters.search, inputs.context.timeFormat), ...chipCard(h, model), ...sheet]
 }
 
-const patternsContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): Html => {
+const patternsContent = (h: LogsViewBuilder, model: Model, inputs: LogsViewInputs, filters: LogFilters): Html => {
 	if (isPending(model.patterns)) return listSkeleton(h, { variant: "table" })
 	const failure = failureWithoutData(model.patterns)
 	if (Option.isSome(failure))
@@ -71,7 +86,7 @@ const patternsContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageView
 	})
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+export const view = LogsComposition.makeView.withInputs<LogsViewInputs>((model, inputs, h) => {
 	const query = queryOf(inputs.context.location)
 	const filters = filtersOf(query)
 	const mode = modeOf(query)
@@ -81,7 +96,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			onOpenFilters: Message.ClickedOpenFilters(),
 			sidebar: sidebar(h, model, filters),
-			toolbar: logsToolbar(h, model, mode, { range: rangeOf(inputs.context), hasNewData: inputs.hasNewDataSince(since) }),
+			toolbar: logsToolbar(h, model, mode, { range: rangeOf(inputs.context), hasNewData: hasNewDataSince(inputs, since) }),
 			activeFilterCount: activeFilterCount(filters),
 		},
 		mode === "list" ? listContent(h, model, inputs, filters) : [patternsContent(h, model, inputs, filters)],

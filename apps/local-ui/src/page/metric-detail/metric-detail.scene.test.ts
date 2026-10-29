@@ -5,11 +5,12 @@ import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import { PageOutMessage } from "../contract"
 import type { MetricEntry } from "../metrics/catalog"
+import { FetchBreakdown, FetchEntry, FetchTimeseries } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { PageViewInputs } from "../kit/inputs"
+import { MetricDetailBlock } from "./block"
 import { init, update } from "./update"
-import { view as pageView } from "./view"
+import { type MetricDetailViewInputs, view as pageView } from "./view"
 
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-01T12:00:00Z"))
 const env = { apiBase: "", port: "4318", otlpEndpoint: "http://localhost:4318", isHosted: false }
@@ -21,7 +22,9 @@ const contextAt = (search: string, canGoBack = false): PageContext => ({
 	canGoBack,
 })
 const context = contextAt("range=1h&spanId=abc")
-const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+/** Every Message the page's graph accepts: its own and the chart's generated delivery. */
+type PageMessage = typeof MetricDetailBlock.Message.Type
+const pageUpdate = (model: Model, message: PageMessage) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
 const entry: MetricEntry = {
@@ -42,12 +45,12 @@ const entered = () =>
 describe("local metric detail", () => {
 	test("entry asks for the metric's catalog entry, then its timeseries and breakdown", () => {
 		const step = entered()
-		expect(names(step.commands)).toEqual(["FetchLocalMetricEntry"])
+		expect(names(step.commands)).toEqual([FetchEntry.name])
 		const found = pageUpdate(
 			step.model,
 			Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW }),
 		)
-		expect(names(found.commands)).toEqual(expect.arrayContaining(["FetchLocalMetricTimeseries", "FetchLocalMetricBreakdown"]))
+		expect(names(found.commands)).toEqual(expect.arrayContaining([FetchTimeseries.name, FetchBreakdown.name]))
 	})
 
 	test("an entry answer for a superseded window is dropped", () => {
@@ -72,7 +75,7 @@ describe("local metric detail", () => {
 	test("last seen reads the root's newer clock, as legacy reads the time at each render", () => {
 		const step = entered()
 		const found = pageUpdate(step.model, Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW })).model
-		const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, clockMs: NOW + 20 * 60_000, hasNewDataSince: () => false }
+		const inputs: MetricDetailViewInputs = { context, clockMs: NOW + 20 * 60_000, lastIngestAtMs: Option.none() }
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, inputs)() },
 			given(found),

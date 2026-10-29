@@ -4,16 +4,17 @@ import { button } from "@maple/web/ui/button"
 import { badge } from "@maple/web/ui/display"
 import { icon } from "@maple/web/ui/icon"
 import { truncatedText } from "@maple/web/ui/truncated-text"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { refreshButton, timeRangeSelect } from "../kit/toolbar"
 import type { MetricEntry } from "../metrics/catalog"
+import type { MetricDetailViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { Model } from "./model"
 
 // The metric detail page's header row.
 
 export const detailHeader = (
-	h: HtmlBuilder<Message>,
+	h: MetricDetailViewBuilder,
 	model: Model,
 	options: Readonly<{ entry: MetricEntry | null; backLabel: string; range: string; hasNewData: boolean }>,
 ): Html => {

@@ -2,15 +2,15 @@ import type { TimeFormat } from "../kit/local-time"
 import { cn } from "@maple/ui/lib/utils"
 import { spinner } from "@maple/web/ui/spinner"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { Message } from "./message"
+import type { Html } from "foldkit/html"
+import type { LogsViewBuilder } from "./composition"
 import type { Model } from "./model"
 import { logKey, rowsOf } from "./stream"
 import { logRow } from "./view-row"
 import { ObserveLogsViewport, ROW_HEIGHT, virtualWindow } from "./virtualize"
 
 /** `LogListMode`'s virtualized stream: only the rows in (or near) the scroller's view are built. */
-export const logStream = (h: HtmlBuilder<Message>, model: Model, search: string | undefined, timeFormat: TimeFormat): Html => {
+export const logStream = (h: LogsViewBuilder, model: Model, search: string | undefined, timeFormat: TimeFormat): Html => {
 	const rows = rowsOf(model)
 	const selectedKey = Option.match(model.maybeDetail, { onNone: () => null, onSome: (detail) => logKey(detail.log) })
 	return h.div(

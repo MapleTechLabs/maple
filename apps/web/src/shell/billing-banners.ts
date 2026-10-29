@@ -6,8 +6,9 @@ import {
 	getQuotaStatus,
 } from "../lib/billing/plan-gating"
 import { Effect, Option } from "effect"
-import { Command } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { ShellDefinition } from "./definition"
+import type { Html } from "foldkit/html"
+import type { ShellViewBuilder } from "./composition"
 import { load } from "foldkit/navigation"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import { AppRoute, hrefOf } from "../route"
@@ -27,41 +28,54 @@ export const readQuotaApproachingDismissed: Effect.Effect<boolean> = Effect.sync
 	() => window.sessionStorage.getItem(QUOTA_DISMISS_KEY) === "1",
 ).pipe(Effect.orElseSucceed(() => false))
 
-export const DismissQuotaBanner = Command.define("DismissQuotaBanner", {
+export const DismissQuotaBanner = ShellDefinition.makeCommand("DismissQuotaBanner", {
 	messages: [Message.CompletedDismissQuotaBanner],
-	execute: Effect.sync(() => window.sessionStorage.setItem(QUOTA_DISMISS_KEY, "1")).pipe(
-		Effect.ignore,
-		Effect.as(Message.CompletedDismissQuotaBanner()),
-	),
+	handler: function* () {
+		return () =>
+			Effect.sync(() => window.sessionStorage.setItem(QUOTA_DISMISS_KEY, "1")).pipe(
+				Effect.ignore,
+				Effect.as(Message.CompletedDismissQuotaBanner()),
+			)
+	},
 })
 
 /** `openCustomerPortal({ returnUrl: location.href })`: Autumn's portal URL, then there. */
-export const OpenCustomerPortal = Command.define("OpenCustomerPortal", {
+export const OpenCustomerPortal = ShellDefinition.makeCommand("OpenCustomerPortal", {
 	messages: [Message.CompletedOpenCustomerPortal, Message.FailedOpenCustomerPortal],
-	execute: Effect.gen(function* () {
-		const client = yield* MapleInternalApiClient
-		const returnUrl = yield* Effect.sync(() => window.location.href)
-		const portal = yield* client.billing.openCustomerPortal({ payload: new CustomerPortalRequest({ returnUrl }) })
-		yield* load(portal.url)
-		return Message.CompletedOpenCustomerPortal()
-	}).pipe(
-		Effect.catch((error) =>
-			Effect.succeed(
-				Message.FailedOpenCustomerPortal({
-					message:
-						"message" in error && typeof error.message === "string" && error.message !== ""
-							? error.message
-							: "Couldn't open the billing portal.",
-				}),
-			),
-		),
-	),
+	handler: function* () {
+		return () =>
+			Effect.gen(function* () {
+				const client = yield* MapleInternalApiClient
+				const returnUrl = yield* Effect.sync(() => window.location.href)
+				const portal = yield* client.billing.openCustomerPortal({
+					payload: new CustomerPortalRequest({ returnUrl }),
+				})
+				yield* load(portal.url)
+				return Message.CompletedOpenCustomerPortal()
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.succeed(
+						Message.FailedOpenCustomerPortal({
+							message:
+								"message" in error &&
+								typeof error.message === "string" &&
+								error.message !== ""
+									? error.message
+									: "Couldn't open the billing portal.",
+						}),
+					),
+				),
+			)
+	},
 })
 
-type H = HtmlBuilder<Message>
+type H = ShellViewBuilder
 
 const banner = (h: H, variant: "crit" | "warn", children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("px-4 pt-3")], [alert(h, { variant }, [icon(h, "CircleWarningIcon", { size: 16 }), ...children])])
+	h.div(
+		[h.Class("px-4 pt-3")],
+		[alert(h, { variant }, [icon(h, "CircleWarningIcon", { size: 16 }), ...children])],
+	)
 
 /** `SubscriptionEndedBanner`: the org held a plan and it lapsed. */
 const subscriptionEnded = (h: H, customer: BillingCustomer): ReadonlyArray<Html> => {
@@ -75,7 +89,11 @@ const subscriptionEnded = (h: H, customer: BillingCustomer): ReadonlyArray<Html>
 				planName ? `Your ${planName} plan has ended.` : "Your plan has ended.",
 				" Your existing data is still here, but new telemetry is being rejected until you pick a plan.",
 			]),
-			alertAction(h, [linkButton(h, { size: "sm", href: hrefOf(AppRoute.SelectPlan({ search: {} })) }, ["Choose a plan"])]),
+			alertAction(h, [
+				linkButton(h, { size: "sm", href: hrefOf(AppRoute.SelectPlan({ search: {} })) }, [
+					"Choose a plan",
+				]),
+			]),
 		]),
 	]
 }
@@ -91,9 +109,11 @@ const paymentFailed = (h: H, customer: BillingCustomer): ReadonlyArray<Html> =>
 						"We couldn't process your most recent payment. Update your payment method to keep your data flowing.",
 					]),
 					alertAction(h, [
-						button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedUpdatePaymentMethod())] }, [
-							"Update payment method",
-						]),
+						button(
+							h,
+							{ size: "sm", attributes: [h.OnClick(Message.ClickedUpdatePaymentMethod())] },
+							["Update payment method"],
+						),
 					]),
 				]),
 			]
@@ -107,7 +127,9 @@ const quota = (h: H, customer: BillingCustomer, isApproachingDismissed: boolean)
 	return [
 		banner(h, isOver ? "crit" : "warn", [
 			alertTitle(h, [
-				isOver ? `You've reached your ${planName} usage limit` : `You're nearing your ${planName} usage limit`,
+				isOver
+					? `You've reached your ${planName} usage limit`
+					: `You're nearing your ${planName} usage limit`,
 			]),
 			alertDescription(h, [
 				isOver
@@ -128,7 +150,16 @@ const quota = (h: H, customer: BillingCustomer, isApproachingDismissed: boolean)
 					),
 					...(isOver
 						? []
-						: [iconButton(h, { label: "Dismiss", attributes: [h.OnClick(Message.ClickedDismissQuotaBanner())] }, [icon(h, "XmarkIcon")])]),
+						: [
+								iconButton(
+									h,
+									{
+										label: "Dismiss",
+										attributes: [h.OnClick(Message.ClickedDismissQuotaBanner())],
+									},
+									[icon(h, "XmarkIcon")],
+								),
+							]),
 				],
 				"flex items-center gap-2",
 			),

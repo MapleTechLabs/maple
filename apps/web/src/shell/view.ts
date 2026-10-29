@@ -5,21 +5,26 @@ import {
 	sidebarMobileStyles,
 } from "@maple/ui/styles/ui/sidebar"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { Submodel } from "foldkit"
+import type { Html } from "foldkit/html"
 import { alert, alertAction, alertDescription, alertTitle } from "../ui/alert"
 import { button } from "../ui/button"
 import { menuPopup } from "../ui/dropdown-menu"
 import { icon } from "../ui/icon"
 import { leftSheet } from "../ui/sheet"
 import { sidebarContent, sidebarDesktop, sidebarInset, sidebarWrapper } from "../ui/sidebar"
-import * as Tooltip from "../ui/tooltip"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
-import * as SupportChannelView from "./support-channel-view"
+import {
+	PaletteBinding,
+	RailTooltipBinding,
+	ShellComposition,
+	type ShellViewBuilder,
+	ShortcutsDialogBinding,
+	SupportChannelBinding,
+} from "./composition"
 import { Message } from "./message"
 import type { Model, ShellClerk } from "./model"
-import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
+import { MeasureShortcutsPanel, MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
@@ -28,15 +33,14 @@ import { type BreadcrumbEntry, hidesTopbarConnect, topbar } from "./view-topbar"
 import { splitPageRails } from "./page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
 import { FLAGGED_HREFS } from "./palette/entries"
-import { paletteView } from "./palette/view"
-import { shortcutsDialogView } from "./palette/shortcuts-view"
-import { paletteContextOf } from "./update-palette"
+import { shortcutsDialogContent } from "./palette/shortcuts-view"
+import { paletteContextOf } from "./update-local"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
 /** `AppSidebar`'s three regions, shared by the desktop rail and the mobile sheet. */
 const sidebarRegions = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	currentPath: string,
 	clerk: ShellClerk | null,
@@ -63,7 +67,7 @@ const railTipTitles = (clerk: ShellClerk | null): ReadonlyArray<string> => [
 
 /** The desktop rail; collapsed, its rows share one Tooltip naming the row (`tooltip={title}`). */
 const desktopSidebar = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	currentPath: string,
 	clerk: ShellClerk | null,
@@ -78,29 +82,29 @@ const desktopSidebar = (
 			undefined,
 			isInstant,
 		)
-	return h.submodel({
-		slotId: "shell-rail-tooltip",
-		model: model.railTooltip,
-		view: Tooltip.view,
-		viewInputs: {
-			toView: ({ trigger, portal }) =>
-				sidebarDesktop(
-					h,
-					"collapsed",
-					[
-						...sidebarRegions(h, model, currentPath, clerk, (title) =>
-							trigger(`${RAIL_TIP_PREFIX}${title}`),
-						),
-						...(portal === null ? [] : [portal]),
-					],
-					undefined,
-					isInstant,
-				),
-			toContent: (triggerId) => [triggerId.slice(RAIL_TIP_PREFIX.length)],
-			triggerIds: railTipTitles(clerk).map((title) => `${RAIL_TIP_PREFIX}${title}`),
-		},
-		toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
-	})
+	return h.block(
+		RailTooltipBinding.embedView({
+			slotId: "shell-rail-tooltip",
+			model: model.railTooltip,
+			viewInputs: {
+				toView: ({ trigger, portal }) =>
+					sidebarDesktop(
+						h,
+						"collapsed",
+						[
+							...sidebarRegions(h, model, currentPath, clerk, (title) =>
+								trigger(`${RAIL_TIP_PREFIX}${title}`),
+							),
+							...(portal === null ? [] : [portal]),
+						],
+						undefined,
+						isInstant,
+					),
+				toContent: (triggerId) => [triggerId.slice(RAIL_TIP_PREFIX.length)],
+				triggerIds: railTipTitles(clerk).map((title) => `${RAIL_TIP_PREFIX}${title}`),
+			},
+		}),
+	)
 }
 
 export type FrameInputs = Readonly<{
@@ -114,17 +118,17 @@ export type FrameInputs = Readonly<{
 	topbarActions: () => Html
 }>
 
-const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: ShellClerk): Html =>
-	h.submodel({
-		slotId: "shell-support-channel",
-		model: model.supportChannel,
-		view: SupportChannelView.view,
-		viewInputs: { email: Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email) },
-		toParentMessage: (message) => Message.GotSupportChannelMessage({ message }),
-	})
+const supportChannelDialog = (h: ShellViewBuilder, model: Model, clerk: ShellClerk): Html =>
+	h.block(
+		SupportChannelBinding.embedView({
+			slotId: "shell-support-channel",
+			model: model.supportChannel,
+			viewInputs: { email: Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email) },
+		}),
+	)
 
 /** `AppUpdateBanner`: not dismissible, a stale bundle may not read what the new build writes. */
-const appUpdateBanner = (h: HtmlBuilder<Message>): Html =>
+const appUpdateBanner = (h: ShellViewBuilder): Html =>
 	h.div(
 		[h.Class("px-4 pt-3")],
 		[
@@ -140,7 +144,7 @@ const appUpdateBanner = (h: HtmlBuilder<Message>): Html =>
 	)
 
 /** `DashboardLayout.Root` + `Breadcrumbs` + `Body`: sidebar, inset, skip link, top bar, page body. */
-export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model, inputs, h) => {
+export const frameView = ShellComposition.makeView.withInputs<FrameInputs>((model, inputs, h) => {
 	const page = model.isFilterCollapsed
 		? splitPageRails(inputs.page())
 		: { body: inputs.page(), maybeFilters: Option.none(), maybeRight: Option.none() }
@@ -207,7 +211,7 @@ export type BareFrameInputs = Readonly<{ currentPath: string; clerk: ShellClerk 
  * `/chat`'s own `SidebarProvider open={false} className="h-svh overflow-hidden"`: the rail held
  * collapsed (its toggle does nothing there) and the page straight in the inset, no top bar.
  */
-export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs>((model, inputs, h) =>
+export const bareFrameView = ShellComposition.makeView.withInputs<BareFrameInputs>((model, inputs, h) =>
 	sidebarWrapper(
 		h,
 		[
@@ -219,12 +223,7 @@ export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs
 	),
 )
 
-const mobileNav = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	currentPath: string,
-	clerk: ShellClerk | null,
-): Html =>
+const mobileNav = (h: ShellViewBuilder, model: Model, currentPath: string, clerk: ShellClerk | null): Html =>
 	leftSheet(
 		h,
 		{
@@ -246,7 +245,7 @@ const mobileNav = (
 // OVERLAYS
 
 const openMenuPopup = (
-	h: HtmlBuilder<Message>,
+	h: ShellViewBuilder,
 	model: Model,
 	currentPath: string,
 	clerk: ShellClerk | null,
@@ -290,27 +289,28 @@ const openMenuPopup = (
 export type OverlayInputs = Readonly<{ currentPath: string; clerk?: ShellClerk | null }>
 
 /** Base UI's sheet portal for the mobile nav, after the frame in the app root. */
-export const sheetLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
+export const sheetLayerView = ShellComposition.makeView.withInputs<OverlayInputs>((model, inputs, h) =>
 	model.isMobile && model.isMobileNavOpen
 		? mobileNav(h, model, inputs.currentPath, inputs.clerk ?? null)
 		: null,
 )
 
 /** A box-less holder that always renders, so a portal moved to `<body>` is never an insertion point. */
-const layer = (h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
+const layer = (h: ShellViewBuilder, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Style({ display: "contents" })], children)
 
 /** `CommandPalette`'s portal while it is mounted. */
-export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
+export const paletteLayerView = ShellComposition.makeView.withInputs<OverlayInputs>((model, inputs, h) =>
 	layer(
 		h,
-		model.palette === null
-			? []
-			: [
-					paletteView(
-						h,
-						model.palette,
-						{
+		Option.match(model.palette, {
+			onNone: () => [],
+			onSome: (palette) => [
+				h.block(
+					PaletteBinding.embedView({
+						slotId: "command-palette",
+						model: palette,
+						viewInputs: {
 							context: paletteContextOf(model),
 							visibleFlagged: shellNavGroups(inputs.clerk ?? null).flatMap((group) =>
 								group.items.flatMap((item) =>
@@ -318,31 +318,43 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 								),
 							),
 						},
-						(message) => Message.GotPaletteMessage({ message }),
-					),
-				],
+					}),
+				),
+			],
+		}),
 	),
 )
 
 /** `KeyboardShortcutsDialog`'s portal while it is mounted. */
-export const shortcutsLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, _inputs, h) =>
+export const shortcutsLayerView = ShellComposition.makeView.withInputs<OverlayInputs>((model, _inputs, h) =>
 	layer(
 		h,
-		model.shortcutsDialog === null
-			? []
-			: [
-					shortcutsDialogView(
-						h,
-						model.shortcutsDialog,
-						model.platform,
-						(message) => Message.GotShortcutsDialogMessage({ message }),
-						Message.MeasuredShortcutsPanel(),
-					),
-				],
+		Option.match(model.shortcutsDialog, {
+			onNone: () => [],
+			onSome: (dialog) => [
+				h.block(
+					ShortcutsDialogBinding.embedView({
+						slotId: "keyboard-shortcuts",
+						model: dialog,
+						viewInputs: {
+							hasTrigger: false,
+							toView: ({ portal }) => portal,
+							toContent: () =>
+								shortcutsDialogContent(
+									h,
+									dialog.id,
+									model.platform,
+									h.OnMount(MeasureShortcutsPanel()),
+								),
+						},
+					}),
+				),
+			],
+		}),
 	),
 )
 
 /** Base UI's menu portal for the open menu, last in the app root. */
-export const menuLayerView = Submodel.defineView<Model, Message, OverlayInputs>(
+export const menuLayerView = ShellComposition.makeView.withInputs<OverlayInputs>(
 	(model, inputs, h) => openMenuPopup(h, model, inputs.currentPath, inputs.clerk ?? null)[0] ?? null,
 )

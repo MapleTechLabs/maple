@@ -1,4 +1,3 @@
-import * as Chart from "@maple/web/charts/chart"
 import { ThemeColors } from "@maple/web/charts/theme-colors"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -28,6 +27,7 @@ export const Message = defineMessageUnion({
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
-	GotChartMessage: { message: Chart.Message },
+	/** The root saw the fragment change under the open page: the range reloads. */
+	InformedOfLocationChange: {},
 })
 export type Message = typeof Message.Type

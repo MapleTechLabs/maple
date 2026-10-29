@@ -3,29 +3,62 @@ import { filterSection } from "@maple/web/ui/filters/filter-section"
 import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
 import { Option } from "effect"
-import { AsyncData, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { AsyncData } from "foldkit"
+import type { Html } from "foldkit/html"
+import { presenceOf, type PresenceResult } from "../../data/signal-presence"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
-import { rangeOf } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
+import { type PageContext, rangeOf } from "../contract"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
 import { errorState } from "../kit/view-states"
 import { activeFilterCount, facetsOf, filtersOf, type ServicesFilters, unfilteredSlot, visibleEntries } from "./derive"
+import {
+	EndpointCopyBinding,
+	EnvCopyBinding,
+	FilterSectionsBinding,
+	ServicesComposition,
+	type ServicesViewBuilder,
+} from "./composition"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { servicesSkeleton, servicesTable } from "./view-table"
 
 // The services list page.
 
-const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
-const toCopy = (id: string, message: CopyButton.Message) => Message.GotCopyMessage({ id, message })
+/** What the view reads from the root: data only, as Block view inputs carry no callbacks. */
+export type ServicesViewInputs = Readonly<{
+	context: PageContext
+	/** The shared signal presence read (`useSignalPresence`): none while loading or unreadable. */
+	maybePresence: Option.Option<PresenceResult>
+	/** The server's last ingest, for `useNewDataSince`'s "New data" pill. */
+	lastIngestAtMs: Option.Option<number>
+}>
+
+/** `useNewDataSince(sinceMs)`: telemetry arrived after the list loaded. */
+const hasNewDataSince = (inputs: ServicesViewInputs, sinceMs: number): boolean =>
+	sinceMs > 0 && Option.exists(inputs.lastIngestAtMs, (last) => last > sinceMs)
+
+const GUIDE_ID = "services-empty"
+
+/** The connect guide's copy buttons are this page's own Blocks. */
+const embedGuideCopy =
+	(h: ServicesViewBuilder, model: Model) =>
+	(slot: "endpoint" | "env", viewInputs: CopyButton.CopyButtonViewInputs): Html =>
+		slot === "endpoint"
+			? h.block(EndpointCopyBinding.embedView({ slotId: `${GUIDE_ID}-endpoint`, model: model.endpointCopy, viewInputs }))
+			: h.block(EnvCopyBinding.embedView({ slotId: `${GUIDE_ID}-env`, model: model.envCopy, viewInputs }))
+
+/** Each section's open/closed state is the remembered sections Block's own. */
+const embedSection = (h: ServicesViewBuilder, model: Model) => (viewInputs: FilterSections.ViewInputs) =>
+	h.block(
+		FilterSectionsBinding.embedView({ slotId: `filter-section-${viewInputs.key}`, model: model.sections, viewInputs }),
+	)
 
 const isFetching = (slot: Model["catalog"]) => AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
 
-const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ServicesFilters): Html => {
+const sidebar = (h: ServicesViewBuilder, model: Model, filters: ServicesFilters): Html => {
 	const { envFacets, nsFacets } = facetsOf(model, filters)
 	const facet = (title: string, param: "env" | "ns", options: typeof envFacets, selected: string | undefined) =>
 		filterSection(h, {
@@ -33,8 +66,7 @@ const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ServicesFilters
 			options,
 			selected: selected ? [selected] : [],
 			isSearchable: true,
-			sections: model.sections,
-			toSectionsMessage: toSections,
+			embedSection: embedSection(h, model),
 			onToggle: (name) => Message.ToggledFacetOption({ param, name }),
 		})
 	return filterSidebarFrame(
@@ -53,7 +85,7 @@ const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ServicesFilters
 	)
 }
 
-const servicesToolbar = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, count: number, errors: number) =>
+const servicesToolbar = (h: ServicesViewBuilder, model: Model, inputs: ServicesViewInputs, count: number, errors: number) =>
 	toolbar(h, [
 		toolbarSearch(h, {
 			id: "services-search",
@@ -70,7 +102,7 @@ const servicesToolbar = (h: HtmlBuilder<Message>, model: Model, inputs: PageView
 				toolbarStat(h, { value: Math.round(errors), label: "errors", isDanger: true }),
 				refreshButton(h, {
 					isSpinning: model.isRefreshing,
-					hasNewData: inputs.hasNewDataSince(model.catalogUpdatedAtMs),
+					hasNewData: hasNewDataSince(inputs, model.catalogUpdatedAtMs),
 					onRefresh: Message.ClickedRefresh(),
 				}),
 				timeRangeSelect(h, rangeOf(inputs.context), (range) => Message.ChangedRange({ range })),
@@ -79,7 +111,7 @@ const servicesToolbar = (h: HtmlBuilder<Message>, model: Model, inputs: PageView
 		),
 	])
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+export const view = ServicesComposition.makeView.withInputs<ServicesViewInputs>((model, inputs, h) => {
 	const { context } = inputs
 	const query = queryOf(context.location)
 	const filters = filtersOf(query)
@@ -99,9 +131,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearFilters: Message.ClickedClearFilters(),
 				range: rangeOf(context),
 				onWidenRange: Message.ClickedWidenRange(),
-				maybePresence: inputs.presenceOf("traces"),
-				nowMs: inputs.presenceNowMs,
-				guide: { id: "services-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				maybePresence: presenceOf(inputs.maybePresence, "traces"),
+				nowMs: Option.match(inputs.maybePresence, { onNone: () => 0, onSome: (result) => result.nowMs }),
+				guide: { id: GUIDE_ID, endpoint: context.env.otlpEndpoint, embedCopy: embedGuideCopy(h, model) },
 			})
 		return servicesTable(h, entries, query, model.catalog.isPlaceholder)
 	}

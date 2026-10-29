@@ -1,12 +1,8 @@
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
-import * as Tooltip from "@maple/web/ui/tooltip"
-import * as ToggleGroup from "@maple/web/ui/toggle-group"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
-import { Message as LogSheetMessage } from "../kit/log-sheet/message"
+import { CopyMessage } from "../kit/copies"
 import { ChipRef, FacetOption, LocalLog, LogPages, LogPatterns, LogPattern, Viewport } from "./model"
 
 export const FacetParam = Schema.Literals(["severity", "service"])
@@ -41,7 +37,8 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ChangedRange: { range: Schema.String },
 	ClickedWidenRange: {},
-	GotModeToggleMessage: { message: ToggleGroup.Message },
+	/** The mode toggle reported a press; the relay brings it back with the hash to compare against. */
+	ChoseMode: { value: Schema.String },
 	ClickedPattern: { pattern: LogPattern },
 	ClickedLog: { log: LocalLog },
 	ClickedChip: { text: Schema.String },
@@ -55,10 +52,9 @@ export const Message = defineMessageUnion({
 	ElapsedChipDelay: { generation: Schema.Number },
 	PlacedChipCard: {},
 	ClickedChipJson: {},
-	GotChipJsonTooltipMessage: { message: Tooltip.Message },
 	CompletedCopyChip: {},
-	GotLogSheetMessage: { message: LogSheetMessage },
-	GotFilterSectionsMessage: { message: FilterSections.Message },
-	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	ReceivedCopyMessage: { message: CopyMessage },
+	/** The hash changed under the page (`locationChanged`). */
+	InformedOfLocationChange: {},
 })
 export type Message = typeof Message.Type

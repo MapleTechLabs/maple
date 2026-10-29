@@ -6,13 +6,14 @@ import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { PopupPosition } from "../ui/anchor"
 import * as Dialog from "../ui/dialog"
+import { DialogBlock } from "../ui/dialog-view"
 import * as Tooltip from "../ui/tooltip"
-import * as ClerkOrgSwitcher from "./clerk-org-switcher"
-import * as Checklist from "./onboarding-checklist"
-import * as ConnectPanel from "./connect-panel"
-import * as SupportChannel from "./support-channel"
+import { ClerkOrgSwitcherBlock } from "./clerk-org-switcher-view"
+import { ChecklistBlock } from "./onboarding-checklist-view"
+import { ConnectPanelBlock } from "./connect-panel-view"
+import { SupportChannelBlock } from "./support-channel-view"
 import { PinnedDashboardRow } from "./dashboards-shape"
-import * as Palette from "./palette/model"
+import { PaletteBlock } from "./palette/view"
 import { Platform } from "./palette/shortcuts"
 import { Menu, Theme } from "./message"
 import { NavSurface } from "./nav"
@@ -62,8 +63,8 @@ export const Model = Schema.Struct({
 	/** Below `sm` (`useMediaQuery("max-sm")`), passed to pages that branch on it. */
 	isBelowSm: Schema.Boolean,
 	/** `PageLayout.FilterSidebar` and `RightSidebar` as sheets, opened from the top bar. */
-	filterSheet: Dialog.Model,
-	rightSheet: Dialog.Model,
+	filterSheet: DialogBlock.Model,
+	rightSheet: DialogBlock.Model,
 	theme: Theme,
 	openMenu: Schema.Option(OpenMenu),
 	maybeOrgId: Schema.Option(Schema.String),
@@ -81,22 +82,22 @@ export const Model = Schema.Struct({
 	/** The self-hosted namespace menu's search query; each opening starts blank. */
 	namespaceQuery: Schema.String,
 	/** The collapsed rail's tooltips: one Tooltip shared by every rail button. */
-	railTooltip: Tooltip.Model,
+	railTooltip: Tooltip.TooltipBlock.Model,
 	/** Clerk: the org switcher (`ClerkOrgSwitcherMenu namespaceScope`). */
-	clerkOrgMenu: ClerkOrgSwitcher.Model,
+	clerkOrgMenu: ClerkOrgSwitcherBlock.Model,
 	/** Clerk: the onboarding reward pill in the top bar. */
-	checklist: Checklist.Model,
+	checklist: ChecklistBlock.Model,
 	/** The top bar's Connect popover (`ConnectButton`). */
-	connect: ConnectPanel.Model,
+	connect: ConnectPanelBlock.Model,
 	/** Clerk: the shared Slack channel dialog of the Support menu. */
-	supportChannel: SupportChannel.Model,
+	supportChannel: SupportChannelBlock.Model,
 	/** `quota-banner-approaching` in sessionStorage: the approaching-quota banner was dismissed. */
 	isQuotaApproachingDismissed: Schema.Boolean,
 	/** The server serves a newer build than this tab (`AppUpdateBanner`). */
 	isAppOutdated: Schema.Boolean,
-	/** `GlobalShortcuts`: the command palette and the shortcuts dialog, `null` while unmounted. */
-	palette: Schema.NullOr(Palette.Model),
-	shortcutsDialog: Schema.NullOr(Dialog.Model),
+	/** `GlobalShortcuts`: the command palette and the shortcuts dialog, `None` while unmounted. */
+	palette: Schema.Option(PaletteBlock.Model),
+	shortcutsDialog: Schema.Option(DialogBlock.Model),
 	/** `detectPlatform`: how the shortcuts dialog spells modifiers. */
 	platform: Platform,
 })
@@ -114,15 +115,15 @@ export type ShellClerk = Readonly<{
 }>
 
 /** `<TooltipPopup side="right" align="center">` of `SidebarMenuButton`. */
-export const initRailTooltip = (): Tooltip.Model =>
-	Tooltip.init("shell-rail-tooltip", { side: "right", align: "center" })
+export const RAIL_TOOLTIP_ID = "shell-rail-tooltip"
+export const RAIL_TOOLTIP_OPTIONS: Tooltip.InitOptions = { side: "right", align: "center" }
 
 export const FILTER_SHEET_ID = "page-filter-sheet"
 export const RIGHT_SHEET_ID = "page-right-sheet"
 
 /** A page change starts the page's sheets closed. */
-export const initFilterSheet = (): Dialog.Model => Dialog.init(FILTER_SHEET_ID, "sheet")
-export const initRightSheet = (): Dialog.Model => Dialog.init(RIGHT_SHEET_ID, "sheet")
+export const initFilterSheet = (): Dialog.Model => Dialog.initialModel(FILTER_SHEET_ID, "sheet")
+export const initRightSheet = (): Dialog.Model => Dialog.initialModel(RIGHT_SHEET_ID, "sheet")
 
 /** Persisted shell state, read before the first render (see `main.ts` flags). */
 export type ShellFlags = Readonly<{
@@ -137,7 +138,8 @@ export type ShellFlags = Readonly<{
 	platform?: Platform
 }>
 
-export const init = (flags: ShellFlags): Model => ({
+/** The Model a fresh shell starts from; each child's Model comes from its own Block's init. */
+export const initialModel = (flags: ShellFlags): Model => ({
 	isSidebarOpen: true,
 	isSidebarToggleInstant: false,
 	isMobileNavOpen: false,
@@ -160,14 +162,14 @@ export const init = (flags: ShellFlags): Model => ({
 	namespaces: NamespacesData.Idle(),
 	namespaceQuery: "",
 	isAppOutdated: false,
-	railTooltip: initRailTooltip(),
-	clerkOrgMenu: ClerkOrgSwitcher.init("shell-clerk-org-switcher"),
-	checklist: Checklist.init(),
-	connect: ConnectPanel.init(),
-	supportChannel: SupportChannel.init(),
+	railTooltip: Tooltip.TooltipBlock.init(RAIL_TOOLTIP_ID, RAIL_TOOLTIP_OPTIONS).model,
+	clerkOrgMenu: ClerkOrgSwitcherBlock.init("shell-clerk-org-switcher").model,
+	checklist: ChecklistBlock.init().model,
+	connect: ConnectPanelBlock.init().model,
+	supportChannel: SupportChannelBlock.init().model,
 	isQuotaApproachingDismissed: flags.isQuotaApproachingDismissed ?? false,
-	palette: null,
-	shortcutsDialog: null,
+	palette: Option.none(),
+	shortcutsDialog: Option.none(),
 	platform: flags.platform ?? "mac",
 })
 
