@@ -2,9 +2,7 @@ import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as AttributesPanel from "../attributes/attributes-panel"
 import { capForDisplay, prettyJson } from "../../lib/display-text"
-import * as AttributesView from "../attributes/attributes-view"
 import { copyButton, type CopyStatus } from "../copy-button"
 import { icon } from "../icon"
 import { highlightedText } from "./highlight"
@@ -40,16 +38,15 @@ const stop = { propagation: "Stop" } as const
 export type ExpandedEvents<Message> = Readonly<{
 	clickedDetails: Message
 	clickedCopyJson: Message
-	toPanelMessage: (message: AttributesPanel.Message) => Message
 }>
 
 export const logRowExpanded = <Message>(
 	h: HtmlBuilder<Message>,
 	log: LogRecord,
 	highlight: string | undefined,
-	panel: AttributesPanel.Model,
+	/** The row's embedded attribute panel, rendered by the owner of the panel Binding. */
+	panelView: Html,
 	jsonStatus: CopyStatus,
-	canFilter: boolean,
 	events: ExpandedEvents<Message>,
 ): Html => {
 	const body = stripAnsi(log.body)
@@ -113,17 +110,7 @@ export const logRowExpanded = <Message>(
 							...(omitted === 0 ? [] : [truncationNote(h, shown.length, formatted.length)]),
 						],
 					),
-					h.submodel({
-						slotId: `${panel.id}-slot`,
-						model: panel,
-						view: AttributesView.view,
-						viewInputs: {
-							logAttributes: log.logAttributes,
-							resourceAttributes: log.resourceAttributes,
-							canFilter,
-						},
-						toParentMessage: events.toPanelMessage,
-					}),
+					panelView,
 				],
 			),
 		],

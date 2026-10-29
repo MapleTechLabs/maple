@@ -9,7 +9,6 @@ import {
 	generateBenchGraph,
 } from "../../lab/bench/service-map-bench-fixture"
 import { Option } from "effect"
-import type { HtmlBuilder } from "foldkit/html"
 import {
 	click,
 	Command,
@@ -21,9 +20,10 @@ import {
 	scene,
 	selector,
 	testId,
+	withViewInputs,
 	within,
 } from "foldkit/scene"
-import { Lazy } from "foldkit/test"
+import { Lazy, toParentMessage } from "foldkit/test"
 import { describe, test, expect as expectValue } from "vitest"
 import { Message as ComboboxMessage } from "../../ui/combobox"
 import { Message as ResizableMessage, MountResizeGroup } from "../../ui/resizable"
@@ -54,8 +54,7 @@ const elkPositions = Object.fromEntries(
 )
 
 const update = ServiceMap.update
-const mapView = (model: ServiceMap.Model, h: HtmlBuilder<ServiceMap.Message>) =>
-	view(h, model, (message) => message)
+const mapView = withViewInputs(view, {})()
 
 /** ELK answered and the pane has a size; the canvas Mount has not measured the cards yet. */
 const revealed: ServiceMap.Model = (() => {
@@ -68,7 +67,7 @@ const revealed: ServiceMap.Model = (() => {
 
 const measured = Mount.resolve(
 	{ name: AttachFlowCanvas.name },
-	ServiceMap.Message.GotCanvasMessage({
+	ServiceMap.Message.ReceivedCanvasMessage({
 		message: Canvas.Message.MeasuredNodes({
 			nodes: initial.model.graph.nodes.map((node) => ({
 				id: node.id,
@@ -102,7 +101,7 @@ const card = (id: string) => within(testId(`rf__node-${id}`), selector(".cursor-
 const select = (model: ServiceMap.Model, nodeId: string) =>
 	update(model, ServiceMap.Message.ClickedNode({ nodeId }))
 
-const canvas = (message: Canvas.Message) => ServiceMap.Message.GotCanvasMessage({ message })
+const canvas = (message: Canvas.Message) => ServiceMap.Message.ReceivedCanvasMessage({ message })
 
 describe("service map selection", () => {
 	test("cards and the empty pane answer clicks once measured", () => {
@@ -110,7 +109,7 @@ describe("service map selection", () => {
 			{ update, view: mapView },
 			given(revealed),
 			measured,
-			Mount.resolve({ name: MountResizeGroup.name }, ResizableMessage.EndedDrag()),
+			Mount.resolve(MountResizeGroup, ResizableMessage.EndedDrag()),
 			Command.resolve(
 				ServiceMap.WaitCameraWrite,
 				ServiceMap.Message.ElapsedCameraWrite({ version: 1 }),
@@ -212,6 +211,31 @@ describe("service map drags and camera", () => {
 		expectValue(dropped.snapshots[0]?.positions["svc-002"]).toEqual({ x: 7, y: 8 })
 	})
 
+	test("a finished drag tells the host to persist the layout; a drag in progress does not", () => {
+		const dragging = update(
+			revealed,
+			canvas(Canvas.Message.DraggedNode({ id: "svc-002", position: { x: 5, y: 6 } })),
+		)
+		expectValue(dragging.outMessage).toBeUndefined()
+		const dropped = update(
+			dragging.model,
+			canvas(Canvas.Message.EndedNodeDrag({ id: "svc-002", position: { x: 7, y: 8 } })),
+		)
+		expectValue(dropped.outMessage?.isLayoutChanged).toBe(true)
+		expectValue(dropped.outMessage?.isPrefsChanged).toBe(false)
+		expectValue(dropped.outMessage?.snapshots).toEqual(dropped.model.snapshots)
+	})
+
+	test("selecting a node opens the detail split and reports the selection", () => {
+		const selected = select(revealed, "svc-002")
+		expectValue(selected.model.split.layout).toEqual([64.999, 35.001])
+		expectValue(selected.outMessage?.previousSelectedId).toEqual(Option.none())
+		expectValue(selected.outMessage?.selectedId).toEqual(Option.some("svc-002"))
+		expectValue(update(selected.model, ServiceMap.Message.ClickedPane()).model.split.layout).toEqual([
+			100,
+		])
+	})
+
 	test("Re-sort drops the saved arrangement and snaps back to the layout", () => {
 		const dropped = update(
 			revealed,
@@ -276,7 +300,8 @@ describe("service map declutter controls", () => {
 		)
 		expectValue(collapsed.model.collapsedNamespaces).toEqual(["payments"])
 		expectValue(collapsed.model.graph.signature).not.toBe(start.graph.signature)
-		expectValue((collapsed.commands ?? []).map((command) => command.name)).toContain("RunElkLayout")
+		const isElk = Command.argsOf(ServiceMap.RunElkLayout)
+		expectValue((collapsed.commands ?? []).some((command) => Option.isSome(isElk(command)))).toBe(true)
 		const expanded = update(collapsed.model, ServiceMap.Message.ClickedNode({ nodeId: "nsagg:payments" }))
 		expectValue(expanded.model.collapsedNamespaces).toEqual([])
 		expectValue(expanded.model.graph.signature).toBe(start.graph.signature)
@@ -285,17 +310,19 @@ describe("service map declutter controls", () => {
 	test("picking a service in the combobox focuses it; clearing restores a fresh combobox", () => {
 		const focused = update(
 			revealed,
-			ServiceMap.Message.GotFocusComboboxMessage({
-				message: ComboboxMessage.ClickedItem({ value: "svc-002" }),
-			}),
+			toParentMessage(
+				ServiceMap.FocusComboboxBinding,
+				ComboboxMessage.ClickedItem({ value: "svc-002" }),
+			),
 		).model
 		expectValue(focused.focus).toEqual(Option.some({ serviceId: "svc-002", hops: 1, mode: "dim" }))
 		expectValue(focused.graph.declutter.dimmedNodeIds.size).toBeGreaterThan(0)
 		const deeper = update(
 			focused,
-			ServiceMap.Message.GotDepthSelectMessage({
-				message: SelectMessage.SelectedItem({ index: 1, value: "2" }),
-			}),
+			toParentMessage(
+				ServiceMap.DepthSelectBinding,
+				SelectMessage.SelectedItem({ index: 1, value: "2" }),
+			),
 		).model
 		expectValue(Option.map(deeper.focus, (focus) => focus.hops)).toEqual(Option.some(2))
 		const hidden = update(deeper, ServiceMap.Message.ClickedToggleHideRest()).model
@@ -308,16 +335,18 @@ describe("service map declutter controls", () => {
 	test("the colour and traffic selects drive the colour mode and the threshold", () => {
 		const health = update(
 			revealed,
-			ServiceMap.Message.GotColorSelectMessage({
-				message: SelectMessage.SelectedItem({ index: 1, value: "health" }),
-			}),
+			toParentMessage(
+				ServiceMap.ColorSelectBinding,
+				SelectMessage.SelectedItem({ index: 1, value: "health" }),
+			),
 		).model
 		expectValue(health.colorMode).toBe("health")
 		const filtered = update(
 			revealed,
-			ServiceMap.Message.GotTrafficSelectMessage({
-				message: SelectMessage.SelectedItem({ index: 3, value: "5" }),
-			}),
+			toParentMessage(
+				ServiceMap.TrafficSelectBinding,
+				SelectMessage.SelectedItem({ index: 3, value: "5" }),
+			),
 		).model
 		expectValue(filtered.minTrafficPct).toBe(5)
 		expectValue(update(filtered, ServiceMap.Message.ClickedShowAllTraffic()).model.minTrafficPct).toBe(0)
@@ -325,19 +354,16 @@ describe("service map declutter controls", () => {
 
 	test("the URL focus applies once; the same focus again changes nothing", () => {
 		const focus = Option.some({ serviceId: "svc-002", hops: 1 as const, mode: "dim" as const })
-		const once = ServiceMap.setFocus(revealed, focus).model
-		expectValue(ServiceMap.setFocus(once, focus).model).toBe(once)
-		expectValue(ServiceMap.setFocus(once, Option.none()).model.focus).toEqual(Option.none())
+		const setFocus = (model: ServiceMap.Model, next: typeof focus) =>
+			update(model, ServiceMap.Message.InformedOfFocus({ focus: next }))
+		const once = setFocus(revealed, focus).model
+		expectValue(setFocus(once, focus).model).toBe(once)
+		expectValue(setFocus(once, Option.none()).model.focus).toEqual(Option.none())
 	})
 })
 
-const toSelf = (message: ServiceMap.Message) => message
-
 describe("service map lazy layers", () => {
 	test("an unchanged map reuses its node, edge, particle and minimap layers", () => {
-		Lazy.expectAllReused({
-			view: (model: ServiceMap.Model, h: HtmlBuilder<ServiceMap.Message>) => view(h, model, toSelf),
-			model: revealed,
-		})
+		Lazy.expectAllReused({ view: mapView, model: revealed })
 	})
 })

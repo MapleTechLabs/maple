@@ -1,13 +1,14 @@
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { button } from "../../../../ui/button"
 import { kbd } from "../../../../ui/display"
 import { serviceDot } from "../../../../ui/values"
+import type { TimelineViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { Model } from "./model"
 
 // The Timeline's footer (key hints and the service legend) and its shortcuts sheet.
 
-type H = HtmlBuilder<Message>
+type H = TimelineViewBuilder
 
 const HINT_KBD = "h-4 font-mono text-4xs"
 

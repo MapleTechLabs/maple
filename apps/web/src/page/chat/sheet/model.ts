@@ -38,8 +38,8 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export const init = (): Model => ({
-	dialog: Dialog.init(SHEET_ID, "sheet"),
-	tooltip: Tooltip.init("chat-sheet-tooltip", { side: "bottom" }),
+	dialog: Dialog.initialModel(SHEET_ID, "sheet"),
+	tooltip: Tooltip.TooltipBlock.init("chat-sheet-tooltip", { side: "bottom" }).model,
 	isInitialFocusPointer: false,
 	orgId: null,
 	tabId: "quick",

@@ -1,15 +1,13 @@
-import { Option } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
 import { outcomeOf, stopSuperseded } from "../../data/lanes"
 import { FetchTables, ReadPlatform, RunQuery } from "./command"
 import { lanes } from "./lanes"
 import { Message } from "./message"
 import { type Model, RunState } from "./model"
 import { init, update } from "./update"
-import { view as pageView } from "./view"
+import { view as pageView, type QueryViewInputs } from "./view"
 
 const env = { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false }
 const contextFor = (search: string): PageContext => ({
@@ -20,7 +18,7 @@ const contextFor = (search: string): PageContext => ({
 	canGoBack: false,
 })
 const context = contextFor("sql=SELECT%201")
-const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, clockMs: 0, hasNewDataSince: () => false }
+const inputs: QueryViewInputs = { context }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
@@ -61,8 +59,9 @@ describe("local query console", () => {
 		const running = pageUpdate(loaded(), Message.ClickedRun()).model
 		const stopsAfter = (before: Model, message: Message) =>
 			names(stopSuperseded(lanes(before), lanes(pageUpdate(before, message).model), outcomeOf))
-		expect(stopsAfter(running, Message.ClickedCancel())).toEqual(["RunQueryConsoleQuery.Interrupt"])
-		expect(stopsAfter(running, Message.ClickedRun())).toEqual(["RunQueryConsoleQuery.Interrupt"])
+		const interruptRun = `${RunQuery.name}.Interrupt`
+		expect(stopsAfter(running, Message.ClickedCancel())).toEqual([interruptRun])
+		expect(stopsAfter(running, Message.ClickedRun())).toEqual([interruptRun])
 		expect(stopsAfter(pageUpdate(running, Message.ClickedCancel()).model, Message.ClickedCancel())).toEqual([])
 	})
 

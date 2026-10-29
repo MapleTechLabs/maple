@@ -3,12 +3,13 @@ import { viewportBounds } from "@maple/ui/components/traces/clamp-viewport"
 import { MINIMAP_HEIGHT, TIME_AXIS_HEIGHT } from "@maple/ui/components/traces/trace-timeline-types"
 import { countLabel, formatDurationAtStep } from "@maple/ui/lib/format"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { button } from "../../../../ui/button"
 import { icon } from "../../../../ui/icon"
 import * as SelectView from "../../../../ui/select-view"
 import type { SpanNodeData } from "../trace-data"
 import { depthControls } from "../depth-controls"
+import { ColorBySelectBinding, type TimelineViewBuilder } from "./composition"
 import { collectMinimapSpans } from "./layout"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -16,7 +17,7 @@ import type { Model } from "./model"
 // The Timeline's chrome: `TraceTimelineSearch`, the toolbar with `TraceDepthControls`, the fit
 // button and `ColorByPicker`, `TraceTimelineMinimap` and `TraceTimelineTimeAxis`.
 
-type H = HtmlBuilder<Message>
+type H = TimelineViewBuilder
 
 export const searchBar = (h: H, model: Model, matchCount: number, totalCount: number): Html =>
 	h.div(
@@ -134,30 +135,30 @@ const colorByEntries = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<S
 
 /** `ColorByPicker`: a small Select whose trigger reads "Color: Service". */
 const colorByPicker = (h: H, model: Model): Html =>
-	h.submodel({
-		slotId: model.colorBySelect.id,
-		model: model.colorBySelect,
-		view: SelectView.view,
-		viewInputs: {
-			entries: colorByEntries(model.rootSpans),
-			size: "sm",
-			labelledBy: SelectView.selectLabelId(model.colorBySelect.id),
-			className: "h-5 min-w-0 text-3xs gap-1 px-2 py-0 rounded-md",
-			leading: [h.span([h.Class("text-muted-foreground")], ["Color:"])],
-			renderValue: (value) => [colorByLabel(colorByFromId(value) ?? DEFAULT_COLOR_BY)],
-			renderItem: (option) =>
-				option.value.startsWith("span:")
-					? [h.span([h.Class("font-mono")], [option.label])]
-					: option.value.startsWith("resource:")
-						? [
-								h.span([h.Class("text-muted-foreground mr-1")], ["R:"]),
-								h.span([h.Class("font-mono")], [option.label]),
-							]
-						: [option.label],
-			toView: (parts) => h.span([h.Class("contents")], parts),
-		},
-		toParentMessage: (message) => Message.GotColorBySelectMessage({ message }),
-	})
+	h.block(
+		ColorBySelectBinding.embedView({
+			slotId: model.colorBySelect.id,
+			model: model.colorBySelect,
+			viewInputs: {
+				entries: colorByEntries(model.rootSpans),
+				size: "sm",
+				labelledBy: SelectView.selectLabelId(model.colorBySelect.id),
+				className: "h-5 min-w-0 text-3xs gap-1 px-2 py-0 rounded-md",
+				leading: [h.span([h.Class("text-muted-foreground")], ["Color:"])],
+				renderValue: (value) => [colorByLabel(colorByFromId(value) ?? DEFAULT_COLOR_BY)],
+				renderItem: (option) =>
+					option.value.startsWith("span:")
+						? [h.span([h.Class("font-mono")], [option.label])]
+						: option.value.startsWith("resource:")
+							? [
+									h.span([h.Class("text-muted-foreground mr-1")], ["R:"]),
+									h.span([h.Class("font-mono")], [option.label]),
+								]
+							: [option.label],
+				toView: (parts) => h.span([h.Class("contents")], parts),
+			},
+		}),
+	)
 
 export type ToolbarIds = Readonly<{
 	depth: readonly [string, string, string, string]

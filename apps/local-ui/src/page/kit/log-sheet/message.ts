@@ -1,21 +1,15 @@
-import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as Dialog from "@maple/web/ui/dialog"
-import * as Tabs from "@maple/web/ui/tabs"
-import * as Tooltip from "@maple/web/ui/tooltip"
-import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import { CopyMessage } from "../copies"
+import { LocalLog } from "./model"
 
 export const Message = defineMessageUnion({
 	/** The close button, or a trace link that leaves the page. */
 	ClosedSheet: {},
-	/** The backdrop, Escape and the transition, through the kit's Dialog. */
-	GotDialogMessage: { message: Dialog.Message },
 	ToggledBodyExpanded: {},
 	ToggledErrorExpanded: {},
-	GotTabsMessage: { message: Tabs.Message },
-	GotAttributesMessage: { message: AttributesPanel.Message },
-	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
-	GotTooltipMessage: { message: Tooltip.Message },
+	/** A copy fact of one of the sheet's copy controls, folded by `updateCopy`. */
+	ReceivedCopyMessage: { message: CopyMessage },
+	/** Operation `requestShowLog`: a row click on an existing sheet shows `log` and opens it. */
+	RequestedShowLog: { log: LocalLog },
 })
 export type Message = typeof Message.Type

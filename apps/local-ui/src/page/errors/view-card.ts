@@ -3,7 +3,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { badge } from "@maple/web/ui/display"
 import { icon } from "@maple/web/ui/icon"
 import { serviceDot } from "@maple/web/ui/values"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { ErrorsViewBuilder } from "./composition"
 import type { ErrorTypeRow } from "./fetch"
 import { cardTraces, relativeTime } from "./view-traces"
 import { Message } from "./message"
@@ -11,7 +12,7 @@ import type { Card } from "./model"
 
 // One error type's card: the header toggles the traces panel.
 
-type H = HtmlBuilder<Message>
+type H = ErrorsViewBuilder
 
 const services = (h: H, row: ErrorTypeRow): ReadonlyArray<Html> =>
 	row.serviceNames.length > 0

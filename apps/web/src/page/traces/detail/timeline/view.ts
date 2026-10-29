@@ -1,9 +1,9 @@
 import { SIDEBAR_WIDTH_NARROW_MIN } from "@maple/ui/components/traces/trace-timeline-types"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { emptyMessage } from "../../../../ui/empty"
 import { MountAltToggle, MeasureTimelineBody } from "./command"
+import { TimelineComposition, type TimelineViewBuilder } from "./composition"
 import { type Bar, computeSearchMatches, computeTimeAxisTicks, ROW_PITCH, virtualRange } from "./layout"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,7 +21,7 @@ export type ViewInputs = Readonly<{
 	idPrefix: string
 }>
 
-type H = HtmlBuilder<Message>
+type H = TimelineViewBuilder
 
 /** `effectiveSidebarWidth`: never more than half a narrow pane. */
 export const effectiveSidebarWidth = (model: Model): number =>
@@ -164,7 +164,7 @@ const body = (
 	)
 }
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const view = TimelineComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	if (model.rootSpans.length === 0)
 		return emptyMessage(h, { className: "border p-8 text-sm" }, ["No spans found for this trace"])
 	const sidebarWidth = effectiveSidebarWidth(model)

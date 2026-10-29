@@ -1,20 +1,25 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { button } from "@maple/web/ui/button"
-import { filterSection, singleCheckboxFilter } from "@maple/web/ui/filters/filter-section"
 import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import { filterSection, singleCheckboxFilter } from "@maple/web/ui/filters/filter-section"
 import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
 import { formatValue } from "@maple/web/ui/filters/range-format"
 import { type RangePreset, rangeFilterSection } from "@maple/web/ui/filters/range-filter-section"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import { FilterSectionsBinding, type TracesViewBuilder } from "./composition"
 import type { TraceFilters } from "./filters"
 import { type FacetParam, Message } from "./message"
 import type { DurationStats, FacetOption, Model } from "./model"
 
 // The filter rail of the traces list.
 
-const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
+/** Each section's open/closed state is the remembered sections Block's own. */
+const embedSection = (h: TracesViewBuilder, model: Model) => (viewInputs: FilterSections.ViewInputs) =>
+	h.block(
+		FilterSectionsBinding.embedView({ slotId: `filter-section-${viewInputs.key}`, model: model.sections, viewInputs }),
+	)
 
 /** `DurationRangeFilter`: p50 and p95 presets from the facet stats, then "> 1s". */
 const durationPresets = (maybeStats: Option.Option<DurationStats>): ReadonlyArray<RangePreset> => {
@@ -30,7 +35,7 @@ const durationPresets = (maybeStats: Option.Option<DurationStats>): ReadonlyArra
 
 /** Single-select facet: the list query takes one value per dimension. */
 const facet = (
-	h: HtmlBuilder<Message>,
+	h: TracesViewBuilder,
 	model: Model,
 	title: string,
 	param: FacetParam,
@@ -44,12 +49,11 @@ const facet = (
 		selected: selected ? [selected] : [],
 		isSearchable: extra.isSearchable ?? false,
 		colorOf: extra.colorOf,
-		sections: model.sections,
-		toSectionsMessage: toSections,
+		embedSection: embedSection(h, model),
 		onToggle: (name) => Message.ToggledFacetOption({ param, name }),
 	})
 
-const durationSection = (h: HtmlBuilder<Message>, model: Model, filters: TraceFilters, maybeStats: Option.Option<DurationStats>) =>
+const durationSection = (h: TracesViewBuilder, model: Model, filters: TraceFilters, maybeStats: Option.Option<DurationStats>) =>
 	rangeFilterSection(h, {
 		title: "Duration",
 		unit: "ms",
@@ -58,15 +62,14 @@ const durationSection = (h: HtmlBuilder<Message>, model: Model, filters: TraceFi
 		draft: { min: model.duration.min, max: model.duration.max },
 		presets: durationPresets(maybeStats),
 		ids: { panel: "traces-duration-panel", min: "traces-duration-min", max: "traces-duration-max" },
-		sections: model.sections,
-		toSectionsMessage: toSections,
+		embedSection: embedSection(h, model),
 		onDraftChange: (min, max) => Message.ChangedDurationDraft({ min, max }),
 		onCommitDraft: Message.CommittedDurationDraft(),
 		onApply: (min, max) => Message.AppliedDuration({ min: min ?? null, max: max ?? null }),
 	})
 
 /** Span scope: facets are off, the only filter is "Errored spans only". */
-const spanScopeSidebar = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =>
+const spanScopeSidebar = (h: TracesViewBuilder, filters: TraceFilters): Html =>
 	filterSidebarFrame(h, { className: "w-56 shrink-0 px-4" }, [
 		filterSidebarHeader(h, { title: "Span search", onClear: Message.ClickedClearFilters() }),
 		...filterSidebarBody(h, "traces-span-filters", [
@@ -87,7 +90,7 @@ const spanScopeSidebar = (h: HtmlBuilder<Message>, filters: TraceFilters): Html 
 		]),
 	])
 
-export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: TraceFilters, activeFilterCount: number): Html => {
+export const sidebar = (h: TracesViewBuilder, model: Model, filters: TraceFilters, activeFilterCount: number): Html => {
 	if (filters.scope === "spans") return spanScopeSidebar(h, filters)
 	const maybeFacets = AsyncData.getData(model.facets.data)
 	const facets = Option.getOrNull(maybeFacets)

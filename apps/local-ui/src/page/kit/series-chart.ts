@@ -2,7 +2,6 @@ import { type GapFill, pivotSeries, type SeriesPoint } from "../../lib/chart-ser
 import type { ChartWindow } from "../../lib/time"
 import { cn } from "@maple/ui/lib/utils"
 import * as AreaChart from "@maple/web/charts/area-chart"
-import type * as Chart from "@maple/web/charts/chart"
 import type { ThemeColors } from "@maple/web/charts/theme-colors"
 import { chartSkeleton } from "@maple/web/ui/chart-skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,7 +12,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 /** The tokens the line chart resolves; a page reads them with `ResolveThemeColors`. */
 export const SERIES_CHART_TOKENS = AreaChart.AREA_CHART_TOKENS
 
-export type SeriesChartOptions<M> = Readonly<{
+export type SeriesChartOptions = Readonly<{
 	chartId: string
 	points: ReadonlyArray<SeriesPoint> | undefined
 	window: ChartWindow
@@ -23,15 +22,21 @@ export type SeriesChartOptions<M> = Readonly<{
 	unit?: string
 	/** Metric detail only; other charts keep the default axis. */
 	fitYAxisToData?: boolean
-	chart: Chart.Model
-	toChartMessage: (message: Chart.Message) => M
+	/**
+	 * Embeds the chart through the caller's own ChartBlock Binding, e.g.
+	 * `(viewInputs) => h.block(ChartBinding.embedView({ slotId: seriesChartSlotId(id), model, view: AreaChart.view, viewInputs }))`.
+	 */
+	renderChart: (viewInputs: AreaChart.AreaChartInputs) => Html
 	/** Theme colours and the chart runtime; null until both are ready (the skeleton stays up). */
 	theme: ThemeColors | null
 	/** The clock the in-flight tail is judged against. */
 	nowMs: number
 }>
 
-export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>): Html => {
+/** The slot id the chart was embedded under before Blocks; callers keep it stable. */
+export const seriesChartSlotId = (chartId: string): string => `series-chart-${chartId}`
+
+export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions): Html => {
 	const heightClassName = options.heightClassName ?? "h-56"
 	const rows = pivotSeries(options.points ?? [], options.window, options.fill)
 	const skeleton = h.div([h.Class("rounded-md border p-3")], [chartSkeleton(h, "line", heightClassName)])
@@ -40,7 +45,10 @@ export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>
 		return h.div(
 			[
 				h.Class(
-					cn("flex items-center justify-center rounded-md border text-sm text-muted-foreground", heightClassName),
+					cn(
+						"flex items-center justify-center rounded-md border text-sm text-muted-foreground",
+						heightClassName,
+					),
 				),
 			],
 			["No datapoints in this range yet."],
@@ -49,25 +57,27 @@ export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>
 	return h.div(
 		[h.Class("rounded-md border p-3")],
 		[
-			h.submodel({
-				slotId: `series-chart-${options.chartId}`,
-				model: options.chart,
-				view: AreaChart.view,
-				toParentMessage: options.toChartMessage,
-				viewInputs: {
-					chartId: options.chartId,
-					data: rows,
-					theme: options.theme,
-					unit: options.unit,
-					nowMs: options.nowMs,
-					className: cn(heightClassName, "w-full"),
-					legend: "visible",
-					mark: "line",
-					curveType: "monotone",
-					...(options.fitYAxisToData === undefined
-						? undefined
-						: { axis: { thresholds: [], logScale: false, softMin: null, softMax: null, fitYAxisToData: options.fitYAxisToData } }),
-				},
+			options.renderChart({
+				chartId: options.chartId,
+				data: rows,
+				theme: options.theme,
+				unit: options.unit,
+				nowMs: options.nowMs,
+				className: cn(heightClassName, "w-full"),
+				legend: "visible",
+				mark: "line",
+				curveType: "monotone",
+				...(options.fitYAxisToData === undefined
+					? undefined
+					: {
+							axis: {
+								thresholds: [],
+								logScale: false,
+								softMin: null,
+								softMax: null,
+								fitYAxisToData: options.fitYAxisToData,
+							},
+						}),
 			}),
 		],
 	)

@@ -8,15 +8,15 @@ import { httpSpanLabel } from "@maple/web/ui/http-span-label"
 import { tableCell } from "@maple/web/ui/table"
 import { servicePills, traceStatusBadge } from "@maple/web/ui/trace-badges"
 import { DateTime } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { TracesViewBuilder } from "./composition"
 import { hrefFor } from "../../route"
 import { linkRow, rowLink } from "../kit/row-link"
-import type { Message } from "./message"
 import type { TraceRow } from "./model"
 
 // One row of the traces list.
 
-export const traceRow = (h: HtmlBuilder<Message>, row: TraceRow, query: URLSearchParams, nowMs: number, timeFormat: TimeFormat): Html => {
+export const traceRow = (h: TracesViewBuilder, row: TraceRow, query: URLSearchParams, nowMs: number, timeFormat: TimeFormat): Html => {
 	const href = hrefFor(`/traces/${encodeURIComponent(row.traceId)}`, query)
 	const httpStatusCode = getHttpInfo({
 		spanName: row.rootSpanName,

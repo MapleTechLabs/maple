@@ -22,5 +22,7 @@ export const Message = defineMessageUnion({
 	ClickedDownload: { format: DownloadFormat },
 	CompletedDownload: {},
 	ClickedOpenFilters: {},
+	/** The root saw the fragment change; the console reads its SQL straight from it, so nothing to do. */
+	InformedOfLocationChange: {},
 })
 export type Message = typeof Message.Type

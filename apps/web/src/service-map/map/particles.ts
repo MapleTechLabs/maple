@@ -181,18 +181,23 @@ const animate = (canvas: HTMLCanvasElement) => {
 	}
 }
 
-const AnimateParticles = Mount.define("AnimateParticles", {
+/** The particle loop's Mount; its owner registers it and merges `AnimateParticles.layer`. */
+export const AnimateParticles = Mount.define("AnimateParticles", {
 	messages: [ParticleMessage.CompletedMountParticles],
-	execute: ({ element }) =>
-		Effect.acquireRelease(
-			Effect.sync(() => (element instanceof HTMLCanvasElement ? animate(element) : () => {})),
-			(release) => Effect.sync(release),
-		).pipe(Effect.as(ParticleMessage.CompletedMountParticles())),
+	handler: function* () {
+		return ({ element }) =>
+			Effect.acquireRelease(
+				Effect.sync(() => (element instanceof HTMLCanvasElement ? animate(element) : () => {})),
+				(release) => Effect.sync(release),
+			).pipe(Effect.as(ParticleMessage.CompletedMountParticles()))
+	},
 })
+
+export type AnimateParticlesRequirement = Mount.RequirementsOf<typeof AnimateParticles>
 
 /** The particle canvas over the map; `tracks` is the serialized edge geometry. */
 export const particleCanvas = <M>(
-	h: HtmlBuilder<M>,
+	h: HtmlBuilder<M, AnimateParticlesRequirement>,
 	tracks: string,
 	toMessage: (message: typeof ParticleMessage.Type) => M,
 ): Html =>

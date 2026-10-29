@@ -1,5 +1,5 @@
-// The Timeline tab of the trace detail page, as one Submodel.
-export { Message } from "./message"
+// The Timeline tab of the trace detail page, as one completed Block.
+export { TimelineBlock } from "./block"
+export { OutMessage } from "./message"
 export { Model } from "./model"
-export { init, setColorBy, setSelectedSpanId, setSpanEvents, update, type UpdateReturn } from "./update"
-export { view } from "./view"
+export type { InitInput } from "./update"

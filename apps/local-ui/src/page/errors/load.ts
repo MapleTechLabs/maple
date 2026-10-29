@@ -1,16 +1,17 @@
-import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option, Record } from "effect"
-import type { Command } from "foldkit"
 import { idle, keyOf, request } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
 import { errorsFiltersOf, FetchByType, FetchFacets, FetchSummary, FetchTraces } from "./command"
-import type { Message } from "./message"
 import type { Card, Model } from "./model"
 
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
-type Step = Readonly<{ model: Model; commands?: Commands }>
+type PageFetch =
+	| ReturnType<typeof FetchSummary>
+	| ReturnType<typeof FetchByType>
+	| ReturnType<typeof FetchFacets>
+	| ReturnType<typeof FetchTraces>
+type Step = Readonly<{ model: Model; commands?: ReadonlyArray<PageFetch> }>
 
 export const boundsOf = (model: Model, context: PageContext): Option.Option<TimeBounds> =>
 	Option.map(model.maybeAnchorMs, (anchorMs) => boundsForRange(rangeOf(context), anchorMs))

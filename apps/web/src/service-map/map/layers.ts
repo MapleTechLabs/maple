@@ -8,7 +8,7 @@ import type { EffectiveGraph, FlowNode } from "./graph"
 import { namespaceBoxes } from "./namespace-group"
 import { serviceMapNode } from "./nodes"
 import { type MiniMapNode, miniMapRects } from "./panels"
-import { particleCanvas } from "./particles"
+import { type AnimateParticlesRequirement, particleCanvas } from "./particles"
 import { Message, type Positions, positionOf } from "./service-map"
 
 // The node, edge, minimap and particle layers. Each depends on the graph, layout, measurements
@@ -147,7 +147,7 @@ export const miniMapRectsLayer = <M>(
 
 /** The particle canvas, re-rendered only when the edge geometry changes. */
 export const particleLayer = <M>(
-	h: HtmlBuilder<M>,
+	h: HtmlBuilder<M, AnimateParticlesRequirement>,
 	graph: EffectiveGraph,
 	positions: Positions,
 	measured: Measured,

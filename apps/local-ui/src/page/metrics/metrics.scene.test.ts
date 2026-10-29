@@ -3,9 +3,10 @@ import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import { PageOutMessage } from "../contract"
 import type { MetricEntry } from "./catalog"
+import { FetchList, FetchSparklines, FetchSummary, ReadClock } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, locationChanged, update } from "./update"
+import { init, update } from "./update"
 
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-01T12:00:00Z"))
 const env = { apiBase: "", port: "4318", otlpEndpoint: "http://localhost:4318", isHosted: false }
@@ -43,13 +44,13 @@ const withList = (model: Model, entries: ReadonlyArray<MetricEntry>, ctx = conte
 
 describe("local metrics list", () => {
 	test("entry reads the clock, then asks for the catalog and the type summary", () => {
-		expect(names(init(context).commands)).toContain("ReadMetricsClock")
-		expect(names(entered().commands)).toEqual(expect.arrayContaining(["FetchLocalMetricsList", "FetchLocalMetricsSummary"]))
+		expect(names(init(context).commands)).toContain(ReadClock.name)
+		expect(names(entered().commands)).toEqual(expect.arrayContaining([FetchList.name, FetchSummary.name]))
 	})
 
 	test("the listed metrics ask for one sparkline batch", () => {
 		const listed = withList(entered().model, [entry("a", "gauge", ["x"]), entry("b", "sum", ["x"])])
-		expect(names(listed.commands)).toEqual(["FetchLocalMetricsSparklines"])
+		expect(names(listed.commands)).toEqual([FetchSparklines.name])
 		expect(listed.model.sparklines.key).toContain('"gauge",["a"]')
 	})
 
@@ -72,8 +73,8 @@ describe("local metrics list", () => {
 
 	test("a service filter that matches nothing asks for the presence without new SQL", () => {
 		const listed = withList(entered().model, [entry("a", "gauge", ["x"])]).model
-		const filtered = locationChanged(listed, contextAt("service=y"))
-		expect(names(filtered.commands)).toEqual(["FetchLocalMetricsSummary"])
+		const filtered = update(listed, Message.InformedOfLocationChange(), contextAt("service=y"))
+		expect(names(filtered.commands)).toEqual([FetchSummary.name])
 		expect(filtered.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 	})
 })

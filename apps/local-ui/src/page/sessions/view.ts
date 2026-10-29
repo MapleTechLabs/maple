@@ -2,8 +2,8 @@ import { isLocalSessionLive } from "../../lib/session-liveness"
 import { cn } from "@maple/ui/lib/utils"
 import * as CopyButton from "@maple/web/ui/copy-button"
 import { listFooter } from "@maple/web/ui/list-footer"
-import { Option } from "effect"
-import { AsyncData, Submodel } from "foldkit"
+import { Array, Option } from "effect"
+import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { hrefFor, queryOf } from "../../route"
@@ -13,6 +13,7 @@ import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
 import { errorState, listSkeleton } from "../kit/view-states"
+import { CopiesBinding, GUIDE_ID, type SessionsViewBuilder, SessionsComposition } from "./composition"
 import { filtersOf } from "./fetch"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,9 +22,17 @@ import { sidebar } from "./view-sidebar"
 
 // The sessions list page.
 
-const toCopy = (id: string, message: CopyButton.Message) => Message.GotCopyMessage({ id, message })
+/** One of the connect guide's copy buttons, embedded from its keyed slot. */
+const embedCopy = (h: SessionsViewBuilder, model: Model) => (id: string, viewInputs: CopyButton.CopyButtonViewInputs): Html =>
+	Option.match(
+		Array.findFirst(model.copies, (slot) => slot.id === id),
+		{
+			onNone: () => null,
+			onSome: (slot) => h.block(CopiesBinding.embedView({ key: slot.id, slotId: `copy-${slot.id}`, model: slot.copy, viewInputs })),
+		},
+	)
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+export const view = SessionsComposition.makeView.withInputs<PageViewInputs>((model, inputs, h) => {
 	const { context } = inputs
 	const query = queryOf(context.location)
 	const filters = filtersOf(query)
@@ -47,7 +56,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				maybePresence: inputs.presenceOf("sessions"),
 				nowMs: inputs.presenceNowMs,
-				guide: { id: "sessions-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				guide: { id: GUIDE_ID, endpoint: context.env.otlpEndpoint, embedCopy: embedCopy(h, model) },
 			})
 		const footer = listFooter(h, {
 			hasMore: hasNextPage,
@@ -98,3 +107,4 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	])
 	return pageShell(h, { sidebar: sidebar(h, model, filters, hasActiveFilters), toolbar: bar, activeFilterCount, onOpenFilters: Message.ClickedOpenFilters() }, [content()])
 })
+export type SessionsViewInputs = PageViewInputs

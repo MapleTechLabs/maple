@@ -1,6 +1,6 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
 import { Effect, Queue, Schema, Stream } from "effect"
-import { Command, Mount } from "foldkit"
+import { LogsStreamDefinition } from "./logs-stream-definition"
 import { Message, type VirtualRow } from "./logs-stream-message"
 
 /**
@@ -189,28 +189,34 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 		).pipe(Effect.flatMap(() => Effect.never)),
 	)
 
-export const VirtualizeLogStream = Mount.defineStream("VirtualizeLogStream", {
+export const VirtualizeLogStream = LogsStreamDefinition.makeMountStream("VirtualizeLogStream", {
 	messages: [Message.ChangedVirtualWindow, Message.ChangedScrolledAway],
-	execute: ({ element, viewStateChanges }) =>
-		viewStateChanges.pipe(
-			Stream.switchMap((viewState) =>
-				viewState === "Live" && element instanceof HTMLElement ? virtualize(element) : Stream.never,
-			),
-		),
+	handler: function* () {
+		return ({ element, viewStateChanges }) =>
+			viewStateChanges.pipe(
+				Stream.switchMap((viewState) =>
+					viewState === "Live" && element instanceof HTMLElement
+						? virtualize(element)
+						: Stream.never,
+				),
+			)
+	},
 })
 
 const scrollerOf = (streamId: string): HTMLElement | null =>
 	document.querySelector<HTMLElement>(`[data-${STREAM_ATTRIBUTE}="${CSS.escape(streamId)}"]`)
 
 /** Keeps a keyboard-focused row in view (`virtualizer.scrollToIndex(index, { align: "auto" })`). */
-export const ScrollStreamToIndex = Command.define("ScrollStreamToIndex", {
+export const ScrollStreamToIndex = LogsStreamDefinition.makeCommand("ScrollStreamToIndex", {
 	args: { streamId: Schema.String, index: Schema.Number },
 	messages: [Message.CompletedScroll],
-	execute: ({ streamId, index }) =>
-		Effect.sync(() => {
-			scrollerOf(streamId)?.dispatchEvent(new CustomEvent(SCROLL_EVENT, { detail: index }))
-			return Message.CompletedScroll()
-		}),
+	handler: function* () {
+		return ({ streamId, index }) =>
+			Effect.sync(() => {
+				scrollerOf(streamId)?.dispatchEvent(new CustomEvent(SCROLL_EVENT, { detail: index }))
+				return Message.CompletedScroll()
+			})
+	},
 })
 
 /** `useCopy`'s write. A refused clipboard (no permission, no focus) is not an error the stream shows. */
@@ -220,26 +226,33 @@ const writeClipboard = (text: string) =>
 		Effect.as(Message.CompletedCopy()),
 	)
 
-export const CopyText = Command.define("CopyText", {
+export const CopyText = LogsStreamDefinition.makeCommand("CopyText", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedCopy],
-	execute: ({ text }) => writeClipboard(text),
+	handler: function* () {
+		return ({ text }) => writeClipboard(text)
+	},
 })
 
 /** `logPermalink`: the standalone `/logs/$logId` page on this origin. */
-export const CopyLogLink = Command.define("CopyLogLink", {
+export const CopyLogLink = LogsStreamDefinition.makeCommand("CopyLogLink", {
 	args: { logKey: Schema.String },
 	messages: [Message.CompletedCopy],
-	execute: ({ logKey }) => Effect.suspend(() => writeClipboard(`${window.location.origin}/logs/${logKey}`)),
+	handler: function* () {
+		return ({ logKey }) =>
+			Effect.suspend(() => writeClipboard(`${window.location.origin}/logs/${logKey}`))
+	},
 })
 
 /** Back to the newest rows. */
-export const ScrollStreamToTop = Command.define("ScrollStreamToTop", {
+export const ScrollStreamToTop = LogsStreamDefinition.makeCommand("ScrollStreamToTop", {
 	args: { streamId: Schema.String },
 	messages: [Message.CompletedScroll],
-	execute: ({ streamId }) =>
-		Effect.sync(() => {
-			scrollerOf(streamId)?.dispatchEvent(new CustomEvent(SCROLL_EVENT, { detail: -1 }))
-			return Message.CompletedScroll()
-		}),
+	handler: function* () {
+		return ({ streamId }) =>
+			Effect.sync(() => {
+				scrollerOf(streamId)?.dispatchEvent(new CustomEvent(SCROLL_EVENT, { detail: -1 }))
+				return Message.CompletedScroll()
+			})
+	},
 })

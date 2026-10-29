@@ -1,96 +1,54 @@
-import { Array, Duration, Effect, Option, Record, Schema, Stream } from "effect"
-import { Command, Dom, type Update } from "foldkit"
-import { defineMessageUnion } from "foldkit/message"
+import { Array, Duration, Effect, Layer, Option, Record, Schema, Stream } from "effect"
+import { Block, Dom, Update } from "foldkit"
+import { makeInitIfMissingStep } from "foldkit/bindingInit"
 import { modifyFields } from "foldkit/struct"
-import * as AttributesPanel from "../attributes/attributes-panel"
 import { buildLogJsonPayload } from "./log-row-expanded"
-import { LogRowView } from "./log-row-view"
-import { Message, type NavigationKey, VirtualRow } from "./logs-stream-message"
-import { CopyLogLink, CopyText, ScrollStreamToIndex, ScrollStreamToTop } from "./virtualize"
+import type { LogRowView } from "./log-row-view"
+import { LogsStreamComposition, PanelsBinding } from "./logs-stream-composition"
+import {
+	type ChipRef,
+	LogsStreamDefinition,
+	makeFieldsStep,
+	makeStep,
+	Model,
+	OutMessage,
+} from "./logs-stream-definition"
+import { Message, type NavigationKey } from "./logs-stream-message"
+import { view } from "./logs-stream-view"
+import { PlaceChipCard } from "./chip-card"
+import {
+	CopyLogLink,
+	CopyText,
+	ScrollStreamToIndex,
+	ScrollStreamToTop,
+	VirtualizeLogStream,
+} from "./virtualize"
 
 export { Message } from "./logs-stream-message"
+export { ChipRef, Model, OutMessage } from "./logs-stream-definition"
 
-// MODEL
+// INIT
 
-export const ChipRef = Schema.Struct({ index: Schema.Number, key: Schema.String })
-export type ChipRef = typeof ChipRef.Type
-
-/**
- * One virtualized logs stream: its rows (derived by the parent and
- * handed over with `setRows` / `replaceRows`), the virtual window, keyboard focus, expanded rows,
- * the attribute card, and what the reader is inspecting. Rows live here rather than in `viewInputs`
- * because `h.submodel` walks `viewInputs` deeply on every render: O(rows) per scroll frame.
- */
-export const Model = Schema.Struct({
-	id: Schema.String,
-	rows: Schema.Array(LogRowView),
-	window: Schema.Array(VirtualRow),
-	totalSize: Schema.Number,
-	focusedIndex: Schema.Option(Schema.Number),
-	expandedRows: Schema.Array(Schema.Number),
-	isHovering: Schema.Boolean,
-	isScrolledAway: Schema.Boolean,
-	/** The attribute card on screen, and the chip whose rest-to-reveal delay is running. */
-	visibleChip: Schema.Option(ChipRef),
-	pendingOpen: Schema.Option(Schema.Struct({ chip: ChipRef, generation: Schema.Number })),
-	pendingClose: Schema.Option(Schema.Number),
-	chipGeneration: Schema.Number,
-	/** Each expanded row's attribute panel, by row index. */
-	panels: Schema.Record(Schema.String, AttributesPanel.Model),
-	/** The expanded body's JSON copy: which row, and its status. */
-	jsonCopy: AttributesPanel.CopyState,
-})
-export type Model = typeof Model.Type
-
-export const init = (id: string, rows: ReadonlyArray<LogRowView>): Model => ({
-	id,
-	rows,
-	window: [],
-	totalSize: 0,
-	focusedIndex: Option.none(),
-	expandedRows: [],
-	isHovering: false,
-	isScrolledAway: false,
-	visibleChip: Option.none(),
-	pendingOpen: Option.none(),
-	pendingClose: Option.none(),
-	chipGeneration: 0,
-	panels: {},
-	jsonCopy: { id: "", status: "idle", generation: 0 },
-})
-
-/** The panels follow the expanded rows: a newly expanded row gets a fresh one, a collapsed one drops it. */
-const syncPanels = (model: Model): Model => {
-	const panels = Object.fromEntries(
-		model.expandedRows.map((index) => [
-			String(index),
-			Option.getOrElse(Record.get(model.panels, String(index)), () =>
-				AttributesPanel.init(`${model.id}-row-${index}-attributes`),
-			),
-		]),
-	)
-	const isSame =
-		Object.keys(panels).length === Object.keys(model.panels).length &&
-		Object.entries(panels).every(([key, panel]) => model.panels[key] === panel)
-	return isSame ? model : modifyFields(model, { panels: () => panels })
-}
-
-// OUT MESSAGE
-
-export const OutMessage = defineMessageUnion({
-	/** A row was clicked or opened from the keyboard. */
-	OpenedLog: { index: Schema.Number },
-	/** The reader started or stopped inspecting (hovering, scrolled away, a row expanded). */
-	ChangedInspecting: { isInspecting: Schema.Boolean, isScrolledAway: Schema.Boolean },
-	/** Filter in / out from an attribute card. */
-	ChoseAttributeFilter: {
-		source: Schema.Literals(["log", "resource"]),
-		key: Schema.String,
-		value: Schema.String,
-		negated: Schema.Boolean,
+const init = LogsStreamComposition.makeInit((id: string, rows: ReadonlyArray<LogRowView>) => ({
+	model: {
+		id,
+		rows,
+		window: [],
+		totalSize: 0,
+		focusedIndex: Option.none(),
+		expandedRows: [],
+		isHovering: false,
+		isScrolledAway: false,
+		visibleChip: Option.none(),
+		pendingOpen: Option.none(),
+		pendingClose: Option.none(),
+		chipGeneration: 0,
+		panels: {},
+		jsonCopy: { id: "", status: "idle", generation: 0 },
 	},
-})
-export type OutMessage = typeof OutMessage.Type
+}))
+
+const panelIdOf = (streamId: string, index: number) => `${streamId}-row-${index}-attributes`
 
 // COMMAND
 
@@ -99,58 +57,61 @@ export const CHIP_OPEN_DELAY = Duration.millis(300)
 /** Grace period for crossing the gap between a chip and its card. */
 export const CHIP_CLOSE_DELAY = Duration.millis(150)
 
-export const WaitChipDelay = Command.define("WaitChipDelay", {
+export const WaitChipDelay = LogsStreamDefinition.makeCommand("WaitChipDelay", {
 	args: { generation: Schema.Number, millis: Schema.Number },
 	messages: [Message.ElapsedChipDelay],
-	execute: ({ generation, millis }) =>
-		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedChipDelay({ generation }))),
+	handler: function* () {
+		return ({ generation, millis }) =>
+			Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedChipDelay({ generation })))
+	},
 })
 
 const COPY_TIMEOUT = Duration.millis(2000)
 
-export const WriteLogJson = Command.define("WriteLogJson", {
+export const WriteLogJson = LogsStreamDefinition.makeCommand("WriteLogJson", {
 	args: { text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopyJson, Message.FailedCopyJson],
-	execute: ({ text, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-			Effect.as(Message.SucceededCopyJson({ generation })),
-			Effect.orElseSucceed(() => Message.FailedCopyJson({ generation })),
-		),
+	handler: function* () {
+		return ({ text, generation }) =>
+			Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+				Effect.as(Message.SucceededCopyJson({ generation })),
+				Effect.orElseSucceed(() => Message.FailedCopyJson({ generation })),
+			)
+	},
 })
 
-export const WaitLogJsonStatus = Command.define("WaitLogJsonStatus", {
+export const WaitLogJsonStatus = LogsStreamDefinition.makeCommand("WaitLogJsonStatus", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCopyJsonStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyJsonStatus({ generation }))),
+	handler: function* () {
+		return ({ generation }) =>
+			Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyJsonStatus({ generation })))
+	},
 })
 
 // UPDATE
 
-type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
-
 const isInspecting = (model: Model) =>
 	model.isHovering || model.isScrolledAway || model.expandedRows.length > 0
 
-/** Runs a transition and reports the inspect state when it changed, once per transition. */
-const reportingInspect = (before: Model, result: UpdateReturn): UpdateReturn => {
-	const after = result.model
-	if (isInspecting(before) === isInspecting(after) && before.isScrolledAway === after.isScrolledAway)
-		return result
-	return {
-		...result,
-		outMessage: OutMessage.ChangedInspecting({
-			isInspecting: isInspecting(after),
-			isScrolledAway: after.isScrolledAway,
-		}),
-	}
-}
+/** The inspect state to report when a transition changed it, once per transition. */
+const inspectChange = (before: Model, after: Model): OutMessage | undefined =>
+	isInspecting(before) === isInspecting(after) && before.isScrolledAway === after.isScrolledAway
+		? undefined
+		: OutMessage.ChangedInspecting({
+				isInspecting: isInspecting(after),
+				isScrolledAway: after.isScrolledAway,
+			})
+
+/** A plain transition with its inspect change attached. */
+const reportingInspect = <const Result extends Readonly<{ model: Model }>>(before: Model, result: Result) =>
+	Update.withOutMessage(result, inspectChange(before, result.model))
 
 const sameChip = (a: ChipRef, b: ChipRef) => a.index === b.index && a.key === b.key
 const isChip = (maybe: Option.Option<ChipRef>, chip: ChipRef) =>
 	Option.exists(maybe, (c) => sameChip(c, chip))
 
-const scheduleOpen = (model: Model, chip: ChipRef): UpdateReturn => {
+const scheduleOpen = (model: Model, chip: ChipRef) => {
 	const generation = model.chipGeneration + 1
 	return {
 		model: modifyFields(model, {
@@ -162,7 +123,7 @@ const scheduleOpen = (model: Model, chip: ChipRef): UpdateReturn => {
 	}
 }
 
-const scheduleClose = (model: Model): UpdateReturn => {
+const scheduleClose = (model: Model) => {
 	const generation = model.chipGeneration + 1
 	return {
 		model: modifyFields(model, {
@@ -191,9 +152,35 @@ const toggled = (rows: ReadonlyArray<number>, index: number, expand: boolean | "
 	return on ? [...rows, index] : rows.filter((row) => row !== index)
 }
 
-const navigate = (model: Model, key: NavigationKey, count: number): UpdateReturn => {
+/**
+ * Expands, collapses or toggles one row. The panels follow the expanded rows: a newly expanded row
+ * gets a fresh one, a collapsed one drops it.
+ */
+const expandStep = makeStep((model: Model, index: number, expand: boolean | "toggle") => {
+	const expandedRows = toggled(model.expandedRows, index, expand)
+	if (expandedRows === model.expandedRows) return { model }
+	if (!expandedRows.includes(index))
+		return {
+			model: modifyFields(model, {
+				expandedRows: () => expandedRows,
+				panels: (panels) => Record.remove(panels, String(index)),
+			}),
+		}
+	return Update.combineSteps([
+		makeFieldsStep(() => ({ expandedRows: () => expandedRows })),
+		makeInitIfMissingStep(PanelsBinding, { key: String(index), args: [panelIdOf(model.id, index)] }),
+	])
+})
+
+/** The inspect change an `expandStep` makes: only its expanded rows move. */
+const expandInspect = (model: Model, index: number, expand: boolean | "toggle") =>
+	inspectChange(model, modifyFields(model, { expandedRows: (rows) => toggled(rows, index, expand) }))
+
+/** Keyboard navigation other than expanding or collapsing the focused row. */
+const navigateStep = makeStep((model: Model, key: NavigationKey) => {
+	const count = model.rows.length
 	const focused = Option.getOrElse(model.focusedIndex, () => -1)
-	const moveTo = (index: number): UpdateReturn => ({
+	const moveTo = (index: number) => ({
 		model: modifyFields(model, { focusedIndex: () => Option.some(index) }),
 		commands: [ScrollStreamToIndex({ streamId: model.id, index })],
 	})
@@ -206,24 +193,13 @@ const navigate = (model: Model, key: NavigationKey, count: number): UpdateReturn
 			return focused < 0 ? { model } : { model, outMessage: OutMessage.OpenedLog({ index: focused }) }
 		case "Expand":
 		case "Collapse":
-			return focused < 0
-				? { model }
-				: {
-						model: modifyFields(model, {
-							expandedRows: (rows) => toggled(rows, focused, key === "Expand"),
-						}),
-					}
+			return { model }
 		case "Clear":
 			return { model: modifyFields(model, { focusedIndex: () => Option.none() }) }
 	}
-}
+})
 
-export const update = (model: Model, message: Message): UpdateReturn => {
-	const result = handle(model, model.rows, message)
-	return reportingInspect(model, { ...result, model: syncPanels(result.model) })
-}
-
-const jsonSettled = (model: Model, generation: number, status: "copied" | "error"): UpdateReturn =>
+const jsonSettled = (model: Model, generation: number, status: "copied" | "error") =>
 	generation === model.jsonCopy.generation
 		? {
 				model: modifyFields(model, { jsonCopy: (copy) => ({ ...copy, status }) }),
@@ -231,153 +207,153 @@ const jsonSettled = (model: Model, generation: number, status: "copied" | "error
 			}
 		: { model }
 
-const panelMessage = (model: Model, index: number, message: AttributesPanel.Message): UpdateReturn =>
-	Option.match(Record.get(model.panels, String(index)), {
-		onNone: () => ({ model }),
-		onSome: (panel) => {
-			const result = AttributesPanel.update(panel, message)
-			return {
-				model: modifyFields(model, {
-					panels: (panels) => Record.set(panels, String(index), result.model),
-				}),
-				commands: Command.mapMessages(result.commands ?? [], (inner) =>
-					Message.GotPanelMessage({ index, message: inner }),
-				),
-				outMessage:
-					result.outMessage === undefined
-						? undefined
-						: OutMessage.ChoseAttributeFilter(result.outMessage),
-			}
-		},
-	})
-
-const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		ChangedVirtualWindow: ({ rows: rendered, totalSize }) => {
-			// A chip that scrolled out of the window unmounts, taking its card along.
-			const isRendered = (chip: ChipRef) => rendered.some((row) => row.index === chip.index)
-			return {
-				model: modifyFields(model, {
-					window: () => rendered,
-					totalSize: () => totalSize,
-					visibleChip: (visible) => Option.filter(visible, isRendered),
-					pendingOpen: (pending) => Option.filter(pending, (p) => isRendered(p.chip)),
-				}),
-			}
-		},
-		ChangedScrolledAway: ({ isScrolledAway }) => ({
-			model: modifyFields(model, { isScrolledAway: () => isScrolledAway }),
-		}),
-		EnteredStream: () => ({ model: modifyFields(model, { isHovering: () => true }) }),
-		LeftStream: () => ({ model: modifyFields(model, { isHovering: () => false }) }),
-		ClickedRow: ({ index }) => ({ model, outMessage: OutMessage.OpenedLog({ index }) }),
-		ClickedExpand: ({ index }) => ({
-			model: modifyFields(model, { expandedRows: (rows) => toggled(rows, index, "toggle") }),
-		}),
-		ClickedCopyMessage: ({ index }) =>
-			copy(
-				model,
-				Option.map(Array.get(rows, index), (row) => row.rawBody),
-			),
-		ClickedCopyLink: ({ index }) =>
-			copyLink(
-				model,
-				Option.map(Array.get(rows, index), (row) => row.logKey),
-			),
-		PressedNavigationKey: ({ key }) => navigate(model, key, rows.length),
-		EnteredChip: ({ index, key }) => scheduleOpen(model, { index, key }),
-		FocusedChip: ({ index, key }) => scheduleOpen(model, { index, key }),
-		LeftChip: ({ index, key }) => {
-			const chip = { index, key }
-			const cancelled = closeChipPending(model, chip)
-			return isChip(model.visibleChip, chip) ? scheduleClose(cancelled) : { model: cancelled }
-		},
-		BlurredChip: ({ index, key }) => ({ model: closeChip(model, { index, key }) }),
-		PressedChipEscape: ({ index, key }) => ({ model: closeChip(model, { index, key }) }),
-		ClickedChip: ({ index, key }) =>
-			copy(
-				model,
-				Option.flatMap(Array.get(rows, index), (row) =>
-					Option.map(
-						Array.findFirst(row.chips, (chip) => chip.key === key),
-						(chip) => `${chip.key}=${chip.value}`,
-					),
-				),
-			),
-		EnteredChipCard: () => ({ model: modifyFields(model, { pendingClose: () => Option.none() }) }),
-		LeftChipCard: () => (Option.isSome(model.visibleChip) ? scheduleClose(model) : { model }),
-		ClickedChipFilter: ({ negated }) =>
-			Option.match(model.visibleChip, {
-				onNone: () => ({ model }),
-				onSome: ({ index, key }) =>
-					Option.match(
-						Option.flatMap(Array.get(rows, index), (row) =>
-							Array.findFirst(row.chips, (chip) => chip.key === key),
-						),
-						{
-							onNone: () => ({ model: closeCard(model) }),
-							onSome: ({ source, value }) => ({
-								model: closeCard(model),
-								outMessage: OutMessage.ChoseAttributeFilter({ source, key, value, negated }),
-							}),
-						},
-					),
+const update = LogsStreamComposition.makeUpdate({
+	ChangedVirtualWindow: (model, { rows: rendered, totalSize }) => {
+		// A chip that scrolled out of the window unmounts, taking its card along.
+		const isRendered = (chip: ChipRef) => rendered.some((row) => row.index === chip.index)
+		return {
+			model: modifyFields(model, {
+				window: () => rendered,
+				totalSize: () => totalSize,
+				visibleChip: (visible) => Option.filter(visible, isRendered),
+				pendingOpen: (pending) => Option.filter(pending, (p) => isRendered(p.chip)),
 			}),
-		ElapsedChipDelay: ({ generation }) => {
-			const opening = Option.filter(model.pendingOpen, (p) => p.generation === generation)
-			if (Option.isSome(opening))
+		}
+	},
+	ChangedScrolledAway: (model, { isScrolledAway }) =>
+		reportingInspect(model, { model: modifyFields(model, { isScrolledAway: () => isScrolledAway }) }),
+	EnteredStream: (model) =>
+		reportingInspect(model, { model: modifyFields(model, { isHovering: () => true }) }),
+	LeftStream: (model) =>
+		reportingInspect(model, { model: modifyFields(model, { isHovering: () => false }) }),
+	ClickedRow: (model, { index }) => ({ model, outMessage: OutMessage.OpenedLog({ index }) }),
+	ClickedExpand: (model, { index }) =>
+		Update.withOutMessage(expandStep(model, index, "toggle"), expandInspect(model, index, "toggle")),
+	ClickedCopyMessage: (model, { index }) =>
+		copy(
+			model,
+			Option.map(Array.get(model.rows, index), (row) => row.rawBody),
+		),
+	ClickedCopyLink: (model, { index }) =>
+		copyLink(
+			model,
+			Option.map(Array.get(model.rows, index), (row) => row.logKey),
+		),
+	PressedNavigationKey: (model, { key }) => {
+		const focused = Option.getOrElse(model.focusedIndex, () => -1)
+		const expand = key === "Expand"
+		return (key === "Expand" || key === "Collapse") && focused >= 0
+			? Update.withOutMessage(expandStep(model, focused, expand), expandInspect(model, focused, expand))
+			: navigateStep(model, key)
+	},
+	EnteredChip: (model, { index, key }) => scheduleOpen(model, { index, key }),
+	FocusedChip: (model, { index, key }) => scheduleOpen(model, { index, key }),
+	LeftChip: (model, { index, key }) => {
+		const chip = { index, key }
+		const cancelled = closeChipPending(model, chip)
+		return isChip(model.visibleChip, chip) ? scheduleClose(cancelled) : { model: cancelled }
+	},
+	BlurredChip: (model, { index, key }) => ({ model: closeChip(model, { index, key }) }),
+	PressedChipEscape: (model, { index, key }) => ({ model: closeChip(model, { index, key }) }),
+	ClickedChip: (model, { index, key }) =>
+		copy(
+			model,
+			Option.flatMap(Array.get(model.rows, index), (row) =>
+				Option.map(
+					Array.findFirst(row.chips, (chip) => chip.key === key),
+					(chip) => `${chip.key}=${chip.value}`,
+				),
+			),
+		),
+	EnteredChipCard: (model) => ({ model: modifyFields(model, { pendingClose: () => Option.none() }) }),
+	LeftChipCard: (model) => (Option.isSome(model.visibleChip) ? scheduleClose(model) : { model }),
+	ClickedChipFilter: (model, { negated }) =>
+		Option.match(model.visibleChip, {
+			onNone: () => ({ model }),
+			onSome: ({ index, key }) =>
+				Option.match(
+					Option.flatMap(Array.get(model.rows, index), (row) =>
+						Array.findFirst(row.chips, (chip) => chip.key === key),
+					),
+					{
+						onNone: () => ({ model: closeCard(model) }),
+						onSome: ({ source, value }) => ({
+							model: closeCard(model),
+							outMessage: OutMessage.ChoseAttributeFilter({ source, key, value, negated }),
+						}),
+					},
+				),
+		}),
+	ElapsedChipDelay: (model, { generation }) => {
+		const opening = Option.filter(model.pendingOpen, (p) => p.generation === generation)
+		if (Option.isSome(opening))
+			return {
+				model: modifyFields(model, {
+					visibleChip: () => Option.some(opening.value.chip),
+					pendingOpen: () => Option.none(),
+					pendingClose: () => Option.none(),
+				}),
+			}
+		return Option.contains(model.pendingClose, generation) ? { model: closeCard(model) } : { model }
+	},
+	ClickedCardCopy: (model, { part }) =>
+		copy(
+			model,
+			Option.flatMap(model.visibleChip, ({ index, key }) =>
+				part === "key"
+					? Option.some(key)
+					: Option.flatMap(Array.get(model.rows, index), (row) =>
+							Option.map(
+								Array.findFirst(row.chips, (chip) => chip.key === key),
+								(chip) => chip.value,
+							),
+						),
+			),
+		),
+	PlacedChipCard: (model) => ({ model }),
+	CompletedCopy: (model) => ({ model }),
+	ClickedDetails: (model, { index }) => ({ model, outMessage: OutMessage.OpenedLog({ index }) }),
+	ClickedCopyJson: (model, { index }) =>
+		Option.match(Array.get(model.rows, index), {
+			onNone: () => ({ model }),
+			onSome: (row) => {
+				const generation = model.jsonCopy.generation + 1
 				return {
 					model: modifyFields(model, {
-						visibleChip: () => Option.some(opening.value.chip),
-						pendingOpen: () => Option.none(),
-						pendingClose: () => Option.none(),
+						jsonCopy: () => ({ id: String(index), status: "idle" as const, generation }),
+					}),
+					commands: [WriteLogJson({ text: buildLogJsonPayload(row.log), generation })],
+				}
+			},
+		}),
+	SucceededCopyJson: (model, { generation }) => jsonSettled(model, generation, "copied"),
+	FailedCopyJson: (model, { generation }) => jsonSettled(model, generation, "error"),
+	ElapsedCopyJsonStatus: (model, { generation }) =>
+		generation === model.jsonCopy.generation
+			? {
+					model: modifyFields(model, {
+						jsonCopy: (copy) => ({ ...copy, status: "idle" as const }),
 					}),
 				}
-			return Option.contains(model.pendingClose, generation) ? { model: closeCard(model) } : { model }
-		},
-		ClickedCardCopy: ({ part }) =>
-			copy(
-				model,
-				Option.flatMap(model.visibleChip, ({ index, key }) =>
-					part === "key"
-						? Option.some(key)
-						: Option.flatMap(Array.get(rows, index), (row) =>
-								Option.map(
-									Array.findFirst(row.chips, (chip) => chip.key === key),
-									(chip) => chip.value,
-								),
-							),
-				),
-			),
-		PlacedChipCard: () => ({ model }),
-		CompletedCopy: () => ({ model }),
-		ClickedDetails: ({ index }) => ({ model, outMessage: OutMessage.OpenedLog({ index }) }),
-		ClickedCopyJson: ({ index }) =>
-			Option.match(Array.get(rows, index), {
-				onNone: () => ({ model }),
-				onSome: (row) => {
-					const generation = model.jsonCopy.generation + 1
-					return {
-						model: modifyFields(model, {
-							jsonCopy: () => ({ id: String(index), status: "idle" as const, generation }),
-						}),
-						commands: [WriteLogJson({ text: buildLogJsonPayload(row.log), generation })],
-					}
-				},
-			}),
-		SucceededCopyJson: ({ generation }) => jsonSettled(model, generation, "copied"),
-		FailedCopyJson: ({ generation }) => jsonSettled(model, generation, "error"),
-		ElapsedCopyJsonStatus: ({ generation }) =>
-			generation === model.jsonCopy.generation
-				? {
-						model: modifyFields(model, {
-							jsonCopy: (copy) => ({ ...copy, status: "idle" as const }),
-						}),
-					}
-				: { model },
-		GotPanelMessage: ({ index, message: inner }) => panelMessage(model, index, inner),
-		CompletedScroll: () => ({ model }),
-	})
+			: { model },
+	CompletedScroll: (model) => ({ model }),
+	InformedOfRows: (model, { rows }) => ({ model: modifyFields(model, { rows: () => rows }) }),
+	InformedOfReplacedRows: (model, { rows }) =>
+		reportingInspect(model, {
+			model: modifyFields(model, { rows: () => rows, expandedRows: () => [], panels: () => ({}) }),
+		}),
+	RequestedJumpToLatest: (model) => {
+		const latest = modifyFields(model, {
+			expandedRows: () => [],
+			panels: () => ({}),
+			isScrolledAway: () => false,
+		})
+		return Update.withOutMessage(
+			{ model: latest, commands: [ScrollStreamToTop({ streamId: model.id })] },
+			inspectChange(model, latest),
+		)
+	},
+})
 
 const closeChipPending = (model: Model, chip: ChipRef): Model =>
 	modifyFields(model, {
@@ -385,40 +361,16 @@ const closeChipPending = (model: Model, chip: ChipRef): Model =>
 			Option.exists(pending, (p) => sameChip(p.chip, chip)) ? Option.none() : pending,
 	})
 
-const copy = (model: Model, text: Option.Option<string>): UpdateReturn =>
+const copy = (model: Model, text: Option.Option<string>) =>
 	Option.match(text, {
 		onNone: () => ({ model }),
 		onSome: (value) => ({ model, commands: [CopyText({ text: value })] }),
 	})
 
-const copyLink = (model: Model, logKey: Option.Option<string>): UpdateReturn =>
+const copyLink = (model: Model, logKey: Option.Option<string>) =>
 	Option.match(logKey, {
 		onNone: () => ({ model }),
 		onSome: (key) => ({ model, commands: [CopyLogLink({ logKey: key })] }),
-	})
-
-// PARENT ENTRY POINTS
-
-/** The same logs, derived again (a pinned column or the search changed). */
-export const setRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateReturn => ({
-	model: modifyFields(model, { rows: () => rows }),
-})
-
-/** New data (a reload that prepends rows, a filter): expansion was made on the old rows, so it goes. */
-export const replaceRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateReturn =>
-	reportingInspect(model, {
-		model: modifyFields(model, { rows: () => rows, expandedRows: () => [], panels: () => ({}) }),
-	})
-
-/** "Jump to latest": back to the newest rows, every row collapsed. */
-export const jumpToLatest = (model: Model): UpdateReturn =>
-	reportingInspect(model, {
-		model: modifyFields(model, {
-			expandedRows: () => [],
-			panels: () => ({}),
-			isScrolledAway: () => false,
-		}),
-		commands: [ScrollStreamToTop({ streamId: model.id })],
 	})
 
 // SUBSCRIPTION
@@ -445,14 +397,57 @@ const KEYS = new Map<string, NavigationKey>([
 ])
 
 /** `useListNavigation` (j/k/↑/↓, Enter, Escape) plus the stream's →/← expand hotkeys. */
-export const navigationKeys: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefault({
-	target: () => document,
-	type: "keydown",
-	filterMapEvent: (event) => {
-		const key = KEYS.get(event.key)
-		if (key === undefined || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target))
-			return Option.none()
-		if (key === "Open" && isInteractive(event.target)) return Option.none()
-		return Option.some(Message.PressedNavigationKey({ key }))
-	},
-})
+const navigationKeys: Stream.Stream<typeof Message.PressedNavigationKey.Type> =
+	Dom.streamFromEventFilterMapPreventDefault({
+		target: () => document,
+		type: "keydown",
+		filterMapEvent: (event) => {
+			const key = KEYS.get(event.key)
+			if (key === undefined || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target))
+				return Option.none()
+			if (key === "Open" && isInteractive(event.target)) return Option.none()
+			return Option.some(Message.PressedNavigationKey({ key }))
+		},
+	})
+
+export const subscriptions = LogsStreamDefinition.makeSubscriptions((entry) => ({
+	/** `useListNavigation` and the →/← expand hotkeys, while the stream has rows. */
+	navigationKeys: entry("LogsStreamNavigationKeys", {
+		messages: [Message.PressedNavigationKey],
+		when: (model) => model.rows.length > 0,
+		handler: function* () {
+			return () => navigationKeys
+		},
+	}),
+}))
+
+// BLOCK
+
+const prepare = () =>
+	LogsStreamComposition.prepareBlock({
+		init,
+		update,
+		view,
+		subscriptions,
+		operations: {
+			/** The same logs, derived again (a pinned column or the search changed). */
+			informRows: Message.InformedOfRows,
+			/** New data: expansion was made on the old rows, so it goes. */
+			informReplacedRows: Message.InformedOfReplacedRows,
+			requestJumpToLatest: Message.RequestedJumpToLatest,
+		},
+		EffectsLayer: Layer.mergeAll(
+			WaitChipDelay.layer,
+			WriteLogJson.layer,
+			WaitLogJsonStatus.layer,
+			ScrollStreamToIndex.layer,
+			ScrollStreamToTop.layer,
+			CopyText.layer,
+			CopyLogLink.layer,
+			VirtualizeLogStream.layer,
+			PlaceChipCard.layer,
+			subscriptions.layer,
+		),
+	})
+export const LogsStreamBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

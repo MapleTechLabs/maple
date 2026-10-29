@@ -1,13 +1,11 @@
-import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
-import { AsyncData, type Command } from "foldkit"
+import { AsyncData } from "foldkit"
 import { keyOf, request } from "../../data/slot"
 import { type PageContext, rangeOf } from "../contract"
 import { queryOf } from "../../route"
 import { FetchFacets, FetchSessions } from "./command"
 import { filtersOf } from "./fetch"
-import type { Message } from "./message"
 import type { Model } from "./model"
 
 /** The window the list, facets and refresh share: the range resolved at the anchor. */
@@ -23,9 +21,9 @@ export const load = (
 	model: Model,
 	context: PageContext,
 	force = false,
-): Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }> =>
+) =>
 	Option.match(boundsOf(model, context), {
-		onNone: () => ({ model }),
+		onNone: () => ({ model, commands: [] }),
 		onSome: (bounds) => {
 			const args = { search: context.location.search, ...bounds, apiBase: context.env.apiBase }
 			const sessionsKey = keyFor("sessions", context, bounds)
@@ -58,7 +56,7 @@ export const fetchAfterCache = (
 	context: PageContext,
 	which: "sessions" | "facets",
 	isFresh: boolean,
-): ReadonlyArray<Command.Command<Message, never, Resources>> =>
+) =>
 	isFresh
 		? []
 		: Option.match(boundsOf(model, context), {

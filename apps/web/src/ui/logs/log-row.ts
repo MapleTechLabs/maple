@@ -27,7 +27,6 @@ export interface RowEvents<Message> {
 	readonly pressedChipEscape: (index: number, key: string) => Message
 	readonly clickedDetails: (index: number) => Message
 	readonly clickedCopyJson: (index: number) => Message
-	readonly gotPanelMessage: (index: number, message: AttributesPanel.Message) => Message
 }
 
 export type Density = "compact" | "comfortable"
@@ -155,6 +154,8 @@ export const logRow = <Message>(
 	index: number,
 	start: number,
 	state: RowState,
+	/** Renders the expanded row's attribute panel; the stream owns the panel Binding. */
+	panelView: (panel: AttributesPanel.Model) => Html,
 ): Html =>
 	h.keyed("div")(
 		String(index),
@@ -267,13 +268,11 @@ export const logRow = <Message>(
 							h,
 							row.log,
 							state.highlight,
-							state.panel,
+							panelView(state.panel),
 							state.jsonStatus,
-							state.canFilter,
 							{
 								clickedDetails: events.clickedDetails(index),
 								clickedCopyJson: events.clickedCopyJson(index),
-								toPanelMessage: (message) => events.gotPanelMessage(index, message),
 							},
 						),
 					]

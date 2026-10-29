@@ -5,13 +5,13 @@ import { icon } from "@maple/web/ui/icon"
 import { spinner } from "@maple/web/ui/spinner"
 import { textarea } from "@maple/web/ui/textarea"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { queryOf } from "../../route"
-import type { PageViewInputs } from "../kit/inputs"
+import type { PageContext } from "../contract"
 import { pageShell } from "../kit/page-shell"
 import { toolbar, toolbarStat, toolbarStats } from "../kit/toolbar"
 import { emptyState } from "../kit/view-states"
+import { QueryComposition } from "./composition"
 import { Message } from "./message"
 import { type Model, RunState } from "./model"
 import { queryError, resultTable } from "./view-result"
@@ -99,7 +99,10 @@ const result = (h: HtmlBuilder<Message>, model: Model): Html =>
 				: resultTable(h, rows),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+/** What the view reads from the root: data only, as Block view inputs carry no callbacks. */
+export type QueryViewInputs = Readonly<{ context: PageContext }>
+
+export const view = QueryComposition.makeView.withInputs<QueryViewInputs>((model, inputs, h) => {
 	const sql = queryOf(inputs.context.location).get("sql") ?? ""
 	return pageShell(h, { sidebar: querySidebar(h, model), toolbar: consoleToolbar(h, model), onOpenFilters: Message.ClickedOpenFilters() }, [
 		h.div(

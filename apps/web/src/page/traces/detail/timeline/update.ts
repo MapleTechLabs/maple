@@ -19,9 +19,11 @@ import {
 	SIDEBAR_WIDTH_MIN,
 } from "@maple/ui/components/traces/trace-timeline-types"
 import { summarizeClockSkew } from "@maple/ui/lib/span-tree"
-import { Command } from "foldkit"
+import { Update } from "foldkit"
 import { type SpanEvents, type SpanNodeData, type TraceData, toSpanNode } from "../trace-data"
 import { FocusSearch, ReadSidebarWidth, ScrollToRow } from "./command"
+import { ColorBySelectBinding, TimelineComposition } from "./composition"
+import { TimelineDefinition } from "./definition"
 import {
 	collectParentIdsByLevel,
 	computeSearchMatches,
@@ -31,14 +33,8 @@ import {
 	type Bar,
 	traceBounds,
 } from "./layout"
-import { Message, OutMessage } from "./message"
+import { OutMessage } from "./message"
 import type { Model, Viewport } from "./model"
-
-export type UpdateReturn = Readonly<{
-	model: Model
-	commands?: ReadonlyArray<Command.Command<Message>>
-	outMessage?: OutMessage
-}>
 
 export const colorByOf = (id: string): ColorByField => colorByFromId(id) ?? DEFAULT_COLOR_BY
 
@@ -64,7 +60,7 @@ export type InitInput = Readonly<{
 const colorBySelectValue = (colorBy: string): string =>
 	colorByFieldId(colorByFromId(colorBy) ?? DEFAULT_COLOR_BY)
 
-export const init = (input: InitInput): UpdateReturn => {
+export const init = TimelineComposition.makeInit((input: InitInput) => {
 	const { trace } = input
 	const { traceStartMs, traceEndMs } = traceBounds(
 		trace.rootSpans,
@@ -95,7 +91,7 @@ export const init = (input: InitInput): UpdateReturn => {
 		colorBySelect: Select.init("trace-timeline-color-by", {
 			value: colorBySelectValue(input.colorBy),
 			selectedIndex: null,
-		}),
+		}).model,
 		spanEvents: input.spanEvents,
 		sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
 		scrollerWidth: 0,
@@ -112,27 +108,16 @@ export const init = (input: InitInput): UpdateReturn => {
 			...(selectedIndex >= 0 ? [ScrollToRow({ index: selectedIndex })] : []),
 		],
 	}
-}
+})
 
 /** The page changed the selection: scroll the new span into view (no-op when visible). */
-export const setSelectedSpanId = (model: Model, spanId: string | null): UpdateReturn => {
+const setSelectedSpanId = (model: Model, spanId: string | null) => {
 	if (spanId === model.selectedSpanId) return { model }
 	const next = { ...model, selectedSpanId: spanId }
 	const index = spanId === null ? -1 : indexOf(next, spanId)
 	return { model: next, commands: index >= 0 ? [ScrollToRow({ index })] : [] }
 }
 
-export const setSpanEvents = (model: Model, spanEvents: SpanEvents | null): UpdateReturn => ({
-	model: { ...model, spanEvents },
-})
-
-export const setColorBy = (model: Model, colorBy: string): UpdateReturn => ({
-	model: {
-		...model,
-		colorBy,
-		colorBySelect: { ...model.colorBySelect, value: colorBySelectValue(colorBy) },
-	},
-})
 
 const setViewport = (model: Model, viewport: Viewport): Model => ({
 	...model,
@@ -178,7 +163,7 @@ const collapseOneLevel = (model: Model): Model =>
 	)
 
 /** Enter / Shift+Enter in the search box: cycle the matches, focusing each row. */
-const navigateSearch = (model: Model, direction: 1 | -1): UpdateReturn => {
+const navigateSearch = (model: Model, direction: 1 | -1) => {
 	const bars = barsOf(model)
 	const matches = computeSearchMatches(bars, model.searchQuery)
 	const rows = bars.flatMap((bar, index) => (matches.has(bar.span.spanId) ? [index] : []))
@@ -190,7 +175,7 @@ const navigateSearch = (model: Model, direction: 1 | -1): UpdateReturn => {
 	return { model: { ...model, matchCursor: next, focusedIndex: index }, commands: [ScrollToRow({ index })] }
 }
 
-const focus = (model: Model, index: number | null): UpdateReturn => ({
+const focus = (model: Model, index: number | null) => ({
 	model: { ...model, focusedIndex: index },
 	commands: index === null ? [] : [ScrollToRow({ index })],
 })
@@ -213,7 +198,7 @@ const panBy = (model: Model, fraction: number): Model => {
 }
 
 /** The timeline's own keys (`handleKeyDown`), only while the timeline itself has focus. */
-const pressedKey = (model: Model, key: string, isShift: boolean): UpdateReturn => {
+const pressedKey = (model: Model, key: string, isShift: boolean) => {
 	const bars = barsOf(model)
 	const focused = model.focusedIndex === null ? undefined : bars[model.focusedIndex]
 	switch (key.toLowerCase()) {
@@ -276,71 +261,65 @@ const pressedKey = (model: Model, key: string, isShift: boolean): UpdateReturn =
 	}
 }
 
-export const update = (model: Model, message: Message): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		CompletedReadSidebarWidth: ({ width }) => ({
-			model: {
-				...model,
-				sidebarWidth:
-					width === null
-						? SIDEBAR_WIDTH_DEFAULT
-						: Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, width)),
-			},
-		}),
-		MeasuredScroller: ({ width, height }) => ({
-			model: { ...model, scrollerWidth: width, scrollerHeight: height },
-		}),
-		ScrolledBody: ({ scrollTop }) =>
-			scrollTop === model.scrollTop ? { model } : { model: { ...model, scrollTop } },
-		CompletedScrollRequest: () => ({ model }),
-		CompletedFocusSearch: () => ({ model }),
-		// A new query resets the match cursor (`setMatchCursor(0)` on `searchQuery`).
-		ChangedSearch: ({ query }) => ({ model: { ...model, searchQuery: query, matchCursor: 0 } }),
-		ClickedClearSearch: () => ({ model: { ...model, searchQuery: "", matchCursor: 0 } }),
-		PressedSearchKey: ({ key, isShift }) =>
-			key === "Enter"
-				? navigateSearch(model, isShift ? -1 : 1)
-				: key === "Escape"
-					? pressedKey(model, "escape", false)
-					: { model },
-		PressedTimelineKey: ({ key, isShift }) => pressedKey(model, key, isShift),
-		ClickedRow: ({ spanId }) => ({ model, outMessage: OutMessage.SelectedSpan({ spanId }) }),
-		DoubleClickedRow: ({ spanId }) => {
-			const bar = barsOf(model).find((candidate) => candidate.span.spanId === spanId)
-			return { model: bar === undefined ? model : zoomToSpan(model, bar.startMs, bar.endMs) }
+export const update = TimelineComposition.makeUpdate({
+	CompletedReadSidebarWidth: (model, { width }) => ({
+		model: {
+			...model,
+			sidebarWidth:
+				width === null
+					? SIDEBAR_WIDTH_DEFAULT
+					: Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, width)),
 		},
-		ClickedToggleCollapse: ({ spanId }) => ({ model: toggleCollapse(model, spanId, false) }),
-		AltClickedToggleCollapse: ({ spanId }) => ({ model: toggleCollapse(model, spanId, true) }),
-		HoveredRow: ({ spanId }) =>
-			spanId === model.hoveredSpanId ? { model } : { model: { ...model, hoveredSpanId: spanId } },
-		ClickedCollapseOneLevel: () => ({ model: collapseOneLevel(model) }),
-		ClickedExpandOneLevel: () => ({ model: expandOneLevel(model) }),
-		ClickedCollapseAll: () => ({ model: withExpanded(model, new Set()) }),
-		ClickedExpandAll: () => ({
-			model: withExpanded(model, collectAllCollapsibleIds(legacyTree(model.rootSpans))),
-		}),
-		ClickedFit: () => ({ model: fit(model) }),
-		ClickedShortcuts: () => ({ model: { ...model, isShowingShortcuts: !model.isShowingShortcuts } }),
-		ClickedCloseShortcuts: () => ({ model: { ...model, isShowingShortcuts: false } }),
-		ClickedShortcutsSheet: () => ({ model }),
-		GotColorBySelectMessage: ({ message: inner }) => {
-			const next = Select.update(model.colorBySelect, inner)
-			const lifted: UpdateReturn = {
-				model: { ...model, colorBySelect: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) =>
-					Message.GotColorBySelectMessage({ message }),
-				),
-			}
-			const value = next.outMessage?.value
-			return value === undefined || value === model.colorBy || colorByFromId(value) === undefined
-				? lifted
-				: { ...lifted, outMessage: OutMessage.ChangedColorBy({ colorBy: value }) }
-		},
-		SelectedColorBy: ({ colorBy }) =>
-			colorBy === model.colorBy
-				? { model }
-				: { model, outMessage: OutMessage.ChangedColorBy({ colorBy }) },
-	})
+	}),
+	MeasuredScroller: (model, { width, height }) => ({
+		model: { ...model, scrollerWidth: width, scrollerHeight: height },
+	}),
+	ScrolledBody: (model, { scrollTop }) =>
+		scrollTop === model.scrollTop ? { model } : { model: { ...model, scrollTop } },
+	CompletedScrollRequest: (model) => ({ model }),
+	CompletedFocusSearch: (model) => ({ model }),
+	// A new query resets the match cursor (`setMatchCursor(0)` on `searchQuery`).
+	ChangedSearch: (model, { query }) => ({ model: { ...model, searchQuery: query, matchCursor: 0 } }),
+	ClickedClearSearch: (model) => ({ model: { ...model, searchQuery: "", matchCursor: 0 } }),
+	PressedSearchKey: (model, { key, isShift }) =>
+		key === "Enter"
+			? navigateSearch(model, isShift ? -1 : 1)
+			: key === "Escape"
+				? pressedKey(model, "escape", false)
+				: { model },
+	PressedTimelineKey: (model, { key, isShift }) => pressedKey(model, key, isShift),
+	ClickedRow: (model, { spanId }) => ({ model, outMessage: OutMessage.SelectedSpan({ spanId }) }),
+	DoubleClickedRow: (model, { spanId }) => {
+		const bar = barsOf(model).find((candidate) => candidate.span.spanId === spanId)
+		return { model: bar === undefined ? model : zoomToSpan(model, bar.startMs, bar.endMs) }
+	},
+	ClickedToggleCollapse: (model, { spanId }) => ({ model: toggleCollapse(model, spanId, false) }),
+	AltClickedToggleCollapse: (model, { spanId }) => ({ model: toggleCollapse(model, spanId, true) }),
+	HoveredRow: (model, { spanId }) =>
+		spanId === model.hoveredSpanId ? { model } : { model: { ...model, hoveredSpanId: spanId } },
+	ClickedCollapseOneLevel: (model) => ({ model: collapseOneLevel(model) }),
+	ClickedExpandOneLevel: (model) => ({ model: expandOneLevel(model) }),
+	ClickedCollapseAll: (model) => ({ model: withExpanded(model, new Set()) }),
+	ClickedExpandAll: (model) => ({
+		model: withExpanded(model, collectAllCollapsibleIds(legacyTree(model.rootSpans))),
+	}),
+	ClickedFit: (model) => ({ model: fit(model) }),
+	ClickedShortcuts: (model) => ({ model: { ...model, isShowingShortcuts: !model.isShowingShortcuts } }),
+	ClickedCloseShortcuts: (model) => ({ model: { ...model, isShowingShortcuts: false } }),
+	ClickedShortcutsSheet: (model) => ({ model }),
+	SelectedColorBy: (model, { colorBy }) =>
+		colorBy === model.colorBy
+			? { model }
+			: { model, outMessage: OutMessage.ChangedColorBy({ colorBy }) },
+	InformedOfSelectedSpanId: (model, { spanId }) => setSelectedSpanId(model, spanId),
+	InformedOfSpanEvents: (model, { spanEvents }) => ({ model: { ...model, spanEvents } }),
+	// The page owns the scheme; the picker's value follows it.
+	InformedOfColorBy: (model, { colorBy }) =>
+		Update.combineSteps(model, [
+			TimelineDefinition.makeFieldsStep(() => ({ colorBy: () => colorBy })),
+			ColorBySelectBinding.informValue({ value: colorBySelectValue(colorBy) }),
+		]),
+})
 
 /** The keys `pressedKey` consumes (and `preventDefault`s). */
 export const TIMELINE_KEYS = new Set([

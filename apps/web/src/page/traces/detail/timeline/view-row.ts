@@ -4,10 +4,11 @@ import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { spanEventMarkers, type TimelineSpanEvent } from "@maple/ui/lib/span-event-markers"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { describeSpan } from "../../../../service-map/trace-flow/span-category"
 import { icon } from "../../../../ui/icon"
 import type { Bar } from "./layout"
+import type { TimelineViewBuilder } from "./composition"
 import { Message } from "./message"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
@@ -33,7 +34,7 @@ export type RowState = Readonly<{
 	markerId: (index: number) => string
 }>
 
-type H = HtmlBuilder<Message>
+type H = TimelineViewBuilder
 
 /**
  * The bar width a span name needs inside its bar (11px mono, 6.6px a glyph, plus padding and the

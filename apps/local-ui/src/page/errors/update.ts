@@ -1,27 +1,28 @@
 import type { Cached } from "../../data/cached"
-import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Option, Record, Result } from "effect"
-import { AsyncData, Command, type Update } from "foldkit"
+import { AsyncData } from "foldkit"
 import { accept, idle, acceptCached } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
-import { updateCopy } from "../kit/copies"
 import { ReadClock, ReadRefreshClock, FetchByType, FetchFacets, FetchSummary, FetchTraces } from "./command"
+import { ErrorsComposition } from "./composition"
 import type { ErrorTrace, ErrorTypeRow } from "./fetch"
 import type { LoadFailure } from "../../data/local-query"
 import { cardOf, load, loadCard, boundsOf } from "./load"
-import { Message } from "./message"
 import type { Model } from "./model"
 
-export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
+type PageCommand =
+	| ReturnType<typeof ReadClock>
+	| ReturnType<typeof ReadRefreshClock>
+	| ReturnType<typeof FetchSummary>
+	| ReturnType<typeof FetchByType>
+	| ReturnType<typeof FetchFacets>
+	| ReturnType<typeof FetchTraces>
+type UpdateReturn = Readonly<{ model: Model; commands?: ReadonlyArray<PageCommand>; outMessage?: PageOutMessage }>
 
-const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
-
-export const init = (
-	_context: PageContext,
-): Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }> => ({
+/** The filter rail's sections and the guide's copy buttons are assembled by their Bindings. */
+export const init = ErrorsComposition.makeInit((_context: PageContext) => ({
 	model: {
 		_tag: "ErrorsPage",
 		maybeAnchorMs: Option.none(),
@@ -31,14 +32,10 @@ export const init = (
 		byTypeUpdatedAtMs: 0,
 		facets: idle(),
 		cards: {},
-		sections: FilterSections.init(),
 		isRefreshing: false,
-		copies: {},
 	},
-	commands: [ReadClock(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
-})
-
-export const locationChanged = (model: Model, context: PageContext): UpdateReturn => load(model, context)
+	commands: [ReadClock()],
+}))
 
 const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
 	model,
@@ -104,80 +101,73 @@ const cardFromCache = (model: Model, context: PageContext, fingerprintHash: stri
 	return { model: settleRefresh(next), commands: cached.isFresh ? [] : [fetch] }
 }
 
-export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		CompletedReadClock: ({ nowMs }) => {
-			const loaded = load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context)
-			// `ErrorsView` reads `useSignalPresence("traces")` on mount, empty or not.
-			return { ...loaded, outMessage: PageOutMessage.RequestedSignalPresence() }
-		},
-		SucceededFetchSummary: ({ key, summary, fetchedAtMs }) =>
-			({ model: settleRefresh({ ...model, summary: accept(model.summary, key, Result.succeed(summary), fetchedAtMs) }) }),
-		FoundCachedSummary: ({ key, cached }) =>
-			model.summary.key === key
-				? refetchAfterCache({ ...model, summary: acceptCached(model.summary, key, cached, cached.isFresh) }, context, "summary", cached.isFresh)
-				: { model },
-		FoundCachedByType: ({ key, cached }) =>
-			model.byType.key === key
-				? refetchAfterCache(
-						pruneCards({ ...model, byType: acceptCached(model.byType, key, cached, cached.isFresh), byTypeUpdatedAtMs: cached.updatedAtMs }, cached.data),
-						context,
-						"byType",
-						cached.isFresh,
-					)
-				: { model },
-		FoundCachedFacets: ({ key, cached }) =>
-			model.facets.key === key
-				? refetchAfterCache({ ...model, facets: acceptCached(model.facets, key, cached, cached.isFresh) }, context, "facets", cached.isFresh)
-				: { model },
-		FoundCachedTraces: ({ fingerprintHash, key, cached }) => cardFromCache(model, context, fingerprintHash, key, cached),
-		FailedFetchSummary: ({ key, failure }) =>
-			({ model: settleRefresh({ ...model, summary: accept(model.summary, key, Result.fail(failure)) }) }),
-		SucceededFetchByType: ({ key, rows, fetchedAtMs }) => {
-			if (model.byType.key !== key) return { model }
-			const next = { ...model, byType: accept(model.byType, key, Result.succeed(rows), fetchedAtMs), byTypeUpdatedAtMs: fetchedAtMs }
-			return { model: settleRefresh(pruneCards(next, rows)) }
-		},
-		FailedFetchByType: ({ key, failure }) => {
-			const byType = accept(model.byType, key, Result.fail(failure))
-			// The error state replaces the list, unmounting every card.
-			const cards = AsyncData.isFailure(byType.data) ? {} : model.cards
-			return { model: settleRefresh({ ...model, byType, cards }) }
-		},
-		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) =>
-			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }) }),
-		FailedFetchFacets: ({ key, failure }) =>
-			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }) }),
-		ClickedErrorType: ({ fingerprintHash }) => toggleCard(model, context, fingerprintHash),
-		SucceededFetchTraces: ({ fingerprintHash, key, traces, fetchedAtMs }) =>
-			({ model: settleTraces(model, fingerprintHash, key, Result.succeed(traces), fetchedAtMs) }),
-		FailedFetchTraces: ({ fingerprintHash, key, failure }) =>
-			({ model: settleTraces(model, fingerprintHash, key, Result.fail(failure)) }),
-		ClickedRetryTraces: ({ fingerprintHash }) => loadCard(model, context, fingerprintHash, true),
-		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
-		ClickedRefresh: () =>
-			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
-		CompletedReadRefreshClock: ({ nowMs }) => {
-			const next = snapToMinute(nowMs)
-			// `advance()`: a new minute re-anchors the window (new keys); else refetch in place.
-			if (Option.getOrNull(model.maybeAnchorMs) !== next)
-				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
-			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
-		},
-		ToggledRootOnly: () =>
-			navigate(model, context, { root: queryOf(context.location).get("root") === "1" ? null : "1" }),
-		ToggledFacetOption: ({ param, name }) =>
-			navigate(model, context, { [param]: queryOf(context.location).get(param) === name ? null : name }),
-		ClickedClearFilters: () => navigate(model, context, { service: null, env: null, root: null }),
-		ChangedRange: ({ range }) => setRange(model, context, range),
-		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
-		GotFilterSectionsMessage: ({ message: child }) => {
-			const next = FilterSections.update(model.sections, child)
-			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }
-		},
-		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
-			return { model: { ...model, copies: next.copies }, commands: next.commands }
-		},
-	})
+export const update = ErrorsComposition.makeUpdate.withContext((context: PageContext) => ({
+	CompletedReadClock: (model, { nowMs }) => {
+		const loaded = load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context)
+		// `ErrorsView` reads `useSignalPresence("traces")` on mount, empty or not.
+		return { ...loaded, outMessage: PageOutMessage.RequestedSignalPresence() }
+	},
+	SucceededFetchSummary: (model, { key, summary, fetchedAtMs }) =>
+		({ model: settleRefresh({ ...model, summary: accept(model.summary, key, Result.succeed(summary), fetchedAtMs) }) }),
+	FoundCachedSummary: (model, { key, cached }) =>
+		model.summary.key === key
+			? refetchAfterCache({ ...model, summary: acceptCached(model.summary, key, cached, cached.isFresh) }, context, "summary", cached.isFresh)
+			: { model },
+	FoundCachedByType: (model, { key, cached }) =>
+		model.byType.key === key
+			? refetchAfterCache(
+					pruneCards({ ...model, byType: acceptCached(model.byType, key, cached, cached.isFresh), byTypeUpdatedAtMs: cached.updatedAtMs }, cached.data),
+					context,
+					"byType",
+					cached.isFresh,
+				)
+			: { model },
+	FoundCachedFacets: (model, { key, cached }) =>
+		model.facets.key === key
+			? refetchAfterCache({ ...model, facets: acceptCached(model.facets, key, cached, cached.isFresh) }, context, "facets", cached.isFresh)
+			: { model },
+	FoundCachedTraces: (model, { fingerprintHash, key, cached }) => cardFromCache(model, context, fingerprintHash, key, cached),
+	FailedFetchSummary: (model, { key, failure }) =>
+		({ model: settleRefresh({ ...model, summary: accept(model.summary, key, Result.fail(failure)) }) }),
+	SucceededFetchByType: (model, { key, rows, fetchedAtMs }) => {
+		if (model.byType.key !== key) return { model }
+		const next = { ...model, byType: accept(model.byType, key, Result.succeed(rows), fetchedAtMs), byTypeUpdatedAtMs: fetchedAtMs }
+		return { model: settleRefresh(pruneCards(next, rows)) }
+	},
+	FailedFetchByType: (model, { key, failure }) => {
+		const byType = accept(model.byType, key, Result.fail(failure))
+		// The error state replaces the list, unmounting every card.
+		const cards = AsyncData.isFailure(byType.data) ? {} : model.cards
+		return { model: settleRefresh({ ...model, byType, cards }) }
+	},
+	SucceededFetchFacets: (model, { key, facets, fetchedAtMs }) =>
+		({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }) }),
+	FailedFetchFacets: (model, { key, failure }) =>
+		({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }) }),
+	ClickedErrorType: (model, { fingerprintHash }) => toggleCard(model, context, fingerprintHash),
+	SucceededFetchTraces: (model, { fingerprintHash, key, traces, fetchedAtMs }) =>
+		({ model: settleTraces(model, fingerprintHash, key, Result.succeed(traces), fetchedAtMs) }),
+	FailedFetchTraces: (model, { fingerprintHash, key, failure }) =>
+		({ model: settleTraces(model, fingerprintHash, key, Result.fail(failure)) }),
+	ClickedRetryTraces: (model, { fingerprintHash }) => loadCard(model, context, fingerprintHash, true),
+	ClickedOpenFilters: (model) => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
+	ClickedRefresh: (model) =>
+		model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
+	CompletedReadRefreshClock: (model, { nowMs }) => {
+		const next = snapToMinute(nowMs)
+		// `advance()`: a new minute re-anchors the window (new keys); else refetch in place.
+		if (Option.getOrNull(model.maybeAnchorMs) !== next)
+			return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
+		const refetch = load({ ...model, nowMs }, context, true)
+		return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
+	},
+	ToggledRootOnly: (model) =>
+		navigate(model, context, { root: queryOf(context.location).get("root") === "1" ? null : "1" }),
+	ToggledFacetOption: (model, { param, name }) =>
+		navigate(model, context, { [param]: queryOf(context.location).get(param) === name ? null : name }),
+	ClickedClearFilters: (model) => navigate(model, context, { service: null, env: null, root: null }),
+	ChangedRange: (model, { range }) => setRange(model, context, range),
+	ClickedWidenRange: (model) => setRange(model, context, WIDEST_RANGE),
+	/** `useLocalErrors` reads the hash query: a filter or range change reloads under new keys. */
+	InformedOfLocationChange: (model) => load(model, context),
+}))

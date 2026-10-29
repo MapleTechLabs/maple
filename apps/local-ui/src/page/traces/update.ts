@@ -1,23 +1,31 @@
-import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { formatCompact, parseRange } from "@maple/web/ui/filters/range-format"
 import { Option, Result } from "effect"
-import { AsyncData, Command, type Update } from "foldkit"
+import { AsyncData } from "foldkit"
 import { accept, acceptCached, canExtend, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
-import { updateCopy } from "../kit/copies"
-import { FetchNextPage, ReadClock, ReadRefreshClock, WaitDurationDebounce, WaitSearchDebounce } from "./command"
+import {
+	FetchNextPage,
+	ReadClock,
+	ReadRefreshClock,
+	type TracesCommand,
+	WaitDurationDebounce,
+	WaitSearchDebounce,
+} from "./command"
+import { TracesComposition } from "./composition"
 import { nextCursor } from "./fetch-traces"
 import { clearedFilters, filtersOf } from "./filters"
 import { boundsOf, fetchAfterCache, load } from "./load"
-import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 
-export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
-
-const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
+export type UpdateReturn = Readonly<{
+	model: Model
+	commands?: ReadonlyArray<TracesCommand>
+	outMessage?: PageOutMessage
+}>
+/** The page's own fields; the filter sections and copy buttons are assembled by their Bindings. */
+type PageFields = Omit<Model, "sections" | "endpointCopy" | "envCopy">
 
 /** The draft formatted from the committed range, as `RangeFilterSection` seeds and re-syncs it. */
 const durationDraftOf = (query: URLSearchParams, version: number): Model["duration"] => {
@@ -38,34 +46,30 @@ const syncDuration = (duration: Model["duration"], query: URLSearchParams): Mode
 		: durationDraftOf(query, duration.version)
 }
 
-export const init = (context: PageContext): Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }> => {
+export const init = TracesComposition.makeInit((context: PageContext) => {
 	const query = queryOf(context.location)
 	const q = query.get("q") ?? ""
-	return {
-		model: {
-			_tag: "TracesPage",
-			maybeAnchorMs: Option.none(),
-			nowMs: 0,
-			traces: idle(),
-			facets: idle(),
-			isFetchingNextPage: false,
-			pageGeneration: 0,
-			tracesUpdatedAtMs: 0,
-			search: { text: q, version: 0, sent: q },
-			duration: durationDraftOf(query, 0),
-			sections: FilterSections.init(),
-			isRefreshing: false,
-			copies: {},
-		},
-		commands: [ReadClock(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
+	const model: PageFields = {
+		_tag: "TracesPage",
+		maybeAnchorMs: Option.none(),
+		nowMs: 0,
+		traces: idle(),
+		facets: idle(),
+		isFetchingNextPage: false,
+		pageGeneration: 0,
+		tracesUpdatedAtMs: 0,
+		search: { text: q, version: 0, sent: q },
+		duration: durationDraftOf(query, 0),
+		isRefreshing: false,
 	}
-}
+	return { model, commands: [ReadClock()] }
+})
 
 /**
  * The hash changed under the page: keep the search input in sync unless the change is the page's
  * own debounced search echoing back, then request what the new filters need.
  */
-export const locationChanged = (model: Model, context: PageContext): UpdateReturn => {
+const locationChanged = (model: Model, context: PageContext): UpdateReturn => {
 	const query = queryOf(context.location)
 	const q = query.get("q") ?? ""
 	const search = q === model.search.sent ? model.search : { ...model.search, text: q, sent: q }
@@ -139,13 +143,13 @@ const appendPage = (model: Model, key: string, page: ReadonlyArray<TraceRow>): M
 	})
 }
 
-export const update = (model: Model, message: Message, context: PageContext): UpdateReturn => {
+export const update = TracesComposition.makeUpdate.withContext((context: PageContext) => {
 	const query = queryOf(context.location)
 	const filters = filtersOf(query)
-	return Message.match<UpdateReturn>(message, {
-		CompletedReadClock: ({ nowMs }) =>
+	return {
+		CompletedReadClock: (model, { nowMs }) =>
 			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
-		SucceededFetchTraces: ({ key, data, fetchedAtMs }) => {
+		SucceededFetchTraces: (model, { key, data, fetchedAtMs }) => {
 			const isCurrent = model.traces.key === key
 			const traces = accept(model.traces, key, Result.succeed(data), fetchedAtMs)
 			const tracesUpdatedAtMs = isCurrent ? fetchedAtMs : model.tracesUpdatedAtMs
@@ -155,7 +159,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 				? { ...next, outMessage: PageOutMessage.RequestedSignalPresence() }
 				: next
 		},
-		FoundCachedTraces: ({ key, cached }) => {
+		FoundCachedTraces: (model, { key, cached }) => {
 			if (model.traces.key !== key) return { model }
 			const next = { ...model, traces: acceptCached(model.traces, key, cached, cached.isFresh), tracesUpdatedAtMs: cached.updatedAtMs }
 			const step = { model: settleRefresh(next), commands: fetchAfterCache(next, context, "traces", cached.isFresh) }
@@ -163,28 +167,28 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const isEmpty = Option.exists(AsyncData.getData(next.traces.data), (data) => data.pages.every((page) => page.length === 0))
 			return isEmpty ? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() } : step
 		},
-		FoundCachedFacets: ({ key, cached }) => {
+		FoundCachedFacets: (model, { key, cached }) => {
 			if (model.facets.key !== key) return { model }
 			const next = { ...model, facets: acceptCached(model.facets, key, cached, cached.isFresh) }
 			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "facets", cached.isFresh) }
 		},
-		FailedFetchTraces: ({ key, failure }) =>
+		FailedFetchTraces: (model, { key, failure }) =>
 			({ model: settleRefresh({ ...model, traces: accept(model.traces, key, Result.fail(failure)) }) }),
-		ClickedLoadMore: () => loadMore(model, context),
-		SucceededFetchNextPage: ({ key, generation, page }) =>
+		ClickedLoadMore: (model) => loadMore(model, context),
+		SucceededFetchNextPage: (model, { key, generation, page }) =>
 			generation === model.pageGeneration ? { model: appendPage(model, key, page) } : { model },
-		FailedFetchNextPage: ({ key, generation, failure }) =>
+		FailedFetchNextPage: (model, { key, generation, failure }) =>
 			generation !== model.pageGeneration
 				? { model }
 				: { model: { ...model, isFetchingNextPage: false, traces: accept(model.traces, key, Result.fail(failure)) } },
-		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) =>
+		SucceededFetchFacets: (model, { key, facets, fetchedAtMs }) =>
 			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }) }),
-		FailedFetchFacets: ({ key, failure }) =>
+		FailedFetchFacets: (model, { key, failure }) =>
 			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }) }),
-		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
-		ClickedRefresh: () =>
+		ClickedOpenFilters: (model) => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
+		ClickedRefresh: (model) =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
-		CompletedReadRefreshClock: ({ nowMs }) => {
+		CompletedReadRefreshClock: (model, { nowMs }) => {
 			const next = snapToMinute(nowMs)
 			// `advance()`: a new minute re-anchors the window (new keys); else refetch in place.
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
@@ -192,54 +196,46 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const refetch = load({ ...model, nowMs }, context, true)
 			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
-		ChangedSearch: ({ text }) => {
+		ChangedSearch: (model, { text }) => {
 			const version = model.search.version + 1
 			return { model: { ...model, search: { ...model.search, text, version } }, commands: [WaitSearchDebounce({ version })] }
 		},
-		ClickedClearSearch: () => {
+		ClickedClearSearch: (model) => {
 			const version = model.search.version + 1
 			return { model: { ...model, search: { ...model.search, text: "", version } }, commands: [WaitSearchDebounce({ version })] }
 		},
-		ElapsedSearchDebounce: ({ version }) => {
+		ElapsedSearchDebounce: (model, { version }) => {
 			if (version !== model.search.version) return { model }
 			const trimmed = model.search.text.trim()
 			return navigate({ ...model, search: { ...model.search, sent: trimmed } }, context, { q: trimmed === "" ? null : trimmed })
 		},
-		ToggledErrorsOnly: () => navigate(model, context, { errors: filters.errorsOnly === true ? null : "1" }),
-		ToggledFacetOption: ({ param, name }) => navigate(model, context, { [param]: query.get(param) === name ? null : name }),
-		ChangedDurationDraft: ({ min, max }) => {
+		ToggledErrorsOnly: (model) => navigate(model, context, { errors: filters.errorsOnly === true ? null : "1" }),
+		ToggledFacetOption: (model, { param, name }) => navigate(model, context, { [param]: query.get(param) === name ? null : name }),
+		ChangedDurationDraft: (model, { min, max }) => {
 			const version = model.duration.version + 1
 			return {
 				model: { ...model, duration: { ...model.duration, min, max, version } },
 				commands: [WaitDurationDebounce({ version })],
 			}
 		},
-		ElapsedDurationDebounce: ({ version }) =>
+		ElapsedDurationDebounce: (model, { version }) =>
 			version !== model.duration.version
 				? { model }
 				: commitDuration(model, context, parseRange(model.duration.min, "ms"), parseRange(model.duration.max, "ms")),
-		CommittedDurationDraft: () => {
+		CommittedDurationDraft: (model) => {
 			const min = parseRange(model.duration.min, "ms")
 			const max = parseRange(model.duration.max, "ms")
 			const duration = { ...model.duration, version: model.duration.version + 1, min: formatCompact(min, "ms"), max: formatCompact(max, "ms") }
 			return commitDuration({ ...model, duration }, context, min, max)
 		},
-		AppliedDuration: ({ min, max }) => {
+		AppliedDuration: (model, { min, max }) => {
 			const duration = { ...model.duration, version: model.duration.version + 1, min: formatCompact(min ?? undefined, "ms"), max: formatCompact(max ?? undefined, "ms") }
 			return commitDuration({ ...model, duration }, context, min ?? undefined, max ?? undefined)
 		},
-		ClickedClearFilters: () => navigate(model, context, clearedFilters()),
-		ClickedExitSpanScope: () => navigate(model, context, { scope: null }),
-		ChangedRange: ({ range }) => setRange(model, context, range),
-		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
-		GotFilterSectionsMessage: ({ message: child }) => {
-			const next = FilterSections.update(model.sections, child)
-			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }
-		},
-		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
-			return { model: { ...model, copies: next.copies }, commands: next.commands }
-		},
-	})
-}
-
+		ClickedClearFilters: (model) => navigate(model, context, clearedFilters()),
+		ClickedExitSpanScope: (model) => navigate(model, context, { scope: null }),
+		ChangedRange: (model, { range }) => setRange(model, context, range),
+		ClickedWidenRange: (model) => setRange(model, context, WIDEST_RANGE),
+		InformedOfLocationChange: (model) => locationChanged(model, context),
+	}
+})

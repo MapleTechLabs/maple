@@ -15,10 +15,10 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { SpanNodeData, TraceData } from "../trace-data"
-import { MeasureTimelineBody, MountAltToggle } from "./command"
+import { MeasureTimelineBody, MountAltToggle, ScrollToRow } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
-import { init, setSelectedSpanId, update } from "./update"
+import { init, update } from "./update"
 import { view as timelineView } from "./view"
 
 const traceId = Schema.decodeSync(TraceId)("6843a8853182b32339b2dd5120d423f2")
@@ -167,9 +167,10 @@ describe("trace timeline", () => {
 	})
 
 	test("a page-driven selection scrolls the new span into view, an unchanged one does nothing", () => {
-		const selected = setSelectedSpanId(entered(), "00000000000000c1")
+		const inform = Message.InformedOfSelectedSpanId({ spanId: "00000000000000c1" })
+		const selected = update(entered(), inform)
 		expect(selected.model.selectedSpanId).toBe("00000000000000c1")
-		expect((selected.commands ?? []).map((command) => command.name)).toEqual(["ScrollTraceTimelineToRow"])
-		expect(setSelectedSpanId(selected.model, "00000000000000c1").commands).toBeUndefined()
+		expect((selected.commands ?? []).map((command) => command.name)).toEqual([ScrollToRow.name])
+		expect(update(selected.model, inform).commands).toBeUndefined()
 	})
 })

@@ -4,8 +4,9 @@ import {
 	type ServiceMapColorMode,
 } from "@maple/ui/components/service-map/service-map-utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Popover from "../../ui/popover"
+import type * as Popover from "../../ui/popover"
 import { statusDot } from "../../ui/status-dot"
+import { LegendBinding, type ServiceMapViewBuilder } from "./service-map"
 
 // `ServiceMapLegend` (packages/ui `service-map/service-map-canvas.tsx`), with the "+N more"
 // popover listing every service.
@@ -52,43 +53,43 @@ const allServices = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Htm
 		),
 	)
 
-const morePopover = <M>(
-	h: HtmlBuilder<M>,
+const morePopover = (
+	h: ServiceMapViewBuilder,
 	services: ReadonlyArray<string>,
 	popover: Popover.Model,
-	toPopover: (message: Popover.Message) => M,
 ): Html =>
-	h.submodel({
-		slotId: "service-map-legend",
-		model: popover,
-		view: Popover.view,
-		toParentMessage: toPopover,
-		viewInputs: {
-			className: "w-64 p-3",
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("contents")],
-					withTrigger(
-						h.button(
-							[
-								...trigger,
-								h.Class("font-medium hover:text-foreground transition-colors cursor-pointer"),
-								h.Type("button"),
-							],
-							["+", String(services.length - 3), " more"],
+	h.block(
+		LegendBinding.embedView({
+			slotId: "service-map-legend",
+			model: popover,
+			viewInputs: {
+				className: "w-64 p-3",
+				toView: ({ trigger, withTrigger }) =>
+					h.div(
+						[h.Class("contents")],
+						withTrigger(
+							h.button(
+								[
+									...trigger,
+									h.Class(
+										"font-medium hover:text-foreground transition-colors cursor-pointer",
+									),
+									h.Type("button"),
+								],
+								["+", String(services.length - 3), " more"],
+							),
 						),
 					),
-				),
-			toContent: () => [allServices(h, services)],
-		},
-	})
+				toContent: () => [allServices(h, services)],
+			},
+		}),
+	)
 
-export const serviceMapLegend = <M>(
-	h: HtmlBuilder<M>,
+export const serviceMapLegend = (
+	h: ServiceMapViewBuilder,
 	colorMode: ServiceMapColorMode,
 	services: ReadonlyArray<string>,
 	popover: Popover.Model,
-	toPopover: (message: Popover.Message) => M,
 ): Html =>
 	h.div(
 		[
@@ -106,7 +107,7 @@ export const serviceMapLegend = <M>(
 						...services
 							.slice(0, 3)
 							.map((service) => swatch(h, serviceSwatchColor(service), service)),
-						...(services.length > 3 ? [morePopover(h, services, popover, toPopover)] : []),
+						...(services.length > 3 ? [morePopover(h, services, popover)] : []),
 					]
 				: []),
 			...(colorMode === "platform"

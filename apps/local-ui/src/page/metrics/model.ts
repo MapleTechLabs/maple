@@ -1,5 +1,6 @@
 import { ChartRuntime } from "@maple/web/charts/chart-runtime"
 import { ThemeColors } from "@maple/web/charts/theme-colors"
+import * as Chart from "@maple/web/charts/chart"
 import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
@@ -29,6 +30,8 @@ export const Model = Schema.TaggedStruct("MetricsPage", {
 	grid: GridViewport,
 	themeColors: Schema.NullOr(ThemeColors),
 	chartRuntime: ChartRuntime,
+	/** Sparklines keep no interaction state; every card embeds this one chart Model. */
+	sparkline: Chart.Model,
 	copies: Copies,
 })
 export type Model = typeof Model.Type

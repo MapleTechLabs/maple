@@ -1,18 +1,20 @@
 import { cn } from "@maple/ui/lib/utils"
+import type * as CopyButton from "@maple/web/ui/copy-button"
 import { listFooter } from "@maple/web/ui/list-footer"
 import { table, tableBody, tableHead, tableHeader, tableRow } from "@maple/web/ui/table"
 import { tableSkeleton } from "@maple/web/ui/table-skeleton"
 import { Option } from "effect"
-import { AsyncData, Submodel } from "foldkit"
+import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
-import { rangeOf } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
+import { presenceOf, type PresenceResult } from "../../data/signal-presence"
+import { type PageContext, rangeOf } from "../contract"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { errorState } from "../kit/view-states"
 import { activeFilterCount, filtersOf } from "./filters"
+import { EndpointCopyBinding, EnvCopyBinding, TracesComposition, type TracesViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { traceRow } from "./view-row"
@@ -28,10 +30,30 @@ const SKELETON_COLUMNS = [
 	{ header: "Started", headClassName: "text-right", skeleton: "ml-auto w-16" },
 ]
 
-const toCopy = (id: string, message: Parameters<typeof Message.GotCopyMessage>[0]["message"]) =>
-	Message.GotCopyMessage({ id, message })
+/** What the view reads from the root: data only, as Block view inputs carry no callbacks. */
+export type TracesViewInputs = Readonly<{
+	context: PageContext
+	/** The shared signal presence read (`useSignalPresence`): none while loading or unreadable. */
+	maybePresence: Option.Option<PresenceResult>
+	/** The server's last ingest, for `useNewDataSince`'s "New data" pill. */
+	lastIngestAtMs: Option.Option<number>
+}>
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+/** `useNewDataSince(sinceMs)`: telemetry arrived after the list loaded. */
+const hasNewDataSince = (inputs: TracesViewInputs, sinceMs: number): boolean =>
+	sinceMs > 0 && Option.exists(inputs.lastIngestAtMs, (last) => last > sinceMs)
+
+const GUIDE_ID = "traces-empty"
+
+/** The connect guide's copy buttons are this page's own Blocks. */
+const embedGuideCopy =
+	(h: TracesViewBuilder, model: Model) =>
+	(slot: "endpoint" | "env", viewInputs: CopyButton.CopyButtonViewInputs): Html =>
+		slot === "endpoint"
+			? h.block(EndpointCopyBinding.embedView({ slotId: `${GUIDE_ID}-endpoint`, model: model.endpointCopy, viewInputs }))
+			: h.block(EnvCopyBinding.embedView({ slotId: `${GUIDE_ID}-env`, model: model.envCopy, viewInputs }))
+
+export const view = TracesComposition.makeView.withInputs<TracesViewInputs>((model, inputs, h) => {
 	const { context } = inputs
 	const query = queryOf(context.location)
 	const filters = filtersOf(query)
@@ -53,9 +75,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearFilters: Message.ClickedClearFilters(),
 				range,
 				onWidenRange: Message.ClickedWidenRange(),
-				maybePresence: inputs.presenceOf("traces"),
-				nowMs: inputs.presenceNowMs,
-				guide: { id: "traces-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				maybePresence: presenceOf(inputs.maybePresence, "traces"),
+				nowMs: Option.match(inputs.maybePresence, { onNone: () => 0, onSome: (result) => result.nowMs }),
+				guide: { id: GUIDE_ID, endpoint: context.env.otlpEndpoint, embedCopy: embedGuideCopy(h, model) },
 			})
 		return h.div(
 			[h.Class(cn(model.traces.isPlaceholder && "opacity-60 transition-opacity"))],
@@ -86,7 +108,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				rowCount: rows.length,
 				hasNextPage,
 				range,
-				hasNewData: inputs.hasNewDataSince(model.tracesUpdatedAtMs),
+				hasNewData: hasNewDataSince(inputs, model.tracesUpdatedAtMs),
 			}),
 			activeFilterCount: count,
 		},

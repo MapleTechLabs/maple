@@ -1,13 +1,11 @@
-import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
-import { AsyncData, type Command } from "foldkit"
+import { AsyncData } from "foldkit"
 import { keyOf, request } from "../../data/slot"
 import { type PageContext, rangeOf } from "../contract"
 import { queryOf } from "../../route"
-import { FetchFacets, FetchTraces } from "./command"
+import { FetchFacets, FetchTraces, type TracesCommand } from "./command"
 import { filtersOf } from "./filters"
-import type { Message } from "./message"
 import type { Model } from "./model"
 
 /** The window the list, facets and refresh share: the range resolved at the anchor. */
@@ -24,7 +22,7 @@ export const fetchAfterCache = (
 	context: PageContext,
 	which: "traces" | "facets",
 	isFresh: boolean,
-): ReadonlyArray<Command.Command<Message, never, Resources>> =>
+): ReadonlyArray<TracesCommand> =>
 	isFresh
 		? []
 		: Option.match(boundsOf(model, context), {
@@ -44,7 +42,7 @@ export const load = (
 	model: Model,
 	context: PageContext,
 	force = false,
-): Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }> =>
+): Readonly<{ model: Model; commands?: ReadonlyArray<TracesCommand> }> =>
 	Option.match(boundsOf(model, context), {
 		onNone: () => ({ model }),
 		onSome: (bounds) => {

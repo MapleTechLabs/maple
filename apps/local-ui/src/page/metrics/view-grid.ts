@@ -8,21 +8,17 @@ import { METRIC_TYPE_COLORS, metricTypeBadge } from "@maple/web/page/metrics/sha
 import { badge } from "@maple/web/ui/display"
 import { truncatedText } from "@maple/web/ui/truncated-text"
 import { serviceDot } from "@maple/web/ui/values"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { hrefFor } from "../../route"
 import type { MetricEntry } from "./catalog"
 import { CARD_ROW_HEIGHT, columnsFor, type GridViewport, previewValues, sparklineValues, visibleRows } from "./derive"
 import type { SparklinePoint } from "./fetch"
 import { MeasureGrid } from "./command"
-import { Message } from "./message"
+import { type MetricsViewBuilder, SparklineBinding } from "./composition"
 
 // The Metrics page's grid of metric preview cards.
 
-type H = HtmlBuilder<Message>
-
-/** Sparklines keep no interaction state; one constant Model satisfies the frame. */
-const CHART_MODEL = Chart.init()
-const toSparklineMessage = (message: Chart.Message) => Message.GotSparklineMessage({ message })
+type H = MetricsViewBuilder
 
 export type GridInputs = Readonly<{
 	entries: ReadonlyArray<MetricEntry>
@@ -33,29 +29,32 @@ export type GridInputs = Readonly<{
 	isDimmed: boolean
 	viewport: GridViewport
 	theme: ThemeColors
+	/** The page's one sparkline chart Model; the sparkline view reads none of it. */
+	chart: Chart.Model
 }>
 
-const sparkline = (h: H, theme: ThemeColors, entry: MetricEntry, values: ReadonlyArray<number>): Html => {
+const sparkline = (h: H, inputs: GridInputs, entry: MetricEntry, values: ReadonlyArray<number>): Html => {
 	const token = validateCssColor(METRIC_TYPE_COLORS.get(entry.metricType) ?? "var(--chart-1)") ?? "var(--chart-1)"
 	const slotId = `local-metric-spark-${entry.metricName} ${entry.metricType}`
 	return h.div(
 		[h.Class("h-full w-full")],
 		[
-			h.submodel({
-				slotId,
-				model: CHART_MODEL,
-				view: Sparkline.view,
-				toParentMessage: toSparklineMessage,
-				viewInputs: {
-					chartId: slotId,
-					values,
-					color: resolveColor(theme, token),
-					className: "h-full w-full",
-					revision: 0,
-					curve: "monotone",
-					fillOpacity: [0.35, 0],
-				},
-			}),
+			h.block(
+				SparklineBinding.embedView({
+					slotId,
+					model: inputs.chart,
+					view: Sparkline.view,
+					viewInputs: {
+						chartId: slotId,
+						values,
+						color: resolveColor(inputs.theme, token),
+						className: "h-full w-full",
+						revision: 0,
+						curve: "monotone",
+						fillOpacity: [0.35, 0],
+					},
+				}),
+			),
 		],
 	)
 }
@@ -105,7 +104,7 @@ const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 				[h.AriaHidden(true), h.Class("h-12 w-full")],
 				[
 					values.length >= 2
-						? sparkline(h, inputs.theme, entry, sparklineValues(values))
+						? sparkline(h, inputs, entry, sparklineValues(values))
 						: h.div([h.Class("flex h-full items-center text-3xs text-muted-foreground")], [status]),
 				],
 			),

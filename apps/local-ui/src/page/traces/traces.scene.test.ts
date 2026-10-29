@@ -2,15 +2,15 @@ import { DateTime, Option } from "effect"
 import { click, expect as expectView, expectOutMessage, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
 import { outcomeOf, stopSuperseded } from "../../data/lanes"
 import { FetchFacets, FetchTraces } from "./command"
 import { lanes } from "./lanes"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 import { PAGE_SIZE } from "./fetch-traces"
-import { init, locationChanged, update } from "./update"
-import { view as pageView } from "./view"
+import type { TracesBlock } from "./block"
+import { init, update } from "./update"
+import { view as pageView, type TracesViewInputs } from "./view"
 
 const NOW = Date.parse("2026-10-01T12:00:30Z")
 
@@ -21,15 +21,15 @@ const context: PageContext = {
 	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
-const inputs: PageViewInputs = {
+const inputs: TracesViewInputs = {
 	context,
-	presenceOf: () => Option.some({ signal: "traces", status: "absent", lastSeenMs: null }),
-	presenceNowMs: NOW,
-	clockMs: 0,
-	hasNewDataSince: () => false,
+	maybePresence: Option.some({ rows: [{ signal: "traces", status: "absent", lastSeenMs: null }], nowMs: NOW }),
+	lastIngestAtMs: Option.none(),
 }
 const view = withViewInputs(pageView, inputs)()
-const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+/** Every Message the page's graph accepts: its own and its child Blocks' generated delivery. */
+type PageMessage = typeof TracesBlock.Message.Type
+const pageUpdate = (model: Model, message: PageMessage) => update(model, message, context)
 
 const row = (traceId: string): TraceRow => ({
 	traceId,
@@ -55,7 +55,7 @@ const loaded = (rows: ReadonlyArray<TraceRow>) => {
 
 describe("local traces list", () => {
 	test("entry reads the clock, then asks for the list and the facets", () => {
-		expect(init(context).commands.map(({ name }) => name)).toContain("ReadTracesClock")
+		expect((init(context).commands ?? []).map(({ name }) => name)).toContain("ReadTracesClock")
 		expect((anchored().commands ?? []).map(({ name }) => name)).toEqual(expect.arrayContaining([FetchTraces.name, FetchFacets.name]))
 	})
 
@@ -117,7 +117,7 @@ describe("local traces list", () => {
 
 	test("Load more on the previous filter's rows waits for the new filter's list", () => {
 		const filtered = { ...context, location: { path: "/traces", search: "errors=1" } }
-		const pending = locationChanged(fullList(), filtered).model
+		const pending = update(fullList(), Message.InformedOfLocationChange(), filtered).model
 		expect(pending.traces.isPlaceholder).toBe(true)
 		expect(names(update(pending, Message.ClickedLoadMore(), filtered).commands)).toEqual([])
 	})

@@ -4,10 +4,12 @@ import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import { PageOutMessage } from "../contract"
 import type { ErrorTypeRow } from "./fetch"
+import { ErrorsBlock } from "./block"
+import { FetchByType, FetchFacets, FetchSummary, FetchTraces, ReadClock } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
-import { view as pageView } from "./view"
+import { type ErrorsViewInputs, view as pageView } from "./view"
 
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-01T12:00:00Z"))
 const env = { apiBase: "", port: "4318", otlpEndpoint: "http://localhost:4318", isHosted: false }
@@ -19,8 +21,10 @@ const contextAt = (search: string): PageContext => ({
 	canGoBack: false,
 })
 const context = contextAt("")
-const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const inputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, clockMs: 0, hasNewDataSince: () => false }
+/** Every Message the page's graph accepts: its own and its children's generated delivery. */
+type PageMessage = typeof ErrorsBlock.Message.Type
+const pageUpdate = (model: Model, message: PageMessage) => update(model, message, context)
+const inputs: ErrorsViewInputs = { context, clockMs: 0, lastIngestAtMs: Option.none(), maybePresence: Option.none() }
 const view = withViewInputs(pageView, inputs)()
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
@@ -44,10 +48,10 @@ const loaded = (rows: ReadonlyArray<ErrorTypeRow>): Model => {
 
 describe("local errors", () => {
 	test("entry reads the clock, then asks for the summary, the types and the facets, and the presence", () => {
-		expect(names(init(context).commands)).toContain("ReadErrorsClock")
+		expect(names(init(context).commands)).toContain(ReadClock.name)
 		const step = entered()
 		expect(names(step.commands)).toEqual(
-			expect.arrayContaining(["FetchLocalErrorsSummary", "FetchLocalErrorsByType", "FetchLocalErrorsFacets"]),
+			expect.arrayContaining([FetchSummary.name, FetchByType.name, FetchFacets.name]),
 		)
 		expect(step.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 	})
@@ -69,7 +73,7 @@ describe("local errors", () => {
 	test("a card opens to its traces, asked for once", () => {
 		const model = loaded([row("fp1", "ConnectionTimeout")])
 		const opened = pageUpdate(model, Message.ClickedErrorType({ fingerprintHash: "fp1" }))
-		expect(names(opened.commands)).toEqual(["FetchLocalErrorTraces"])
+		expect(names(opened.commands)).toEqual([FetchTraces.name])
 		const key = opened.model.cards.fp1?.traces.key ?? ""
 		const answered = pageUpdate(opened.model, Message.SucceededFetchTraces({ fingerprintHash: "fp1", key, traces: [], fetchedAtMs: 0 }))
 		scene(

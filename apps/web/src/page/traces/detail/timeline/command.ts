@@ -1,32 +1,38 @@
 import { SIDEBAR_WIDTH_STORAGE_KEY } from "@maple/ui/components/traces/trace-timeline-types"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Queue, Schema, Stream } from "effect"
-import { Command, Mount } from "foldkit"
+import { TimelineDefinition } from "./definition"
 import { ROW_PITCH } from "./layout"
 import { Message } from "./message"
 
 /** `readSidebarWidth`'s storage read; clamping happens in `update`. */
-export const ReadSidebarWidth = Command.define("ReadTraceTimelineSidebarWidth", {
+export const ReadSidebarWidth = TimelineDefinition.makeCommand("ReadTraceTimelineSidebarWidth", {
 	messages: [Message.CompletedReadSidebarWidth],
-	execute: Effect.sync(() =>
-		Message.CompletedReadSidebarWidth({
-			width: Option.getOrNull(
-				Option.filter(
-					Option.map(readLocalStorage(SIDEBAR_WIDTH_STORAGE_KEY), Number),
-					Number.isFinite,
-				),
-			),
-		}),
-	),
+	handler: function* () {
+		return () =>
+			Effect.sync(() =>
+				Message.CompletedReadSidebarWidth({
+					width: Option.getOrNull(
+						Option.filter(
+							Option.map(readLocalStorage(SIDEBAR_WIDTH_STORAGE_KEY), Number),
+							Number.isFinite,
+						),
+					),
+				}),
+			)
+	},
 })
 
 /** `/`: focus the timeline's search box (`searchInputRef.current?.focus()`). */
-export const FocusSearch = Command.define("FocusTraceTimelineSearch", {
+export const FocusSearch = TimelineDefinition.makeCommand("FocusTraceTimelineSearch", {
 	messages: [Message.CompletedFocusSearch],
-	execute: Effect.sync(() => {
-		document.querySelector<HTMLInputElement>('input[placeholder="Search spans…"]')?.focus()
-		return Message.CompletedFocusSearch()
-	}),
+	handler: function* () {
+		return () =>
+			Effect.sync(() => {
+				document.querySelector<HTMLInputElement>('input[placeholder="Search spans…"]')?.focus()
+				return Message.CompletedFocusSearch()
+			})
+	},
 })
 
 const SCROLL_EVENT = "maple:trace-timeline-scroll"
@@ -35,17 +41,19 @@ const SCROLL_EVENT = "maple:trace-timeline-scroll"
  * `rowVirtualizer.scrollToIndex(index, { align: "auto" })`, delivered to the body's Mount after the
  * next paint, once the rows rendered.
  */
-export const ScrollToRow = Command.define("ScrollTraceTimelineToRow", {
+export const ScrollToRow = TimelineDefinition.makeCommand("ScrollTraceTimelineToRow", {
 	args: { index: Schema.Number },
 	messages: [Message.CompletedScrollRequest],
-	execute: ({ index }) =>
-		Effect.callback<typeof Message.CompletedScrollRequest.Type>((resume) => {
-			const handle = requestAnimationFrame(() => {
-				window.dispatchEvent(new CustomEvent(SCROLL_EVENT, { detail: index }))
-				resume(Effect.succeed(Message.CompletedScrollRequest()))
+	handler: function* () {
+		return ({ index }) =>
+			Effect.callback<typeof Message.CompletedScrollRequest.Type>((resume) => {
+				const handle = requestAnimationFrame(() => {
+					window.dispatchEvent(new CustomEvent(SCROLL_EVENT, { detail: index }))
+					resume(Effect.succeed(Message.CompletedScrollRequest()))
+				})
+				return Effect.sync(() => cancelAnimationFrame(handle))
 			})
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
+	},
 })
 
 /** virtual-core's `align: "auto"` offset for a fixed-pitch row, clamped to the scroll range. */
@@ -96,41 +104,47 @@ const measure = (scroller: HTMLElement): Stream.Stream<MeasureMessage> =>
 	)
 
 /** The body scroller: `useContainerSize` plus the scroll requests above. */
-export const MeasureTimelineBody = Mount.defineStream("MeasureTraceTimelineBody", {
+export const MeasureTimelineBody = TimelineDefinition.makeMountStream("MeasureTraceTimelineBody", {
 	messages: [Message.MeasuredScroller],
-	execute: ({ element, viewStateChanges }) =>
-		viewStateChanges.pipe(
-			Stream.switchMap((viewState) =>
-				viewState === "Live" && element instanceof HTMLElement ? measure(element) : Stream.never,
-			),
-		),
+	handler: function* () {
+		return ({ element, viewStateChanges }) =>
+			viewStateChanges.pipe(
+				Stream.switchMap((viewState) =>
+					viewState === "Live" && element instanceof HTMLElement ? measure(element) : Stream.never,
+				),
+			)
+	},
 })
+
+const altToggles = (element: Element): Stream.Stream<typeof Message.AltClickedToggleCollapse.Type> =>
+	Stream.callback<typeof Message.AltClickedToggleCollapse.Type>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const onClick = (event: Event) => {
+					if (!(event instanceof MouseEvent) || !event.altKey) return
+					const toggle =
+						event.target instanceof Element
+							? event.target.closest("[data-toggle-span]")
+							: null
+					const spanId = toggle?.getAttribute("data-toggle-span")
+					if (spanId === null || spanId === undefined) return
+					event.stopPropagation()
+					Queue.offerUnsafe(queue, Message.AltClickedToggleCollapse({ spanId }))
+				}
+				element.addEventListener("click", onClick, true)
+				return onClick
+			}),
+			(onClick) => Effect.sync(() => element.removeEventListener("click", onClick, true)),
+		).pipe(Effect.flatMap(() => Effect.never)),
+	)
 
 /**
  * The row toggle's ⌥-click (`event.altKey`): Foldkit's click carries no modifiers, so the rows
  * listen first (capture) and, with ⌥ held, report the subtree toggle instead of the plain one.
  */
-export const MountAltToggle = Mount.defineStream("MountTimelineAltToggle", {
+export const MountAltToggle = TimelineDefinition.makeMountStream("MountTimelineAltToggle", {
 	messages: [Message.AltClickedToggleCollapse],
-	execute: ({ element }) =>
-		Stream.callback<typeof Message.AltClickedToggleCollapse.Type>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					const onClick = (event: Event) => {
-						if (!(event instanceof MouseEvent) || !event.altKey) return
-						const toggle =
-							event.target instanceof Element
-								? event.target.closest("[data-toggle-span]")
-								: null
-						const spanId = toggle?.getAttribute("data-toggle-span")
-						if (spanId === null || spanId === undefined) return
-						event.stopPropagation()
-						Queue.offerUnsafe(queue, Message.AltClickedToggleCollapse({ spanId }))
-					}
-					element.addEventListener("click", onClick, true)
-					return onClick
-				}),
-				(onClick) => Effect.sync(() => element.removeEventListener("click", onClick, true)),
-			).pipe(Effect.flatMap(() => Effect.never)),
-		),
+	handler: function* () {
+		return ({ element }) => altToggles(element)
+	},
 })

@@ -1,7 +1,7 @@
 import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
-import { Copies } from "../kit/copies"
+import * as CopyButton from "@maple/web/ui/copy-button"
 import { ErrorsFacets, ErrorsSummary, ErrorTrace, ErrorTypeRow } from "./fetch"
 
 /** One `ErrorTypeCard`'s own state: open or not, and its traces query (kept while closed). */
@@ -25,6 +25,8 @@ export const Model = Schema.TaggedStruct("ErrorsPage", {
 	cards: Schema.Record(Schema.String, Card),
 	sections: FilterSections.Model,
 	isRefreshing: Schema.Boolean,
-	copies: Copies,
+	/** The connect guide's copy buttons: the OTLP endpoint and the exporter environment. */
+	guideEndpointCopy: CopyButton.Model,
+	guideEnvCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type

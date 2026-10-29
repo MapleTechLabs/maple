@@ -1,11 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import { defineView } from "foldkit/submodel"
+import { createKeyedLazy, type Html } from "foldkit/html"
 import { chipCard } from "./chip-card"
 import { type Density, logRow, type RowEvents } from "./log-row"
 import type { LogRowView } from "./log-row-view"
-import type { Model } from "./logs-stream"
+import { type LogsStreamViewBuilder, LogsStreamComposition, PanelsBinding } from "./logs-stream-composition"
 import { Message } from "./logs-stream-message"
 import { eyebrow } from "../eyebrow"
 import type * as AttributesPanel from "../attributes/attributes-panel"
@@ -68,12 +67,11 @@ const ROW_EVENTS: RowEvents<Message> = {
 	pressedChipEscape: (index, key) => Message.PressedChipEscape({ index, key }),
 	clickedDetails: (index) => Message.ClickedDetails({ index }),
 	clickedCopyJson: (index) => Message.ClickedCopyJson({ index }),
-	gotPanelMessage: (index, message) => Message.GotPanelMessage({ index, message }),
 }
 
 /** Sticky column labels. */
 const columnHeader = (
-	h: HtmlBuilder<Message>,
+	h: LogsStreamViewBuilder,
 	pinnedColumns: ReadonlyArray<string>,
 	timeZone: string,
 ): Html =>
@@ -114,7 +112,7 @@ const columnHeader = (
 	)
 
 const rowView = (
-	h: HtmlBuilder<Message>,
+	h: LogsStreamViewBuilder,
 	row: LogRowView,
 	index: number,
 	start: number,
@@ -128,17 +126,37 @@ const rowView = (
 	canFilter: boolean,
 	isSelected: boolean,
 ): Html =>
-	logRow(h, ROW_EVENTS, row, index, start, {
-		isFocused,
-		isExpanded,
-		isSelected,
-		wrap,
-		density,
-		highlight,
-		panel,
-		jsonStatus,
-		canFilter,
-	})
+	logRow(
+		h,
+		ROW_EVENTS,
+		row,
+		index,
+		start,
+		{
+			isFocused,
+			isExpanded,
+			isSelected,
+			wrap,
+			density,
+			highlight,
+			panel,
+			jsonStatus,
+			canFilter,
+		},
+		(panelModel) =>
+			h.block(
+				PanelsBinding.embedView({
+					key: String(index),
+					slotId: `${panelModel.id}-slot`,
+					model: panelModel,
+					viewInputs: {
+						logAttributes: row.log.logAttributes,
+						resourceAttributes: row.log.resourceAttributes,
+						canFilter,
+					},
+				}),
+			),
+	)
 
 // Rows are keyed by index; the slot is `index % 256` so the cache stays bounded
 // (a window never holds 256 rows) while each slot still renders at one position.
@@ -146,7 +164,7 @@ const lazyRow = createKeyedLazy()
 const ROW_SLOTS = 256
 
 /** The logs table for a non-empty stream. */
-export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const view = LogsStreamComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const focused = Option.getOrElse(model.focusedIndex, () => -1)
 	const rows = model.window.flatMap(({ index, start }) => {
 		const row = model.rows[index]

@@ -5,8 +5,8 @@ import {
 	dropdownMenuSubContentStyles,
 } from "@maple/ui/styles/ui/dropdown-menu"
 import { Array, Option } from "effect"
-import { Submodel } from "foldkit"
-import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
+import { Block } from "foldkit"
+import { type ChildAttribute, childAttributes, type Html } from "foldkit/html"
 import {
 	menuCheckableItem,
 	menuGroup,
@@ -18,19 +18,24 @@ import {
 	menuSubTrigger,
 } from "./dropdown-menu"
 import {
+	EffectsLayer,
+	init,
 	type ItemRef,
+	ItemTooltipBinding,
 	itemId,
 	itemTooltipTriggerId,
+	MenuComposition,
+	type MenuViewBuilder,
 	Message,
-	type Model,
+	Model,
 	MountMenu,
 	MountSubmenu,
 	subItemId,
 	subPopupId,
 	subPortalId,
+	update,
 } from "./menu"
 import { icon, type IconName } from "./icon"
-import * as Tooltip from "./tooltip"
 import { popupId, portalId, triggerId } from "./overlay/popup-state"
 import type { Align, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
@@ -156,7 +161,7 @@ export type ViewInputs = Readonly<{
 	) => Html
 }>
 
-type H = HtmlBuilder<Message>
+type H = MenuViewBuilder
 
 const countOf = (entry: MenuEntry): number => itemRefs([entry]).length
 
@@ -200,18 +205,22 @@ const withItemTooltip = (
 ): Html => {
 	const id = itemTooltipTriggerId(model.id, index)
 	const side = tooltip.side ?? "left"
-	return h.submodel({
-		slotId: `${model.id}-item-tooltip-${index}`,
-		model: model.itemTooltip,
-		view: Tooltip.view,
-		toParentMessage: (message) => Message.GotItemTooltipMessage({ message, side }),
-		viewInputs: {
-			triggerIds: [id],
-			toContent: () => tooltip.content,
-			toView: ({ trigger, portal }) =>
-				h.div([...trigger(id)], [item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])]),
-		},
-	})
+	return h.block(
+		ItemTooltipBinding.embedView({
+			slotId: `${model.id}-item-tooltip-${index}`,
+			model: model.itemTooltip,
+			viewInputs: {
+				triggerIds: [id],
+				side,
+				toContent: () => tooltip.content,
+				toView: ({ trigger, portal }) =>
+					h.div(
+						[...trigger(id)],
+						[item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])],
+					),
+			},
+		}),
+	)
 }
 
 const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html => {
@@ -318,8 +327,13 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 						: [h.div([h.Class(entry.itemsClassName)], rows)]),
 			],
 		})
-	const subClassName = Option.getOrUndefined(Option.flatMapNullishOr(maybeEntry, (entry) => entry.className))
-	const separatorAfter = Option.match(maybeEntry, { onNone: () => undefined, onSome: (entry) => entry.separatorAfter })
+	const subClassName = Option.getOrUndefined(
+		Option.flatMapNullishOr(maybeEntry, (entry) => entry.className),
+	)
+	const separatorAfter = Option.match(maybeEntry, {
+		onNone: () => undefined,
+		onSome: (entry) => entry.separatorAfter,
+	})
 	const placement = [
 		h.DataAttribute("align", submenu.align),
 		h.DataAttribute("open", ""),
@@ -336,10 +350,10 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 			[
 				h.div(
 					[
-					h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
-					...placement,
-					h.Role("presentation"),
-				],
+						h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
+						...placement,
+						h.Role("presentation"),
+					],
 					[
 						h.div(
 							[
@@ -356,7 +370,9 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 								keyHandler(h, SUBMENU_KEYS, (key) =>
 									Message.PressedSubmenuKey({
 										key,
-										values: items.map((item) => (item.isDisabled === true ? null : item.value)),
+										values: items.map((item) =>
+											item.isDisabled === true ? null : item.value,
+										),
 									}),
 								),
 							],
@@ -444,7 +460,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 	)
 }
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const view = MenuComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const isVisible = isMounted(model.isOpen, model.animation)
 	const count = itemRefs(inputs.entries).length
 	const trigger = childAttributes([
@@ -482,3 +498,16 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			: [button]
 	return inputs.toView({ trigger, withTrigger })
 })
+
+// BLOCK
+
+const prepare = () =>
+	MenuComposition.prepareBlock({
+		init,
+		update,
+		view,
+		operations: { requestClose: Message.RequestedClose },
+		EffectsLayer,
+	})
+export const MenuBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

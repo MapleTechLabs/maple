@@ -1,20 +1,28 @@
 import { Option } from "effect"
-import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html } from "foldkit/html"
 import { button } from "../../ui/button"
-import * as Resizable from "../../ui/resizable"
 import type * as Canvas from "../xyflow/canvas"
 import { edgesLayer, flowCanvas, nodesLayer } from "../xyflow/view"
 import { miniMapNodes, miniMapRectsLayer, particleLayer, renderEdges, renderNodes } from "./layers"
 import { serviceMapLegend } from "./legend"
 import { serviceMapLoading } from "./loading"
 import { serviceMapBackground, serviceMapControls, serviceMapMiniMap } from "./panels"
-import { Message, type Model } from "./service-map"
-import { serviceMapToolbar } from "./toolbar"
+import {
+	Message,
+	type Model,
+	ServiceMapComposition,
+	type ServiceMapViewBuilder,
+	SplitBinding,
+} from "./service-map"
+import { serviceMapToolbar } from "./toolbar-view"
 
 const nodesSlot = createLazy()
 const edgesSlot = createLazy()
 const rectsSlot = createLazy()
 const particlesSlot = createLazy()
+
+/** The map's own Messages need no wrapping inside its boundary; one identity keeps layers lazy. */
+const toSelf = (message: Message): Message => message
 
 export type MapViewOptions = Readonly<{
 	/** The side panel for the selected node (`renderDetailPanel`). */
@@ -27,7 +35,7 @@ export type MapViewOptions = Readonly<{
 }>
 
 /** Declutter hid every node: offer a reset instead of the "no instrumentation" empty state. */
-const hiddenState = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Message) => M): Html =>
+const hiddenState = (h: ServiceMapViewBuilder, model: Model): Html =>
 	h.div(
 		[h.Class("flex h-full items-center justify-center")],
 		[
@@ -50,7 +58,7 @@ const hiddenState = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Me
 						{
 							variant: "outline",
 							size: "sm",
-							attributes: [h.OnClick(toMessage(Message.ClickedResetFilters()))],
+							attributes: [h.OnClick(Message.ClickedResetFilters())],
 						},
 						["Reset filters"],
 					),
@@ -59,8 +67,9 @@ const hiddenState = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Me
 		],
 	)
 
-const canvasArea = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Message) => M): Html => {
-	const toCanvas = (message: Canvas.Message) => toMessage(Message.GotCanvasMessage({ message }))
+const toCanvas = (message: Canvas.Message): Message => Message.ReceivedCanvasMessage({ message })
+
+const canvasArea = (h: ServiceMapViewBuilder, model: Model): Html => {
 	const { graph, selectedId, colorMode, positions } = model
 	const measured = model.canvas.measured
 	const draggingId = Option.match(model.drag, { onNone: () => null, onSome: (drag) => drag.id })
@@ -76,14 +85,14 @@ const canvasArea = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Mes
 				measured,
 				selectedId,
 				colorMode,
-				toMessage,
+				toSelf,
 				draggingId,
 			]) ?? nodesLayer(h, []),
-		onPaneClick: toMessage(Message.ClickedPane()),
+		onPaneClick: Message.ClickedPane(),
 		panels: [
 			...(model.reducedMotion
 				? []
-				: [particlesSlot(particleLayer, [h, graph, positions, measured, toMessage]) ?? h.canvas([])]),
+				: [particlesSlot(particleLayer, [h, graph, positions, measured, toSelf]) ?? h.canvas([])]),
 			serviceMapControls(h, model.canvas, toCanvas),
 			serviceMapMiniMap(
 				h,
@@ -98,12 +107,7 @@ const canvasArea = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Mes
 }
 
 /** The map column: toolbar, canvas and legend. */
-const mapColumn = <M>(
-	h: HtmlBuilder<M>,
-	model: Model,
-	toMessage: (message: Message) => M,
-	options: MapViewOptions,
-): Html => {
+const mapColumn = (h: ServiceMapViewBuilder, model: Model, options: MapViewOptions): Html => {
 	const is3d = options.viewMode === "3d"
 	return h.div(
 		[h.Class("flex flex-col h-full")],
@@ -117,43 +121,23 @@ const mapColumn = <M>(
 				hiddenNodeCount: model.graph.declutter.hiddenNodeCount,
 				hiddenEdgeCount: model.graph.declutter.hiddenEdgeCount,
 				showPresentationControls: !is3d,
-				toCombobox: (message) => toMessage(Message.GotFocusComboboxMessage({ message })),
-				toTraffic: (message) => toMessage(Message.GotTrafficSelectMessage({ message })),
-				toColor: (message) => toMessage(Message.GotColorSelectMessage({ message })),
-				toDepth: (message) => toMessage(Message.GotDepthSelectMessage({ message })),
-				toTooltip: (message) => toMessage(Message.GotTooltipMessage({ message })),
-				onClearFocus: toMessage(Message.ClickedClearFocus()),
-				onToggleHideRest: toMessage(Message.ClickedToggleHideRest()),
-				onShowAllTraffic: toMessage(Message.ClickedShowAllTraffic()),
-				onResort: toMessage(Message.ClickedResort()),
 			}),
 			h.div(
 				[h.Class("flex-1 min-h-0 relative")],
-				[is3d ? (options.render3D?.() ?? h.div([], [])) : canvasArea(h, model, toMessage)],
+				[is3d ? (options.render3D?.() ?? h.div([], [])) : canvasArea(h, model)],
 			),
-			...(is3d
-				? []
-				: [
-						serviceMapLegend(h, model.colorMode, model.source.services, model.legend, (message) =>
-							toMessage(Message.GotLegendMessage({ message })),
-						),
-					]),
+			...(is3d ? [] : [serviceMapLegend(h, model.colorMode, model.source.services, model.legend)]),
 		],
 	)
 }
 
 /**
  * The map: empty or all-hidden state, the loading skeleton until the first layout lands, then
- * the split of map column and the selected node's panel.
+ * the split of map column and the selected node's panel. Its inputs' callbacks run in the host.
  */
-export const view = <M>(
-	h: HtmlBuilder<M>,
-	model: Model,
-	toMessage: (message: Message) => M,
-	options: MapViewOptions = {},
-): Html => {
+export const view = ServiceMapComposition.makeView.withInputs<MapViewOptions>((model, options, h) => {
 	if (model.graph.nodes.length === 0) {
-		if (model.source.rawNodes.length > 0) return hiddenState(h, model, toMessage)
+		if (model.source.rawNodes.length > 0) return hiddenState(h, model)
 		return options.emptyState ?? h.div([], [])
 	}
 	if (!model.revealed && options.viewMode !== "3d") return serviceMapLoading(h)
@@ -163,21 +147,20 @@ export const view = <M>(
 	return h.div(
 		[h.Class("flex flex-col h-full"), h.DataAttribute("elk-status", model.layout.status)],
 		[
-			h.submodel({
-				slotId: "service-map-split",
-				model: model.split,
-				view: Resizable.view,
-				toParentMessage: (message: Resizable.Message) =>
-					toMessage(Message.GotSplitMessage({ message })),
-				viewInputs: {
-					className: "flex-1 min-h-0",
-					withHandle: [true],
-					toPanels: () => [
-						[mapColumn(h, model, toMessage, options)],
-						...Option.toArray(Option.map(detail, (panel) => [panel])),
-					],
-				},
-			}),
+			h.block(
+				SplitBinding.embedView({
+					slotId: "service-map-split",
+					model: model.split,
+					viewInputs: {
+						className: "flex-1 min-h-0",
+						withHandle: [true],
+						toPanels: () => [
+							[mapColumn(h, model, options)],
+							...Option.toArray(Option.map(detail, (panel) => [panel])),
+						],
+					},
+				}),
+			),
 		],
 	)
-}
+})

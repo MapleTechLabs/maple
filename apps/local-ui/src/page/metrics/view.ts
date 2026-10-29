@@ -2,19 +2,20 @@ import { isChartRuntimeReady } from "@maple/web/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/web/charts/theme-colors"
 import { METRIC_TYPE_COLORS } from "@maple/web/page/metrics/shared"
 import { Option } from "effect"
-import { AsyncData, Submodel } from "foldkit"
+import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
+import { MetricsComposition } from "./composition"
+import { type PresenceResult, presenceOf } from "../../data/signal-presence"
+import type { PageContext } from "../contract"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
 import { errorState, listSkeleton } from "../kit/view-states"
 import { metricsFilters } from "./load"
 import { Message } from "./message"
-import type { Model } from "./model"
 import { visibleEntries } from "./update"
 import { metricGrid } from "./view-grid"
 import { sidebar } from "./view-sidebar"
@@ -24,10 +25,20 @@ import { sidebar } from "./view-sidebar"
 /** The colours the sparklines resolve: the type palette and the fallback. */
 const THEME_TOKENS = [...METRIC_TYPE_COLORS.values(), "var(--chart-1)"]
 
-const toCopy = (id: string, message: Parameters<typeof Message.GotCopyMessage>[0]["message"]) =>
-	Message.GotCopyMessage({ id, message })
+/** What the view reads from the root: data only, as Block view inputs carry no callbacks. */
+export type MetricsViewInputs = Readonly<{
+	context: PageContext
+	/** `useSignalPresence`: the shared read, none while unknown (loading or unreadable). */
+	presence: Option.Option<PresenceResult>
+	/** The server's last ingest, for `useNewDataSince`'s "New data" pill. */
+	lastIngestAtMs: Option.Option<number>
+}>
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+/** `useNewDataSince(sinceMs)`: telemetry arrived after the list loaded. */
+const hasNewDataSince = (inputs: MetricsViewInputs, sinceMs: number): boolean =>
+	sinceMs > 0 && Option.exists(inputs.lastIngestAtMs, (last) => last > sinceMs)
+
+export const view = MetricsComposition.makeView.withInputs<MetricsViewInputs>((model, inputs, h) => {
 	const { context } = inputs
 	const { service, type, search } = metricsFilters(context)
 	const range = rangeOf(context)
@@ -49,9 +60,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearFilters: Message.ClickedClearFilters(),
 				range,
 				onWidenRange: Message.ClickedWidenRange(),
-				maybePresence: inputs.presenceOf("metrics"),
-				nowMs: inputs.presenceNowMs,
-				guide: { id: "metrics-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				maybePresence: presenceOf(inputs.presence, "metrics"),
+				nowMs: Option.match(inputs.presence, { onNone: () => 0, onSome: (result) => result.nowMs }),
+				guide: {
+					id: "metrics-empty",
+					endpoint: context.env.otlpEndpoint,
+					copies: model.copies,
+					toCopyMessage: (message) => Message.ReceivedCopyMessage({ message }),
+				},
 			})
 		const theme = model.themeColors
 		if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return listSkeleton(h, { variant: "grid", rows: 9 })
@@ -67,6 +83,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			isDimmed: model.list.isPlaceholder,
 			viewport: model.grid,
 			theme,
+			chart: model.sparkline,
 		})
 	}
 	return h.div(
@@ -93,7 +110,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								toolbarStat(h, { value: totalDataPoints, label: "datapoints" }),
 								refreshButton(h, {
 									isSpinning: model.isRefreshing,
-									hasNewData: inputs.hasNewDataSince(model.listUpdatedAtMs),
+									hasNewData: hasNewDataSince(inputs, model.listUpdatedAtMs),
 									onRefresh: Message.ClickedRefresh(),
 								}),
 								timeRangeSelect(h, range, (next) => Message.ChangedRange({ range: next })),

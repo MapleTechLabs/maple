@@ -5,15 +5,16 @@ import {
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { Duration, Effect, Option, Schema, type Stream } from "effect"
-import { Command, Dom, type Update } from "foldkit"
+import { Duration, Effect, Layer, Option, Schema } from "effect"
+import { Block, type Command, Dom, Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import * as Combobox from "../../ui/combobox"
+import { ComboboxBlock } from "../../ui/combobox-view"
 import * as Popover from "../../ui/popover"
 import * as Resizable from "../../ui/resizable"
-import * as Select from "../../ui/select"
+import { SelectBlock } from "../../ui/select-view"
 import * as Tooltip from "../../ui/tooltip"
+import { AttachFlowCanvas } from "../xyflow/attach"
 import * as Canvas from "../xyflow/canvas"
 import { Point } from "../xyflow/geometry"
 import {
@@ -35,13 +36,15 @@ import {
 	upsert,
 } from "./state"
 import { namespaceBoxRects } from "./namespace-group"
+import { AnimateParticles } from "./particles"
 import * as Toolbar from "./toolbar"
 
 /**
- * `ServiceMapFlowCanvas` (packages/ui `service-map/service-map-canvas.tsx`) as a Submodel:
- * declutter (traffic, focus, collapsed namespaces), ELK layout in a worker with the synchronous
- * layout as a 2 s fallback, drags and camera per layout signature, selection with the detail
- * split, toolbar and legend. The host reads `focus`, the prefs and `snapshots` back to persist them.
+ * `ServiceMapFlowCanvas` (packages/ui `service-map/service-map-canvas.tsx`) as a Block's
+ * Definition and Composition: declutter (traffic, focus, collapsed namespaces), ELK layout in a
+ * worker with the synchronous layout as a 2 s fallback, drags and camera per layout signature,
+ * selection with the detail split, toolbar and legend. `ChangedMapState` tells the host when
+ * `focus`, the prefs, `snapshots` or the selection moved, so it can persist them.
  */
 
 export { ColorMode, Focus, Positions, Snapshot } from "./state"
@@ -92,13 +95,14 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
-	GotCanvasMessage: { message: Canvas.Message },
+	/** The xyflow canvas helper's Messages (a plain helper, not a Block). */
+	ReceivedCanvasMessage: { message: Canvas.Message },
 	SucceededElkLayout: { signature: Schema.String, positions: Positions },
 	FailedElkLayout: { signature: Schema.String },
 	ElapsedLayoutGrace: { signature: Schema.String },
 	ClickedNode: { nodeId: Schema.String },
 	/** The 3D scene's `onSelect`: a machine, label or belt picked, or `null` for empty paper. */
-	PickedNode: { nodeId: Schema.NullOr(Schema.String) },
+	InformedOfPick: { nodeId: Schema.NullOr(Schema.String) },
 	ClickedPane: {},
 	ClickedResort: {},
 	ChangedReducedMotion: { reduced: Schema.Boolean },
@@ -108,88 +112,172 @@ export const Message = defineMessageUnion({
 	ClickedToggleHideRest: {},
 	ClickedShowAllTraffic: {},
 	ClickedResetFilters: {},
-	ClickedCloseDetail: {},
-	ClickedFocusSelected: {},
+	/** The host's detail panel closed (its close button). */
+	RequestedCloseDetail: {},
+	/** The host's detail panel focused the selected node. */
+	RequestedFocusSelected: {},
 	ElapsedCameraWrite: { version: Schema.Number },
 	PaintedBridge: { signature: Schema.String },
-	GotFocusComboboxMessage: { message: Combobox.Message },
-	GotTrafficSelectMessage: { message: Select.Message },
-	GotColorSelectMessage: { message: Select.Message },
-	GotDepthSelectMessage: { message: Select.Message },
-	GotTooltipMessage: { message: Tooltip.Message },
-	GotLegendMessage: { message: Popover.Message },
-	GotSplitMessage: { message: Resizable.Message },
+	/** New rows from a refresh or an overlay landing. */
+	InformedOfSource: { source: SourceGraphSchema },
+	/** The URL's focus (the route owns it). */
+	InformedOfFocus: { focus: Schema.Option(Focus) },
 })
 export type Message = typeof Message.Type
 
-type Return = Update.Return<Model, Message>
+/**
+ * The host-visible state moved: prefs (`minTrafficPct`, `collapsedNamespaces`), drags and cameras
+ * (`snapshots`), `focus` or the selection. Emitted only when one of them changed.
+ */
+export const OutMessage = defineMessageUnion({
+	ChangedMapState: {
+		isPrefsChanged: Schema.Boolean,
+		isLayoutChanged: Schema.Boolean,
+		isFocusChanged: Schema.Boolean,
+		previousSelectedId: Schema.Option(Schema.String),
+		selectedId: Schema.Option(Schema.String),
+		minTrafficPct: Schema.Number,
+		collapsedNamespaces: Schema.Array(Schema.String),
+		snapshots: Schema.Array(Snapshot),
+		focus: Schema.Option(Focus),
+	},
+})
+export type OutMessage = typeof OutMessage.Type
+
+export const ServiceMapDefinition = Block.makeDefinition("ServiceMap", { Model, Message, OutMessage })
+
+const { makeStep, makeNoopStep } = ServiceMapDefinition
 
 /**
  * `useMediaQuery("(prefers-reduced-motion: reduce)")`, which gates the particle canvas. The model
- * starts reduced, so every host must subscribe to this or the edges never animate.
+ * starts reduced; the Block's own Subscription below keeps it current.
  */
-export const reducedMotionChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
+const reducedMotionChanges = Dom.streamFromMediaQuery({
 	query: "(prefers-reduced-motion: reduce)",
 	mapMatches: (reduced) => Message.ChangedReducedMotion({ reduced }),
 })
+
+export const subscriptions = ServiceMapDefinition.makeSubscriptions((entry) => ({
+	reducedMotion: entry("ServiceMapReducedMotion", {
+		messages: [Message.ChangedReducedMotion],
+		handler: function* () {
+			return () => reducedMotionChanges
+		},
+	}),
+}))
 
 /** Default `fitView()` of the map: padding 0.1 inside the canvas's zoom range. */
 export const MAP_FIT: Canvas.FitRequest = { padding: 0.1, minZoom: 0.05, maxZoom: 2 }
 
 /** ELK in its worker (`layoutServiceMapWithElk`); the module and elkjs load on first use. */
-export const RunElkLayout = Command.define("RunElkLayout", {
+export const RunElkLayout = ServiceMapDefinition.makeCommand("RunElkLayout", {
 	args: { signature: Schema.String, graph: EffectiveGraphSchema, previous: Schema.Option(Positions) },
 	messages: [Message.SucceededElkLayout, Message.FailedElkLayout],
-	execute: ({ signature, graph, previous }) =>
-		Effect.tryPromise(() =>
-			import("@maple/ui/components/service-map/service-map-elk").then((elk) =>
-				elk.layoutServiceMapWithElk(
-					[...graph.nodes],
-					[...graph.edges],
-					{ ...DEFAULT_LAYOUT_CONFIG },
-					Option.getOrUndefined(
-						Option.map(previous, (positions) => new Map(Object.entries(positions))),
+	handler: function* () {
+		return ({ signature, graph, previous }) =>
+			Effect.tryPromise(() =>
+				import("@maple/ui/components/service-map/service-map-elk").then((elk) =>
+					elk.layoutServiceMapWithElk(
+						[...graph.nodes],
+						[...graph.edges],
+						{ ...DEFAULT_LAYOUT_CONFIG },
+						Option.getOrUndefined(
+							Option.map(previous, (positions) => new Map(Object.entries(positions))),
+						),
 					),
 				),
-			),
-		).pipe(
-			Effect.map((result) =>
-				Message.SucceededElkLayout({ signature, positions: Object.fromEntries(result.positions) }),
-			),
-			Effect.orElseSucceed(() => Message.FailedElkLayout({ signature })),
-		),
+			).pipe(
+				Effect.map((result) =>
+					Message.SucceededElkLayout({
+						signature,
+						positions: Object.fromEntries(result.positions),
+					}),
+				),
+				Effect.orElseSucceed(() => Message.FailedElkLayout({ signature })),
+			)
+	},
 })
 
 /** The 2 s after which the synchronous layout is revealed if ELK has not answered. */
-export const WaitLayoutGrace = Command.define("WaitLayoutGrace", {
+export const WaitLayoutGrace = ServiceMapDefinition.makeCommand("WaitLayoutGrace", {
 	args: { signature: Schema.String },
 	messages: [Message.ElapsedLayoutGrace],
-	execute: ({ signature }) =>
-		Effect.sleep(Duration.seconds(2)).pipe(Effect.as(Message.ElapsedLayoutGrace({ signature }))),
+	handler: function* () {
+		return ({ signature }) =>
+			Effect.sleep(Duration.seconds(2)).pipe(Effect.as(Message.ElapsedLayoutGrace({ signature })))
+	},
 })
 
 /** Two frames: the bridge's patch, then the paint that shows it. */
-export const WaitBridgePaint = Command.define("WaitServiceMapBridgePaint", {
+export const WaitBridgePaint = ServiceMapDefinition.makeCommand("WaitServiceMapBridgePaint", {
 	args: { signature: Schema.String },
 	messages: [Message.PaintedBridge],
-	execute: ({ signature }) =>
-		Effect.callback<ReturnType<typeof Message.PaintedBridge>>((resume) => {
-			const handle = { id: 0 }
-			handle.id = requestAnimationFrame(() => {
-				handle.id = requestAnimationFrame(() =>
-					resume(Effect.succeed(Message.PaintedBridge({ signature }))),
-				)
+	handler: function* () {
+		return ({ signature }) =>
+			Effect.callback<ReturnType<typeof Message.PaintedBridge>>((resume) => {
+				const handle = { id: 0 }
+				handle.id = requestAnimationFrame(() => {
+					handle.id = requestAnimationFrame(() =>
+						resume(Effect.succeed(Message.PaintedBridge({ signature }))),
+					)
+				})
+				return Effect.sync(() => cancelAnimationFrame(handle.id))
 			})
-			return Effect.sync(() => cancelAnimationFrame(handle.id))
-		}),
+	},
 })
 
 /** Coalesces a burst of camera changes into one write (`VIEWPORT_PERSIST_DEBOUNCE_MS`). */
-export const WaitCameraWrite = Command.define("WaitServiceMapCameraWrite", {
+export const WaitCameraWrite = ServiceMapDefinition.makeCommand("WaitServiceMapCameraWrite", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedCameraWrite],
-	execute: ({ version }) =>
-		Effect.sleep(Duration.millis(400)).pipe(Effect.as(Message.ElapsedCameraWrite({ version }))),
+	handler: function* () {
+		return ({ version }) =>
+			Effect.sleep(Duration.millis(400)).pipe(Effect.as(Message.ElapsedCameraWrite({ version })))
+	},
+})
+
+type MapRequirement =
+	| Command.HandlerOf<typeof RunElkLayout>
+	| Command.HandlerOf<typeof WaitLayoutGrace>
+	| Command.HandlerOf<typeof WaitBridgePaint>
+	| Command.HandlerOf<typeof WaitCameraWrite>
+
+/** A local transition of the map's own fields: the Model and its own Commands. */
+type Return = Update.Return<Model, Message, MapRequirement>
+
+/** The handlers of every Command, Subscription and Mount the map owns. */
+export const EffectsLayer = Layer.mergeAll(
+	RunElkLayout.layer,
+	WaitLayoutGrace.layer,
+	WaitBridgePaint.layer,
+	WaitCameraWrite.layer,
+	subscriptions.layer,
+	AttachFlowCanvas.layer,
+	AnimateParticles.layer,
+)
+
+// CHILDREN WITHOUT OUTMESSAGES
+
+/** The map column and the selected node's panel; built in `init`. */
+export const SplitBinding = ServiceMapDefinition.makeBinding(Resizable.ResizableBlock, {
+	field: "split",
+	init: false,
+})
+
+/** The legend's "+N more" popover; built in `init`. */
+export const LegendBinding = ServiceMapDefinition.makeBinding(Popover.PopoverBlock, {
+	field: "legend",
+	init: false,
+})
+
+/** The toolbar's one Tooltip, shared by its three triggers. */
+export const ToolbarTooltipBinding = ServiceMapDefinition.makeBinding(Tooltip.TooltipBlock, {
+	placement: "toolbarTooltip",
+	read: (model: Model) => Option.some(model.toolbar.tooltip),
+	write: (model: Model, tooltip: Tooltip.Model): Model => ({
+		...model,
+		toolbar: { ...model.toolbar, tooltip },
+	}),
 })
 
 // DERIVED STATE
@@ -297,14 +385,10 @@ const savedCameraOf = (snapshots: ReadonlyArray<Snapshot>, signature: string) =>
 	Option.flatMap(snapshotFor(snapshots, signature), (snapshot) => Option.fromNullishOr(snapshot.viewport))
 
 /** The 65 / 35 split when a node opens the panel (as react-resizable-panels lays it out). */
-const DETAIL_SPLIT = [64.999, 35.001]
+const DETAIL_SPLIT: ReadonlyArray<number> = [64.999, 35.001]
 
-const withSelection = (model: Model, selectedId: Option.Option<string>): Model => {
-	const wasOpen = Option.isSome(model.selectedId)
-	const isOpen = Option.isSome(selectedId)
-	const layout = wasOpen === isOpen ? model.split.layout : isOpen ? DETAIL_SPLIT : [100]
-	return { ...model, selectedId, split: { ...model.split, layout } }
-}
+/** The split follows in `settle`: it changes only when the panel opens or closes. */
+const withSelection = (model: Model, selectedId: Option.Option<string>): Model => ({ ...model, selectedId })
 
 /**
  * A new effective graph. Same signature: metrics or dimming changed, positions stay. New signature:
@@ -382,7 +466,8 @@ export interface MapConfig {
 	readonly isFirstBoxedFitKept?: boolean
 }
 
-export const init = (source: SourceGraph, config: MapConfig): Return => {
+/** The first Model and its layout Commands, children included. */
+const initialResult = (source: SourceGraph, config: MapConfig): Return => {
 	const prefs: Prefs = {
 		minTrafficPct: config.minTrafficPct,
 		focus: config.focus,
@@ -417,7 +502,7 @@ export const init = (source: SourceGraph, config: MapConfig): Return => {
 		cameraWrite: 0,
 		toolbar: Toolbar.init(),
 		legend: Popover.init("service-map-legend", { align: "start", side: "top" }),
-		split: Resizable.init("service-map-split", "horizontal", [100]),
+		split: Resizable.ResizableBlock.init("service-map-split", "horizontal", [100]).model,
 	}
 	// A focus target missing from the first graph clears like any later one.
 	const settled =
@@ -436,11 +521,11 @@ export const init = (source: SourceGraph, config: MapConfig): Return => {
 }
 
 /** The URL's focus (the route owns it); a no-op when it already matches. */
-export const setFocus = (model: Model, focus: Option.Option<Focus>): Return =>
+const setFocus = (model: Model, focus: Option.Option<Focus>): Return =>
 	sameFocus(model.focus, focus) ? { model } : redeclutter({ ...model, focus })
 
 /** New rows from a refresh or an overlay landing: same nodes refine in place, new topology relayouts. */
-export const setSource = (model: Model, source: SourceGraph): Return => redeclutter({ ...model, source })
+const setSource = (model: Model, source: SourceGraph): Return => redeclutter({ ...model, source })
 
 // UPDATE
 
@@ -529,29 +614,66 @@ const scheduleCameraWrite = (result: Return): Return => {
 const afterFits = (before: Model, result: Return): Return =>
 	result.model.canvas.fitsApplied === before.canvas.fitsApplied ? result : scheduleCameraWrite(result)
 
-const withSelectMessage = (
-	select: Select.Model,
-	message: Select.Message,
-	write: (next: Select.Model) => Model,
-	wrap: (message: Select.Message) => Message,
-	onValue: (model: Model, value: string) => Return,
-): Return => {
-	const next = Select.update(select, message)
-	const model = write(next.model)
-	const changed = next.outMessage === undefined ? { model } : onValue(model, next.outMessage.value)
-	return {
-		...changed,
-		commands: [...Command.mapMessages(next.commands ?? [], wrap), ...(changed.commands ?? [])],
-	}
+const isSameSelection = (first: Option.Option<string>, second: Option.Option<string>): boolean =>
+	Option.getOrNull(first) === Option.getOrNull(second)
+
+/** What the host persists or follows moved between two Models (reference checks, as before). */
+const changesOf = (before: Model, after: Model): OutMessage | undefined => {
+	const isPrefsChanged =
+		before.minTrafficPct !== after.minTrafficPct ||
+		before.collapsedNamespaces !== after.collapsedNamespaces
+	const isLayoutChanged = before.snapshots !== after.snapshots
+	const isFocusChanged = !sameFocus(before.focus, after.focus)
+	const isSelectionChanged = !isSameSelection(before.selectedId, after.selectedId)
+	return isPrefsChanged || isLayoutChanged || isFocusChanged || isSelectionChanged
+		? OutMessage.ChangedMapState({
+				isPrefsChanged,
+				isLayoutChanged,
+				isFocusChanged,
+				previousSelectedId: before.selectedId,
+				selectedId: after.selectedId,
+				minTrafficPct: after.minTrafficPct,
+				collapsedNamespaces: after.collapsedNamespaces,
+				snapshots: after.snapshots,
+				focus: after.focus,
+			})
+		: undefined
+}
+
+/** The split's layout when the detail panel opened or closed: 65 / 35 open, full width closed. */
+const splitLayoutStep = (before: Model, after: Model) => {
+	const isOpen = Option.isSome(after.selectedId)
+	return makeStep(() =>
+		Option.isSome(before.selectedId) === isOpen
+			? makeNoopStep()
+			: SplitBinding.requestLayout({ layout: isOpen ? DETAIL_SPLIT : [100] }),
+	)
+}
+
+/** The Model a connected map Step is applied to (it carries the registered split). */
+type MapInput = Parameters<ReturnType<typeof splitLayoutStep>>[0]
+
+/**
+ * Settles a local transition: a fit schedules a camera write, the split follows the panel, and
+ * `ChangedMapState` reports what the host persists. Returns the Step to apply to the map.
+ */
+const settle = (before: Model, result: Return) => {
+	const settled = afterFits(before, result)
+	const settledStep = makeStep(() => settled)
+	const layoutStep = splitLayoutStep(before, settled.model)
+	const outMessage = changesOf(before, settled.model)
+	return (model: MapInput) =>
+		Update.withOutMessage(Update.combineSteps(model, [settledStep, layoutStep]), outMessage)
 }
 
 const isColorMode = Schema.is(ColorMode)
 
 const withFocus = (model: Model, focus: Option.Option<Focus>): Return => redeclutter({ ...model, focus })
 
+/** The map's own Messages; child Blocks reach it through their Bindings' folds below. */
 const step = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		GotCanvasMessage: ({ message: inner }) => canvasMessage(model, inner),
+		ReceivedCanvasMessage: ({ message: inner }) => canvasMessage(model, inner),
 		SucceededElkLayout: ({ signature, positions }) => ({
 			model:
 				signature !== model.graph.signature
@@ -593,7 +715,7 @@ const step = (model: Model, message: Message): Return =>
 			}
 		},
 		ClickedNode: ({ nodeId }) => clickedNode(model, nodeId),
-		PickedNode: ({ nodeId }) => pickedNode(model, nodeId),
+		InformedOfPick: ({ nodeId }) => pickedNode(model, nodeId),
 		ClickedPane: () =>
 			Option.isNone(model.selectedId) ? { model } : redeclutter(withSelection(model, Option.none())),
 		// "Re-sort": drop this signature's drags and camera, snap back to the layout and fit it.
@@ -611,18 +733,8 @@ const step = (model: Model, message: Message): Return =>
 			model.collapsedNamespaces.includes(namespace)
 				? { model }
 				: redeclutter({ ...model, collapsedNamespaces: [...model.collapsedNamespaces, namespace] }),
-		// The combobox comes back fresh.
-		ClickedClearFocus: () =>
-			withFocus(
-				{
-					...model,
-					toolbar: {
-						...model.toolbar,
-						focusCombobox: Combobox.init(Toolbar.FOCUS_COMBOBOX_ID, "single"),
-					},
-				},
-				Option.none(),
-			),
+		// The combobox comes back fresh (`requestReset` in the update record).
+		ClickedClearFocus: () => withFocus(model, Option.none()),
 		ClickedToggleHideRest: () =>
 			withFocus(
 				model,
@@ -633,8 +745,8 @@ const step = (model: Model, message: Message): Return =>
 			),
 		ClickedShowAllTraffic: () => redeclutter({ ...model, minTrafficPct: 0 }),
 		ClickedResetFilters: () => redeclutter({ ...model, minTrafficPct: 0, focus: Option.none() }),
-		ClickedCloseDetail: () => redeclutter(withSelection(model, Option.none())),
-		ClickedFocusSelected: () =>
+		RequestedCloseDetail: () => redeclutter(withSelection(model, Option.none())),
+		RequestedFocusSelected: () =>
 			withFocus(
 				model,
 				Option.map(model.selectedId, (serviceId) => ({ serviceId, hops: 1, mode: "dim" })),
@@ -651,75 +763,147 @@ const step = (model: Model, message: Message): Return =>
 							})),
 						},
 					},
-		GotFocusComboboxMessage: ({ message: inner }) => {
-			const next = Combobox.update(model.toolbar.focusCombobox, inner)
-			const withCombobox = { ...model, toolbar: { ...model.toolbar, focusCombobox: next.model } }
-			const commands = Command.mapMessages(next.commands ?? [], (m) =>
-				Message.GotFocusComboboxMessage({ message: m }),
-			)
-			const picked =
-				next.outMessage?._tag === "ChangedValue" && next.outMessage.value.length > 0
-					? next.outMessage.value
-					: null
-			if (picked === null) return { model: withCombobox, commands }
-			const focused = withFocus(withCombobox, Option.some({ serviceId: picked, hops: 1, mode: "dim" }))
-			return { ...focused, commands: [...commands, ...(focused.commands ?? [])] }
-		},
-		GotTrafficSelectMessage: ({ message: inner }) =>
-			withSelectMessage(
-				model.toolbar.trafficSelect,
-				inner,
-				(trafficSelect) => ({ ...model, toolbar: { ...model.toolbar, trafficSelect } }),
-				(m) => Message.GotTrafficSelectMessage({ message: m }),
-				(next, value) => redeclutter({ ...next, minTrafficPct: Number(value) }),
-			),
-		GotColorSelectMessage: ({ message: inner }) =>
-			withSelectMessage(
-				model.toolbar.colorSelect,
-				inner,
-				(colorSelect) => ({ ...model, toolbar: { ...model.toolbar, colorSelect } }),
-				(m) => Message.GotColorSelectMessage({ message: m }),
-				(next, value) => ({ model: isColorMode(value) ? { ...next, colorMode: value } : next }),
-			),
-		GotDepthSelectMessage: ({ message: inner }) =>
-			withSelectMessage(
-				model.toolbar.depthSelect,
-				inner,
-				(depthSelect) => ({ ...model, toolbar: { ...model.toolbar, depthSelect } }),
-				(m) => Message.GotDepthSelectMessage({ message: m }),
-				(next, value) =>
-					withFocus(
-						next,
-						Option.map(next.focus, (focus) => ({ ...focus, hops: Number(value) === 2 ? 2 : 1 })),
-					),
-			),
-		GotTooltipMessage: ({ message: inner }) => {
-			const next = Tooltip.update(model.toolbar.tooltip, inner)
-			return {
-				model: { ...model, toolbar: { ...model.toolbar, tooltip: next.model } },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotTooltipMessage({ message: m }),
-				),
-			}
-		},
-		GotLegendMessage: ({ message: inner }) => {
-			const next = Popover.update(model.legend, inner)
-			return {
-				model: { ...model, legend: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotLegendMessage({ message: m }),
-				),
-			}
-		},
-		GotSplitMessage: ({ message: inner }) => {
-			const next = Resizable.update(model.split, inner)
-			return {
-				model: { ...model, split: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotSplitMessage({ message: m }),
-				),
-			}
-		},
+		InformedOfSource: ({ source }) => setSource(model, source),
+		InformedOfFocus: ({ focus }) => setFocus(model, focus),
 	})
 
-export const update = (model: Model, message: Message): Return => afterFits(model, step(model, message))
+/** A map Message through `step`, settled (camera write, split, `ChangedMapState`). */
+const transition = (model: MapInput, message: Message) => settle(model, step(model, message))(model)
+
+/** A child's fact, as a Step: the map's transition from the Model the child left. */
+const childStep = (toResult: (model: Model) => Return) =>
+	makeStep((model: Model) => settle(model, toResult(model)))
+
+// CHILDREN WITH OUTMESSAGES
+
+/** A picked service focuses it (dim, 1 hop); an emptied input changes nothing. */
+export const FocusComboboxBinding = ServiceMapDefinition.makeBinding(ComboboxBlock, {
+	placement: "focusCombobox",
+	read: (model: Model) => Option.some(model.toolbar.focusCombobox),
+	write: (model: Model, focusCombobox: Model["toolbar"]["focusCombobox"]): Model => ({
+		...model,
+		toolbar: { ...model.toolbar, focusCombobox },
+	}),
+}).withOutMessagePolicy({
+	fold: ServiceMapDefinition.makeOutMessageFold(ComboboxBlock, {
+		ChangedSelection: makeNoopStep,
+		ChangedValue: ({ value }) =>
+			value.length === 0
+				? makeNoopStep()
+				: childStep((model) =>
+						withFocus(model, Option.some({ serviceId: value, hops: 1, mode: "dim" })),
+					),
+	}),
+})
+
+export const TrafficSelectBinding = ServiceMapDefinition.makeBinding(SelectBlock, {
+	placement: "trafficSelect",
+	read: (model: Model) => Option.some(model.toolbar.trafficSelect),
+	write: (model: Model, trafficSelect: Model["toolbar"]["trafficSelect"]): Model => ({
+		...model,
+		toolbar: { ...model.toolbar, trafficSelect },
+	}),
+}).withOutMessagePolicy({
+	fold: ServiceMapDefinition.makeOutMessageFold(SelectBlock, {
+		ChangedValue: ({ value }) =>
+			childStep((model) => redeclutter({ ...model, minTrafficPct: Number(value) })),
+	}),
+})
+
+export const ColorSelectBinding = ServiceMapDefinition.makeBinding(SelectBlock, {
+	placement: "colorSelect",
+	read: (model: Model) => Option.some(model.toolbar.colorSelect),
+	write: (model: Model, colorSelect: Model["toolbar"]["colorSelect"]): Model => ({
+		...model,
+		toolbar: { ...model.toolbar, colorSelect },
+	}),
+}).withOutMessagePolicy({
+	fold: ServiceMapDefinition.makeOutMessageFold(SelectBlock, {
+		ChangedValue: ({ value }) =>
+			childStep((model) => ({ model: isColorMode(value) ? { ...model, colorMode: value } : model })),
+	}),
+})
+
+export const DepthSelectBinding = ServiceMapDefinition.makeBinding(SelectBlock, {
+	placement: "depthSelect",
+	read: (model: Model) => Option.some(model.toolbar.depthSelect),
+	write: (model: Model, depthSelect: Model["toolbar"]["depthSelect"]): Model => ({
+		...model,
+		toolbar: { ...model.toolbar, depthSelect },
+	}),
+}).withOutMessagePolicy({
+	fold: ServiceMapDefinition.makeOutMessageFold(SelectBlock, {
+		ChangedValue: ({ value }) =>
+			childStep((model) =>
+				withFocus(
+					model,
+					Option.map(model.focus, (focus) => ({ ...focus, hops: Number(value) === 2 ? 2 : 1 })),
+				),
+			),
+	}),
+})
+
+export const ServiceMapComposition = ServiceMapDefinition.makeComposition({
+	bindings: [
+		SplitBinding,
+		LegendBinding,
+		ToolbarTooltipBinding,
+		FocusComboboxBinding,
+		TrafficSelectBinding,
+		ColorSelectBinding,
+		DepthSelectBinding,
+	],
+	mounts: [AttachFlowCanvas, AnimateParticles],
+})
+export type ServiceMapViewBuilder = Block.ViewBuilderFor<typeof ServiceMapComposition>
+
+// INIT AND UPDATE
+
+/** `initialResult` with its children: the host's `ServiceMapBlock.init(source, config)`. */
+export const init = ServiceMapComposition.makeInit((source: SourceGraph, config: MapConfig) =>
+	initialResult(source, config),
+)
+
+export const update = ServiceMapComposition.makeUpdate({
+	ReceivedCanvasMessage: transition,
+	SucceededElkLayout: transition,
+	FailedElkLayout: transition,
+	ElapsedLayoutGrace: transition,
+	ClickedNode: transition,
+	InformedOfPick: transition,
+	ClickedPane: transition,
+	ClickedResort: transition,
+	ChangedReducedMotion: transition,
+	CompletedMountParticles: transition,
+	ClickedCollapseNamespace: transition,
+	// The local transition, then the focus combobox comes back fresh.
+	ClickedClearFocus: (model, message) => {
+		const settled = afterFits(model, step(model, message))
+		return Update.withOutMessage(
+			Update.combineSteps(model, [
+				makeStep(() => settled),
+				splitLayoutStep(model, settled.model),
+				FocusComboboxBinding.requestReset({ selected: [] }),
+			]),
+			changesOf(model, settled.model),
+		)
+	},
+	ClickedToggleHideRest: transition,
+	ClickedShowAllTraffic: transition,
+	ClickedResetFilters: transition,
+	RequestedCloseDetail: transition,
+	RequestedFocusSelected: transition,
+	ElapsedCameraWrite: transition,
+	PaintedBridge: transition,
+	InformedOfSource: transition,
+	InformedOfFocus: transition,
+})
+
+/** Parent-initiated transitions, exposed on the host's Binding. */
+export const operations = {
+	informOfSource: Message.InformedOfSource,
+	informOfFocus: Message.InformedOfFocus,
+	informOfPick: Message.InformedOfPick,
+	requestCloseDetail: Message.RequestedCloseDetail,
+	requestFocusSelected: Message.RequestedFocusSelected,
+}

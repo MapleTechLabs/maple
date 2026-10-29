@@ -1,16 +1,16 @@
-import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
-import { AsyncData, type Command } from "foldkit"
+import { AsyncData } from "foldkit"
 import { keyOf, request } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchList, FetchSparklines, FetchSummary } from "./command"
 import { sparklineGroups, sparklineWindow } from "./derive"
-import type { Message } from "./message"
 import type { Model } from "./model"
 
-type Step = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
+/** The fetches a load may start. */
+export type LoadCommand = ReturnType<typeof FetchList> | ReturnType<typeof FetchSummary> | ReturnType<typeof FetchSparklines>
+type Step = Readonly<{ model: Model; commands?: ReadonlyArray<LoadCommand> }>
 
 export const boundsOf = (model: Model, context: PageContext): Option.Option<TimeBounds> =>
 	Option.map(model.maybeAnchorMs, (anchorMs) => boundsForRange(rangeOf(context), anchorMs))

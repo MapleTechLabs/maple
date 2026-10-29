@@ -1,8 +1,7 @@
 import { DOCS_LOCAL_MODE_SEND_TELEMETRY } from "../../lib/links"
 import { copyableField } from "@maple/web/ui/copyable-field"
-import * as CopyButton from "@maple/web/ui/copy-button"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { type Copies, copyOf } from "./copies"
+import { type Copies, CopyMessage, copiesButton, copyOf } from "./copies"
 
 // The one "how to send telemetry here" block.
 
@@ -19,7 +18,8 @@ export type ConnectGuideOptions<M> = Readonly<{
 	id: string
 	endpoint: string
 	copies: Copies
-	toCopyMessage: (id: string, message: CopyButton.Message) => M
+	/** Lifts a copy fact (it carries the button's id) into the owner's Message. */
+	toCopyMessage: (message: CopyMessage) => M
 	note?: Html
 }>
 
@@ -35,7 +35,9 @@ export const connectGuide = <M>(h: HtmlBuilder<M>, options: ConnectGuideOptions<
 				label: "OTLP/HTTP endpoint",
 				value: options.endpoint,
 				copy: copyOf(options.copies, endpointId),
-				toCopyMessage: (message) => options.toCopyMessage(endpointId, message),
+				onCopy: options.toCopyMessage(
+					CopyMessage.ClickedCopy({ id: endpointId, text: options.endpoint }),
+				),
 			}),
 			h.div(
 				[h.Class("space-y-1")],
@@ -44,9 +46,10 @@ export const connectGuide = <M>(h: HtmlBuilder<M>, options: ConnectGuideOptions<
 						[h.Class("flex items-center justify-between")],
 						[
 							h.span([h.Class("text-xs text-muted-foreground")], ["Exporter environment"]),
-							CopyButton.view(h, {
-								model: copyOf(options.copies, envId),
-								toParentMessage: (message) => options.toCopyMessage(envId, message),
+							copiesButton(h, {
+								copies: options.copies,
+								id: envId,
+								toMessage: options.toCopyMessage,
 								value: env,
 								label: "Environment variables",
 								idleLabel: "Copy",

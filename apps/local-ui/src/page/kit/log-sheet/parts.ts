@@ -1,10 +1,10 @@
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import * as CopyButton from "@maple/web/ui/copy-button"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { hrefFor } from "../../../route"
-import { type Copies, copyOf } from "../copies"
+import { type Copies, CopyMessage, copyOf } from "../copies"
+import type { LogSheetViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { LocalLog } from "./model"
 
@@ -35,7 +35,10 @@ export const heroToneStyle = (severity: string): Readonly<Record<string, string>
 export const traceHrefOf = (log: LocalLog): Option.Option<string> =>
 	log.traceId
 		? Option.some(
-				hrefFor(`/traces/${encodeURIComponent(log.traceId)}`, new URLSearchParams(log.spanId ? { spanId: log.spanId } : {})),
+				hrefFor(
+					`/traces/${encodeURIComponent(log.traceId)}`,
+					new URLSearchParams(log.spanId ? { spanId: log.spanId } : {}),
+				),
 			)
 		: Option.none()
 
@@ -57,9 +60,16 @@ export const buildLogJsonPayload = (log: LocalLog): string =>
 		2,
 	)
 
+/** A click on the copy control `id`, copying `text`. */
+export const copyClick = (id: string, text: string): Message =>
+	Message.ReceivedCopyMessage({ message: CopyMessage.ClickedCopy({ id, text }) })
+
+/** Lifts a copy fact into the sheet's Message, for `copiesButton`. */
+export const toCopyMessage = (message: CopyMessage): Message => Message.ReceivedCopyMessage({ message })
+
 /** `CopyableValue`: inline text that copies itself, tinted by the copy's outcome. */
 export const copyableValue = (
-	h: HtmlBuilder<Message>,
+	h: LogSheetViewBuilder,
 	copies: Copies,
 	options: Readonly<{ id: string; value: string; label?: string }>,
 	children: ReadonlyArray<Html | string>,
@@ -77,7 +87,7 @@ export const copyableValue = (
 					status === "error" && "bg-severity-error/20",
 				),
 			),
-			h.OnClick(Message.GotCopyMessage({ id: options.id, message: CopyButton.Message.ClickedCopy({ text: options.value }) }), {
+			h.OnClick(copyClick(options.id, options.value), {
 				propagation: "Stop",
 			}),
 			h.Title("Click to copy"),

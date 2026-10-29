@@ -1,7 +1,7 @@
+import * as CopyButton from "@maple/web/ui/copy-button"
 import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
-import { Copies } from "../kit/copies"
 
 // The sessions list, as Schemas: the columns the list card reads.
 
@@ -43,6 +43,10 @@ export type SessionFacets = typeof SessionFacets.Type
 export const Draft = Schema.Struct({ text: Schema.String, version: Schema.Number, sent: Schema.String })
 export type Draft = typeof Draft.Type
 
+/** One copy button the page shows, keyed by its id. */
+export const CopySlot = Schema.Struct({ id: Schema.String, copy: CopyButton.CopyButtonBlock.Model })
+export type CopySlot = typeof CopySlot.Type
+
 export const Model = Schema.TaggedStruct("SessionsPage", {
 	/** The time window's anchor, snapped to the minute; none until the clock is read. */
 	maybeAnchorMs: Schema.Option(Schema.Number),
@@ -56,8 +60,9 @@ export const Model = Schema.TaggedStruct("SessionsPage", {
 	/** `dataUpdatedAt` of the list, for the "New data" pill. */
 	sessionsUpdatedAtMs: Schema.Number,
 	search: Draft,
-	sections: FilterSections.Model,
+	sections: FilterSections.FilterSectionsBlock.Model,
 	isRefreshing: Schema.Boolean,
-	copies: Copies,
+	/** The connect guide's copy buttons, by the guide's own ids. */
+	copies: Schema.Array(CopySlot),
 })
 export type Model = typeof Model.Type

@@ -1,23 +1,19 @@
-import type { Resources } from "../../platform/resources"
 import { Option } from "effect"
-import { AsyncData, type Update } from "foldkit"
+import { AsyncData } from "foldkit"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { FetchNextPage } from "./command"
 import { nextCursor } from "./fetch"
 import { canExtend } from "../../data/slot"
 import { boundsOf } from "./load"
-import type { Message } from "./message"
 import type { Model, SessionRow } from "./model"
 
-export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
-
-export const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
+export const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>) => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
 
 /** `setRange`: remember it for pages opened without one, then put it in the hash. */
-export const setRange = (model: Model, context: PageContext, range: string): UpdateReturn => ({
+export const setRange = (model: Model, context: PageContext, range: string) => ({
 	model,
 	outMessage: PageOutMessage.RememberedRange({ range, hash: withParams(context.location, { range }) }),
 })
@@ -32,7 +28,7 @@ export const settleRefresh = (model: Model): Model => {
 }
 
 /** `fetchNextPage`: the cursor after the last loaded page. */
-export const loadMore = (model: Model, context: PageContext): UpdateReturn => {
+export const loadMore = (model: Model, context: PageContext) => {
 	const maybeNext = Option.flatMap(AsyncData.getData(model.sessions.data), (data) =>
 		Option.fromNullishOr(data.hasNextPage ? nextCursor(data.pages[data.pages.length - 1] ?? []) : undefined),
 	)

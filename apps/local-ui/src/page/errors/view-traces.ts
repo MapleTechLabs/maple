@@ -5,7 +5,8 @@ import { spinner } from "@maple/web/ui/spinner"
 import type { DateTime } from "effect"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { ErrorsViewBuilder } from "./composition"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { hrefFor } from "../../route"
 import { errorState } from "../kit/view-states"
@@ -15,7 +16,7 @@ import type { Card } from "./model"
 
 // The open panel of `ErrorTypeCard`: the most recent traces of one error type.
 
-type H = HtmlBuilder<Message>
+type H = ErrorsViewBuilder
 
 /** `formatRelativeTime` against the clock the page last read. */
 export const relativeTime = (value: DateTime.Utc, nowMs: number): string => {

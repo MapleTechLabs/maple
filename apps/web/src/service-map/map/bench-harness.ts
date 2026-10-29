@@ -146,17 +146,24 @@ const install = (root: Element, emit: (message: HarnessMessage) => void) => {
 	}
 }
 
-/** Installs `window.__smBench` on the bench root; its camera requests return as Messages. */
+/**
+ * Installs `window.__smBench` on the bench root; its camera requests return as Messages. The
+ * owner registers it in its Composition's `mounts` and merges `AttachBenchHarness.layer`.
+ */
 export const AttachBenchHarness = Mount.defineStream("AttachBenchHarness", {
 	messages: [HarnessMessage.RequestedCamera, HarnessMessage.RequestedFit],
-	execute: ({ element }) =>
-		Stream.callback<HarnessMessage>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => install(element, (message) => Queue.offerUnsafe(queue, message))),
-				(release) => Effect.sync(release),
-			).pipe(Effect.flatMap(() => Effect.never)),
-		),
+	handler: function* () {
+		return ({ element }) =>
+			Stream.callback<HarnessMessage>((queue) =>
+				Effect.acquireRelease(
+					Effect.sync(() => install(element, (message) => Queue.offerUnsafe(queue, message))),
+					(release) => Effect.sync(release),
+				).pipe(Effect.flatMap(() => Effect.never)),
+			)
+	},
 })
+
+export type AttachBenchHarnessRequirement = Mount.RequirementsOf<typeof AttachBenchHarness>
 
 /** Resolves once no DOM mutation has landed for `quietMs` (the render has settled). */
 const waitForQuiet = (root: Element, maxMs: number, quietMs: number) =>

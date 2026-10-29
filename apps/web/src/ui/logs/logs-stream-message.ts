@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as AttributesPanel from "../attributes/attributes-panel"
+import { LogRowView } from "./log-row-view"
 
 /** A rendered row of the virtual window: which log, and where it sits in the list. */
 export const VirtualRow = Schema.Struct({ index: Schema.Number, start: Schema.Number })
@@ -41,7 +41,12 @@ export const Message = defineMessageUnion({
 	SucceededCopyJson: { generation: Schema.Number },
 	FailedCopyJson: { generation: Schema.Number },
 	ElapsedCopyJsonStatus: { generation: Schema.Number },
-	GotPanelMessage: { index: Schema.Number, message: AttributesPanel.Message },
 	CompletedScroll: {},
+	/** The parent derived the same logs again (a pinned column or the search changed). */
+	InformedOfRows: { rows: Schema.Array(LogRowView) },
+	/** The parent has new data (a reload that prepends rows, a filter): expansion goes with the old rows. */
+	InformedOfReplacedRows: { rows: Schema.Array(LogRowView) },
+	/** "Jump to latest": back to the newest rows, every row collapsed. */
+	RequestedJumpToLatest: {},
 })
 export type Message = typeof Message.Type

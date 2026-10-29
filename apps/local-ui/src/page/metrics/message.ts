@@ -1,10 +1,8 @@
-import * as Chart from "@maple/web/charts/chart"
 import { ThemeColors } from "@maple/web/charts/theme-colors"
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
+import { CopyMessage } from "../kit/copies"
 import { LoadFailure } from "../../data/local-query"
 import { ListRequest, SparklinesRequest, SummaryRequest } from "./requests"
 import { MetricsListData } from "./catalog"
@@ -41,8 +39,9 @@ export const Message = defineMessageUnion({
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
-	GotSparklineMessage: { message: Chart.Message },
-	GotFilterSectionsMessage: { message: FilterSections.Message },
-	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	/** The root saw the fragment change under the open page: sync the search, then load. */
+	InformedOfLocationChange: {},
+	/** A connect-guide copy button's fact; it carries the button's id. */
+	ReceivedCopyMessage: { message: CopyMessage },
 })
 export type Message = typeof Message.Type

@@ -1,32 +1,34 @@
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { button } from "@maple/web/ui/button"
-import * as CopyButton from "@maple/web/ui/copy-button"
 import { badge } from "@maple/web/ui/display"
 import { icon } from "@maple/web/ui/icon"
 import { logMessageOf, logMessageView } from "@maple/web/ui/logs/log-message"
 import { serviceDot } from "@maple/web/ui/values"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import { copiesButton } from "../copies"
+import type { LogSheetViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { copyOf } from "../copies"
-import { copyableValue, heroToneStyle, severityLabel } from "./parts"
+import { copyableValue, heroToneStyle, severityLabel, toCopyMessage } from "./parts"
 
 /** `SeverityBadge`: the label in its colour on a 10% wash. */
-const severityBadge = (h: HtmlBuilder<Message>, label: string): Html => {
+const severityBadge = (h: LogSheetViewBuilder, label: string): Html => {
 	const color = getSeverityColor(label)
 	return badge(
 		h,
 		{
 			variant: "secondary",
 			className: "font-mono text-3xs uppercase",
-			attributes: [h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` })],
+			attributes: [
+				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
+			],
 		},
 		[label],
 	)
 }
 
 /** `LogHeroHeader`: severity, service, close, and the (clamped) message. */
-export const heroHeader = (h: HtmlBuilder<Message>, model: Model): Html => {
+export const heroHeader = (h: LogSheetViewBuilder, model: Model): Html => {
 	const { log } = model
 	const severity = severityLabel(log.severityText, log.severityNumber)
 	const message = logMessageOf(log.body ?? "")
@@ -40,7 +42,9 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model): Html => {
 					severityBadge(h, severity),
 					badge(h, { variant: "outline", size: "xs", mono: true }, [
 						serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
-						copyableValue(h, model.copies, { id: "detail-service", value: log.serviceName }, [log.serviceName]),
+						copyableValue(h, model.copies, { id: "detail-service", value: log.serviceName }, [
+							log.serviceName,
+						]),
 					]),
 					button(
 						h,
@@ -57,17 +61,21 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model): Html => {
 			h.div(
 				[h.Class("mt-3")],
 				[
-					h.div([h.Class("flex items-start gap-1")], [
-						logMessageView(h, message, model.isBodyExpanded),
-						CopyButton.view(h, {
-							model: copyOf(model.copies, "detail-body"),
-							toParentMessage: (copy) => Message.GotCopyMessage({ id: "detail-body", message: copy }),
-							value: message.copyValue,
-							label: "message",
-							iconSize: 12,
-							className: "-mt-0.5 shrink-0",
-						}),
-					]),
+					h.div(
+						[h.Class("flex items-start gap-1")],
+						[
+							logMessageView(h, message, model.isBodyExpanded),
+							copiesButton(h, {
+								copies: model.copies,
+								id: "detail-body",
+								toMessage: toCopyMessage,
+								value: message.copyValue,
+								label: "message",
+								iconSize: 12,
+								className: "-mt-0.5 shrink-0",
+							}),
+						],
+					),
 					...(message.isLong
 						? [
 								h.button(
@@ -80,7 +88,9 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model): Html => {
 									],
 									[
 										model.isBodyExpanded ? "Show less" : "Show full message",
-										icon(h, model.isBodyExpanded ? "ChevronUpIcon" : "ChevronDownIcon", { size: 10 }),
+										icon(h, model.isBodyExpanded ? "ChevronUpIcon" : "ChevronDownIcon", {
+											size: 10,
+										}),
 									],
 								),
 							]

@@ -6,16 +6,16 @@ import {
 	inputLgStyles,
 	inputStyles,
 } from "@maple/ui/styles/ui/input"
-import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { inputId, Message, type Model } from "./combobox"
+import { ComboboxComposition, inputId, Message, type Model } from "./combobox"
 import { dismissButton, hiddenInput, inputAttributes, listPopup } from "./combobox-view"
 import { icon } from "./icon"
 import { isMounted } from "./overlay/transition"
 
 /**
- * Base UI `Autocomplete` (`@maple/ui/autocomplete`) on the Combobox Submodel in "autocomplete"
+ * Base UI `Autocomplete` (`@maple/ui/autocomplete`) on the Combobox Block in "autocomplete"
  * mode: `AutocompleteInput` (input group, start addon, `Input` control) and its popup.
+ * Embed `view` through a `ComboboxBlock` Binding: `embedView({ model, inputs, view })`.
  */
 export { Message, type Model } from "./combobox"
 
@@ -40,17 +40,17 @@ export type FieldOptions<M = never> = Readonly<{
 }>
 
 /** `AutocompleteInput` with a magnifier start addon (unless `hasStartAddon: false`). */
-export const autocompleteField = <M>(
-	h: HtmlBuilder<M>,
+export const autocompleteField = <M, R = never>(
+	h: HtmlBuilder<M, R>,
 	model: Model,
 	options: FieldOptions<M>,
 	toMessage: (message: Message) => M,
 ): Html => {
 	const size = options.size ?? "default"
 	const hasStartAddon = options.hasStartAddon ?? true
-	const listEmpty: ReadonlyArray<Attribute<M>> =
+	const listEmpty: ReadonlyArray<Attribute<M, R>> =
 		options.isListEmpty === true ? [h.DataAttribute("list-empty", "")] : []
-	const popupState: ReadonlyArray<Attribute<M>> = model.isOpen
+	const popupState: ReadonlyArray<Attribute<M, R>> = model.isOpen
 		? [
 				h.DataAttribute("popup-open", ""),
 				...(options.isInline === true ? [] : [h.DataAttribute("popup-side", model.side)]),
@@ -79,7 +79,8 @@ export const autocompleteField = <M>(
 						),
 					]
 				: []),
-			...((options.hasDismissButton ?? options.isInline !== true) && isMounted(model.isOpen, model.animation)
+			...((options.hasDismissButton ?? options.isInline !== true) &&
+			isMounted(model.isOpen, model.animation)
 				? [dismissButton(h)]
 				: []),
 			h.span(
@@ -123,7 +124,9 @@ export const autocompleteField = <M>(
 							[
 								h.Type("button"),
 								h.AriaLabel("Clear"),
-								h.Class(cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles)),
+								h.Class(
+									cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles),
+								),
 								h.DataAttribute("slot", "autocomplete-clear"),
 								h.OnClick(options.onClear),
 							],
@@ -146,7 +149,7 @@ export type ViewInputs = Readonly<{
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
 }>
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
+export const view = ComboboxComposition.makeView.withInputs<ViewInputs>((model, inputs, h) =>
 	inputs.toView({
 		field: autocompleteField(
 			h,

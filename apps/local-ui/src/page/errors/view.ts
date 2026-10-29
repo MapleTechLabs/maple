@@ -2,18 +2,20 @@ import { formatErrorRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { icon } from "@maple/web/ui/icon"
 import { Option } from "effect"
-import { AsyncData, Submodel } from "foldkit"
+import * as CopyButton from "@maple/web/ui/copy-button"
+import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
 import { queryOf } from "../../route"
-import { rangeOf } from "../contract"
-import type { PageViewInputs } from "../kit/inputs"
+import { type PresenceResult, presenceOf } from "../../data/signal-presence"
+import { type PageContext, rangeOf } from "../contract"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { refreshButton, timeRangeSelect, toolbar, toolbarStat, toolbarStats } from "../kit/toolbar"
 import { emptyState, errorState, listSkeleton } from "../kit/view-states"
 import { errorsFiltersOf } from "./command"
 import { cardOf } from "./load"
+import { ErrorsComposition, type ErrorsViewBuilder, GuideEndpointCopyBinding, GuideEnvCopyBinding } from "./composition"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { errorTypeCard } from "./view-card"
@@ -21,10 +23,32 @@ import { sidebar } from "./view-sidebar"
 
 // The Errors page: error types grouped by fingerprint, with filters.
 
-const toCopy = (id: string, message: Parameters<typeof Message.GotCopyMessage>[0]["message"]) =>
-	Message.GotCopyMessage({ id, message })
+/** What the view reads from the root: data only, as Block view inputs carry no callbacks. */
+export type ErrorsViewInputs = Readonly<{
+	context: PageContext
+	/** The root's latest clock read (each server probe): legacy's per-render `Date.now()` for relative times. */
+	clockMs: number
+	/** The server's last ingest, for `useNewDataSince`'s "New data" pill. */
+	lastIngestAtMs: Option.Option<number>
+	/** The shared signal presence read; none while loading or unreadable. */
+	maybePresence: Option.Option<PresenceResult>
+}>
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+const GUIDE_ID = "errors-empty"
+
+/** `useNewDataSince(sinceMs)`: telemetry arrived after the list loaded. */
+const hasNewDataSince = (inputs: ErrorsViewInputs, sinceMs: number): boolean =>
+	sinceMs > 0 && Option.exists(inputs.lastIngestAtMs, (last) => last > sinceMs)
+
+/** The connect guide's two copy buttons, by the id the guide gives each. */
+const embedGuideCopy =
+	(h: ErrorsViewBuilder, model: Model) =>
+	(copyId: string, viewInputs: CopyButton.CopyButtonViewInputs): Html =>
+		copyId === `${GUIDE_ID}-endpoint`
+			? h.block(GuideEndpointCopyBinding.embedView({ slotId: copyId, model: model.guideEndpointCopy, viewInputs }))
+			: h.block(GuideEnvCopyBinding.embedView({ slotId: copyId, model: model.guideEnvCopy, viewInputs }))
+
+export const view = ErrorsComposition.makeView.withInputs<ErrorsViewInputs>((model, inputs, h) => {
 	const { context } = inputs
 	const query = queryOf(context.location)
 	const filters = errorsFiltersOf(query)
@@ -32,7 +56,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const activeFilterCount = [filters.service, filters.env, filters.rootOnly].filter(Boolean).length
 	const stats = Option.getOrNull(Option.flatMap(AsyncData.getData(model.summary.data), Option.fromNullishOr))
 	const rows = Option.getOrElse(AsyncData.getData(model.byType.data), () => [])
-	const tracesPresence = inputs.presenceOf("traces")
+	const tracesPresence = presenceOf(inputs.maybePresence, "traces")
+	const presenceNowMs = Option.match(inputs.maybePresence, { onNone: () => 0, onSome: (result) => result.nowMs })
 	const content = (): Html => {
 		if (isPending(model.byType)) return listSkeleton(h, { variant: "card", rows: 6 })
 		const failure = failureWithoutData(model.byType)
@@ -53,8 +78,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						range,
 						onWidenRange: Message.ClickedWidenRange(),
 						maybePresence: tracesPresence,
-						nowMs: inputs.presenceNowMs,
-						guide: { id: "errors-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+						nowMs: presenceNowMs,
+						guide: { id: GUIDE_ID, endpoint: context.env.otlpEndpoint, embedCopy: embedGuideCopy(h, model) },
 					})
 		return h.div(
 			[h.Class(cn("space-y-2 p-4", model.byType.isPlaceholder && "opacity-60 transition-opacity"))],
@@ -88,7 +113,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					[
 						refreshButton(h, {
 							isSpinning: model.isRefreshing,
-							hasNewData: inputs.hasNewDataSince(model.byTypeUpdatedAtMs),
+							hasNewData: hasNewDataSince(inputs, model.byTypeUpdatedAtMs),
 							onRefresh: Message.ClickedRefresh(),
 						}),
 						timeRangeSelect(h, range, (next) => Message.ChangedRange({ range: next })),

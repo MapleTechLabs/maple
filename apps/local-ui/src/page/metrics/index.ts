@@ -1,5 +1,4 @@
-export { init, locationChanged, update } from "./update"
-export { Message } from "./message"
+export { MetricsBlock } from "./block"
 export { Model } from "./model"
-export { view } from "./view"
+export type { MetricsViewInputs } from "./view"
 export { lanes } from "./lanes"

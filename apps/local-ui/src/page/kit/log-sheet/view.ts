@@ -4,28 +4,32 @@ import { formatErrorPrompt } from "@maple/ui/lib/error-prompt"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { sheetTitleStyles } from "@maple/ui/styles/ui/sheet"
-import * as CopyButton from "@maple/web/ui/copy-button"
 import type { CopyStatus } from "@maple/web/ui/copy-button"
 import { titleId } from "@maple/web/ui/dialog"
-import * as DialogView from "@maple/web/ui/dialog-view"
 import { errorSectionView } from "@maple/web/ui/error-section"
 import { icon } from "@maple/web/ui/icon"
-import * as Tooltip from "@maple/web/ui/tooltip"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { copyOf } from "../copies"
+import type { ChildAttribute, Html } from "foldkit/html"
+import { copiesButton, copyOf } from "../copies"
 import { formatDateTime, type TimeFormat } from "../local-time"
+import { DialogBinding, LogSheetComposition, type LogSheetViewBuilder, TooltipBinding } from "./composition"
 import { heroHeader } from "./hero"
 import { Message } from "./message"
 import { JSON_COPY_TRIGGER, type LocalLog, type Model, PROMPT_COPY_TRIGGER } from "./model"
-import { buildLogJsonPayload, copyableValue, severityLabel, traceHrefOf } from "./parts"
+import {
+	buildLogJsonPayload,
+	copyClick,
+	copyableValue,
+	severityLabel,
+	toCopyMessage,
+	traceHrefOf,
+} from "./parts"
 import { detailTabs } from "./tabs"
 
 // The log detail sheet in the kit's Sheet, which
 // portals it to `<body>`, marks the page outside it, locks scroll and traps focus.
 
-type H = HtmlBuilder<Message>
+type H = LogSheetViewBuilder
 type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
 /** The tooltip's portal when it is anchored to `id`. Each trigger keeps it in its own parent, since
  * the portal lives in `<body>` and a keyed swap between triggers in one parent cannot find it. */
@@ -35,9 +39,6 @@ type TooltipParts = Readonly<{ trigger: Trigger; portalFor: PortalFor }>
 /** `copyTooltipText`: the tooltip follows the copy status. */
 const copyTooltipText = (status: CopyStatus, label: string, copiedLabel = "Copied"): string =>
 	status === "copied" ? copiedLabel : status === "error" ? "Failed to copy" : `Copy ${label}`
-
-const copyClick = (id: string, text: string) =>
-	Message.GotCopyMessage({ id, message: CopyButton.Message.ClickedCopy({ text }) })
 
 const metaStrip = (
 	h: H,
@@ -99,9 +100,10 @@ const metaStrip = (
 			h.div(
 				[h.Class("ml-auto flex shrink-0 items-center gap-0.5")],
 				[
-					CopyButton.view(h, {
-						model: copyOf(model.copies, "detail-json"),
-						toParentMessage: (message) => Message.GotCopyMessage({ id: "detail-json", message }),
+					copiesButton(h, {
+						copies: model.copies,
+						id: "detail-json",
+						toMessage: toCopyMessage,
 						value: buildLogJsonPayload(log),
 						label: "Log JSON",
 						iconSize: 13,
@@ -188,43 +190,44 @@ const sheetBody = (
 
 /** The sheet's content, wrapped in the copy buttons' one Tooltip. */
 const content = (h: H, model: Model, timeFormat: TimeFormat): ReadonlyArray<Html> => [
-	h.submodel({
-		slotId: `${model.tooltip.id}-slot`,
-		model: model.tooltip,
-		view: Tooltip.view,
-		viewInputs: {
-			triggerIds: [JSON_COPY_TRIGGER, PROMPT_COPY_TRIGGER],
-			toContent: (triggerId) => tooltipContent(model, triggerId),
-			toView: ({ trigger, portal }) =>
-				h.div(
-					[h.Class("contents")],
-					sheetBody(h, model, timeFormat, {
-						trigger,
-						portalFor: (id) =>
-							portal !== null && model.tooltip.triggerId === id ? [portal] : [],
-					}),
-				),
-		},
-		toParentMessage: (message) => Message.GotTooltipMessage({ message }),
-	}),
+	h.block(
+		TooltipBinding.embedView({
+			slotId: `${model.tooltip.id}-slot`,
+			model: model.tooltip,
+			viewInputs: {
+				triggerIds: [JSON_COPY_TRIGGER, PROMPT_COPY_TRIGGER],
+				toContent: (triggerId) => tooltipContent(model, triggerId),
+				toView: ({ trigger, portal }) =>
+					h.div(
+						[h.Class("contents")],
+						sheetBody(h, model, timeFormat, {
+							trigger,
+							portalFor: (id) =>
+								portal !== null && model.tooltip.triggerId === id ? [portal] : [],
+						}),
+					),
+			},
+		}),
+	),
 ]
 
 export type ViewInputs = Readonly<{ timeFormat: TimeFormat }>
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
-	h.submodel({
-		slotId: `${model.dialog.id}-sheet`,
-		model: model.dialog,
-		view: DialogView.view,
-		viewInputs: {
-			className: "flex flex-col p-0 sm:max-w-2xl",
-			side: "right",
-			hasTrigger: false,
-			showCloseButton: false,
-			hasDescription: false,
-			toView: ({ portal }) => portal,
-			toContent: () => content(h, model, inputs.timeFormat),
-		},
-		toParentMessage: (message) => Message.GotDialogMessage({ message }),
-	}),
+/** The sheet in the kit's Sheet dialog; its parent embeds it with `LogSheetBinding.embedView`. */
+export const view = LogSheetComposition.makeView.withInputs<ViewInputs>((model, inputs, h) =>
+	h.block(
+		DialogBinding.embedView({
+			slotId: `${model.dialog.id}-sheet`,
+			model: model.dialog,
+			viewInputs: {
+				className: "flex flex-col p-0 sm:max-w-2xl",
+				side: "right",
+				hasTrigger: false,
+				showCloseButton: false,
+				hasDescription: false,
+				toView: ({ portal }) => portal,
+				toContent: () => content(h, model, inputs.timeFormat),
+			},
+		}),
+	),
 )

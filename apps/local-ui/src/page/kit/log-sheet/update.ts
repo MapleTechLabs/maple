@@ -1,58 +1,69 @@
-import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
-import * as Dialog from "@maple/web/ui/dialog"
-import * as Tabs from "@maple/web/ui/tabs"
-import * as Tooltip from "@maple/web/ui/tooltip"
-import type { Option } from "effect"
-import { Command, type Update } from "foldkit"
+import { Update } from "foldkit"
+import { initAndSet } from "foldkit/bindingInit"
+import { modifyFields } from "foldkit/struct"
 import { updateCopy } from "../copies"
+import {
+	AttributesBinding,
+	DialogBinding,
+	LogSheetComposition,
+	TabsBinding,
+	TooltipBinding,
+} from "./composition"
+import { makeFieldsStep, makeNoopStep, makeStep } from "./definition"
 import { Message } from "./message"
-import { type LocalLog, type Model, withLog } from "./model"
-
-export type UpdateReturn = Update.Return<Model, Message>
-
-const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): UpdateReturn => ({
-	model: { ...model, dialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
-})
-
-/** A row click: the sheet shows `log`, opening if it was closed. */
-export const openLog = (maybeSheet: Option.Option<Model>, log: LocalLog): UpdateReturn => {
-	const sheet = withLog(maybeSheet, log)
-	return liftDialog(sheet, Dialog.open(sheet.dialog))
-}
+import { ATTRIBUTES_ID, type LocalLog, logKey, type Model, tabValuesOf } from "./model"
 
 export const isOpen = (model: Model): boolean => model.dialog.isOpen
 
-/** The local sheet has no attribute filters, so the panel's filter OutMessage is never raised. */
-export const update = (model: Model, message: Message): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		ClosedSheet: () => liftDialog(model, Dialog.close(model.dialog)),
-		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
-		ToggledBodyExpanded: () => ({ model: { ...model, isBodyExpanded: !model.isBodyExpanded } }),
-		ToggledErrorExpanded: () => ({ model: { ...model, isErrorExpanded: !model.isErrorExpanded } }),
-		GotTabsMessage: ({ message: child }) => {
-			const next = Tabs.update(model.tabs, child)
-			return {
-				model: { ...model, tabs: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tabs) => Message.GotTabsMessage({ message: tabs })),
-			}
-		},
-		GotAttributesMessage: ({ message: child }) => {
-			const next = AttributesPanel.update(model.attributes, child)
-			return {
-				model: { ...model, attributes: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (panel) => Message.GotAttributesMessage({ message: panel })),
-			}
-		},
-		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
-			return { model: { ...model, copies: next.copies }, commands: next.commands }
-		},
-		GotTooltipMessage: ({ message: child }) => {
-			const next = Tooltip.update(model.tooltip, child)
-			return {
-				model: { ...model, tooltip: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tooltip) => Message.GotTooltipMessage({ message: tooltip })),
-			}
-		},
-	})
+/** A first row click: the sheet starts on `log`, already opening. The children start from the Bindings. */
+export const init = LogSheetComposition.makeInit((log: LocalLog) => ({
+	childInitContext: { log },
+	model: { log, isBodyExpanded: false, isErrorExpanded: false, copies: {} },
+	steps: [DialogBinding.requestOpen()],
+}))
+
+const isSameValues = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean =>
+	a.length === b.length && a.every((value, index) => value === b[index])
+
+export const update = LogSheetComposition.makeUpdate({
+	ClosedSheet: (model) => DialogBinding.requestClose()(model),
+	ToggledBodyExpanded: (model) => ({
+		model: modifyFields(model, { isBodyExpanded: (isExpanded) => !isExpanded }),
+	}),
+	ToggledErrorExpanded: (model) => ({
+		model: modifyFields(model, { isErrorExpanded: (isExpanded) => !isExpanded }),
+	}),
+	ReceivedCopyMessage: (model, { message }) => {
+		const next = updateCopy(model.copies, message, (copy) =>
+			Message.ReceivedCopyMessage({ message: copy }),
+		)
+		return { model: modifyFields(model, { copies: () => next.copies }), commands: next.commands }
+	},
+	// A sheet that stays mounted keeps its tab and body expansion; the rest is per log. The tooltip
+	// starts closed: one left open when the sheet closed would show on a button nobody hovered.
+	RequestedShowLog: (model, { log }) => {
+		const isSameLog = logKey(model.log) === logKey(log)
+		const values = tabValuesOf(log)
+		return Update.combineSteps(model, [
+			makeFieldsStep(() => ({
+				log: () => log,
+				isErrorExpanded: (isExpanded: boolean) => isSameLog && isExpanded,
+			})),
+			// The Trace tab comes and goes with the trace id; the selected tab stays.
+			isSameValues(model.tabs.values, values)
+				? makeNoopStep()
+				: makeStep((current: Model) =>
+						initAndSet(TabsBinding, current, {
+							args: [{ idBase: current.tabs.idBase, values, selected: current.tabs.selected }],
+						}),
+					),
+			isSameLog
+				? makeNoopStep()
+				: makeStep((current: Model) =>
+						initAndSet(AttributesBinding, current, { args: [ATTRIBUTES_ID] }),
+					),
+			TooltipBinding.requestReset(),
+			DialogBinding.requestOpen(),
+		])
+	},
+})

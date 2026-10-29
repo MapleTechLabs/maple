@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Array, Effect, Option, Schema } from "effect"
-import { Mount } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { copyButton } from "../copy-button"
 import { eyebrow } from "../eyebrow"
 import { icon } from "../icon"
 import type { LogChip } from "./log-row-view"
-import type { Model } from "./logs-stream"
+import type { LogsStreamViewBuilder } from "./logs-stream-composition"
+import { LogsStreamDefinition, type Model } from "./logs-stream-definition"
 import { Message } from "./logs-stream-message"
 import { hoverCardContentStyles } from "@maple/ui/styles/ui/hover-card"
 import { CHIP_FILTER_ACTION_CLASS } from "./styles"
@@ -53,40 +53,42 @@ export const place = (positioner: HTMLElement, popup: HTMLElement, anchor: DOMRe
 }
 
 /** Moves the card to <body> (Base UI's portal) and keeps it under its chip while anything scrolls. */
-export const PlaceChipCard = Mount.define("PlaceChipCard", {
+export const PlaceChipCard = LogsStreamDefinition.makeMount("PlaceChipCard", {
 	args: { index: Schema.Number, key: Schema.String },
 	messages: [Message.PlacedChipCard],
-	execute: ({ element, index, key }) =>
-		Effect.acquireRelease(
-			Effect.sync(() => {
-				const positioner = element.firstElementChild
-				const popup = positioner?.firstElementChild
-				document.body.appendChild(element)
-				const update = () => {
-					const anchor = findChip(index, key)
-					if (
-						anchor !== undefined &&
-						positioner instanceof HTMLElement &&
-						popup instanceof HTMLElement
-					)
-						place(positioner, popup, anchor.getBoundingClientRect())
-				}
-				update()
-				const listenerOptions = { capture: true, passive: true }
-				window.addEventListener("scroll", update, listenerOptions)
-				window.addEventListener("resize", update)
-				return () => {
-					window.removeEventListener("scroll", update, listenerOptions)
-					window.removeEventListener("resize", update)
-					element.remove()
-				}
-			}),
-			(cleanup) => Effect.sync(cleanup),
-		).pipe(Effect.as(Message.PlacedChipCard())),
+	handler: function* () {
+		return ({ element, index, key }) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const positioner = element.firstElementChild
+					const popup = positioner?.firstElementChild
+					document.body.appendChild(element)
+					const update = () => {
+						const anchor = findChip(index, key)
+						if (
+							anchor !== undefined &&
+							positioner instanceof HTMLElement &&
+							popup instanceof HTMLElement
+						)
+							place(positioner, popup, anchor.getBoundingClientRect())
+					}
+					update()
+					const listenerOptions = { capture: true, passive: true }
+					window.addEventListener("scroll", update, listenerOptions)
+					window.addEventListener("resize", update)
+					return () => {
+						window.removeEventListener("scroll", update, listenerOptions)
+						window.removeEventListener("resize", update)
+						element.remove()
+					}
+				}),
+				(cleanup) => Effect.sync(cleanup),
+			).pipe(Effect.as(Message.PlacedChipCard()))
+	},
 })
 
 /** `<CopyButton iconSize={10}>` in its idle state, as `SelectableValue` renders it. */
-const valueCopyButton = (h: HtmlBuilder<Message>, label: string, onClick: Message): Html =>
+const valueCopyButton = (h: LogsStreamViewBuilder, label: string, onClick: Message): Html =>
 	copyButton(h, {
 		label,
 		status: "idle",
@@ -96,11 +98,11 @@ const valueCopyButton = (h: HtmlBuilder<Message>, label: string, onClick: Messag
 		attributes: [h.OnClick(onClick, { propagation: "Stop" })],
 	})
 
-const cardEyebrow = (h: HtmlBuilder<Message>, text: string): Html =>
+const cardEyebrow = (h: LogsStreamViewBuilder, text: string): Html =>
 	eyebrow(h, { as: "div", className: "mb-0.5" }, [text])
 
 const filterAction = (
-	h: HtmlBuilder<Message>,
+	h: LogsStreamViewBuilder,
 	label: string,
 	negated: boolean,
 	icon: Html,
@@ -116,7 +118,7 @@ const filterAction = (
 		[icon, text],
 	)
 
-const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilter: boolean): Html =>
+const cardView = (h: LogsStreamViewBuilder, index: number, chip: LogChip, canFilter: boolean): Html =>
 	h.keyed("div")(
 		`chip-card-${index}-${chip.key}`,
 		[
@@ -222,7 +224,7 @@ const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilt
 	)
 
 /** The open attribute card, or nothing. */
-export const chipCard = (h: HtmlBuilder<Message>, model: Model, canFilter: boolean): Html =>
+export const chipCard = (h: LogsStreamViewBuilder, model: Model, canFilter: boolean): Html =>
 	Option.match(
 		Option.flatMap(model.visibleChip, ({ index, key }) =>
 			Option.flatMap(Option.fromNullishOr(model.rows[index]), (row) =>

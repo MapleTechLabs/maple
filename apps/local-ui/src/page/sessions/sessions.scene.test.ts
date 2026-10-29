@@ -8,7 +8,8 @@ import { FetchFacets, FetchSessions, ReadClock } from "./command"
 import { Message } from "./message"
 import { PAGE_SIZE } from "./fetch"
 import type { Model, SessionRow } from "./model"
-import { init, locationChanged, update } from "./update"
+import { SessionsBlock } from "./block"
+import { init, update } from "./update"
 import { view as pageView } from "./view"
 
 const NOW = Date.UTC(2026, 9, 1, 12, 0, 30)
@@ -28,7 +29,11 @@ const inputs: PageViewInputs = {
 	clockMs: 0,
 	hasNewDataSince: () => false,
 }
-const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+/** The page's complete Message, its Bindings' delivery included. */
+type PageMessage = typeof SessionsBlock.Message.Type
+const pageUpdate = (model: Model, message: PageMessage) => update(model, message, context)
+/** The root's `locationChanged`, as the page hears it. */
+const locationChanged = (model: Model, next: PageContext) => update(model, Message.InformedOfLocationChange(), next)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 

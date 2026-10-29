@@ -1,5 +1,3 @@
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
@@ -34,7 +32,7 @@ export const Message = defineMessageUnion({
 	ClickedClearAllFilters: {},
 	ChangedRange: { range: Schema.String },
 	ClickedWidenRange: {},
-	GotFilterSectionsMessage: { message: FilterSections.Message },
-	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	/** The root's `locationChanged`: the hash moved while this page stayed open. */
+	InformedOfLocationChange: {},
 })
 export type Message = typeof Message.Type

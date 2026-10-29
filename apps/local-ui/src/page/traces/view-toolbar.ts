@@ -2,7 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { badge } from "@maple/web/ui/display"
 import { button } from "@maple/web/ui/button"
 import { serviceDot } from "@maple/web/ui/values"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { TracesViewBuilder } from "./composition"
 import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
 import type { TraceFilters } from "./filters"
 import { Message } from "./message"
@@ -10,7 +11,7 @@ import type { Model } from "./model"
 
 // The toolbar of `TraceListView` and its `SpanScopeBanner`.
 
-const spanScopeBanner = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =>
+const spanScopeBanner = (h: TracesViewBuilder, filters: TraceFilters): Html =>
 	h.div(
 		[h.Class("flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm")],
 		[
@@ -37,7 +38,7 @@ const spanScopeBanner = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =
 	)
 
 export const tracesToolbar = (
-	h: HtmlBuilder<Message>,
+	h: TracesViewBuilder,
 	model: Model,
 	filters: TraceFilters,
 	options: Readonly<{ rowCount: number; hasNextPage: boolean; range: string; hasNewData: boolean }>,

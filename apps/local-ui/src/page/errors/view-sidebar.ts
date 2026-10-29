@@ -4,16 +4,21 @@ import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import { type ErrorsViewBuilder, FilterSectionsBinding } from "./composition"
 import type { ErrorsFilters } from "./fetch"
 import { Message } from "./message"
 import type { Model } from "./model"
 
 // The Errors page's filter rail.
 
-const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
+/** One collapsible section's chrome, drawn by the Block that remembers its state. */
+const embedSection = (h: ErrorsViewBuilder, model: Model) => (viewInputs: FilterSections.ViewInputs): Html =>
+	h.block(
+		FilterSectionsBinding.embedView({ slotId: `filter-section-${viewInputs.key}`, model: model.sections, viewInputs }),
+	)
 
-export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ErrorsFilters, activeFilterCount: number): Html => {
+export const sidebar = (h: ErrorsViewBuilder, model: Model, filters: ErrorsFilters, activeFilterCount: number): Html => {
 	const facets = Option.getOrNull(AsyncData.getData(model.facets.data))
 	const isFetching = AsyncData.isLoading(model.facets.data) || AsyncData.isRefreshing(model.facets.data)
 	const sections = [
@@ -27,8 +32,7 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ErrorsFi
 			options: facets?.services ?? [],
 			selected: filters.service ? [filters.service] : [],
 			isSearchable: true,
-			sections: model.sections,
-			toSectionsMessage: toSections,
+			embedSection: embedSection(h, model),
 			onToggle: (name) => Message.ToggledFacetOption({ param: "service", name }),
 			colorOf: getServiceColor,
 		}),
@@ -37,8 +41,7 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ErrorsFi
 			options: facets?.environments ?? [],
 			selected: filters.env ? [filters.env] : [],
 			isSearchable: true,
-			sections: model.sections,
-			toSectionsMessage: toSections,
+			embedSection: embedSection(h, model),
 			onToggle: (name) => Message.ToggledFacetOption({ param: "env", name }),
 		}),
 	]

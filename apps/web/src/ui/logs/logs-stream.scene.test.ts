@@ -1,5 +1,5 @@
 import { LOGS_TABLE_BENCH_ROWS } from "../../lab/bench/logs-table-bench-fixture"
-import type { HtmlBuilder } from "foldkit/html"
+import { Scene } from "foldkit"
 import {
 	all,
 	Command,
@@ -15,7 +15,9 @@ import {
 	selector,
 	Subscription,
 	text,
+	unhover,
 	within,
+	withViewInputs,
 } from "foldkit/scene"
 import { Duration } from "effect"
 import { Lazy } from "foldkit/test"
@@ -25,13 +27,14 @@ import { logTimeFormat, toLogRowView } from "./log-row-view"
 import {
 	CHIP_CLOSE_DELAY,
 	CHIP_OPEN_DELAY,
-	init,
+	LogsStreamBlock,
 	type Model,
 	OutMessage,
-	update,
+	subscriptions,
 	WaitChipDelay,
 } from "./logs-stream"
-import { Message } from "./logs-stream-message"
+import { LogsStreamComposition } from "./logs-stream-composition"
+import { Message, type NavigationKey } from "./logs-stream-message"
 import { view, type ViewInputs } from "./logs-stream-view"
 import { ScrollStreamToIndex, VirtualizeLogStream } from "./virtualize"
 
@@ -49,9 +52,15 @@ const INPUTS: ViewInputs = {
 }
 const ROW_HEIGHT = 37
 
-const sceneUpdate = (model: Model, message: Message) => update(model, message)
-const sceneView = (model: Model, h: HtmlBuilder<Message>) => view(model, INPUTS, h)
-const program = { update: sceneUpdate, view: sceneView }
+const { init, update } = LogsStreamBlock
+const sceneView = withViewInputs(view, INPUTS)()
+const program = {
+	update,
+	view: sceneView,
+	subscriptions: Scene.subscriptions(LogsStreamComposition, subscriptions),
+}
+const pressed = (key: NavigationKey) =>
+	Subscription.emit(subscriptions.navigationKeys, Message.PressedNavigationKey({ key }))
 
 /** The window the virtualizer reports for rows `from..to` at 37px each. */
 const windowOf = (from: number, to: number) =>
@@ -64,14 +73,13 @@ const windowOf = (from: number, to: number) =>
 	})
 
 const withWindow = (from: number, to: number): Model =>
-	update(init(STREAM_ID, ROWS), windowOf(from, to)).model
+	update(init(STREAM_ID, ROWS).model, windowOf(from, to)).model
 
 const log = role("log")
 const rows = all.role("listitem")
 const rowOf = (index: number) => selector(`[data-index="${index}"]`)
 const chip0 = role("button", { name: /^Copy attribute\.0=.*-0-0$/ })
-// Scene has no pointer-leave step and resolves a Mount once; later Mount and leave events are fed as emitted Messages.
-const leave = Subscription.emit(Message.LeftChip({ index: 0, key: "attribute.0" }))
+const leave = unhover(chip0)
 const ackVirtualizer = Mount.resolve(
 	VirtualizeLogStream,
 	Message.ChangedScrolledAway({ isScrolledAway: false }),
@@ -81,7 +89,7 @@ describe("logs stream: virtual window", () => {
 	test("renders nothing until the virtualizer reports, then exactly its window at its offsets", () => {
 		scene(
 			program,
-			given(init(STREAM_ID, ROWS)),
+			given(init(STREAM_ID, ROWS).model),
 			expectAll(rows).toHaveCount(0),
 			Mount.resolve(VirtualizeLogStream, windowOf(0, 24)),
 			expectAll(rows).toHaveCount(25),
@@ -118,19 +126,19 @@ describe("logs stream: keyboard selection", () => {
 			program,
 			given(withWindow(0, 24)),
 			ackVirtualizer,
-			Subscription.emit(Message.PressedNavigationKey({ key: "Next" })),
+			pressed("Next"),
 			Command.expectExact(ScrollStreamToIndex({ streamId: STREAM_ID, index: 0 })),
 			Command.resolve(ScrollStreamToIndex, Message.CompletedScroll()),
-			Subscription.emit(Message.PressedNavigationKey({ key: "Next" })),
+			pressed("Next"),
 			Command.resolve(ScrollStreamToIndex, Message.CompletedScroll()),
 			expect(within(rowOf(1), role("listitem"))).toHaveAttr("data-focused", "true"),
 			expect(within(rowOf(0), role("listitem"))).not.toHaveAttr("data-focused"),
-			Subscription.emit(Message.PressedNavigationKey({ key: "Previous" })),
+			pressed("Previous"),
 			Command.resolve(ScrollStreamToIndex, Message.CompletedScroll()),
 			expect(within(rowOf(0), role("listitem"))).toHaveAttr("data-focused", "true"),
-			Subscription.emit(Message.PressedNavigationKey({ key: "Open" })),
+			pressed("Open"),
 			expectOutMessage(OutMessage.OpenedLog({ index: 0 })),
-			Subscription.emit(Message.PressedNavigationKey({ key: "Clear" })),
+			pressed("Clear"),
 			expect(within(rowOf(0), role("listitem"))).not.toHaveAttr("data-focused"),
 		)
 	})
@@ -140,9 +148,9 @@ describe("logs stream: keyboard selection", () => {
 			program,
 			given(withWindow(0, 24)),
 			ackVirtualizer,
-			Subscription.emit(Message.PressedNavigationKey({ key: "Next" })),
+			pressed("Next"),
 			Command.resolve(ScrollStreamToIndex, Message.CompletedScroll()),
-			Subscription.emit(Message.PressedNavigationKey({ key: "Expand" })),
+			pressed("Expand"),
 			expectOutMessage(OutMessage.ChangedInspecting({ isInspecting: true, isScrolledAway: false })),
 			expect(within(rowOf(0), role("button", { name: "Collapse log" }))).toHaveAttr(
 				"aria-expanded",
@@ -173,7 +181,7 @@ describe("logs stream: keyboard selection", () => {
 		)
 		scene(
 			program,
-			given(update(init(STREAM_ID, untraced), windowOf(0, 1)).model),
+			given(update(init(STREAM_ID, untraced).model, windowOf(0, 1)).model),
 			ackVirtualizer,
 			expect(within(rowOf(0), role("link", { name: "Open trace" }))).toHaveAttr(
 				"href",
@@ -209,14 +217,16 @@ describe("logs stream: attribute card", () => {
 	})
 
 	test("an open card closes when its row scrolls out of the window", () => {
+		// Scene resolves a Mount once, so the virtualizer's later window arrives as its first result.
+		const cardOpen = [
+			Message.EnteredChip({ index: 0, key: "attribute.0" }),
+			Message.ElapsedChipDelay({ generation: 1 }),
+		].reduce((model, message) => update(model, message).model, withWindow(0, 24))
 		scene(
 			program,
-			given(withWindow(0, 24)),
-			ackVirtualizer,
-			hover(chip0),
-			Command.resolve(WaitChipDelay, Message.ElapsedChipDelay({ generation: 1 })),
+			given(cardOpen),
 			Mount.resolve(PlaceChipCard, Message.PlacedChipCard()),
-			Subscription.emit(windowOf(30, 59)),
+			Mount.resolve(VirtualizeLogStream, windowOf(30, 59)),
 			expect(text("Attribute", { exact: true })).not.toExist(),
 			Mount.expectEnded(PlaceChipCard),
 		)
