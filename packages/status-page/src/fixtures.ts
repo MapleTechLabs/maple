@@ -3,7 +3,7 @@ import {
 	DEFAULT_STATUS_PAGE_THEME,
 	lastDays,
 	StatusPageSnapshot,
-	STATUS_PAGE_HISTORY_DAYS,
+	STATUS_PAGE_WINDOW_DAYS,
 	type StatusPageDayState,
 } from "@maple/domain/status-page"
 
@@ -34,12 +34,16 @@ const DAY_COUNTS = {
 	down: { checks: 1440, failures: 30, downChecks: 30 },
 } as const satisfies Record<StatusPageDayState, Omit<EncodedDay, "day">>
 
-/** 90 days ending on `nowMs`, all `ok` except the given overrides (index 0 is the oldest). */
+/**
+ * `count` days ending on `nowMs` (90 unless given), all `ok` except the given overrides
+ * (index 0 is the oldest).
+ */
 export const makeDays = (
 	nowMs: number = FIXTURE_NOW,
 	overrides: Readonly<Record<number, StatusPageDayState>> = {},
+	count: number = STATUS_PAGE_WINDOW_DAYS,
 ): ReadonlyArray<EncodedDay> =>
-	lastDays(nowMs, STATUS_PAGE_HISTORY_DAYS).map((day, index) => ({
+	lastDays(nowMs, count).map((day, index) => ({
 		day,
 		...DAY_COUNTS[overrides[index] ?? "ok"],
 	}))
@@ -88,6 +92,8 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 			logoUrl: null,
 			theme: DEFAULT_STATUS_PAGE_THEME,
 			showPoweredBy: true,
+			privacyUrl: null,
+			termsUrl: null,
 		},
 		breakGlassTokenSha256: null,
 		components: [
@@ -96,5 +102,6 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 			makeComponent(2, { name: "Docs", showUptime: false, monitored: false, days: [] }),
 		],
 		incidents: [],
+		incidentHistory: [],
 		...fields,
 	})

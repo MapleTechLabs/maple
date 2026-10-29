@@ -9,7 +9,7 @@ import {
 	incidentComponentStatus,
 	isActiveIncident,
 	lastDays,
-	STATUS_PAGE_HISTORY_DAYS,
+	STATUS_PAGE_WINDOW_DAYS,
 	STATUS_PAGE_SNAPSHOT_VERSION,
 	type StatusPageSnapshot,
 	type StatusPageSnapshotIncident,
@@ -29,7 +29,8 @@ export interface PreviewComponent {
 
 /**
  * A snapshot of what the page would look like with the editor's draft, for the dashboard
- * preview. Monitored components get empty day bars: the preview shows shape, not history.
+ * preview. Monitored components get one window of empty bars: the preview shows shape, not
+ * history. The calendar marks the incidents passed in.
  */
 export const previewSnapshot = (input: {
 	readonly pageId: StatusPageId
@@ -40,7 +41,7 @@ export const previewSnapshot = (input: {
 	readonly nowMs: number
 }): StatusPageSnapshot => {
 	const active = input.incidents.filter(isActiveIncident)
-	const emptyDays = lastDays(input.nowMs, STATUS_PAGE_HISTORY_DAYS).map((day) => ({
+	const emptyDays = lastDays(input.nowMs, STATUS_PAGE_WINDOW_DAYS).map((day) => ({
 		day,
 		checks: 0,
 		failures: 0,
@@ -78,5 +79,15 @@ export const previewSnapshot = (input: {
 			}
 		}),
 		incidents: input.incidents,
+		incidentHistory: input.incidents
+			.filter((incident) => !(incident.kind === "maintenance" && incident.status === "scheduled"))
+			.map((incident) => ({
+				id: incident.id,
+				title: incident.title,
+				kind: incident.kind,
+				impact: incident.impact,
+				startedAt: incident.startedAt,
+				resolvedAt: incident.resolvedAt,
+			})),
 	}
 }

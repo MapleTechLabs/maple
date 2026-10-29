@@ -124,7 +124,7 @@ describe("serving a page", () => {
 			}),
 		)
 		const html = await (await send(fake, PAGE)).text()
-		expect(html).toContain("<h1>Major system outage</h1>")
+		expect(html).toContain("We're experiencing a major outage")
 		expect(html).toContain("Checkout failing")
 		expect(html).toContain("Posted from the edge")
 		expect(html).toContain("Still looking")
