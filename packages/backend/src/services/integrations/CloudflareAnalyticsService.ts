@@ -182,6 +182,12 @@ export const hasAnalyticsScopes = (scope: string): boolean => {
 const BUCKET_MS = 5 * 60_000
 /** Never query buckets younger than this — ABR data needs a few minutes to become complete. */
 const SAFETY_LAG_MS = 10 * 60_000
+/**
+ * A caught-up row waits until this much is pending before its next head poll. Cloudflare's
+ * limiter charges per zone x dataset, not per time span, so a 15-min window costs the same as a
+ * 5-min one: polling every third tick cuts steady-state spend 3x.
+ */
+const MIN_HEAD_WINDOW_MS = 15 * 60_000
 /** How far back the first poll reaches (further bounded by the plan's `notOlderThan`). */
 const BACKFILL_MS = 24 * 60 * 60_000
 /**
@@ -720,8 +726,8 @@ const backfillFloor = (row: CloudflareAnalyticsStateRow, now: number): number =>
 /**
  * HEAD window — the newest un-ingested slice, fetched FIRST every tick so a freshly-connected
  * integration surfaces near-live data within one tick. The first poll (null watermark) grabs just
- * the newest window; steady state is the small `[watermark, horizon]` delta. Null once caught up to
- * the safety-lag horizon.
+ * the newest window; steady state is the `[watermark, horizon]` delta once it reaches
+ * {@link MIN_HEAD_WINDOW_MS}. Null until then.
  */
 const headWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow | null => {
 	const effectiveEnd = floorToBucket(now - SAFETY_LAG_MS)
@@ -732,7 +738,7 @@ const headWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow |
 	if (start < floor) start = floor
 	start = floorToBucket(start)
 	const end = Math.min(start + window, effectiveEnd)
-	if (end <= start) return null
+	if (end - start < Math.min(MIN_HEAD_WINDOW_MS, window)) return null
 	return { start, end }
 }
 
