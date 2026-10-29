@@ -115,6 +115,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
 		jsonDraft: null,
+		jsonBase: null,
 		isApplyingJson: false,
 		jsonFailure: null,
 		jsonCopy: CopyButton.init(),

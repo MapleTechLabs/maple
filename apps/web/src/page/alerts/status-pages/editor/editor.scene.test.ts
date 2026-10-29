@@ -807,6 +807,25 @@ describe("json tab", () => {
 		])
 	})
 
+	test("a newer config read while editing does not replace the version the draft was opened from", () => {
+		const base = {
+			...statusPageConfig(statusPage(), [component(1), component(2), component(3)]),
+			version: "v7",
+		}
+		const draft = editing(JSON.stringify({ ...documentOf([1, 2]) }), { config: base })
+		// Someone else's edit lands and the tab re-reads it, mid-edit.
+		const reread = pageUpdate(
+			draft,
+			Message.CompletedFetchConfig({
+				key: draft.config.key ?? "",
+				result: Result.succeed({ ...base, version: "v8" }),
+			}),
+		).model
+		expect(pageUpdate(reread, Message.ClickedApplyJson()).commands).toMatchObject([
+			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v7" } },
+		])
+	})
+
 	test("a draft that differs only by spacing or colour case is no change", () => {
 		const theme = { ...DEFAULT_STATUS_PAGE_THEME, appearance: "light" as const, accent: "#1a2b3c" }
 		const page = statusPage({ description: "Live status.", theme })

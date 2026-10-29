@@ -78,6 +78,8 @@ export const Model = Schema.Struct({
 	config: KeyedSchema(StatusPageConfig, LoadFailure),
 	/** The edited document; `null` while the tab shows the page as saved. */
 	jsonDraft: Schema.NullOr(Schema.String),
+	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
+	jsonBase: Schema.NullOr(StatusPageConfig),
 	isApplyingJson: Schema.Boolean,
 	jsonFailure: Schema.NullOr(LoadFailure),
 	jsonCopy: CopyButton.Model,

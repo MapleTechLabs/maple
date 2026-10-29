@@ -27,11 +27,11 @@ import { isSettingsDirty } from "./update-settings"
 export const currentConfigOf = (model: Model): Option.Option<StatusPageConfig> =>
 	AsyncData.getData(model.config.data)
 
-/** The draft parsed against the saved page; none while not editing. */
+/** The draft parsed against the document it was opened from; none while not editing. */
 export const draftOf = (model: Model): Option.Option<DraftResult> =>
-	model.jsonDraft === null
+	model.jsonDraft === null || model.jsonBase === null
 		? Option.none()
-		: Option.map(currentConfigOf(model), (current) => parseDraft(model.jsonDraft ?? "", current))
+		: Option.some(parseDraft(model.jsonDraft, model.jsonBase))
 
 const hasChanges = (draft: DraftResult): boolean =>
 	Result.match(draft, {
@@ -52,16 +52,16 @@ export const canApply = (model: Model): boolean =>
 	!isSettingsDirty(model) &&
 	Option.match(draftOf(model), { onNone: () => false, onSome: hasChanges })
 
-const withCurrent = (model: Model, write: (text: string) => Model): Return =>
+const withCurrent = (model: Model, write: (text: string, base: StatusPageConfig) => Model): Return =>
 	Option.match(currentConfigOf(model), {
 		onNone: () => ({ model }),
-		onSome: (current) => ({ model: write(formatConfig(current)) }),
+		onSome: (current) => ({ model: write(formatConfig(current), current) }),
 	})
 
 /** Opens the editor on the saved document; Reset runs it again over the draft. */
 export const editJson = (model: Model): Return =>
 	model.isAdmin
-		? withCurrent(model, (jsonDraft) => ({ ...model, jsonDraft, jsonFailure: null }))
+		? withCurrent(model, (jsonDraft, jsonBase) => ({ ...model, jsonDraft, jsonBase, jsonFailure: null }))
 		: { model }
 
 /** Ignored while an apply runs: its result replaces the draft, and would drop the keystrokes. */
@@ -71,12 +71,15 @@ export const changeJson = (model: Model, value: string): Return =>
 		: { model: { ...model, jsonDraft: value, jsonFailure: null } }
 
 export const cancelJson = (model: Model): Return =>
-	model.isApplyingJson ? { model } : { model: { ...model, jsonDraft: null, jsonFailure: null } }
+	model.isApplyingJson
+		? { model }
+		: { model: { ...model, jsonDraft: null, jsonBase: null, jsonFailure: null } }
 
 export const applyJson = (model: Model): Return => {
 	const pageId = model.pageId
 	if (pageId === null || !canApply(model)) return { model }
-	const ifVersion = Option.getOrUndefined(currentConfigOf(model))?.version
+	// The version the draft was opened from, not the newest read: a re-read must not hide someone else's edit.
+	const ifVersion = model.jsonBase?.version
 	return Option.match(draftOf(model), {
 		onNone: () => ({ model }),
 		onSome: (draft) =>
@@ -132,6 +135,7 @@ export const appliedJson = (
 					...model,
 					isApplyingJson: false,
 					jsonDraft: null,
+					jsonBase: null,
 					settingsEdits: settingsAfterApply(model, applied),
 				},
 				readPage(context, "Supersede"),
