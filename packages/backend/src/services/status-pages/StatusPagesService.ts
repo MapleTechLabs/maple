@@ -73,6 +73,8 @@ export interface CreateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
+	readonly privacyUrl?: string | null
+	readonly termsUrl?: string | null
 	readonly theme?: StatusPageTheme
 	readonly showPoweredBy?: boolean
 	readonly autoIncidents?: StatusPageAutoIncidents
@@ -85,6 +87,8 @@ export interface UpdateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
+	readonly privacyUrl?: string | null
+	readonly termsUrl?: string | null
 	/** Merged onto the stored theme under the page's row lock, so concurrent partial edits both land. */
 	readonly theme?: Partial<StatusPageTheme>
 	readonly showPoweredBy?: boolean
@@ -391,6 +395,8 @@ const toPageRecord = (row: StatusPageRow): StatusPageRecord => ({
 	description: row.description,
 	websiteUrl: row.websiteUrl,
 	logoUrl: row.logoUrl,
+	privacyUrl: row.privacyUrl,
+	termsUrl: row.termsUrl,
 	theme: row.theme,
 	showPoweredBy: row.showPoweredBy,
 	autoIncidents: row.autoIncidents,
@@ -635,6 +641,8 @@ const contentOf = (
 	description: page.description,
 	website_url: page.websiteUrl,
 	logo_url: page.logoUrl,
+	privacy_url: page.privacyUrl,
+	terms_url: page.termsUrl,
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
 	theme: page.theme,
@@ -736,6 +744,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const description = yield* validateText(input.description ?? null, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.websiteUrl ?? null, "Website URL")
 				const logoUrl = yield* validateHttpsUrl(input.logoUrl ?? null, "Logo URL")
+				const privacyUrl = yield* validateHttpsUrl(input.privacyUrl ?? null, "Privacy policy URL")
+				const termsUrl = yield* validateHttpsUrl(input.termsUrl ?? null, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme ?? DEFAULT_STATUS_PAGE_THEME)
 				const now = yield* Clock.currentTimeMillis
 				const id = StatusPageId.make(randomUUID())
@@ -753,6 +763,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									description,
 									websiteUrl,
 									logoUrl,
+									privacyUrl,
+									termsUrl,
 									theme,
 									showPoweredBy: input.showPoweredBy ?? true,
 									autoIncidents: input.autoIncidents ?? "off",
@@ -797,6 +809,14 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					patch.logoUrl === undefined
 						? undefined
 						: yield* validateHttpsUrl(patch.logoUrl, "Logo URL")
+				const privacyUrl =
+					patch.privacyUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.privacyUrl, "Privacy policy URL")
+				const termsUrl =
+					patch.termsUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.termsUrl, "Terms of service URL")
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecuteSlug(slug ?? "")((db) =>
 					db.transaction(
@@ -820,6 +840,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(description === undefined ? undefined : { description }),
 										...(websiteUrl === undefined ? undefined : { websiteUrl }),
 										...(logoUrl === undefined ? undefined : { logoUrl }),
+										...(privacyUrl === undefined ? undefined : { privacyUrl }),
+										...(termsUrl === undefined ? undefined : { termsUrl }),
 										...(theme === undefined ? undefined : { theme }),
 										...(patch.showPoweredBy === undefined
 											? undefined
@@ -1407,6 +1429,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const description = yield* validateText(input.description, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.website_url, "Website URL")
 				const logoUrl = yield* validateHttpsUrl(input.logo_url, "Logo URL")
+				const privacyUrl = yield* validateHttpsUrl(input.privacy_url, "Privacy policy URL")
+				const termsUrl = yield* validateHttpsUrl(input.terms_url, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme)
 				const components = yield* Effect.forEach(input.components, validateConfigComponent)
 				const listedIds = components.flatMap((component) =>
@@ -1427,6 +1451,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					description,
 					website_url: websiteUrl,
 					logo_url: logoUrl,
+					privacy_url: privacyUrl,
+					terms_url: termsUrl,
 					show_powered_by: input.show_powered_by,
 					auto_incidents: input.auto_incidents,
 					theme,
@@ -1481,6 +1507,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										description,
 										websiteUrl,
 										logoUrl,
+										privacyUrl,
+										termsUrl,
 										theme,
 										showPoweredBy: input.show_powered_by,
 										autoIncidents: input.auto_incidents,

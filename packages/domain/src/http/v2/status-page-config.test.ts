@@ -15,6 +15,8 @@ const current: StatusPageConfig = {
 	description: null,
 	website_url: null,
 	logo_url: null,
+	privacy_url: null,
+	terms_url: null,
 	show_powered_by: true,
 	auto_incidents: "off",
 	theme: DEFAULT_STATUS_PAGE_THEME,
@@ -109,6 +111,19 @@ describe("diffStatusPageConfig", () => {
 		expect(changes).toMatchObject({ fields: [], updated: [] })
 	})
 
+	it("reports set and cleared footer links as page field changes", () => {
+		const linked = { ...current, privacy_url: "https://acme.test/privacy", terms_url: " " }
+		expect(diffStatusPageConfig(current, linked).fields).toEqual(["privacy_url"])
+		expect(
+			diffStatusPageConfig(linked, {
+				...linked,
+				privacy_url: null,
+				terms_url: "https://acme.test/terms",
+			}).fields,
+		).toEqual(["privacy_url", "terms_url"])
+		expect(statusPageConfigVersion(linked)).not.toBe(statusPageConfigVersion(current))
+	})
+
 	it("flags ids that are not on the page and ids listed twice", () => {
 		const changes = diffStatusPageConfig(current, {
 			...current,
@@ -183,6 +198,8 @@ describe("statusPageConfigVersion", () => {
 			},
 			auto_incidents: current.auto_incidents,
 			show_powered_by: current.show_powered_by,
+			terms_url: current.terms_url,
+			privacy_url: current.privacy_url,
 			logo_url: current.logo_url,
 			website_url: current.website_url,
 			description: current.description,

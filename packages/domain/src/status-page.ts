@@ -15,9 +15,11 @@ import {
 // freshness, the break-glass overlay).
 
 export const STATUS_PAGE_SNAPSHOT_VERSION = 1
-/** Days of uptime bars on a page. */
-export const STATUS_PAGE_HISTORY_DAYS = 90
-/** Resolved incidents stay listed this long. */
+/** Days of uptime bars a snapshot carries; the page shows them a window at a time. */
+export const STATUS_PAGE_HISTORY_DAYS = 365
+/** Days of uptime bars in one window of the page. */
+export const STATUS_PAGE_WINDOW_DAYS = 90
+/** Resolved incidents stay listed, with their updates, this long. */
 export const STATUS_PAGE_INCIDENT_HISTORY_DAYS = 14
 /** Past this, the page says live checks are delayed instead of implying all is well. */
 export const STATUS_PAGE_STALE_AFTER_MS = 5 * 60_000
@@ -88,6 +90,17 @@ export const StatusPageSnapshotIncident = Schema.Struct({
 })
 export type StatusPageSnapshotIncident = Schema.Schema.Type<typeof StatusPageSnapshotIncident>
 
+/** One incident in the year-long calendar index: enough to mark its days, without updates. */
+export const StatusPageIncidentHistoryEntry = Schema.Struct({
+	id: Schema.String,
+	title: Schema.String,
+	kind: StatusPageIncidentKind,
+	impact: StatusPageIncidentImpact,
+	startedAt: Schema.Number,
+	resolvedAt: Schema.NullOr(Schema.Number),
+})
+export type StatusPageIncidentHistoryEntry = Schema.Schema.Type<typeof StatusPageIncidentHistoryEntry>
+
 // --- Theme ---
 
 export const StatusPageThemePreset = Schema.Literals(["default", "mono", "midnight", "paper"])
@@ -149,9 +162,17 @@ export interface StatusPageThemeTokens {
 	readonly none: string
 }
 
-/** A scheme's tokens as rendered: `secondary` colours the site name and footer links. */
+/**
+ * A scheme's tokens as rendered: `secondary` colours the site name and footer links; the
+ * `*Tint` colours fill the status banner, each a mix of the status into the card colour.
+ */
 export interface ResolvedStatusPageThemeTokens extends StatusPageThemeTokens {
 	readonly secondary: string
+	readonly okTint: string
+	readonly degradedTint: string
+	readonly partialTint: string
+	readonly majorTint: string
+	readonly maintTint: string
 }
 
 export interface ResolvedStatusPageTheme {
@@ -363,14 +384,30 @@ const withOverrides = (tokens: StatusPageThemeTokens, theme: StatusPageTheme): S
 	}
 }
 
+const TINT_WEIGHTS = Array.from({ length: 10 }, (_, step) => 0.22 - step * 0.02)
+
+/** The strongest mix of `status` into `card` (22% down to 4%) that keeps `fg` text at AA on it. */
+const statusTint = (status: string, card: string, fg: string): string =>
+	TINT_WEIGHTS.map((weight) => mixHex(status, card, weight)).find(
+		(tint) => contrastRatio(fg, tint) >= STATUS_PAGE_MIN_CONTRAST,
+	) ?? card
+
 /**
  * Links take the accent only where it stays readable on that mode's background; else the text
  * colour. The site name and footer links take it too, else the muted colour.
  */
-const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): ResolvedStatusPageThemeTokens =>
-	accent === null || contrastRatio(accent, tokens.bg) < STATUS_PAGE_MIN_CONTRAST
-		? { ...tokens, secondary: tokens.muted }
-		: { ...tokens, link: accent, secondary: accent }
+const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): ResolvedStatusPageThemeTokens => {
+	const tints = {
+		okTint: statusTint(tokens.ok, tokens.card, tokens.fg),
+		degradedTint: statusTint(tokens.degraded, tokens.card, tokens.fg),
+		partialTint: statusTint(tokens.partial, tokens.card, tokens.fg),
+		majorTint: statusTint(tokens.major, tokens.card, tokens.fg),
+		maintTint: statusTint(tokens.maint, tokens.card, tokens.fg),
+	}
+	return accent === null || contrastRatio(accent, tokens.bg) < STATUS_PAGE_MIN_CONTRAST
+		? { ...tokens, ...tints, secondary: tokens.muted }
+		: { ...tokens, ...tints, link: accent, secondary: accent }
+}
 
 /**
  * The concrete tokens a theme renders with. Auto takes the preset and accent only; a forced
@@ -446,6 +483,9 @@ export const StatusPageSnapshotPage = Schema.Struct({
 	// Snapshots published before themes existed carry none; they render the default until republished.
 	theme: StatusPageTheme.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(DEFAULT_STATUS_PAGE_THEME))),
 	showPoweredBy: Schema.Boolean,
+	// Footer links; absent from snapshots published before they existed.
+	privacyUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	termsUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 })
 export type StatusPageSnapshotPage = Schema.Schema.Type<typeof StatusPageSnapshotPage>
 
@@ -461,6 +501,13 @@ export const StatusPageSnapshot = Schema.Struct({
 	components: Schema.Array(StatusPageSnapshotComponent),
 	/** Open incidents, upcoming and active maintenance, and recently resolved ones; newest first. */
 	incidents: Schema.Array(StatusPageSnapshotIncident),
+	/**
+	 * Incidents and maintenance that started, or were still open, in the last
+	 * `STATUS_PAGE_HISTORY_DAYS`, newest first. Older snapshots carry none.
+	 */
+	incidentHistory: Schema.Array(StatusPageIncidentHistoryEntry).pipe(
+		Schema.withDecodingDefaultTypeKey(Effect.succeed([])),
+	),
 })
 export type StatusPageSnapshot = Schema.Schema.Type<typeof StatusPageSnapshot>
 
