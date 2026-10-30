@@ -45,10 +45,10 @@ const GUIDE_ID = "services-empty"
 /** The connect guide's copy buttons are this page's own Blocks. */
 const embedGuideCopy =
 	(h: ServicesViewBuilder, model: Model) =>
-	(slot: "endpoint" | "env", viewInputs: CopyButton.CopyButtonViewInputs): Html =>
-		slot === "endpoint"
-			? h.block(EndpointCopyBinding.embedView({ slotId: `${GUIDE_ID}-endpoint`, model: model.endpointCopy, viewInputs }))
-			: h.block(EnvCopyBinding.embedView({ slotId: `${GUIDE_ID}-env`, model: model.envCopy, viewInputs }))
+	(copyId: string, viewInputs: CopyButton.CopyButtonViewInputs): Html =>
+		copyId === `${GUIDE_ID}-endpoint`
+			? h.block(EndpointCopyBinding.embedView({ slotId: copyId, model: model.endpointCopy, viewInputs }))
+			: h.block(EnvCopyBinding.embedView({ slotId: copyId, model: model.envCopy, viewInputs }))
 
 /** Each section's open/closed state is the remembered sections Block's own. */
 const embedSection = (h: ServicesViewBuilder, model: Model) => (viewInputs: FilterSections.ViewInputs) =>
