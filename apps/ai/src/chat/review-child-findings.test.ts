@@ -1,6 +1,6 @@
 import { PrReviewFinding } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
-import { parseChildFindings, unaccountedChildFindings } from "./review-child-findings"
+import { closeOutFindings, parseChildFindings, unaccountedChildFindings } from "./review-child-findings"
 
 const anchors = (answer: string) =>
 	parseChildFindings(answer).map((finding) => [finding.path, finding.line, finding.severity])
@@ -36,6 +36,39 @@ describe("parseChildFindings", () => {
 	it("skips prose and NO FINDINGS", () => {
 		assert.deepStrictEqual(anchors("NO FINDINGS"), [])
 		assert.deepStrictEqual(anchors("Looked at src/a.ts:1 and found nothing | really"), [])
+	})
+})
+
+describe("closeOutFindings", () => {
+	const saved = new PrReviewFinding({
+		path: "src/a.ts",
+		line: 10,
+		category: "correctness",
+		severity: "warn",
+		title: "Saved",
+		body: "Why",
+	})
+
+	it("files the children's warnings the saved findings do not cover", () => {
+		const children = parseChildFindings(
+			[
+				"src/a.ts:11 | warn | correctness | Same issue | Why | Fix | -",
+				"src/b.ts:40 | critical | security | Token in a span | Leaks | Drop it | -",
+				"src/b.ts:90 | info | maintainability | Note | Why | Fix | -",
+			].join("\n"),
+		)
+		assert.deepStrictEqual(
+			closeOutFindings([saved], children).map((finding) => [finding.path, finding.line, finding.title]),
+			[
+				["src/a.ts", 10, "Saved"],
+				["src/b.ts", 40, "Token in a span"],
+			],
+		)
+	})
+
+	it("files a child's warning when nothing was saved", () => {
+		const children = parseChildFindings("src/c.ts:3 | warn | correctness | Race | Why | Fix | -")
+		assert.lengthOf(closeOutFindings([], children), 1)
 	})
 })
 

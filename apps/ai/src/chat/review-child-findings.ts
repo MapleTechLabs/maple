@@ -102,6 +102,18 @@ export const childFindingsToFile = (
 		return finding === undefined ? [] : [finding]
 	})
 
+/**
+ * What a pass that ended without a report files as its partial: the findings it saved, then its
+ * children's warnings none of those account for.
+ */
+export const closeOutFindings = (
+	saved: ReadonlyArray<PrReviewFinding>,
+	children: ReadonlyArray<PrReviewFindingSubmission>,
+): ReadonlyArray<PrReviewFinding> => [
+	...saved,
+	...childFindingsToFile(unaccountedChildFindings(children, saved, [])),
+]
+
 /** The one-time refusal `submit_review` answers with while a child's warning is unaccounted for. */
 export const childFindingsRefusal = (unaccounted: ReadonlyArray<PrReviewFindingSubmission>): string =>
 	[
