@@ -77,7 +77,7 @@ const KNOWN_ALIASES: ReadonlyMap<string, { readonly column: string; readonly exp
 const identifierFix = (
 	written: string,
 	tables: ReadonlyArray<TableInfo>,
-	qualifiers: ReadonlySet<string>,
+	qualifiers: ReadonlyMap<string, string>,
 ): string | undefined => {
 	const owners = (column: string) => tables.filter((t) => t.columns.some((c) => c.name === column)).length
 	if (owners(written) > 0) return undefined
@@ -90,11 +90,13 @@ const identifierFix = (
 	if (whole !== undefined) return whole
 	const alias = KNOWN_ALIASES.get(fold(written))
 	if (alias !== undefined && owners(alias.column) === 1) return alias.expr
-	// `t.trace_id`: keep the qualifier, fix the column, but only for a table or alias in scope.
+	// `t.trace_id`: keep the qualifier and fix the column from the table it names.
 	const dot = written.lastIndexOf(".")
-	if (dot <= 0 || !qualifiers.has(written.slice(0, dot))) return undefined
-	const column = byFold(written.slice(dot + 1), false)
-	return column === undefined ? undefined : `${written.slice(0, dot + 1)}${column}`
+	const qualified =
+		dot <= 0 ? undefined : tables.find((t) => t.name === qualifiers.get(written.slice(0, dot)))
+	if (qualified === undefined) return undefined
+	const hits = qualified.columns.filter((c) => fold(c.name) === fold(written.slice(dot + 1)))
+	return hits.length === 1 ? `${written.slice(0, dot + 1)}${hits[0].name}` : undefined
 }
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -126,15 +128,21 @@ export const definedNames = (sql: string): ReadonlySet<string> =>
 		),
 	)
 
-/** Tables and aliases a column may be qualified with: `FROM traces t`, `JOIN logs AS l`. */
-const tableQualifiers = (sql: string): ReadonlySet<string> =>
-	new Set(
+/** The catalog table each qualifier names: `FROM traces t`, `JOIN logs AS l`, `FROM a, b`. */
+const tableQualifiers = (sql: string): ReadonlyMap<string, string> => {
+	const catalog = new Set(listWarehouseTables().map((t) => t.name))
+	return new Map(
 		[
 			...identifierText(sql).matchAll(
-				/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?/gi,
+				/(?:\bFROM\s+|\bJOIN\s+|,\s*)([A-Za-z_][\w.]*)(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?/gi,
 			),
-		].flatMap((m) => [m[1], m[1].split(".").at(-1) ?? m[1], ...(m[2] === undefined ? [] : [m[2]])]),
+		].flatMap((m) => {
+			const table = m[1].split(".").at(-1) ?? m[1]
+			if (!catalog.has(table)) return []
+			return [m[1], table, ...(m[2] === undefined ? [] : [m[2]])].map((q) => [q, table] as const)
+		}),
 	)
+}
 
 export type IdentifierRewrite = typeof RunSqlRewrite.Type
 
