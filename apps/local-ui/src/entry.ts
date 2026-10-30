@@ -1,26 +1,20 @@
 import "./styles.css"
 
 import { ResourcesLive } from "./platform/resources"
-import { Runtime } from "foldkit"
-import { Flags, flags, init, Message, Model, subscriptions, update, view } from "./main"
+import { Program, Runtime } from "foldkit"
+import { ApplicationBlock, Flags, flags } from "./main"
 
 const container = document.getElementById("app") ?? document.body
 
-Runtime.run(
-	Runtime.makeApplication({
-		Model,
-		Flags,
-		init,
-		update,
-		view,
-		subscriptions,
-		resources: ResourcesLive,
-		container,
-		routing: {
-			onUrlRequest: (request) => Message.ClickedLink({ request }),
-			onUrlChange: (url) => Message.ChangedUrl({ url }),
-		},
-		devTools: { Message },
-	}),
-	{ flags },
-)
+const program = Program.make({
+	block: ApplicationBlock,
+	Flags,
+	container,
+	routing: {
+		onUrlRequest: ApplicationBlock.Message.ClickedLink,
+		onUrlChange: ApplicationBlock.Message.ChangedUrl,
+	},
+	devTools: { dispatch: true },
+})
+
+Runtime.run(program.provide(ResourcesLive), { flags })

@@ -1,74 +1,53 @@
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
-import { Option, Schema, Stream } from "effect"
-import { Dom, Subscription } from "foldkit"
+import { Option } from "effect"
+import { Dom } from "foldkit"
 import { MOBILE_QUERY } from "./env"
 import { Message } from "./message"
-import type { Model } from "./model"
-import { PageMessage } from "./page/registry"
-import * as ServiceMapPage from "./page/service-map"
+import { ApplicationDefinition } from "./page/application-definition"
 
-// The OS theme and the sidebar's ⌘B / Ctrl+B shortcut (`SidebarProvider`).
+// The OS theme and the sidebar's ⌘B / Ctrl+B shortcut (`SidebarProvider`). The open service
+// map's reduced-motion gate is the map Block's own Subscription.
 
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
-const colorScheme: Stream.Stream<Message> = Dom.streamFromMediaQuery({
+type ShortcutMessage = ReturnType<typeof Message.PressedSidebarShortcut>
+
+const colorScheme = Dom.streamFromMediaQuery({
 	query: "(prefers-color-scheme: light)",
 	mapMatches: (prefersLight) => Message.ChangedColorScheme({ theme: prefersLight ? "light" : "dark" }),
 })
 
-const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
+const sidebarShortcut = Dom.streamFromEventFilterMap({
 	target: () => window,
 	type: "keydown",
-	filterMapEvent: (event): Option.Option<Message> => {
-		if (event.key !== SIDEBAR_KEYBOARD_SHORTCUT || !(event.metaKey || event.ctrlKey)) return Option.none()
+	filterMapEvent: (event) => {
+		if (event.key !== SIDEBAR_KEYBOARD_SHORTCUT || !(event.metaKey || event.ctrlKey)) return Option.none<ShortcutMessage>()
 		event.preventDefault()
 		return Option.some(Message.PressedSidebarShortcut())
 	},
 })
 
-/** The open map's particle gate; a fresh map starts reduced until this first emits. */
-const mapReducedMotion: Stream.Stream<Message> = Stream.map(ServiceMap.reducedMotionChanges, (message) =>
-	Message.GotPageMessage({
-		message: PageMessage.GotServiceMapMessage({
-			message: ServiceMapPage.Message.GotMapMessage({ message }),
-		}),
-	}),
-)
-
-const viewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
+const viewportChanges = Dom.streamFromMediaQuery({
 	query: MOBILE_QUERY,
 	mapMatches: (isMobile) => Message.ChangedViewport({ isMobile }),
 })
 
-export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
-	viewport: entry(
-		{},
-		{
-			modelToDependencies: () => ({}),
-			dependenciesToStream: () => viewportChanges,
+export const subscriptions = ApplicationDefinition.makeSubscriptions((entry) => ({
+	viewport: entry("LocalViewport", {
+		messages: [Message.ChangedViewport],
+		handler: function* () {
+			return () => viewportChanges
 		},
-	),
-	colorScheme: entry(
-		{},
-		{
-			modelToDependencies: () => ({}),
-			dependenciesToStream: () => colorScheme,
+	}),
+	colorScheme: entry("LocalColorScheme", {
+		messages: [Message.ChangedColorScheme],
+		handler: function* () {
+			return () => colorScheme
 		},
-	),
-	mapReducedMotion: entry(
-		{ hasMap: Schema.Boolean },
-		{
-			modelToDependencies: (model) => ({
-				hasMap: model.page._tag === "ServiceMapPage" && Option.isSome(model.page.maybeMap),
-			}),
-			dependenciesToStream: ({ hasMap }) => (hasMap ? mapReducedMotion : Stream.empty),
+	}),
+	sidebarShortcut: entry("LocalSidebarShortcut", {
+		messages: [Message.PressedSidebarShortcut],
+		handler: function* () {
+			return () => sidebarShortcut
 		},
-	),
-	sidebarShortcut: entry(
-		{},
-		{
-			modelToDependencies: () => ({}),
-			dependenciesToStream: () => sidebarShortcut,
-		},
-	),
+	}),
 }))

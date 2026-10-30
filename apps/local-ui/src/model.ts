@@ -9,8 +9,7 @@ import { PresenceResult } from "./data/signal-presence"
 import { Copies } from "./page/kit/copies"
 import { LocalEnv, Theme } from "./env"
 import { TimeFormat } from "./page/kit/local-time"
-import { FILTER_DRAWER_ID } from "./page/kit/page-shell"
-import { PageModel } from "./page/registry"
+import { PageModel } from "./page/page-model"
 import { AppRoute, Location } from "./route"
 import { ServerState } from "./server/state"
 
@@ -59,5 +58,3 @@ export const Model = Schema.Struct({
 	page: PageModel,
 })
 export type Model = typeof Model.Type
-
-export const initFilterDrawer = (): Dialog.Model => Dialog.init(FILTER_DRAWER_ID, "sheet")
