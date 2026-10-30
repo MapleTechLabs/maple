@@ -13,21 +13,14 @@ export interface SeriesLegendItem {
 	readonly swatch?: SeriesLegendSwatch
 }
 
-const VARIANTS = {
-	inline: {
-		root: "flex flex-wrap items-center justify-end gap-x-3 gap-y-1",
-		item: "inline-flex min-w-0 items-baseline gap-1.5",
-		dot: "size-1.5 translate-y-[-1px]",
-		label: "max-w-[24ch] truncate text-2xs text-muted-foreground",
-		value: "font-mono text-2xs text-foreground-soft tabular-nums",
-	},
-	chip: {
-		root: "flex flex-wrap items-center gap-2",
-		item: "inline-flex items-center gap-1.5 rounded-full border bg-background px-2 py-0.5 text-2xs",
-		dot: "size-2",
-		label: "font-medium text-foreground-soft",
-		value: "font-mono text-muted-foreground tabular-nums",
-	},
+// One legend look for every chart: the `size-2` rounded square the plot legends and widget
+// headers use, a muted label and the value beside it.
+const STYLES = {
+	root: "flex flex-wrap items-center justify-end gap-x-3 gap-y-1",
+	item: "inline-flex min-w-0 items-center gap-1.5",
+	swatch: "size-2",
+	label: "max-w-[24ch] truncate text-2xs text-muted-foreground",
+	value: "font-mono text-2xs text-foreground-soft tabular-nums",
 } as const
 
 const swatch = <M>(h: HtmlBuilder<M>, kind: SeriesLegendSwatch, color: string, size: string): Html => {
@@ -63,31 +56,29 @@ export const seriesLegend = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		items: ReadonlyArray<SeriesLegendItem>
-		variant?: keyof typeof VARIANTS
 		swatch?: SeriesLegendSwatch
 		maxItems?: number
 		className?: string
 	}>,
 ): Html => {
-	const styles = VARIANTS[options.variant ?? "inline"]
 	const shown = options.maxItems === undefined ? options.items : options.items.slice(0, options.maxItems)
 	const overflow = options.items.length - shown.length
 	return h.div(
-		[h.Class(cn(styles.root, options.className))],
+		[h.Class(cn(STYLES.root, options.className))],
 		[
 			...shown.map((item) =>
 				h.span(
-					[h.Key(item.key), h.Class(styles.item)],
+					[h.Key(item.key), h.Class(STYLES.item)],
 					[
 						...(item.color === undefined
 							? []
-							: [swatch(h, item.swatch ?? options.swatch ?? "dot", item.color, styles.dot)]),
+							: [swatch(h, item.swatch ?? options.swatch ?? "square", item.color, STYLES.swatch)]),
 						...(item.label === undefined
 							? []
 							: [
 									h.span(
 										[
-											h.Class(styles.label),
+											h.Class(STYLES.label),
 											...(item.title === undefined ? [] : [h.Title(item.title)]),
 										],
 										[item.label],
@@ -97,7 +88,7 @@ export const seriesLegend = <M>(
 							? []
 							: [
 									h.span(
-										[h.Class(styles.value)],
+										[h.Class(STYLES.value)],
 										[typeof item.value === "number" ? String(item.value) : item.value],
 									),
 								]),

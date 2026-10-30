@@ -171,6 +171,7 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 						x,
 						y: y(lead.key),
 						fill: `url(#${spec.gradientId})`,
+						fillOpacity: 1,
 						stroke: "none",
 					}),
 				]

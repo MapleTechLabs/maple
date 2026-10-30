@@ -10,7 +10,7 @@ import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
-import { verticalGradient } from "./fixed-metric-axes"
+import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 // The anomaly timeseries chart's definition. `thresholdRules` is copied below because
@@ -91,7 +91,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 
 	return {
 		definition: defineChart({
-			gradients: [verticalGradient(spec.gradientId, stroke, 0.3, 0.03)],
+			gradients: [verticalGradient(spec.gradientId, stroke)],
 			marks: [
 				...(window
 					? [
@@ -120,10 +120,11 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 					y: value,
 					y1: () => yDomain[0],
 					fill: `url(#${spec.gradientId})`,
+					fillOpacity: 1,
 					stroke: "none",
 					curve: d3Curve(curveMonotoneX),
 				}),
-				lineY(data, { x: at, y: value, stroke, strokeWidth: 2, curve: d3Curve(curveMonotoneX) }),
+				lineY(data, { x: at, y: value, stroke, strokeWidth: SERIES_STROKE_WIDTH, curve: d3Curve(curveMonotoneX) }),
 				focusDot(data, at, value, stroke, chrome),
 				focusCrosshair(chrome),
 			],

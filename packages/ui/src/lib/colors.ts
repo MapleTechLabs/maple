@@ -81,18 +81,19 @@ export function getServiceHueFromName(serviceName: string): number {
  * Lightness/chroma tiers layered on top of the 16 hues. A second hash
  * dimension picks the tier, tripling the palette to 48 slots so services
  * that land on neighboring hues (teal/cyan, blue/violet, …) still separate
- * by depth. All tiers stay mid-lightness so they read on both themes.
+ * by depth. All tiers stay mid-lightness so they read on both themes: below ~0.55 a hue
+ * turns muddy on the dark canvas, and chroma under ~0.13 reads washed out.
  */
 const SERVICE_COLOR_TIERS = [
-	{ l: 0.47, c: 0.17 },
-	{ l: 0.57, c: 0.15 },
-	{ l: 0.67, c: 0.12 },
+	{ l: 0.57, c: 0.17 },
+	{ l: 0.64, c: 0.16 },
+	{ l: 0.7, c: 0.14 },
 ]
 
-function getServiceColorTier(serviceName: string): { l: number; c: number } {
-	const hash = hashString(serviceName)
-	return SERVICE_COLOR_TIERS[Math.floor(hash / SERVICE_HUES.length) % SERVICE_COLOR_TIERS.length]
-}
+/** Yellow through lime go olive at mid lightness, so they sit lighter; capped so service
+ * names drawn in these colours still read on a white background. */
+const tierLightness = (l: number, hue: number): number =>
+	hue >= 70 && hue <= 140 ? Math.min(l + 0.08, 0.74) : l
 
 /**
  * The identity palette flattened to a single index space: `tier * 16 + hue`.
@@ -114,7 +115,7 @@ export function getIdentityColorBySlot(slot: number): string {
 	const index = ((Math.floor(slot) % IDENTITY_SLOT_COUNT) + IDENTITY_SLOT_COUNT) % IDENTITY_SLOT_COUNT
 	const tier = SERVICE_COLOR_TIERS[Math.floor(index / SERVICE_HUES.length)]
 	const hue = SERVICE_HUES[index % SERVICE_HUES.length]
-	return `oklch(${tier.l} ${tier.c} ${hue})`
+	return `oklch(${tierLightness(tier.l, hue).toFixed(2)} ${tier.c} ${hue})`
 }
 
 /**
@@ -156,14 +157,6 @@ export function getSpanColorStyle(
 		backgroundColor: bgColor,
 		color: textColor,
 	}
-}
-
-/**
- * Get a border accent color for a service (slightly darker/more saturated than background)
- */
-export function getServiceBorderColor(serviceName: string): string {
-	const tier = getServiceColorTier(serviceName)
-	return `oklch(${tier.l - 0.08} ${tier.c + 0.02} ${getServiceHueFromName(serviceName)})`
 }
 
 /**
