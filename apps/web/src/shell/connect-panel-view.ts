@@ -2,16 +2,22 @@ import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { ingestUrl } from "../lib/services/common/ingest-url"
 import { mcpUrl } from "../lib/services/common/mcp-url"
+import {
+	claudeCodeCommand,
+	cursorInstallUrl,
+	vscodeInstallUrl,
+} from "../components/settings/mcp-client-config"
 import { ONBOARD_SKILL_COMMAND } from "../components/ingest/onboard-skill"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../route"
-import { button } from "../ui/button"
+import { button, linkButton } from "../ui/button"
 import * as CopyButton from "../ui/copy-button"
 import { copyableField } from "../ui/copyable-field"
 import { badge, separator } from "../ui/display"
 import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
+import type { IconName } from "../ui/icons.generated"
 import { inlineCode } from "../ui/inline-code"
 import { panel } from "../ui/panel"
 import * as PopoverView from "../ui/popover"
@@ -22,6 +28,7 @@ import { type CopyField, Message, type Model, POPOVER_ID, realServices } from ".
 type H = HtmlBuilder<Message>
 
 const MCP_ENDPOINT = `${mcpUrl}/mcp`
+const MCP_COMMAND = claudeCodeCommand(MCP_ENDPOINT)
 
 /** The endpoint field's input-group glyph size, so every copy button in the panel matches it. */
 const COPY_CLASS = "shrink-0 [&_svg:not([class*='size-'])]:size-4"
@@ -136,67 +143,113 @@ const credentials = (h: H, model: Model): Html =>
 
 const settingsHref = (tab: "ingestion" | "mcp") => hrefOf(AppRoute.Settings({ search: { tab } }))
 
-/** `McpCard`: the MCP settings link and the copyable endpoint. */
-const mcpCard = (h: H, model: Model): Html =>
-	panel(h, { tone: "muted", className: "group transition-colors hover:border-foreground/20" }, [
-		h.a(
-			[
-				h.Href(settingsHref("mcp")),
-				h.Class(
-					"flex items-center gap-3 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring",
-				),
-			],
-			[
-				h.span(
-					[
-						h.Class(
-							"flex size-8 shrink-0 items-center justify-center rounded-md border bg-background text-foreground",
-						),
-					],
-					[icon(h, "ChatBubbleSparkleIcon", { size: 15 })],
-				),
-				h.span(
-					[h.Class("min-w-0 flex-1 space-y-0.5")],
-					[
-						h.span(
-							[h.Class("flex items-center font-prose text-xs font-medium text-foreground")],
-							["Connect your own agent"],
-						),
-						h.span(
-							[h.Class("block font-prose text-xs text-muted-foreground")],
-							["Claude Code, Cursor, or any MCP client can query your telemetry."],
-						),
-					],
-				),
-				icon(h, "ArrowRightIcon", {
-					size: 14,
-					className:
-						"shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground",
-				}),
-			],
-		),
-		h.div(
-			[h.Class("flex items-center gap-2 border-t bg-background/60 py-1.5 pl-3 pr-1.5")],
-			[
-				eyebrow(h, {}, ["MCP"]),
-				h.code(
-					[
-						h.Class(
-							"min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-muted-foreground scroll-fade-x [scrollbar-width:none]",
-						),
-					],
-					[MCP_ENDPOINT],
-				),
-				CopyButton.view(h, {
-					model: model.copies.mcp,
-					toParentMessage: toCopy("mcp"),
-					value: MCP_ENDPOINT,
-					label: "MCP endpoint",
-					className: COPY_CLASS,
-				}),
-			],
-		),
+type ClientMark = Readonly<{ name: IconName; className: string }>
+
+/** A client's brand mark on a tile, as the setup pages show agents. */
+const clientMark = (h: H, mark: ClientMark): Html =>
+	h.span(
+		[h.Class("flex size-6 shrink-0 items-center justify-center rounded-md border bg-background")],
+		[icon(h, mark.name, { size: 13, className: mark.className })],
+	)
+
+/** `McpClientRow`: a client's mark and name, then its one way in. */
+const clientRow = (h: H, mark: ClientMark, label: string, action: Html): Html =>
+	h.li(
+		[h.Class("flex min-h-10 items-center gap-2.5 px-3 py-1.5")],
+		[
+			clientMark(h, mark),
+			h.span([h.Class("shrink-0 font-prose text-xs font-medium text-foreground")], [label]),
+			h.div([h.Class("flex min-w-0 flex-1 items-center justify-end gap-1")], [action]),
+		],
+	)
+
+/** A copyable value at the end of a client row. */
+const copyAction = (h: H, model: Model, value: string, field: CopyField, label: string): Html =>
+	h.div(
+		[h.Class("flex min-w-0 items-center gap-1")],
+		[
+			h.code(
+				[
+					h.Class(
+						"min-w-0 overflow-x-auto whitespace-nowrap font-mono text-2xs text-muted-foreground scroll-fade-x [scrollbar-width:none]",
+					),
+				],
+				[value],
+			),
+			CopyButton.view(h, {
+				model: model.copies[field],
+				toParentMessage: toCopy(field),
+				value,
+				label,
+				className: COPY_CLASS,
+			}),
+		],
+	)
+
+/** A one-click install that hands the server entry to the editor. */
+const installAction = (h: H, href: string, label: string): Html =>
+	linkButton(h, { size: "xs", variant: "outline", className: "gap-1", href }, [
+		label,
+		icon(h, "ExternalLinkIcon", { size: 11, className: "text-muted-foreground" }),
 	])
+
+/** `McpCard`: each client's fastest way to add Maple, the endpoint for any other. */
+const mcpCard = (h: H, model: Model): Html =>
+	h.div(
+		[h.Class("space-y-2")],
+		[
+			h.div(
+				[h.Class("flex items-baseline justify-between gap-2")],
+				[
+					eyebrow(h, { variant: "label" }, ["Connect your own agent · MCP"]),
+					h.a(
+						[
+							h.Href(settingsHref("mcp")),
+							h.Class(
+								"inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground",
+							),
+						],
+						["All clients", icon(h, "ArrowRightIcon", { size: 12 })],
+					),
+				],
+			),
+			panel(h, { tone: "muted" }, [
+				h.ul(
+					[h.Class("divide-y")],
+					[
+						clientRow(
+							h,
+							{ name: "ClaudeIcon", className: "text-[#D97757]" },
+							"Claude Code",
+							copyAction(h, model, MCP_COMMAND, "mcpCommand", "Claude Code command"),
+						),
+						clientRow(
+							h,
+							{ name: "CursorIcon", className: "text-foreground" },
+							"Cursor",
+							installAction(h, cursorInstallUrl(MCP_ENDPOINT), "Add to Cursor"),
+						),
+						clientRow(
+							h,
+							{ name: "VsCodeIcon", className: "text-[#2B9FEF]" },
+							"VS Code",
+							installAction(h, vscodeInstallUrl(MCP_ENDPOINT), "Add to VS Code"),
+						),
+						clientRow(
+							h,
+							{ name: "ConnectionIcon", className: "text-primary" },
+							"Any client",
+							copyAction(h, model, MCP_ENDPOINT, "mcp", "MCP endpoint"),
+						),
+					],
+				),
+			]),
+			h.p(
+				[h.Class("font-prose text-xs text-muted-foreground")],
+				["Your client opens Maple in the browser to approve access."],
+			),
+		],
+	)
 
 /** The command split before its first flag: each half stays on one line, so a wrap breaks only there. */
 const commandParts = (command: string): ReadonlyArray<string> => {

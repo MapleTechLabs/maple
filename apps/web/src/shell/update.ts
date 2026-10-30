@@ -210,19 +210,28 @@ export const connectPollTicked = (): Message =>
 	Message.GotConnectMessage({ message: ConnectPanel.Message.TickedPoll() })
 
 /**
- * Navigation closes every menu and the mobile sheet. The page
+ * Navigation closes every menu, the Connect panel and the mobile sheet. The page
  * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
  */
 export const routeChanged =
 	(isSamePage: boolean, hasTopBar = true) =>
-	(model: Model): UpdateReturn => ({
-		model: modifyFields(closeMenu(model), {
-			isMobileNavOpen: () => false,
-			filterSheet: (sheet) => (isSamePage ? sheet : initFilterSheet()),
-			rightSheet: (sheet) => (isSamePage ? sheet : initRightSheet()),
-		}),
-		commands: checklistRefreshOnNavigation(model, hasTopBar, isClerkAuthEnabled),
-	})
+	(model: Model): UpdateReturn => {
+		const connect = ConnectPanel.close(model.connect)
+		return {
+			model: modifyFields(closeMenu(model), {
+				isMobileNavOpen: () => false,
+				filterSheet: (sheet) => (isSamePage ? sheet : initFilterSheet()),
+				rightSheet: (sheet) => (isSamePage ? sheet : initRightSheet()),
+				connect: () => connect.model,
+			}),
+			commands: [
+				...checklistRefreshOnNavigation(model, hasTopBar, isClerkAuthEnabled),
+				...Command.mapMessages(connect.commands ?? [], (message) =>
+					Message.GotConnectMessage({ message }),
+				),
+			],
+		}
+	}
 
 /**
  * Every checklist step is done on another page: a navigation re-reads it (`onResolved`), but only
