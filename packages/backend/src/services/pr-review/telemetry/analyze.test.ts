@@ -399,4 +399,34 @@ describe("analyzeTelemetry", () => {
 			[["issue-1", "src/payments/charge.ts"]],
 		)
 	})
+
+	it("does not link a service's issues to the bundle entry file every frame names", () => {
+		const issue = (id: string, service: string, topFrame: string) => ({
+			id,
+			fingerprintHash: id,
+			title: `Error ${id}`,
+			service,
+			topFrame,
+			occurrences: 100,
+			lastSeenAt: 1,
+		})
+		const telemetry = analyzeTelemetry({
+			files: [
+				file("apps/api/src/worker-app.ts", "@@ -1,1 +1,1 @@\n-a\n+b"),
+				file("src/payments/charge.ts", "@@ -1,1 +1,1 @@\n-a\n+b"),
+			],
+			catalog,
+			sources: [],
+			issues: [
+				...["a", "b", "c", "d", "e", "f"].map((id) =>
+					issue(id, "api-v2", "at Object.fetch (worker-app.js:1:52311)"),
+				),
+				issue("charge", "payments", "at charge (/app/payments/charge.js)"),
+			],
+		})
+		assert.deepStrictEqual(
+			telemetry.linkedIssues.map((linked) => [linked.issueId, linked.path]),
+			[["charge", "src/payments/charge.ts"]],
+		)
+	})
 })

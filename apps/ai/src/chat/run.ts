@@ -33,6 +33,7 @@ import {
 	type ProgramCall,
 } from "./events"
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
+import { makeChildFindings } from "./review-child-findings"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
 import { buildCodeMode, CODE_MODE_GUIDANCE, CODE_MODE_TOOLS } from "./code-mode"
@@ -182,6 +183,8 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
 		? (input.review?.coverage ?? makeReviewCoverage(input.text))
 		: undefined
+	// What this run's `review_files` children answer; `submit_review` checks the review against it.
+	const childFindings = coverage === undefined ? undefined : makeChildFindings()
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
 	// The same for a `run_code` program's calls (`<program call id>#<n>`), drawn when it settles.
@@ -226,6 +229,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					sessionAttributes,
 					coverage,
 					input.review?.ledger,
+					childFindings,
 				)) ??
 		(input.submitReply === undefined || input.stageEdit === undefined
 			? undefined
@@ -269,6 +273,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
 					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
 					Object.keys(codeTools),
+					childFindings,
 				)
 			: undefined
 

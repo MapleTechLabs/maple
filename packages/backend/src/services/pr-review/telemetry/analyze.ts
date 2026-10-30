@@ -84,6 +84,14 @@ const GENERIC_BASENAME =
 const stripExtension = (name: string) => name.replace(/\.[^.]+$/, "")
 
 /**
+ * A changed file that at least this many, and this share, of one service's open issues point at is
+ * where the service's frames land, not where its errors come from: a bundle shipped without source
+ * maps names its entry file in every frame.
+ */
+const CATCH_ALL_MIN_ISSUES = 5
+const CATCH_ALL_SHARE = 0.5
+
+/**
  * Whether a normalized top frame points at a changed file: by its last directory and name (any
  * extension, since a frame may be the compiled `.js` of a `.ts` file), or by a distinctive name
  * alone.
@@ -295,10 +303,28 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		})
 	}
 
-	const linkedIssues = input.issues
-		.flatMap((issue) => {
-			const file = files.find((candidate) => frameMatchesPath(issue.topFrame, candidate.path))
-			return file === undefined
+	const matched = input.issues.map((issue) => ({
+		issue,
+		file: files.find((candidate) => frameMatchesPath(issue.topFrame, candidate.path)),
+	}))
+	const issuesPerService = new Map<string, number>()
+	const matchesPerFile = new Map<string, number>()
+	for (const { issue, file } of matched) {
+		issuesPerService.set(issue.service, (issuesPerService.get(issue.service) ?? 0) + 1)
+		if (file === undefined) continue
+		const key = `${issue.service}\u0000${file.path}`
+		matchesPerFile.set(key, (matchesPerFile.get(key) ?? 0) + 1)
+	}
+	const isCatchAll = (service: string, path: string) => {
+		const count = matchesPerFile.get(`${service}\u0000${path}`) ?? 0
+		return (
+			count >= CATCH_ALL_MIN_ISSUES && count >= CATCH_ALL_SHARE * (issuesPerService.get(service) ?? 0)
+		)
+	}
+
+	const linkedIssues = matched
+		.flatMap(({ issue, file }) =>
+			file === undefined || isCatchAll(issue.service, file.path)
 				? []
 				: [
 						new PrReviewLinkedIssue({
@@ -311,8 +337,8 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 							occurrences: issue.occurrences,
 							lastSeenAt: issue.lastSeenAt,
 						}),
-					]
-		})
+					],
+		)
 		.sort((a, b) => b.occurrences - a.occurrences)
 		.slice(0, MAX_ISSUES)
 
