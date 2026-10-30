@@ -75,6 +75,40 @@ describe("fixUnknownIdentifier", () => {
 		).toBe("SELECT ServiceName FROM `traces` WHERE $__orgFilter")
 	})
 
+	// Only FROM/JOIN/comma positions name tables: not a literal, not an alias.
+	it.each([
+		[
+			"SELECT service.name FROM logs WHERE $__orgFilter AND Body = '`traces`'",
+			"SELECT ServiceName FROM logs WHERE $__orgFilter AND Body = '`traces`'",
+		],
+		[
+			"SELECT service.name FROM logs AS traces WHERE $__orgFilter",
+			"SELECT ServiceName FROM logs AS traces WHERE $__orgFilter",
+		],
+	])("fixes %s against the one table it reads", (sql, expected) => {
+		expect(fixUnknownIdentifier(sql, unknown("service.name"))?.sql).toBe(expected)
+	})
+
+	it("fixes a column qualified by the alias of a backtick-quoted table", () => {
+		expect(
+			fixUnknownIdentifier(
+				"SELECT t.trace_id FROM `traces` AS t WHERE $__orgFilter(t)",
+				unknown("t.trace_id"),
+			)?.sql,
+		).toBe("SELECT t.TraceId FROM `traces` AS t WHERE $__orgFilter(t)")
+	})
+
+	it("never rewrites a backtick-quoted alias the query defines", () => {
+		const sql =
+			"SELECT ServiceName AS `service.name` FROM traces WHERE $__orgFilter ORDER BY `service.name`"
+		expect(fixUnknownIdentifier(sql, unknown("service.name"))).toBeUndefined()
+	})
+
+	it("counts every table of a comma-separated FROM list", () => {
+		const sql = "SELECT service_name FROM traces t, logs l WHERE $__orgFilter(t) AND $__orgFilter(l)"
+		expect(fixUnknownIdentifier(sql, unknown("service_name"))).toBeUndefined()
+	})
+
 	it("does not fix an unqualified name both joined tables have", () => {
 		const sql =
 			"SELECT service_name FROM traces t JOIN logs l ON t.TraceId = l.TraceId WHERE $__orgFilter(t)"

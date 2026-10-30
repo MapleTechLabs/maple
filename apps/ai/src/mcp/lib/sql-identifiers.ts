@@ -1,5 +1,4 @@
 import type { RunSqlRewrite } from "@maple/domain/mcp-outputs"
-import { maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import {
 	describeWarehouseTable,
 	listWarehouseTables,
@@ -14,15 +13,31 @@ export const unknownIdentifierName = (message: string): string | undefined => {
 	return match?.[1] ?? match?.[2] ?? match?.[3]
 }
 
-/** Names of the catalog tables the SQL reads, in first-mention order. */
+// String literals (with '' and \' escapes), comments, and backtick or double-quoted identifiers.
+const SQL_TOKEN =
+	/'(?:[^'\\]|\\[\s\S]|'')*'?|--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|`(?:[^`]|``)*`?|"(?:[^"]|"")*"?/g
+
+/**
+ * The SQL with literals and comments blanked and quoted identifiers unquoted, keeping every
+ * position, so `FROM \`traces\`` reads as a table while `'traces'` does not.
+ */
+export const identifierText = (sql: string): string =>
+	sql.replace(SQL_TOKEN, (token) => {
+		if (token[0] !== "`" && token[0] !== '"') return token.replace(/[^\n]/g, " ")
+		const closed = token.length > 1 && token.endsWith(token[0])
+		return ` ${token.slice(1, closed ? -1 : undefined)}${closed ? " " : ""}`
+	})
+
+/** Names of the catalog tables the SQL reads (after FROM, JOIN or a comma), in first-mention order. */
 export const referencedTableNames = (sql: string): ReadonlyArray<string> => {
-	const masked = maskLiteralsAndComments(sql)
+	const text = identifierText(sql)
 	return listWarehouseTables()
-		.map((t) => {
-			// Masking blanks backticks too, so a quoted ``FROM `traces` `` is found in the raw text.
-			const at = masked.search(new RegExp(`\\b${t.name}\\b`))
-			return { name: t.name, at: at >= 0 ? at : sql.indexOf(`\`${t.name}\``) }
-		})
+		.map((t) => ({
+			name: t.name,
+			at: text.search(
+				new RegExp(`(?:\\bFROM\\s+|\\bJOIN\\s+|,\\s*)(?:[A-Za-z_]\\w*\\.)?${t.name}\\b`, "i"),
+			),
+		}))
 		.filter((t) => t.at >= 0)
 		.sort((a, b) => a.at - b.at)
 		.map((t) => t.name)
@@ -85,19 +100,18 @@ const identifierFix = (
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /**
- * Every use of `written` as an identifier, bare or backticked, replaced by `replacement`.
+ * Every use of `written` as an identifier, bare or quoted, replaced by `replacement`.
  * Literals and comments are left alone, as are longer names it is part of and function calls.
  */
 const replaceIdentifier = (sql: string, written: string, replacement: string): string => {
-	// Unquote only this name's backticks (same length) so other quoting still masks as before.
-	const quoted = `\`${written}\``
-	const masked = maskLiteralsAndComments(sql.replaceAll(quoted, ` ${written} `))
 	const pattern = new RegExp(`(?<![\\w.])${escapeRegExp(written)}(?![\\w.(])`, "g")
-	const spans = [...masked.matchAll(pattern)].map((m) =>
-		sql.startsWith(quoted, m.index - 1)
+	const spans = [...identifierText(sql).matchAll(pattern)].map((m) => {
+		const quote = sql[m.index - 1]
+		const quoted = (quote === "`" || quote === '"') && sql[m.index + written.length] === quote
+		return quoted
 			? { start: m.index - 1, end: m.index + written.length + 1 }
-			: { start: m.index, end: m.index + written.length },
-	)
+			: { start: m.index, end: m.index + written.length }
+	})
 	return spans.reduceRight(
 		(text, { start, end }) => `${text.slice(0, start)}${replacement}${text.slice(end)}`,
 		sql,
@@ -107,7 +121,7 @@ const replaceIdentifier = (sql: string, written: string, replacement: string): s
 /** Names the SQL defines itself (`AS x`, `x AS (`), which are never column typos. */
 export const definedNames = (sql: string): ReadonlySet<string> =>
 	new Set(
-		[...maskLiteralsAndComments(sql).matchAll(/\bAS\s+([A-Za-z_]\w*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)].map(
+		[...identifierText(sql).matchAll(/\bAS\s+([A-Za-z_][\w.]*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)].map(
 			(m) => m[1] ?? m[2],
 		),
 	)
@@ -116,7 +130,7 @@ export const definedNames = (sql: string): ReadonlySet<string> =>
 const tableQualifiers = (sql: string): ReadonlySet<string> =>
 	new Set(
 		[
-			...maskLiteralsAndComments(sql).matchAll(
+			...identifierText(sql).matchAll(
 				/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?/gi,
 			),
 		].flatMap((m) => [m[1], m[1].split(".").at(-1) ?? m[1], ...(m[2] === undefined ? [] : [m[2]])]),
