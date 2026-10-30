@@ -933,6 +933,7 @@ describe("json tab", () => {
 			}),
 		).model
 		expect(reread.jsonDraft).toBe(draftText)
+		scene({ update: pageUpdate, view }, given(reread), expectView(text("changed")).not.toExist())
 		expect(pageUpdate(reread, Message.ClickedApplyJson()).commands).toMatchObject([
 			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v8" } },
 		])

@@ -1,4 +1,9 @@
-import { normalizeStatusPageConfig, type StatusPageConfig, type V2StatusPage } from "@maple/domain/http/v2"
+import {
+	hasStatusPageConfigChanges,
+	normalizeStatusPageConfig,
+	type StatusPageConfig,
+	type V2StatusPage,
+} from "@maple/domain/http/v2"
 import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "../../../../data/load-failure"
@@ -36,12 +41,7 @@ export const draftOf = (model: Model): Option.Option<DraftResult> =>
 const hasChanges = (draft: DraftResult): boolean =>
 	Result.match(draft, {
 		onFailure: () => false,
-		onSuccess: ({ changes }) =>
-			changes.fields.length > 0 ||
-			changes.created.length > 0 ||
-			changes.updated.length > 0 ||
-			changes.deleted.length > 0 ||
-			changes.reordered,
+		onSuccess: ({ changes }) => hasStatusPageConfigChanges(changes),
 	})
 
 /** Apply needs a valid draft that changes something, and no unsaved Settings edits to fight. */
@@ -170,7 +170,12 @@ export const rebaseJsonDraft = (model: Model): Model =>
 	model.isRebasingJson && model.jsonDraft !== null
 		? Option.match(currentConfigOf(model), {
 				onNone: () => model,
-				onSome: (current) => ({ ...model, jsonBase: current, isRebasingJson: false }),
+				onSome: (current) => ({
+					...model,
+					jsonBase: current,
+					isRebasingJson: false,
+					jsonFailure: null,
+				}),
 			})
 		: model
 
