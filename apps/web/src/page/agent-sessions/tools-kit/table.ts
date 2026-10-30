@@ -55,7 +55,7 @@ export const toolTableHead = <M>(
 	className?: string,
 ): Html =>
 	h.div(
-		[h.Class(cn("flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-2.5", className))],
+		[h.Class(cn("flex h-8 shrink-0 items-center gap-3 border-y border-border px-2.5", className))],
 		children,
 	)
 

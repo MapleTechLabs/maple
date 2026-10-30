@@ -80,7 +80,7 @@ export const runningClock = <M>(h: HtmlBuilder<M>, mount: PanelHost<M>["clockMou
 const statusGlyph = <M>(h: HtmlBuilder<M>, status: ToolStatus, live: boolean, toolName: string): Html => {
 	if (status === "running")
 		return live ? dotLoader(h) : spinner(h, "size-3.5 text-muted-foreground motion-reduce:animate-none")
-	if (status === "error") return icon(h, "CircleXmarkIcon", { className: "size-3.5 text-destructive" })
+	if (status === "error") return icon(h, "CircleXmarkIcon", { className: "size-3.5 text-severity-error" })
 	if (status === "stopped")
 		return icon(h, "CircleWarningIcon", { className: "size-3.5 text-muted-foreground" })
 	return icon(h, toolIcon(toolName), { className: "size-3.5" })

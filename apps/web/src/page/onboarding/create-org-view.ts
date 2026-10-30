@@ -230,7 +230,7 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 						{
 							type: "submit",
 							size: "lg",
-							className: "h-12 w-full text-[15px] font-semibold",
+							className: "h-12 w-full text-title font-semibold",
 							isLoading: model.isCreating,
 							isDisabled:
 								model.name.trim() === "" ||
@@ -305,7 +305,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 												[initialOf(model.name)],
 											),
 											h.span(
-												[h.Class("min-w-0 flex-1 truncate text-[13px] font-medium")],
+												[h.Class("min-w-0 flex-1 truncate text-ui font-medium")],
 												[nameOf(model.name)],
 											),
 											...(hasMultipleRegions
@@ -337,7 +337,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 								[h.Class("flex flex-1 flex-col gap-4 p-5")],
 								[
 									h.span(
-										[h.Class("font-display text-[15px] font-semibold")],
+										[h.Class("font-display text-title font-semibold")],
 										[`Welcome to ${nameOf(model.name)}`],
 									),
 									h.div(
@@ -352,7 +352,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 												[icon(h, "FrameworkOpenTelemetryIcon", { size: 28 })],
 											),
 											h.span(
-												[h.Class("text-[13px] font-medium")],
+												[h.Class("text-ui font-medium")],
 												["Waiting for your first span"],
 											),
 											h.span(
@@ -409,7 +409,7 @@ export const view = (
 											h.p(
 												[
 													h.Class(
-														"max-w-md text-[15px] leading-relaxed text-muted-foreground",
+														"max-w-md text-title leading-relaxed text-muted-foreground",
 													),
 												],
 												[

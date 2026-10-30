@@ -1,6 +1,6 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
-import { formatBucketLabel } from "@maple/ui/lib/format"
+import { countLabel, formatBucketLabel } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
@@ -18,8 +18,10 @@ import { plotFrame } from "../../../charts/plot-frame"
 import { stackedBreakdown } from "../../../charts/stacked-breakdown-chart"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
+import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { segmentedSelect } from "../../../ui/segmented-select"
+import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { isoMs } from "../shared/time"
 import * as CopyButton from "../../../ui/copy-button"
@@ -103,8 +105,9 @@ const isStatsRefreshing = (model: Model): boolean => AsyncData.isRefreshing(mode
 const timeLabel = (window: UptimeWindow, iso: string, timeZone: string): string =>
 	window === "1h" ? formatAlertTime(iso, timeZone) : formatAlertDateTime(iso, timeZone)
 
-/** `3m ago`. */
-const ago = (nowMs: number, atMs: number): string => `${formatSpan(nowMs - atMs)} ago`
+/** `3m ago`, the absolute time on hover. */
+const ago = (h: H, nowMs: number, timeZone: string, iso: string): Html =>
+	relativeTime(h, { value: isoMs(iso), nowMs, timeZone, tooltip: "title" })
 
 /** The figures over the page: status, the last check, uptime and the window's percentiles. */
 export const kpiRail = (
@@ -134,7 +137,7 @@ export const kpiRail = (
 				value:
 					monitor.state.last_ping_at === null
 						? "None yet"
-						: ago(nowMs, isoMs(monitor.state.last_ping_at)),
+						: ago(h, nowMs, timeZone, monitor.state.last_ping_at),
 				compact: true,
 				subline:
 					monitor.state.last_ping_at === null
@@ -143,7 +146,7 @@ export const kpiRail = (
 			})
 		: statRailItem(h, {
 				eyebrow: "Last checked",
-				value: last === null ? "Not yet" : ago(nowMs, isoMs(last.at)),
+				value: last === null ? "Not yet" : ago(h, nowMs, timeZone, last.at),
 				tone: last !== null && !last.ok ? "crit" : "neutral",
 				compact: true,
 				subline:
@@ -1016,7 +1019,7 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 			],
 		),
 		rows.length === 0
-			? h.p([h.Class("px-4 py-6 text-sm text-muted-foreground")], ["No checks yet."])
+			? emptyMessage(h, {}, ["No checks yet."])
 			: h.ul(
 					[h.Class("divide-y")],
 					rows.map((row, index) =>
@@ -1116,7 +1119,7 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 		count === 0
 			? "Nobody yet"
 			: destinations === null
-				? `${count} ${count === 1 ? "destination" : "destinations"}`
+				? countLabel(count, "destination")
 				: monitor.destination_ids
 						.map(
 							(id) =>

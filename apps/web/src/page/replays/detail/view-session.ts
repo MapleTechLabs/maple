@@ -1,4 +1,4 @@
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
@@ -33,10 +33,28 @@ const row = (
 ): Html => detailRailRow(h, { ...options, labelWidth: "102px" }, children)
 
 const value = (h: H, text: string, options: Readonly<{ isMono?: boolean; className?: string }> = {}): Html =>
-	h.span([h.Class(cn("text-xs text-foreground", options.isMono === true && "font-mono tabular-nums", options.className))], [text])
+	h.span(
+		[
+			h.Class(
+				cn(
+					"text-xs text-foreground",
+					options.isMono === true && "font-mono tabular-nums",
+					options.className,
+				),
+			),
+		],
+		[text],
+	)
 
 /** `CopyButton iconSize={12} className="ml-1 size-5 shrink-0" toast={false}`. */
-export const copy = (h: H, model: Pick<Model, "copies">, key: string, text: string, label: string, className = "ml-1 size-5 shrink-0"): Html =>
+export const copy = (
+	h: H,
+	model: Pick<Model, "copies">,
+	key: string,
+	text: string,
+	label: string,
+	className = "ml-1 size-5 shrink-0",
+): Html =>
 	CopyButton.view(h, {
 		model: model.copies[key] ?? CopyButton.init(),
 		toParentMessage: (message) => Message.GotCopyMessage({ key, message }),
@@ -60,23 +78,39 @@ const stat = (h: H, iconName: IconName, label: string, count: number, isDanger =
 			),
 		],
 		[
-			h.span([h.Class("flex items-center gap-1 text-3xs text-muted-foreground")], [
-				icon(h, iconName, { className: cn("size-3 shrink-0", isDanger && "text-severity-error"), attributes: [h.AriaHidden(true)] }),
-				h.span([h.Class("truncate")], [label]),
-			]),
 			h.span(
-				[h.Class(cn("font-mono text-sm font-semibold tabular-nums", isDanger ? "text-severity-error" : "text-foreground"))],
+				[h.Class("flex items-center gap-1 text-3xs text-muted-foreground")],
+				[
+					icon(h, iconName, {
+						className: cn("size-3 shrink-0", isDanger && "text-severity-error"),
+						attributes: [h.AriaHidden(true)],
+					}),
+					h.span([h.Class("truncate")], [label]),
+				],
+			),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"font-mono text-sm font-semibold tabular-nums",
+							isDanger ? "text-severity-error" : "text-foreground",
+						),
+					),
+				],
 				[String(count)],
 			),
 		],
 	)
 
 const legend = (h: H, swatch: string, label: string, text: string): Html =>
-	h.span([h.Class("flex items-center gap-1.5")], [
-		statusDot(h, { tone: "custom", className: swatch }),
-		label,
-		h.span([h.Class("font-mono tabular-nums text-foreground")], [text]),
-	])
+	h.span(
+		[h.Class("flex items-center gap-1.5")],
+		[
+			statusDot(h, { tone: "custom", className: swatch }),
+			label,
+			h.span([h.Class("font-mono tabular-nums text-foreground")], [text]),
+		],
+	)
 
 const summary = (h: H, session: ReplayDetail): Html => {
 	const total = session.durationMs
@@ -84,33 +118,62 @@ const summary = (h: H, session: ReplayDetail): Html => {
 	const idle = session.idleTimeMs
 	const share =
 		total !== null && total > 0 && (active !== null || idle !== null)
-			? { active: Math.min(100, ((active ?? 0) / total) * 100), idle: Math.min(100, ((idle ?? 0) / total) * 100) }
+			? {
+					active: Math.min(100, ((active ?? 0) / total) * 100),
+					idle: Math.min(100, ((idle ?? 0) / total) * 100),
+				}
 			: null
 	const isErrored = session.errorCount > 0
-	return h.section([h.Class("border-b border-border/40 px-4 py-3.5")], [
-		statFigure(h, { value: formatSessionDuration(total), unit: "on the page" }),
-		...(share === null
-			? []
-			: [
-					segmentedBar(h, {
-						segments: [
-							{ key: "active", value: share.active, className: "bg-primary" },
-							{ key: "idle", value: share.idle, className: "bg-muted-foreground/40" },
-						],
-						total: 100,
-						className: "mt-3 h-1 gap-px bg-muted",
-					}),
-					h.div([h.Class("mt-2 flex items-center gap-4 text-2xs text-muted-foreground")], [
-						...(active === null ? [] : [legend(h, "bg-primary", "Active", formatSessionDuration(active))]),
-						...(idle === null ? [] : [legend(h, "bg-muted-foreground/40", "Idle", formatSessionDuration(idle))]),
+	return h.section(
+		[h.Class("border-b border-border/40 px-4 py-3.5")],
+		[
+			statFigure(h, { value: formatSessionDuration(total), unit: "on the page" }),
+			...(share === null
+				? []
+				: [
+						segmentedBar(h, {
+							segments: [
+								{ key: "active", value: share.active, className: "bg-primary" },
+								{ key: "idle", value: share.idle, className: "bg-muted-foreground/40" },
+							],
+							total: 100,
+							className: "mt-3 h-1 gap-px bg-muted",
+						}),
+						h.div(
+							[h.Class("mt-2 flex items-center gap-4 text-2xs text-muted-foreground")],
+							[
+								...(active === null
+									? []
+									: [legend(h, "bg-primary", "Active", formatSessionDuration(active))]),
+								...(idle === null
+									? []
+									: [
+											legend(
+												h,
+												"bg-muted-foreground/40",
+												"Idle",
+												formatSessionDuration(idle),
+											),
+										]),
+							],
+						),
 					]),
-				]),
-		h.div([h.Class("mt-3 grid grid-cols-3 gap-1.5")], [
-			stat(h, "FileIcon", "Pages", session.pageViews || 1),
-			stat(h, "CursorPointerIcon", "Clicks", session.clickCount),
-			stat(h, "AlertWarningIcon", session.errorCount === 1 ? "Error" : "Errors", session.errorCount, isErrored),
-		]),
-	])
+			h.div(
+				[h.Class("mt-3 grid grid-cols-3 gap-1.5")],
+				[
+					stat(h, "FileIcon", "Pages", session.pageViews || 1),
+					stat(h, "CursorPointerIcon", "Clicks", session.clickCount),
+					stat(
+						h,
+						"AlertWarningIcon",
+						pluralize(session.errorCount, "Error"),
+						session.errorCount,
+						isErrored,
+					),
+				],
+			),
+		],
+	)
 }
 
 const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null => {
@@ -119,7 +182,13 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 	const { userName, userEmail, groupName, groupId } = session
 	if (!userName && !userEmail && !userId && !groupName && !groupId && traits.length === 0) return null
 	return detailRailGroup(h, "Identity", [
-		...(userName ? [row(h, { icon: "UserIcon", label: "Name", title: userName }, [value(h, userName, { className: "truncate" })])] : []),
+		...(userName
+			? [
+					row(h, { icon: "UserIcon", label: "Name", title: userName }, [
+						value(h, userName, { className: "truncate" }),
+					]),
+				]
+			: []),
 		...(userEmail
 			? [
 					row(h, { icon: "EnvelopeIcon", label: "Email", title: userEmail }, [
@@ -131,7 +200,12 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 		...(userId
 			? [
 					row(h, { icon: "IdBadgeIcon", label: "User ID", title: userId }, [
-						link(h, hrefOf(AppRoute.Replays({ search: { userId } })), userId, "truncate font-mono text-xs text-primary underline-offset-2 hover:underline"),
+						link(
+							h,
+							hrefOf(AppRoute.Replays({ search: { userId } })),
+							userId,
+							"truncate font-mono text-xs text-primary underline-offset-2 hover:underline",
+						),
 						copy(h, model, "userId", userId, "User ID"),
 					]),
 				]
@@ -148,7 +222,12 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 						},
 						[
 							groupName
-								? link(h, hrefOf(AppRoute.Replays({ search: { group: groupName } })), groupName, "truncate text-xs text-primary underline-offset-2 hover:underline")
+								? link(
+										h,
+										hrefOf(AppRoute.Replays({ search: { group: groupName } })),
+										groupName,
+										"truncate text-xs text-primary underline-offset-2 hover:underline",
+									)
 								: value(h, groupId, { isMono: true, className: "truncate" }),
 						],
 					),
@@ -160,7 +239,11 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 						h.div(
 							[h.Class("flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground")],
 							traits.map(([key, text]) =>
-								truncatedText(h, { text: `${key}: ${text}`, className: "max-w-full" }, [key, "=", h.span([h.Class("text-foreground/80")], [text])]),
+								truncatedText(h, { text: `${key}: ${text}`, className: "max-w-full" }, [
+									key,
+									"=",
+									h.span([h.Class("text-foreground/80")], [text]),
+								]),
 							),
 						),
 					]),
@@ -171,25 +254,66 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 
 const envFact = (
 	h: H,
-	options: Readonly<{ icon: IconName; glyph?: string | undefined; label: string; value: string; className?: string }>,
+	options: Readonly<{
+		icon: IconName
+		glyph?: string | undefined
+		label: string
+		value: string
+		className?: string
+	}>,
 ): Html =>
-	h.span([h.Class("flex min-w-0 items-center gap-2"), h.Title(`${options.label}: ${options.value || "unknown"}`)], [
-		options.glyph === undefined || options.glyph === ""
-			? icon(h, options.icon, { className: "size-3.5 shrink-0 text-muted-foreground", attributes: [h.AriaHidden(true)] })
-			: h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0 text-center text-sm leading-none")], [options.glyph]),
-		h.span(
-			[h.Class(cn("min-w-0 truncate text-xs", options.value ? "text-foreground" : "text-muted-foreground", options.className))],
-			[options.value || EMPTY_VALUE],
-		),
-	])
+	h.span(
+		[
+			h.Class("flex min-w-0 items-center gap-2"),
+			h.Title(`${options.label}: ${options.value || "unknown"}`),
+		],
+		[
+			options.glyph === undefined || options.glyph === ""
+				? icon(h, options.icon, {
+						className: "size-3.5 shrink-0 text-muted-foreground",
+						attributes: [h.AriaHidden(true)],
+					})
+				: h.span(
+						[h.AriaHidden(true), h.Class("w-3.5 shrink-0 text-center text-sm leading-none")],
+						[options.glyph],
+					),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"min-w-0 truncate text-xs",
+							options.value ? "text-foreground" : "text-muted-foreground",
+							options.className,
+						),
+					),
+				],
+				[options.value || EMPTY_VALUE],
+			),
+		],
+	)
 
-const path = (h: H, text: string): Html => h.span([h.Class("min-w-0 truncate font-mono text-xs text-foreground")], [text])
+const path = (h: H, text: string): Html =>
+	h.span([h.Class("min-w-0 truncate font-mono text-xs text-foreground")], [text])
 
 const acquisition = (h: H, session: ReplayDetail): Html | null =>
 	session.entryPath || session.referrerHost || session.utmSource
 		? detailRailGroup(h, "Acquisition", [
-				...(session.entryPath ? [row(h, { icon: "ArrowRightFromLineIcon", label: "Entry", title: session.entryPath }, [path(h, session.entryPath)])] : []),
-				...(session.exitPath ? [row(h, { icon: "LogoutIcon", label: "Exit", title: session.exitPath }, [path(h, session.exitPath)])] : []),
+				...(session.entryPath
+					? [
+							row(
+								h,
+								{ icon: "ArrowRightFromLineIcon", label: "Entry", title: session.entryPath },
+								[path(h, session.entryPath)],
+							),
+						]
+					: []),
+				...(session.exitPath
+					? [
+							row(h, { icon: "LogoutIcon", label: "Exit", title: session.exitPath }, [
+								path(h, session.exitPath),
+							]),
+						]
+					: []),
 				row(h, { icon: "LinkIcon", label: "Referrer" }, [
 					session.referrerHost
 						? value(h, session.referrerHost, { isMono: true, className: "truncate" })
@@ -198,12 +322,18 @@ const acquisition = (h: H, session: ReplayDetail): Html | null =>
 				...(session.utmSource
 					? [
 							row(h, { icon: "PaperPlaneIcon", label: "Source" }, [
-								value(h, [session.utmSource, session.utmMedium].filter(Boolean).join(" / "), { className: "truncate" }),
+								value(h, [session.utmSource, session.utmMedium].filter(Boolean).join(" / "), {
+									className: "truncate",
+								}),
 							]),
 						]
 					: []),
 				...(session.utmCampaign
-					? [row(h, { icon: "RocketIcon", label: "Campaign", title: session.utmCampaign }, [value(h, session.utmCampaign, { className: "truncate" })])]
+					? [
+							row(h, { icon: "RocketIcon", label: "Campaign", title: session.utmCampaign }, [
+								value(h, session.utmCampaign, { className: "truncate" }),
+							]),
+						]
 					: []),
 			])
 		: null
@@ -220,23 +350,35 @@ const context = (h: H, model: SessionView, session: ReplayDetail): Html => {
 				]
 			: []),
 		row(h, { icon: "IdBadgeIcon", label: "Session ID", title: model.sessionId }, [
-			value(h, shortId(model.sessionId, "session", { ellipsis: true }), { isMono: true, className: "truncate" }),
+			value(h, shortId(model.sessionId, "session", { ellipsis: true }), {
+				isMono: true,
+				className: "truncate",
+			}),
 			copy(h, model, "session", model.sessionId, "Session ID"),
 		]),
 		...(recorded === undefined
 			? []
 			: [
 					row(h, { icon: "EyeIcon", label: "Recording" }, [
-						h.span([h.Class("flex items-center gap-1.5 text-xs")], [
-							statusDot(h, { tone: recorded ? "ok" : "neutral" }),
-							h.span([h.Class(recorded ? "text-foreground" : "text-muted-foreground")], [recorded ? "Complete" : "Not recorded"]),
-						]),
+						h.span(
+							[h.Class("flex items-center gap-1.5 text-xs")],
+							[
+								statusDot(h, { tone: recorded ? "ok" : "neutral" }),
+								h.span(
+									[h.Class(recorded ? "text-foreground" : "text-muted-foreground")],
+									[recorded ? "Complete" : "Not recorded"],
+								),
+							],
+						),
 					]),
 				]),
 		...(session.userAgent
 			? [
 					detailRailField(h, { label: "User agent" }, [
-						h.span([h.Class("break-words font-mono text-3xs leading-3.75 text-muted-foreground")], [session.userAgent]),
+						h.span(
+							[h.Class("break-words font-mono text-3xs leading-3.75 text-muted-foreground")],
+							[session.userAgent],
+						),
 					]),
 				]
 			: []),
@@ -260,22 +402,36 @@ export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Htm
 								"truncate font-mono text-xs text-primary underline-offset-2 hover:underline",
 							),
 						]),
-						row(h, { icon: "UserIcon", label: "Visitor" }, [value(h, session.visitorIsNew ? "New" : "Returning")]),
+						row(h, { icon: "UserIcon", label: "Visitor" }, [
+							value(h, session.visitorIsNew ? "New" : "Returning"),
+						]),
 					])
 				: null,
 			acquisition(h, session),
 			detailRailGroup(h, "Environment", [
-				h.div([h.Class("grid grid-cols-2 gap-x-3 gap-y-2 pt-0.5")], [
-					envFact(h, { icon: browserIconFor(session.browserName), label: "Browser", value: session.browserName }),
-					envFact(h, { icon: "CubeIcon", label: "Operating system", value: session.osName }),
-					envFact(h, { icon: deviceIconFor(session.deviceType), label: "Device", value: session.deviceType, className: "capitalize" }),
-					envFact(h, {
-						icon: "GlobeIcon",
-						glyph: session.country ? countryFlag(session.country) : undefined,
-						label: "Country",
-						value: session.country ? countryName(session.country) : "",
-					}),
-				]),
+				h.div(
+					[h.Class("grid grid-cols-2 gap-x-3 gap-y-2 pt-0.5")],
+					[
+						envFact(h, {
+							icon: browserIconFor(session.browserName),
+							label: "Browser",
+							value: session.browserName,
+						}),
+						envFact(h, { icon: "CubeIcon", label: "Operating system", value: session.osName }),
+						envFact(h, {
+							icon: deviceIconFor(session.deviceType),
+							label: "Device",
+							value: session.deviceType,
+							className: "capitalize",
+						}),
+						envFact(h, {
+							icon: "GlobeIcon",
+							glyph: session.country ? countryFlag(session.country) : undefined,
+							label: "Country",
+							value: session.country ? countryName(session.country) : "",
+						}),
+					],
+				),
 			]),
 			context(h, model, session),
 		].filter((node): node is Html => node !== null),

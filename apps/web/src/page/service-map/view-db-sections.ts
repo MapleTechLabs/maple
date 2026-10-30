@@ -3,7 +3,6 @@ import type { PlanetScaleNodeMetrics } from "@maple/ui/components/service-map/se
 import {
 	countLabel,
 	EMPTY_VALUE,
-	formatDuration,
 	formatLatency,
 	formatNumber,
 	formatPercent,
@@ -11,12 +10,16 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import {
+	formatLag,
+	formatStoragePercent,
+	lagClass,
+	utilizationClass,
+} from "../../components/infra/planetscale/metrics"
 import type { LoadFailure } from "../../data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { alert, alertDescription, alertTitle } from "../../ui/alert"
@@ -38,23 +41,6 @@ import { queryActivityCharts } from "./view-db-charts"
 // PlanetScale health and branches, query activity and the top query shapes.
 
 type H = HtmlBuilder<Message>
-
-// PlanetScale tone classes and formats (see components/infra/planetscale/metrics.ts).
-const utilizationClass = (percent: number): string | undefined => {
-	const level = utilizationLevel(percent / 100)
-	return level === "ok" ? undefined : TONE_TEXT[level]
-}
-const lagClass = (seconds: number): string | undefined =>
-	!Number.isFinite(seconds)
-		? undefined
-		: seconds > 10
-			? TONE_TEXT.crit
-			: seconds > 1
-				? TONE_TEXT.warn
-				: undefined
-const formatLag = (seconds: number) => formatDuration(seconds * 1000)
-const formatStoragePercent = (percent: number) =>
-	`${percent >= 99.5 || percent < 10 ? percent.toFixed(1) : percent.toFixed(0)}%`
 
 /** A failed read as the panels show it: a small critical Alert with `displayError`'s copy. */
 export const failureAlert = <A>(h: H, data: AsyncData.AsyncData<A, LoadFailure>): Option.Option<Html> =>

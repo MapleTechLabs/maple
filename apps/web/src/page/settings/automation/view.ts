@@ -1,10 +1,8 @@
 import type { AlertDestinationDocument, IssueSeverity } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
-import { button } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { field, fieldLabel, type FieldState } from "../../../ui/field"
@@ -136,14 +134,9 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-x-4 gap-y-2")],
 					[
-						h.a(
-							[
-								h.Href("/alerts?tab=routing"),
-								h.Class(cn(buttonVariants({ size: "sm", variant: "outline" }))),
-								h.DataAttribute("slot", "button"),
-							],
-							["Add a destination"],
-						),
+						linkButton(h, { size: "sm", variant: "outline", href: "/alerts?tab=routing" }, [
+							"Add a destination",
+						]),
 						docsLink(h, "destinations"),
 					],
 				),

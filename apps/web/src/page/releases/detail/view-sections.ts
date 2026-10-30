@@ -19,7 +19,7 @@ import {
 } from "../../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
+import { severityBadge } from "../../errors/kit/severity"
 import { emptyMessage } from "../../../ui/empty"
 import { listRow } from "../../../ui/list-row"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
@@ -386,23 +386,6 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 	)
 }
 
-// Issue severity tones and labels (as in page/errors/kit/severity.ts).
-const SEVERITY = new Map([
-	["critical", { tone: "bg-severity-fatal/12 text-severity-fatal", label: "Critical" }],
-	["high", { tone: "bg-severity-error/12 text-severity-error", label: "High" }],
-	["medium", { tone: "bg-severity-warn/12 text-severity-warn", label: "Medium" }],
-	["low", { tone: "bg-severity-debug/12 text-severity-debug", label: "Low" }],
-])
-
-const severityBadge = <M>(h: HtmlBuilder<M>, severity: string | null): Html => {
-	const known = severity === null ? undefined : SEVERITY.get(severity)
-	return known === undefined
-		? h.span([h.Class(cn("inline-flex h-5", "w-[60px] justify-center")), h.Title("Severity not set")])
-		: badge(h, { variant: "outline", className: cn(known.tone, "w-[60px] justify-center") }, [
-				known.label,
-			])
-}
-
 const issueLine = <M>(
 	h: HtmlBuilder<M>,
 	issue: ErrorIssueDocument,
@@ -419,14 +402,14 @@ const issueLine = <M>(
 			? h.span(
 					[h.Class("contents")],
 					[
-						severityBadge(h, issue.severity),
+						severityBadge(h, issue.severity, "w-[60px] justify-center"),
 						h.span(
 							[h.Class("ml-2.5 inline-flex"), h.Title(issue.serviceName)],
 							[serviceDot(h, { serviceName: issue.serviceName })],
 						),
 					],
 				)
-			: severityBadge(h, issue.severity),
+			: severityBadge(h, issue.severity, "w-[60px] justify-center"),
 		title: truncatedText(h, { text: title, className: "font-normal" }),
 		trailing: h.span(
 			[h.Class("contents")],

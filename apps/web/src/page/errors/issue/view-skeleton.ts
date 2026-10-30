@@ -1,12 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
 import { detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
-import { empty, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { resourceNotFound } from "../../kit/resource-not-found"
 import { tabOf, windowLabel } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
@@ -118,19 +116,8 @@ export const issueSkeleton = (h: H, model: Model): Html => {
 /** `ResourceNotFound` with its way back to the list. */
 export const issueNotFound = (h: H): Html =>
 	dashboardPage(h, {}, [
-		empty(
-			h,
-			[
-				emptyHeader(h, [
-					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
-					emptyTitle(h, ["Issue not found"]),
-				]),
-				linkButton(
-					h,
-					{ variant: "outline", size: "sm", href: hrefOf(AppRoute.Errors({ search: {} })) },
-					["Back to errors"],
-				),
-			],
-			"md:py-12",
-		),
+		resourceNotFound(h, {
+			title: "Issue not found",
+			back: { href: hrefOf(AppRoute.Errors({ search: {} })), label: "Back to errors" },
+		}),
 	])

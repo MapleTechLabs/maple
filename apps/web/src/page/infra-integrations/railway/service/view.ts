@@ -1,4 +1,5 @@
-import { formatCores, shareOfLimit } from "../../../../components/infra/railway/format"
+import { formatCores } from "../../../../components/infra/format"
+import { shareOfLimit } from "../../../../components/infra/railway/format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -88,11 +89,11 @@ const stats = (h: H, service: RailwayServiceRow): Html => {
 		statRailItem(h, {
 			compact: true,
 			eyebrow: "Avg CPU",
-			value: formatCores(service.cpuAvg),
+			value: `${formatCores(service.cpuAvg)} vCPU`,
 			subline:
 				cpuShare === null
 					? undefined
-					: `${formatPercent(cpuShare / 100)} of ${formatCores(service.cpuLimit)}`,
+					: `${formatPercent(cpuShare / 100)} of ${formatCores(service.cpuLimit)} vCPU`,
 		}),
 		statRailItem(h, {
 			compact: true,
@@ -147,7 +148,16 @@ const tracedChip = (h: H, model: Model, service: RailwayServiceRow): Html => {
 	if (traced === null) return null
 	return traced.some((row) => row.serviceName === service.serviceName)
 		? h.a(
-				[h.Href(hrefOf(AppRoute.Service({ serviceName: service.serviceName, search: pickTimeSearch(model.search) })))],
+				[
+					h.Href(
+						hrefOf(
+							AppRoute.Service({
+								serviceName: service.serviceName,
+								search: pickTimeSearch(model.search),
+							}),
+						),
+					),
+				],
 				[heroChip(h, ["traced as ", service.serviceName])],
 			)
 		: heroChip(h, "no traces matched")

@@ -4,6 +4,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
+import { eyebrow } from "../../../../ui/eyebrow"
 import { FLEET_INSIGHTS_LIMIT } from "../data"
 import { logSourceLabel, severityOf } from "../health"
 import { supabaseLogsHref } from "../links"
@@ -105,15 +106,14 @@ const findingRow = (h: H, finding: AdvisorFinding): Html =>
 		`${finding.projectRef}:${finding.lint.cacheKey}`,
 		hrefOf(AppRoute.InfraSupabaseProject({ projectRef: finding.projectRef, search: {} })),
 		[
-			h.span(
-				[
-					h.Class(
-						cn(
-							"w-24 shrink-0 text-3xs font-medium uppercase tracking-wide",
-							TONE_TEXT[finding.lint.level === "ERROR" ? "crit" : "warn"],
-						),
+			eyebrow(
+				h,
+				{
+					className: cn(
+						"w-24 shrink-0",
+						TONE_TEXT[finding.lint.level === "ERROR" ? "crit" : "warn"],
 					),
-				],
+				},
 				[finding.lint.advisor === "security" ? "Security" : "Performance"],
 			),
 			h.span(

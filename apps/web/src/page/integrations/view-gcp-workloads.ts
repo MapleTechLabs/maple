@@ -20,6 +20,7 @@ import { icon } from "../../ui/icon"
 import { panel, panelHeader } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
+import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { truncatedText } from "../../ui/truncated-text"
 import { statRail } from "../kit/stat-rail"
@@ -36,20 +37,6 @@ const TONE_ORDER = ["crit", "warn", "neutral"] as const
 const VALUES_SHOWN = 3
 const VALUE_VISIBLE = ["flex", "hidden @sm:flex", "hidden @lg:flex"]
 const WINDOW = "24h"
-
-const chip = (h: H, value: string, label: string, count: number): ToggleGroup.ToggleGroupItem => ({
-	value,
-	label,
-	className:
-		"group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs",
-	children: [
-		label,
-		h.span(
-			[h.Class("tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground")],
-			[String(count)],
-		),
-	],
-})
 
 const workloads = (h: H, model: Model, className: string): Html => {
 	const fleet = fleetOf(model)
@@ -93,14 +80,13 @@ const workloads = (h: H, model: Model, className: string): Html => {
 								size: "xs",
 								className: "gap-1.5",
 								items: [
-									chip(h, "all", "All", all.length),
+									countChipItem(h, { value: "all", label: "All", count: all.length }),
 									...services.map((entry) =>
-										chip(
-											h,
-											entry.service,
-											GCP_INFRA_SERVICES[entry.service].title,
-											entry.workloads.length,
-										),
+										countChipItem(h, {
+											value: entry.service,
+											label: GCP_INFRA_SERVICES[entry.service].title,
+											count: entry.workloads.length,
+										}),
 									),
 								],
 							}),
@@ -231,36 +217,34 @@ const resources = (h: H, model: Model, className: string): Html => {
 				)
 			: h.ul(
 					[h.Class("flex flex-col px-2 py-1.5")],
-					types
-						.slice(0, TYPES_SHOWN)
-						.map(({ assetType, count }) =>
-							h.li(
-								[],
-								[
-									h.a(
-										[
-											h.Href(
-												hrefOf(
-													AppRoute.InfraGcp({
-														search: { tab: GCP_RESOURCES_TAB, type: assetType },
-													}),
-												),
+					types.slice(0, TYPES_SHOWN).map(({ assetType, count }) =>
+						h.li(
+							[],
+							[
+								h.a(
+									[
+										h.Href(
+											hrefOf(
+												AppRoute.InfraGcp({
+													search: { tab: GCP_RESOURCES_TAB, type: assetType },
+												}),
 											),
-											h.Class(
-												"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
-											),
-										],
-										[
-											truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
-											h.span(
-												[h.Class("shrink-0 tabular-nums text-muted-foreground")],
-												[formatNumber(count)],
-											),
-										],
-									),
-								],
-							),
+										),
+										h.Class(
+											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+										),
+									],
+									[
+										truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
+										h.span(
+											[h.Class("shrink-0 tabular-nums text-muted-foreground")],
+											[formatNumber(count)],
+										),
+									],
+								),
+							],
 						),
+					),
 				),
 		...(inventory === "failed" || inventory.total === 0
 			? []

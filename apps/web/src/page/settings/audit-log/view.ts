@@ -17,7 +17,7 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { SettingsSearch as SettingsSearchSchema } from "../../../route/search"
 import { button } from "../../../ui/button"
-import { avatarFallback, badge } from "../../../ui/display"
+import { avatarFallback, badge, separator } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -164,7 +164,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 								[option.label],
 							),
 						),
-						h.div([h.Class("mx-3 my-1 h-px bg-border/60")], []),
+						separator(h, "horizontal", "mx-3 my-1 data-[orientation=horizontal]:w-auto"),
 						h.button(
 							[
 								h.Type("button"),

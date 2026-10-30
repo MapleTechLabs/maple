@@ -83,7 +83,7 @@ export const unverifiedChip = <M>(h: HtmlBuilder<M>): Html =>
 		[
 			h.Title("Severity estimated from the source; not proven by running the code"),
 			h.Class(
-				"rounded-sm border border-dashed border-muted-foreground/50 px-1.5 py-px text-[11px] text-muted-foreground",
+				"rounded-sm border border-dashed border-muted-foreground/50 px-1.5 py-px text-2xs text-muted-foreground",
 			),
 		],
 		["Unverified"],

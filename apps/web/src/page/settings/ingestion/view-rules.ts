@@ -2,10 +2,9 @@ import type { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2
 import { formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
@@ -100,16 +99,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 						),
 					]
 				: []
-			: [
-					h.a(
-						[
-							h.Href(href),
-							h.Class(cn(buttonVariants({ variant: "outline", size: "sm" }))),
-							h.DataAttribute("slot", "button"),
-						],
-						[icon(h, "CodeIcon"), "How to fix"],
-					),
-				]
+			: [linkButton(h, { variant: "outline", size: "sm", href }, [icon(h, "CodeIcon"), "How to fix"])]
 	return [
 		...primary,
 		button(

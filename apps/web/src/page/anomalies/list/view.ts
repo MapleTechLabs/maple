@@ -1,3 +1,4 @@
+import { pluralize } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "../../../ui/error-state"
@@ -7,6 +8,7 @@ import { skeletonList } from "../../../ui/skeleton"
 import * as TabsView from "../../../ui/tabs-view"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import {
 	allIncidentsOf,
 	anomalyFilterChips,
@@ -45,34 +47,24 @@ const liveChip = (h: H, isLive: boolean): Html =>
 
 /** `ListToolbar`: the status tabs and the count readout. */
 const toolbar = (h: H, model: Model, count: number | null): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2 gap-y-1.5 pb-3")],
-		[
-			h.submodel({
-				slotId: "anomalies-status-tabs",
-				model: model.tabs,
-				view: TabsView.view,
-				viewInputs: {
-					labels: TAB_LABELS,
-					ariaLabel: "Filter anomalies",
-					tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
-					panel: () => undefined,
-				},
-				toParentMessage: (message) => Message.GotTabsMessage({ message }),
-			}),
-			h.div(
-				[h.Class("ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2")],
-				count === null
-					? []
-					: [
-							h.span(
-								[h.Class("text-xs text-muted-foreground tabular-nums")],
-								[String(count), " ", count === 1 ? "anomaly" : "anomalies"],
-							),
-						],
-			),
-		],
-	)
+	listToolbar(h, {
+		leading: h.submodel({
+			slotId: "anomalies-status-tabs",
+			model: model.tabs,
+			view: TabsView.view,
+			viewInputs: {
+				labels: TAB_LABELS,
+				ariaLabel: "Filter anomalies",
+				tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
+				panel: () => undefined,
+			},
+			toParentMessage: (message) => Message.GotTabsMessage({ message }),
+		}),
+		trailing:
+			count === null
+				? []
+				: [toolbarCount(h, [String(count), " ", pluralize(count, "anomaly", "anomalies")])],
+	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const all = allIncidentsOf(model)

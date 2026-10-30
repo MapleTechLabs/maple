@@ -8,6 +8,7 @@ import {
 	formatRate,
 } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { AsyncData, Submodel } from "foldkit"
@@ -18,10 +19,14 @@ import { linkButton } from "../../../../ui/button"
 import * as Dialog from "../../../../ui/dialog"
 import * as DialogView from "../../../../ui/dialog-view"
 import { kbd } from "../../../../ui/display"
+import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
+import { eyebrow } from "../../../../ui/eyebrow"
 import { icon } from "../../../../ui/icon"
 import { iconButton } from "../../../../ui/icon-button"
 import { skeleton } from "../../../../ui/skeleton"
+import { truncatedId } from "../../../../ui/truncated-id"
+import { statRail, statRailItem } from "../../../kit/stat-rail"
 import { callsPerSecond } from "../derive"
 import {
 	endpointStatusCodes,
@@ -65,7 +70,7 @@ export type ViewInputs = Readonly<{
 
 const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
 
-const eyebrowClass = "text-2xs uppercase tracking-wider text-muted-foreground"
+const sectionLabel = (h: H, label: string): Html => eyebrow(h, { variant: "label", as: "h3" }, [label])
 
 const card = (
 	h: H,
@@ -79,7 +84,7 @@ const card = (
 		[
 			h.div(
 				[h.Class("flex items-baseline justify-between gap-2")],
-				[h.h3([h.Class(eyebrowClass)], [label]), ...(aside === null ? [] : [aside])],
+				[sectionLabel(h, label), ...(aside === null ? [] : [aside])],
 			),
 			...children,
 		],
@@ -87,66 +92,46 @@ const card = (
 
 const hint = (h: H, text: string) => h.span([h.Class("text-3xs text-muted-foreground")], [text])
 
-const stat = (h: H, label: string, value: string, sub: string, valueClassName?: string): Html =>
-	h.div(
-		[
-			h.Key(label),
-			h.Class(
-				"flex min-w-0 flex-col gap-1 border-b p-3 odd:border-r sm:border-r sm:border-b-0 sm:last:border-r-0",
-			),
-		],
-		[
-			h.span([h.Class("text-3xs uppercase tracking-wider text-muted-foreground")], [label]),
-			h.span([h.Class(cn("text-lg font-medium leading-6 tabular-nums", valueClassName))], [value]),
-			h.span([h.Class("truncate text-3xs text-muted-foreground")], [sub]),
-		],
-	)
+const stat = (h: H, label: string, value: string, sub: string, tone?: Tone): Html =>
+	statRailItem(h, { eyebrow: label, value, subline: sub, tone, size: "sm", className: "min-w-0" })
 
 const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, seconds: number): Html => {
 	const { endpoint } = peek
 	const mix = knownStatusMix(endpoint)
 	const topClient = codes.find((code) => code.name.startsWith("4"))
-	return h.div(
-		[h.Class("grid grid-cols-2 overflow-hidden rounded-lg border bg-card sm:grid-cols-4")],
-		[
-			stat(
-				h,
-				"Req/s",
-				formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds)),
-				`${formatNumber(Math.round(endpoint.estimatedSpanCount))} total`,
-			),
-			stat(
-				h,
-				"4xx",
-				mix === null ? "—" : formatErrorRate(mix.client),
-				// The leading code comes from the status rows; until they land it stays blank.
-				mix === null || mix.client === 0
-					? "none in window"
-					: topClient === undefined
-						? ""
-						: `mostly ${topClient.name}`,
-				mix !== null && mix.client > 0 ? "text-warning-foreground" : undefined,
-			),
-			stat(
-				h,
-				"5xx",
-				mix === null ? formatErrorRate(endpoint.errorRate) : formatErrorRate(mix.server),
-				(mix?.server ?? endpoint.errorRate) === 0
-					? "none in window"
-					: countLabel(
-							Math.round(endpoint.estimatedSpanCount * (mix?.server ?? endpoint.errorRate)),
-							"response",
-						),
-				(mix?.server ?? endpoint.errorRate) > 0 ? "text-destructive-foreground" : undefined,
-			),
-			stat(
-				h,
-				"p95",
-				formatLatency(endpoint.p95DurationMs),
-				`p99 ${formatLatency(endpoint.p99DurationMs)}`,
-			),
-		],
-	)
+	return statRail(h, { columns: 4, className: "overflow-hidden" }, [
+		stat(
+			h,
+			"Req/s",
+			formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds)),
+			`${formatNumber(Math.round(endpoint.estimatedSpanCount))} total`,
+		),
+		stat(
+			h,
+			"4xx",
+			mix === null ? "—" : formatErrorRate(mix.client),
+			// The leading code comes from the status rows; until they land it stays blank.
+			mix === null || mix.client === 0
+				? "none in window"
+				: topClient === undefined
+					? ""
+					: `mostly ${topClient.name}`,
+			mix !== null && mix.client > 0 ? "warn" : undefined,
+		),
+		stat(
+			h,
+			"5xx",
+			mix === null ? formatErrorRate(endpoint.errorRate) : formatErrorRate(mix.server),
+			(mix?.server ?? endpoint.errorRate) === 0
+				? "none in window"
+				: countLabel(
+						Math.round(endpoint.estimatedSpanCount * (mix?.server ?? endpoint.errorRate)),
+						"response",
+					),
+			(mix?.server ?? endpoint.errorRate) > 0 ? "crit" : undefined,
+		),
+		stat(h, "p95", formatLatency(endpoint.p95DurationMs), `p99 ${formatLatency(endpoint.p99DurationMs)}`),
+	])
 }
 
 const legendSwatch = (h: H, label: string, color: string): Html =>
@@ -162,7 +147,7 @@ const chartSection = (h: H, title: string, legend: ReadonlyArray<Html>, body: Ht
 			h.div(
 				[h.Class("flex items-center justify-between")],
 				[
-					h.h3([h.Class(eyebrowClass)], [title]),
+					sectionLabel(h, title),
 					h.div([h.Class("flex items-center gap-3 text-3xs text-muted-foreground")], legend),
 				],
 			),
@@ -241,10 +226,10 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 			? [h.p([h.Class("text-2xs text-muted-foreground")], ["No status codes recorded in this window."])]
 			: codes.slice(0, 4).map((code) => {
 					const tone = code.name.startsWith("2")
-						? { text: "text-success-foreground", bar: "bg-chart-3" }
+						? { text: TONE_TEXT.info, bar: "bg-chart-3" }
 						: isServerError(code.name)
-							? { text: "text-destructive-foreground", bar: "bg-severity-error" }
-							: { text: "text-warning-foreground", bar: "bg-warning" }
+							? { text: TONE_TEXT.crit, bar: TONE_FILL.crit }
+							: { text: TONE_TEXT.warn, bar: TONE_FILL.warn }
 					return h.div(
 						[h.Key(code.name), h.Class("flex flex-col gap-1")],
 						[
@@ -426,7 +411,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 					h.div(
 						[h.Class("flex items-baseline gap-2")],
 						[
-							h.h3([h.Class(eyebrowClass)], ["Slowest requests"]),
+							sectionLabel(h, "Slowest requests"),
 							h.span(
 								[h.Class("hidden text-3xs text-muted-foreground sm:inline")],
 								["slowest per hour and status"],
@@ -445,12 +430,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 				],
 			),
 			...(detail.slowest.length === 0
-				? [
-						h.p(
-							[h.Class("px-3 py-4 text-2xs text-muted-foreground")],
-							["No requests in this window."],
-						),
-					]
+				? [emptyMessage(h, {}, ["No requests in this window."])]
 				: detail.slowest.map((request) =>
 						h.a(
 							[
@@ -461,10 +441,11 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								),
 							],
 							[
-								h.span(
-									[h.Class("w-16 shrink-0 text-info-foreground sm:w-20")],
-									[request.traceId.slice(0, 8)],
-								),
+								truncatedId(h, {
+									value: request.traceId,
+									kind: "trace",
+									className: "w-16 shrink-0 text-info-foreground sm:w-20",
+								}),
 								h.span(
 									[h.Class("w-14 shrink-0 text-right")],
 									[formatLatency(request.durationMs)],
@@ -475,10 +456,12 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 											cn(
 												"w-10 shrink-0",
 												request.httpStatusCode.startsWith("2")
-													? "text-success-foreground"
-													: isServerError(request.httpStatusCode)
-														? "text-destructive-foreground"
-														: "text-warning-foreground",
+													? TONE_TEXT.info
+													: TONE_TEXT[
+															isServerError(request.httpStatusCode)
+																? "crit"
+																: "warn"
+														],
 											),
 										),
 									],

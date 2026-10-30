@@ -1,4 +1,4 @@
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	errorTextTokens,
@@ -16,6 +16,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
+import { linkButton } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
@@ -52,7 +53,13 @@ export const detailOf = (model: Model): ErrorDetail =>
 
 export const differencesOf = (detail: ErrorDetail): ReadonlyMap<string, VariantDifference> => {
 	const found = variantDifferences(detail.variants.map((row) => unwrapToolErrorText(row.message).text))
-	return new Map(detail.variants.flatMap((row, index) => Option.toArray(Option.fromUndefinedOr(found[index])).map((difference) => [row.message, difference] as const)))
+	return new Map(
+		detail.variants.flatMap((row, index) =>
+			Option.toArray(Option.fromUndefinedOr(found[index])).map(
+				(difference) => [row.message, difference] as const,
+			),
+		),
+	)
 }
 
 const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =>
@@ -60,7 +67,9 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 		h.span(
 			[h.Class("contents")],
 			[
-				...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"])] : []),
+				...(index > 0
+					? [h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"])]
+					: []),
 				typeof item === "string" ? h.span([h.Class("text-muted-foreground")], [item]) : item,
 			],
 		),
@@ -88,14 +97,16 @@ const headingOf = (h: H, group: Prepared, text: string): Html => {
 
 const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 	const { group, timeZone } = inputs
-	const share = formatPercent(inputs.toolFailures > 0 ? group.calls / inputs.toolFailures : 0, { floor: 0.01 })
+	const share = formatPercent(inputs.toolFailures > 0 ? group.calls / inputs.toolFailures : 0, {
+		floor: 0.01,
+	})
 	return facts(h, [
 		h.span(
 			[h.Class("text-foreground")],
-			[formatToolCount(group.calls), " failed call", group.calls === 1 ? "" : "s"],
+			[formatToolCount(group.calls), ` failed ${pluralize(group.calls, "call")}`],
 		),
 		`${share} of failures`,
-		`${formatToolCount(group.sessions)} session${group.sessions === 1 ? "" : "s"}`,
+		`${formatToolCount(group.sessions)} ${pluralize(group.sessions, "session")}`,
 		`first seen ${formatTimestampInTimezone(group.firstSeen, { timeZone })}`,
 		`last seen ${formatTimestampInTimezone(group.lastSeen, { timeZone })}`,
 	])
@@ -107,7 +118,11 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 		[h.Class("flex min-w-0 flex-1 flex-col gap-2.5")],
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/80")],
+				[
+					h.Class(
+						"flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/80",
+					),
+				],
 				[
 					h.span([], [inputs.tool]),
 					h.span([h.Class("text-muted-foreground/40")], ["/"]),
@@ -118,7 +133,11 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 						? []
 						: [
 								h.span(
-									[h.Class("ml-1 rounded-sm border border-border px-[5px] text-2xs text-muted-foreground/70")],
+									[
+										h.Class(
+											"ml-1 rounded-sm border border-border px-[5px] text-2xs text-muted-foreground/70",
+										),
+									],
 									["error.type ", group.errorType],
 								),
 							]),
@@ -126,7 +145,11 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 			),
 			headingOf(h, group, unwrapToolErrorText(group.message).text),
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5")],
+				[
+					h.Class(
+						"flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5",
+					),
+				],
 				headerFacts(h, inputs),
 			),
 		],
@@ -150,7 +173,10 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 			h.div(
 				[h.Class("flex items-baseline justify-between font-mono")],
 				[
-					eyebrow(h, { variant: "mono", className: "leading-3.5" }, ["Failed calls / ", bucket.unit]),
+					eyebrow(h, { variant: "mono", className: "leading-3.5" }, [
+						"Failed calls / ",
+						bucket.unit,
+					]),
 					h.span(
 						[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
 						["max ", formatToolCount(Math.max(0, ...group.spark))],
@@ -304,15 +330,22 @@ const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 					className: NAV_BUTTON,
 					attributes: [h.OnClick(Message.ClickedCopyLink())],
 				},
-				[icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", { attributes: [h.AriaHidden(true)] })],
-			),
-			h.a(
 				[
-					h.Href(hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } }))),
-					h.Class(
-						"inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50",
-					),
+					icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", {
+						attributes: [h.AriaHidden(true)],
+					}),
 				],
+			),
+			linkButton(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					className: "font-mono text-2xs sm:text-2xs",
+					href: hrefOf(
+						AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } }),
+					),
+				},
 				[
 					"Open in Sessions",
 					icon(h, "ExternalLinkIcon", {

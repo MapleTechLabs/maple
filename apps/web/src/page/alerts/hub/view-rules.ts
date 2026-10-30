@@ -23,6 +23,7 @@ import type { MenuEntry } from "../../../ui/menu-view"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { statusDot } from "../../../ui/status-dot"
 import { ROW_LINK_LIFT, rowLink } from "../../../ui/table"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { filteredEmpty } from "../../kit/signal-empty-state"
 import { ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
@@ -127,36 +128,38 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 	return h.div(
 		[h.Class("space-y-4")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					rulesSearch(h, model.rulesQuery),
-					...BUCKETS.map((bucket) =>
-						filterChip(
-							h,
-							{
-								isPressed: status === bucket.value,
-								onClick: Message.ClickedStatusFilter({ bucket: bucket.value }),
-								tone: bucket.tone,
-								hasDot: true,
-								count: String(bucketCounts.get(bucket.value) ?? 0),
-							},
-							[bucket.label],
+			listToolbar(h, {
+				className: "pb-0",
+				leading: h.div(
+					[h.Class("flex flex-wrap items-center gap-2")],
+					[
+						rulesSearch(h, model.rulesQuery),
+						...BUCKETS.map((bucket) =>
+							filterChip(
+								h,
+								{
+									isPressed: status === bucket.value,
+									onClick: Message.ClickedStatusFilter({ bucket: bucket.value }),
+									tone: bucket.tone,
+									hasDot: true,
+									count: String(bucketCounts.get(bucket.value) ?? 0),
+								},
+								[bucket.label],
+							),
 						),
-					),
-					h.span(
-						[h.Class("ml-auto font-mono text-xs text-muted-foreground")],
-						[
-							countLabel(rules.length, "rule"),
-							" · ",
-							String(totalFired),
-							" fired in ",
-							String(FIRED_WINDOW_DAYS),
-							"d",
-						],
-					),
+					],
+				),
+				trailing: [
+					toolbarCount(h, [
+						countLabel(rules.length, "rule"),
+						" · ",
+						String(totalFired),
+						" fired in ",
+						String(FIRED_WINDOW_DAYS),
+						"d",
+					]),
 				],
-			),
+			}),
 			...(model.hasToggleFailed
 				? [
 						alert(h, { variant: "crit", size: "sm" }, [

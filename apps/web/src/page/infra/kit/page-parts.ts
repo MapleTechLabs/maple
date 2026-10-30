@@ -7,6 +7,7 @@ import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTi
 import { icon } from "../../../ui/icon"
 import { pageTitle } from "../../../ui/page-layout"
 import { searchInput } from "../../../ui/search-input"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
 // `PageHero`, `SearchToolbar` and the infra empty states.
@@ -105,31 +106,31 @@ export type SearchToolbarOptions<M> = Readonly<{
 	className?: string
 }>
 
-/** `SearchToolbar` over `SearchInput size="default"` (w-64). */
+/** `SearchToolbar` over `SearchInput size="default"` (w-64), on the shared list toolbar. */
 export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOptions<M>): Html =>
-	h.div(
-		[h.Class(cn("flex flex-wrap items-center justify-between gap-3", options.className))],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					searchInput(h, {
-						id: options.id,
-						size: "default",
-						className: "w-64",
-						placeholder: options.placeholder,
-						value: options.value,
-						onInput: options.onInput,
-						onClear: options.onClear,
-					}),
-					...(options.children ?? []),
-				],
-			),
-			...(options.trailing === undefined || options.trailing === ""
+	listToolbar(h, {
+		// Parents space their sections; the list toolbar's own bottom padding would double it.
+		className: cn("pb-0", options.className),
+		leading: h.div(
+			[h.Class("flex flex-wrap items-center gap-2")],
+			[
+				searchInput(h, {
+					id: options.id,
+					size: "default",
+					className: "w-64",
+					placeholder: options.placeholder,
+					value: options.value,
+					onInput: options.onInput,
+					onClear: options.onClear,
+				}),
+				...(options.children ?? []),
+			],
+		),
+		trailing:
+			options.trailing === undefined || options.trailing === ""
 				? []
-				: [h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [options.trailing])]),
-		],
-	)
+				: [toolbarCount(h, [options.trailing])],
+	})
 
 /** `InfraSetupEmpty`: nothing reporting yet; the button opens the page's install modal. */
 export const setupEmpty = <M>(

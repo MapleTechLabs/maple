@@ -1,6 +1,4 @@
-import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyableField } from "../../../ui/copyable-field"
@@ -10,6 +8,7 @@ import { panel } from "../../../ui/panel"
 import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { linkButton } from "../../../ui/button"
 
 // `ApiReference` and `OAuthPointer`.
 
@@ -170,14 +169,14 @@ export const apiReference = (h: H, model: Model): Html =>
 				"A REST interface with snake_case JSON, cursor-paginated lists and scoped API keys.",
 			],
 			framed: false,
-			actions: h.a(
-				[
-					h.Href(`${apiPublicUrl}/v2/docs`),
-					h.Target("_blank"),
-					h.Rel("noopener noreferrer"),
-					h.Class(cn(buttonVariants({ size: "sm", variant: "outline" }))),
-					h.DataAttribute("slot", "button"),
-				],
+			actions: linkButton(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					href: `${apiPublicUrl}/v2/docs`,
+					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+				},
 				[
 					icon(h, "CodeIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
 					"Open API reference",

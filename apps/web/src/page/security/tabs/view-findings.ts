@@ -1,4 +1,5 @@
 import type { SecurityAuditFinding, SecurityAuditTarget } from "@maple/domain/http"
+import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
@@ -10,7 +11,7 @@ import { switchControl } from "../../../ui/switch"
 import { nothingInWindow } from "../../kit/nothing-in-window"
 import { relativeTime } from "../../kit/relative-time"
 import { countByBucket, sectionsOf, type SeverityBucket } from "../kit/findings"
-import { findingGroups, severityTabs, trailingText } from "../kit/findings-view"
+import { findingGroups, severityTabs } from "../kit/findings-view"
 import { FINDING_STATUS_LABEL, STATUS_TAB_LABEL } from "../kit/format"
 import { gateState, placeholderRows, repositoryName } from "../kit/parts"
 import {
@@ -24,6 +25,7 @@ import {
 	toolbarFindings,
 } from "./derive"
 import { Message, type Model } from "./model"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 
 // The Findings tab, as Linear lists issues: severity tabs, a filter toolbar, then one dense line
 // per finding under collapsible severity groups.
@@ -73,18 +75,18 @@ const toolbar = (
 			? "All targets"
 			: (targets.find((target) => target.id === value)?.repository ?? "Removed target")
 	const statusLabel = (value: string) => STATUS_TABS.find((tab) => tab === value) ?? "open"
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2 border-b px-3 py-2")],
-		[
-			searchInput(h, {
-				id: "security-findings-search",
-				size: "sm",
-				className: "w-64 max-w-sm",
-				placeholder: "Search title, file or fingerprint",
-				value: model.searchDraft,
-				onInput: (value) => Message.ChangedSearchDraft({ value }),
-				onClear: Message.ChangedSearchDraft({ value: "" }),
-			}),
+	return listToolbar(h, {
+		framed: true,
+		leading: searchInput(h, {
+			id: "security-findings-search",
+			size: "sm",
+			className: "w-64 max-w-sm",
+			placeholder: "Search title, file or fingerprint",
+			value: model.searchDraft,
+			onInput: (value) => Message.ChangedSearchDraft({ value }),
+			onClear: Message.ChangedSearchDraft({ value: "" }),
+		}),
+		trailing: [
 			selectSubmodel(
 				h,
 				model.statusSelect,
@@ -114,7 +116,7 @@ const toolbar = (
 			h.label(
 				[
 					h.Id("security-show-rejected-label"),
-					h.Class("ml-auto flex items-center gap-2 text-xs text-muted-foreground"),
+					h.Class("flex items-center gap-2 text-xs text-muted-foreground"),
 				],
 				[
 					...switchControl(h, {
@@ -128,7 +130,7 @@ const toolbar = (
 				],
 			),
 		],
-	)
+	})
 }
 
 /** Reopened and new lead; a triaged finding says how; an open one says nothing. */
@@ -254,25 +256,17 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 				...(targets.length === 0 || state._tag !== "Ready"
 					? []
 					: [
-							h.div(
-								[h.Class("flex items-center gap-3 border-b px-3 py-2")],
-								[
-									severityTabs(h, {
-										counts: countByBucket(
-											toolbarFindings(all, model.findingsSearch, query),
-										),
-										active: model.findingsSearch.severity ?? null,
-										onPick: (bucket: SeverityBucket | null) =>
-											Message.PickedSeverity({ bucket }),
-										label: "Severity",
-									}),
-									trailingText(
-										h,
-										`${shown} ${shown === 1 ? "finding" : "findings"}`,
-										"ml-auto shrink-0 tabular-nums",
-									),
-								],
-							),
+							listToolbar(h, {
+								framed: true,
+								leading: severityTabs(h, {
+									counts: countByBucket(toolbarFindings(all, model.findingsSearch, query)),
+									active: model.findingsSearch.severity ?? null,
+									onPick: (bucket: SeverityBucket | null) =>
+										Message.PickedSeverity({ bucket }),
+									label: "Severity",
+								}),
+								trailing: [toolbarCount(h, [countLabel(shown, "finding")])],
+							}),
 							toolbar(h, model, all, targets),
 						]),
 				content,

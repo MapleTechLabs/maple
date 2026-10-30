@@ -94,7 +94,9 @@ const editor = (h: H, sql: string): Html =>
 						[h.Class("font-mono")],
 						[
 							...tokenizeSql(sql).map((token) =>
-								h.span(token.className === undefined ? [] : [h.Class(token.className)], [token.text]),
+								h.span(token.className === undefined ? [] : [h.Class(token.className)], [
+									token.text,
+								]),
 							),
 							"\n",
 						],
@@ -130,8 +132,18 @@ const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<Chi
 const chipDescription = (chips: ReadonlyArray<readonly [string, string]>, triggerId: string): string =>
 	chips.find((_, index) => chipTriggerId(index) === triggerId)?.[1] ?? ""
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
-const BUCKET_IDS = { control: "widget-editor-sql-bucket", label: "widget-editor-sql-bucket-label", error: "widget-editor-sql-bucket-error" }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
+const BUCKET_IDS = {
+	control: "widget-editor-sql-bucket",
+	label: "widget-editor-sql-bucket-label",
+	error: "widget-editor-sql-bucket-error",
+}
 
 /** The chips, each a trigger of the one description tooltip. */
 const chipRow = (
@@ -177,7 +189,10 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 			className: "max-w-xs",
 			toContent: (triggerId) => [chipDescription(chips, triggerId)],
 			toView: ({ trigger, portal }) =>
-				h.div([], [footerRow(h, rawSql, chipRow(h, chips, trigger)), ...(portal === null ? [] : [portal])]),
+				h.div(
+					[],
+					[footerRow(h, rawSql, chipRow(h, chips, trigger)), ...(portal === null ? [] : [portal])],
+				),
 		},
 	})
 }
@@ -201,7 +216,8 @@ const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 				input(h, {
 					id: BUCKET_IDS.control,
 					type: "number",
-					className: "h-7 w-20 text-xs",
+					size: "sm",
+					className: "w-20 text-xs",
 					attributes: [
 						h.Min("1"),
 						h.Placeholder("auto"),
@@ -222,7 +238,15 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 	return [
 		...(error === null
 			? []
-			: [h.div([h.Class(cn(fieldErrorStyles, "font-medium")), h.DataAttribute("slot", "field-error")], [error])]),
+			: [
+					h.div(
+						[
+							h.Class(cn(fieldErrorStyles, "font-medium")),
+							h.DataAttribute("slot", "field-error"),
+						],
+						[error],
+					),
+				]),
 		h.div(
 			[h.Class("space-y-3")],
 			[
@@ -232,7 +256,12 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 						header(h, rawSql),
 						...(rawSql.isCollapsed
 							? []
-							: [h.div([h.Class("p-3 space-y-3")], [editor(h, rawSql.draft.sql), footer(h, model, rawSql)])]),
+							: [
+									h.div(
+										[h.Class("p-3 space-y-3")],
+										[editor(h, rawSql.draft.sql), footer(h, model, rawSql)],
+									),
+								]),
 					],
 				),
 				h.div(
@@ -240,7 +269,11 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 					[
 						button(
 							h,
-							{ size: "sm", isDisabled: issue !== null, attributes: [h.OnClick(Message.ClickedRunPreview())] },
+							{
+								size: "sm",
+								isDisabled: issue !== null,
+								attributes: [h.OnClick(Message.ClickedRunPreview())],
+							},
 							["Run preview"],
 						),
 						h.span(

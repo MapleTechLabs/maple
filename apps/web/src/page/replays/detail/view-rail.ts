@@ -19,10 +19,12 @@ import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { httpSpanLabel } from "../../../ui/http-span-label"
 import { icon, type IconName } from "../../../ui/icon"
+import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import { meter } from "../../../ui/meter"
 import { skeleton } from "../../../ui/skeleton"
 import { togglePrimitive } from "../../../ui/toggle"
+import { MARKER_SOFT, MARKER_TEXT } from "../kit/replay-meta"
 import { realOffsetFrom, timelineFrom } from "./derive"
 import { Message } from "./message"
 import type { EventFilter, EventRow, Model, RailTab, ReplayDetail, TraceSummary } from "./model"
@@ -45,22 +47,11 @@ const FILTER_LABELS = {
 	error: "Errors",
 } satisfies Record<EventFilter, string>
 
+// Event kinds are categories, so they take the timeline markers' chart hues; network has no marker.
 const EVENT_KIND_VISUALS = {
-	navigation: {
-		icon: "PixelWindowIcon",
-		tone: "text-success-foreground",
-		selected: "bg-success/15 text-success-foreground",
-	},
-	click: {
-		icon: "PixelCrosshairsIcon",
-		tone: "text-warning-foreground",
-		selected: "bg-warning/15 text-warning-foreground",
-	},
-	network: {
-		icon: "PixelNodesIcon",
-		tone: "text-info-foreground",
-		selected: "bg-info/15 text-info-foreground",
-	},
+	navigation: { icon: "PixelWindowIcon", tone: MARKER_TEXT.nav, selected: MARKER_SOFT.nav },
+	click: { icon: "PixelCrosshairsIcon", tone: MARKER_TEXT.click, selected: MARKER_SOFT.click },
+	network: { icon: "PixelNodesIcon", tone: "text-chart-5", selected: "bg-chart-5/15 text-chart-5" },
 	custom: { icon: "PixelSparkleIcon", tone: "text-primary", selected: "bg-primary/15 text-primary" },
 	console: {
 		icon: "PixelBracketsCurlyIcon",
@@ -111,7 +102,7 @@ const eventVisual = (ev: EventRow): { icon: IconName; tone: string; lead: string
 				ev.level === "error"
 					? EVENT_KIND_VISUALS.error.tone
 					: ev.level === "warn"
-						? EVENT_KIND_VISUALS.click.tone
+						? TONE_TEXT.warn
 						: EVENT_KIND_VISUALS.console.tone
 			return { ...EVENT_KIND_VISUALS.console, tone, lead: ev.message, trail: "" }
 		}
@@ -221,17 +212,20 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 					],
 				),
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(
-						"inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted data-[popup-open]:text-foreground ml-auto",
-					),
-					h.AriaLabel("What the event icons mean"),
-					h.AriaHasPopup("dialog"),
-					h.AriaExpanded(false),
-					h.DataAttribute("base-ui-popover-trigger", ""),
-				],
+			iconButton(
+				h,
+				{
+					label: "What the event icons mean",
+					size: "icon-xs",
+					hasTooltip: false,
+					className:
+						"ml-auto size-5 text-muted-foreground sm:size-5 data-[popup-open]:bg-muted data-[popup-open]:text-foreground",
+					attributes: [
+						h.AriaHasPopup("dialog"),
+						h.AriaExpanded(false),
+						h.DataAttribute("base-ui-popover-trigger", ""),
+					],
+				},
 				[icon(h, "CircleInfoIcon", { size: 13 })],
 			),
 		],

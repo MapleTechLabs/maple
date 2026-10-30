@@ -10,6 +10,7 @@ import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { RAILWAY_ACCENT } from "../infra-integrations/kit/integration-empty"
 import { railwayTokenForm } from "./view-railway-token"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
@@ -180,18 +181,11 @@ const byStatus = (h: H, model: Model, status: RailwayIntegrationStatus, timeZone
 
 /** A source page whose token was removed: the way back is the connect flow. */
 const railwayReconnect = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
-			),
-		],
-		[
-			h.span([h.Class("text-muted-foreground")], ["Railway is not connected."]),
-			linkButton(
-				h,
-				{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "railway" } })) },
-				["Reconnect"],
-			),
-		],
-	)
+	integrationNotice(h, {
+		message: "Railway is not connected.",
+		action: linkButton(
+			h,
+			{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "railway" } })) },
+			["Reconnect"],
+		),
+	})

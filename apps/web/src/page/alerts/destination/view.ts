@@ -423,8 +423,8 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 								h,
 								{
 									variant: "ghost",
-									size: "sm",
-									className: "h-6 px-2 text-2xs",
+									size: "xs",
+									className: "px-2 text-2xs",
 									isDisabled: !isTokenReady,
 									isLoading: model.isDetectingChats,
 									attributes: [

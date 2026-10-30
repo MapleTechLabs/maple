@@ -323,7 +323,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 				[
 					isExpanded
 						? "Show fewer errors"
-						: `Show ${formatToolCount(hidden.length)} more error${hidden.length === 1 ? "" : "s"}`,
+						: `Show ${formatToolCount(hidden.length)} more ${pluralize(hidden.length, "error")}`,
 				],
 			),
 			...(isExpanded
@@ -333,8 +333,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 							[h.Class("text-muted-foreground/70")],
 							[
 								formatToolCount(hiddenCalls),
-								" failed call",
-								hiddenCalls === 1 ? "" : "s",
+								` failed ${pluralize(hiddenCalls, "call")}`,
 								...(hiddenCalls === hidden.length && hidden.length > 1 ? [", 1 each"] : []),
 							],
 						),

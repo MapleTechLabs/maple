@@ -18,11 +18,11 @@ import {
 	abnormalState,
 	formatLag,
 	formatStoragePercent,
-	formatWholePercent,
 	lagClass,
 	MISSING,
 	utilizationClass,
-} from "../metrics"
+} from "../../../../components/infra/planetscale/metrics"
+import { formatWholePercent } from "../../../../components/infra/format"
 import { Message, type SortKey } from "./model"
 
 // `PlanetScaleDatabaseTable` and its loading state.

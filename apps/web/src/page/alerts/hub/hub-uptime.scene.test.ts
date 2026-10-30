@@ -165,8 +165,8 @@ describe("alerts hub, Uptime tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withMonitors(THREE)),
-			expectView(text("1 up · 1 down · 1 paused")).toExist(),
-			expectView(text("payments-api for 6m")).toExist(),
+			expectView(text(/^3\s*monitors$/)).toExist(),
+			expectView(text(/^1\s*down$/)).toExist(),
 			expectView(text("Down 6m")).toExist(),
 			expectView(text("Paused")).toExist(),
 			expectView(role("link", { name: "payments-api" })).toHaveAttr(

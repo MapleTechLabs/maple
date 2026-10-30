@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { docsUrl } from "../../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../../route"
+import { statusDot } from "../../../../ui/status-dot"
 import { columnHead, dataTable } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import { ERROR_RATE_LIMIT } from "../health"
@@ -62,7 +63,7 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 					),
 				],
 				[
-					h.span([h.Class("size-1.5 shrink-0 rounded-full bg-chart-1")]),
+					statusDot(h, { tone: "custom", className: "bg-chart-1" }),
 					h.span(
 						[h.Class("truncate font-mono"), h.Title(caller.serviceName)],
 						[caller.serviceName],

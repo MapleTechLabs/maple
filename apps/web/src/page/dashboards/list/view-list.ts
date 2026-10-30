@@ -1,3 +1,4 @@
+import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -11,6 +12,7 @@ import * as Menu from "../../../ui/menu"
 import * as MenuView from "../../../ui/menu-view"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton, skeletonSlowNote } from "../../../ui/skeleton"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { docsLink } from "../../kit/signal-empty-state"
 import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "../kit/summary"
 import { relativeTime } from "../../kit/relative-time"
@@ -102,43 +104,31 @@ const sortMenu = (h: H, model: Model): Html => {
 
 const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, scoped: number): Html => {
 	const isFiltering = queryOf(model.search).trim().length > 0 || tagsOf(model.search).length > 0
-	return h.div(
-		[
-			h.Class(
-				cn(
-					"flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3",
-					"justify-start gap-2 border-b-0 px-0 pt-0",
-				),
-			),
-		],
-		[
+	return listToolbar(h, {
+		leading: segmentedSelect<Scope, Message>(h, {
+			options: SCOPE_OPTIONS,
+			value: scopeOf(model.search),
+			onChange: (scope) => Message.ChangedScope({ scope }),
+			ariaLabel: "Filter dashboards by favorite",
+			className: "shrink-0",
+		}),
+		trailing: [
 			toolbarSearch(h, {
 				id: "dashboards-search",
 				draft: model.searchDraft,
 				placeholder: "Search dashboards",
-				className: "min-w-0 grow sm:max-w-70",
+				className: "w-full min-w-0 sm:w-70",
 				onInput: (value) => Message.ChangedSearchDraft({ value }),
-			}),
-			segmentedSelect<Scope, Message>(h, {
-				options: SCOPE_OPTIONS,
-				value: scopeOf(model.search),
-				onChange: (scope) => Message.ChangedScope({ scope }),
-				ariaLabel: "Filter dashboards by favorite",
-				className: "shrink-0",
 			}),
 			tagFilter(h, model, collectTags(dashboards)),
 			sortMenu(h, model),
-			h.span([h.Class("grow")], []),
-			h.span(
-				[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
-				[
-					isFiltering || scopeOf(model.search) === "favorites"
-						? `${scoped} of ${dashboards.length}`
-						: `${dashboards.length} of ${dashboards.length}`,
-				],
-			),
+			toolbarCount(h, [
+				isFiltering || scopeOf(model.search) === "favorites"
+					? `${scoped} of ${dashboards.length}`
+					: `${dashboards.length} of ${dashboards.length}`,
+			]),
 		],
-	)
+	})
 }
 
 /** The reason in the menu itself: a tooltip would break the menu's roving focus. */
@@ -213,7 +203,7 @@ type RowContext = Readonly<{ model: Model; nowMs: number; timeZone: string }>
 /** `DashboardRow`: one link for the whole row, then the star and the kebab above it. */
 const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFavorite: boolean): Html => {
 	const isEmpty = dashboard.widgetCount === 0
-	const widgets = `${dashboard.widgetCount} ${dashboard.widgetCount === 1 ? "widget" : "widgets"}`
+	const widgets = `${dashboard.widgetCount} ${pluralize(dashboard.widgetCount, "widget")}`
 	const name = displayName(dashboard.name)
 	return h.keyed("div")(
 		dashboard.id,

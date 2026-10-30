@@ -24,7 +24,10 @@ const total = (h: H, value: string, label: string, className?: string): Html =>
 	h.div(
 		[h.Class("flex flex-col items-end gap-0.5")],
 		[
-			h.span([h.Class(cn("font-mono text-lg tabular-nums text-foreground", className))], [value]),
+			h.span(
+				[h.Class(cn("font-mono text-lg font-semibold tabular-nums text-foreground", className))],
+				[value],
+			),
 			h.span([h.Class("text-2xs text-muted-foreground")], [label]),
 		],
 	)

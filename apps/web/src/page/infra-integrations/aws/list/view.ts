@@ -1,3 +1,4 @@
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -24,7 +25,7 @@ import type { AwsStatus, FleetRead } from "../data"
 import {
 	BAND_CELLS,
 	filterViews,
-	type Health,
+	HEALTH_TONE,
 	regionsOf,
 	type ResourceView,
 	resourceViews,
@@ -41,15 +42,6 @@ import { awsTable, awsTableLoading, type TableContext } from "./view-table"
 type H = HtmlBuilder<Message>
 
 const MANAGE_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
-
-const SEGMENT = {
-	ok: "bg-success",
-	warn: "bg-severity-warn",
-	crit: "bg-severity-error",
-	idle: "bg-muted-foreground/50",
-} satisfies Record<Health, string>
-
-const TONE = { crit: "crit", warn: "warn", idle: "neutral", ok: "ok" } as const
 
 const loading = (h: H): Html =>
 	h.div(
@@ -85,14 +77,14 @@ const band = (h: H, model: Model, kind: AwsInfraKindId, views: ReadonlyArray<Res
 		segments: (["ok", "warn", "crit", "idle"] as const).map((health) => ({
 			key: health,
 			count: summary.counts[health],
-			className: SEGMENT[health],
+			className: TONE_FILL[HEALTH_TONE[health]],
 		})),
 		cells: BAND_CELLS[kind].map((cell) => ({
 			scope: cell.scope,
 			label: cell.label,
 			hint: cell.hint,
 			value: summary.byScope[cell.scope] ?? 0,
-			tone: TONE[cell.tone],
+			tone: HEALTH_TONE[cell.tone],
 		})),
 		activeScope: model.search.scope,
 		onScopeChange: (scope) => Message.ClickedScope({ scope }),

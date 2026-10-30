@@ -2,7 +2,7 @@ import { ChatApplyRequest } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
-import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
+import { writeClipboard } from "../../kit/clipboard"
 import { parseMarkdownTexts } from "../../kit/markdown"
 import { abortTurn, loadHistory, postMessage } from "./kit/chat-api"
 import { historyMessageToUIMessage } from "./kit/fold"
@@ -91,12 +91,7 @@ const saveFile = (name: string, contents: string, type: string) =>
 export const CopyCode = Command.define("CopyChatCode", {
 	args: { code: Schema.String },
 	messages: [Message.CompletedCodeAction],
-	execute: ({ code }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(code)).pipe(
-			Effect.catch(() => Effect.try(() => writeClipboardFallback(code))),
-			Effect.ignore,
-			Effect.as(Message.CompletedCodeAction()),
-		),
+	execute: ({ code }) => Effect.as(writeClipboard(code), Message.CompletedCodeAction()),
 })
 
 export const DownloadCode = Command.define("DownloadChatCode", {

@@ -59,8 +59,8 @@ describe("node capacity", () => {
 	})
 
 	it("formats cores against allocatable", () => {
-		expect(formatCoresOfAllocatable(0.4231, 3.92)).toBe("0.42 / 3.92 cores")
-		expect(formatCoresOfAllocatable(0.4231, 0)).toBe("0.42 cores")
+		expect(formatCoresOfAllocatable(0.4231, 3.92)).toBe("0.423 / 3.92 cores")
+		expect(formatCoresOfAllocatable(0.4231, 0)).toBe("0.423 cores")
 	})
 
 	it("formats memory against allocatable", () => {

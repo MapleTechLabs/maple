@@ -29,6 +29,7 @@ import { iconTile, metaItem, placeholder, runStatusBadge } from "../kit/parts"
 import { meter } from "../../../ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
 import { Message, type Model } from "./model"
+import { statusDot } from "../../../ui/status-dot"
 
 // The run's title block, its stop banner, the phase strip and the four totals.
 
@@ -131,13 +132,11 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 								h,
 								{
 									size: "sm",
+									isLoading: model.busy === "start",
 									isDisabled: model.busy !== null,
 									attributes: [h.OnClick(Message.ClickedStartRun())],
 								},
-								[
-									icon(h, "MediaPlayIcon"),
-									model.busy === "start" ? "Starting…" : "Start run",
-								],
+								[icon(h, "MediaPlayIcon"), "Start run"],
 							),
 						]),
 		],
@@ -149,10 +148,11 @@ const startRunButton = (h: H, model: Model): Html =>
 		{
 			size: "sm",
 			variant: "outline",
+			isLoading: model.busy === "start",
 			isDisabled: model.busy !== null,
 			attributes: [h.OnClick(Message.ClickedStartRun())],
 		},
-		[model.busy === "start" ? "Starting…" : "Start run"],
+		["Start run"],
 	)
 
 const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html> => {
@@ -221,7 +221,7 @@ const phaseMark = (h: H, state: PhaseState): Html => {
 						"flex size-4 items-center justify-center rounded-full border-2 border-severity-debug",
 					),
 				],
-				[h.span([h.Class("size-1.5 rounded-full bg-severity-debug")])],
+				[statusDot(h, { tone: "done" })],
 			)
 		case "pending":
 		case "skipped":

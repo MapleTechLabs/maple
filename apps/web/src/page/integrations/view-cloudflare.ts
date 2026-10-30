@@ -6,6 +6,7 @@ import { button, linkButton } from "../../ui/button"
 import { confirmDialog } from "../../ui/confirm-dialog"
 import { errorState } from "../../ui/error-state"
 import { skeleton } from "../../ui/skeleton"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
@@ -16,21 +17,14 @@ type H = HtmlBuilder<Message>
 
 /** A source page whose grant was removed: the way back is the connect flow. */
 const cloudflareReconnect = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
-			),
-		],
-		[
-			h.span([h.Class("text-muted-foreground")], ["Cloudflare is not connected."]),
-			linkButton(
-				h,
-				{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "cloudflare" } })) },
-				["Reconnect"],
-			),
-		],
-	)
+	integrationNotice(h, {
+		message: "Cloudflare is not connected.",
+		action: linkButton(
+			h,
+			{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "cloudflare" } })) },
+			["Reconnect"],
+		),
+	})
 
 export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.cloudflare.data, {

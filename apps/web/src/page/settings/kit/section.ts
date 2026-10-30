@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { panel } from "../../../ui/panel"
 import { sectionHeading } from "../../kit/section-heading"
+import { emptyMessage } from "../../../ui/empty"
 
 // `SettingsSection`, `SettingsSections`, `AdminOnlyNote`.
 
@@ -76,5 +77,4 @@ export const adminOnlyNote = <M>(h: HtmlBuilder<M>, children: Children, classNam
 export const INLINE_LINK_CLASS = "text-primary underline-offset-4 hover:underline"
 
 /** The centered one-line note a list section shows for empty or failed loads. */
-export const sectionNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.p([h.Class("px-4 py-6 text-center font-prose text-sm text-muted-foreground")], [text])
+export const sectionNote = <M>(h: HtmlBuilder<M>, text: string): Html => emptyMessage(h, {}, [text])

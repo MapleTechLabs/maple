@@ -95,7 +95,7 @@ export const pullRequestsPanel = (
 				{
 					size: "sm",
 					variant: "ghost",
-					className: "h-7 gap-1 px-2 text-xs",
+					className: "gap-1 px-2 text-xs",
 					isDisabled: isBusy,
 					attributes: [h.OnClick(Message.ClickedAttach())],
 				},

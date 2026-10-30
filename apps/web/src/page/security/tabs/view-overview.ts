@@ -62,6 +62,7 @@ import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
 import { findingBadge } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
 import { leadsLine, stopSummaryOf } from "../kit/outcome"
+import { emptyMessage } from "../../../ui/empty"
 
 // The Overview tab: totals, the targets table, open leads and recent runs.
 
@@ -518,14 +519,11 @@ const topFindingsList = (
 	const rows = openLeads(findings).slice(0, 5)
 	const coverage = coverageAcross(model)
 	return rows.length === 0
-		? h.p(
-				[h.Class("px-4 py-6 text-sm text-muted-foreground")],
-				[
-					coverage === null
-						? "No open leads yet."
-						: `No open leads. The latest runs closed ${coverage.closed} of ${coverage.total} units.`,
-				],
-			)
+		? emptyMessage(h, {}, [
+				coverage === null
+					? "No open leads yet."
+					: `No open leads. The latest runs closed ${coverage.closed} of ${coverage.total} units.`,
+			])
 		: h.ul(
 				[h.Class("divide-y")],
 				rows.map((finding) =>
@@ -577,10 +575,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 			action: h.span([h.Class("text-xs text-muted-foreground")], ["Manual runs only for now"]),
 		}),
 		runs.length === 0
-			? h.p(
-					[h.Class("px-4 py-6 text-sm text-muted-foreground")],
-					["No runs yet. Start one from a target."],
-				)
+			? emptyMessage(h, {}, ["No runs yet. Start one from a target."])
 			: h.ul(
 					[h.Class("divide-y")],
 					runs.map((run) => {

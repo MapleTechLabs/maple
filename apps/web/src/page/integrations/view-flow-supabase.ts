@@ -6,6 +6,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
+import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { SUPABASE_NOT_CONFIGURED } from "../infra-integrations/supabase/connect"
@@ -75,10 +76,7 @@ const windowSteps = (h: H): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-2 rounded-md bg-muted/40 p-4")],
 		[
-			h.span(
-				[h.Class("font-mono text-[10px] uppercase tracking-wide text-muted-foreground")],
-				["In the Supabase window"],
-			),
+			eyebrow(h, { variant: "mono" }, ["In the Supabase window"]),
 			h.ul(
 				[h.Class("flex flex-col gap-1.5 text-sm")],
 				[

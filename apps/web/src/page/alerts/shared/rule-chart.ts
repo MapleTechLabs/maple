@@ -44,7 +44,6 @@ import { isoMs } from "./time"
 /** The tokens the chart and its chrome read off the theme (`PAINT_COLORS` plus the frame). */
 export const RULE_CHART_TOKENS: ReadonlyArray<string> = [
 	"--chart-1",
-	"--destructive",
 	"--severity-warn",
 	"--severity-info",
 	"--severity-error",
@@ -201,7 +200,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		hasGhost,
 		colors: {
 			signal: resolved(SIGNAL_TOKEN),
-			destructive: resolved("--destructive"),
+			destructive: resolved("--severity-error"),
 			warn: resolved("--severity-warn"),
 			muted: resolved("--muted-foreground"),
 			border: resolved("--border"),
@@ -294,7 +293,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						h.Class(
 							cn(
 								"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed",
-								criticalThreshold != null ? "border-severity-warn" : "border-destructive",
+								criticalThreshold != null ? "border-severity-warn" : "border-severity-error",
 							),
 						),
 					]),
@@ -332,7 +331,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 								h.span([
 									h.AriaHidden(true),
 									h.Class(
-										"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive",
+										"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-severity-error",
 									),
 								]),
 								h.span(

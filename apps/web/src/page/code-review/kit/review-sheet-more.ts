@@ -13,6 +13,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { bulletList, ciResultBadge, section, traceLink } from "./parts"
 import { type ReviewSheet, SheetMessage } from "./review-sheet"
 import { CI_RUNS_SHOWN } from "./review-sheet-update"
+import { emptyMessage } from "../../../ui/empty"
 
 // `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history.
 
@@ -124,9 +125,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["Couldn't load cI runs"])]),
 		onData: (response) =>
 			response.runs.length === 0
-				? ciSection(h, [
-						h.p([h.Class("text-sm text-muted-foreground")], ["No CI runs in the last 90 days"]),
-					])
+				? ciSection(h, [emptyMessage(h, {}, ["No CI runs in the last 90 days"])])
 				: ciSection(h, [
 						h.ul(
 							[h.Class("-mx-2 flex flex-col")],

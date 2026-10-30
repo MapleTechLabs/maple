@@ -453,7 +453,7 @@ const desktopTable = (
 								environmentBadge(h, environment),
 								h.span(
 									[h.Class("text-xs text-muted-foreground")],
-									[String(rows.length), " ", rows.length === 1 ? "service" : "services"],
+									[String(rows.length), " ", pluralize(rows.length, "service")],
 								),
 							],
 							mode === "namespace" ? "pl-4" : undefined,

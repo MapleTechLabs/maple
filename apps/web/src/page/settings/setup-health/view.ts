@@ -2,7 +2,6 @@ import type { V2SetupAudit, V2SetupAuditCheck } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
@@ -26,6 +25,7 @@ import {
 	setupHealthAction,
 } from "./derive"
 import { Message, type Model } from "./model"
+import { linkButton } from "../../../ui/button"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -58,21 +58,22 @@ const CATEGORY_LABEL = {
 	data_platform: "Data platform",
 } as const satisfies { readonly [Category in V2SetupAuditCheck["category"]]: string }
 
-const actionClassName = cn(buttonVariants({ variant: "outline", size: "sm" }), "shrink-0 gap-1.5")
-
 const actionButton = (h: H, action: SetupHealthAction): Html =>
 	action.kind === "docs"
-		? h.a(
-				[
-					h.Href(action.href),
-					h.Target("_blank"),
-					h.Rel("noopener noreferrer"),
-					h.Class(actionClassName),
-				],
+		? linkButton(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					className: "shrink-0 gap-1.5",
+					href: action.href,
+					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+				},
 				[action.label, icon(h, "ExternalLinkIcon", { size: 14 })],
 			)
-		: h.a(
-				[h.Href(action.href), h.Class(actionClassName)],
+		: linkButton(
+				h,
+				{ variant: "outline", size: "sm", className: "shrink-0 gap-1.5", href: action.href },
 				[action.label, icon(h, "ArrowRightIcon", { size: 14 })],
 			)
 
@@ -263,13 +264,9 @@ const noTelemetry = (h: H): Html =>
 					]),
 				]),
 				emptyActions(h, [
-					h.a(
-						[
-							h.Href("/settings?tab=ingestion"),
-							h.Class(buttonVariants({ variant: "outline", size: "sm" })),
-						],
-						["Go to Ingestion"],
-					),
+					linkButton(h, { variant: "outline", size: "sm", href: "/settings?tab=ingestion" }, [
+						"Go to Ingestion",
+					]),
 					docsLink(h, "quickstart"),
 				]),
 			],

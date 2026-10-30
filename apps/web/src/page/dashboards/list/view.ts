@@ -154,9 +154,9 @@ const degradedBanner = (h: H): Html =>
 			button(
 				h,
 				{
-					size: "sm",
+					size: "xs",
 					variant: "ghost",
-					className: "-my-1 h-6 shrink-0 px-2 text-xs hover:text-foreground",
+					className: "-my-1 shrink-0 hover:text-foreground",
 					attributes: [h.OnClick(Message.ClickedRetrySync())],
 				},
 				["Retry sync"],

@@ -4,6 +4,7 @@ import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
+import { separator } from "../../../ui/display"
 import { field, fieldLabel, type FieldState, input } from "../../../ui/field"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { textarea } from "../../../ui/textarea"
@@ -51,7 +52,7 @@ export const railSetting = (
 		...children,
 	])
 
-export const divider = (h: H): Html => h.div([h.Class("h-px bg-border")], [])
+export const divider = (h: H): Html => separator(h, "horizontal", undefined)
 
 /** `Segments`: the rail's full-width segmented control. */
 export const segments = <T extends string>(

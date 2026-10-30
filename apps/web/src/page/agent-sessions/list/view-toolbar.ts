@@ -3,6 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { refreshButton } from "../../../ui/refresh-button"
 import { switchControl } from "../../../ui/switch"
+import { toolbarStat } from "../../kit/list-toolbar"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
@@ -28,19 +29,10 @@ const toolbarSearch = (h: H, model: Model): Html =>
 
 /** `ToolbarStat`: "6 of 1,666" when the total is known and larger, else "6 shown". */
 const stat = (h: H, value: number, total: number | undefined): Html =>
-	h.span(
-		[h.Class("flex items-center gap-1.5 whitespace-nowrap text-sm")],
-		total !== undefined && total > value
-			? [
-					h.span([h.Class("font-medium tabular-nums")], [value.toLocaleString()]),
-					h.span([h.Class("text-muted-foreground")], ["of"]),
-					h.span([h.Class("tabular-nums text-muted-foreground")], [total.toLocaleString()]),
-				]
-			: [
-					h.span([h.Class("font-medium tabular-nums")], [value.toLocaleString()]),
-					h.span([h.Class("text-muted-foreground")], ["shown"]),
-				],
-	)
+	toolbarStat(h, {
+		value: value.toLocaleString(),
+		label: total !== undefined && total > value ? `of ${total.toLocaleString()}` : "shown",
+	})
 
 const tooltipTrigger = <M>(h: HtmlBuilder<M>, id: string) => [
 	h.DataAttribute("base-ui-tooltip-trigger", ""),

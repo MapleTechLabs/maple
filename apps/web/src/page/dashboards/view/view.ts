@@ -19,6 +19,7 @@ import { skeleton } from "../../../ui/skeleton"
 import type { PageContext, PageViewInputs } from "../../contract"
 import { variablesOf } from "./plan"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { resourceNotFound } from "../../kit/resource-not-found"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -124,25 +125,15 @@ const viewSkeleton = (h: H): Html => {
 
 /** `ResourceNotFound`: the id resolved to nothing. */
 const notFound = (h: H, dashboardId: string): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
-				emptyTitle(h, ["Dashboard not found"]),
-				emptyDescription(h, [
-					"No dashboard with id ",
-					inlineCode(h, { className: "break-all px-1.5 py-0.5" }, [dashboardId]),
-				]),
-			]),
-			linkButton(
-				h,
-				{ variant: "outline", size: "sm", href: hrefOf(AppRoute.Dashboards({ search: {} })) },
-				["Back to all dashboards"],
-			),
+	resourceNotFound(h, {
+		title: "Dashboard not found",
+		description: [
+			"No dashboard with id ",
+			inlineCode(h, { className: "break-all px-1.5 py-0.5" }, [dashboardId]),
 		],
-		cn("md:py-12", "py-24"),
-	)
+		back: { href: hrefOf(AppRoute.Dashboards({ search: {} })), label: "Back to all dashboards" },
+		className: "py-24",
+	})
 
 const GRID_PREVIEW = [
 	{ glyph: "ChartBarTrendUpIcon", className: "h-16 grow" },

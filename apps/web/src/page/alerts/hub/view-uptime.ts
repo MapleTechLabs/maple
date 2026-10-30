@@ -1,4 +1,4 @@
-import { countLabel } from "@maple/ui/lib/format"
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -19,14 +19,12 @@ import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
 import { ROW_LINK_LIFT, rowLink } from "../../../ui/table"
 import { emptyActions, filteredEmpty } from "../../kit/signal-empty-state"
-import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
-import { isoMs } from "../shared/time"
+import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
 import { monitorHref, newMonitorHref } from "../shared/uptime-commands"
 import {
 	displayStatus,
 	formatMs,
 	formatShare,
-	formatSpan,
 	KIND_LABEL,
 	matchesQuery,
 	latencyPercentiles,
@@ -49,7 +47,7 @@ import {
 	type ServiceNamespaces,
 } from "./uptime-groups"
 
-// The hub's Uptime tab: the KPI rail, the filters and the monitor table.
+// The hub's Uptime tab: the filters with the readout, and the monitor table.
 
 type H = HtmlBuilder<Message>
 
@@ -95,39 +93,22 @@ const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolea
 		"py-12",
 	)
 
-const kpis = (h: H, monitors: ReadonlyArray<UptimeMonitor>, nowMs: number): Html => {
+/** The window's figures as the toolbar readout: the total, what is down now and the recent uptime. */
+const readout = (h: H, monitors: ReadonlyArray<UptimeMonitor>): ReadonlyArray<Html> => {
 	const summary = summarize(monitors)
-	const down = monitors.filter((monitor) => displayStatus(monitor) === "down")
-	const firstDown = down[0]
-	return statRail(h, { columns: 3 }, [
-		statRailItem(h, {
-			eyebrow: "Monitors",
-			value: String(summary.total),
-			compact: true,
-			subline: `${summary.up} up · ${summary.down} down · ${summary.paused} paused`,
-		}),
-		statRailItem(h, {
-			eyebrow: "Down now",
+	return [
+		toolbarStat(h, { value: String(summary.total), label: pluralize(summary.total, "monitor") }),
+		toolbarStat(h, {
 			value: String(summary.down),
-			tone: summary.down > 0 ? "crit" : "neutral",
-			compact: true,
-			subline:
-				firstDown === undefined
-					? "Every active check passes"
-					: down.length > 1
-						? `${firstDown.name} and ${down.length - 1} more`
-						: firstDown.state.status_changed_at === null
-							? firstDown.name
-							: `${firstDown.name} for ${formatSpan(nowMs - isoMs(firstDown.state.status_changed_at))}`,
+			label: "down",
+			dot: summary.down > 0 ? "crit" : undefined,
 		}),
-		statRailItem(h, {
-			eyebrow: "Uptime, recent checks",
+		toolbarStat(h, {
 			value: formatShare(summary.share),
-			tone: summary.share !== null && summary.share < 1 ? "warn" : "neutral",
-			compact: true,
-			subline: "Across the last checks of every active monitor",
+			label: "uptime, recent checks",
+			dot: summary.share !== null && summary.share < 1 ? "warn" : undefined,
 		}),
-	])
+	]
 }
 
 const statusSegments = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Html => {
@@ -153,9 +134,10 @@ const statusSegments = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonito
 }
 
 const toolbar = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
-		[
+	listToolbar(h, {
+		leading: statusSegments(h, model, monitors),
+		className: "pb-0",
+		trailing: [
 			searchInput(h, {
 				id: "uptime-filter",
 				value: model.uptimeQuery,
@@ -165,7 +147,6 @@ const toolbar = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Ht
 				onClear: Message.ChangedUptimeQuery({ value: "" }),
 				className: "w-64",
 			}),
-			statusSegments(h, model, monitors),
 			nativeSelect(
 				h,
 				{
@@ -183,8 +164,9 @@ const toolbar = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Ht
 				},
 				KIND_FILTERS.map((kind) => nativeOption(kind.value, kind.label)),
 			),
+			h.div([h.Class("flex items-center gap-3")], readout(h, monitors)),
 		],
-	)
+	})
 
 const rowMenu = (h: H, model: Model, monitor: UptimeMonitor): Html => {
 	const menuId = monitorMenuId(monitor.id)
@@ -390,7 +372,6 @@ const loaded = (
 	return h.div(
 		[h.Class("flex flex-col gap-4")],
 		[
-			kpis(h, monitors, nowMs),
 			toolbar(h, model, monitors),
 			rows.length === 0
 				? filteredEmpty(h, {
@@ -431,10 +412,7 @@ export const uptimeTab = (h: H, model: Model, nowMs: number, pinnedNamespace: st
 }
 
 const loadingState = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-4")],
-		[statRailLoading(h, 3, 3), skeleton(h, "h-9 w-2/3"), skeleton(h, "h-64 w-full")],
-	)
+	h.div([h.Class("flex flex-col gap-4")], [skeleton(h, "h-9 w-2/3"), skeleton(h, "h-64 w-full")])
 
 export const deleteMonitorDialog = (h: H, model: Model): Html => {
 	const monitors = AsyncData.getOrElse(model.monitors.data, () => [])

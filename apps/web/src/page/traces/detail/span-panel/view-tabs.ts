@@ -1,4 +1,3 @@
-import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import {
@@ -18,6 +17,7 @@ import { badge } from "../../../../ui/display"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { icon, type IconName } from "../../../../ui/icon"
+import { severityBadge } from "../../../../ui/logs/severity-badge"
 import { skeleton } from "../../../../ui/skeleton"
 import * as Tabs from "../../../../ui/tabs"
 import { docsLink } from "../../../kit/signal-empty-state"
@@ -131,23 +131,6 @@ export const tabList = (h: H, model: Model, values: ReadonlyArray<TabValue>): Ht
 		],
 	)
 
-/** `SeverityBadge` (packages/ui/src/components/logs/severity-badge.tsx), from the text only. */
-const severityBadge = (h: H, severityText: string): Html => {
-	const label = severityText.trim() === "" ? "UNSET" : severityText
-	const color = getSeverityColor(label)
-	return badge(
-		h,
-		{
-			variant: "secondary",
-			className: cn("font-mono text-3xs uppercase", "h-4 px-1"),
-			attributes: [
-				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
-			],
-		},
-		[label],
-	)
-}
-
 const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 	h.button(
 		[h.Class("block w-full p-2 text-left hover:bg-muted/30 cursor-pointer"), h.Type("button")],
@@ -156,7 +139,7 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 				[h.Class("flex items-center gap-2 text-3xs text-muted-foreground mb-1")],
 				[
 					h.span([], [formatTimestamp(log.timestamp, timeZone, false)]),
-					severityBadge(h, log.severityText),
+					severityBadge(h, { severity: log.severityText, className: "h-4 px-1" }),
 				],
 			),
 			h.p([h.Class("font-mono text-xs whitespace-pre-wrap break-all line-clamp-3")], [log.body]),

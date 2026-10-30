@@ -132,8 +132,7 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 				h,
 				{
 					variant: "ghost",
-					size: "sm",
-					className: "h-6 text-xs",
+					size: "xs",
 					attributes: [h.OnClick(onFit)],
 				},
 				[icon(h, "EyeIcon"), "Fit view"],
