@@ -29,8 +29,8 @@ export function clock(scope: Scope, running: Running): { value: number } {
 /** Seconds a clicked duck spends hopping. */
 export const HOP = 0.45
 
-/** Mallards paddle a steady loop round the lake. A click makes one hop and quack: each group
- * carries `userData.quack`, which the scene's click handler calls. */
+/** Mallards paddle a steady loop round the lake. A click makes one hop and quack: each duck's
+ * hit box carries `userData.quack`, which the scene's click handler calls. */
 export function ducks(
 	scope: Scope,
 	{
@@ -45,7 +45,8 @@ export function ducks(
 		phase,
 		lane: (hash(i, 8.1) - 0.5) * 0.7,
 		speed: 0.13,
-		hop: 0,
+		/** When the current hop lands, in seconds on `performance.now()`'s clock. */
+		landsAt: 0,
 	}))
 	const draw = (sketch: Sketch) => {
 		const stock = prototypes()
@@ -53,18 +54,23 @@ export function ducks(
 		stock.dispose()
 	}
 	// The duck is tiny on screen, so a roomier invisible box takes its clicks.
-	const target = () =>
-		mesh(new THREE.BoxGeometry(0.4, 0.3, 0.3), new THREE.MeshBasicMaterial({ visible: false }), {
-			position: [0, 0.1, 0],
-		})
-	const groups = flock.map((duck) => {
-		const node = group({}, [group({}, [sketchDrawing(draw, palette.ink)]), target()])
-		node.userData.quack = () => {
-			duck.hop = HOP
+	const target = (duck: (typeof flock)[number]) => {
+		const box = mesh(
+			new THREE.BoxGeometry(0.4, 0.3, 0.3),
+			new THREE.MeshBasicMaterial({ visible: false }),
+			{
+				position: [0, 0.1, 0],
+			},
+		)
+		box.userData.quack = () => {
+			duck.landsAt = performance.now() / 1000 + HOP
 		}
-		return node
-	})
-	scope.frames.push((delta) => {
+		return box
+	}
+	const groups = flock.map((duck) =>
+		group({}, [group({}, [sketchDrawing(draw, palette.ink)]), target(duck)]),
+	)
+	scope.frames.push(() => {
 		flock.forEach((duck, i) => {
 			const node = groups[i]
 			const body = node?.children[0]
@@ -79,10 +85,10 @@ export function ducks(
 			)
 			node.rotation.y = Math.atan2(-point.nx, -point.nz)
 			// The hop runs on real time, so a paused map still answers the click.
-			duck.hop = Math.max(0, duck.hop - Math.min(delta, 0.05))
-			const t = 1 - duck.hop / HOP
-			body.position.y = duck.hop > 0 ? Math.sin(Math.PI * t) * 0.12 : 0
-			body.rotation.z = duck.hop > 0 ? Math.sin(Math.PI * 2 * t) * 0.25 : 0
+			const left = Math.max(0, duck.landsAt - performance.now() / 1000)
+			const t = 1 - left / HOP
+			body.position.y = left > 0 ? Math.sin(Math.PI * t) * 0.12 : 0
+			body.rotation.z = left > 0 ? Math.sin(Math.PI * 2 * t) * 0.25 : 0
 		})
 	})
 	return groups

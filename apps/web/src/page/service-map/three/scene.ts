@@ -93,7 +93,8 @@ const pick = (
 		.map(({ id }) => id)
 }
 
-/** The `userData.quack` of the duck under the pointer, if any. */
+/** The `userData.quack` of the duck hit box under the pointer, if any. Only the boxes are
+ * tested: the ink outlines would pick with three's 1-unit line threshold. */
 const pickDuck = (
 	camera: THREE.Camera,
 	scenery: THREE.Object3D,
@@ -105,7 +106,7 @@ const pickDuck = (
 		if (typeof node.userData.quack === "function") ducks.push(node)
 	})
 	const raycaster = aim(camera, event, size)
-	const hit = ducks.find((duck) => raycaster.intersectObject(duck, true).length > 0)
+	const hit = ducks.find((duck) => raycaster.intersectObject(duck, false).length > 0)
 	return hit === undefined ? null : hit.userData.quack
 }
 
