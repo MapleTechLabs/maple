@@ -141,6 +141,32 @@ export const latencyPercentiles = (recent: ReadonlyArray<RecentCheck>): LatencyP
 	return { p50: at(0.5), p95: at(0.95), p99: at(0.99) }
 }
 
+/** How a check, or a bucket of checks, reads on a strip or scatter. */
+export type CheckHealth = "fast" | "slower" | "slow" | "someFailed" | "mostlyFailed" | "none"
+
+/** Latency over these multiples of the window's median reads as slower and slow. */
+const SLOWER_FACTOR = 1.5
+const SLOW_FACTOR = 2
+
+export const medianOf = (values: ReadonlyArray<number>): number | null => {
+	if (values.length === 0) return null
+	const sorted = [...values].sort((a, b) => a - b)
+	const mid = Math.floor(sorted.length / 2)
+	return sorted.length % 2 === 1 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+}
+
+/** Failures first (most of the bucket failing is red, some is amber), then latency against the median. */
+export const checkHealth = (
+	checks: Readonly<{ total: number; failed: number; latencyMs: number | null }>,
+	medianMs: number | null,
+): CheckHealth => {
+	if (checks.total === 0) return "none"
+	if (checks.failed > 0) return checks.failed * 2 >= checks.total ? "mostlyFailed" : "someFailed"
+	if (checks.latencyMs === null || medianMs === null || medianMs <= 0) return "fast"
+	if (checks.latencyMs > medianMs * SLOW_FACTOR) return "slow"
+	return checks.latencyMs > medianMs * SLOWER_FACTOR ? "slower" : "fast"
+}
+
 export const formatMs = (ms: number | null): string =>
 	ms === null ? "–" : ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`
 
