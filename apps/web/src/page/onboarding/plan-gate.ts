@@ -1,7 +1,7 @@
 import { BillingCustomer } from "@maple/domain/http"
 import type { MapleRegion } from "@maple/domain/organization-regions"
 import { hasSelectedPlan, type PlanAccess, resolvePlanAccess } from "../../lib/billing/plan-gating"
-import { hasMultipleRegions } from "../../lib/region"
+import { hasMultipleRegions, regionAppUrl } from "../../lib/region"
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Effect, Option, Schema } from "effect"
@@ -100,6 +100,18 @@ export const wrongRegionOf = (organization: Option.Option<ClerkOrganization>): O
 	Option.flatMap(organization, (org) =>
 		org.isServedHere || org.isRegionOpen ? Option.none() : Option.some(org.homeRegion),
 	)
+
+/** Where a wrong-region user goes on their own: `href` on `region`, when no org of theirs is served here. */
+export const leaveTargetOf = (
+	region: MapleRegion,
+	href: string,
+	memberships: ReadonlyArray<ClerkOrganization>,
+	appUrlOf: (region: MapleRegion) => string | undefined = regionAppUrl,
+): string | null => {
+	const url = appUrlOf(region)
+	const hasOrgHere = memberships.some((org) => org.isServedHere || org.isRegionOpen)
+	return url === undefined || hasOrgHere ? null : `${url}${href}`
+}
 
 /** `ClerkReverseRedirects` renders a splash or redirects instead of the route: nothing mounts yet. */
 export const isRouteHeld = (gate: Gate): boolean => gate.isSplash || Option.isSome(gate.redirect)
