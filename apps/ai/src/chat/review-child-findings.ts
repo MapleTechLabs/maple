@@ -22,7 +22,14 @@ export const makeChildFindings = (): ChildFindings => {
 	}
 }
 
-const ANCHOR = /^`?(.+?):(\d+)`?$/
+/** `path:line` once a list bullet and backticks are gone; a path never holds whitespace. */
+const ANCHOR = /^(\S+):(\d+)$/
+
+/** The severity the review would post: anything but a note or a critical is a warning. */
+const severityOf = (raw: string): "critical" | "warn" | "info" => {
+	const word = raw.toLowerCase().replace(/[^a-z]/g, "")
+	return word.startsWith("crit") ? "critical" : word === "info" || word === "note" ? "info" : "warn"
+}
 
 /**
  * A child's answer as findings: one `path:line | severity | category | title | why | fix | check`
@@ -31,14 +38,14 @@ const ANCHOR = /^`?(.+?):(\d+)`?$/
 export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindingSubmission> =>
 	answer.split("\n").flatMap((line) => {
 		const parts = line.split("|").map((part) => part.trim())
-		const anchor = ANCHOR.exec(parts[0] ?? "")
+		const anchor = ANCHOR.exec((parts[0] ?? "").replace(/^[-*]\s+/, "").replaceAll("`", ""))
 		if (parts.length < 6 || anchor === null) return []
 		const [, severity, category, title, why, fix, check] = parts
 		return [
 			{
-				path: anchor[1]!.trim(),
+				path: anchor[1]!,
 				line: Number(anchor[2]),
-				severity: severity!.toLowerCase(),
+				severity: severityOf(severity!),
 				category: category!.toLowerCase(),
 				title: title!,
 				body: why!,
@@ -62,7 +69,7 @@ export const unaccountedChildFindings = (
 ): ReadonlyArray<PrReviewFindingSubmission> =>
 	children.filter(
 		(child) =>
-			(child.severity === "warn" || child.severity === "critical") &&
+			child.severity !== "info" &&
 			!filed.some((finding) => near(finding, child)) &&
 			!dismissed.some((dismissal) => near(dismissal, child)),
 	)
