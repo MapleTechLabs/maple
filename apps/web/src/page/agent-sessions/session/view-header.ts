@@ -107,7 +107,7 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 							[shortId(id, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true })],
 						),
 						icon(h, "CopyIcon", {
-							size: 11,
+							size: 12,
 							className: "shrink-0 text-muted-foreground",
 							attributes: [h.AriaHidden(true)],
 						}),

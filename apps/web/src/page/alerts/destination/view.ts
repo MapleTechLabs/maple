@@ -115,7 +115,7 @@ const providerTile = (
 					"relative flex flex-col items-start gap-2 overflow-hidden rounded-md border p-3 text-left transition-colors",
 					options.isSelected
 						? "border-(--tile-accent) bg-muted/40"
-						: "border-border/60 bg-card hover:border-border hover:bg-muted/40",
+						: "border-border/60 bg-card hover:border-border hover:bg-muted/50",
 				),
 			),
 			h.Style({ "--tile-accent": provider.accent }),

@@ -326,7 +326,7 @@ const passingDisclosure = (
 							h.AriaDisabled(false),
 							h.AriaExpanded(isOpen),
 							h.Class(
-								"group hover:bg-muted/20 flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
+								"group hover:bg-muted/50 flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
 							),
 							...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 							h.DataAttribute("slot", "collapsible-trigger"),

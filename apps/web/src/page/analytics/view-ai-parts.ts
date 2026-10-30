@@ -121,7 +121,7 @@ export const aiPanel = (
 							h.Type("button"),
 							h.OnClick(Message.ClickedExpandPanel({ panel: options.expand.id })),
 							h.Class(
-								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/40 px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none",
+								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:outline-none",
 							),
 						],
 						[
@@ -290,7 +290,7 @@ export const rankingTable = (h: H, ranks: ReadonlyArray<AiReferralRank>, surface
 				[
 					h.Key(rank.product.id),
 					h.Style(shareBarStyle(rank.share)),
-					h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"),
+					h.Class("flex items-center gap-4 border-b border-border/60 px-4 py-2 last:border-0"),
 				],
 				[
 					h.span(
@@ -376,7 +376,7 @@ export const crawlerTable = (
 			return h.div(
 				[
 					h.Key(row.crawler),
-					h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"),
+					h.Class("flex items-center gap-4 border-b border-border/60 px-4 py-2 last:border-0"),
 				],
 				[
 					h.span(

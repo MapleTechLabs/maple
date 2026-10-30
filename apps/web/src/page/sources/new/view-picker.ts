@@ -48,8 +48,8 @@ const card = (
 			h.OnClick(onSelect),
 			h.Class(
 				cn(
-					"group bg-card flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors",
-					"hover:bg-muted/40 focus-visible:ring-ring outline-none focus-visible:ring-2",
+					"group bg-card flex items-center gap-3 rounded-md border px-3 py-3 text-left transition-colors",
+					"hover:bg-muted/50 focus-visible:ring-ring outline-none focus-visible:ring-2",
 				),
 			),
 		],

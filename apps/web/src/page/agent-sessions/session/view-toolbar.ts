@@ -126,7 +126,7 @@ const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 								],
 							},
 							[
-								icon(h, "SlidersIcon", { size: 13, className: "text-muted-foreground" }),
+								icon(h, "SlidersIcon", { size: 14, className: "text-muted-foreground" }),
 								"Display",
 								h.span(
 									[h.Class("text-muted-foreground tabular-nums")],

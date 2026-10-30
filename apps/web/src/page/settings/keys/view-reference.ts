@@ -107,7 +107,7 @@ const scopes = (h: H, isOpen: boolean): Html =>
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
 					h.Class(
-						"group/scopes hover:bg-muted/20 flex w-full items-center gap-2 px-4 py-3 text-left",
+						"group/scopes hover:bg-muted/50 flex w-full items-center gap-2 px-4 py-3 text-left",
 					),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),

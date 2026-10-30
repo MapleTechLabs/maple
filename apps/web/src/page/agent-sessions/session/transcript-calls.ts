@@ -270,7 +270,7 @@ export const structureRow = (
 						h.AriaPressed(String(isSelected)),
 						h.Class(
 							cn(
-								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted/40",
+								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted/50",
 								rowSelectedClass(isSelected),
 							),
 						),
@@ -281,7 +281,7 @@ export const structureRow = (
 					],
 					[
 						icon(h, STRUCTURE_ICON[category], {
-							size: 13,
+							size: 14,
 							className: cn(
 								"shrink-0",
 								structure.failed ? "text-severity-error" : STRUCTURE_TONE[category],

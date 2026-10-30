@@ -223,7 +223,7 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 												h.Key(options.step),
 												h.Class(
 													cn(
-														"relative m-auto w-full max-w-[540px] rounded-2xl border border-border bg-sidebar p-5",
+														"relative m-auto w-full max-w-[540px] rounded-md border border-border bg-sidebar p-5",
 														"onboarding-enter-preview",
 													),
 												),
@@ -490,7 +490,7 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 						h.ul(
 							[
 								h.Class(
-									"flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-background",
+									"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
 								),
 							],
 							surfaces.map((surface) =>
@@ -651,7 +651,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 								h.ul(
 									[
 										h.Class(
-											"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card",
+											"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
 										),
 									],
 									platforms.map((platform) => providerRow(h, model, platform)),
@@ -688,7 +688,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 												"flex size-6 items-center justify-center rounded-sm border border-border bg-card",
 											),
 										],
-										[icon(h, name, { size: 13 })],
+										[icon(h, name, { size: 14 })],
 									),
 								),
 							),
@@ -796,7 +796,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 			h.ul(
 				[
 					h.Class(
-						"flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-background",
+						"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-background",
 					),
 				],
 				[
@@ -994,7 +994,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 							h.ul(
 								[
 									h.Class(
-										"grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3",
+										"grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3",
 									),
 								],
 								startCards(findings).map((card) =>
@@ -1041,7 +1041,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 										h.ul(
 											[
 												h.Class(
-													"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border",
+													"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border",
 												),
 											],
 											[

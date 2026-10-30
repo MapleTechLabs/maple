@@ -20,7 +20,7 @@ export const detailRailGroup = <M>(
 		[
 			h.DataAttribute("slot", "detail-rail-group"),
 			h.Class(
-				cn("flex flex-col gap-1.5 border-b border-border/40 px-4 py-3.5 last:border-b-0", className),
+				cn("flex flex-col gap-1.5 border-b border-border/60 px-4 py-3.5 last:border-b-0", className),
 			),
 		],
 		[eyebrow(h, { as: "h3" }, [label]), h.div([h.Class("flex flex-col gap-1")], children)],
@@ -172,7 +172,7 @@ export const detailRailMetaRow = <M>(
 									[
 										h.Class(
 											cn(
-												"break-all text-right font-mono text-2xs tabular-nums text-foreground/85",
+												"break-all text-right font-mono text-2xs tabular-nums text-foreground/80",
 												options.valueClassName,
 											),
 										),

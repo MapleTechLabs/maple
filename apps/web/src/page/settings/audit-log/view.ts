@@ -300,7 +300,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 			h.div(
 				[
 					h.Class(
-						"hover:bg-muted/20 relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors @md:flex-nowrap",
+						"hover:bg-muted/50 relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors @md:flex-nowrap",
 					),
 				],
 				[

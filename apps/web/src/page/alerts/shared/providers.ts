@@ -284,7 +284,7 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 		[
 			h.Class(
 				cn(
-					"relative inline-flex shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card",
+					"relative inline-flex shrink-0 items-center justify-center rounded-md border border-border/60 bg-card",
 					options.className,
 				),
 			),
@@ -293,7 +293,7 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 		[
 			h.span([
 				h.AriaHidden(true),
-				h.Class("absolute inset-0 rounded-lg opacity-70"),
+				h.Class("absolute inset-0 rounded-md opacity-70"),
 				h.Style({
 					background: `radial-gradient(circle at 30% 20%, ${provider.accentBg}, transparent 70%)`,
 				}),

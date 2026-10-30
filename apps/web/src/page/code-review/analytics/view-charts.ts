@@ -161,7 +161,7 @@ export const issuesCard = (
 					),
 					h.Href(href),
 				],
-				["See all issues caught", icon(h, "ArrowRightIcon", { size: 13 })],
+				["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
 			),
 		],
 	)

@@ -78,7 +78,7 @@ const timeComposition = (h: H, summary: SessionSummary): Html => {
 				[h.Key(band.kind), h.Class("flex items-center gap-2.5")],
 				[
 					icon(h, AGENT_TIME_ICON[band.kind], {
-						size: 13,
+						size: 14,
 						className: cn("shrink-0", AGENT_TIME_TEXT[band.kind]),
 						attributes: [h.AriaHidden(true)],
 					}),
@@ -180,7 +180,7 @@ const tokensSection = (h: H, summary: SessionSummary): Html => {
 							[h.Key(bucket.key), h.Class("flex items-center gap-2.5")],
 							[
 								icon(h, bucket.icon, {
-									size: 13,
+									size: 14,
 									className: cn("shrink-0", bucket.text),
 									attributes: [h.AriaHidden(true)],
 								}),

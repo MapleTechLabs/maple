@@ -118,7 +118,7 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 						? []
 						: [
 								h.ul(
-									[h.Class("divide-y divide-border/40 text-sm")],
+									[h.Class("divide-y divide-border/60 text-sm")],
 									profile.taxIds.map((taxId) =>
 										h.li(
 											[h.Key(taxId.id), h.Class("flex items-center gap-3 py-1.5")],

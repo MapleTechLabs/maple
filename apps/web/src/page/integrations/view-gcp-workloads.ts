@@ -98,7 +98,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 			? []
 			: [
 					h.p(
-						[h.Class("border-b border-border/40 px-4 py-2 text-2xs text-severity-warn")],
+						[h.Class("border-b border-border/60 px-4 py-2 text-2xs text-severity-warn")],
 						[`${gcpTitles(unread)} metrics could not be read. Reload to try again.`],
 					),
 				]),
@@ -132,7 +132,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 										),
 									),
 									h.Class(
-										"group flex items-center gap-3 border-b border-border/40 px-4 py-2.5 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+										"group flex items-center gap-3 border-b border-border/60 px-4 py-2.5 transition-colors last:border-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
 									),
 								],
 								[
@@ -231,7 +231,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 											),
 										),
 										h.Class(
-											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
 										),
 									],
 									[
@@ -275,7 +275,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 									types.length > TYPES_SHOWN
 										? `All ${countLabel(types.length, "type")}`
 										: "All resources",
-									icon(h, "ArrowRightIcon", { size: 11 }),
+									icon(h, "ArrowRightIcon", { size: 12 }),
 								],
 							),
 						],

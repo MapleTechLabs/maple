@@ -111,7 +111,7 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep, index: number): Html =>
 							h.Href(step.href),
 							h.OnClick(Message.ClickedStep()),
 							h.Class(
-								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
+								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[

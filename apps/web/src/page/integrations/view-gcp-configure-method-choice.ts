@@ -88,7 +88,7 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 				[h.Class(cn(GCP_TITLE, "mb-3"))],
 				[changing ? "How do you want to apply the change?" : "How do you want to connect?"],
 			),
-			RadioGroup.radioGroup(h, { className: "gap-0 divide-y divide-border/60 rounded-lg border" }, [
+			RadioGroup.radioGroup(h, { className: "gap-0 divide-y divide-border/60 rounded-md border" }, [
 				...METHODS.map((option) =>
 					h.div(
 						[h.Key(option.value), h.Class("flex flex-col gap-3 p-4")],
@@ -110,7 +110,16 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 													option.title,
 													...(option.badge === null
 														? []
-														: [h.span([h.Class("text-xs font-normal text-muted-foreground")], [option.badge])]),
+														: [
+																h.span(
+																	[
+																		h.Class(
+																			"text-xs font-normal text-muted-foreground",
+																		),
+																	],
+																	[option.badge],
+																),
+															]),
 												],
 											),
 											h.span([h.Class(SMALL)], [option.description]),
@@ -118,7 +127,9 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 									),
 								],
 							),
-							...(option.value === "code" && row === "code" ? [flavourToggle(h, configure, flavour)] : []),
+							...(option.value === "code" && row === "code"
+								? [flavourToggle(h, configure, flavour)]
+								: []),
 						],
 					),
 				),

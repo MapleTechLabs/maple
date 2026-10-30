@@ -8,7 +8,7 @@ import type { SortDir } from "../../kit/table-sort"
 // `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
 
 export const ROW_LINK_CLASS =
-	"group flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+	"group flex items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
 
 /** A sortable head's state: `null` sort is the skeleton's inert head (no current key). */
 export const headSort = <M, K extends string>(
@@ -61,7 +61,7 @@ export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>):
 						[
 							options.label,
 							icon(h, "ArrowUpDownIcon", {
-								size: 10,
+								size: 12,
 								className: cn(
 									"transition-opacity",
 									sort.isActive ? "opacity-100" : "opacity-40",
@@ -98,7 +98,7 @@ export const dataTable = <M>(
 	)
 	return h.div(
 		[
-			h.Class(cn("border-y border-border/70", refreshingClass(isWaiting), options.className)),
+			h.Class(cn("border-y border-border/60", refreshingClass(isWaiting), options.className)),
 			h.AriaLabel(options.ariaLabel),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
@@ -128,7 +128,7 @@ export const skeletonRows = <M>(
 ): ReadonlyArray<Html> =>
 	Array.from({ length: count }, () =>
 		h.div(
-			[h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0")],
+			[h.Class("flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0")],
 			cells(),
 		),
 	)

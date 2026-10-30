@@ -134,7 +134,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 									[
 										h.Key(run.traceId),
 										h.Class(
-											"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/60",
+											"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/50",
 										),
 									],
 									[
@@ -187,7 +187,7 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 								h.Class(
 									cn(
 										"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-										isCurrent ? "bg-muted" : "hover:bg-muted/60",
+										isCurrent ? "bg-muted" : "hover:bg-muted/50",
 									),
 								),
 								...(isCurrent ? [h.Disabled(true)] : []),

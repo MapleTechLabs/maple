@@ -225,7 +225,7 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 		h.div(
 			[
 				h.Key(String(width)),
-				h.Class("flex h-[38px] items-center gap-3 border-b border-border/50 px-2.5 last:border-0"),
+				h.Class("flex h-[38px] items-center gap-3 border-b border-border/60 px-2.5 last:border-0"),
 				h.Style({ opacity: String(1 - index * 0.2) }),
 			],
 			[
@@ -303,7 +303,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 		[
 			h.AriaExpanded(isExpanded),
 			h.Class(
-				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs transition-colors hover:bg-muted/30",
+				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs transition-colors hover:bg-muted/50",
 			),
 			h.Type("button"),
 			h.OnClick(Message.ToggledErrorsExpanded()),

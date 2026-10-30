@@ -71,7 +71,7 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 				),
 			],
 			[
-				icon(h, "PlanetScaleIcon", { size: 11, className: "shrink-0 text-muted-foreground" }),
+				icon(h, "PlanetScaleIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
 				h.span([h.Class("truncate font-mono")], [config.matched.name]),
 				h.span(
 					[h.Class("shrink-0 text-3xs text-muted-foreground")],
@@ -83,7 +83,7 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 		return h.span(
 			[h.Class("flex min-w-0 items-center gap-1.5 text-muted-foreground")],
 			[
-				icon(h, "PlanetScaleIcon", { size: 11, className: "shrink-0" }),
+				icon(h, "PlanetScaleIcon", { size: 12, className: "shrink-0" }),
 				h.span([h.Class("truncate font-mono")], [config.originDatabase]),
 				h.span([h.Class("shrink-0 text-3xs")], ["PlanetScale (not in inventory)"]),
 			],
@@ -139,7 +139,7 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 							[h.Class("mt-1.5 flex items-center gap-1.5 text-2xs")],
 							[
 								icon(h, "ArrowRightIcon", {
-									size: 10,
+									size: 12,
 									className: "shrink-0 text-muted-foreground/60",
 								}),
 								hyperdriveOrigin(h, config),

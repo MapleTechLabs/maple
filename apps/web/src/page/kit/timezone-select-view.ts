@@ -65,7 +65,7 @@ export const zoneListView = Submodel.defineView<Combobox.Model, Combobox.Message
 		trigger: {
 			returnFocusId: inputs.triggerId,
 			header: h.div(
-				[h.Class("flex items-center gap-2 border-b border-border/70 px-3")],
+				[h.Class("flex items-center gap-2 border-b border-border/60 px-3")],
 				[
 					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0 text-muted-foreground/60" }),
 					h.input([

@@ -187,7 +187,7 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 			h.div(
 				[h.Class("flex items-center gap-2.5")],
 				[
-					icon(h, "CircleInfoIcon", { size: 13, className: "shrink-0 text-muted-foreground" }),
+					icon(h, "CircleInfoIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 					h.span([h.Class(cn(LABEL, "text-muted-foreground"))], ["Capture changes here"]),
 					h.span(
 						[h.Class("min-w-0 text-muted-foreground text-xs")],
@@ -206,7 +206,7 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 	return h.div(
 		[h.Class("mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-muted/30 px-4 py-3")],
 		[
-			icon(h, "CircleInfoIcon", { size: 15, className: "mt-0.5 shrink-0 text-muted-foreground" }),
+			icon(h, "CircleInfoIcon", { size: 16, className: "mt-0.5 shrink-0 text-muted-foreground" }),
 			h.div(
 				[h.Class("flex min-w-0 grow flex-col gap-1")],
 				[

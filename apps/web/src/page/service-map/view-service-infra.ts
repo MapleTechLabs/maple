@@ -55,7 +55,7 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 					[h.Class("min-w-0 flex-1")],
 					[
 						eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
-							icon(h, "CubeIcon", { size: 11 }),
+							icon(h, "CubeIcon", { size: 12 }),
 							h.span([], [workload.workloadKind]),
 						]),
 						h.p(
@@ -98,10 +98,7 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 					? []
 					: [
 							h.a(
-								[
-									h.Class(LINK),
-									h.Href(workloadLink(workload, time).href),
-								],
+								[h.Class(LINK), h.Href(workloadLink(workload, time).href)],
 								["View workload ", icon(h, "ArrowRightIcon", { size: 10 })],
 							),
 						]),
@@ -125,9 +122,9 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 			),
 		],
 		[
-			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-muted/40" }, [
+			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-muted/50" }, [
 				eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
-					icon(h, link.icon, { size: 11 }),
+					icon(h, link.icon, { size: 12 }),
 					h.span([], [link.label]),
 				]),
 				h.div(
@@ -138,7 +135,7 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 							[link.name],
 						),
 						icon(h, "ArrowRightIcon", {
-							size: 10,
+							size: 12,
 							className: "shrink-0 text-muted-foreground group-hover:text-primary",
 						}),
 					],

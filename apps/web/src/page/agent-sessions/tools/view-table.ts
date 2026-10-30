@@ -100,7 +100,7 @@ const duration = (h: H, value: number, isDriving: boolean, hidden?: string): Htm
 			h.Class(
 				cn(
 					"w-[76px] shrink-0 text-right font-mono text-xs tabular-nums",
-					isDriving ? "text-foreground/85" : "text-muted-foreground",
+					isDriving ? "text-foreground/80" : "text-muted-foreground",
 					hidden,
 				),
 			),

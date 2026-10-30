@@ -368,7 +368,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const isHttp = model.form.kind === "http"
 	const widthClass = isHttp ? "max-w-6xl" : "max-w-3xl"
 	const card = h.div(
-		[h.Class("divide-y rounded-lg border bg-card")],
+		[h.Class("divide-y rounded-md border bg-card")],
 		[kindPicker(h, model), ...kindSections(h, model), serviceSection(h, model), notifySection(h, model)],
 	)
 	return dashboardPage(h, { ...header, fill: true }, [

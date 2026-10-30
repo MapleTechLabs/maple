@@ -138,7 +138,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 				[attr(h, "flex shrink-0 items-center"), h.Title(category.label)],
 				[
 					icon(h, category.icon, {
-						size: 11,
+						size: 12,
 						className: bar.isError ? TONE_TEXT.crit : category.accent.text,
 					}),
 				],
@@ -347,8 +347,8 @@ export const timelineRow = (h: H, bar: Bar, state: RowState): Html => {
 				h,
 				cn(
 					"absolute left-0 right-0 flex items-stretch cursor-pointer select-none",
-					"hover:bg-muted/30",
-					state.isHovered && "bg-muted/30",
+					"hover:bg-muted/50",
+					state.isHovered && "bg-muted/50",
 					state.isSelected && "bg-primary/10",
 					state.isFocused && "ring-1 ring-inset ring-primary/60",
 					state.isMatched && "ring-1 ring-inset ring-primary/40",

@@ -319,7 +319,7 @@ const fact = (h: H, label: string, value: Html | string): Html =>
 	)
 
 const signalLink = (h: H, href: string, label: string): Html =>
-	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 11 })])
+	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 12 })])
 
 const menuEntries: ReadonlyArray<MenuEntry> = [
 	...(IS_ADMIN ? [{ _tag: "Item", value: "configure", label: "Edit data" } as const] : []),

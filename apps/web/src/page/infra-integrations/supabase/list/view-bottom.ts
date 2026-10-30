@@ -22,13 +22,13 @@ const MAX_ROWS = 6
 
 const listRow = (h: H, key: string, href: string | null, children: ReadonlyArray<Html>): Html => {
 	const className =
-		"flex items-center gap-4 border-t border-border/40 px-4 py-2.5 first:border-t-0 transition-colors"
+		"flex items-center gap-4 border-t border-border/60 px-4 py-2.5 first:border-t-0 transition-colors"
 	return h.li(
 		[h.Key(key)],
 		[
 			href === null
 				? h.div([h.Class(className)], children)
-				: h.a([h.Href(href), h.Class(cn(className, "hover:bg-muted/40"))], children),
+				: h.a([h.Href(href), h.Class(cn(className, "hover:bg-muted/50"))], children),
 		],
 	)
 }
@@ -159,7 +159,7 @@ const findingsBody = (
 				h.p(
 					[
 						h.Key(note),
-						h.Class("border-t border-border/40 px-4 py-2 text-2xs text-muted-foreground"),
+						h.Class("border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground"),
 					],
 					[note],
 				),

@@ -36,7 +36,7 @@ const depthButton = <M>(
 				h.OnClick(onClick),
 			],
 		},
-		[icon(h, name, { size: 11 })],
+		[icon(h, name, { size: 12 })],
 	)
 
 export const depthControls = <M>(h: HtmlBuilder<M>, options: DepthControlsOptions<M>): Html =>

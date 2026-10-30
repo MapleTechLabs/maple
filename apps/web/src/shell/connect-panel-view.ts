@@ -59,7 +59,7 @@ const statusPill = (h: H, model: Model): Html => {
 		},
 		isConnected
 			? [statusDot(h, { tone: "ok" }), `Connected · ${countLabel(services.length, "service")}`]
-			: [icon(h, "ClockIcon", { size: 11, className: "size-[11px]" }), "Waiting for telemetry"],
+			: [icon(h, "ClockIcon", { size: 12, className: "size-3" }), "Waiting for telemetry"],
 	)
 }
 
@@ -149,7 +149,7 @@ type ClientMark = Readonly<{ name: IconName; className: string }>
 const clientMark = (h: H, mark: ClientMark): Html =>
 	h.span(
 		[h.Class("flex size-6 shrink-0 items-center justify-center rounded-md border bg-background")],
-		[icon(h, mark.name, { size: 13, className: mark.className })],
+		[icon(h, mark.name, { size: 14, className: mark.className })],
 	)
 
 /** `McpClientRow`: a client's mark and name, then its one way in. */
@@ -190,7 +190,7 @@ const copyAction = (h: H, model: Model, value: string, field: CopyField, label: 
 const installAction = (h: H, href: string, label: string): Html =>
 	linkButton(h, { size: "xs", variant: "outline", className: "gap-1", href }, [
 		label,
-		icon(h, "ExternalLinkIcon", { size: 11, className: "text-muted-foreground" }),
+		icon(h, "ExternalLinkIcon", { size: 12, className: "text-muted-foreground" }),
 	])
 
 /** `McpCard`: each client's fastest way to add Maple, the endpoint for any other. */

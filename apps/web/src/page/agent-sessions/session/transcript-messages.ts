@@ -106,7 +106,7 @@ export const userBlock = (
 	])
 
 const chevron = (h: H, isOpen: boolean, className: string): Html =>
-	icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 11, className })
+	icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12, className })
 
 const systemCoverage = (calls: number, turnCalls: number): string =>
 	calls >= turnCalls

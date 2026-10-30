@@ -131,10 +131,10 @@ export const toolTableBody = <M>(
 	)
 
 const ROW =
-	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border/50 px-2.5 text-left transition-colors last:border-0 focus-visible:outline-none"
+	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border/60 px-2.5 text-left transition-colors last:border-0 focus-visible:outline-none"
 
 export const toolRowClass = (isSelected: boolean): string =>
-	cn(ROW, rowSelectedClass(isSelected), !isSelected && "hover:bg-muted/30 focus-visible:bg-muted/30")
+	cn(ROW, rowSelectedClass(isSelected), !isSelected && "hover:bg-muted/50 focus-visible:bg-muted/50")
 
 export const toolTableFooter = <M>(h: HtmlBuilder<M>, subject: string, detail: string): Html =>
 	h.div(

@@ -167,7 +167,7 @@ export const logRow = <Message>(
 				width: "100%",
 				transform: `translateY(${start}px)`,
 			}),
-			rowClass(h, "border-b border-border/70"),
+			rowClass(h, "border-b border-border/60"),
 		],
 		[
 			h.div(
@@ -213,7 +213,7 @@ export const logRow = <Message>(
 					),
 					h.span(
 						[
-							rowClass(h, "shrink-0 w-[92px] text-foreground/75 tabular-nums"),
+							rowClass(h, "shrink-0 w-[92px] text-foreground/70 tabular-nums"),
 							h.Title(row.timeTitle),
 						],
 						row.timeFraction === ""
@@ -296,13 +296,13 @@ const rowActions = <Message>(
 				h,
 				"Copy message",
 				events.clickedCopyMessage(index),
-				icon(h, "CopyIcon", { size: 13 }),
+				icon(h, "CopyIcon", { size: 14 }),
 			),
 			iconButton(
 				h,
 				"Copy link to log",
 				events.clickedCopyLink(index),
-				icon(h, "LinkIcon", { size: 13 }),
+				icon(h, "LinkIcon", { size: 14 }),
 			),
 			...(row.traceId === ""
 				? []
@@ -314,7 +314,7 @@ const rowActions = <Message>(
 								h.Title("Open trace"),
 								rowClass(h, ROW_ACTION_CLASS),
 							],
-							[icon(h, "PulseIcon", { size: 13 })],
+							[icon(h, "PulseIcon", { size: 14 })],
 						),
 					]),
 			iconButton(

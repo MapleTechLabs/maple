@@ -586,8 +586,8 @@ const loadingState = (h: H): Html =>
 			h.div(
 				[h.Class("flex flex-col gap-4 lg:flex-row")],
 				[
-					skeleton(h, "h-[262px] flex-1 rounded-lg"),
-					skeleton(h, "h-[262px] w-full rounded-lg lg:w-[400px]"),
+					skeleton(h, "h-[262px] flex-1 rounded-md"),
+					skeleton(h, "h-[262px] w-full rounded-md lg:w-[400px]"),
 				],
 			),
 			panel(h, {}, [
@@ -695,7 +695,7 @@ const loaded = (
 								],
 							)
 						: Option.match(overview, {
-								onNone: () => skeleton(h, "h-[262px] flex-1 rounded-lg"),
+								onNone: () => skeleton(h, "h-[262px] flex-1 rounded-md"),
 								onSome: (data) => responsesChart(h, model, data, inputs, theme),
 							}),
 					breakdownFailure !== null

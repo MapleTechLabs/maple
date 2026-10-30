@@ -437,7 +437,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								h.Key(`${request.traceId}-${request.timestamp}`),
 								h.Href(hrefOf(AppRoute.Trace({ traceId: request.traceId, search: {} }))),
 								h.Class(
-									"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-muted/40",
+									"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-muted/50",
 								),
 							],
 							[

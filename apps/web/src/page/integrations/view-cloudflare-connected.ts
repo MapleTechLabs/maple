@@ -141,7 +141,7 @@ const statCards = (h: H, usage: CloudflareUsageResponse | null): Html => {
 						"inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground",
 					),
 				],
-				["Open", icon(h, "ArrowRightIcon", { size: 11 })],
+				["Open", icon(h, "ArrowRightIcon", { size: 12 })],
 			),
 		}),
 	])

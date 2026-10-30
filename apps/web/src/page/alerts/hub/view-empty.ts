@@ -140,7 +140,7 @@ const templateTile = <M>(h: HtmlBuilder<M>, template: AlertTemplate, serviceName
 				[
 					h.span(
 						[h.Class(cn("flex size-6 shrink-0 items-center justify-center rounded-md", tone?.glyph))],
-						[icon(h, template.icon, { size: 13 })],
+						[icon(h, template.icon, { size: 14 })],
 					),
 					h.span([h.Class("font-medium text-sm")], [template.title]),
 				],

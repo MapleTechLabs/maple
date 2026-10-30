@@ -25,7 +25,7 @@ import { panelScope, type Trigger } from "./view-scope"
 type H = HtmlBuilder<Message>
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
+	"flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0 hover:bg-muted/50"
 const MONO_LINK =
 	"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
 
@@ -52,11 +52,11 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 	h.label(
 		[
 			h.Class(
-				"flex h-6 items-center gap-1.5 rounded-sm border border-border/70 bg-background/60 px-2 transition-colors focus-within:border-ring min-w-0 max-w-xs flex-1",
+				"flex h-6 items-center gap-1.5 rounded-sm border border-border/60 bg-background/60 px-2 transition-colors focus-within:border-ring min-w-0 max-w-xs flex-1",
 			),
 		],
 		[
-			icon(h, "MagnifierIcon", { size: 11, className: "shrink-0 text-muted-foreground" }),
+			icon(h, "MagnifierIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
 			h.input([
 				h.Type("search"),
 				h.Value(value),

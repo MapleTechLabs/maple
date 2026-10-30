@@ -106,7 +106,7 @@ export type ApprovalCardOptions<M> = Readonly<{
 
 export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<M>): Html =>
 	h.div(
-		[h.Class("overflow-hidden rounded-lg border border-severity-warn/40 bg-severity-warn/5 text-xs")],
+		[h.Class("overflow-hidden rounded-md border border-severity-warn/40 bg-severity-warn/5 text-xs")],
 		[
 			item(h, { size: "xs", variant: "flush", className: "gap-2 px-3" }, [
 				itemMedia(h, { variant: "icon" }, [

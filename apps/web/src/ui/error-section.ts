@@ -47,7 +47,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 		: capForDisplay(body.full)
 	const { prompt } = options
 	return h.div(
-		[h.Class("mx-3 my-2 rounded-lg border border-severity-error/25 bg-severity-error/4 px-3 py-2.5")],
+		[h.Class("mx-3 my-2 rounded-md border border-severity-error/25 bg-severity-error/4 px-3 py-2.5")],
 		[
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-2")],

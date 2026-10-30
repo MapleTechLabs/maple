@@ -165,7 +165,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				"hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell",
 			),
 		],
-		cn("cursor-pointer transition-colors hover:bg-muted/40", isSelected && "bg-muted/40"),
+		cn("cursor-pointer transition-colors hover:bg-muted/50", isSelected && "bg-muted/60"),
 		[h.Key(review.id), h.OnClick(open)],
 	)
 }

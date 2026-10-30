@@ -8,7 +8,7 @@ export const ROW_LANE =
 
 /** Lane + tint for a selected row, transparent lane otherwise. */
 export function rowSelectedClass(selected: boolean | undefined): string {
-	return cn(ROW_LANE, selected ? "bg-muted/40 before:bg-primary" : "before:bg-transparent")
+	return cn(ROW_LANE, selected ? "bg-muted/60 before:bg-primary" : "before:bg-transparent")
 }
 
 export const listRowVariants = cva(

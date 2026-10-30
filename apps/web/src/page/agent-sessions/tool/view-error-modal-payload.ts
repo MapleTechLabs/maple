@@ -75,7 +75,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 										? "text-foreground"
 										: line.folded !== undefined
 											? "text-muted-foreground"
-											: "text-foreground/85",
+											: "text-foreground/80",
 								),
 							),
 						],
@@ -168,7 +168,7 @@ const argumentsBlock = (
 				? h.pre(
 						[
 							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85",
+								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/80",
 							),
 						],
 						[args === undefined ? row.arguments : JSON.stringify(args, null, 2)],
@@ -222,7 +222,7 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 				: h.pre(
 						[
 							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85",
+								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/80",
 							),
 						],
 						[parsed === undefined ? row.result : JSON.stringify(parsed, null, 2)],
@@ -263,7 +263,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 									["What's wrong"],
 								),
 								h.span(
-									[h.Class("text-xs leading-4 text-foreground/85")],
+									[h.Class("text-xs leading-4 text-foreground/80")],
 									[
 										h.span([h.Class("font-medium text-foreground")], [hint.subject]),
 										" ",

@@ -65,7 +65,7 @@ const connectedRow = (
 			h.Type("button"),
 			h.OnClick(onSelect(entry.id)),
 			h.Class(
-				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
 			),
 		],
 		[
@@ -161,7 +161,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 			h.Type("button"),
 			h.OnClick(onSelect(entry.id)),
 			h.Class(
-				"group flex items-center gap-4 rounded-lg border border-border/60 bg-card p-4 text-left outline-none transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+				"group flex items-center gap-4 rounded-md border border-border/60 bg-card p-4 text-left outline-none transition-colors hover:border-border hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
 			),
 		],
 		[

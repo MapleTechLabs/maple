@@ -138,7 +138,7 @@ export const manualSteps = (
 				],
 			),
 			h.ol(
-				[h.Class("divide-y divide-border/60 rounded-lg border")],
+				[h.Class("divide-y divide-border/60 rounded-md border")],
 				options.steps.map((step, index) => {
 					const expanded = open === step.title
 					return h.li(

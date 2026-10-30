@@ -22,7 +22,7 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 	h.div(
 		[h.Class("flex items-center gap-2 border-b border-border bg-muted/20 px-3 py-1.5")],
 		[
-			icon(h, "MagnifierIcon", { size: 13, className: "text-muted-foreground shrink-0" }),
+			icon(h, "MagnifierIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 			h.input([
 				h.Class(
 					"min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/50 pointer-coarse:text-base",
@@ -222,7 +222,7 @@ export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: Toolb
 										h.Id(ids.skew),
 									],
 									[
-										icon(h, "AlertWarningIcon", { size: 11 }),
+										icon(h, "AlertWarningIcon", { size: 12 }),
 										h.span([h.Class("hidden @min-[400px]/timeline:inline")], ["skew"]),
 									],
 								),

@@ -183,7 +183,7 @@ const workflowRow = (
 				"hidden px-4 sm:table-cell",
 			),
 		],
-		cn("cursor-pointer transition-colors hover:bg-muted/40", isActive && "bg-muted/40"),
+		cn("cursor-pointer transition-colors hover:bg-muted/50", isActive && "bg-muted/60"),
 		[h.Key(`${row.owner}/${row.repository}/${row.pipeline}`), h.OnClick(select)],
 	)
 }

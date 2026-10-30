@@ -370,7 +370,7 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 					),
 				],
 			),
-			icon(h, "ArrowRightIcon", { size: 13, className: "text-muted-foreground shrink-0" }),
+			icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 		],
 	)
 
@@ -419,7 +419,7 @@ const nothingMatched = (h: H, model: Model): Html => {
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon", { size: 17 })]),
+				emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon", { size: 16 })]),
 				emptyTitle(h, [
 					isSearching
 						? `No dashboard matches “${query}”`
@@ -474,7 +474,7 @@ const nothingStarred = (h: H): Html =>
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "StarIcon", { size: 17 })]),
+				emptyMedia(h, { variant: "icon" }, [icon(h, "StarIcon", { size: 16 })]),
 				emptyTitle(h, ["Nothing starred on this device"]),
 				emptyDescription(h, [
 					"Favorites are stored in this browser, not shared with your org. Star a dashboard to pin it to the top of the list.",

@@ -253,7 +253,7 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 					h.Class(cn(CHIP, "text-muted-foreground")),
 				],
 				[
-					icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 11 }),
+					icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 12 }),
 					truncatedText(h, { text: target.name }),
 				],
 			)

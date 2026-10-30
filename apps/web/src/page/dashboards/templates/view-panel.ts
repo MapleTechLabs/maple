@@ -478,10 +478,10 @@ export const detailPanel = (
 							h.span(
 								[
 									h.Class(
-										"border-border bg-card flex size-8.5 shrink-0 items-center justify-center rounded-lg border",
+										"border-border bg-card flex size-8.5 shrink-0 items-center justify-center rounded-md border",
 									),
 								],
-								[icon(h, templateIcon(template.id, template.category), { size: 17 })],
+								[icon(h, templateIcon(template.id, template.category), { size: 16 })],
 							),
 							h.div(
 								[h.Class("flex min-w-0 flex-col gap-1")],

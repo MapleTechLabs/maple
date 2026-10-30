@@ -366,7 +366,7 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 				? h.div(
 						[
 							h.Class(
-								"flex items-start gap-3 rounded-lg border border-severity-error/25 bg-severity-error/6 px-3 py-2.5",
+								"flex items-start gap-3 rounded-md border border-severity-error/25 bg-severity-error/6 px-3 py-2.5",
 							),
 						],
 						[
@@ -418,7 +418,7 @@ const partialList = <M>(
 						[h.Class(cn("flex gap-2 text-sm leading-6", tone))],
 						[
 							icon(h, iconName, {
-								size: 13,
+								size: 14,
 								className: "mt-0.5 shrink-0 text-muted-foreground/70",
 							}),
 							h.span([h.Class("min-w-0")], [item]),

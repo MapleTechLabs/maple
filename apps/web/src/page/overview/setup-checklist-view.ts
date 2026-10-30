@@ -114,7 +114,7 @@ const watchingStrip = (h: H): Html =>
 	h.div(
 		[
 			h.Class(
-				"flex items-center gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3",
+				"flex items-center gap-2.5 rounded-md border border-dashed border-primary/30 bg-primary/5 px-4 py-3",
 			),
 		],
 		[
@@ -201,7 +201,7 @@ const waitingCard = (
 				[
 					listRow(h, {
 						onClick: Message.ClickedToggleExpanded(),
-						className: "flex-1 px-5 py-4 hover:bg-muted/30",
+						className: "flex-1 px-5 py-4 hover:bg-muted/50",
 						leading: h.span(
 							[
 								h.Class(

@@ -180,7 +180,7 @@ const addMenu = (
 								h.Type("button"),
 								h.Class(
 									cn(
-										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground",
+										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground",
 										// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
 										menu.isOpen && "border-b border-border/60",
 									),

@@ -111,7 +111,7 @@ export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 								),
 								h.Title(`${countLabel(signal.commentCount, "comment")} on the timeline`),
 							],
-							[icon(h, "ChatBubbleIcon", { size: 11 }), String(signal.commentCount)],
+							[icon(h, "ChatBubbleIcon", { size: 12 }), String(signal.commentCount)],
 						),
 					]
 				: []),
@@ -133,7 +133,7 @@ export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 										: countLabel(prCount, "open pull request"),
 								),
 							],
-							[icon(h, "PullRequestIcon", { size: 11 }), String(prCount)],
+							[icon(h, "PullRequestIcon", { size: 12 }), String(prCount)],
 						),
 					]
 				: []),

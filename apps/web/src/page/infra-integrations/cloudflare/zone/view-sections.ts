@@ -31,7 +31,7 @@ export type SectionContext = Readonly<{
 const MAX_LEGEND_CHIPS = 8
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
+	"flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0 hover:bg-muted/50"
 
 export const SCOPE_IDS = {
 	dns: "cf-scope-dns",

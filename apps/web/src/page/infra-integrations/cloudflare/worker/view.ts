@@ -95,7 +95,7 @@ const figure = (h: H, value: string, caption: string, className?: string): Html 
 /** `CloudflareTraceGapCallout`: failures Cloudflare saw that the Worker's spans never recorded. */
 const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedService: string): Html =>
 	h.div(
-		[h.Class("@container rounded-lg border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error/40")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -289,7 +289,7 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 	return panel(h, {}, [
 		panelHeader(h, { title: "Outcomes" }),
 		h.div(
-			[h.Class("divide-y divide-border/40")],
+			[h.Class("divide-y divide-border/60")],
 			totals.byStatus.map(({ status, count }) => {
 				const success = status === "success"
 				const share = totals.invocations > 0 ? count / totals.invocations : 0

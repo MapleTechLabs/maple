@@ -37,7 +37,7 @@ export const BAR_FILL: Record<SeverityLevel, string> = {
 
 /** Dimmer value-text tone used inside compact bar widgets. */
 export const BAR_VALUE_TONE: Record<SeverityLevel, string> = {
-	ok: "text-foreground/75",
+	ok: "text-foreground/70",
 	warn: TONE_TEXT.warn,
 	crit: TONE_TEXT.crit,
 } satisfies Record<SeverityLevel, string>

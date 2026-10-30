@@ -134,7 +134,7 @@ const repoRow = (h: H, model: Model, repo: GithubRepoSummary, timeZone: string):
 	return item(h, { variant: "flush", size: "lg", tag: "li" }, [
 		itemMedia(h, {}, [
 			icon(h, presentation.icon, {
-				size: 17,
+				size: 16,
 				className: `${presentation.tone} ${presentation.spin === true ? "animate-spin" : ""}`,
 			}),
 		]),
@@ -199,7 +199,7 @@ const syncCount = (h: H, glyph: Html, count: number, label: string): Html =>
 
 const removedRow = (h: H, model: Model, repo: GithubRepoSummary): Html =>
 	item(h, { variant: "flush", size: "lg", tag: "li" }, [
-		itemMedia(h, {}, [icon(h, "CircleWarningIcon", { size: 17, className: "text-severity-warn" })]),
+		itemMedia(h, {}, [icon(h, "CircleWarningIcon", { size: 16, className: "text-severity-warn" })]),
 		itemContent(
 			h,
 			[
@@ -245,7 +245,7 @@ export const repositoriesPanels = (
 				? [
 						syncCount(
 							h,
-							icon(h, "CircleCheckIcon", { size: 13, className: "text-severity-info" }),
+							icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
 							synced,
 							"synced",
 						),
@@ -256,7 +256,7 @@ export const repositoriesPanels = (
 				? [
 						syncCount(
 							h,
-							icon(h, "CircleWarningIcon", { size: 13, className: "text-severity-error" }),
+							icon(h, "CircleWarningIcon", { size: 14, className: "text-severity-error" }),
 							failed,
 							"failed",
 						),
@@ -300,7 +300,7 @@ export const repositoriesPanels = (
 									[h.Class("flex items-center gap-1.5 text-sm font-medium")],
 									[
 										icon(h, "CircleWarningIcon", {
-											size: 15,
+											size: 16,
 											className: "text-severity-warn",
 										}),
 										"Needs attention",

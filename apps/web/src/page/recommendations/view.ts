@@ -159,7 +159,7 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 				row(h, "Type", [badge(h, { variant: kindBadge.variant }, [kindBadge.label])]),
 				row(h, "Fix", [
 					badge(h, { variant: "outline", className: cn("gap-1", mode.className), attributes: [h.Title(mode.title)] }, [
-						icon(h, mode.icon, { size: 11 }),
+						icon(h, mode.icon, { size: 12 }),
 						mode.label,
 					]),
 				]),

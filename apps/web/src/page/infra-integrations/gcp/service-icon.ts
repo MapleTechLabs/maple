@@ -51,7 +51,7 @@ export const gcpServiceIcon = <M>(
 			h.AriaHidden(true),
 			h.Class(
 				cn(
-					"flex shrink-0 items-center justify-center border bg-muted/40 text-foreground/75",
+					"flex shrink-0 items-center justify-center border bg-muted/40 text-foreground/70",
 					tile.box,
 					options.className,
 				),

@@ -227,7 +227,7 @@ const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html
 			? []
 			: [
 					icon(h, platform.icon, {
-						size: 11,
+						size: 12,
 						className: cn("shrink-0", platform.accentClassName),
 						attributes: [h.AriaLabel(platform.label)],
 					}),

@@ -167,7 +167,7 @@ export const agentPromptButton = <M>(
 										),
 									),
 								],
-								[icon(h, mark.name, { size: 13, className: mark.className })],
+								[icon(h, mark.name, { size: 14, className: mark.className })],
 							),
 						),
 					),

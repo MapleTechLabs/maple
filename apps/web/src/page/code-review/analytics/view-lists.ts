@@ -30,7 +30,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 								[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
 								[
 									icon(h, "GithubIcon", {
-										size: 15,
+										size: 16,
 										className: "shrink-0 text-muted-foreground",
 									}),
 									h.span([h.Class("min-w-0 flex-1 truncate")], [row.name]),
