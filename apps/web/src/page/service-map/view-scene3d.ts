@@ -412,6 +412,17 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 				],
 				[
 					scene,
+					// The island fades into the paper instead of stopping at the canvas edge.
+					h.div(
+						[
+							h.Class("pointer-events-none absolute inset-0"),
+							h.AriaHidden(true),
+							h.Style({
+								"background-image": `radial-gradient(ellipse at center, transparent 58%, ${palette.paper} 100%)`,
+							}),
+						],
+						[],
+					),
 					h.div(
 						[
 							h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
