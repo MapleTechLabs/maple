@@ -66,6 +66,15 @@ describe("fixUnknownIdentifier", () => {
 		)
 	})
 
+	it("fixes a column of a backtick-quoted table", () => {
+		expect(
+			fixUnknownIdentifier(
+				"SELECT service.name FROM `traces` WHERE $__orgFilter",
+				unknown("service.name"),
+			)?.sql,
+		).toBe("SELECT ServiceName FROM `traces` WHERE $__orgFilter")
+	})
+
 	it("does not fix an unqualified name both joined tables have", () => {
 		const sql =
 			"SELECT service_name FROM traces t JOIN logs l ON t.TraceId = l.TraceId WHERE $__orgFilter(t)"
