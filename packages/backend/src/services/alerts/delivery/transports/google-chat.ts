@@ -32,7 +32,7 @@ const markdownToCardHtml = (markdown: string): string =>
 		)
 		.replace(/\n/g, "<br>")
 
-/** `<users/all>` in a message's `text` is a mention; a rule name or template must not ping a space. */
+/** `<users/all>` is Google Chat mention syntax; a rule name or template must never ping a space. */
 const neutralizeMentions = (value: string): string => value.replace(/<(?=users\/)/gi, "<\u200B")
 
 const paragraph = (html: string) => ({ textParagraph: { text: html } })
@@ -77,8 +77,9 @@ export const buildGoogleChatMessage = (input: RenderInput<Config>) => {
 				...(group == null ? [] : [{ decoratedText: { topLabel: "Group", text: escapeHtml(group) } }]),
 			]
 	return {
-		// The notification and the text clients without cards show.
-		text: neutralizeMentions(truncate(title, 300)),
+		// Shown in notifications and by clients that cannot draw cards. Not `text`, which Google
+		// Chat renders above the card and so repeats the headline.
+		fallbackText: neutralizeMentions(truncate(title, 300)),
 		cardsV2: [
 			{
 				cardId: "maple-alert",

@@ -127,7 +127,7 @@ describe("googleChatTransport.render", () => {
 		const body = JSON.parse(
 			render({ templated: { title: "Custom title", body: "line <1>\nline 2" } }).body,
 		)
-		assert.strictEqual(body.text, "Custom title")
+		assert.strictEqual(body.fallbackText, "Custom title")
 		assert.strictEqual(body.cardsV2[0].card.header.title, "Custom title")
 		const widgets = widgetsOf(JSON.stringify(body))
 		assert.strictEqual(widgets[0].textParagraph.text, "line &lt;1&gt;<br>line 2")
@@ -153,8 +153,8 @@ describe("googleChatTransport.render", () => {
 
 	it("does not let a rule name mention the whole space", () => {
 		const body = JSON.parse(render({ context: { ...context, ruleName: "<users/all> checkout" } }).body)
-		assert.notInclude(body.text, "<users/all>")
-		assert.include(body.text, "checkout")
+		assert.notInclude(body.fallbackText, "<users/all>")
+		assert.include(body.fallbackText, "checkout")
 	})
 
 	it("says what a revoked or deleted webhook means", () => {
