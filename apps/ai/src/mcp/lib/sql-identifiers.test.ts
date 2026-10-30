@@ -117,6 +117,12 @@ describe("fixUnknownIdentifier", () => {
 		expect(fixUnknownIdentifier(sql, unknown("service"))).toBeUndefined()
 	})
 
+	it("never renames a quoted, dotted derived-table alias declared without AS", () => {
+		const sql =
+			"SELECT service.name FROM (SELECT ServiceName FROM traces WHERE $__orgFilter) `service.name`"
+		expect(fixUnknownIdentifier(sql, unknown("service.name"))).toBeUndefined()
+	})
+
 	it("ignores a table named in a # comment", () => {
 		expect(
 			fixUnknownIdentifier(

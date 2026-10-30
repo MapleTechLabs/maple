@@ -140,7 +140,7 @@ export const definedNames = (sql: string): ReadonlySet<string> => {
 		...[...text.matchAll(/\bAS\s+([A-Za-z_][\w.]*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)].map(
 			(m) => m[1] ?? m[2],
 		),
-		...[...text.matchAll(/\)\s*([A-Za-z_]\w*)/g)]
+		...[...text.matchAll(/\)\s*([A-Za-z_][\w.]*)/g)]
 			.map((m) => m[1])
 			.filter((name) => !KEYWORDS_AFTER_PAREN.has(name.toLowerCase())),
 	])
