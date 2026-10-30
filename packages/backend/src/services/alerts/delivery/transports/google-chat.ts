@@ -41,6 +41,18 @@ export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly
 const escapeHtml = (value: string): string =>
 	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 
+/**
+ * A template's Markdown in card HTML, the same subset Telegram gets: `**b**` and `[t](url)`, with
+ * http(s) links only. Escaped first, so only the tags built here reach Google Chat.
+ */
+const markdownToCardHtml = (markdown: string): string =>
+	escapeHtml(markdown)
+		.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
+			/^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : match,
+		)
+		.replace(/\n/g, "<br>")
+
 const paragraph = (html: string) => ({ textParagraph: { text: html } })
 
 /**
@@ -64,7 +76,7 @@ export const buildGoogleChatMessage = (input: RenderInput<Config>) => {
 	const group = displayGroupKey(context.groupKey)
 	const title = templated?.title ?? `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`
 	const lead = templated
-		? escapeHtml(truncate(templated.body, MAX_TEMPLATED_BODY_CHARS)).replace(/\n/g, "<br>")
+		? markdownToCardHtml(truncate(templated.body, MAX_TEMPLATED_BODY_CHARS))
 		: escapeHtml(buildSummaryLine(context, (value) => value))
 	const footer = [
 		...(context.sparkline ? [escapeHtml(context.sparkline)] : []),

@@ -135,6 +135,21 @@ describe("googleChatTransport.render", () => {
 		)
 	})
 
+	it("renders a template's bold and http links, and nothing else", () => {
+		const body = JSON.parse(
+			render({
+				templated: {
+					title: "t",
+					body: "**checkout** > 5% [runbook](https://docs.test/r) [x](javascript:alert(1))",
+				},
+			}).body,
+		)
+		assert.strictEqual(
+			body.cardsV2[0].card.sections[0].widgets[0].textParagraph.text,
+			'<b>checkout</b> &gt; 5% <a href="https://docs.test/r">runbook</a> [x](javascript:alert(1))',
+		)
+	})
+
 	it("says what a revoked or deleted webhook means", () => {
 		assert.include(googleChatTransport.describeStatus?.(404) ?? "", "no longer exists")
 		assert.isNull(googleChatTransport.describeStatus?.(500) ?? null)
