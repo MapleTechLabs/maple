@@ -12,7 +12,6 @@ import {
 	defineChart,
 	dot,
 	lineY,
-	type ChartLinearGradient,
 	type ChartValue,
 } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
@@ -30,6 +29,7 @@ import {
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import type { BuiltChart } from "./built-chart"
+import { AREA_FILL_END, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
 // Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
@@ -38,34 +38,11 @@ import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
 type AreaSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderArea" }>
 
-const STROKE_WIDTH = 2
+const STROKE_WIDTH = SERIES_STROKE_WIDTH
 const STACKED_STROKE_WIDTH = 1
-const AREA_FILL_OPACITY = 0.6
 const STACKED_FILL_OPACITY = 0.55
 const PARTIAL_STACKED_FILL_OPACITY = 0.2
-const FILL_GRADIENT = [0.8, 0.1] as const
-const PARTIAL_FILL_GRADIENT = [0.15, 0] as const
-
-// copied: `verticalGradient` and `roundCapDasharray` (plot-paint.ts imports React's `useId`).
-const verticalGradient = (
-	id: string,
-	color: string,
-	startOpacity: number,
-	endOpacity: number,
-): ChartLinearGradient => ({
-	id,
-	x1: 0,
-	y1: 0,
-	x2: 0,
-	y2: 1,
-	stops: [
-		{ offset: 0.05, color, opacity: startOpacity },
-		{ offset: 0.95, color, opacity: endOpacity },
-	],
-})
-
-const roundCapDasharray = (on: number, off: number, strokeWidth: number): string =>
-	`${Math.max(0.01, on - strokeWidth)} ${off + strokeWidth}`
+const PARTIAL_FILL_GRADIENT = [0.1, AREA_FILL_END] as const
 
 interface Series {
 	readonly key: string
@@ -150,7 +127,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		`${spec.gradientPrefix}-${key}${partial ? "-partial" : ""}`
 	const hasDashed = dashed.length > 0
 	const fillOpacityFor = (partial: boolean) =>
-		isStacked ? (partial ? PARTIAL_STACKED_FILL_OPACITY : STACKED_FILL_OPACITY) : AREA_FILL_OPACITY
+		isStacked ? (partial ? PARTIAL_STACKED_FILL_OPACITY : STACKED_FILL_OPACITY) : 1
 
 	const band = (rowSlice: ReadonlyArray<TimeseriesRow>, entry: Series, partial: boolean) =>
 		areaY(rowSlice, {
@@ -180,7 +157,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 			? []
 			: [
 					...visible.map((entry) =>
-						verticalGradient(gradientIdFor(entry.key, false), entry.color, ...FILL_GRADIENT),
+						verticalGradient(gradientIdFor(entry.key, false), entry.color),
 					),
 					...(hasDashed
 						? visible.map((entry) =>

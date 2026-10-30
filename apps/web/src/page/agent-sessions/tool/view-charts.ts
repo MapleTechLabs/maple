@@ -110,7 +110,6 @@ const cell = (
 									label: entry.label,
 									color: `var(${entry.token})`,
 								})),
-								swatch: "square",
 							})
 						: undefined,
 				divided: false,

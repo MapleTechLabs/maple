@@ -653,7 +653,6 @@ const rail = <M>(
 				],
 				[
 					seriesLegend(h, {
-						swatch: "square",
 						className: "justify-start",
 						items: [
 							{

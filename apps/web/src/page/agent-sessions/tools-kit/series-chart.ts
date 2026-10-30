@@ -194,7 +194,6 @@ export const seriesChart = <M>(
 											label: entry.label,
 											color: `var(${entry.token})`,
 										})),
-										swatch: "square",
 									}),
 								]
 							: []),

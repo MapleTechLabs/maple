@@ -1,58 +1,37 @@
 /* Chart loading ghosts for @maple/ui ChartSkeleton (charts/_shared/chart-skeleton.tsx).
    Shared because both apps render that component; import after tailwindcss. */
-/* A 100-long dash chased by a 100-long gap; sliding the offset sweeps the
-   stroke on then off in one continuous, seam-free motion. */
-@keyframes skeleton-draw {
-	to {
-		stroke-dashoffset: -100;
+/* One motion for every ghost: the shapes hold still and a soft band of light
+   passes left to right, then rests. It fades in after a beat so a fast query
+   swaps straight to the chart without flashing a skeleton. */
+@keyframes chart-skeleton-sweep {
+	0% {
+		mask-position: 100% 0;
 	}
-}
-
-@keyframes skeleton-spin {
-	to {
-		transform: rotate(360deg);
-	}
-}
-
-/* Height wave for bar / histogram ghosts — scales from a grounded baseline. */
-@keyframes skeleton-bar {
-	0%,
+	70%,
 	100% {
-		transform: scaleY(0.4);
-	}
-	50% {
-		transform: scaleY(1);
+		mask-position: 0% 0;
 	}
 }
 
-.skeleton-draw {
-	stroke-dasharray: 100 100;
-	stroke-dashoffset: 100;
-	animation: skeleton-draw 2.2s linear infinite;
+@keyframes chart-skeleton-enter {
+	from {
+		opacity: 0;
+	}
 }
 
-.skeleton-spin {
-	transform-origin: center;
-	transform-box: view-box;
-	animation: skeleton-spin 1.6s linear infinite;
-}
-
-.skeleton-bar {
-	transform-origin: bottom;
-	animation: skeleton-bar 1.5s ease-in-out infinite;
+.chart-skeleton {
+	mask-image: linear-gradient(90deg, rgb(0 0 0 / 0.55) 40%, #000 50%, rgb(0 0 0 / 0.55) 60%);
+	mask-size: 300% 100%;
+	mask-position: 100% 0;
+	animation:
+		chart-skeleton-enter 240ms ease-out 120ms backwards,
+		chart-skeleton-sweep 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.skeleton-draw,
-	.skeleton-spin,
-	.skeleton-bar {
-		animation: none;
-	}
-	.skeleton-draw {
-		stroke-dashoffset: 0;
-	}
-	.skeleton-bar {
-		transform: scaleY(0.85);
+	.chart-skeleton {
+		mask-image: none;
+		animation: chart-skeleton-enter 240ms ease-out 120ms backwards;
 	}
 }
 

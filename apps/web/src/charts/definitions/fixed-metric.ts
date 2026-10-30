@@ -1,4 +1,5 @@
-import { areaY, defineChart, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
+import { curveMonotoneX } from "d3-shape"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
@@ -18,7 +19,7 @@ import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
-import { roundCapDasharray, verticalGradient } from "./fixed-metric-axes"
+import { AREA_FILL_END, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 // Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
@@ -36,8 +37,9 @@ interface TooltipSeries {
 	readonly format: (value: number) => string
 }
 
-const STROKE_WIDTH = 2
-const FILL_OPACITY = 0.6
+const STROKE_WIDTH = SERIES_STROKE_WIDTH
+/** Monotone like every other time-series chart: it smooths without overshooting a bucket. */
+const curve = d3Curve(curveMonotoneX)
 const at = (row: TimeseriesRow) => row.date
 const valueOf = (key: string) => (row: TimeseriesRow) => asFiniteNumber(row[key])
 /** A missing value stays null, so the line and its focus dot leave a gap instead of dropping to 0. */
@@ -124,11 +126,13 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 			y: valueOf(THROUGHPUT_KEY),
 			y1: () => 0,
 			fill: `url(#${fill})`,
-			fillOpacity: FILL_OPACITY,
+			fillOpacity: 1,
+			curve,
 			stroke: "none",
 		})
 	const edge = (slice: ReadonlyArray<TimeseriesRow>, partial: boolean) =>
 		lineY(slice, {
+			curve,
 			id: partial ? "throughput-partial" : "throughput",
 			x: at,
 			y: valueOf(THROUGHPUT_KEY),
@@ -138,6 +142,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 		})
 	const errorLine = (slice: ReadonlyArray<TimeseriesRow>, partial: boolean) =>
 		lineY(slice, {
+			curve,
 			id: partial ? "error-throughput-partial" : "error-throughput",
 			x: at,
 			y: valueOf(ERROR_KEY),
@@ -147,6 +152,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 			strokeOpacity: partial ? 0.5 : undefined,
 		})
 	const tracedLine = lineY(rows, {
+		curve,
 		id: "traced-throughput",
 		x: at,
 		y: valueOf(TRACED_KEY),
@@ -160,7 +166,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, throughputColor),
-			...(hasDashed ? [verticalGradient(fadedGradientId, throughputColor, 0.15, 0)] : []),
+			...(hasDashed ? [verticalGradient(fadedGradientId, throughputColor, 0.15, AREA_FILL_END)] : []),
 		],
 		marks: [
 			band(solid, gradientId, false),
@@ -255,11 +261,13 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 			y: value,
 			y1: () => 0,
 			fill: `url(#${fill})`,
-			fillOpacity: FILL_OPACITY,
+			fillOpacity: 1,
+			curve,
 			stroke: "none",
 		})
 	const edge = (slice: ReadonlyArray<TimeseriesRow>, partial: boolean) =>
 		lineY(slice, {
+			curve,
 			id: partial ? "error-rate-partial" : "error-rate",
 			x: at,
 			y: value,
@@ -272,7 +280,7 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, color),
-			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, 0)] : []),
+			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, AREA_FILL_END)] : []),
 		],
 		marks: [
 			band(solid, gradientId),
@@ -318,6 +326,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
 	const line = (slice: ReadonlyArray<TimeseriesRow>, entry: (typeof series)[number], dash: boolean) =>
 		lineY(slice, {
+			curve,
 			id: dash ? `${entry.key}-partial` : entry.key,
 			x: at,
 			y: gapValueOf(entry.key),
@@ -373,11 +382,13 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 			y: value,
 			y1: () => 0,
 			fill: `url(#${fill})`,
-			fillOpacity: FILL_OPACITY,
+			fillOpacity: 1,
+			curve,
 			stroke: "none",
 		})
 	const edge = (slice: ReadonlyArray<TimeseriesRow>, partial: boolean) =>
 		lineY(slice, {
+			curve,
 			id: partial ? "apdex-partial" : "apdex",
 			x: at,
 			y: value,
@@ -390,7 +401,7 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, color),
-			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, 0)] : []),
+			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, AREA_FILL_END)] : []),
 		],
 		marks: [
 			band(solid, gradientId),

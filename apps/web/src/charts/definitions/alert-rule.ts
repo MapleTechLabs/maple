@@ -12,7 +12,7 @@ import { Option, Schema } from "effect"
 import { AlertSignalType } from "@maple/domain/http"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
-import { roundCapDasharray } from "./fixed-metric-axes"
+import { roundCapDasharray, SERIES_STROKE_WIDTH } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
 
 // The alert rule chart's definition. The view half is `page/alerts/shared/rule-chart.ts`.
@@ -179,7 +179,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 							x: at,
 							y: valueOf(SINGLE_KEY),
 							stroke: palette.signal,
-							strokeWidth: 2,
+							strokeWidth: SERIES_STROKE_WIDTH,
 							curve,
 						}),
 					]),
