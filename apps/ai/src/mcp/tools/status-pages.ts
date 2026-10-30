@@ -35,7 +35,7 @@ import {
 import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
 import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
-import { auditAttribution } from "@maple/backend/services/audit/audit-access"
+import { auditAttribution, originMetadata } from "@maple/backend/services/audit/audit-access"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
@@ -150,6 +150,7 @@ const auditIncidentCreated = Effect.fnUntraced(function* (incident: StatusPageIn
 			kind: incident.kind,
 			page_id: incident.pageId,
 			published: incident.published,
+			...originMetadata(tenant.turnOrigin),
 		},
 	})
 })
@@ -161,7 +162,12 @@ const auditUpdatePosted = Effect.fnUntraced(function* (incident: StatusPageIncid
 		...auditAttribution(tenant, yield* CurrentAuditActor),
 		action: "status_page_incident.update_posted",
 		resourceId: incident.id,
-		metadata: { status: incident.status, page_id: incident.pageId, active: isActiveIncident(incident) },
+		metadata: {
+			status: incident.status,
+			page_id: incident.pageId,
+			active: isActiveIncident(incident),
+			...originMetadata(tenant.turnOrigin),
+		},
 	})
 })
 
@@ -729,6 +735,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 						components_updated: changes.updated.length,
 						components_deleted: changes.deleted.length,
 						components_reordered: changes.reordered,
+						...originMetadata(tenant.turnOrigin),
 					},
 				})
 			const applied = yield* service.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
