@@ -213,4 +213,8 @@ describe("time range picker hotkey", () => {
 		expect(isOpenKey(press("D", { shiftKey: true }))).toBe(false)
 		expect(isOpenKey(press("f"))).toBe(false)
 	})
+
+	test("the key-less keydown Chrome fires on autofill opens nothing", () => {
+		expect(isOpenKey({ ...press("d"), key: undefined })).toBe(false)
+	})
 })

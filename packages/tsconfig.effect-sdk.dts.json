@@ -1,7 +1,7 @@
 {
 	// Declaration emit for effect-sdk's tsdown build only. It lives here so tsgo's
-	// rootDir covers @maple/browser-session, whose types the SDK bundles.
+	// rootDir covers @maple/browser-session and @maple/sdk-core, whose types the SDK bundles.
 	"extends": "./effect-sdk/tsconfig.json",
-	"include": ["./effect-sdk/src/**/*.ts", "./browser-session/src/**/*.ts"],
+	"include": ["./effect-sdk/src/**/*.ts", "./browser-session/src/**/*.ts", "./sdk-core/src/**/*.ts"],
 	"exclude": ["**/*.test.ts", "**/*.bench.ts"]
 }
