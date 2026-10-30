@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
@@ -60,14 +61,12 @@ export const thresholds = (h: H, state: EditorState): Html =>
 							],
 						),
 					),
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.ClickedAddThreshold()),
-							h.Class(
-								"h-8 rounded-md border border-dashed text-xs text-muted-foreground transition-colors hover:text-foreground",
-							),
-						],
+					button(
+						h,
+						{
+							variant: "dashed",
+							attributes: [h.OnClick(Message.ClickedAddThreshold())],
+						},
 						["+ Add threshold"],
 					),
 				],

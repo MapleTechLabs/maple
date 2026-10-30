@@ -153,14 +153,14 @@ const argumentsBlock = (
 				label: "Arguments",
 				attribute: "gen_ai.tool.call.arguments",
 				bytes: row.argumentsBytes,
-				action: h.button(
-					[
-						h.Class(
-							"font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground",
-						),
-						h.Type("button"),
-						h.OnClick(Message.ClickedCopyArguments({ text: row.arguments })),
-					],
+				action: button(
+					h,
+					{
+						variant: "ghost",
+						size: "xs",
+						className: "font-mono text-2xs text-muted-foreground hover:text-foreground sm:text-2xs",
+						attributes: [h.OnClick(Message.ClickedCopyArguments({ text: row.arguments }))],
+					},
 					[copyLabel],
 				),
 			}),

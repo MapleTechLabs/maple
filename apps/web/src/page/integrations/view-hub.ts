@@ -3,6 +3,7 @@ import { pageDescriptionStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
+import { cardButton } from "../../ui/card-button"
 import { errorState } from "../../ui/error-state"
 import { badge } from "../../ui/display"
 import { eyebrow } from "../../ui/eyebrow"
@@ -156,15 +157,7 @@ const connectedRow = (
 export const newBadge = (h: H): Html => badge(h, { variant: "info", size: "sm" }, ["New"])
 
 const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"], onSelect: Select): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(onSelect(entry.id)),
-			h.Class(
-				"group flex items-center gap-4 rounded-md border border-border-subtle bg-card p-4 text-left outline-none transition-colors hover:border-border hover:bg-surface-sunken focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
-			),
-		],
-		[
+	cardButton(h, { onClick: onSelect(entry.id), className: "flex items-center gap-4 p-4" }, [
 			entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
 			h.span(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
@@ -193,8 +186,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 				],
 				[cta, " →"],
 			),
-		],
-	)
+		])
 
 const skeletonRow = (h: H): Html =>
 	h.div(

@@ -1,5 +1,5 @@
 import type { PushSourcePlatform } from "@maple/domain/primitives"
-import { cn } from "@maple/ui/lib/utils"
+import { cardButton } from "../../../ui/card-button"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
@@ -41,18 +41,9 @@ const card = (
 	onSelect: Message,
 	badge: Html | null,
 ): Html =>
-	h.button(
-		[
-			h.Key(key),
-			h.Type("button"),
-			h.OnClick(onSelect),
-			h.Class(
-				cn(
-					"group bg-card flex items-center gap-3 rounded-md border px-3 py-3 text-left transition-colors",
-					"hover:bg-surface-sunken focus-visible:ring-ring outline-none focus-visible:ring-2",
-				),
-			),
-		],
+	cardButton(
+		h,
+		{ onClick: onSelect, className: "flex items-center gap-3 px-3 py-3", attributes: [h.Key(key)] },
 		[
 			leading,
 			h.span(

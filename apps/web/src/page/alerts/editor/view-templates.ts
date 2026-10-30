@@ -1,7 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "../../../ui/button"
+import { cardButton } from "../../../ui/card-button"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon, type IconName } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
@@ -13,12 +13,7 @@ import type { Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-const TILE_CLASS = cn(
-	"group flex h-full flex-col gap-3 rounded-md border bg-card p-4 text-left transition-colors",
-	"hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none",
-	// Focus reads like hover (the primary tint), not a neutral ring that looks like a selection.
-	"focus-visible:border-primary/60 focus-visible:bg-primary/[0.03] focus-visible:ring-2 focus-visible:ring-primary/20",
-)
+const TILE_LAYOUT = "flex h-full flex-col gap-3 p-4"
 
 const tileHead = (h: H, iconName: IconName, title: string, subtitle: string): Html =>
 	h.div(
@@ -50,44 +45,37 @@ const chevron = (h: H): Html =>
 
 const tiles = (h: H): ReadonlyArray<Html> => [
 	...ALERT_TEMPLATES.map((template) =>
-		h.button(
-			[h.Type("button"), h.Class(TILE_CLASS), h.OnClick(Message.ClickedTemplate({ id: template.id }))],
-			[
-				tileHead(h, template.icon, template.title, template.description),
-				h.div(
-					[h.Class("mt-auto flex min-w-0 items-center justify-between gap-2")],
-					[
-						inlineCode(
-							h,
-							{
-								className:
-									"min-w-0 truncate whitespace-nowrap text-2xs text-muted-foreground",
-							},
-							[template.summary],
-						),
-						chevron(h),
-					],
-				),
-			],
-		),
-	),
-	h.button(
-		[h.Type("button"), h.Class(TILE_CLASS), h.OnClick(Message.ClickedStartBlank())],
-		[
-			tileHead(h, "SquarePlusIcon", "Start blank", "Build a rule from scratch."),
+		cardButton(h, { onClick: Message.ClickedTemplate({ id: template.id }), className: TILE_LAYOUT }, [
+			tileHead(h, template.icon, template.title, template.description),
 			h.div(
 				[h.Class("mt-auto flex min-w-0 items-center justify-between gap-2")],
 				[
-					// One line, so the chevron sits on the same row as the siblings' chips.
-					h.p(
-						[h.Class("min-w-0 truncate font-prose text-muted-foreground text-xs")],
-						["Choose a signal"],
+					inlineCode(
+						h,
+						{
+							className: "min-w-0 truncate whitespace-nowrap text-2xs text-muted-foreground",
+						},
+						[template.summary],
 					),
 					chevron(h),
 				],
 			),
-		],
+		]),
 	),
+	cardButton(h, { onClick: Message.ClickedStartBlank(), className: TILE_LAYOUT }, [
+		tileHead(h, "SquarePlusIcon", "Start blank", "Build a rule from scratch."),
+		h.div(
+			[h.Class("mt-auto flex min-w-0 items-center justify-between gap-2")],
+			[
+				// One line, so the chevron sits on the same row as the siblings' chips.
+				h.p(
+					[h.Class("min-w-0 truncate font-prose text-muted-foreground text-xs")],
+					["Choose a signal"],
+				),
+				chevron(h),
+			],
+		),
+	]),
 	// Instructions, not a choice: a note under the tiles rather than another card.
 	h.p(
 		[h.Class("mt-1 flex items-center gap-2 font-prose text-muted-foreground text-xs md:col-span-3")],

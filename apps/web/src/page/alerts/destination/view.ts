@@ -6,6 +6,7 @@ import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { cardButton } from "../../../ui/card-button"
 import * as DialogView from "../../../ui/dialog-view"
 import { titleId } from "../../../ui/dialog"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -110,23 +111,20 @@ const providerTile = (
 	}>,
 ): Html => {
 	const provider = destinationProvider(options.type, options.chatConnector)
-	return h.button(
-		[
-			h.Key(options.key),
-			h.Type("button"),
-			h.OnClick(options.onSelect),
-			...(options.isBusy === true ? [h.Disabled(true)] : []),
-			h.AriaPressed(options.isSelected ? "true" : "false"),
-			h.Class(
-				cn(
-					"relative flex flex-col items-start gap-2 overflow-hidden rounded-md border p-3 text-left transition-colors",
-					options.isSelected
-						? "border-(--tile-accent) bg-surface-sunken"
-						: "border-border-subtle bg-card hover:border-border hover:bg-surface-sunken",
-				),
+	return cardButton(
+		h,
+		{
+			onClick: options.onSelect,
+			isSelected: options.isSelected,
+			isDisabled: options.isBusy === true,
+			// Selection takes the provider's accent; a busy tile stays solid so its spinner reads.
+			className: cn(
+				"relative flex flex-col items-start gap-2 overflow-hidden p-3 disabled:opacity-100",
+				options.isSelected &&
+					"border-(--tile-accent) bg-surface-sunken hover:border-(--tile-accent) hover:bg-surface-sunken",
 			),
-			h.Style({ "--tile-accent": provider.accent }),
-		],
+			attributes: [h.Key(options.key), h.Style({ "--tile-accent": provider.accent })],
+		},
 		[
 			h.span([
 				h.AriaHidden(true),

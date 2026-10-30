@@ -7,6 +7,7 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "../../../ui/button"
+import { textLink } from "../../../ui/text-link"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
@@ -37,15 +38,15 @@ const runMeta = (h: H, run: CodeReviewCiRun, prUrl: string | null): Html =>
 			...(run.branch
 				? [
 						dot(h),
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.ClickedBranch({ branch: run.branch })),
-								h.Title(`Show runs on ${run.branch}`),
-								h.Class(
-									"max-w-48 truncate font-mono hover:text-foreground hover:underline focus-visible:underline",
-								),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								isMono: true,
+								className: "block max-w-48 truncate",
+								onClick: Message.ClickedBranch({ branch: run.branch }),
+								attributes: [h.Title(`Show runs on ${run.branch}`)],
+							},
 							[run.branch],
 						),
 					]
@@ -57,13 +58,16 @@ const runMeta = (h: H, run: CodeReviewCiRun, prUrl: string | null): Html =>
 						dot(h),
 						prUrl === null
 							? h.span([], ["#", String(run.pullRequest)])
-							: h.a(
-									[
-										h.Href(prUrl),
-										h.Attribute("target", "_blank"),
-										h.Attribute("rel", "noreferrer"),
-										h.Class("hover:text-foreground hover:underline"),
-									],
+							: textLink(
+									h,
+									{
+										tone: "muted",
+										href: prUrl,
+										attributes: [
+											h.Attribute("target", "_blank"),
+											h.Attribute("rel", "noreferrer"),
+										],
+									},
 									["#", String(run.pullRequest)],
 								),
 					]),

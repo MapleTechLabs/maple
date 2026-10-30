@@ -160,18 +160,21 @@ const shortIssueId = (id: string): string => id.replace(/-/g, "").slice(0, 7).to
 
 /** `IssueIdCopy`: the short id that copies the full one. TODO(tooltip): its "Copy issue ID" popup. */
 const issueIdCopy = (h: H, model: Model, id: string): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(
-				Message.GotIssueIdCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: id }) }),
-			),
-			h.Class(
-				"group/copy -mr-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-mono text-xs tabular-nums text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-			),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-		],
+	button(
+		h,
+		{
+			variant: "ghost",
+			size: "xs",
+			slot: "tooltip-trigger",
+			className:
+				"group/copy -mr-1.5 px-1.5 font-mono tabular-nums text-muted-foreground hover:text-foreground",
+			attributes: [
+				h.OnClick(
+					Message.GotIssueIdCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: id }) }),
+				),
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+			],
+		},
 		[
 			shortIssueId(id),
 			CopyButton.copyIndicator(h, {

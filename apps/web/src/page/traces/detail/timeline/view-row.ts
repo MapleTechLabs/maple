@@ -7,6 +7,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { describeSpan } from "../../../../service-map/trace-flow/span-category"
 import { icon } from "../../../../ui/icon"
+import { iconButton } from "../../../../ui/icon-button"
 import type { Bar } from "./layout"
 import { Message } from "./message"
 
@@ -118,19 +119,21 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 					]
 				: []),
 			bar.hasChildren
-				? h.button(
-						[
-							h.AriaLabel(verb),
-							attr(
-								h,
-								"flex items-center justify-center size-4 shrink-0 text-muted-foreground hover:text-foreground",
-							),
-							h.Tabindex(-1),
-							h.Title(`${verb} — ⌥ for the whole subtree`),
-							h.Type("button"),
-							h.OnClick(Message.ClickedToggleCollapse({ spanId }), { propagation: "Stop" }),
-							h.DataAttribute("toggle-span", spanId),
-						],
+				? iconButton(
+						h,
+						{
+							label: verb,
+							size: "icon-2xs",
+							// The native title carries the shortcut hint, so no tooltip trigger per row.
+							hasTooltip: false,
+							className: "text-muted-foreground hover:text-foreground",
+							attributes: [
+								h.Tabindex(-1),
+								h.Title(`${verb} — ⌥ for the whole subtree`),
+								h.OnClick(Message.ClickedToggleCollapse({ spanId }), { propagation: "Stop" }),
+								h.DataAttribute("toggle-span", spanId),
+							],
+						},
 						[icon(h, bar.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon", { size: 12 })],
 					)
 				: h.span([attr(h, "inline-block size-4 shrink-0")], []),

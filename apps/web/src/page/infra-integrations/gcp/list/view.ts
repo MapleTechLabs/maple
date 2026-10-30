@@ -32,6 +32,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
 import { button } from "../../../../ui/button"
+import { textLink } from "../../../../ui/text-link"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import type * as Menu from "../../../../ui/menu"
@@ -230,14 +231,14 @@ const regionChip = (h: H, region: string): Html => {
 					),
 				],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedClearRegion()),
-					h.Class(
-						"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline ml-1",
-					),
-				],
+			textLink(
+				h,
+				{
+					tone: "muted",
+					isMono: true,
+					className: "ml-1 text-3xs",
+					onClick: Message.ClickedClearRegion(),
+				},
 				["Clear all"],
 			),
 		],
