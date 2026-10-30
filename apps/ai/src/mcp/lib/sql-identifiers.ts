@@ -120,8 +120,8 @@ const replaceIdentifier = (sql: string, written: string, replacement: string): s
 	)
 }
 
-/** Words that can follow a closing parenthesis without being an alias. */
-const KEYWORDS_AFTER_PAREN = new Set(
+/** SQL words that are never an alias, wherever an alias could stand. */
+const KEYWORDS = new Set(
 	(
 		"and or not in is like ilike between as on using where prewhere having qualify group order limit " +
 		"offset by asc desc nulls first last union except intersect settings format window over final " +
@@ -130,9 +130,18 @@ const KEYWORDS_AFTER_PAREN = new Set(
 	).split(" "),
 )
 
+/** A relation after FROM, JOIN or a comma, and its alias unless that word is a keyword. */
+const RELATION = new RegExp(
+	`(?:\\bFROM\\s+|\\bJOIN\\s+|,\\s*)([A-Za-z_][\\w.]*)(?:\\s+(?:AS\\s+)?(?!(?:${[...KEYWORDS].join("|")})\\b)([A-Za-z_][\\w.]*))?`,
+	"gi",
+)
+
+const relations = (sql: string) =>
+	[...identifierText(sql).matchAll(RELATION)].map((m) => ({ name: m[1], alias: m[2] }))
+
 /**
- * Names the SQL defines itself, which are never column typos: `AS x`, `x AS (`, and an
- * alias straight after a closing parenthesis (`FROM (...) t`, `count() c`).
+ * Names the SQL defines itself, which are never column typos: `AS x`, `x AS (`, a relation's
+ * alias (`FROM s service`, CTE or table), and an alias after `)` (`FROM (...) t`, `count() c`).
  */
 export const definedNames = (sql: string): ReadonlySet<string> => {
 	const text = identifierText(sql)
@@ -142,7 +151,8 @@ export const definedNames = (sql: string): ReadonlySet<string> => {
 		),
 		...[...text.matchAll(/\)\s*([A-Za-z_][\w.]*)/g)]
 			.map((m) => m[1])
-			.filter((name) => !KEYWORDS_AFTER_PAREN.has(name.toLowerCase())),
+			.filter((name) => !KEYWORDS.has(name.toLowerCase())),
+		...relations(sql).flatMap((r) => (r.alias === undefined ? [] : [r.alias])),
 	])
 }
 
@@ -150,14 +160,10 @@ export const definedNames = (sql: string): ReadonlySet<string> => {
 const tableQualifiers = (sql: string): ReadonlyMap<string, string> => {
 	const catalog = new Set(listWarehouseTables().map((t) => t.name))
 	return new Map(
-		[
-			...identifierText(sql).matchAll(
-				/(?:\bFROM\s+|\bJOIN\s+|,\s*)([A-Za-z_][\w.]*)(?:\s+(?:AS\s+)?([A-Za-z_][\w.]*))?/gi,
-			),
-		].flatMap((m) => {
-			const table = m[1].split(".").at(-1) ?? m[1]
+		relations(sql).flatMap(({ name, alias }) => {
+			const table = name.split(".").at(-1) ?? name
 			if (!catalog.has(table)) return []
-			return [m[1], table, ...(m[2] === undefined ? [] : [m[2]])].map((q) => [q, table] as const)
+			return [name, table, ...(alias === undefined ? [] : [alias])].map((q) => [q, table] as const)
 		}),
 	)
 }

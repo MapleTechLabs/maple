@@ -128,6 +128,18 @@ describe("fixUnknownIdentifier", () => {
 		expect(fixUnknownIdentifier(sql, unknown("service.name"))).toBeUndefined()
 	})
 
+	it("never renames the alias of a CTE reference", () => {
+		const sql =
+			"WITH s AS (SELECT ServiceName FROM traces) SELECT service FROM s service WHERE $__orgFilter(service)"
+		expect(fixUnknownIdentifier(sql, unknown("service"))).toBeUndefined()
+	})
+
+	it("reads the alias of a table joined after an unaliased one", () => {
+		const sql =
+			"SELECT l.body FROM traces JOIN logs l ON traces.TraceId = l.TraceId WHERE $__orgFilter(l)"
+		expect(fixUnknownIdentifier(sql, unknown("l.body"))?.sql).toContain("SELECT l.Body FROM")
+	})
+
 	it("ignores a table named in a # comment", () => {
 		expect(
 			fixUnknownIdentifier(
