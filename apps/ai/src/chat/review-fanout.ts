@@ -15,6 +15,7 @@ import { Clock, Duration, Effect, Layer, Predicate, Schema } from "effect"
 import { LanguageModel, Prompt, type Tool, Toolkit } from "effect/ai"
 import type { ResolvedModel } from "../platform/Llm"
 import { MODEL_RETRIES } from "./budgets"
+import type { ChildFindings } from "./review-child-findings"
 import { accumulateUsage, type RunUsage } from "./tools"
 
 export const REVIEW_FILES = "review_files"
@@ -163,6 +164,8 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 	guidance?: string,
 	/** Tools the child calls only from `run_code` programs; the grant must name them too. */
 	programmatic: ReadonlyArray<string> = [],
+	/** Where each child's answer is kept, so `submit_review` can tell which ones the review dropped. */
+	childFindings?: ChildFindings,
 ) => {
 	const worker = Agent.make("pr-review-worker", {
 		input: Schema.String,
@@ -178,7 +181,7 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 		description:
 			"Hand a group of related changed files to a child reviewer, for a pull request too large to read alone. " +
 			"Call it once per group, several in one message to run them in parallel. It answers the group's " +
-			"confirmed findings, one per line; verify any you doubt before you file it with submit_review.",
+			"confirmed findings, one per line; verify any you doubt, then file it or dismiss it in submit_review's childDismissals.",
 		target: worker,
 		// The default grant is the toolkit's own names; a tool reached only through `run_code` is
 		// refused unless named here as well.
@@ -200,10 +203,13 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 				}),
 			),
 		projectResult: (output, context) =>
-			Effect.succeed({
-				findings: output.length > MAX_RESULT_CHARS ? `${output.slice(0, MAX_RESULT_CHARS)}…` : output,
-				budgetExhausted: context.budgetExhausted,
-			}),
+			Effect.sync(() => childFindings?.observe(output)).pipe(
+				Effect.as({
+					findings:
+						output.length > MAX_RESULT_CHARS ? `${output.slice(0, MAX_RESULT_CHARS)}…` : output,
+					budgetExhausted: context.budgetExhausted,
+				}),
+			),
 		policy: Subagent.SubagentPolicy.make({
 			// 12 groups of up to 12 files covers a 144-file pull request.
 			maxChildren: 12,

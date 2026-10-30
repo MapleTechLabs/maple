@@ -501,6 +501,13 @@ export const PrReviewTelemetryDismissalSubmission = Schema.Struct({
 	line: Schema.optionalKey(Schema.NullOr(LenientNumber)),
 })
 
+/** A child reviewer's finding the parent checked and found does not hold, and why. */
+export const PrReviewChildDismissalSubmission = Schema.Struct({
+	path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	line: Schema.optionalKey(Schema.NullOr(LenientNumber)),
+	reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
 	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
@@ -518,6 +525,7 @@ export const PrReviewSubmission = Schema.Struct({
 	telemetryDismissals: Schema.optionalKey(
 		Schema.NullOr(LenientArray(PrReviewTelemetryDismissalSubmission)),
 	),
+	childDismissals: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewChildDismissalSubmission))),
 })
 export type PrReviewSubmission = Schema.Schema.Type<typeof PrReviewSubmission>
 
@@ -559,6 +567,9 @@ const decodeCoverage = Schema.decodeUnknownOption(
 const decodeHandles = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
 const decodeDismissals = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Array(PrReviewTelemetryDismissalSubmission)),
+)
+const decodeChildDismissals = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Array(PrReviewChildDismissalSubmission)),
 )
 
 /** A lenient list as its items; JSON text that is not a list of them reads as empty. */
@@ -638,6 +649,14 @@ export interface NormalizedPrReviewSubmission {
 	readonly resolved: ReadonlyArray<string>
 	/** Where the reviewer says each removed name is still emitted; the service verifies each one. */
 	readonly telemetryDismissals: ReadonlyArray<PrReviewTelemetryDismissal>
+	/** Child reviewers' findings the reviewer refuted; a dismissal without a reason is dropped. */
+	readonly childDismissals: ReadonlyArray<PrReviewChildDismissal>
+}
+
+export interface PrReviewChildDismissal {
+	readonly path: string
+	readonly line: number
+	readonly reason: string
 }
 
 export interface PrReviewTelemetryDismissal {
@@ -744,6 +763,16 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 					) === i,
 			)
 			.slice(0, MAX_DISMISSALS),
+		childDismissals: listOf(submission.childDismissals, decodeChildDismissals)
+			.flatMap((raw) => {
+				const path = raw.path?.trim().replace(/^\/+/, "")
+				const line = toNumber(raw.line)
+				const reason = raw.reason?.trim()
+				return path && reason && line !== undefined && line >= 1
+					? [{ path, line: Math.round(line), reason: clip(reason, MAX_BULLET) }]
+					: []
+			})
+			.slice(0, MAX_FINDINGS),
 	}
 }
 

@@ -40,6 +40,7 @@ import {
 	PR_REVIEW_CONTINUE_PROMPT,
 } from "./prompts"
 import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
+import { closeOutFindings, makeChildFindings } from "./review-child-findings"
 import { makeReviewCoverage } from "./review-coverage"
 import { reviewFailureError, reviewFailureReason } from "./review-failure"
 import { makeReviewLedger } from "./review-ledger"
@@ -476,7 +477,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// One per review turn: the close-out sees what the pass read and keeps what it saved.
 			const review =
 				prReviewId !== undefined && autonomous
-					? { coverage: makeReviewCoverage(text), ledger: makeReviewLedger() }
+					? {
+							coverage: makeReviewCoverage(text),
+							ledger: makeReviewLedger(),
+							childFindings: makeChildFindings(),
+						}
 					: undefined
 			// The autonomous pass's tool calls show on the investigation row until its report is on its way. A failed write is logged and dropped: it is only a feed.
 			const investigationFeed =
@@ -697,8 +702,12 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 							),
 						)
 				}
-				// Findings the pass saved are posted as a partial rather than lost with the report.
-				const saved = review?.ledger.findings() ?? []
+				// Findings the pass saved, and its children's warnings, are posted as a partial rather
+				// than lost with the report.
+				const saved = closeOutFindings(
+					review?.ledger.findings() ?? [],
+					review?.childFindings?.all() ?? [],
+				)
 				if (!submitted && prReviewId !== undefined && review !== undefined && saved.length > 0) {
 					submitted = yield* reviews
 						.submitReview(

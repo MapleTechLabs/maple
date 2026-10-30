@@ -29,6 +29,7 @@ import {
 	type SubmitPrReviewRequest,
 } from "@maple/domain/http"
 import type { ReviewCoverage } from "./review-coverage"
+import { makeChildFindings } from "./review-child-findings"
 import { makeReviewLedger } from "./review-ledger"
 
 const orgId = Schema.decodeSync(OrgId)("org_test")
@@ -231,6 +232,173 @@ describe("buildReviewCompletion", () => {
 			})
 			assert.isTrue(Result.isSuccess(result))
 			assert.lengthOf(notApplicable.filed, 1)
+		})
+	})
+
+	describe("with a child reviewer's warning", () => {
+		const CHILD_ANSWER =
+			"src/capture.ts:213 | warn | correctness | Queue can finish before the forced capture starts | " +
+			"A slow forced start lets the consumer ack the old session | Enqueue after the start returns | -\n" +
+			"src/capture.ts:40 | info | maintainability | Constant duplicated | Drifts | Share it | -"
+		const submitWith = (partial = false) => {
+			const filed: Array<SubmitPrReviewRequest> = []
+			const children = makeChildFindings()
+			children.observe(CHILD_ANSWER)
+			const completion = buildReviewCompletion(
+				REVIEW_SESSION,
+				tenantFor(human),
+				{ kind: "autonomous" },
+				(_org, _id, request) => Effect.sync(() => filed.push(request)),
+				makeRunUsage(),
+				MODEL_NAME,
+				partial,
+				undefined,
+				undefined,
+				makeReviewLedger(),
+				children,
+			)!
+			const call = (submission: PrReviewSubmission) =>
+				Effect.runPromise(Effect.result(completion.handlers[SUBMIT_REVIEW](submission)))
+			return { filed, call }
+		}
+		const CLEAN: PrReviewSubmission = { verdict: "clean", summary: "Moves capture onto a queue." }
+
+		it("refuses a review that drops it, then files it as the child reported it", async () => {
+			const { filed, call } = submitWith()
+
+			const first = await call(CLEAN)
+			assert.isTrue(Result.isFailure(first))
+			assert.include(Result.isFailure(first) ? first.failure.message : "", "src/capture.ts:213")
+			assert.notInclude(Result.isFailure(first) ? first.failure.message : "", "src/capture.ts:40")
+			assert.lengthOf(filed, 0)
+
+			assert.isTrue(Result.isSuccess(await call(CLEAN)))
+			assert.deepStrictEqual(
+				filed[0]!.report.findings.map((finding) => [finding.path, finding.line, finding.severity]),
+				[["src/capture.ts", 213, "warn"]],
+			)
+			assert.equal(filed[0]!.report.verdict, "issues")
+		})
+
+		it("files a child's observability warning without an audit id as a correctness finding", async () => {
+			const filed: Array<SubmitPrReviewRequest> = []
+			const children = makeChildFindings()
+			children.observe(
+				"src/queue.ts:7 | warn | observability | Consumer has no span | Untraced | Wrap it | -",
+			)
+			const completion = buildReviewCompletion(
+				REVIEW_SESSION,
+				tenantFor(human),
+				{ kind: "autonomous" },
+				(_org, _id, request) => Effect.sync(() => filed.push(request)),
+				makeRunUsage(),
+				MODEL_NAME,
+				false,
+				undefined,
+				undefined,
+				makeReviewLedger(),
+				children,
+			)!
+			const call = () => Effect.runPromise(Effect.result(completion.handlers[SUBMIT_REVIEW](CLEAN)))
+			assert.isTrue(Result.isFailure(await call()))
+			assert.isTrue(Result.isSuccess(await call()))
+			assert.deepStrictEqual(
+				filed[0]!.report.findings.map((finding) => [finding.path, finding.category]),
+				[["src/queue.ts", "correctness"]],
+			)
+		})
+
+		it("files it straight away in a close-out, which is never refused", async () => {
+			const { filed, call } = submitWith(true)
+			assert.isTrue(Result.isSuccess(await call(CLEAN)))
+			assert.deepStrictEqual(
+				filed[0]!.report.findings.map((finding) => [finding.path, finding.line]),
+				[["src/capture.ts", 213]],
+			)
+		})
+
+		it("accepts a dismissal that spells the path with a leading ./", async () => {
+			const { filed, call } = submitWith()
+			const result = await call({
+				...CLEAN,
+				childDismissals: [
+					{ path: "./src/capture.ts", line: 213, reason: "The start resets the session." },
+				],
+			})
+			assert.isTrue(Result.isSuccess(result))
+			assert.lengthOf(filed[0]!.report.findings, 0)
+		})
+
+		it("counts a finding saved and repeated in the submission once", async () => {
+			const children = makeChildFindings()
+			children.observe(
+				[
+					"src/capture.ts:213 | warn | correctness | Queue acks early | Why | Fix | -",
+					"src/capture.ts:216 | warn | security | Secret in a log | Why | Fix | -",
+				].join("\n"),
+			)
+			const completion = buildReviewCompletion(
+				REVIEW_SESSION,
+				tenantFor(human),
+				{ kind: "autonomous" },
+				() => Effect.void,
+				makeRunUsage(),
+				MODEL_NAME,
+				false,
+				undefined,
+				undefined,
+				makeReviewLedger(),
+				children,
+			)!
+			const finding = {
+				path: "src/capture.ts",
+				line: 214,
+				severity: "warn",
+				category: "correctness",
+				title: "Queue acks before the forced capture starts",
+				body: "Why",
+			}
+			await Effect.runPromise(completion.handlers[RECORD_FINDING](finding))
+			const result = await Effect.runPromise(
+				Effect.result(completion.handlers[SUBMIT_REVIEW]({ ...CLEAN, findings: [finding] })),
+			)
+			assert.isTrue(Result.isFailure(result))
+			assert.include(Result.isFailure(result) ? result.failure.message : "", "src/capture.ts:216")
+		})
+
+		it("records a review that dismisses it with a reason", async () => {
+			const { filed, call } = submitWith()
+			const result = await call({
+				...CLEAN,
+				childDismissals: [
+					{
+						path: "src/capture.ts",
+						line: 213,
+						reason: "The forced start resets the session synchronously.",
+					},
+				],
+			})
+			assert.isTrue(Result.isSuccess(result))
+			assert.lengthOf(filed[0]!.report.findings, 0)
+		})
+
+		it("records a review that files it near the child's line", async () => {
+			const { filed, call } = submitWith()
+			const result = await call({
+				...CLEAN,
+				findings: [
+					{
+						path: "src/capture.ts",
+						line: 210,
+						severity: "warn",
+						category: "correctness",
+						title: "Race",
+						body: "b",
+					},
+				],
+			})
+			assert.isTrue(Result.isSuccess(result))
+			assert.lengthOf(filed[0]!.report.findings, 1)
 		})
 	})
 })

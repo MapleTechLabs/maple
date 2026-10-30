@@ -56,6 +56,12 @@ import {
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { mergeSavedFindings } from "@maple/backend/services/pr-review/findings"
+import {
+	type ChildFindings,
+	childFindingsRefusal,
+	childFindingsToFile,
+	unaccountedChildFindings,
+} from "./review-child-findings"
 import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
 import { makeReviewLedger, type ReviewLedger } from "./review-ledger"
 
@@ -342,7 +348,8 @@ export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 		"Record your review of THIS pull request. Call it once, after you have " +
 		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, before-merge steps, coverage, line-anchored findings and the " +
 		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
-		"pass that location in telemetryDismissals. It " +
+		"pass that location in telemetryDismissals. A warning or critical a review_files child reported is either " +
+		"filed or listed in childDismissals with the reason it does not hold. It " +
 		"persists the review and posts it to the pull request. A refusal says what to do before calling " +
 		"it again; once it answers that the review is recorded, stop.",
 	parameters: PrReviewSubmission,
@@ -424,6 +431,8 @@ export const buildReviewCompletion = (
 	coverage?: ReviewCoverage,
 	/** Findings saved with `record_finding`; the turn's own, or this run's when none is passed. */
 	ledger: ReviewLedger = makeReviewLedger(),
+	/** What this pass's `review_files` children reported. Unaccounted warnings are refused once. */
+	childFindings?: ChildFindings,
 ) => {
 	const reviewId = prReviewForSession(sessionId)
 	if (reviewId === undefined) return undefined
@@ -433,6 +442,7 @@ export const buildReviewCompletion = (
 	const toolkit = Toolkit.make(reviewTool, recordFindingTool)
 	let submitted = false
 	let refusedUnread = false
+	let refusedChildren = false
 	// Once only: a second call with files still unread is the agent submitting anyway. A close-out
 	// files what it has and a not_applicable verdict reads nothing, so neither is held.
 	const unreadToRefuse = (verdict: PrReviewVerdict): ReadonlyArray<string> => {
@@ -451,10 +461,41 @@ export const buildReviewCompletion = (
 					Effect.andThen(Effect.fail(new MapleToolFailure({ message: unreadRefusal(unread) }))),
 				)
 			}
-			const saved = ledger.findings()
+			const unaccounted =
+				childFindings === undefined
+					? []
+					: unaccountedChildFindings(
+							childFindings.all(),
+							// Deduplicated as the report is, so a finding saved and repeated counts once.
+							mergeSavedFindings(ledger.findings(), normalized.report.findings),
+							normalized.childDismissals,
+						)
+			// A close-out is not refused, but still files what the children found.
+			if (unaccounted.length > 0 && !partial && !refusedChildren) {
+				refusedChildren = true
+				return Effect.annotateCurrentSpan(
+					"maple.pr_review.unaccounted_child_findings",
+					unaccounted.length,
+				).pipe(
+					Effect.andThen(
+						Effect.fail(new MapleToolFailure({ message: childFindingsRefusal(unaccounted) })),
+					),
+				)
+			}
+			// Refused once already: a peer's warning stands unless the reviewer says why it does not.
+			const childFiled = childFindingsToFile(unaccounted)
+			const saved = [...ledger.findings(), ...childFiled]
 			const unreviewed =
 				normalized.report.verdict === "not_applicable" ? [] : (coverage?.unread() ?? [])
 			const report = withSavedFindings(normalized.report, saved, unreviewed)
+			const childPosted = childFiled.filter((child) =>
+				report.findings.some(
+					(finding) =>
+						finding.path === child.path &&
+						finding.line === child.line &&
+						finding.title === child.title,
+				),
+			).length
 			return submitReview(
 				tenant.orgId,
 				reviewId,
@@ -478,6 +519,21 @@ export const buildReviewCompletion = (
 						"maple.pr_review.unreviewed_files": unreviewed.length,
 						"maple.pr_review.verdict": report.verdict,
 						"maple.pr_review.resolved": resolved.length,
+						"maple.pr_review.child_findings": childFindings?.all().length ?? 0,
+						"maple.pr_review.child_findings_filed_unaccounted": childPosted,
+						// Unpostable, or cut by the report's finding cap.
+						"maple.pr_review.child_findings_dropped": unaccounted.length - childPosted,
+						"maple.pr_review.child_dismissals": normalized.childDismissals.length,
+						...(normalized.childDismissals.length > 0
+							? {
+									"maple.pr_review.child_dismissal_reasons": normalized.childDismissals
+										.map(
+											(dismissal) =>
+												`${dismissal.path}:${dismissal.line}: ${dismissal.reason}`,
+										)
+										.join("\n"),
+								}
+							: undefined),
 					}),
 				),
 				Effect.tap(() => Effect.sync(() => (submitted = true))),

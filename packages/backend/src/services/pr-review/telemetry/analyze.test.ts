@@ -399,4 +399,83 @@ describe("analyzeTelemetry", () => {
 			[["issue-1", "src/payments/charge.ts"]],
 		)
 	})
+
+	it("does not link a service's issues to the bundle entry file every frame names", () => {
+		const issue = (id: string, service: string, topFrame: string) => ({
+			id,
+			fingerprintHash: id,
+			title: `Error ${id}`,
+			service,
+			topFrame,
+			occurrences: 100,
+			lastSeenAt: 1,
+		})
+		const telemetry = analyzeTelemetry({
+			files: [
+				file("apps/api/src/worker-app.ts", "@@ -1,1 +1,1 @@\n-a\n+b"),
+				file("src/payments/charge.ts", "@@ -1,1 +1,1 @@\n-a\n+b"),
+			],
+			catalog,
+			sources: [],
+			issues: [
+				...["a", "b", "c", "d", "e", "f"].map((id) =>
+					issue(id, "api-v2", "at Object.fetch (worker-app.js:1:52311)"),
+				),
+				issue("charge", "payments", "at charge (/app/payments/charge.js)"),
+			],
+		})
+		assert.deepStrictEqual(
+			telemetry.linkedIssues.map((linked) => [linked.issueId, linked.path]),
+			[["charge", "src/payments/charge.ts"]],
+		)
+	})
+
+	it("matches a frame's whole directory segment and prefers it over a name-only match", () => {
+		const linked = (files: ReadonlyArray<string>, topFrame: string) =>
+			analyzeTelemetry({
+				files: files.map((path) => file(path, "@@ -1,1 +1,1 @@\n-a\n+b")),
+				catalog,
+				sources: [],
+				issues: ["a", "b", "c", "d", "e"].map((id) => ({
+					id,
+					fingerprintHash: id,
+					title: `Error ${id}`,
+					service: "shop",
+					topFrame,
+					occurrences: 10,
+					lastSeenAt: 1,
+				})),
+			}).linkedIssues.map((issue) => issue.path)
+		// Matched by name only, `public-api` not being `api`: the bundle entry, so unlinked.
+		assert.deepStrictEqual(
+			linked(["src/api/worker-app.ts"], "at f (/dist/public-api/worker-app.js:1:9)"),
+			[],
+		)
+		// The `orders` file is named with its directory, so it is chosen and kept.
+		assert.deepStrictEqual(
+			linked(
+				["src/admin/checkout.ts", "src/orders/checkout.ts"],
+				"at f (/dist/orders/checkout.js:4:2)",
+			),
+			Array(5).fill("src/orders/checkout.ts"),
+		)
+	})
+
+	it("keeps a service's issues whose frames name the changed file's directory", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("src/orders/checkout.ts", "@@ -1,1 +1,1 @@\n-a\n+b")],
+			catalog,
+			sources: [],
+			issues: ["a", "b", "c", "d", "e"].map((id, i) => ({
+				id,
+				fingerprintHash: id,
+				title: `Error ${id}`,
+				service: "orders",
+				topFrame: `at step${i} (/app/dist/orders/checkout.js:${10 * (i + 1)}:5)`,
+				occurrences: 10,
+				lastSeenAt: 1,
+			})),
+		})
+		assert.lengthOf(telemetry.linkedIssues, 5)
+	})
 })
