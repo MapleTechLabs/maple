@@ -6,7 +6,7 @@ import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
-import { MAX_RAW_SQL_RESULT_ROWS } from "@maple/domain/raw-sql"
+import { MAX_RAW_SQL_RESULT_ROWS, maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import { rawSqlErrorText } from "../lib/raw-sql-error-text"
 import { withTraceIndexSeek } from "../lib/trace-seek"
 import { doc } from "../lib/tool-doc"
@@ -292,6 +292,15 @@ const withCallerErrorText =
 				})
 			: error
 
+// The cap leaves no overflow row, so only a statement's own LIMIT within the cap proves it whole.
+const OWN_LIMIT = /\bLIMIT\s+(\d+)(?:\s*(?:,|OFFSET)\s*\d+)?\s*;?\s*$/i
+
+/** The statement ends in its own LIMIT of at most the cap, so a full page is its answer, not ours. */
+const limitedWithinCap = (sql: string): boolean => {
+	const own = OWN_LIMIT.exec(maskLiteralsAndComments(sql).trimEnd())
+	return own !== null && Number(own[1]) <= MAX_RAW_SQL_RESULT_ROWS
+}
+
 type RawSqlRun = ReturnType<typeof runRawSql>
 
 interface FixFailure {
@@ -408,7 +417,9 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 				timeRange: { start: st, end: et },
 				maxCellChars,
 				windowApplied: usesWindow(expandedSql, st, et),
-				...(rowCount >= MAX_RAW_SQL_RESULT_ROWS ? { atRowCap: true } : undefined),
+				...(rowCount >= MAX_RAW_SQL_RESULT_ROWS && !limitedWithinCap(params.sql)
+					? { atRowCap: true }
+					: undefined),
 				...(rewrites.length === 0 ? undefined : { rewrites: [...rewrites] }),
 				...(params.show_sql === true ? { expandedSql } : undefined),
 			}

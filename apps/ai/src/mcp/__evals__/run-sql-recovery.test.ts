@@ -119,6 +119,17 @@ describe("run_sql recovery", () => {
 		expect(markdown(result)).toContain("Stopped at the 1000-row cap")
 	})
 
+	it("trusts a full page the query's own LIMIT asked for", async () => {
+		const result = await runToolDirect(rt, "run_sql", {
+			...WINDOW,
+			sql: "SELECT number AS n FROM product_events WHERE $__orgFilter LIMIT 1000",
+		})
+		const output = Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent)
+		expect(output.rowCount).toBe(1000)
+		expect(output.atRowCap).toBeUndefined()
+		expect(markdown(result)).not.toContain("row cap")
+	})
+
 	// The seek names `ServiceName`/`Timestamp`, which an outer query over a subquery may lack.
 	it("runs a trace-id lookup as written when the warehouse cannot analyse the seeked form", async () => {
 		const result = await runToolDirect(rt, "run_sql", {
