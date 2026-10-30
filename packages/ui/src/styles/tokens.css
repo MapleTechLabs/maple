@@ -158,11 +158,12 @@
 	--heatmap-cividis-4: oklch(0.43 0.06 258);
 
 	--destructive-foreground: var(--color-red-700);
-	--info: var(--color-blue-500);
+	/* Status aliases: one palette, the logs severity scale. */
+	--info: var(--severity-debug);
 	--info-foreground: var(--color-blue-700);
-	--success: var(--color-emerald-500);
+	--success: var(--severity-info);
 	--success-foreground: var(--color-emerald-700);
-	--warning: var(--color-amber-500);
+	--warning: var(--severity-warn);
 	--warning-foreground: var(--color-amber-700);
 }
 
@@ -293,11 +294,12 @@
 	--heatmap-cividis-4: oklch(0.85 0.13 95);
 
 	--destructive-foreground: var(--color-red-400);
-	--info: var(--color-blue-500);
+	/* Status aliases: one palette, the logs severity scale. */
+	--info: var(--severity-debug);
 	--info-foreground: var(--color-blue-400);
-	--success: var(--color-emerald-500);
+	--success: var(--severity-info);
 	--success-foreground: var(--color-emerald-400);
-	--warning: var(--color-amber-500);
+	--warning: var(--severity-warn);
 	--warning-foreground: var(--color-amber-400);
 }
 

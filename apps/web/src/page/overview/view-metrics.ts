@@ -314,7 +314,7 @@ const cardContent = (
 			// one-line caption in the strip's failure class, centred in the plot area. No axis, no data.
 			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
 				return h.div(
-					[h.Class("flex h-full flex-col px-6 pb-6")],
+					[h.Class("flex h-full flex-col px-4 pb-4")],
 					[
 						h.span(
 							[

@@ -9,9 +9,8 @@ import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
 // The service usage cards.
 
-/** Overview rails share the chart cards' corner radius and their 24px inner inset. */
-export const OVERVIEW_RAIL_CLASS = "rounded-2xl"
-const OVERVIEW_TILE_CLASS = "px-6"
+/** Overview tiles share the chart cards' 16px inner inset. */
+const OVERVIEW_TILE_CLASS = "px-4"
 
 const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (value: number) => string }> = [
 	{ title: "Total Logs", key: "logs", format: formatNumber },
@@ -27,11 +26,11 @@ export const usageCards = <M>(
 	isExplained: (failure: LoadFailure) => boolean,
 ): Html =>
 	AsyncData.matchData(model.usage.data, {
-		onEmpty: () => statRailLoading(h, CARDS.length, 3, OVERVIEW_RAIL_CLASS),
+		onEmpty: () => statRailLoading(h, CARDS.length, 3),
 		onFailure: (failure) =>
 			statRail(
 				h,
-				{ columns: 3, className: OVERVIEW_RAIL_CLASS },
+				{ columns: 3 },
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
@@ -49,7 +48,7 @@ export const usageCards = <M>(
 		onData: ({ totals, previous }) =>
 			statRail(
 				h,
-				{ columns: 3, className: OVERVIEW_RAIL_CLASS },
+				{ columns: 3 },
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
