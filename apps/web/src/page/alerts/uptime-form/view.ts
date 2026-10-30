@@ -64,7 +64,8 @@ const kindPicker = (h: H, model: Model): Html =>
 					segmentedSelect(h, {
 						ariaLabel: "Monitor type",
 						size: "sm",
-						className: "w-fit",
+						// Four labelled kinds outgrow a phone column, so the track wraps like the old picker.
+						className: "w-fit flex-wrap",
 						value: model.form.kind,
 						onChange: (kind) => Message.PickedKind({ kind }),
 						// Editing keeps the kind: the others stay visible but can't be picked.
