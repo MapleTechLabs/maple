@@ -487,6 +487,27 @@ describe("app update banner", () => {
 	})
 })
 
+describe("services section", () => {
+	test("on the service map, Services opens with the map row current", () => {
+		scene(
+			{ update, view: shellAt("/service-map") },
+			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Map" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "All services" })).toExist(),
+		)
+	})
+
+	test("elsewhere the map row stays hidden", () => {
+		scene(
+			{ update, view: shellAt("/logs") },
+			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Map" })).toBeAbsent(),
+		)
+	})
+})
+
 describe("infrastructure section", () => {
 	test("on an infra page only the sources the org reports or connected are listed", () => {
 		scene(
