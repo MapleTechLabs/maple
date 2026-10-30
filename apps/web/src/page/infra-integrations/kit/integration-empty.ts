@@ -8,8 +8,6 @@ import { panel } from "../../../ui/panel"
 
 // `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
 
-export const RAILWAY_ACCENT = "#0B0D0E"
-
 export type IntegrationBrand = Readonly<{
 	icon: IconName
 	/** A monochrome twin for the dimmed backer plates (multicolour marks). */

@@ -1,3 +1,4 @@
+import { CLOUDFLARE_ACCENT_CLASS, dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
 import type { IconName } from "../../../../ui/icon"
 
 // copied: packages/ui/src/lib/cloud-platforms/{types,cloudflare,database}.ts with `Icon` as an
@@ -68,7 +69,7 @@ const cloudflare = (attrs: Attrs): PlatformInfo | null => {
 	return {
 		label: "Cloudflare Worker",
 		icon: "CloudflareIcon",
-		accentClassName: "text-[#F38020]",
+		accentClassName: CLOUDFLARE_ACCENT_CLASS,
 		edge: joinEdge(pickAttr(attrs, "cloudflare.colo"), pickAttr(attrs, "faas.invoked_region")),
 		location: [city, country].filter(Boolean).join(", ") || null,
 		outcome: outcome === null ? null : { value: outcome, bad: outcome.toLowerCase() !== "ok" },
@@ -112,29 +113,6 @@ const DB_SYSTEM_LABELS = new Map(
 	}),
 )
 
-const DB_SYSTEM_ACCENTS = new Map(
-	Object.entries({
-		postgresql: "text-[#336791]",
-		mysql: "text-[#00758F]",
-		mariadb: "text-[#1F7A8C]",
-		clickhouse: "text-[#F5B400]",
-		redis: "text-[#DC382D]",
-		mongodb: "text-[#13AA52]",
-		elasticsearch: "text-[#00BFB3]",
-		opensearch: "text-[#00BFB3]",
-		cassandra: "text-[#1287B1]",
-		cockroachdb: "text-[#6933FF]",
-		sqlite: "text-[#0F80CC]",
-		oracle: "text-[#C74634]",
-		mssql: "text-[#CC2927]",
-		"microsoft.sql_server": "text-[#CC2927]",
-		dynamodb: "text-[#4053D6]",
-		"aws.dynamodb": "text-[#4053D6]",
-		redshift: "text-[#8C4FFF]",
-		snowflake: "text-[#29B5E8]",
-	}),
-)
-
 const humanizeDbSystem = (system: string): string =>
 	DB_SYSTEM_LABELS.get(system.toLowerCase()) ??
 	(system.split(".").pop() ?? system)
@@ -173,7 +151,7 @@ const database = (attrs: Attrs): PlatformInfo | null => {
 	return {
 		label: humanizeDbSystem(system),
 		icon: "DatabaseIcon",
-		accentClassName: DB_SYSTEM_ACCENTS.get(system.toLowerCase()) ?? "text-muted-foreground",
+		accentClassName: dbSystemAccentClass(system),
 		edge: null,
 		location: null,
 		outcome: errorType === null ? null : { value: errorType, bad: true },

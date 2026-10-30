@@ -1,4 +1,9 @@
-import { type AlertDestinationDocument, AlertDestinationId, AlertDestinationType } from "@maple/domain/http"
+import {
+	type AlertDestinationDocument,
+	AlertDestinationId,
+	AlertDestinationType,
+	parseGoogleChatWebhookUrl,
+} from "@maple/domain/http"
 import {
 	V2AlertDestinationCreateParams,
 	V2AlertDestinationUpdateParams,
@@ -180,6 +185,8 @@ const createRequest = (payload: V2AlertDestinationCreateParams) => {
 			return { payload }
 		case "telegram":
 			return { payload }
+		case "google-chat":
+			return { payload }
 		case "email":
 			return { payload }
 		case "chat":
@@ -201,6 +208,8 @@ const updateRequest = (id: AlertDestinationId, payload: V2AlertDestinationUpdate
 		case "discord":
 			return { params, payload }
 		case "telegram":
+			return { params, payload }
+		case "google-chat":
 			return { params, payload }
 		case "email":
 			return { params, payload }
@@ -247,6 +256,10 @@ export const isValidPagerDutyKey = (key: string): boolean => /^[A-Za-z0-9]{32}$/
 export const isValidTelegramToken = (token: string): boolean =>
 	/^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(token.trim())
 
+/** The server's own check, so a pasted space link or bare token is caught before save. */
+export const isValidGoogleChatWebhookUrl = (raw: string): boolean =>
+	Option.isSome(parseGoogleChatWebhookUrl(raw))
+
 export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean => {
 	if (isEditing && form.name.trim().length === 0) return false
 	switch (form.type) {
@@ -254,6 +267,11 @@ export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean 
 			return form.hazelOrganizationId.trim().length > 0 && form.hazelChannelId.trim().length > 0
 		case "discord":
 			return isEditing || form.webhookUrl.trim().length > 0
+		case "google-chat":
+			return (
+				(isEditing && form.webhookUrl.trim().length === 0) ||
+				isValidGoogleChatWebhookUrl(form.webhookUrl)
+			)
 		case "telegram":
 			return (
 				form.telegramChatId.trim().length > 0 &&

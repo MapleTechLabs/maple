@@ -169,6 +169,7 @@ extension AlertDestinationType {
 		case .hazelOauth: "Hazel"
 		case .discord: "Discord"
 		case .telegram: "Telegram"
+		case .googleChat: "Google Chat"
 		case .email: "Email"
 		case .linear: "Linear"
 		}
