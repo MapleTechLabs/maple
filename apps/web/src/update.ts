@@ -402,7 +402,11 @@ const isPlanGated = (model: Model) => Option.exists(planGateOf(model), isRouteHe
 
 const loadPage: Step = (model) =>
 	Option.match(
-		Option.filter(pageContextOf(model), () => !isPlanGated(model)),
+		// A flag-gated route is on its way home: no page, so nothing it would fetch.
+		Option.filter(
+			pageContextOf(model),
+			() => !isPlanGated(model) && Option.isNone(flagRedirectOf(model)),
+		),
 		{
 			// Leaving every page (signed out) releases what the last one held, like any page change.
 			// Parked pages go too: none may come back in the next session or org.
