@@ -140,6 +140,13 @@ describe("fixUnknownIdentifier", () => {
 		expect(fixUnknownIdentifier(sql, unknown("l.body"))?.sql).toContain("SELECT l.Body FROM")
 	})
 
+	it("declines a qualified fix when the qualifier names relations in two scopes", () => {
+		const sql =
+			"WITH t AS (SELECT ServiceName AS span_name FROM traces WHERE $__orgFilter) SELECT t.span_name FROM t " +
+			"WHERE t.span_name IN (SELECT t.span_name FROM traces t WHERE $__orgFilter(t))"
+		expect(fixUnknownIdentifier(sql, unknown("t.span_name"))).toBeUndefined()
+	})
+
 	it("ignores a table named in a # comment", () => {
 		expect(
 			fixUnknownIdentifier(
