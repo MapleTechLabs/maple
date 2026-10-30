@@ -51,8 +51,14 @@ describe("railway service", () => {
 		const scoped = routeChanged(reloaded, { ...route, search: { environmentId: "env_staging" } }, context)
 		expect(names(scoped.commands)).toContain("FetchRailwayServiceTimeseries")
 		expect(names(scoped.commands)).not.toContain("ResolveRailwayServiceWindow")
-		const moved = routeChanged(scoped.model, { ...route, search: { environmentId: "env_staging", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveRailwayServiceWindow", "Refresh"]])
+		const moved = routeChanged(
+			scoped.model,
+			{ ...route, search: { environmentId: "env_staging", timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveRailwayServiceWindow", "Refresh"],
+		])
 	})
 
 	test("the window brings the fleet read and the service's series, bucketed for ~100 points", () => {

@@ -7,6 +7,7 @@ import * as BarChart from "../../../charts/bar-chart"
 import type * as Chart from "../../../charts/chart"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { panel } from "../../../ui/panel"
+import { emptyMessage } from "../../../ui/empty"
 import { skeleton } from "../../../ui/skeleton"
 import {
 	integrationPlatformOf,
@@ -126,18 +127,10 @@ const volumePanel = (h: H, model: Model, timeZone: string, nowMs: number): Html 
 	const isFailed = AsyncData.isFailure(model.usage.data)
 	const body = Option.match(usage, {
 		onNone: () =>
-			isFailed
-				? h.p(
-						[h.Class("text-muted-foreground py-6 text-center text-xs")],
-						["Volume is unavailable right now."],
-					)
-				: skeleton(h, "h-48 w-full"),
+			isFailed ? emptyMessage(h, {}, ["Volume is unavailable right now."]) : skeleton(h, "h-48 w-full"),
 		onSome: (value) =>
 			value.buckets.length === 0
-				? h.p(
-						[h.Class("text-muted-foreground py-8 text-center text-xs")],
-						["Nothing stored from this source in the last 24 hours."],
-					)
+				? emptyMessage(h, {}, ["Nothing stored from this source in the last 24 hours."])
 				: usageChart(h, model, usageRows(value), timeZone, nowMs),
 	})
 	return panel(h, { padded: true, className: "gap-3" }, [

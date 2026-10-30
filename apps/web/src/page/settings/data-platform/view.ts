@@ -5,7 +5,7 @@ import type {
 	OrgClickHouseSettingsResponse,
 } from "@maple/domain/http"
 import { EMPTY_VALUE, formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	columnDriftResolvedByApply,
@@ -30,6 +30,7 @@ import { statRail, statRailItem } from "../../kit/stat-rail"
 import { settingsSection, settingsSections } from "../kit/section"
 import { type ConnectionField, Message, type Model, type Totals } from "./model"
 import { draftOf, isRunActive } from "./update"
+import { statusDot } from "../../../ui/status-dot"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -55,7 +56,7 @@ const connectionStatus = (h: H, settings: OrgClickHouseSettingsResponse, inputs:
 		return h.div(
 			[h.Class("flex items-center gap-2 border-b px-4 py-3 text-xs")],
 			[
-				h.span([h.Class(cn("size-1.5 rounded-full", TONE_FILL.neutral))], []),
+				statusDot(h, { tone: "neutral" }),
 				h.span([], ["Not connected"]),
 				h.span([h.Class("text-muted-foreground")], ["· Queries use Maple's warehouse"]),
 			],
@@ -67,10 +68,7 @@ const connectionStatus = (h: H, settings: OrgClickHouseSettingsResponse, inputs:
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					h.span(
-						[h.Class(cn("size-1.5 rounded-full", isFailing ? TONE_FILL.crit : TONE_FILL.ok))],
-						[],
-					),
+					statusDot(h, { tone: isFailing ? "crit" : "ok" }),
 					h.span([], [isFailing ? "Connection error" : "Connected"]),
 					...(settings.lastSyncAt === null
 						? []

@@ -9,6 +9,7 @@ import { Effect } from "effect"
 import { AsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ROW_LINE_CHARS } from "../../../lib/display-text"
+import { separator } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { errorSectionView } from "../../../ui/error-section"
 import { errorState } from "../../../ui/error-state"
@@ -285,7 +286,7 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 								h.div(
 									[h.Class("flex items-center gap-2 px-2 py-0.5 bg-muted/30")],
 									[
-										h.div([h.Class("h-px flex-1 bg-border")], []),
+										separator(h, "horizontal", "flex-1"),
 										h.span(
 											[
 												h.Class(
@@ -294,7 +295,7 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 											],
 											[spanNames.get(spanChanged) ?? shortId(spanChanged, "span")],
 										),
-										h.div([h.Class("h-px flex-1 bg-border")], []),
+										separator(h, "horizontal", "flex-1"),
 									],
 								),
 							]),

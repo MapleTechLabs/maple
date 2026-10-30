@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterChip } from "../../../ui/filter-chip"
 import { searchInput } from "../../../ui/search-input"
+import { listToolbar } from "../../kit/list-toolbar"
 
 // The replays toolbar: the URL search and the triage chips.
 // TODO(tooltip): the chips' hover tooltips.
@@ -50,18 +51,19 @@ const triageChip = <M>(
 
 export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOptions<M>): Html => {
 	const isWaiting = options.isWaiting ?? false
-	return h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-3")],
-		[
-			searchInput(h, {
-				id: "replays-search",
-				value: options.query,
-				placeholder: "Search by URL…",
-				onInput: options.onInput,
-				onClear: options.onClear,
-				size: "default",
-				className: cn("max-w-sm", "w-full sm:max-w-sm"),
-			}),
+	// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+	return listToolbar(h, {
+		className: "pb-0",
+		leading: searchInput(h, {
+			id: "replays-search",
+			value: options.query,
+			placeholder: "Search by URL…",
+			onInput: options.onInput,
+			onClear: options.onClear,
+			size: "default",
+			className: cn("max-w-sm", "w-full sm:max-w-sm"),
+		}),
+		trailing: [
 			h.div(
 				[
 					...(isWaiting ? [h.AriaBusy(true)] : []),
@@ -87,5 +89,5 @@ export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOpti
 				],
 			),
 		],
-	)
+	})
 }

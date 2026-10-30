@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
+import { statusDot } from "../../../../ui/status-dot"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
 
@@ -13,11 +14,6 @@ import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
 
 type H = HtmlBuilder<Message>
 
-const TONE_DOT = {
-	ok: "bg-severity-info",
-	warn: "bg-severity-warn",
-	crit: "bg-severity-error",
-} as const satisfies Record<AccountTone, string>
 const TONE_TEXT = {
 	ok: "text-muted-foreground",
 	warn: "text-severity-warn",
@@ -108,10 +104,7 @@ export const accountsStrip = (
 					h.span(
 						[h.Class("flex items-center gap-2")],
 						[
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_DOT[account.health.tone])),
-							]),
+							statusDot(h, { tone: account.health.tone }),
 							h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
 							h.span(
 								[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
@@ -155,10 +148,7 @@ export const accountHealthLine = (h: H, account: CloudflareAccount): Html | null
 					),
 				],
 				[
-					h.span([
-						h.AriaHidden(true),
-						h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_DOT[account.health.tone])),
-					]),
+					statusDot(h, { tone: account.health.tone }),
 					h.span(
 						[h.Class("text-foreground")],
 						[

@@ -7,9 +7,9 @@ import {
 	type RowRules,
 } from "../../../../components/infra/gcp/list-model"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
+import { statusDot } from "../../../../ui/status-dot"
 
 // The band specs and `GcpHealthDot`.
 
@@ -130,15 +130,9 @@ export const healthDot = <S extends string, M>(
 	health: S | "ok",
 ): Html => {
 	const tone: Tone = health === "ok" ? "ok" : spec.cells[health].tone
-	return h.span([
-		h.AriaHidden(true),
-		h.Class(
-			cn(
-				"size-2 shrink-0 rounded-full",
-				tone === "neutral" ? "border border-muted-foreground/70" : TONE_FILL[tone],
-			),
-		),
-	])
+	return tone === "neutral"
+		? statusDot(h, { tone: "custom", size: "lg", className: "border border-muted-foreground/70" })
+		: statusDot(h, { tone, size: "lg" })
 }
 
 export const gcpBand = <R, S extends string, M>(

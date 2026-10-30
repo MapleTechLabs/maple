@@ -1,6 +1,5 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -30,6 +29,7 @@ import * as TabsView from "../../../ui/tabs-view"
 import { truncatedText } from "../../../ui/truncated-text"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { listToolbar, toolbarCount, toolbarStat } from "../../kit/list-toolbar"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink, filteredEmpty } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
@@ -67,15 +67,6 @@ const bar = (h: H, model: Model, isAccent = false, placeholder?: string): Html =
 		placeholder,
 	})
 
-const stat = (h: H, value: number, label: string, tone?: "info" | "warn"): Html =>
-	h.span(
-		[h.Class("flex items-center gap-1.5 whitespace-nowrap text-sm")],
-		[
-			h.span([h.Class(cn("font-medium tabular-nums", tone && TONE_TEXT[tone]))], [formatNumber(value)]),
-			h.span([h.Class("text-muted-foreground")], [label]),
-		],
-	)
-
 const KIND_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = KIND_FILTER_VALUES.map((value) => ({
 	_tag: "Item",
 	item: { value, label: KIND_FILTER_LABEL[value] },
@@ -105,119 +96,106 @@ const toolbar = (
 		["history", all.length - activeCount],
 	])
 	const stats = triageStatsOf(all, model.nowMs)
-	// Two rows: tabs beside the triage counters, then the filters with room for their labels.
-	return h.div(
-		[h.Class(cn("flex flex-col gap-1.5", isFramed ? "border-b border-border/60 px-2 py-1.5" : "pb-3"))],
-		[
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-2")],
-				[
-					h.submodel({
-						slotId: "investigations-view-tabs",
-						model: model.tabs,
-						view: TabsView.view,
-						viewInputs: {
-							labels: ["Active", "History"],
-							ariaLabel: "Filter investigations",
-							tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
-							// Unknown counts (loading or failed) are left out, never a false 0.
-							tabContent: (value, label) => [
-								label,
-								...(isKnown
-									? [
-											h.span(
-												[
-													h.Class(
-														"text-muted-foreground/70 tabular-nums group-data-active/tab:text-muted-foreground",
-													),
-												],
-												[String(counts.get(value) ?? 0)],
-											),
-										]
-									: []),
-							],
-							panel: () => undefined,
-						},
-						toParentMessage: (message) => Message.GotTabsMessage({ message }),
-					}),
+	return listToolbar(h, {
+		framed: isFramed,
+		leading: h.submodel({
+			slotId: "investigations-view-tabs",
+			model: model.tabs,
+			view: TabsView.view,
+			viewInputs: {
+				labels: ["Active", "History"],
+				ariaLabel: "Filter investigations",
+				tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
+				// Unknown counts (loading or failed) are left out, never a false 0.
+				tabContent: (value, label) => [
+					label,
 					...(isKnown
 						? [
-								h.div(
-									[h.Class("ml-auto hidden items-center gap-4 sm:flex")],
+								h.span(
 									[
-										stat(
-											h,
-											stats.running,
-											"investigating",
-											stats.running > 0 ? "info" : undefined,
+										h.Class(
+											"text-muted-foreground/70 tabular-nums group-data-active/tab:text-muted-foreground",
 										),
-										stat(
-											h,
-											stats.review,
-											stats.critical > 0
-												? `to review (${stats.critical} critical)`
-												: "to review",
-											stats.review > 0 ? "warn" : undefined,
-										),
-										stat(h, stats.resolved, "resolved in 24h"),
 									],
+									[String(counts.get(value) ?? 0)],
 								),
 							]
 						: []),
 				],
-			),
-			h.div(
-				[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
-				[
-					h.submodel({
-						slotId: model.kindSelect.id,
-						model: model.kindSelect,
-						view: SelectView.view,
-						viewInputs: {
-							entries: KIND_ENTRIES,
-							className: "w-[140px]",
-							renderValue: (value) => [kindLabel(value)],
-							toView: (parts) => h.div([h.Class("contents")], parts),
-						},
-						toParentMessage: (message) => Message.GotKindSelectMessage({ message }),
-					}),
-					h.submodel({
-						slotId: model.sortSelect.id,
-						model: model.sortSelect,
-						view: SelectView.view,
-						viewInputs: {
-							entries: SORT_ENTRIES,
-							className: "w-[168px]",
-							renderValue: (value) => [sortLabel(value)],
-							toView: (parts) => h.div([h.Class("contents")], parts),
-						},
-						toParentMessage: (message) => Message.GotSortSelectMessage({ message }),
-					}),
-					searchInput(h, {
-						id: "investigations-search",
-						size: "default",
-						className: "w-auto min-w-56 max-w-sm flex-1",
-						placeholder: "Search subjects and findings",
-						value: model.searchDraft,
-						onInput: (value) => Message.ChangedSearchDraft({ value }),
-						onClear: Message.ChangedSearchDraft({ value: "" }),
-					}),
-					h.span(
-						[h.Class("ml-auto text-xs text-muted-foreground tabular-nums")],
-						!isKnown
-							? []
-							: hasMore
-								? [`Showing ${visible.length} of the ${all.length} most recent`]
-								: [
-										String(visible.length),
-										" ",
-										visible.length === 1 ? "investigation" : "investigations",
-									],
-					),
-				],
+				panel: () => undefined,
+			},
+			toParentMessage: (message) => Message.GotTabsMessage({ message }),
+		}),
+		trailing: [
+			...(isKnown
+				? [
+						h.div(
+							[h.Class("hidden items-center gap-3 sm:flex")],
+							[
+								toolbarStat(h, {
+									value: formatNumber(stats.running),
+									label: "investigating",
+									dot: stats.running > 0 ? "info" : undefined,
+								}),
+								toolbarStat(h, {
+									value: formatNumber(stats.review),
+									label:
+										stats.critical > 0
+											? `to review (${stats.critical} critical)`
+											: "to review",
+									dot: stats.review > 0 ? "warn" : undefined,
+								}),
+								toolbarStat(h, {
+									value: formatNumber(stats.resolved),
+									label: "resolved in 24h",
+								}),
+							],
+						),
+					]
+				: []),
+			h.submodel({
+				slotId: model.kindSelect.id,
+				model: model.kindSelect,
+				view: SelectView.view,
+				viewInputs: {
+					entries: KIND_ENTRIES,
+					className: "w-[140px]",
+					renderValue: (value) => [kindLabel(value)],
+					toView: (parts) => h.div([h.Class("contents")], parts),
+				},
+				toParentMessage: (message) => Message.GotKindSelectMessage({ message }),
+			}),
+			h.submodel({
+				slotId: model.sortSelect.id,
+				model: model.sortSelect,
+				view: SelectView.view,
+				viewInputs: {
+					entries: SORT_ENTRIES,
+					className: "w-[168px]",
+					renderValue: (value) => [sortLabel(value)],
+					toView: (parts) => h.div([h.Class("contents")], parts),
+				},
+				toParentMessage: (message) => Message.GotSortSelectMessage({ message }),
+			}),
+			searchInput(h, {
+				id: "investigations-search",
+				size: "default",
+				className: "w-auto min-w-56 max-w-sm flex-1",
+				placeholder: "Search subjects and findings",
+				value: model.searchDraft,
+				onInput: (value) => Message.ChangedSearchDraft({ value }),
+				onClear: Message.ChangedSearchDraft({ value: "" }),
+			}),
+			toolbarCount(
+				h,
+				!isKnown
+					? []
+					: hasMore
+						? [`Showing ${visible.length} of the ${all.length} most recent`]
+						: [String(visible.length), " ", pluralize(visible.length, "investigation")],
 			),
 		],
-	)
+	})
 }
 
 const rowFinding = (h: H, investigation: V2Investigation): Html => {

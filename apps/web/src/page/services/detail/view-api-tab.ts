@@ -8,19 +8,23 @@ import {
 	formatRate,
 } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "../../../charts/chart"
 import type { ThemeColors } from "../../../charts/theme-colors"
+import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { panel } from "../../../ui/panel"
 import { searchInput } from "../../../ui/search-input"
 import { skeleton } from "../../../ui/skeleton"
 import { statFigure } from "../../../ui/stat-figure"
+import { statusDot } from "../../../ui/status-dot"
 import { table, tableBody, tableHeader, tableRow } from "../../../ui/table"
 import { docsLink } from "../../kit/signal-empty-state"
+import { statRail, statRailLoading } from "../../kit/stat-rail"
 import { windowSeconds } from "./derive"
 import {
 	apiKpis,
@@ -69,7 +73,7 @@ const MARKER_GUTTER = 32
 
 type Tile = Readonly<{
 	label: string
-	dot?: string
+	dot?: Tone
 	value: string
 	unit?: string
 	valueClassName?: string
@@ -82,19 +86,12 @@ type Tile = Readonly<{
 // Same anatomy as the shared `statRailItem`: sentence-case label, figure with its unit, caption.
 const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 	h.div(
-		[
-			h.Key(tile.label),
-			h.Class(
-				"flex min-w-0 flex-col border-b px-5 py-4 odd:border-r last:col-span-2 last:border-b-0 last:border-r-0 md:border-r md:border-b-0 md:last:col-span-1 md:last:border-r-0",
-			),
-		],
+		[h.Key(tile.label), h.Class("flex min-w-0 flex-col px-5 py-4 last:col-span-2 md:last:col-span-1")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-1.5")],
 				[
-					...(tile.dot === undefined
-						? []
-						: [h.span([h.Class(cn("size-1.5 rounded-full", tile.dot))])]),
+					...(tile.dot === undefined ? [] : [statusDot(h, { tone: tile.dot })]),
 					h.span([h.Class("truncate text-2xs font-medium text-muted-foreground")], [tile.label]),
 				],
 			),
@@ -170,21 +167,21 @@ const kpiStrip = (
 		},
 		{
 			label: "4xx responses",
-			dot: "bg-warning",
+			dot: "warn",
 			value: client === null ? "—" : formatErrorRate(client),
-			valueClassName: client !== null && client > 0 ? "text-warning-foreground" : undefined,
+			valueClassName: client !== null && client > 0 ? TONE_TEXT.warn : undefined,
 			aside: client === null ? "no status codes" : leadingCode(summaries, false),
-			asideClassName: client !== null && client > 0 ? "text-warning-foreground" : undefined,
+			asideClassName: client !== null && client > 0 ? TONE_TEXT.warn : undefined,
 			values: sparks.client,
 			token: client !== null && client > 0 ? SPARK_TOKENS.client : SPARK_TOKENS.quiet,
 		},
 		{
 			label: "5xx responses",
-			dot: "bg-severity-error",
+			dot: "crit",
 			value: server === null ? "—" : formatErrorRate(server),
-			valueClassName: server !== null && server > 0.01 ? "text-destructive-foreground" : undefined,
+			valueClassName: server !== null && server > 0.01 ? TONE_TEXT.crit : undefined,
 			aside: server === null ? "no status codes" : leadingCode(summaries, true),
-			asideClassName: server !== null && server > 0 ? "text-destructive-foreground" : undefined,
+			asideClassName: server !== null && server > 0 ? TONE_TEXT.crit : undefined,
 			values: sparks.server,
 			token: server !== null && server > 0 ? SPARK_TOKENS.server : SPARK_TOKENS.quiet,
 		},
@@ -196,8 +193,8 @@ const kpiStrip = (
 				kpis.p95Change === null || Math.abs(kpis.p95Change) < 0.05
 					? undefined
 					: kpis.p95Change < 0
-						? "text-success-foreground"
-						: "text-warning-foreground",
+						? TONE_TEXT.info
+						: TONE_TEXT.warn,
 			values: sparks.p95,
 			token: SPARK_TOKENS.latency,
 		},
@@ -210,30 +207,14 @@ const kpiStrip = (
 			token: SPARK_TOKENS.bytes,
 		},
 	]
-	return h.div(
-		[h.Class("grid w-full grid-cols-2 overflow-hidden rounded-lg border bg-card md:grid-cols-5")],
+	return statRail(
+		h,
+		{ columns: 5, className: "w-full overflow-hidden" },
 		tiles.map((tile) => kpiTile(h, tile, theme)),
 	)
 }
 
-const kpiSkeleton = (h: H): Html =>
-	h.div(
-		[
-			h.Class("grid w-full grid-cols-2 overflow-hidden rounded-lg border bg-card md:grid-cols-5"),
-			h.AriaBusy(true),
-		],
-		Array.from({ length: 5 }, (_, index) =>
-			h.div(
-				[
-					h.Key(String(index)),
-					h.Class(
-						"flex flex-col gap-2.5 border-b px-5 py-4 md:border-r md:border-b-0 md:last:border-r-0",
-					),
-				],
-				[skeleton(h, "h-2.5 w-20"), skeleton(h, "h-6 w-24"), skeleton(h, "h-7 w-full")],
-			),
-		),
-	)
+const kpiSkeleton = (h: H): Html => statRailLoading(h, 5, 5, "w-full overflow-hidden")
 
 // RESPONSES CHART
 
@@ -270,74 +251,71 @@ const responsesChart = (
 				})
 	const context: ChartContext | null =
 		theme === null ? null : { theme, timeZone: inputs.timeZone, nowMs: model.nowMs ?? 0 }
-	return h.div(
-		[h.Class("flex min-w-0 flex-1 flex-col gap-3 rounded-lg border bg-card p-4")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2")],
-				[
-					h.div(
-						[h.Class("flex items-baseline gap-2")],
-						[
-							h.span([h.Class("text-ui font-medium")], ["Responses by status"]),
-							h.span([h.Class("text-2xs text-muted-foreground")], ["req/s, all endpoints"]),
-						],
-					),
-					h.div(
-						[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
-						[
-							legendItem(
-								h,
-								swatch(h, STATUS_COLORS["2xx"]),
-								`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
-							),
-							legendItem(
-								h,
-								swatch(h, STATUS_COLORS["4xx"]),
-								`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
-							),
-							legendItem(
-								h,
-								swatch(h, STATUS_COLORS["5xx"]),
-								`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
-							),
-							...(hasUnknownBuckets(overview.buckets)
-								? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
-								: []),
-							...(markers.length === 0
-								? []
-								: [
-										legendItem(
-											h,
-											h.span([
-												h.Class(
-													"h-2.5 w-0 border-l border-dashed border-muted-foreground",
-												),
-											]),
-											"deploy",
-										),
-									]),
-						],
-					),
-				],
-			),
-			context === null
-				? skeleton(h, "h-[200px] w-full")
-				: statusChart(h, {
-						chartId: "api-responses",
-						chart: chartModel,
-						buckets: overview.buckets,
-						bucketSeconds: inputs.bucketSeconds,
-						window: inputs.window,
-						context,
-						className: "h-[200px] w-full",
-						marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
-						overlay,
-						reportPlot: markers.length > 0,
-						toMessage: toChart("api-responses"),
-					}),
-		],
-	)
+	return panel(h, { padded: true, className: "flex-1 gap-3" }, [
+		h.div(
+			[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2")],
+			[
+				h.div(
+					[h.Class("flex items-baseline gap-2")],
+					[
+						h.span([h.Class("text-ui font-medium")], ["Responses by status"]),
+						h.span([h.Class("text-2xs text-muted-foreground")], ["req/s, all endpoints"]),
+					],
+				),
+				h.div(
+					[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
+					[
+						legendItem(
+							h,
+							swatch(h, STATUS_COLORS["2xx"]),
+							`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
+						),
+						legendItem(
+							h,
+							swatch(h, STATUS_COLORS["4xx"]),
+							`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
+						),
+						legendItem(
+							h,
+							swatch(h, STATUS_COLORS["5xx"]),
+							`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
+						),
+						...(hasUnknownBuckets(overview.buckets)
+							? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
+							: []),
+						...(markers.length === 0
+							? []
+							: [
+									legendItem(
+										h,
+										h.span([
+											h.Class(
+												"h-2.5 w-0 border-l border-dashed border-muted-foreground",
+											),
+										]),
+										"deploy",
+									),
+								]),
+					],
+				),
+			],
+		),
+		context === null
+			? skeleton(h, "h-[200px] w-full")
+			: statusChart(h, {
+					chartId: "api-responses",
+					chart: chartModel,
+					buckets: overview.buckets,
+					bucketSeconds: inputs.bucketSeconds,
+					window: inputs.window,
+					context,
+					className: "h-[200px] w-full",
+					marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
+					overlay,
+					reportPlot: markers.length > 0,
+					toMessage: toChart("api-responses"),
+				}),
+	])
 }
 
 // NON-2XX BREAKDOWN
@@ -356,7 +334,7 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 							h.Class(
 								cn(
 									"rounded-sm bg-muted px-1 font-medium",
-									isServer ? "text-destructive-foreground" : "text-warning-foreground",
+									TONE_TEXT[isServer ? "crit" : "warn"],
 								),
 							),
 						],
@@ -374,7 +352,7 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 				[h.Class("h-1 w-full rounded-full bg-muted")],
 				[
 					h.div([
-						h.Class(cn("h-1 rounded-full", isServer ? "bg-severity-error" : "bg-warning")),
+						h.Class(cn("h-1 rounded-full", TONE_FILL[isServer ? "crit" : "warn"])),
 						h.Style({ width: `${Math.max(summary.share * 100, 1)}%` }),
 					]),
 				],
@@ -394,50 +372,38 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 
 const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null): Html => {
 	const total = summaries?.reduce((sum, summary) => sum + summary.count, 0) ?? 0
-	return h.div(
-		[
-			h.Class(
-				"flex w-full shrink-0 flex-col gap-3 overflow-hidden rounded-lg border bg-card p-4 lg:w-[400px]",
-			),
-		],
-		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-2")],
-				[
-					h.span([h.Class("text-ui font-medium")], ["Non-2xx responses"]),
-					...(summaries === null
-						? []
-						: [
-								h.span(
-									[
-										h.Class("text-2xs text-muted-foreground tabular-nums"),
-										h.Title(
-											"Counted over complete hours, so the total can reach past the window's edges",
-										),
-									],
-									[`${formatNumber(Math.round(total))} in complete hours`],
-								),
-							]),
-				],
-			),
-			summaries === null
-				? h.div(
-						[h.Class("flex flex-col gap-3"), h.AriaBusy(true)],
-						[0, 1, 2, 3].map((index) =>
-							h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")]),
-						),
-					)
-				: summaries.length === 0
-					? h.p(
-							[h.Class("py-6 text-center text-xs text-muted-foreground")],
-							["Every response in this window was below 400."],
-						)
-					: h.div(
-							[h.Class("flex flex-col gap-3")],
-							summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
-						),
-		],
-	)
+	return panel(h, { padded: true, className: "w-full shrink-0 gap-3 lg:w-[400px]" }, [
+		h.div(
+			[h.Class("flex items-baseline justify-between gap-2")],
+			[
+				h.span([h.Class("text-ui font-medium")], ["Non-2xx responses"]),
+				...(summaries === null
+					? []
+					: [
+							h.span(
+								[
+									h.Class("text-2xs text-muted-foreground tabular-nums"),
+									h.Title(
+										"Counted over complete hours, so the total can reach past the window's edges",
+									),
+								],
+								[`${formatNumber(Math.round(total))} in complete hours`],
+							),
+						]),
+			],
+		),
+		summaries === null
+			? h.div(
+					[h.Class("flex flex-col gap-3"), h.AriaBusy(true)],
+					[0, 1, 2, 3].map((index) => h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")])),
+				)
+			: summaries.length === 0
+				? emptyMessage(h, {}, ["Every response in this window was below 400."])
+				: h.div(
+						[h.Class("flex flex-col gap-3")],
+						summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
+					),
+	])
 }
 
 // TABLE
@@ -549,73 +515,65 @@ const endpointsTable = (
 		})
 	// A sampled endpoint's rate is scaled up from its traced spans; the header says so.
 	const isEstimated = visible.some((endpoint) => endpoint.estimatedSpanCount > endpoint.spanCount)
-	return h.div(
-		[h.Class("flex w-full flex-col overflow-hidden rounded-lg border bg-card")],
-		[
-			toolbar(h, model, visible.length),
-			table(h, {}, [
-				tableHeader(h, [
-					tableRow(
-						h,
-						[
-							column("path", "Endpoint", "pl-4", "left"),
-							isEstimated
-								? column(
-										"traffic",
-										"Req/s est.",
-										COLUMN.rate,
-										undefined,
-										"Estimated from sampled traces",
-									)
-								: column("traffic", "Req/s", COLUMN.rate),
-							headLabel(
-								h,
-								[
-									h.span([h.Class("md:hidden")], ["4xx"]),
-									h.span([h.Class("hidden md:inline")], ["2xx / 4xx / 5xx"]),
-								],
-								cn("pr-0 text-right", COLUMN.mix),
-							),
-							column("errorRate", "5xx", COLUMN.err),
-							column("p50", "p50", COLUMN.p50),
-							column("p95", "p95", COLUMN.p95),
-							column("p99", "p99", COLUMN.p99),
-							headLabel(h, ["Body avg"], cn("pr-0 text-right", COLUMN.body)),
-							headLabel(h, [], COLUMN.chevron),
-						],
-						"border-b hover:bg-transparent",
-					),
-				]),
-				tableBody(
+	return panel(h, { className: "w-full" }, [
+		toolbar(h, model, visible.length),
+		table(h, {}, [
+			tableHeader(h, [
+				tableRow(
 					h,
-					groups.length === 0
-						? [
-								tableRow(
-									h,
-									[
-										h.td(
-											[
-												h.Attribute("colspan", String(COLUMN_COUNT)),
-												h.Class("py-8 text-center text-xs text-muted-foreground"),
-											],
-											["No endpoint matches this filter."],
-										),
-									],
-									"hover:bg-transparent",
-								),
-							]
-						: groups.flatMap((group) =>
-								groupRows(
-									h,
-									group,
-									context,
-									model.expandedEndpointGroups.includes(group.kind),
-								),
-							),
+					[
+						column("path", "Endpoint", "pl-4", "left"),
+						isEstimated
+							? column(
+									"traffic",
+									"Req/s est.",
+									COLUMN.rate,
+									undefined,
+									"Estimated from sampled traces",
+								)
+							: column("traffic", "Req/s", COLUMN.rate),
+						headLabel(
+							h,
+							[
+								h.span([h.Class("md:hidden")], ["4xx"]),
+								h.span([h.Class("hidden md:inline")], ["2xx / 4xx / 5xx"]),
+							],
+							cn("pr-0 text-right", COLUMN.mix),
+						),
+						column("errorRate", "5xx", COLUMN.err),
+						column("p50", "p50", COLUMN.p50),
+						column("p95", "p95", COLUMN.p95),
+						column("p99", "p99", COLUMN.p99),
+						headLabel(h, ["Body avg"], cn("pr-0 text-right", COLUMN.body)),
+						headLabel(h, [], COLUMN.chevron),
+					],
+					"border-b hover:bg-transparent",
 				),
 			]),
-		],
-	)
+			tableBody(
+				h,
+				groups.length === 0
+					? [
+							tableRow(
+								h,
+								[
+									h.td(
+										[
+											h.Attribute("colspan", String(COLUMN_COUNT)),
+											h.Class("py-8 text-center text-xs text-muted-foreground"),
+										],
+										["No endpoint matches this filter."],
+									),
+								],
+								"hover:bg-transparent",
+							),
+						]
+					: groups.flatMap((group) =>
+							groupRows(h, group, context, model.expandedEndpointGroups.includes(group.kind)),
+						),
+			),
+		]),
+	])
 }
 
 // STATES

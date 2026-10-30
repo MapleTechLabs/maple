@@ -48,7 +48,7 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 			size: "sm",
 			isDisabled: config.options.length === 0,
 			className: cn(
-				"h-[30px] gap-2 rounded-md px-2.5 font-mono text-xs",
+				"gap-2 font-mono text-xs",
 				isSet
 					? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary"
 					: "bg-card text-foreground",

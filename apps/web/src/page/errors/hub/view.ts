@@ -1,3 +1,4 @@
+import { pluralize } from "@maple/ui/lib/format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
@@ -23,7 +24,7 @@ const countReadout = (model: Model, shown: number): ReadonlyArray<string> | null
 	if (listStatusOf(model) !== "ready") return null
 	if (pagingOf(model) !== "end") return [`${shown}+ issues`]
 	// Split where the JSX interpolates, so the text runs match.
-	return [String(shown), " ", shown === 1 ? "issue" : "issues"]
+	return [String(shown), " ", pluralize(shown, "issue")]
 }
 
 /** Kept by reference across renders, so the memoized rows that read it stay cached. */

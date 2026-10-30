@@ -17,6 +17,7 @@ import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
 import { middleTruncate } from "../../ui/middle-truncate"
+import { statusDot } from "../../ui/status-dot"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { machineBadge } from "./badge"
 import {
@@ -335,13 +336,10 @@ const overlays = <M>(
 				h.span(
 					[h.Class("flex items-center gap-1.5")],
 					[
-						h.span(
-							[
-								h.Class("size-1.5 rounded-full"),
-								h.Style({ "background-color": HEALTH_COLOR[status] }),
-							],
-							[],
-						),
+						statusDot(h, {
+							tone: "custom",
+							attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
+						}),
 						HEALTH_LABEL[status],
 					],
 				),

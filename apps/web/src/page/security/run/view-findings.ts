@@ -15,6 +15,7 @@ import { FINDING_STATUS_LABEL, gateOf, isLive, locationOf } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
 import { countOf, openFindingOf } from "./derive"
 import { Message, type Model } from "./model"
+import { emptyMessage } from "../../../ui/empty"
 
 // What the run reported, first on the page: severity tabs over severity groups, each finding
 // opening in a side sheet.
@@ -68,16 +69,13 @@ const reportLinks = (h: H, run: SecurityAuditRunDetail): ReadonlyArray<Html> =>
 
 const emptyLine = (h: H, run: SecurityAuditRunDetail): Html => {
 	const waiting = countOf(run, "candidate")
-	return h.p(
-		[h.Class("px-4 py-6 text-sm text-muted-foreground")],
-		[
-			isLive(run)
-				? waiting > 0
-					? `Nothing verified yet. ${waiting} ${waiting === 1 ? "candidate is" : "candidates are"} waiting for a second model.`
-					: "Nothing reported yet. Findings appear here as they are verified."
-				: "This run reported no findings.",
-		],
-	)
+	return emptyMessage(h, {}, [
+		isLive(run)
+			? waiting > 0
+				? `Nothing verified yet. ${waiting} ${waiting === 1 ? "candidate is" : "candidates are"} waiting for a second model.`
+				: "Nothing reported yet. Findings appear here as they are verified."
+			: "This run reported no findings.",
+	])
 }
 
 const findingsList = (h: H, model: Model, findings: ReadonlyArray<SecurityAuditFinding>): Html => {

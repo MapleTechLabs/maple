@@ -7,6 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { detailRailField, detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
 import { icon, type IconName } from "../../../../ui/icon"
+import { inlineCode } from "../../../../ui/inline-code"
 import { serviceDot } from "../../../../ui/values"
 import type { Message } from "./model"
 
@@ -127,13 +128,12 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 									[h.Class("flex flex-wrap gap-1")],
 									labels.map((text) =>
 										h.span(
+											[h.Class("flex min-w-0 max-w-full"), h.Title(text)],
 											[
-												h.Class(
-													"max-w-full truncate rounded-sm bg-muted px-1.5 font-mono text-2xs/[18px]",
-												),
-												h.Title(text),
+												inlineCode(h, { className: "truncate text-2xs/[18px]" }, [
+													text,
+												]),
 											],
-											[text],
 										),
 									),
 								),

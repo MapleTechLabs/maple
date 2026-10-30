@@ -1,6 +1,8 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import type { VariableValues } from "@maple/query-engine"
+import { pluralize } from "@maple/ui/lib/format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
@@ -13,6 +15,7 @@ import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "..
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { input } from "../../../ui/input"
+import { relativeTime } from "../../kit/relative-time"
 import { dataStateOf } from "../kit/data-state"
 import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
@@ -21,7 +24,6 @@ import {
 	CATEGORY_LABELS,
 	compositionLabel,
 	READINESS_WINDOW_LABEL,
-	relativeAge,
 	setupHref,
 	type TemplateReadiness,
 	templateIcon,
@@ -177,7 +179,7 @@ const previewBody = (h: H, model: Model, timeZone: string, variables: VariableVa
 				? [
 						h.p(
 							[h.Class("text-muted-foreground text-xs")],
-							[`${hidden} more ${hidden === 1 ? "widget" : "widgets"} below the fold.`],
+							[`${hidden} more ${pluralize(hidden, "widget")} below the fold.`],
 						),
 					]
 				: []),
@@ -191,11 +193,12 @@ const requirementBlock = (
 	template: V2DashboardTemplate,
 	readiness: TemplateReadiness | undefined,
 	nowMs: number,
+	timeZone: string,
 ): ReadonlyArray<Html> => {
 	const requirement = template.requirement
 	if (requirement === null) return []
 	const isReady = readiness?.ready !== false
-	const age = relativeAge(readiness?.lastSeen ?? null, nowMs)
+	const lastSeen = readiness?.lastSeen ?? null
 	return [
 		h.div(
 			[h.Class("flex flex-col gap-2.5")],
@@ -269,10 +272,20 @@ const requirementBlock = (
 														[
 															String(readiness.metricCount),
 															" ",
-															readiness.metricCount === 1
-																? "metric"
-																: "metrics",
-															...(age === null ? [] : [` · last seen ${age}`]),
+															pluralize(readiness.metricCount, "metric"),
+															...(lastSeen === null ||
+															!Number.isFinite(toEpochMs(lastSeen))
+																? []
+																: [
+																		" · ",
+																		relativeTime(h, {
+																			value: lastSeen,
+																			nowMs,
+																			timeZone,
+																			prefix: "last seen",
+																			tooltip: "title",
+																		}),
+																	]),
 														],
 													),
 												]
@@ -511,7 +524,7 @@ export const detailPanel = (
 					),
 				],
 			),
-			...requirementBlock(h, template, readiness, model.nowMs ?? 0),
+			...requirementBlock(h, template, readiness, model.nowMs ?? 0, timeZone),
 			...parameterFields(h, model, template),
 			createRow(h, model, template, isReady),
 		],

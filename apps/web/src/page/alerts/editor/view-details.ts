@@ -66,10 +66,17 @@ const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 				),
 				h.OnBlur(Message.BlurredTagInput()),
 				...(form.tags.length === 0 ? [h.Placeholder("prod, payments, team-checkout…")] : []),
-				h.Class("min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-muted-foreground/70"),
+				h.Class(
+					"min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-muted-foreground/70",
+				),
 			]),
 			...(available.length > 0
-				? [h.datalist([h.Id(TAG_LIST_ID)], available.map((tag) => h.option([h.Value(tag)], [])))]
+				? [
+						h.datalist(
+							[h.Id(TAG_LIST_ID)],
+							available.map((tag) => h.option([h.Value(tag)], [])),
+						),
+					]
 				: []),
 		],
 	)
@@ -91,8 +98,8 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 								h,
 								{
 									variant: "ghost",
-									size: "sm",
-									className: "h-6 px-1.5 text-2xs",
+									size: "xs",
+									className: "px-1.5 text-2xs",
 									attributes: [h.OnClick(Message.ClickedSuggestName())],
 								},
 								["Suggest: ", suggestion ?? ""],
@@ -177,4 +184,5 @@ const viewOf = stableSlice((model: Model) =>
 )
 
 /** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
-export const detailsSection = (h: H, model: Model, form: RuleForm): Html => slot(details, [h, viewOf(model), form])
+export const detailsSection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(details, [h, viewOf(model), form])

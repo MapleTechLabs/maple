@@ -30,6 +30,8 @@ import * as QuickStartTeamView from "./quick-start-team-view"
 import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
 import { Message, type Model, MountDitherField } from "./quick-start"
 import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quick-start-state"
+import { eyebrow, eyebrowVariants } from "../../ui/eyebrow"
+import { statusDot } from "../../ui/status-dot"
 
 // `/quick-start`: each step's form on the left and, where it has one, a preview of what it sets up on
 // the right, over the dithered backdrop that spreads a little further every step.
@@ -293,14 +295,13 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 		],
 	)
 
-const STACK_LEGEND_CLASS = "text-2xs uppercase tracking-widest text-muted-foreground"
 const STACK_GRID_CLASS = "grid gap-2 sm:grid-cols-2 xl:grid-cols-3"
 
 const stackGroup = (h: H, legend: string, cards: ReadonlyArray<Html>): Html =>
 	h.fieldset(
 		[h.Class("flex min-w-0 flex-col gap-3")],
 		[
-			h.legend([h.Class(cn("mb-3", STACK_LEGEND_CLASS))], [legend]),
+			h.legend([h.Class(cn("mb-3", eyebrowVariants({ variant: "label" })))], [legend]),
 			h.div([h.Class(STACK_GRID_CLASS)], cards),
 		],
 	)
@@ -329,7 +330,7 @@ const languageGroup = (h: H, state: QuickStartState, query: string): Html => {
 			h.div(
 				[h.Class("flex items-center justify-between gap-4")],
 				[
-					h.span([h.AriaHidden(true), h.Class(STACK_LEGEND_CLASS)], ["Your code"]),
+					eyebrow(h, { variant: "label", attributes: [h.AriaHidden(true)] }, ["Your code"]),
 					searchInput(h, {
 						id: "stack-language-search",
 						value: query,
@@ -407,7 +408,7 @@ const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean
 						["What are you running?"],
 					),
 					h.p(
-						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
+						[h.Class("text-title leading-relaxed text-muted-foreground")],
 						["Pick everything that applies. We set up just those, and you can add more later."],
 					),
 				],
@@ -472,10 +473,7 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 			h.div(
 				[h.Class("flex flex-col gap-1")],
 				[
-					h.span(
-						[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
-						[`What ${orgName} gets`],
-					),
+					eyebrow(h, { variant: "label" }, [`What ${orgName} gets`]),
 					h.span(
 						[h.Class("font-display text-xl font-semibold")],
 						[
@@ -584,7 +582,7 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 						[h.Class("flex items-center gap-3")],
 						[
 							h.span(
-								[h.Class("flex items-center gap-1.5 text-sm text-success")],
+								[h.Class("flex items-center gap-1.5 text-sm text-severity-info")],
 								[icon(h, "CircleCheckIcon", { size: 14 }), "Connected"],
 							),
 							// A push source made after its sheet was dismissed: its one-time token is still there.
@@ -636,7 +634,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 						["Connect your stack"],
 					),
 					h.p(
-						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
+						[h.Class("text-title leading-relaxed text-muted-foreground")],
 						[
 							"Connect each provider without leaving setup. Your code sends its traces, logs and metrics with OpenTelemetry: one prompt to your coding agent, or a few lines by hand.",
 						],
@@ -649,10 +647,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 						h.section(
 							[h.Class("flex flex-col gap-3")],
 							[
-								h.h2(
-									[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
-									["Providers"],
-								),
+								eyebrow(h, { variant: "label", as: "h2" }, ["Providers"]),
 								h.ul(
 									[
 										h.Class(
@@ -670,14 +665,9 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					h.div(
 						[h.Class("flex items-center justify-between gap-3")],
 						[
-							h.h2(
-								[
-									h.Class(
-										"flex items-center gap-2 text-2xs uppercase tracking-widest text-muted-foreground",
-									),
-								],
-								["Your code, with OpenTelemetry"],
-							),
+							eyebrow(h, { variant: "label", as: "h2", className: "flex items-center gap-2" }, [
+								"Your code, with OpenTelemetry",
+							]),
 							// The languages picked, or every SDK there are snippets for when none was.
 							h.span(
 								[h.AriaHidden(true), h.Class("flex items-center gap-1.5")],
@@ -782,10 +772,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 					h.div(
 						[h.Class("flex flex-col gap-1")],
 						[
-							h.span(
-								[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
-								[`Arriving in ${orgName}`],
-							),
+							eyebrow(h, { variant: "label" }, [`Arriving in ${orgName}`]),
 							h.span(
 								[h.Class("font-display text-xl font-semibold")],
 								[
@@ -802,10 +789,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 								"flex items-center gap-1.5 rounded-sm border border-border px-2 py-0.5 text-2xs text-muted-foreground",
 							),
 						],
-						[
-							h.span([h.AriaHidden(true), h.Class("size-1.5 rounded-full bg-success")], []),
-							"Listening",
-						],
+						[statusDot(h, { tone: "ok" }), "Listening"],
 					),
 				],
 			),
@@ -827,7 +811,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 											cn(
 												"text-xs",
 												row.presence.status === "present"
-													? "text-success"
+													? "text-severity-info"
 													: "text-muted-foreground",
 											),
 										),
@@ -858,7 +842,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 											cn(
 												"text-xs",
 												model.connect.connected[platform] === true
-													? "text-success"
+													? "text-severity-info"
 													: "text-muted-foreground",
 											),
 										),
@@ -957,7 +941,14 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 						[h.Class("flex flex-col items-center gap-3 text-center")],
 						[
 							h.p(
-								[h.Class(cn("text-sm", isLive ? "text-success" : "text-muted-foreground"))],
+								[
+									h.Class(
+										cn(
+											"text-sm",
+											isLive ? "text-severity-info" : "text-muted-foreground",
+										),
+									),
+								],
 								[isLive ? "Data is flowing" : "All set up"],
 							),
 							h.h1(
@@ -974,7 +965,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 										chip(h, [
 											icon(h, "CircleCheckIcon", {
 												size: 12,
-												className: "text-success",
+												className: "text-severity-info",
 											}),
 											row.label,
 										]),
@@ -999,10 +990,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 					h.section(
 						[h.Class("flex flex-col gap-3")],
 						[
-							h.h2(
-								[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
-								["Start with your own data"],
-							),
+							eyebrow(h, { variant: "label", as: "h2" }, ["Start with your own data"]),
 							h.ul(
 								[
 									h.Class(
@@ -1017,14 +1005,11 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 											h.div(
 												[h.Class("flex flex-col gap-1")],
 												[
-													h.span(
-														[h.Class("text-[15px] font-medium")],
-														[card.title],
-													),
+													h.span([h.Class("text-title font-medium")], [card.title]),
 													h.span(
 														[
 															h.Class(
-																"text-[13px] leading-relaxed text-muted-foreground",
+																"text-ui leading-relaxed text-muted-foreground",
 															),
 														],
 														[card.finding],
@@ -1035,7 +1020,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 												[
 													h.Href(card.href),
 													h.Class(
-														"mt-auto flex items-center gap-1.5 text-[13px] text-primary hover:underline",
+														"mt-auto flex items-center gap-1.5 text-ui text-primary hover:underline",
 													),
 												],
 												[card.action, icon(h, "ArrowRightIcon", { size: 12 })],
@@ -1052,14 +1037,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 								h.section(
 									[h.Class("flex flex-col gap-3")],
 									[
-										h.h2(
-											[
-												h.Class(
-													"text-2xs uppercase tracking-widest text-muted-foreground",
-												),
-											],
-											["Still waiting on"],
-										),
+										eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
 										h.ul(
 											[
 												h.Class(

@@ -3,10 +3,10 @@ import {
 	CPU_HEAVY_P99_MS,
 	MIN_RATED_REQUESTS,
 	SLOW_P99_MS,
-	type WorkerHealth,
 	workerHealth,
 	type WorkerListRow,
 	workerRowKey,
+	WORKER_HEALTH_TONE,
 } from "../../../../components/infra/cloudflare/list-model"
 import { ERROR_RATE_WARN, errorRateClass } from "@maple/ui/lib/error-rate"
 import {
@@ -25,6 +25,7 @@ import { resolveColor, type ThemeColors } from "../../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
 import { segmentedBar } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
+import { statusDot } from "../../../../ui/status-dot"
 import {
 	columnHead,
 	dataTable,
@@ -342,12 +343,6 @@ export const zoneTable = (
 
 // WORKERS
 
-const HEALTH_DOT = {
-	erroring: "bg-severity-error",
-	slow: "bg-severity-warn",
-	ok: "bg-severity-info",
-} as const satisfies Record<WorkerHealth, string>
-
 const workerMeta = (h: H, row: WorkerListRow) => [
 	row.nameInOtherAccounts ? "name shared with another account" : "",
 	row.errors > 0 ? `${formatNumber(row.errors)} of ${formatNumber(row.requests)} failed` : "",
@@ -387,7 +382,7 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 			),
 		],
 		[
-			h.span([h.AriaHidden(true), h.Class(cn("size-2 shrink-0 rounded-full", HEALTH_DOT[health]))]),
+			statusDot(h, { tone: WORKER_HEALTH_TONE[health], size: "lg" }),
 			h.div(
 				[h.Class("w-0 min-w-[220px] flex-1 space-y-0.5")],
 				[

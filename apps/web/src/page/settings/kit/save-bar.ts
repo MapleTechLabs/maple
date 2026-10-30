@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
+import { statusDot } from "../../../ui/status-dot"
 
 // `SettingsSaveBar`: pinned while a tab has unsaved edits. TODO(settings): its `UnsavedChangesGuard`
 // (confirm before navigating away, and the browser's beforeunload prompt) needs a root-level navigation
@@ -35,10 +36,7 @@ export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): Reado
 				h.div(
 					[h.Class("flex min-w-0 items-center gap-2 text-sm")],
 					[
-						h.span(
-							[h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-full bg-primary")],
-							[],
-						),
+						statusDot(h, { tone: "live" }),
 						h.span([h.Class("shrink-0 text-foreground")], ["Unsaved changes"]),
 						...(options.context === undefined
 							? []

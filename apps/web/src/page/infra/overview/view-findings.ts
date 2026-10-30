@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
+import { emptyMessage } from "../../../ui/empty"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { sectionHeading } from "../../kit/section-heading"
@@ -179,14 +180,9 @@ export const needsAttention = <M>(
 						})
 					: rows.length > 0
 						? findingsList(h, rows)
-						: h.p(
-								[
-									h.Class(
-										"rounded-md border px-4 py-6 text-center text-sm text-muted-foreground",
-									),
-								],
-								["Nothing is over its thresholds in this window."],
-							),
+						: emptyMessage(h, { dashed: true }, [
+								"Nothing is over its thresholds in this window.",
+							]),
 		],
 	)
 }

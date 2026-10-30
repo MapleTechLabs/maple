@@ -1,9 +1,10 @@
-import { getSeverityColor, SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { copyButton } from "../../../ui/copy-button"
 import { badge } from "../../../ui/display"
+import { severityBadge } from "../../../ui/logs/severity-badge"
 import { icon } from "../../../ui/icon"
 import { logMessageOf, logMessageView } from "../../../ui/logs/log-message"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
@@ -74,34 +75,16 @@ export const logTextButton = (
 		children,
 	)
 
-const severityBadge = (h: H, log: LogRecord): Html => {
-	const label = severityLabel(log.severityText, log.severityNumber)
-	const color = getSeverityColor(label)
-	return h.span(
+const severityTrigger = (h: H, log: LogRecord): Html =>
+	h.span(
 		[
 			h.Class("cursor-help inline-flex"),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
 			h.Id("log-detail-severity-trigger"),
 		],
-		[
-			badge(
-				h,
-				{
-					variant: "secondary",
-					className: "font-mono text-3xs uppercase",
-					attributes: [
-						h.Style({
-							color,
-							"background-color": `color-mix(in oklch, ${color} 10%, transparent)`,
-						}),
-					],
-				},
-				[label],
-			),
-		],
+		[severityBadge(h, { severity: log.severityText, severityNumber: log.severityNumber })],
 	)
-}
 
 export const heroHeader = (
 	h: H,
@@ -118,7 +101,7 @@ export const heroHeader = (
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					severityBadge(h, log),
+					severityTrigger(h, log),
 					badge(h, { variant: "outline", size: "xs", mono: true }, [
 						serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
 						copyable(h, model, "hero-service", log.serviceName, [log.serviceName]),

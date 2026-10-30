@@ -7,7 +7,7 @@ import {
 	totalReferrals,
 } from "../../components/analytics/ai/ai-traffic-model"
 import { DEFAULT_TRAFFIC, hasActiveFilters } from "../../components/analytics/filters"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -66,7 +66,11 @@ export const crawledPagesCard = (model: Model, crawlers: AiCrawlers): BreakdownC
 		dimensions: [
 			{
 				tab: "Pages read by AI crawlers",
-				rows: crawlers.pages.map((page) => ({ name: page.path, count: page.requests, secondary: page.host })),
+				rows: crawlers.pages.map((page) => ({
+					name: page.path,
+					count: page.requests,
+					secondary: page.host,
+				})),
 				filterKey: "pagePath",
 				noun: "page",
 				nounPlural: "pages",
@@ -88,7 +92,9 @@ const noAiTraffic = (h: H): Html =>
 				"See visits sent by ChatGPT, Claude and other assistants, and which pages AI crawlers read. Visits come from the Maple browser SDK, crawler fetches from your server’s traces.",
 			]),
 		]),
-		emptyContent(h, [emptyActions(h, [docsLink(h, "browserSdk", "Setup guide"), docsLink(h, "webAnalytics")])]),
+		emptyContent(h, [
+			emptyActions(h, [docsLink(h, "browserSdk", "Setup guide"), docsLink(h, "webAnalytics")]),
+		]),
 	])
 
 const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
@@ -105,7 +111,9 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 	const bucketSeconds = sparkBucketSeconds(window.startTime, window.endTime)
 	const referralPoints = dataOf(model.aiReferrals)
 	const referrals =
-		referralPoints === undefined ? undefined : summarizeReferrals(referralPoints, { ...window, bucketSeconds })
+		referralPoints === undefined
+			? undefined
+			: summarizeReferrals(referralPoints, { ...window, bucketSeconds })
 	const previousPoints = dataOf(model.previousAiReferrals)
 	const previousTotals = previousPoints === undefined ? undefined : totalReferrals(previousPoints)
 	const crawlers = dataOf(model.aiCrawlers)
@@ -200,11 +208,19 @@ const rankingPanel = (h: H, ranks: ReturnType<typeof rankReferrals>): Html => {
 			])
 		: aiPanel(h, {
 				...options,
-				expand: { id: "ai-ranking", count: plural(ranks.length, "assistant", "assistants"), table: rankingTable(h, ranks, CARD_SURFACE) },
+				expand: {
+					id: "ai-ranking",
+					count: plural(ranks.length, "assistant", "assistants"),
+					table: rankingTable(h, ranks, CARD_SURFACE),
+				},
 			})
 }
 
-const crawlersPanel = (h: H, data: AiCrawlers, clock: Readonly<{ nowMs: number; timeZone: string }>): Html => {
+const crawlersPanel = (
+	h: H,
+	data: AiCrawlers,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): Html => {
 	const requests = data.crawlers.reduce((sum, row) => sum + row.requests, 0)
 	const failed = data.crawlers.reduce((sum, row) => sum + row.failedRequests, 0)
 	const options = {
@@ -217,7 +233,11 @@ const crawlersPanel = (h: H, data: AiCrawlers, clock: Readonly<{ nowMs: number; 
 		aside:
 			failed > 0
 				? h.span(
-						[h.Title("User agents are easy to spoof: scanners borrow crawler names and mostly get 404s.")],
+						[
+							h.Title(
+								"User agents are easy to spoof: scanners borrow crawler names and mostly get 404s.",
+							),
+						],
 						[formatPercent(failed / Math.max(requests, 1)), " of fetches failed"],
 					)
 				: undefined,
@@ -275,8 +295,10 @@ const aiKpis = (
 		(total, summary) => summary.spark.map((value, i) => value + (total[i] ?? 0)),
 		[],
 	)
-	const previousVisits = previousTotals === undefined ? undefined : [...previousTotals.values()].reduce((a, b) => a + b, 0)
-	const change = previousVisits !== undefined && previousVisits > 0 ? (visits - previousVisits) / previousVisits : null
+	const previousVisits =
+		previousTotals === undefined ? undefined : [...previousTotals.values()].reduce((a, b) => a + b, 0)
+	const change =
+		previousVisits !== undefined && previousVisits > 0 ? (visits - previousVisits) / previousVisits : null
 	const sessions = dataOf(model.summary)?.sessions
 	const fetches = crawlers?.crawlers.reduce((sum, row) => sum + row.requests, 0) ?? 0
 	const failed = crawlers?.crawlers.reduce((sum, row) => sum + row.failedRequests, 0) ?? 0
@@ -291,7 +313,7 @@ const aiKpis = (
 				referrals === undefined
 					? undefined
 					: products > 0
-						? `from ${products} ${products === 1 ? "assistant" : "assistants"}`
+						? `from ${products} ${pluralize(products, "assistant")}`
 						: "No AI referrals yet",
 		}),
 		statRailItem(h, {
@@ -310,7 +332,12 @@ const aiKpis = (
 			eyebrow: "Crawler fetches",
 			value: crawlers === undefined ? EMPTY_VALUE : formatNumber(fetches),
 			tone: crawlers !== undefined && fetches > 0 && failed / fetches > 0.5 ? "warn" : "neutral",
-			subline: crawlers === undefined ? undefined : failed > 0 ? `${formatNumber(failed)} got an error` : "All served",
+			subline:
+				crawlers === undefined
+					? undefined
+					: failed > 0
+						? `${formatNumber(failed)} got an error`
+						: "All served",
 			delay: 180,
 		}),
 	])

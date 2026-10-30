@@ -115,7 +115,7 @@ export const teamStep = (h: H, team: Team): Html => {
 						["Bring in your team and tools"],
 					),
 					h.p(
-						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
+						[h.Class("text-title leading-relaxed text-muted-foreground")],
 						["Maple shows up where you already work. Every one of these is optional."],
 					),
 				],
@@ -220,10 +220,7 @@ export const teamPreview = (h: H): Html =>
 			h.div(
 				[h.Class("mb-1 flex flex-col gap-1")],
 				[
-					h.span(
-						[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
-						["Where Maple shows up"],
-					),
+					eyebrow(h, { variant: "label" }, ["Where Maple shows up"]),
 					h.span([h.Class("font-display text-xl font-semibold")], ["Right where the work happens"]),
 				],
 			),
@@ -235,7 +232,7 @@ export const teamPreview = (h: H): Html =>
 							[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
 							[icon(h, surface.icon, { size: 14 }), surface.where],
 						),
-						h.span([h.Class("text-[13px] font-medium")], [surface.title]),
+						h.span([h.Class("text-ui font-medium")], [surface.title]),
 						h.span([h.Class("text-xs leading-snug text-muted-foreground")], [surface.body]),
 					],
 				),

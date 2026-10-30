@@ -13,6 +13,7 @@ import type { GcpTraceGap } from "../../../../components/infra/gcp/workload-sign
 import type { ErrorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,6 +25,7 @@ import { chartLoading } from "../../../../ui/chart-state"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
+import { statusDot } from "../../../../ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { CHART_HEIGHT } from "../../kit/chart-card"
@@ -57,11 +59,10 @@ const SERVICE_KIND = {
 	loadBalancing: "Load balancer",
 } as const satisfies Record<GcpInfraServiceId, string>
 
-const HEALTH_DOT = {
-	crit: "bg-severity-error",
-	warn: "bg-severity-warn",
-	neutral: "bg-severity-info",
-} as const satisfies Record<ErrorRateLevel, string>
+const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } as const satisfies Record<
+	ErrorRateLevel,
+	Tone
+>
 
 const BARE_IDENTITY = ["Region", "Zone", "Location"]
 const RAIL_IDENTITY = ["Project"]
@@ -109,15 +110,11 @@ const header = (h: H, model: Model, data: PageData) => {
 						...(data.health === null
 							? []
 							: [
-									h.span([
-										h.AriaHidden(true),
-										h.Class(
-											cn(
-												"absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background",
-												HEALTH_DOT[data.health],
-											),
-										),
-									]),
+									statusDot(h, {
+										tone: HEALTH_TONE[data.health],
+										className:
+											"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
+									}),
 								]),
 					],
 				),

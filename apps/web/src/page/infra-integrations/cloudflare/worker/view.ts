@@ -1,4 +1,4 @@
-import { type WorkerHealth, workerHealth } from "../../../../components/infra/cloudflare/list-model"
+import { WORKER_HEALTH_TONE, workerHealth } from "../../../../components/infra/cloudflare/list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -17,6 +17,7 @@ import {
 	formatNumber,
 	formatPercent,
 } from "@maple/ui/lib/format"
+import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -30,6 +31,7 @@ import { errorState } from "../../../../ui/error-state"
 import { segmentedBar } from "../../../../ui/meter"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { skeleton } from "../../../../ui/skeleton"
+import { statusDot } from "../../../../ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
@@ -50,12 +52,6 @@ type H = HtmlBuilder<Message>
 /** The failure and Durable Object strips name `--severity-fatal` and `--chart-2` too. */
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--severity-fatal", "--chart-2"]
 
-const HEALTH_DOT = {
-	erroring: "bg-severity-error",
-	slow: "bg-severity-warn",
-	ok: "bg-severity-info",
-} as const satisfies Record<WorkerHealth, string>
-
 /** `CloudflareWorkerHeader`. */
 const header = (h: H, model: Model, data: PageData) => {
 	const { row, accountName, traced, currentVersion } = data
@@ -66,12 +62,7 @@ const header = (h: H, model: Model, data: PageData) => {
 			[
 				...(row === null
 					? []
-					: [
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-2 shrink-0 rounded-full", HEALTH_DOT[workerHealth(row)])),
-							]),
-						]),
+					: [statusDot(h, { tone: WORKER_HEALTH_TONE[workerHealth(row)], size: "lg" })]),
 				model.scriptName,
 			],
 		),
@@ -84,7 +75,7 @@ const header = (h: H, model: Model, data: PageData) => {
 						[h.Href(hrefOf(AppRoute.Service({ serviceName: tracedService, search: {} })))],
 						[heroChip(h, ["traced as ", tracedService])],
 					),
-			...(currentVersion === null ? [] : [heroChip(h, ["version ", currentVersion.slice(0, 7)])]),
+			...(currentVersion === null ? [] : [heroChip(h, ["version ", shortId(currentVersion, "sha")])]),
 		],
 	})
 }
@@ -406,7 +397,7 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 							deploys.map((deploy) =>
 								detailRailMetaRow(h, {
 									icon: "CodeIcon",
-									label: deploy.commitSha.slice(0, 7),
+									label: shortId(deploy.commitSha, "sha"),
 									value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
 								}),
 							),

@@ -1,7 +1,6 @@
 import type { AiTriageSettingsDocument, OpenRouterKeyDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import {
 	PASSES_PER_DAY_LIMITS,
@@ -11,7 +10,7 @@ import {
 import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
@@ -164,7 +163,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 							isLoading: model.isSavingKey,
 							isDisabled: model.keyDraft.value.trim() === "",
 						},
-						[model.isSavingKey ? "Checking…" : "Save key"],
+						["Save key"],
 					),
 					...(isReplacing
 						? [
@@ -656,12 +655,9 @@ const escalationCard = (h: H): Html =>
 					),
 				],
 			),
-			h.a(
-				[
-					h.Href("/settings?tab=automation"),
-					h.Class(cn(buttonVariants({ variant: "outline", size: "sm", className: "shrink-0" }))),
-					h.DataAttribute("slot", "button"),
-				],
+			linkButton(
+				h,
+				{ variant: "outline", size: "sm", className: "shrink-0", href: "/settings?tab=automation" },
 				["Open automation"],
 			),
 		],

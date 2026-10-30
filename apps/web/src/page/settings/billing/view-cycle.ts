@@ -1,5 +1,6 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { DailySpendResponse } from "@maple/domain/http"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import type { TrialStatus } from "../../../lib/billing/plan-gating"
@@ -381,7 +382,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 					valueClassName:
 						(spend.baseCents > 0 && spend.projectedCents > spend.baseCents) ||
 						(maximum !== null && spend.projectedCents > maximum)
-							? "text-warning"
+							? TONE_TEXT.warn
 							: undefined,
 					note: ["At this cycle's daily rate"],
 				}),

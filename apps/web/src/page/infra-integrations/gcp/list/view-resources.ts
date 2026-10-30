@@ -17,6 +17,7 @@ import {
 	skeletonRows,
 	ROW_LINK_CLASS,
 } from "../../../infra/kit/data-table"
+import { listToolbar, toolbarCount } from "../../../kit/list-toolbar"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import type { Resources } from "../data"
 import { gcpMessage } from "../gcp-message"
@@ -184,19 +185,21 @@ const resourcesList = (
 					toMessage: (message) => Message.GotResourceProjectSelectMessage({ message }),
 				},
 				(projectParts) =>
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-between gap-3")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-center gap-2")],
-								[...typeParts, ...projectParts],
-							),
-							h.span(
-								[h.Class("text-xs text-muted-foreground tabular-nums")],
-								[summary, " · ", countLabel(projectCount, "project"), " discovered"],
-							),
+					listToolbar(h, {
+						className: "pb-0",
+						leading: h.div(
+							[h.Class("flex flex-wrap items-center gap-2")],
+							[...typeParts, ...projectParts],
+						),
+						trailing: [
+							toolbarCount(h, [
+								summary,
+								" · ",
+								countLabel(projectCount, "project"),
+								" discovered",
+							]),
 						],
-					),
+					}),
 			),
 	)
 	return [

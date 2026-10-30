@@ -13,6 +13,7 @@ import { orderedSearch } from "../../../route/tanstack-search"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
+import { linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import { skeletonList } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
@@ -42,12 +43,14 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 			),
 			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
 			h.Href(
-				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch([
-					["t", sessionLinkWindow(session).t],
-					["end", sessionLinkWindow(session).end],
-					["tool", tool],
-					["view", "trace"],
-				])}`,
+				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch(
+					[
+						["t", sessionLinkWindow(session).t],
+						["end", sessionLinkWindow(session).end],
+						["tool", tool],
+						["view", "trace"],
+					],
+				)}`,
 			),
 		],
 		[
@@ -154,13 +157,14 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 							),
 						],
 					),
-					h.a(
-						[
-							h.Class(
-								"inline-flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50",
-							),
-							h.Href(hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool] } }))),
-						],
+					linkButton(
+						h,
+						{
+							variant: "outline",
+							size: "xs",
+							className: "font-mono text-2xs sm:text-2xs",
+							href: hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool] } })),
+						},
 						[
 							"Open in Sessions",
 							icon(h, "ExternalLinkIcon", {

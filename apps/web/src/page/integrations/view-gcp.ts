@@ -16,6 +16,7 @@ import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
 import { sectionHeading } from "../kit/section-heading"
 import { HEALTH_TONE } from "./derive"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { gcpConnectors } from "./update-gcp"
@@ -77,17 +78,10 @@ const FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } })
 
 /** A source page whose connection was removed: the way back is the connect flow. */
 const gcpReconnect = (h: H, text: string): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
-			),
-		],
-		[
-			h.span([h.Class("text-muted-foreground")], [text]),
-			linkButton(h, { size: "sm", href: FLOW_HREF }, ["Reconnect"]),
-		],
-	)
+	integrationNotice(h, {
+		message: text,
+		action: linkButton(h, { size: "sm", href: FLOW_HREF }, ["Reconnect"]),
+	})
 
 const byStatus = (
 	h: H,

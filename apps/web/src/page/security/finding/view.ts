@@ -203,10 +203,11 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 					{
 						type: "submit",
 						variant: "outline",
+						isLoading: model.isSaving,
 						isDisabled: !isChange || model.isSaving,
 						className: "w-full",
 					},
-					[model.isSaving ? "Updating…" : "Update status"],
+					["Update status"],
 				),
 			],
 		),

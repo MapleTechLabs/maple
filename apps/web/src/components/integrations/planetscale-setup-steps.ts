@@ -10,6 +10,7 @@
 // (same shape as branch-selection.ts).
 
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
+import { countLabel } from "@maple/ui/lib/format"
 
 /** Where branch metrics come from. Legacy wire values ("oauth", "missing") mean the API poller. */
 export type MetricsAuth = "api" | "service_token"
@@ -107,8 +108,6 @@ export interface PlanetScaleSetup {
 /** What the inventory found, when it has loaded. */
 export type InventoryCounts = Readonly<{ databases: number; branches: number }>
 
-const plural = (count: number, noun: string, nouns: string) => `${count} ${count === 1 ? noun : nouns}`
-
 /**
  * Derive Go live's checks from the status the page already fetches.
  * Everything here is a function of `status` and the inventory counts: no extra requests, no local state.
@@ -169,7 +168,7 @@ export function derivePlanetScaleSetup(
 						"Resources found",
 						inventory === null
 							? "Databases and branches listed"
-							: `${plural(inventory.databases, "database", "databases")}, ${plural(inventory.branches, "branch", "branches")}`,
+							: `${countLabel(inventory.databases, "database")}, ${countLabel(inventory.branches, "branch", "branches")}`,
 					)
 
 	const metricsTitle = viaApi ? "First poll, branch metrics" : "First scrape, branch metrics"
@@ -219,7 +218,7 @@ export function derivePlanetScaleSetup(
 								"webhooks",
 								"done",
 								"Webhooks registered",
-								plural(webhooks.databases, "database", "databases"),
+								countLabel(webhooks.databases, "database"),
 							)
 						: webhooks.state === "pending"
 							? check(

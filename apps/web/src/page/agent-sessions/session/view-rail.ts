@@ -1,5 +1,5 @@
 import { formatCost, type SessionSummary } from "@maple/agent-sessions"
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -124,7 +124,7 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 												" ",
 												String(model.llmCalls),
 												" ",
-												model.llmCalls === 1 ? "call" : "calls",
+												pluralize(model.llmCalls, "call"),
 											],
 										),
 									],

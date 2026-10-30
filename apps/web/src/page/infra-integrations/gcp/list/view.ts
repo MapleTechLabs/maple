@@ -25,7 +25,7 @@ import {
 } from "../../../../components/infra/gcp/tabs"
 import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -36,6 +36,7 @@ import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import type * as Menu from "../../../../ui/menu"
 import { skeleton } from "../../../../ui/skeleton"
+import { statusDot } from "../../../../ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
@@ -249,15 +250,7 @@ const healthText = (health: GcpProjectHealth | undefined) =>
 
 // A project with no connector health still gets a dot, neutral, so every name lines up.
 const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<Html> => [
-	h.span([
-		h.AriaHidden(true),
-		h.Class(
-			cn(
-				"size-1.5 shrink-0 rounded-full",
-				health === undefined ? "bg-muted-foreground/50" : TONE_FILL[health.tone],
-			),
-		),
-	]),
+	statusDot(h, { tone: health?.tone ?? "neutral" }),
 ]
 
 /** What a project's share counts, matching `gcpProjectShares`. */

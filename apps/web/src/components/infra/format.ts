@@ -10,7 +10,7 @@ import { type UtilizationLevel, utilizationLevel } from "@maple/ui/lib/utilizati
  *
  * `ended` is deliberately not "down": a series that stops mid-window means the
  * resource stopped reporting, and for a pod on an autoscaled fleet that is
- * almost always a normal termination — scale-in, a rollout, a replaced Fargate
+ * almost always a normal termination: scale-in, a rollout, a replaced Fargate
  * task. Calling that an error painted the expected case red. A real down state
  * needs an expectation signal (`k8s.pod.phase`, or a workload's available vs
  * desired replicas), and belongs beside these rather than instead of them.
@@ -50,8 +50,9 @@ export const formatUtilizationPercent = (fraction: number): string => {
 	return rounded >= 10 ? `${Math.round(pct)}%` : `${rounded}%`
 }
 
-/** CPU usage in cores, two decimals. */
-export const formatCores = (cores: number) => (Number.isFinite(cores) ? cores.toFixed(2) : EMPTY_VALUE)
+/** CPU in cores without trailing zeros: 0.004, 0.42, 1.5, 12.35. */
+export const formatCores = (cores: number): string =>
+	Number.isFinite(cores) ? String(Number(cores.toFixed(cores < 1 ? 3 : 2))) : EMPTY_VALUE
 
 /**
  * A node's usage / allocatable fraction, or NaN when allocatable was not collected

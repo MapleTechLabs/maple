@@ -219,7 +219,7 @@ const mutedError = <M>(
 							{
 								variant: "outline",
 								size: "xs",
-								className: "mt-1 h-6 gap-1 text-3xs",
+								className: "mt-1 gap-1 text-3xs",
 								attributes: [h.OnClick(narrowRange)],
 							},
 							[icon(h, "ClockIcon"), NARROW_RANGE_LABEL],
@@ -233,7 +233,7 @@ const mutedError = <M>(
 							{
 								variant: "outline",
 								size: "xs",
-								className: "mt-1 h-6 gap-1 text-3xs",
+								className: "mt-1 gap-1 text-3xs",
 								attributes: [h.OnClick(configure)],
 							},
 							[icon(h, "PencilIcon"), "Edit"],

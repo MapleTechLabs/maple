@@ -15,6 +15,7 @@ import { relativeTime } from "../kit/relative-time"
 import { healthPill, isReadPending, lifecycleOf, projectHealth } from "../infra-integrations/supabase/health"
 import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { SUPABASE_BRAND, SUPABASE_NOT_CONFIGURED } from "../infra-integrations/supabase/connect"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -357,28 +358,16 @@ export const supabaseCard = (h: H, model: Model, timeZone: string): Html =>
 
 /** A source page whose organization was disconnected: the way back is the connect flow. */
 const supabaseReconnect = (h: H, isConfigured: boolean): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
-			),
-		],
-		[
-			h.span(
-				[h.Class("text-muted-foreground")],
-				[isConfigured ? "Supabase is not connected." : SUPABASE_NOT_CONFIGURED],
-			),
-			...(isConfigured
-				? [
-						linkButton(
-							h,
-							{
-								size: "sm",
-								href: hrefOf(AppRoute.SourcesNew({ search: { integration: "supabase" } })),
-							},
-							["Reconnect"],
-						),
-					]
-				: []),
-		],
-	)
+	integrationNotice(h, {
+		message: isConfigured ? "Supabase is not connected." : SUPABASE_NOT_CONFIGURED,
+		action: isConfigured
+			? linkButton(
+					h,
+					{
+						size: "sm",
+						href: hrefOf(AppRoute.SourcesNew({ search: { integration: "supabase" } })),
+					},
+					["Reconnect"],
+				)
+			: undefined,
+	})

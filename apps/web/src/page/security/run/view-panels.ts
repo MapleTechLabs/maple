@@ -22,6 +22,7 @@ import {
 import { type EventFilter, eventLineOf, unitContext, unitName } from "../kit/outcome"
 import { EVENTS_PAGE } from "./command"
 import { Message, type Model, type UnitFilter } from "./model"
+import { emptyMessage } from "../../../ui/empty"
 
 // The run's coverage ledger, its gaps and the event log.
 
@@ -108,7 +109,7 @@ const unitsBody = (
 		onData: (response) => {
 			const shown = rows(response.units)
 			return shown.length === 0
-				? h.p([h.Class("px-4 py-6 text-sm text-muted-foreground")], ["No units in this status."])
+				? emptyMessage(h, {}, ["No units in this status."])
 				: table(h, { variant: "bare", ariaLabel: "Coverage units" }, [
 						tableHeader(h, [
 							tableRow(h, [
@@ -302,16 +303,13 @@ export const eventsPanel = (
 					[
 						...(events.length === 0 ? [] : [eventChips(h, model, events)]),
 						shown.length === 0
-							? h.p(
-									[h.Class("px-4 py-6 text-sm text-muted-foreground")],
-									[
-										events.length === 0
-											? "No events yet."
-											: model.eventFilter === "problems"
-												? "No problems in the events read so far."
-												: "No events about leads read so far.",
-									],
-								)
+							? emptyMessage(h, {}, [
+									events.length === 0
+										? "No events yet."
+										: model.eventFilter === "problems"
+											? "No problems in the events read so far."
+											: "No events about leads read so far.",
+								])
 							: h.ol(
 									[h.Class("divide-y")],
 									shown.map((event) => eventRow(h, event, timeZone)),

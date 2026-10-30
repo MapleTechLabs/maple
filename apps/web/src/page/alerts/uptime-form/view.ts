@@ -1,3 +1,4 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -142,25 +143,28 @@ const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 			[h.Class("flex items-baseline gap-2")],
 			[
 				h.span(
-					[h.Class(cn("font-mono text-2xl", result.ok ? "text-success" : "text-destructive"))],
+					[h.Class(cn("font-mono text-2xl font-semibold", TONE_TEXT[result.ok ? "ok" : "crit"]))],
 					[result.status_code === null ? "No response" : String(result.status_code)],
 				),
 				h.span([h.Class("font-mono text-xs text-muted-foreground")], [formatMs(result.duration_ms)]),
 			],
 		),
-		...(result.error === null ? [] : [h.p([h.Class("text-sm text-destructive")], [result.error])]),
+		...(result.error === null ? [] : [h.p([h.Class(cn("text-sm", TONE_TEXT.crit))], [result.error])]),
 		h.ul(
 			[h.Class("flex flex-col gap-1.5 text-sm")],
 			result.ok
 				? model.form.assertions.map((row) =>
 						h.li(
 							[h.Key(String(row.id)), h.Class("flex items-center gap-2")],
-							[icon(h, "CheckIcon", { className: "text-success" }), describeAssertion(row)],
+							[
+								icon(h, "CheckIcon", { className: "text-severity-info" }),
+								describeAssertion(row),
+							],
 						),
 					)
 				: [
 						h.li(
-							[h.Class("flex items-center gap-2 text-destructive")],
+							[h.Class(cn("flex items-center gap-2", TONE_TEXT.crit))],
 							[icon(h, "XmarkIcon"), result.failed_assertion ?? "The check did not pass."],
 						),
 					],

@@ -15,6 +15,7 @@ import { statusDot } from "../../ui/status-dot"
 import { switchControl } from "../../ui/switch"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { GITHUB_ACCENT } from "./catalog"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { ciTracesShown } from "./update-github"
@@ -212,21 +213,14 @@ const loadingState = (h: H): Html =>
 
 /** A source page whose installation was removed: the way back is the connect flow. */
 const githubReconnect = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
-			),
-		],
-		[
-			h.span([h.Class("text-muted-foreground")], ["GitHub is not connected."]),
-			linkButton(
-				h,
-				{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })) },
-				["Reconnect"],
-			),
-		],
-	)
+	integrationNotice(h, {
+		message: "GitHub is not connected.",
+		action: linkButton(
+			h,
+			{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })) },
+			["Reconnect"],
+		),
+	})
 
 export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
 	const suspended = status.state === "suspended"

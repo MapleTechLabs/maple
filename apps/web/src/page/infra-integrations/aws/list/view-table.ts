@@ -14,13 +14,15 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { meter } from "../../../../ui/meter"
+import { inlineCode } from "../../../../ui/inline-code"
 import { skeleton } from "../../../../ui/skeleton"
+import { statusDot } from "../../../../ui/status-dot"
 import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import type { TracedService } from "../../kit/traced"
 import {
 	cpuShare,
-	type Health,
+	HEALTH_TONE,
 	HOT,
 	lambdaErrorRate,
 	lb5xxRate,
@@ -57,13 +59,6 @@ type Column = Readonly<{
 
 const MUTED = "font-mono text-2xs text-muted-foreground"
 const NUMBER = "font-mono text-xs tabular-nums text-foreground/80"
-
-const DOT = {
-	crit: "bg-severity-error",
-	warn: "bg-severity-warn",
-	idle: "border border-muted-foreground bg-transparent",
-	ok: "bg-success",
-} satisfies Record<Health, string>
 
 const reading = (view: ResourceView, key: string) => view.readings[key]?.value ?? null
 
@@ -135,10 +130,7 @@ const tracedCell = (h: H, view: ResourceView, context: TableContext): Html => {
 	const service = tracedAs(context.traced, view)
 	return service === null
 		? h.span([h.Class(MUTED)], ["not traced"])
-		: h.span(
-				[h.Class("truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono text-2xs text-foreground/80")],
-				[service.serviceName],
-			)
+		: inlineCode(h, { className: "truncate text-2xs" }, [service.serviceName])
 }
 
 const perMinuteText = (view: ResourceView, key: string, context: TableContext) => {
@@ -403,7 +395,13 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 			h.div(
 				[h.Class(cn("flex items-start gap-2.5", NAME_COLUMN.width))],
 				[
-					h.span([h.Class(cn("mt-1.5 size-1.5 shrink-0 rounded-full", DOT[view.health]))]),
+					// Idle is a hollow ring, as on GCP: nothing wrong, nothing running.
+					view.health === "idle"
+						? statusDot(h, {
+								tone: "custom",
+								className: "mt-1.5 border border-muted-foreground/70",
+							})
+						: statusDot(h, { tone: HEALTH_TONE[view.health], className: "mt-1.5" }),
 					h.div(
 						[h.Class("flex min-w-0 flex-col gap-0.5")],
 						[

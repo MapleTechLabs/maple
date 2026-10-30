@@ -10,6 +10,7 @@ import { emptyMessage } from "../../ui/empty"
 import { panel, panelHeader } from "../../ui/panel"
 import { searchInput } from "../../ui/search-input"
 import { statusDot } from "../../ui/status-dot"
+import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { truncatedText } from "../../ui/truncated-text"
 import { columnHead } from "../infra/kit/data-table"
@@ -221,9 +222,14 @@ export const zoneBoard = (
 					size: "xs",
 					className: "ml-auto gap-1.5",
 					items: [
-						countChip(h, "all", "All", decorated.length),
+						countChipItem(h, { value: "all", label: "All", count: decorated.length }),
 						...CHIP_ORDER.filter((kind) => counts(kind) > 0).map((kind) =>
-							countChip(h, kind, STATUS_META[kind].label, counts(kind), STATUS_META[kind].tone),
+							countChipItem(h, {
+								value: kind,
+								label: STATUS_META[kind].label,
+								count: counts(kind),
+								tone: STATUS_META[kind].tone,
+							}),
 						),
 					],
 				}),
@@ -393,24 +399,3 @@ export const workersCard = (
 				),
 	])
 }
-
-const countChip = (
-	h: H,
-	value: string,
-	label: string,
-	count: number,
-	tone?: ZoneStatusInfo["tone"],
-): ToggleGroup.ToggleGroupItem => ({
-	value,
-	label,
-	className:
-		"group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs",
-	children: [
-		...(tone === undefined ? [] : [statusDot(h, { tone })]),
-		label,
-		h.span(
-			[h.Class("tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground")],
-			[String(count)],
-		),
-	],
-})

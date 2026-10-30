@@ -1,4 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
@@ -10,6 +9,7 @@ import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { skeleton } from "../../../../ui/skeleton"
+import { statusDot } from "../../../../ui/status-dot"
 import * as Tooltip from "../../../../ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
@@ -82,12 +82,7 @@ const header = (h: H, model: Model, hasFilters: boolean): HeaderParts => {
 	const hero = pageHeroParts(h, {
 		title: h.span(
 			[h.Class("flex items-center gap-3")],
-			[
-				...(severity === null
-					? []
-					: [h.span([h.AriaHidden(true), h.Class(cn("size-2 shrink-0 rounded-full", severity))])]),
-				model.zoneName,
-			],
+			[...(severity === null ? [] : [statusDot(h, { tone: severity, size: "lg" })]), model.zoneName],
 		),
 		meta: [
 			heroChip(h, "zone"),

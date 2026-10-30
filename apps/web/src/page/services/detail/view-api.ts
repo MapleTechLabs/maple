@@ -12,6 +12,7 @@ import {
 	formatNumber,
 	formatRate,
 } from "@maple/ui/lib/format"
+import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ThemeColors } from "../../../charts/theme-colors"
@@ -94,8 +95,14 @@ export const statusMixBar = <M>(h: HtmlBuilder<M>, mix: StatusMix | null, classN
 			? []
 			: [
 					h.div([h.Class("h-full bg-chart-3"), h.Style({ width: `${mix.ok * 100}%` })]),
-					h.div([h.Class("h-full bg-warning"), h.Style({ width: `${mix.client * 100}%` })]),
-					h.div([h.Class("h-full bg-severity-error"), h.Style({ width: `${mix.server * 100}%` })]),
+					h.div([
+						h.Class(cn("h-full", TONE_FILL.warn)),
+						h.Style({ width: `${mix.client * 100}%` }),
+					]),
+					h.div([
+						h.Class(cn("h-full", TONE_FILL.crit)),
+						h.Style({ width: `${mix.server * 100}%` }),
+					]),
 				],
 	)
 
@@ -187,7 +194,10 @@ const endpointRow = (
 										h.span(
 											[
 												h.Class(
-													"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs text-warning-foreground md:inline",
+													cn(
+														"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs md:inline",
+														TONE_TEXT.warn,
+													),
 												),
 											],
 											["slowest"],
@@ -254,7 +264,7 @@ const endpointRow = (
 							statusMixBar(h, mix, "hidden w-24 md:flex"),
 							h.span(
 								[h.Class("w-12 text-right")],
-								[shareText(h, mix?.client ?? null, "text-warning-foreground")],
+								[shareText(h, mix?.client ?? null, TONE_TEXT.warn)],
 							),
 						],
 					),
@@ -263,7 +273,7 @@ const endpointRow = (
 			),
 			tableCell(
 				h,
-				[shareText(h, serverShare(endpoint), "text-destructive-foreground")],
+				[shareText(h, serverShare(endpoint), TONE_TEXT.crit)],
 				cn(numeric, "py-0 pr-0", COLUMN.err),
 			),
 			latencyCell(h, endpoint.p50DurationMs, "p50", COLUMN.p50),
@@ -358,9 +368,7 @@ const groupHeaderRow = (
 			cell(
 				formatErrorRate(mix === null ? group.totals.errorRate : mix.server),
 				COLUMN.err,
-				(mix === null ? group.totals.errorRate : mix.server) > 0
-					? "text-destructive-foreground"
-					: undefined,
+				(mix === null ? group.totals.errorRate : mix.server) > 0 ? TONE_TEXT.crit : undefined,
 			),
 			cell("—", COLUMN.p50),
 			cell(formatLatencyText(group.totals.p95DurationMs), COLUMN.p95),

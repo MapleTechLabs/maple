@@ -11,6 +11,7 @@ import { skeleton } from "../../ui/skeleton"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { liveChecklist } from "../kit/connect-flow"
 import { catalogEntry } from "./catalog"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isWatchExpired } from "./planetscale"
@@ -234,21 +235,14 @@ const byStatus = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone
 
 /** A source page whose connection was removed: the way back is the connect flow. */
 const planetscaleReconnect = (h: H, text: string): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
-			),
-		],
-		[
-			h.span([h.Class("text-muted-foreground")], [text]),
-			linkButton(
-				h,
-				{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } })) },
-				["Reconnect"],
-			),
-		],
-	)
+	integrationNotice(h, {
+		message: text,
+		action: linkButton(
+			h,
+			{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } })) },
+			["Reconnect"],
+		),
+	})
 
 /** A failed status read is not "not connected": no connect offer over a maybe-authorized org. */
 const statusFailed = (h: H): Html =>

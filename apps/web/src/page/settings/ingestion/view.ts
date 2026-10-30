@@ -1,11 +1,10 @@
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { docsUrl } from "../../../lib/docs"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { icon } from "../../../ui/icon"
@@ -78,20 +77,14 @@ const statusBanner = (h: H, model: Model): Html => {
 		h.div([h.Class("grow")], []),
 		...(connection.isConnected
 			? [
-					h.a(
-						[
-							h.Href("/traces"),
-							h.Class(
-								cn(
-									buttonVariants({
-										variant: "ghost",
-										size: "sm",
-										className: "text-muted-foreground hover:text-foreground gap-1.5",
-									}),
-								),
-							),
-							h.DataAttribute("slot", "button"),
-						],
+					linkButton(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							className: "text-muted-foreground hover:text-foreground gap-1.5",
+							href: "/traces",
+						},
 						["Explore traces", icon(h, "ArrowRightIcon")],
 					),
 				]

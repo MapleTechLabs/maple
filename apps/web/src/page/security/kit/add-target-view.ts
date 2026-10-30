@@ -398,8 +398,9 @@ const addTargetDialog = (
 		title: "Add audit target",
 		description: "Pick a repository branch to audit. You can start a run as soon as it is added.",
 		onSubmit: Message.Submitted(),
-		submitLabel: model.isPending ? "Adding…" : "Add target",
-		isSubmitDisabled: model.isPending || !hasRepositories,
+		submitLabel: "Add target",
+		isPending: model.isPending,
+		isSubmitDisabled: !hasRepositories,
 		footerStart: hasRepositories ? startNowToggle(h, model) : undefined,
 		panelClassName: "flex flex-col gap-5",
 		fields: hasRepositories

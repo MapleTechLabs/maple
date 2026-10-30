@@ -1,4 +1,5 @@
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
+import type { Tone } from "@maple/ui/lib/tone"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Array as Arr } from "effect"
 import type { TracedService } from "../kit/traced"
@@ -10,6 +11,13 @@ import type { FleetRead, SparkRead } from "./data"
 export type Reading = Readonly<{ value: number; peak: number }>
 
 export type Health = "crit" | "warn" | "idle" | "ok"
+
+export const HEALTH_TONE = {
+	crit: "crit",
+	warn: "warn",
+	idle: "neutral",
+	ok: "ok",
+} as const satisfies Record<Health, Tone>
 
 export type ResourceView = Readonly<{
 	kind: AwsInfraKindId

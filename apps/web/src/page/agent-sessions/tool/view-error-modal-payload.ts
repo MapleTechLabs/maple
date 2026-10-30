@@ -9,6 +9,7 @@ import {
 } from "../../../lib/agent-sessions/tool-error-display"
 import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { statusDot } from "../../../ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
@@ -192,14 +193,14 @@ const argumentsBlock = (
 					...(lines === undefined
 						? []
 						: [
-								h.button(
-									[
-										h.Class(
-											"flex h-6 shrink-0 items-center rounded-md border border-border bg-card px-2 text-foreground transition-colors hover:bg-muted/50",
-										),
-										h.Type("button"),
-										h.OnClick(Message.ToggledFullArguments()),
-									],
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "xs",
+										className: "text-2xs sm:text-2xs",
+										attributes: [h.OnClick(Message.ToggledFullArguments())],
+									},
 									[isFull ? "Shorten" : "Show full payload"],
 								),
 							]),

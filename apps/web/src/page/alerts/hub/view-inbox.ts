@@ -22,6 +22,7 @@ import {
 } from "@maple/web-data/alerts/overview-derive"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
+import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { rowLink } from "../../../ui/table"
@@ -272,10 +273,7 @@ const fireStrip = <M>(
 				],
 			),
 			shown.length === 0
-				? h.p(
-						[h.Class("border-t py-4 text-sm text-muted-foreground")],
-						["No rule fired in the last 24 hours."],
-					)
+				? emptyMessage(h, { className: "border-t" }, ["No rule fired in the last 24 hours."])
 				: h.ul(
 						[h.Class("divide-y border-y")],
 						shown.map((lane) => fireLaneRow(h, lane)),
@@ -444,10 +442,9 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 				],
 			),
 			shown.length === 0
-				? h.p(
-						[h.Class("border-t py-4 text-sm text-muted-foreground")],
-						["No rule has reported a value yet. The first checks land within a minute."],
-					)
+				? emptyMessage(h, { className: "border-t" }, [
+						"No rule has reported a value yet. The first checks land within a minute.",
+					])
 				: h.ul(
 						[h.Class("divide-y border-y")],
 						shown.map((row) => headroomRow(h, row, now)),

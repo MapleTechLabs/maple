@@ -66,7 +66,11 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 						[
 							eyebrow(h, {}, [stat.label]),
 							h.span(
-								[h.Class("font-mono text-lg leading-tight tabular-nums text-foreground")],
+								[
+									h.Class(
+										"font-mono text-lg font-semibold leading-tight tabular-nums text-foreground",
+									),
+								],
 								[stat.format(totals[stat.key])],
 							),
 							delta(h, {
@@ -93,11 +97,7 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 		[h.Key(label), h.Class("flex items-center gap-2 leading-none")],
 		[
 			h.span(
-				[
-					h.Class(
-						cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-muted-foreground/70"),
-					),
-				],
+				[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-muted-foreground/70"))],
 				[label],
 			),
 			meter(h, {

@@ -1,10 +1,11 @@
 import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
 import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
+import { statusDot } from "../../../../ui/status-dot"
 import { Message } from "./model"
 import type { H } from "./view-rows"
 
@@ -29,14 +30,7 @@ const projectItem = (
 		[
 			h.span(
 				[h.Class("mt-1.5 flex w-1.5 shrink-0")],
-				health === undefined
-					? []
-					: [
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_FILL[health.tone])),
-							]),
-						],
+				health === undefined ? [] : [statusDot(h, { tone: health.tone })],
 			),
 			h.span(
 				[h.Class("flex flex-col")],

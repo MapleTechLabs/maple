@@ -11,11 +11,11 @@ import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
 import {
 	formatLag,
 	formatStoragePercent,
-	formatWholePercent,
 	lagClass,
 	MISSING,
 	utilizationClass,
-} from "../metrics"
+} from "../../../../components/infra/planetscale/metrics"
+import { formatWholePercent } from "../../../../components/infra/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
 
 // `PlanetScaleBranchBreakdownPanel`.

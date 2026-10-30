@@ -1,5 +1,6 @@
 import type { SecurityAuditRun, SecurityAuditRunDetail, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
+import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
@@ -39,6 +40,7 @@ import { BUCKET_LABEL, type BucketCounts, SCORED_BUCKETS } from "../kit/findings
 import { bucketDot } from "../kit/findings-view"
 import { meter } from "../../../ui/meter"
 import { Message, type Model } from "./model"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
 
@@ -203,44 +205,37 @@ const toolbar = (
 	count: number,
 	isCapped: boolean,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2 border-b border-border/60 px-2 py-1.5")],
-		[
-			h.submodel({
-				slotId: model.runsTargetSelect.id,
-				model: model.runsTargetSelect,
-				view: SelectView.view,
-				viewInputs: {
-					entries: [
-						{ _tag: "Item", item: { value: "all", label: "All targets" } },
-						...targets.map((target): SelectView.SelectEntry => ({
-							_tag: "Item",
-							item: { value: target.id, label: target.repository },
-						})),
-					],
-					size: "sm",
-					ariaLabel: "Target",
-					className: "h-7 w-auto min-w-40 text-xs",
-					renderValue: (value) => [
-						h.span([h.Class("text-muted-foreground")], ["Target "]),
-						value === "all"
-							? "All targets"
-							: (targets.find((target) => target.id === value)?.repository ?? "Removed target"),
-					],
-					toView: (parts) => h.div([h.Class("contents")], parts),
-				},
-				toParentMessage: (message) => Message.GotRunsTargetSelectMessage({ message }),
-			}),
-			h.span(
-				[h.Class("ml-auto text-xs tabular-nums text-muted-foreground")],
-				[
-					isCapped
-						? `showing the ${RUN_LIST_CAP} newest`
-						: `${count} ${count === 1 ? "run" : "runs"}`,
+	listToolbar(h, {
+		framed: true,
+		leading: h.submodel({
+			slotId: model.runsTargetSelect.id,
+			model: model.runsTargetSelect,
+			view: SelectView.view,
+			viewInputs: {
+				entries: [
+					{ _tag: "Item", item: { value: "all", label: "All targets" } },
+					...targets.map((target): SelectView.SelectEntry => ({
+						_tag: "Item",
+						item: { value: target.id, label: target.repository },
+					})),
 				],
-			),
+				size: "sm",
+				ariaLabel: "Target",
+				className: "h-7 w-auto min-w-40 text-xs",
+				renderValue: (value) => [
+					h.span([h.Class("text-muted-foreground")], ["Target "]),
+					value === "all"
+						? "All targets"
+						: (targets.find((target) => target.id === value)?.repository ?? "Removed target"),
+				],
+				toView: (parts) => h.div([h.Class("contents")], parts),
+			},
+			toParentMessage: (message) => Message.GotRunsTargetSelectMessage({ message }),
+		}),
+		trailing: [
+			toolbarCount(h, [isCapped ? `showing the ${RUN_LIST_CAP} newest` : countLabel(count, "run")]),
 		],
-	)
+	})
 
 /** "Start run" for the target the list is narrowed to. */
 export const startRunAction = (h: H, model: Model): Html | undefined => {
@@ -252,13 +247,14 @@ export const startRunAction = (h: H, model: Model): Html | undefined => {
 		h,
 		{
 			size: "sm",
+			isLoading: model.startingTargetId === target.id,
 			isDisabled: isRunning || model.startingTargetId !== null,
 			attributes: [
 				h.OnClick(Message.ClickedStartRun({ targetId: target.id })),
 				...(isRunning ? [h.Title("One audit runs per target at a time")] : []),
 			],
 		},
-		[icon(h, "MediaPlayIcon"), model.startingTargetId === target.id ? "Starting…" : "Start run"],
+		[icon(h, "MediaPlayIcon"), "Start run"],
 	)
 }
 

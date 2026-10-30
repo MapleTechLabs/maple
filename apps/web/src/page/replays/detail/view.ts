@@ -2,23 +2,21 @@ import { shortId } from "@maple/ui/lib/ids"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { gradientFor, hostFromUrl } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
-import { cn } from "@maple/ui/lib/utils"
 import { parseChTimestampMs } from "../../../components/replays/replay-timeline"
 import { Struct } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
-import { linkButton } from "../../../ui/button"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
+import { inlineCode, inlineCodeClassName } from "../../../ui/inline-code"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { resourceNotFound } from "../../kit/resource-not-found"
 import { relativeTime } from "../../kit/relative-time"
 import { stableSlice } from "../../kit/stable-slice"
 import { errorCountPill, livePill } from "../kit/sessions-parts"
@@ -132,8 +130,12 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 						: []),
 					h.span(
 						[
+							// The id chip holds its copy button, so it borrows the chip's look on a span.
 							h.Class(
-								"hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground xl:inline-flex",
+								inlineCodeClassName(
+									"chip",
+									"hidden shrink-0 items-center gap-1 text-2xs text-muted-foreground xl:inline-flex",
+								),
 							),
 						],
 						[
@@ -220,22 +222,15 @@ const detailSkeleton = (h: H): Html =>
 	)
 
 const notFound = (h: H, sessionId: string): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
-				emptyTitle(h, ["Session not found"]),
-				emptyDescription(h, [
-					"No metadata for session ",
-					inlineCode(h, {}, [sessionId]),
-					". It may have expired or not been ingested yet.",
-				]),
-			]),
-			linkButton(h, { variant: "outline", size: "sm", href: "/replays" }, ["Back to replays"]),
+	resourceNotFound(h, {
+		title: "Session not found",
+		description: [
+			"No metadata for session ",
+			inlineCode(h, {}, [sessionId]),
+			". It may have expired or not been ingested yet.",
 		],
-		cn("md:py-12"),
-	)
+		back: { href: "/replays", label: "Back to replays" },
+	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const session = detailOf(model)
