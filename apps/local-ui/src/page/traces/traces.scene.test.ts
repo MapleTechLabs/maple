@@ -95,7 +95,7 @@ describe("local traces list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([row("t1")]).model),
-			expectView(text("1")).toExist(),
+			expectView(role("link", { name: "Trace GET /" })).toExist(),
 			click(role("checkbox", { name: "Has error" })),
 			expectOutMessage(PageOutMessage.RequestedNavigation({ hash: "#/traces?errors=1", isReplace: true })),
 		)
