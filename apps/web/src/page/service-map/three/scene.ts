@@ -35,6 +35,10 @@ interface Built {
 	readonly world: { readonly scope: Scope; readonly root: THREE.Group }
 }
 
+/** A 60 Hz display draws every other frame. Under half the motion's 50 ms step cap, so a skipped
+ * frame never costs cargo any distance at any refresh rate. */
+const AMBIENT_FRAME_MS = 24
+
 const disposeScope = (scope: Scope, root: THREE.Object3D) => {
 	disposeTree(root)
 	scope.textures.forEach((texture) => texture.dispose())
@@ -216,8 +220,11 @@ export function startScene(
 	)
 	const loop = (now: number) => {
 		state.raf = requestAnimationFrame(loop)
-		if (!flowing() && state.pending === 0 && now > state.awakeUntil) return
-		if (!flowing()) state.pending = Math.max(0, state.pending - 1)
+		const idle = state.pending === 0 && now > state.awakeUntil
+		if (!flowing() && idle) return
+		// Ambient traffic alone runs at 30 to 40 fps; camera moves and clicks draw every frame.
+		if (idle && now - state.last < AMBIENT_FRAME_MS) return
+		state.pending = Math.max(0, state.pending - 1)
 		const delta = (now - state.last) / 1000
 		state.last = now
 		rig()
@@ -274,9 +281,13 @@ export function startScene(
 				previous.selectedId !== input.selectedId ||
 				previous.dark !== input.dark
 			if (changed) state.built = build(scene, input, state.built, flowing)
-			// A camera command alone changes no scene prop, so the demand loop draws no frame for it;
-			// the zoom lands on the next frame (always while traffic flows).
-			if (changed || input.flowing !== previous.flowing) invalidate()
+			// A camera command changes no scene prop, but the zoom still needs frames to land.
+			if (
+				changed ||
+				input.flowing !== previous.flowing ||
+				input.command.serial !== previous.command.serial
+			)
+				invalidate()
 		},
 		stop: () => {
 			cancelAnimationFrame(state.raf)
