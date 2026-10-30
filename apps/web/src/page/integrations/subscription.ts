@@ -7,7 +7,14 @@ import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { apiOrigins } from "../../lib/services/common/api-base-url"
 import { integrationOfSearch } from "./catalog"
-import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startConnect } from "./connect"
+import {
+	ConnectAttempt,
+	ConnectProvider,
+	currentReturnPath,
+	IntegrationCallbackEvents,
+	PROVIDERS,
+	startConnect,
+} from "./connect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
@@ -274,23 +281,29 @@ export const isCallbackOrigin = (origin: string, ownOrigin: string): boolean =>
 	origin === ownOrigin || apiOrigins.includes(origin)
 
 const callbackMessages = (provider: ConnectProvider) =>
-	Stream.fromEventListener<MessageEvent>(window, "message").pipe(
-		Stream.filter((event) => isCallbackOrigin(event.origin, window.location.origin)),
-		Stream.flatMap((event) =>
-			Option.match(decodeCallback(event.data), {
-				onNone: () => Stream.empty,
-				onSome: (data) =>
-					data.type === `maple:integration:${provider}`
-						? Stream.make(
-								Message.ReceivedConnectMessage({
-									provider,
-									status: data.status ?? "",
-									message: data.message ?? null,
-									github: data.github,
-								}),
+	Stream.unwrap(
+		Effect.map(IntegrationCallbackEvents, ({ ownOrigin, messages }) =>
+			messages.pipe(
+				Stream.filter((event) => isCallbackOrigin(event.origin, ownOrigin)),
+				Stream.flatMap((event) =>
+					Option.match(decodeCallback(event.data), {
+						onNone: () => Stream.empty,
+						onSome: (data) => {
+							if (data.type !== `maple:integration:${provider}`) return Stream.empty
+							const message = {
+								provider,
+								status: data.status ?? "",
+								message: data.message ?? null,
+							}
+							return Stream.make(
+								Message.ReceivedConnectMessage(
+									data.github === undefined ? message : { ...message, github: data.github },
+								),
 							)
-						: Stream.empty,
-			}),
+						},
+					}),
+				),
+			),
 		),
 	)
 

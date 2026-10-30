@@ -112,8 +112,10 @@ export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
 			message: response.message,
 			chat: response.chat,
 			isHandedOff,
-		} satisfies OAuthReturnOutcome
-		return response.github === undefined ? outcome : { ...outcome, github: response.github }
+		}
+		return OAuthReturnOutcome.make(
+			response.github === undefined ? outcome : { ...outcome, github: response.github },
+		)
 	})
 
 export const completeOAuthReturn: Effect.Effect<OAuthReturnOutcome | null, never, MapleInternalApiClient> =

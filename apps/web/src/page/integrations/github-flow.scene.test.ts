@@ -7,6 +7,7 @@ import {
 import { Result, Schema } from "effect"
 import {
 	type AnyCommand,
+	type SceneSimulation,
 	click,
 	Command,
 	expect as expectView,
@@ -19,7 +20,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../data/load-failure"
-import type { PageContext } from "../contract"
+import type { PageContext, PageOutMessage } from "../contract"
 import { FetchSourcesList, ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"
 import type { Model } from "../sources/new/model"
@@ -440,7 +441,7 @@ describe("github connect flow", () => {
 			Command.expectHas(LoadGithub),
 			expectView(role("button", { name: "Connect acme" })).not.toExist(),
 			Command.resolve(TrackConnected, IntegrationMessage.CompletedTrackConnected()),
-			(simulation) =>
+			(simulation: SceneSimulation<Model, Message, PageOutMessage>) =>
 				Command.resolve(
 					LoadGithub,
 					IntegrationMessage.CompletedLoadGithub({
@@ -453,7 +454,7 @@ describe("github connect flow", () => {
 						),
 					}),
 				)(simulation),
-			(simulation) =>
+			(simulation: SceneSimulation<Model, Message, PageOutMessage>) =>
 				Command.resolve(
 					FetchSourcesList,
 					Message.CompletedFetchList({

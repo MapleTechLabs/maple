@@ -6,7 +6,7 @@ import {
 	LinearStartConnectRequest,
 	SupabaseConnectRequest,
 } from "@maple/domain/http"
-import { Effect, Result, Schema } from "effect"
+import { Context, Effect, Result, Schema, Stream } from "effect"
 import { toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 
@@ -21,6 +21,17 @@ export const ConnectProvider = Schema.Literals([
 	"supabase",
 ])
 export type ConnectProvider = typeof ConnectProvider.Type
+
+const browserCallbackEvents = () => ({
+	ownOrigin: window.location.origin,
+	messages: Stream.fromEventListener<MessageEvent>(window, "message"),
+})
+
+/** The browser's callback channel; its event source and origin travel together. */
+export const IntegrationCallbackEvents = Context.Reference<ReturnType<typeof browserCallbackEvents>>(
+	"@maple/web/IntegrationCallbackEvents",
+	{ defaultValue: browserCallbackEvents },
+)
 
 /** One attempt: the popup is out while this is set; a new attempt restarts the flow. */
 export const ConnectAttempt = Schema.Struct({
@@ -144,7 +155,9 @@ export const startConnect = (
 				})
 			case "github":
 				return yield* internal.integrations.githubStart({
-					payload: new GithubStartConnectRequest({ returnTo, mode: githubMode }),
+					payload: new GithubStartConnectRequest(
+						githubMode === undefined ? { returnTo } : { returnTo, mode: githubMode },
+					),
 				})
 			case "planetscale": {
 				const response = yield* v2.planetscaleIntegration.connect({
