@@ -4989,6 +4989,27 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
+-- builder:service-infra:serviceRuntimesSQL:default  [4d718731]
+SELECT
+          metrics_gauge.ServiceName AS metricServiceName,
+          metrics_gauge.MetricName AS metricName,
+          if(metrics_gauge.ResourceAttributes['cloud.account.id'] != '', metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloudflare.account.id']) AS account,
+          metrics_gauge.ResourceAttributes['cloud.region'] AS region,
+          metrics_gauge.Attributes['aws.dimension.cluster_name'] AS cluster,
+          metrics_gauge.ResourceAttributes['railway.service.id'] AS railwayServiceId,
+          metrics_gauge.ResourceAttributes['railway.environment.id'] AS railwayEnvironmentId,
+          max(metrics_gauge.ResourceAttributes['railway.environment.name']) AS railwayEnvironmentName
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName IN ('api', 'cloudflare-worker/api', 'checkout', 'cloudflare-worker/checkout')
+          AND metrics_gauge.MetricName IN ('gcp.cloud_run.container.instance.count', 'gcp.cloud_functions.instance.count', 'aws.ecs.cpu_utilization', 'aws.lambda.duration', 'railway.cpu.usage', 'cloudflare.worker.cpu_time')
+        GROUP BY metricServiceName, metricName, account, region, cluster, railwayServiceId, railwayEnvironmentId
+        ORDER BY metricServiceName ASC, metricName ASC
+        LIMIT 10000
+        FORMAT JSON
+
 -- builder:service-infra:serviceWorkloadsSQL:default  [e9f241ba]
 SELECT
           swm.serviceName AS serviceName,

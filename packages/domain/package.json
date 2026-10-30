@@ -15,6 +15,7 @@
 		"./aws": "./src/aws.ts",
 		"./gcp": "./src/gcp.ts",
 		"./gcp-infra": "./src/gcp-infra.ts",
+		"./service-runtimes": "./src/service-runtimes.ts",
 		"./aws-infra": "./src/aws-infra.ts",
 		"./gcp-metrics": "./src/gcp-metrics.ts",
 		"./gen-ai": "./src/gen-ai.ts",

@@ -60,6 +60,7 @@ import {
 	ServiceDependenciesBundleResponse,
 	ServiceMapBundleResponse,
 	ServiceWorkloadsResponse,
+	ServiceRuntimesResponse,
 	ServiceUsageResponse,
 	ServiceEndpointsResponse,
 	ServiceApiOverviewResponse,
@@ -326,6 +327,12 @@ const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
 	avgCpuLimitUtilization: row.avgCpuLimitUtilization == null ? null : row.avgCpuLimitUtilization,
 	avgMemoryLimitUtilization: row.avgMemoryLimitUtilization == null ? null : row.avgMemoryLimitUtilization,
 })
+
+const toServiceRuntimeRows = (rows: ReadonlyArray<CH.ServiceRuntimesOutput>, requested: ReadonlyArray<string>) =>
+	CH.serviceRuntimeResources(rows, requested).map((row) => ({
+		...row,
+		serviceName: decodeServiceName(row.serviceName),
+	}))
 
 export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "queryEngine", (handlers) =>
 	Effect.gen(function* () {
@@ -1382,16 +1389,32 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						for (const row of overviewRows) services.add(row.serviceName)
 						services.delete("")
 
-						const workloadRows =
-							services.size === 0
-								? []
-								: yield* runQuery(Queries.serviceWorkloads, tenant, {
-										startTime: payload.startTime,
-										endTime: payload.endTime,
-										services: Array.from(services)
-											.sort()
-											.map((name) => decodeServiceName(name)),
-									})
+						const serviceNames = Array.from(services)
+							.sort()
+							.map((name) => decodeServiceName(name))
+						const range = { startTime: payload.startTime, endTime: payload.endTime }
+						const [workloadRows, runtimeRows] =
+							serviceNames.length === 0
+								? [[], []]
+								: yield* Effect.all(
+										[
+											runQuery(Queries.serviceWorkloads, tenant, {
+												...range,
+												services: serviceNames,
+											}),
+											// The map draws without platform labels rather than fail on them.
+											runQuery(Queries.serviceRuntimes, tenant, {
+												...range,
+												services: serviceNames,
+											}).pipe(
+												Effect.tapCause((cause) =>
+													Effect.logWarning("service map runtimes failed", cause),
+												),
+												Effect.orElseSucceed((): ReadonlyArray<CH.ServiceRuntimesOutput> => []),
+											),
+										],
+										{ concurrency: 2 },
+									)
 
 						return new ServiceMapBundleResponse({
 							dependencies: dependencyRows.map((row) => ({ ...row })),
@@ -1400,6 +1423,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							overview: overviewRows.map((row) => ({ ...row })),
 							platforms: platformRows.map(toServicePlatformRow),
 							workloads: workloadRows.map(toServiceWorkloadRow),
+							runtimes: toServiceRuntimeRows(runtimeRows, serviceNames),
 						})
 					}),
 				)
@@ -1469,6 +1493,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						}
 						const rows = yield* runQuery(Queries.serviceWorkloads, tenant, payload)
 						return new ServiceWorkloadsResponse({ data: rows.map(toServiceWorkloadRow) })
+					}),
+				)
+				.handle("serviceRuntimes", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						if (payload.services.length === 0) {
+							return new ServiceRuntimesResponse({ data: [] })
+						}
+						const rows = yield* runQuery(Queries.serviceRuntimes, tenant, payload)
+						return new ServiceRuntimesResponse({ data: toServiceRuntimeRows(rows, payload.services) })
 					}),
 				)
 				.handle("serviceUsage", ({ payload }) =>
