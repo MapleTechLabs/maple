@@ -452,7 +452,8 @@ function blobShadow({ height, palette, dimmed }: { height: number; palette: InkP
 		polygonOffsetUnits: -1,
 	})
 	const shadow = new THREE.Mesh(geometry, material)
-	shadow.position.y = 0.062
+	// Under the pad's top face, so the pad keeps its health colour and the shadow shows past its edge.
+	shadow.position.y = 0.01
 	// Picking walks every part of a machine; the shadow reaches past the pad, so it must not catch clicks.
 	shadow.raycast = () => {}
 	return shadow
