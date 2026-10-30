@@ -11,6 +11,28 @@ describe("rawSqlErrorText", () => {
 		)
 	})
 
+	// A preview or staging warehouse uses its own database name.
+	it("collapses the wrapper under any database name, aliased or as a bare subquery", () => {
+		const wrap = (db: string, table: string) =>
+			`(SELECT * FROM (SELECT * FROM ${db}.${table} WHERE OrgId = 'org_a') AS ${db}.${table} WHERE OrgId = 'org_a')`
+		expect(
+			rawSqlErrorText(
+				`In scope SELECT l.x FROM ${wrap("pr_1961", "logs")} AS l WHERE (l.OrgId = 'org_a')`,
+			),
+		).toBe("In scope SELECT l.x FROM logs AS l WHERE $__orgFilter(l)")
+		expect(
+			rawSqlErrorText(
+				"Actual SELECT * FROM (SELECT * FROM pr_1961.traces WHERE OrgId = 'org_a') AS pr_1961.traces WHERE OrgId = 'org_a'.",
+			),
+		).toBe("Actual traces.")
+	})
+
+	it("never leaves an org id or a database-qualified table behind", () => {
+		expect(rawSqlErrorText("FROM pr_1961.traces WHERE OrgId = 'org_3KkfPhr7'")).toBe(
+			"FROM traces WHERE OrgId = '<your org>'",
+		)
+	})
+
 	it("drops the row-cap wrapper", () => {
 		expect(
 			rawSqlErrorText(
