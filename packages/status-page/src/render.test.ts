@@ -195,7 +195,15 @@ describe("renderPage", () => {
 const DAY_MS = 86_400_000
 
 const PageData = Schema.Struct({
+	end: Schema.String,
+	len: Schema.Number,
 	windows: Schema.Number,
+	bars: Schema.Record(
+		Schema.String,
+		Schema.Array(
+			Schema.Union([Schema.Literal(0), Schema.Tuple([Schema.Number, Schema.Number, Schema.Number])]),
+		),
+	),
 	today: Schema.String,
 	entries: Schema.Array(
 		Schema.Struct({
@@ -318,7 +326,11 @@ describe("renderPage layout", () => {
 		const arrows = html.match(/<button type="button" data-nav="[a-z]+"[^>]*>/gu) ?? []
 		expect(arrows).toHaveLength(4)
 		expect(arrows.every((arrow) => arrow.includes(" hidden"))).toBe(true)
-		expect(pageDataOf(html).windows).toBe(5)
+		const data = pageDataOf(html)
+		expect(data.windows).toBe(5)
+		expect(data.len).toBe(365)
+		expect(data.end).toBe("2026-10-28")
+		expect(data.bars[fixtureComponentId(0)]).toHaveLength(365)
 	})
 
 	it("names the status of a component that hides uptime, without bars or a percentage", () => {
@@ -689,6 +701,6 @@ describe("previewSnapshot", () => {
 		expect(snapshot.components[0]?.days.every((day) => day.checks === 0)).toBe(true)
 		const html = renderPage(snapshot, { _tag: "live", updatedAt: FIXTURE_NOW }, FIXTURE_NOW)
 		expect(html).toContain("--link:#123abc")
-		expect(html).toContain("No data")
+		expect(rowOf(html, snapshot.components[0]!.id)).toContain(`<span class="uptime">No data</span>`)
 	})
 })
