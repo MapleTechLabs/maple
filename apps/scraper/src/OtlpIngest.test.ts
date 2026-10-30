@@ -24,15 +24,14 @@ const TestLayer = OtlpIngest.layer.pipe(
 	Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(ScraperEnv, testEnv))),
 )
 
-/** Lets the stubbed fetch settle on the real event loop, then moves the test clock past a backoff. */
-const settleAndAdvance = (steps: number, by: Duration.Input = "2 seconds") =>
-	Effect.forEach(
-		Array.from({ length: steps }),
-		() =>
-			Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).pipe(
-				Effect.andThen(TestClock.adjust(by)),
-			),
-		{ discard: true },
+/**
+ * Lets the stubbed fetch settle on the real event loop and moves the test clock past a backoff,
+ * until `fiber` exits. A fixed tick count races the libuv gzip when the machine is loaded.
+ */
+const advanceUntilDone = (fiber: Fiber.Fiber<unknown, unknown>, by: Duration.Input = "2 seconds") =>
+	Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).pipe(
+		Effect.andThen(TestClock.adjust(by)),
+		Effect.repeat({ until: () => fiber.pollUnsafe() !== undefined, times: 100 }),
 	)
 
 const SAMPLE_REQUEST: OtlpExportRequest = {
@@ -172,7 +171,7 @@ describe("OtlpIngest", () => {
 					),
 				),
 			)
-			yield* settleAndAdvance(2)
+			yield* advanceUntilDone(fiber)
 			yield* Fiber.join(fiber)
 			assert.lengthOf(recorded, 2)
 		}).pipe(Effect.provide(TestLayer)),
@@ -218,7 +217,7 @@ describe("OtlpIngest", () => {
 				{ startImmediately: true },
 			)
 			// Each of the three attempts times out at 30s, with a backoff between them.
-			yield* settleAndAdvance(3, "35 seconds")
+			yield* advanceUntilDone(fiber, "35 seconds")
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error.reason, "scrape_failed")
 			assert.strictEqual(error.statusCode, null)
