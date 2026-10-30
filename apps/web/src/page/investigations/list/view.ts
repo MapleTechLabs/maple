@@ -376,7 +376,7 @@ const hubHero = (h: H, model: Model): Html => {
 							h.div(
 								[h.Class("flex flex-wrap items-baseline gap-3")],
 								[
-									pageTitle(h, { title: HUB_TITLE, className: "text-foreground" }, [
+									pageTitle(h, { className: "min-w-0 whitespace-normal text-foreground" }, [
 										HUB_TITLE,
 									]),
 								],

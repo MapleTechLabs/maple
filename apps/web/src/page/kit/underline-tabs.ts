@@ -67,7 +67,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 			label,
 			bleed: false,
 			divided: false,
-			className: "gap-0 overflow-visible border-b border-border",
+			className: "gap-0 border-b border-border",
 		},
 		tabs.map((tab) =>
 			h.a(

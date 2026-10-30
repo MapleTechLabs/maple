@@ -83,7 +83,8 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 										h,
 										{
 											title: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
-											className: "min-w-0 text-foreground",
+											className:
+												"min-w-0 whitespace-normal break-words text-foreground",
 										},
 										[
 											SIGNAL_LABEL[incident.signalType],
