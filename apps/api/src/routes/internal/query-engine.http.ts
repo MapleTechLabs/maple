@@ -156,7 +156,6 @@ import {
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
 import { isMapleService } from "@maple/domain/uptime"
-import { serviceRuntimeKindOfMarker, tracedServiceOfRuntime } from "@maple/domain/service-runtimes"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {
 	makeDashboardReads,
@@ -329,31 +328,11 @@ const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
 	avgMemoryLimitUtilization: row.avgMemoryLimitUtilization == null ? null : row.avgMemoryLimitUtilization,
 })
 
-/** One row per resource. A Railway service is one resource per environment, whatever its regions. */
-const toServiceRuntimeRows = (rows: ReadonlyArray<CH.ServiceRuntimesOutput>) => {
-	const resources = rows.flatMap((row) => {
-		const kind = serviceRuntimeKindOfMarker(row.metricName)
-		if (kind === null) return []
-		const key =
-			kind === "railway"
-				? `railway|${row.railwayServiceId}|${row.railwayEnvironmentId}`
-				: [kind, row.metricServiceName, row.account, row.region, row.cluster].join("|")
-		return [
-			{
-				key,
-				serviceName: decodeServiceName(tracedServiceOfRuntime(row.metricServiceName)),
-				kind,
-				account: row.account,
-				region: row.region,
-				cluster: row.cluster,
-				railwayServiceId: row.railwayServiceId,
-				railwayEnvironmentId: row.railwayEnvironmentId,
-				railwayEnvironmentName: row.railwayEnvironmentName,
-			},
-		]
-	})
-	return Array.from(new Map(resources.map(({ key, ...row }) => [key, row])).values())
-}
+const toServiceRuntimeRows = (rows: ReadonlyArray<CH.ServiceRuntimesOutput>, requested: ReadonlyArray<string>) =>
+	CH.serviceRuntimeResources(rows, requested).map((row) => ({
+		...row,
+		serviceName: decodeServiceName(row.serviceName),
+	}))
 
 export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "queryEngine", (handlers) =>
 	Effect.gen(function* () {
@@ -1444,7 +1423,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							overview: overviewRows.map((row) => ({ ...row })),
 							platforms: platformRows.map(toServicePlatformRow),
 							workloads: workloadRows.map(toServiceWorkloadRow),
-							runtimes: toServiceRuntimeRows(runtimeRows),
+							runtimes: toServiceRuntimeRows(runtimeRows, serviceNames),
 						})
 					}),
 				)
@@ -1523,7 +1502,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							return new ServiceRuntimesResponse({ data: [] })
 						}
 						const rows = yield* runQuery(Queries.serviceRuntimes, tenant, payload)
-						return new ServiceRuntimesResponse({ data: toServiceRuntimeRows(rows) })
+						return new ServiceRuntimesResponse({ data: toServiceRuntimeRows(rows, payload.services) })
 					}),
 				)
 				.handle("serviceUsage", ({ payload }) =>

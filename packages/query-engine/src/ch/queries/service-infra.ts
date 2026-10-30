@@ -34,7 +34,13 @@ import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } fro
 import { CHNumber } from "../schema"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
-import { SERVICE_RUNTIME_MARKERS, runtimeMetricServiceNames } from "@maple/domain/service-runtimes"
+import {
+	SERVICE_RUNTIME_MARKERS,
+	runtimeMetricServiceNames,
+	serviceRuntimeKindOfMarker,
+	type ServiceRuntimeKindId,
+	tracedServiceOfRuntime,
+} from "@maple/domain/service-runtimes"
 
 export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
@@ -295,8 +301,8 @@ export function serviceRuntimesSQL(
 			"railwayEnvironmentId",
 		)
 		.orderBy(["metricServiceName", "asc"], ["metricName", "asc"])
-		// A service runs as a few resources at most: one per region, cluster or environment.
-		.limit(Math.max(200, opts.services.length * 8))
+		// Rows are resources, a few per service; the cap is a backstop, not a page size.
+		.limit(10_000)
 		.format("JSON")
 
 	return compile(
@@ -304,4 +310,47 @@ export function serviceRuntimesSQL(
 		{ orgId: params.orgId, startTime: params.startTime, endTime: params.endTime },
 		{ rowSchema: ServiceRuntimesOutputSchema },
 	)
+}
+
+export interface ServiceRuntimeResource {
+	readonly serviceName: string
+	readonly kind: ServiceRuntimeKindId
+	readonly account: string
+	readonly region: string
+	readonly cluster: string
+	readonly railwayServiceId: string
+	readonly railwayEnvironmentId: string
+	readonly railwayEnvironmentName: string
+}
+
+/**
+ * One resource per row of a requested service. A Railway service is one resource per environment,
+ * whatever its regions; a `cloudflare-worker/x` series only ever answers for `x`.
+ */
+export const serviceRuntimeResources = (
+	rows: ReadonlyArray<ServiceRuntimesOutput>,
+	requested: ReadonlyArray<string>,
+): ReadonlyArray<ServiceRuntimeResource> => {
+	const isRequested = new Set(requested)
+	const resources = rows.flatMap((row) => {
+		const kind = serviceRuntimeKindOfMarker(row.metricName)
+		const serviceName = tracedServiceOfRuntime(row.metricServiceName)
+		if (kind === null || !isRequested.has(serviceName)) return []
+		const key =
+			kind === "railway"
+				? ["railway", serviceName, row.railwayServiceId, row.railwayEnvironmentId].join("|")
+				: [kind, row.metricServiceName, row.account, row.region, row.cluster].join("|")
+		const resource: ServiceRuntimeResource = {
+			serviceName,
+			kind,
+			account: row.account,
+			region: row.region,
+			cluster: row.cluster,
+			railwayServiceId: row.railwayServiceId,
+			railwayEnvironmentId: row.railwayEnvironmentId,
+			railwayEnvironmentName: row.railwayEnvironmentName,
+		}
+		return [[key, resource] as const]
+	})
+	return Array.from(new Map(resources).values())
 }
