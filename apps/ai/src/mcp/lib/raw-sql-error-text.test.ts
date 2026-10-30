@@ -27,6 +27,14 @@ describe("rawSqlErrorText", () => {
 		).toBe("Actual traces.")
 	})
 
+	it("keeps parentheses balanced around a wrapper with no alias", () => {
+		expect(
+			rawSqlErrorText(
+				"x IN (SELECT * FROM (SELECT * FROM pr_1.traces WHERE OrgId = 'org_a') AS pr_1.traces WHERE OrgId = 'org_a')",
+			),
+		).toBe("x IN (traces)")
+	})
+
 	it("never leaves an org id or a database-qualified table behind", () => {
 		expect(rawSqlErrorText("FROM pr_1961.traces WHERE OrgId = 'org_3KkfPhr7'")).toBe(
 			"FROM traces WHERE OrgId = '<your org>'",
