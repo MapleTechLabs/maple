@@ -19,7 +19,7 @@ import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
-import { AREA_FILL_END, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
+import { AREA_FILL_END, AREA_FILL_PARTIAL, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 // Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
@@ -166,7 +166,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, throughputColor),
-			...(hasDashed ? [verticalGradient(fadedGradientId, throughputColor, 0.15, AREA_FILL_END)] : []),
+			...(hasDashed ? [verticalGradient(fadedGradientId, throughputColor, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
 		],
 		marks: [
 			band(solid, gradientId, false),
@@ -280,7 +280,7 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, color),
-			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, AREA_FILL_END)] : []),
+			...(hasDashed ? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
 		],
 		marks: [
 			band(solid, gradientId),
@@ -401,7 +401,7 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, color),
-			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, AREA_FILL_END)] : []),
+			...(hasDashed ? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
 		],
 		marks: [
 			band(solid, gradientId),

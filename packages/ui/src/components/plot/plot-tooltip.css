@@ -8,7 +8,7 @@
  *
  * Values started from `chartTooltipCardClassName` (packages/ui/src/components/ui/chart.tsx),
  * then tightened: opaque enough to read over a busy plot, the card radius, a lighter shadow.
- * Two properties the shell does NOT write inline — backdrop-filter and transition — are set directly.
+ * Two properties the shell does NOT write inline, backdrop-filter and transition, are set directly.
  */
 .maple-plot-tooltip {
 	/* Near-opaque: at 90% the series under the card showed through and muddied the values. */

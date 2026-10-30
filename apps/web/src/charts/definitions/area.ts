@@ -29,7 +29,7 @@ import {
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import type { BuiltChart } from "./built-chart"
-import { AREA_FILL_END, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
+import { AREA_FILL_END, AREA_FILL_PARTIAL, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
 // Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
@@ -42,7 +42,7 @@ const STROKE_WIDTH = SERIES_STROKE_WIDTH
 const STACKED_STROKE_WIDTH = 1
 const STACKED_FILL_OPACITY = 0.55
 const PARTIAL_STACKED_FILL_OPACITY = 0.2
-const PARTIAL_FILL_GRADIENT = [0.1, AREA_FILL_END] as const
+const PARTIAL_FILL_GRADIENT = [AREA_FILL_PARTIAL, AREA_FILL_END] as const
 
 interface Series {
 	readonly key: string

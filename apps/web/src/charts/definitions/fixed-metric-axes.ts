@@ -10,6 +10,8 @@ export const SERIES_STROKE_WIDTH = 1.5
 export const AREA_FILL_START = 0.24
 /** Not 0: a 0% stop resolves to transparent black, and the canvas fades the wash through grey. */
 export const AREA_FILL_END = 0.01
+/** The in-flight tail's wash: clearly weaker than the closed buckets' fill. */
+export const AREA_FILL_PARTIAL = 0.1
 
 /** `verticalGradient` (plot-paint.ts). */
 export const verticalGradient = (

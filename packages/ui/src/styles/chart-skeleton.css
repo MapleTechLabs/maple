@@ -1,5 +1,5 @@
-/* Chart loading ghosts for @maple/ui ChartSkeleton (charts/_shared/chart-skeleton.tsx).
-   Shared because both apps render that component; import after tailwindcss. */
+/* Chart loading ghosts for `chartSkeleton` (apps/web/src/ui/chart-skeleton.ts).
+   Shared because the dashboard and Maple Local both render it; import after tailwindcss. */
 /* One motion for every ghost: the shapes hold still and a soft band of light
    passes left to right, then rests. It fades in after a beat so a fast query
    swaps straight to the chart without flashing a skeleton. */
@@ -29,8 +29,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+	/* The dim level the shapes rest at between sweeps, without the sweep. */
 	.chart-skeleton {
 		mask-image: none;
+		opacity: 0.55;
 		animation: chart-skeleton-enter 240ms ease-out 120ms backwards;
 	}
 }

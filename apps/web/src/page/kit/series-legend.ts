@@ -61,25 +61,24 @@ export const seriesLegend = <M>(
 		className?: string
 	}>,
 ): Html => {
-	const styles = STYLES
 	const shown = options.maxItems === undefined ? options.items : options.items.slice(0, options.maxItems)
 	const overflow = options.items.length - shown.length
 	return h.div(
-		[h.Class(cn(styles.root, options.className))],
+		[h.Class(cn(STYLES.root, options.className))],
 		[
 			...shown.map((item) =>
 				h.span(
-					[h.Key(item.key), h.Class(styles.item)],
+					[h.Key(item.key), h.Class(STYLES.item)],
 					[
 						...(item.color === undefined
 							? []
-							: [swatch(h, item.swatch ?? options.swatch ?? "square", item.color, styles.swatch)]),
+							: [swatch(h, item.swatch ?? options.swatch ?? "square", item.color, STYLES.swatch)]),
 						...(item.label === undefined
 							? []
 							: [
 									h.span(
 										[
-											h.Class(styles.label),
+											h.Class(STYLES.label),
 											...(item.title === undefined ? [] : [h.Title(item.title)]),
 										],
 										[item.label],
@@ -89,7 +88,7 @@ export const seriesLegend = <M>(
 							? []
 							: [
 									h.span(
-										[h.Class(styles.value)],
+										[h.Class(STYLES.value)],
 										[typeof item.value === "number" ? String(item.value) : item.value],
 									),
 								]),

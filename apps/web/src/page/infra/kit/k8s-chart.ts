@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import { formatValueWithUnit } from "../../../components/infra/chart-units"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -22,7 +23,7 @@ export const K8S_CHART_HEIGHT = 280
 /** `K8sSeriesSummary`: the series legend above the plot. */
 const k8sSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo, className = "mb-3"): Html =>
 	seriesLegend(h, {
-		className,
+		className: cn("justify-start", className),
 		items: info.series.map((name) => {
 			const value = info.lastValues[name]
 			return {

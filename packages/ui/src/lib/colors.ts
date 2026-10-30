@@ -86,17 +86,14 @@ export function getServiceHueFromName(serviceName: string): number {
  */
 const SERVICE_COLOR_TIERS = [
 	{ l: 0.57, c: 0.17 },
-	{ l: 0.65, c: 0.16 },
-	{ l: 0.73, c: 0.14 },
+	{ l: 0.64, c: 0.16 },
+	{ l: 0.7, c: 0.14 },
 ]
 
-/** Yellow through lime go olive at mid lightness, so they sit one step lighter. */
-const tierLightness = (l: number, hue: number): number => (hue >= 70 && hue <= 140 ? l + 0.08 : l)
-
-function getServiceColorTier(serviceName: string): { l: number; c: number } {
-	const hash = hashString(serviceName)
-	return SERVICE_COLOR_TIERS[Math.floor(hash / SERVICE_HUES.length) % SERVICE_COLOR_TIERS.length]
-}
+/** Yellow through lime go olive at mid lightness, so they sit lighter; capped so service
+ * names drawn in these colours still read on a white background. */
+const tierLightness = (l: number, hue: number): number =>
+	hue >= 70 && hue <= 140 ? Math.min(l + 0.08, 0.74) : l
 
 /**
  * The identity palette flattened to a single index space: `tier * 16 + hue`.
@@ -160,14 +157,6 @@ export function getSpanColorStyle(
 		backgroundColor: bgColor,
 		color: textColor,
 	}
-}
-
-/**
- * Get a border accent color for a service (slightly darker/more saturated than background)
- */
-export function getServiceBorderColor(serviceName: string): string {
-	const tier = getServiceColorTier(serviceName)
-	return `oklch(${tier.l - 0.08} ${tier.c + 0.02} ${getServiceHueFromName(serviceName)})`
 }
 
 /**
