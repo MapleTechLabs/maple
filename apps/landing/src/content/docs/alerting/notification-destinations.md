@@ -1,6 +1,6 @@
 ---
 title: "Notification destinations"
-description: "Route Maple alerts to Slack, email, PagerDuty, Discord, Telegram, Hazel, Linear or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
+description: "Route Maple alerts to Slack, email, PagerDuty, Discord, Telegram, Google Chat, Hazel, Linear or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
 group: "Alerting"
 order: 4
 ---
@@ -67,6 +67,13 @@ Post alerts to a Discord channel through an incoming webhook.
 
 1. In Discord, open **Channel settings → Integrations → Webhooks → New Webhook**.
 2. Copy the webhook URL (`https://discord.com/api/webhooks/...`) into the **Discord webhook URL** field.
+
+## Google Chat
+
+Post alerts to a Google Chat space through an incoming webhook. Each alert is a card with the summary, severity, chart and links back to Maple, and a resolve or reminder replies in the thread its trigger started.
+
+1. In Google Chat, open the space, then **Apps & integrations → Webhooks → Add webhook**. Webhooks are available in Google Workspace accounts; an admin may need to allow them.
+2. Copy the webhook URL (`https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...`) into the **Google Chat webhook URL** field. The `key` and `token` in it are the credential, so treat the URL as a secret.
 
 ## Telegram
 

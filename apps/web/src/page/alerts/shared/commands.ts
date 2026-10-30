@@ -53,6 +53,8 @@ export const updateDestination = (
 				return yield* client.alertDestinations.update({ params, payload })
 			case "telegram":
 				return yield* client.alertDestinations.update({ params, payload })
+			case "google-chat":
+				return yield* client.alertDestinations.update({ params, payload })
 			case "email":
 				return yield* client.alertDestinations.update({ params, payload })
 			case "chat":

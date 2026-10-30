@@ -16,7 +16,14 @@ import { panel } from "../../../ui/panel"
 import { settingRow } from "../../../ui/setting-row"
 import { switchControl } from "../../../ui/switch"
 import { destinationProvider, providerLogo, providerOf, destinationTypesFor } from "../shared/providers"
-import { isFormReady, isValidPagerDutyKey, isValidTelegramToken, Message, type Model } from "./dialog"
+import {
+	isFormReady,
+	isValidGoogleChatWebhookUrl,
+	isValidPagerDutyKey,
+	isValidTelegramToken,
+	Message,
+	type Model,
+} from "./dialog"
 import { chatFields } from "./chat-fields-view"
 import { emailFields } from "./email-fields-view"
 import { hazelFields } from "./hazel-fields-view"
@@ -292,6 +299,43 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						h,
 						{ ids: fieldIds, className: "text-2xs", state: stateOf(form.webhookUrl) },
 						"In Discord: Channel settings → Integrations → Webhooks → New Webhook, then copy the URL.",
+					),
+				]),
+			]
+		}
+		case "google-chat": {
+			const fieldIds = ids("google-chat-webhook", true)
+			const isBadUrl =
+				form.webhookUrl.trim().length > 0 && !isValidGoogleChatWebhookUrl(form.webhookUrl)
+			return [
+				fieldBlock(h, [
+					fieldLabel(
+						h,
+						{ ids: fieldIds, className: "text-xs", state: stateOf(form.webhookUrl) },
+						"Google Chat webhook URL",
+					),
+					textInput(h, model, {
+						name: "google-chat-webhook",
+						field: "webhookUrl",
+						placeholder: isEditing
+							? "Leave blank to keep current webhook"
+							: "https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...",
+						className: "font-mono text-xs",
+						hasDescription: true,
+					}),
+					...(isBadUrl
+						? [
+								fieldError(
+									h,
+									{ ids: fieldIds, className: "text-2xs", state: stateOf(form.webhookUrl) },
+									"That isn't a Google Chat webhook URL. It starts with https://chat.googleapis.com/v1/spaces/ and has a key and a token; a link to the space won't work.",
+								),
+							]
+						: []),
+					fieldDescription(
+						h,
+						{ ids: fieldIds, className: "text-2xs", state: stateOf(form.webhookUrl) },
+						"In Google Chat: open the space → Apps & integrations → Webhooks → Add webhook, then copy the URL.",
 					),
 				]),
 			]

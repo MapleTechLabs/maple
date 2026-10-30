@@ -11,6 +11,7 @@ import {
 	AlertDestinationNotFoundError,
 	PagerDutyAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
+	GoogleChatAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import type {
@@ -95,6 +96,13 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				name: params.name,
 				botToken: params.bot_token,
 				chatId: params.chat_id,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "google-chat":
+			return new GoogleChatAlertDestinationConfig({
+				type: "google-chat",
+				name: params.name,
+				webhookUrl: params.webhook_url,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
 		case "email":
@@ -185,6 +193,12 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				...shared,
 				...(params.bot_token !== undefined ? { botToken: params.bot_token } : undefined),
 				...(params.chat_id !== undefined ? { chatId: params.chat_id } : undefined),
+			}
+		case "google-chat":
+			return {
+				type: "google-chat",
+				...shared,
+				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
 			}
 		case "email":
 			return {

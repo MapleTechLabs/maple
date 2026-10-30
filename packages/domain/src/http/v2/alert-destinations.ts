@@ -86,7 +86,7 @@ export const V2AlertDestination = Schema.Struct({
 	}),
 	type: AlertDestinationType.annotate({
 		description:
-			"The delivery channel: `pagerduty`, `webhook`, `hazel-oauth`, `discord`, `telegram`, `email`, `chat` (a channel in a chat workspace linked through a chat connector), or `linear` (a team in the connected Linear workspace). Immutable after creation.",
+			"The delivery channel: `pagerduty`, `webhook`, `hazel-oauth`, `discord`, `telegram`, `google-chat`, `email`, `chat` (a channel in a chat workspace linked through a chat connector), or `linear` (a team in the connected Linear workspace). Immutable after creation.",
 		examples: ["pagerduty"],
 	}),
 	enabled: Schema.Boolean.annotate({
@@ -137,7 +137,7 @@ export const V2AlertDestination = Schema.Struct({
 	identifier: "AlertDestination",
 	title: "Alert Destination",
 	description:
-		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Hazel OAuth, Discord, Telegram, workspace-member email, a channel in a linked chat workspace, or a Linear team). Channel secrets are write-only: responses carry a redacted `summary` instead.",
+		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Hazel OAuth, Discord, Telegram, Google Chat, workspace-member email, a channel in a linked chat workspace, or a Linear team). Channel secrets are write-only: responses carry a redacted `summary` instead.",
 	examples: [wireExample(alertDestinationExample)],
 })
 export type V2AlertDestination = Schema.Schema.Type<typeof V2AlertDestination>
@@ -235,6 +235,16 @@ const V2TelegramDestinationCreateParams = Schema.Struct({
 	enabled: enabledField,
 }).annotate({ identifier: "AlertDestinationCreateTelegram", title: "Telegram destination" })
 
+const V2GoogleChatDestinationCreateParams = Schema.Struct({
+	type: Schema.Literal("google-chat"),
+	name: nameField,
+	webhook_url: NonEmptyString.annotate({
+		description:
+			"The Google Chat space's incoming webhook URL (`https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…`). Write-only — never returned.",
+	}),
+	enabled: enabledField,
+}).annotate({ identifier: "AlertDestinationCreateGoogleChat", title: "Google Chat destination" })
+
 const V2EmailDestinationCreateParams = Schema.Struct({
 	type: Schema.Literal("email"),
 	name: nameField,
@@ -276,6 +286,7 @@ export const V2AlertDestinationCreateParams = Schema.Union([
 	V2HazelOAuthDestinationCreateParams,
 	V2DiscordDestinationCreateParams,
 	V2TelegramDestinationCreateParams,
+	V2GoogleChatDestinationCreateParams,
 	V2EmailDestinationCreateParams,
 	V2ChatDestinationCreateParams,
 	V2LinearDestinationCreateParams,
@@ -339,6 +350,12 @@ export const V2AlertDestinationUpdateParams = Schema.Union([
 		chat_id: Schema.optionalKey(Schema.String),
 		enabled: Schema.optionalKey(Schema.Boolean),
 	}).annotate({ identifier: "AlertDestinationUpdateTelegram", title: "Telegram destination update" }),
+	Schema.Struct({
+		type: Schema.Literal("google-chat"),
+		name: optionalNameField,
+		webhook_url: Schema.optionalKey(Schema.String),
+		enabled: Schema.optionalKey(Schema.Boolean),
+	}).annotate({ identifier: "AlertDestinationUpdateGoogleChat", title: "Google Chat destination update" }),
 	Schema.Struct({
 		type: Schema.Literal("email"),
 		name: optionalNameField,
@@ -648,6 +665,6 @@ export class V2AlertDestinationsApiGroup extends HttpApiGroup.make("alertDestina
 		OpenApi.annotations({
 			title: "Alert Destinations",
 			description:
-				"Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+				"Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
 		}),
 	) {}

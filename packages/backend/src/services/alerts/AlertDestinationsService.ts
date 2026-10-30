@@ -21,6 +21,7 @@ import {
 	type ChatWorkspaceId as ChatWorkspaceIdType,
 	type OrgId,
 	type UserId,
+	parseGoogleChatWebhookUrl,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -151,6 +152,22 @@ const summarizeWebhookUrl = (url: string) =>
 const TELEGRAM_MALFORMED_TOKEN_MESSAGE =
 	"Telegram bot token must look like `123456789:ABC-DEF…` — copy it from @BotFather without the `bot` prefix."
 
+/** The space id is not a secret; the `key` and `token` query parameters are. */
+const googleChatSummary = (webhookUrl: string) =>
+	Option.match(parseGoogleChatWebhookUrl(webhookUrl), {
+		onNone: () => "Google Chat space",
+		onSome: ({ spaceId }) => `Space ${spaceId}`,
+	})
+
+const validateGoogleChatWebhookUrl = (rawUrl: string): Effect.Effect<string, AlertValidationError> =>
+	Option.isSome(parseGoogleChatWebhookUrl(rawUrl))
+		? validateDestinationUrl(rawUrl, "webhookUrl")
+		: Effect.fail(
+				makeValidationError(
+					"Google Chat webhook URL must look like `https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…` — copy it from the space's Apps & integrations → Webhooks.",
+				),
+			)
+
 /** A chat id is not a secret, but it is also not a name — label it as what it is. */
 const telegramSummary = (chatId: string) => `Chat ${chatId.trim()}`
 
@@ -191,6 +208,7 @@ const buildPublicConfig = (
 			// `channelLabel` as well as the summary so the edit form can prefill it
 			// — without that, renaming a destination would demand retyping the id.
 			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: r.chatId.trim() }),
+			"google-chat": (r) => ({ summary: googleChatSummary(r.webhookUrl), channelLabel: null }),
 		}),
 	)
 
@@ -214,6 +232,7 @@ const buildSecretConfig = (
 				botToken: r.botToken.trim(),
 				chatId: r.chatId.trim(),
 			}),
+			"google-chat": (r) => ({ type: "google-chat" as const, webhookUrl: r.webhookUrl.trim() }),
 		}),
 	)
 
@@ -540,7 +559,7 @@ export class AlertDestinationsService extends Context.Service<
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
 			else if (request.type === "discord") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			}
+			} else if (request.type === "google-chat") yield* validateGoogleChatWebhookUrl(request.webhookUrl)
 			const destinationId = decodeAlertDestinationIdSync(runtime.makeUuid())
 			let publicConfig: DestinationPublicConfig
 			let secretConfig: DestinationSecretConfig
@@ -647,6 +666,12 @@ export class AlertDestinationsService extends Context.Service<
 				request.webhookUrl.trim().length > 0
 			) {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+			} else if (
+				request.type === "google-chat" &&
+				request.webhookUrl != null &&
+				request.webhookUrl.trim().length > 0
+			) {
+				yield* validateGoogleChatWebhookUrl(request.webhookUrl)
 			}
 
 			const { nextPublicConfig, nextSecretConfig } = yield* Match.value(request).pipe(
@@ -760,6 +785,26 @@ export class AlertDestinationsService extends Context.Service<
 										: ""),
 							} satisfies DestinationSecretConfig,
 						}),
+					"google-chat": (r) => {
+						const nextUrl = normalizeOptionalString(r.webhookUrl)
+						return Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									nextUrl != null
+										? googleChatSummary(nextUrl)
+										: hydrated.publicConfig.summary,
+								channelLabel: null,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "google-chat" as const,
+								webhookUrl:
+									nextUrl ??
+									(hydrated.secretConfig.type === "google-chat"
+										? hydrated.secretConfig.webhookUrl
+										: ""),
+							} satisfies DestinationSecretConfig,
+						})
+					},
 					telegram: (r) => {
 						const previous =
 							hydrated.secretConfig.type === "telegram" ? hydrated.secretConfig : null

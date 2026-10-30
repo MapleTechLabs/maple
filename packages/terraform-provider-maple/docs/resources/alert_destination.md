@@ -39,7 +39,7 @@ resource "maple_alert_destination" "team_email" {
 ### Required
 
 - `name` (String) Display name.
-- `type` (String) Channel type: `pagerduty`, `webhook`, `discord`, `telegram`, `email` or `chat`. Changing it replaces the destination.
+- `type` (String) Channel type: `pagerduty`, `webhook`, `discord`, `telegram`, `google-chat`, `email` or `chat`. Changing it replaces the destination.
 
 ### Optional
 
@@ -51,7 +51,7 @@ resource "maple_alert_destination" "team_email" {
 - `member_user_ids` (List of String) `email`: the organization members to email.
 - `signing_secret` (String, Sensitive) `webhook`: secret used to sign each request (optional).
 - `url` (String, Sensitive) `webhook`: the URL Maple POSTs to. Sensitive, since webhook URLs often carry a token.
-- `webhook_url` (String, Sensitive) `discord`: the channel webhook URL.
+- `webhook_url` (String, Sensitive) `discord`, `google-chat`: the channel webhook URL.
 - `workspace_id` (String) `chat`: the linked chat workspace. Changing it replaces the destination.
 
 ### Read-Only

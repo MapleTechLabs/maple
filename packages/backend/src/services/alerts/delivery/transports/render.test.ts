@@ -6,6 +6,7 @@ import { Schema } from "effect"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
+import { googleChatTransport } from "./google-chat"
 import { hazelTransport } from "./hazel"
 import { pagerDutyTransport } from "./pagerduty"
 import { telegramTransport } from "./telegram"
@@ -127,6 +128,15 @@ describe("transport render: guard flags", () => {
 				inputFor({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
 			),
 		],
+		[
+			"google-chat",
+			googleChatTransport.render(
+				inputFor({
+					type: "google-chat",
+					webhookUrl: "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=k&token=t",
+				}),
+			),
+		],
 	]
 
 	it("guards exactly the user-configured hosts", () => {
@@ -134,13 +144,14 @@ describe("transport render: guard flags", () => {
 		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
-		assert.deepStrictEqual(guarded, ["webhook", "discord", "hazel-oauth"])
+		assert.deepStrictEqual(guarded, ["webhook", "discord", "hazel-oauth", "google-chat"])
 	})
 
 	it("marks exactly the providers whose token rides in the URL path", () => {
 		const sensitive = specs.filter(([, spec]) => spec.sensitivePath).map(([name]) => name)
 		// telegram is the first provider where this disagrees with `guarded`: a
-		// fixed vendor host, but the bot token rides in the path.
+		// fixed vendor host, but the bot token rides in the path. google-chat carries its
+		// credential in the query string, which no span records.
 		assert.deepStrictEqual(sensitive, ["discord", "hazel-oauth", "telegram"])
 	})
 
