@@ -9,7 +9,7 @@ import {
 } from "@maple/ui/styles/ui/card"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/card.tsx: the raised rounded-2xl surface and its parts.
+// Port of packages/ui/src/components/ui/card.tsx: the raised rounded-md surface and its parts.
 
 type Children = ReadonlyArray<Html | string>
 
