@@ -7,6 +7,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
@@ -37,11 +38,11 @@ import { decodeGitCommitSha } from "@maple/backend/services/integrations/vcs/__t
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const installationResponse = () =>
+const installationResponse = (id = 42, login = "octo") =>
 	jsonResponse({
-		id: 42,
+		id,
 		account: {
-			login: "octo",
+			login,
 			id: 100,
 			type: "Organization",
 			avatar_url: "https://avatars.githubusercontent.com/u/100",
@@ -80,7 +81,12 @@ const connectResponders = (...rest: Array<() => Response>) => [
 
 // Wire GithubConnectService over an in-memory PGlite (real repo + state repo), a
 // real GithubAppClient backed by the stubbed HttpClient, and a recording queue.
-const connectLayer = (testDb: TestDb, http: Layer.Layer<HttpClient.HttpClient>, sent: Array<VcsSyncJob>) => {
+const connectLayer = (
+	testDb: TestDb,
+	http: Layer.Layer<HttpClient.HttpClient>,
+	sent: Array<VcsSyncJob>,
+	decorateRepo?: (repo: VcsRepository["Service"]) => VcsRepository["Service"],
+) => {
 	const env = testEnv(GITHUB_APP_CONFIG)
 	const data = Layer.mergeAll(
 		VcsRepository.layer,
@@ -91,13 +97,305 @@ const connectLayer = (testDb: TestDb, http: Layer.Layer<HttpClient.HttpClient>, 
 		Layer.provide(http),
 		Layer.provide(env),
 	)
-	const service = Layer.effect(GithubConnectService, GithubConnectService.make).pipe(
-		Layer.provide(Layer.mergeAll(env, githubAppClient, data)),
-	)
+	const service = Layer.effect(
+		GithubConnectService,
+		Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			return yield* GithubConnectService.make.pipe(
+				Effect.provideService(VcsRepository, decorateRepo?.(repo) ?? repo),
+			)
+		}),
+	).pipe(Layer.provide(Layer.mergeAll(env, githubAppClient, data, SecureRandom.layerWebCrypto)))
 	return Layer.mergeAll(service, data)
 }
 
+const startExisting = (service: GithubConnectService["Service"]) =>
+	service.startConnect(INITIATOR.orgId, INITIATOR.userId, {
+		callbackUrl: "https://api.example.com/api/integrations/github/callback",
+		mode: "existing",
+	})
+
+describe("connecting an existing GitHub installation", () => {
+	it.effect(
+		"discovers an independently installed app and connects only the explicitly selected account",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			const http = scriptedHttp(connectResponders(installationResponse))
+			return Effect.gen(function* () {
+				const service = yield* GithubConnectService
+				const repo = yield* VcsRepository
+				const started = yield* startExisting(service)
+				const url = new URL(started.redirectUrl)
+				assert.strictEqual(url.pathname, "/login/oauth/authorize")
+				assert.strictEqual(url.searchParams.get("state"), started.state)
+				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+				assert.deepStrictEqual(
+					selection.installations.map((installation) => [
+						installation.id,
+						installation.accountLogin,
+					]),
+					[["42", "octo"]],
+				)
+				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, false)
+				assert.strictEqual(sent.length, 0)
+
+				yield* service.selectInstallation("42", selection.state, INITIATOR)
+				const installed = Option.getOrThrow(yield* repo.resolveInstallation("github", "42"))
+				assert.strictEqual(installed.orgId, INITIATOR.orgId)
+				assert.strictEqual(installed.installedByUserId, INITIATOR.userId)
+				const connected = yield* service.getStatus(INITIATOR.orgId)
+				assert.strictEqual(connected.connected, true)
+				assert.strictEqual(connected.repositoryDiscovery?._tag, "Pending")
+				assert.isString(connected.repositoryDiscovery?.requestId)
+				assert.deepStrictEqual(sent, [
+					{
+						kind: "installation-sync",
+						provider: "github",
+						externalInstallationId: "42",
+						reason: "created",
+						requestId: connected.repositoryDiscovery?.requestId,
+					},
+				])
+				const replay = findError(
+					yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
+				)
+				assert.ok(replay instanceof IntegrationsValidationError)
+				assert.strictEqual(sent.length, 1)
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+		},
+	)
+
+	it.effect("offers every administered installation without choosing the first one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		const http = fakeGithubHttp((request) => {
+			const url = new URL(request.url)
+			if (url.pathname === "/login/oauth/access_token") return oauthTokenResponse()
+			if (url.pathname === "/user/installations") return userInstallationsResponse([42, 43])()
+			if (url.pathname === "/app/installations/42") return installationResponse()
+			if (url.pathname === "/app/installations/43") return installationResponse(43, "second")
+			return orgMembershipResponse()()
+		})
+		return Effect.gen(function* () {
+			const service = yield* GithubConnectService
+			const started = yield* startExisting(service)
+			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+			assert.deepStrictEqual(
+				selection.installations.map((installation) => installation.id),
+				["42", "43"],
+			)
+			assert.strictEqual(sent.length, 0)
+			yield* service.selectInstallation("43", selection.state, INITIATOR)
+			const repo = yield* VcsRepository
+			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
+			assert.strictEqual(
+				Option.getOrThrow(yield* repo.resolveInstallation("github", "43")).accountLogin,
+				"second",
+			)
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+	})
+
+	for (const role of [
+		{ name: "member", response: orgMembershipResponse("member") },
+		{ name: "unverifiable", response: () => jsonResponse({}, { status: 403 }) },
+	]) {
+		it.effect(`refuses discovery when GitHub does not prove account admin (${role.name})`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			const http = scriptedHttp([
+				oauthTokenResponse,
+				userInstallationsResponse(),
+				installationResponse,
+				role.response,
+			])
+			return Effect.gen(function* () {
+				const service = yield* GithubConnectService
+				const started = yield* startExisting(service)
+				const error = findError(
+					yield* service
+						.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+						.pipe(Effect.exit),
+				)
+				assert.ok(error instanceof IntegrationsValidationError)
+				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, false)
+				assert.strictEqual(sent.length, 0)
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+		})
+	}
+
+	for (const other of [
+		{ ...INITIATOR, userId: asUserId("other-user") },
+		{ ...INITIATOR, orgId: asOrgId("other-org") },
+	]) {
+		it.effect(`selection belongs to its initiating user and org (${other.userId}/${other.orgId})`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			const http = scriptedHttp(connectResponders(installationResponse))
+			return Effect.gen(function* () {
+				const service = yield* GithubConnectService
+				const started = yield* startExisting(service)
+				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+				const error = findError(
+					yield* service.selectInstallation("42", selection.state, other).pipe(Effect.exit),
+				)
+				assert.ok(error instanceof IntegrationsValidationError)
+				assert.strictEqual(sent.length, 0)
+				yield* service.selectInstallation("42", selection.state, INITIATOR)
+				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, true)
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+		})
+	}
+
+	for (const refusal of ["expired", "unlisted", "install-state"] as const) {
+		it.effect(`refuses ${refusal} selection authority without binding`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			const http = scriptedHttp(connectResponders())
+			return Effect.gen(function* () {
+				const service = yield* GithubConnectService
+				const started = yield* startExisting(service)
+				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+				if (refusal === "expired") yield* TestClock.adjust("11 minutes")
+				const attempt =
+					refusal === "install-state"
+						? service.completeConnect("42", selection.state, undefined, INITIATOR)
+						: service.selectInstallation(
+								refusal === "unlisted" ? "999" : "42",
+								selection.state,
+								INITIATOR,
+							)
+				assert.ok(findError(yield* attempt.pipe(Effect.exit)) instanceof IntegrationsValidationError)
+				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, false)
+				assert.strictEqual(sent.length, 0)
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+		})
+	}
+
+	it.effect("refuses an installation claimed by another Maple organization after discovery", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		const http = scriptedHttp(connectResponders())
+		return Effect.gen(function* () {
+			const service = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const started = yield* startExisting(service)
+			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+			yield* repo.upsertInstallation({
+				orgId: asOrgId("other-org"),
+				provider: "github",
+				externalInstallationId: "42",
+				accountLogin: "octo",
+				accountType: "organization",
+				externalAccountId: "100",
+				accountAvatarUrl: null,
+				repositorySelection: "all",
+				installedByUserId: INITIATOR.userId,
+			})
+			assert.ok(
+				findError(
+					yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
+				) instanceof IntegrationsValidationError,
+			)
+			assert.strictEqual(
+				Option.getOrThrow(yield* repo.resolveInstallation("github", "42")).orgId,
+				asOrgId("other-org"),
+			)
+			assert.strictEqual(sent.length, 0)
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+	})
+})
+
 describe("GithubConnectService", () => {
+	for (const initialStatus of ["active", "disconnected"] as const) {
+		it.effect(
+			`getStatus keeps an ${initialStatus} installation correlated with its discovery snapshot while the worker completes`,
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const sent: Array<VcsSyncJob> = []
+				let completeDuringRead = false
+				const decorateRepo = (repo: VcsRepository["Service"]) => {
+					const completeDiscovery = Effect.gen(function* () {
+						if (!completeDuringRead) return
+						completeDuringRead = false
+						const installation = Option.getOrThrow(
+							yield* repo.resolveInstallation("github", "42"),
+						)
+						const job = sent[0]
+						assert.ok(
+							installation !== undefined &&
+								job?.kind === "installation-sync" &&
+								job.requestId !== undefined,
+						)
+						yield* repo.markInstallationStatus(installation.id, "active")
+						yield* repo.upsertRepositories(installation, [
+							{
+								externalRepoId: "7",
+								owner: "octo",
+								name: "repo",
+								fullName: "octo/repo",
+								defaultBranch: "main",
+								htmlUrl: "https://github.com/octo/repo",
+								isPrivate: true,
+								isArchived: false,
+							},
+						])
+						yield* repo.finishRepositoryDiscovery(installation.id, {
+							_tag: "Complete",
+							requestId: job.requestId,
+						})
+					})
+					return {
+						...repo,
+						listInstallationsByOrg: (...args: Parameters<typeof repo.listInstallationsByOrg>) =>
+							repo
+								.listInstallationsByOrg(...args)
+								.pipe(
+									Effect.tap(() =>
+										initialStatus === "disconnected" ? completeDiscovery : Effect.void,
+									),
+								),
+						listRepositoriesByInstallation: (
+							...args: Parameters<typeof repo.listRepositoriesByInstallation>
+						) =>
+							repo
+								.listRepositoriesByInstallation(...args)
+								.pipe(
+									Effect.tap(() =>
+										initialStatus === "active" ? completeDiscovery : Effect.void,
+									),
+								),
+					}
+				}
+				return Effect.gen(function* () {
+					const service = yield* GithubConnectService
+					const repo = yield* VcsRepository
+					const start = yield* service.startConnect(INITIATOR.orgId, INITIATOR.userId, {
+						callbackUrl: "https://api.example.com/callback",
+					})
+					yield* service.completeConnect("42", start.state, TEST_CODE, INITIATOR)
+					const installation = Option.getOrThrow(yield* repo.resolveInstallation("github", "42"))
+					yield* repo.markInstallationStatus(installation.id, initialStatus)
+					completeDuringRead = true
+					const during = yield* service.getStatus(INITIATOR.orgId)
+					assert.strictEqual(
+						during.state,
+						initialStatus === "active" ? "connected" : "disconnected",
+					)
+					assert.strictEqual(during.repositoryDiscovery?._tag, "Pending")
+					if (initialStatus === "active") assert.lengthOf(during.repositories, 0)
+					const after = yield* service.getStatus(INITIATOR.orgId)
+					assert.strictEqual(after.connected, true)
+					assert.strictEqual(after.repositoryDiscovery?._tag, "Complete")
+					assert.strictEqual(after.repositories[0]?.fullName, "octo/repo")
+				}).pipe(
+					Effect.provide(
+						connectLayer(testDb, scriptedHttp(connectResponders()), sent, decorateRepo),
+					),
+				)
+			},
+		)
+	}
 	it.effect("startConnect mints a state row and returns the GitHub install URL with state", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
@@ -280,7 +578,9 @@ describe("GithubConnectService", () => {
 					const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 						callbackUrl: "https://tunnel.example/cb",
 					})
-					const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
+					const exit = yield* svc
+						.completeConnect("42", state, TEST_CODE, INITIATOR)
+						.pipe(Effect.exit)
 					assert.deepStrictEqual(roleUrls, [
 						c.account === "Organization" ? "/user/memberships/orgs/octo" : "/user",
 					])
@@ -366,6 +666,9 @@ describe("GithubConnectService", () => {
 			})
 			yield* svc.completeConnect("42", first.state, TEST_CODE, INITIATOR)
 			assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "42")))
+			const oldDiscovery = (yield* svc.getStatus(orgId)).repositoryDiscovery
+			const installation = Option.getOrThrow(yield* repo.resolveInstallation("github", "42"))
+			yield* repo.markInstallationStatus(installation.id, "disconnected")
 
 			// Second connect from the SAME org, no code → still allowed (reconnect).
 			const second = yield* svc.startConnect(orgId, asUserId("user_1"), {
@@ -376,6 +679,10 @@ describe("GithubConnectService", () => {
 			const found = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(found))
 			assert.strictEqual(found.value.orgId, orgId)
+			const reconnecting = yield* svc.getStatus(orgId)
+			assert.strictEqual(reconnecting.connected, false)
+			assert.strictEqual(reconnecting.repositoryDiscovery?._tag, "Pending")
+			assert.notStrictEqual(reconnecting.repositoryDiscovery?.requestId, oldDiscovery?.requestId)
 
 			// First connect enqueues "created"; the reconnect enqueues "updated".
 			const reasons = sent.flatMap((j) => (j.kind === "installation-sync" ? [j.reason] : []))

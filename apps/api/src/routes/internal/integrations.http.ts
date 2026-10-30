@@ -21,6 +21,7 @@ import {
 	GithubPrReviewSettingsResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
+	GithubSelectInstallationResponse,
 	HazelChannelsListResponse,
 	HazelDisconnectResponse,
 	HazelIntegrationStatus,
@@ -620,6 +621,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,
 							ciTracesEnabled: status.ciTracesEnabled,
+							repositoryDiscovery: status.repositoryDiscovery,
 							repositories: status.repositories,
 						})
 					}),
@@ -632,8 +634,21 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
 							returnTo: payload.returnTo,
+							mode: payload.mode,
 						})
 						return new GithubStartConnectResponse(result)
+					}),
+				)
+				.handle("githubSelectInstallation", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return new GithubSelectInstallationResponse(
+							yield* github.selectInstallation(payload.installationId, payload.state, {
+								orgId: tenant.orgId,
+								userId: tenant.userId,
+							}),
+						)
 					}),
 				)
 				.handle("githubDisconnect", () =>

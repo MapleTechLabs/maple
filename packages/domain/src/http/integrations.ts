@@ -26,6 +26,7 @@ import {
 	VcsRepoStatus,
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
+	VcsRepositoryDiscovery,
 } from "./vcs"
 
 const RETURN_PATH_MAX_LENGTH = 2048
@@ -803,6 +804,7 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		repositorySelection: Schema.NullOr(VcsRepoSelection),
 		/** Whether GitHub Actions runs become traces. True before the org has connected. */
 		ciTracesEnabled: Schema.Boolean,
+		repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery),
 		repositories: Schema.Array(GithubRepoSummary),
 	},
 ) {}
@@ -811,6 +813,7 @@ export class GithubStartConnectRequest extends Schema.Class<GithubStartConnectRe
 	"GithubStartConnectRequest",
 )({
 	returnTo: Schema.optionalKey(IntegrationReturnPath),
+	mode: Schema.optionalKey(Schema.Literals(["install", "existing"])),
 }) {}
 
 export class GithubStartConnectResponse extends Schema.Class<GithubStartConnectResponse>(
@@ -818,6 +821,19 @@ export class GithubStartConnectResponse extends Schema.Class<GithubStartConnectR
 )({
 	redirectUrl: Schema.String,
 	state: Schema.String,
+}) {}
+
+export class GithubSelectInstallationRequest extends Schema.Class<GithubSelectInstallationRequest>(
+	"GithubSelectInstallationRequest",
+)({
+	state: Schema.String,
+	installationId: Schema.String,
+}) {}
+
+export class GithubSelectInstallationResponse extends Schema.Class<GithubSelectInstallationResponse>(
+	"GithubSelectInstallationResponse",
+)({
+	connected: Schema.Literal(true),
 }) {}
 
 export class GithubDisconnectResponse extends Schema.Class<GithubDisconnectResponse>(
@@ -1740,6 +1756,18 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.post("githubStart", "/github/start", {
 			payload: GithubStartConnectRequest,
 			success: GithubStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("githubSelectInstallation", "/github/select", {
+			payload: GithubSelectInstallationRequest,
+			success: GithubSelectInstallationResponse,
 			error: [
 				IntegrationsForbiddenError,
 				IntegrationsValidationError,

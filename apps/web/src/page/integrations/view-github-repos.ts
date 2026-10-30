@@ -238,6 +238,7 @@ export const repositoriesPanels = (
 		(repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling",
 	).length
 	const failed = active.filter((repo) => repo.syncStatus === "error").length
+	const discovery = status.repositoryDiscovery
 	const counts = h.div(
 		[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
 		[
@@ -278,18 +279,38 @@ export const repositoriesPanels = (
 				],
 				action: active.length > 0 ? counts : undefined,
 			}),
-			active.length === 0 && removed.length === 0
+			discovery?._tag === "Pending"
 				? h.div(
 						[h.Class("flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground")],
-						[
-							spinner(h, undefined, 16),
-							"Syncing repositories from GitHub… this can take a moment.",
-						],
+						[spinner(h, undefined, 16), "Discovering repositories…"],
 					)
-				: h.ul(
-						[h.Class("divide-y")],
-						active.map((repo) => repoRow(h, model, repo, timeZone)),
-					),
+				: discovery?._tag === "Failed"
+					? h.div(
+							[h.Class("flex flex-col items-start gap-3 px-4 py-6 text-sm")],
+							[
+								h.p([h.Class("text-severity-error")], [discovery.message]),
+								button(
+									h,
+									{
+										variant: "outline",
+										isDisabled: model.connect.isStarting,
+										attributes: [h.OnClick(Message.ClickedConnectExistingGithub())],
+									},
+									["Connect existing installation"],
+								),
+							],
+						)
+					: active.length === 0 && removed.length === 0
+						? h.p(
+								[h.Class("px-4 py-6 text-sm text-muted-foreground")],
+								[
+									"No repositories granted. Change repository access on GitHub to grant Maple at least one.",
+								],
+							)
+						: h.ul(
+								[h.Class("divide-y")],
+								active.map((repo) => repoRow(h, model, repo, timeZone)),
+							),
 		]),
 		...(removed.length > 0
 			? [

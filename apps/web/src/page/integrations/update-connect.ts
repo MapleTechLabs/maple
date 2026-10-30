@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import type { GithubInstallationSelection } from "@maple/domain/http"
 import type * as Keyed from "../../data/keyed"
 import { PageOutMessage, type PageContext, type PageReturn } from "../contract"
 import { integrationOfSearch } from "./catalog"
@@ -44,16 +45,27 @@ export const refreshProvider = (
 	mode: Keyed.ReadMode = "Supersede",
 ): Return => requestStatus(model, context, STATUS_OF[provider], mode)
 
-export const clickedConnect = (model: Model): Return => {
+export const clickedConnect = (model: Model, githubMode?: "install" | "existing"): Return => {
 	const integration = integrationOfSearch(model.search.integration)
-	if (!Schema.is(ConnectProvider)(integration) || model.connect.isStarting) return { model }
+	if (
+		!Schema.is(ConnectProvider)(integration) ||
+		model.connect.isStarting ||
+		model.githubCard.selectingInstallation !== null
+	)
+		return { model }
 	if (integration === "linear" && !model.isAdmin) return { model }
 	const attempt = model.connect.attempts + 1
-	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
+	const base =
+		integration === "cloudflare"
+			? Cloudflare.resetPrime(model)
+			: integration === "github"
+				? { ...model, githubCard: { ...model.githubCard, selection: null } }
+				: model
+	const active = { provider: integration, attempt }
 	return {
 		model: withConnect(base, {
 			attempts: attempt,
-			active: { provider: integration, attempt },
+			active: integration === "github" && githubMode !== undefined ? { ...active, githubMode } : active,
 			isStarting: true,
 			isClosed: false,
 		}),
@@ -129,8 +141,16 @@ export const receivedCallback = (
 	provider: ConnectProvider,
 	status: string,
 	message: string | null,
+	github?: GithubInstallationSelection,
 ): Return => {
 	const label = PROVIDERS[provider].label
+	if (provider === "github" && status === "success" && github !== undefined)
+		return {
+			model: {
+				...withConnect(model, { active: null, isStarting: false, isClosed: false }),
+				githubCard: { ...model.githubCard, selection: github, selectingInstallation: null },
+			},
+		}
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
 		return chain(provider === "planetscale" ? Planetscale.restartWatch(model) : model, [
@@ -143,7 +163,13 @@ export const receivedCallback = (
 		])
 	}
 	if (status !== "error") return { model }
-	const failed = toast(model, "error", message ?? `${label} connection failed`)
+	const failed = toast(
+		provider === "github"
+			? withConnect(model, { active: null, isStarting: false, isClosed: false })
+			: model,
+		"error",
+		message ?? `${label} connection failed`,
+	)
 	return provider === "cloudflare"
 		? chain(model, [() => failed, (next) => refreshProvider(next, context, provider)])
 		: failed

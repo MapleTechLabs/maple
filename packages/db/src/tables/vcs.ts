@@ -27,6 +27,7 @@ import {
 	VcsRepoStatus,
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
+	VcsRepositoryDiscovery,
 } from "@maple/domain/http"
 import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
 import { Schema } from "effect"
@@ -67,6 +68,9 @@ export const VcsInstallations = PG.table("vcs_installations", {
 		suspendedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "suspended_at" }),
 		/** Opt-out: finished CI workflow runs become traces unless the org turns this off. */
 		ciTracesEnabled: PG.column(PG.bool, { name: "ci_traces_enabled", default: true }),
+		repositoryDiscovery: PG.column(PG.nullable(PG.jsonb(VcsRepositoryDiscovery)), {
+			name: "repository_discovery",
+		}),
 		installedByUserId: PG.column(PG.brand(PG.text, UserId), { name: "installed_by_user_id" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
