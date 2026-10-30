@@ -168,6 +168,22 @@ const tableQualifiers = (sql: string): ReadonlyMap<string, string> => {
 	)
 }
 
+/**
+ * The qualifier of `written` names more than one relation (a CTE in one scope, a table in
+ * another), so a rewrite of every `q.col` would also change the scope where it was valid.
+ */
+const qualifierReused = (sql: string, written: string): boolean => {
+	const dot = written.lastIndexOf(".")
+	if (dot <= 0) return false
+	const qualifier = written.slice(0, dot).toLowerCase()
+	const binds = relations(sql).filter(
+		({ name, alias }) =>
+			alias?.toLowerCase() === qualifier ||
+			(name.split(".").at(-1) ?? name).toLowerCase() === qualifier,
+	)
+	return binds.length > 1
+}
+
 export type IdentifierRewrite = typeof RunSqlRewrite.Type
 
 /** The SQL with the identifier an error named replaced, or undefined when no single fix fits. */
@@ -176,6 +192,7 @@ export const fixUnknownIdentifier = (
 	message: string,
 ): { readonly sql: string; readonly rewrite: IdentifierRewrite } | undefined => {
 	const written = unknownIdentifierName(message)
+	if (written !== undefined && qualifierReused(sql, written)) return undefined
 	const qualifiers = tableQualifiers(sql)
 	// A table alias is a name the query defines, `AS` or not; renaming it breaks the FROM.
 	if (written === undefined || definedNames(sql).has(written) || qualifiers.has(written)) return undefined
