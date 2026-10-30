@@ -100,7 +100,7 @@ export const choiceTiles = <M>(h: HtmlBuilder<M>, tiles: ReadonlyArray<ChoiceTil
 				: h.button(
 						[
 							h.Type("button"),
-							h.Class(cn(className, "hover:border-foreground/30")),
+							h.Class(cn(className, "hover:border-border-strong")),
 							h.AriaPressed(tile.isSelected === true ? "true" : "false"),
 							h.OnClick(tile.onSelect),
 						],

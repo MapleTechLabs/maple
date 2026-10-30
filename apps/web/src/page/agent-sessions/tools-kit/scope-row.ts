@@ -21,7 +21,7 @@ const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
 			h.Key(`${chip.kind}:${chip.value}`),
 			h.AriaLabel(`Remove ${chip.kind} ${chip.value}`),
 			h.Class(
-				"inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20",
+				"inline-flex h-[22px] max-w-64 items-center gap-1.5 rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20",
 			),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),

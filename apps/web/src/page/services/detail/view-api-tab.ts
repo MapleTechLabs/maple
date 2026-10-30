@@ -222,7 +222,7 @@ const legendItem = (h: H, swatch: Html, label: string): Html =>
 	h.div([h.Key(label), h.Class("flex items-center gap-1.5")], [swatch, h.span([], [label])])
 
 const swatch = (h: H, color: string) =>
-	h.span([h.Class("size-2 rounded-[2px]"), h.Style({ background: color })])
+	h.span([h.Class("size-2 rounded-xs"), h.Style({ background: color })])
 
 const responsesChart = (
 	h: H,
@@ -617,7 +617,7 @@ const loadingState = (h: H): Html =>
 /** `ApiEmptyState`: names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
 	const mono = (text: string) => h.span([h.Class("text-foreground-soft")], [text])
-	return panel(h, { className: "items-center gap-3.5 px-[18px] py-11 text-center" }, [
+	return panel(h, { className: "items-center gap-3.5 px-4 py-11 text-center" }, [
 		h.span([h.Class("text-title font-medium text-foreground-soft")], ["No HTTP endpoints in this window"]),
 		h.span(
 			[h.Class("max-w-[620px] text-ui leading-[21px] text-muted-foreground")],

@@ -112,13 +112,13 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 	const color = inputs.colorFor(row.key)
 	return [
 		h.span(
-			[h.Class("flex w-0 min-w-0 flex-1 items-center gap-[9px]")],
+			[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
 			[
 				h.span(
 					[
 						h.AriaHidden(true),
 						h.Class(
-							cn("size-2 shrink-0 rounded-xs", color === undefined && "bg-muted-foreground/50"),
+							cn("size-2 shrink-0 rounded-xs", color === undefined && "bg-foreground-subtle"),
 						),
 						...(color === undefined ? [] : [h.Style({ "background-color": color })]),
 					],

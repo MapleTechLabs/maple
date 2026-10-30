@@ -29,7 +29,7 @@ export const uptimeStatusSquare = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor)
 			h.AriaHidden(true),
 			h.Class(
 				cn(
-					"inline-block size-2 shrink-0 rounded-[2px]",
+					"inline-block size-2 shrink-0 rounded-xs",
 					TONE_FILL[STATUS_TONE[displayStatus(monitor)]],
 				),
 			),

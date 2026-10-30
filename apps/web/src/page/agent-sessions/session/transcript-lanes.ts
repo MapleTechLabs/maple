@@ -136,7 +136,7 @@ const parallelRule = (h: H, label: string, range: string): Html =>
 			icon(h, "BranchForkIcon", { size: 12, className: "shrink-0" }),
 			truncatedText(h, { text: label, className: "font-medium text-xs" }),
 			h.span([h.Class(cn(META, "shrink-0"))], [range]),
-			h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border/60")], []),
+			h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border-subtle")], []),
 		],
 	)
 

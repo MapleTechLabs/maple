@@ -120,7 +120,7 @@ const variantsSection = (
 
 const whereItHappens = (h: H, rows: ReadonlyArray<BreakdownRow>, isLoading: boolean): Html =>
 	h.section(
-		[h.Class("flex flex-col gap-3.5 border-b border-border px-4 pt-4 pb-[18px]")],
+		[h.Class("flex flex-col gap-3.5 border-b border-border p-4")],
 		[
 			h.span([h.Class(RAIL_TITLE)], ["Where it happens"]),
 			...(isLoading && rows.length === 0
@@ -276,7 +276,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 									[],
 								),
 								h.span(
-									[h.Class("flex w-0 min-w-0 grow flex-col items-start gap-[3px]")],
+									[h.Class("flex w-0 min-w-0 grow flex-col items-start gap-1")],
 									[
 										sessionLink(h, {
 											tool: inputs.tool,
@@ -319,7 +319,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 						)
 					})),
 			h.div(
-				[h.Class("flex h-9 shrink-0 items-center gap-[9px] px-4 font-mono text-xs")],
+				[h.Class("flex h-9 shrink-0 items-center gap-2 px-4 font-mono text-xs")],
 				[
 					h.span(
 						[h.Class("text-muted-foreground")],

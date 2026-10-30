@@ -135,7 +135,7 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 								h.span(
 									[
 										h.Class(
-											"ml-1 rounded-sm border border-border px-[5px] text-2xs text-foreground-subtle",
+											"ml-1 rounded-sm border border-border px-1.5 text-2xs text-foreground-subtle",
 										),
 									],
 									["error.type ", group.errorType],
@@ -236,7 +236,7 @@ const content = (h: H, model: Model, inputs: ModalInputs): Html => {
 			h.header(
 				[
 					h.Class(
-						"flex shrink-0 items-start gap-8 border-b border-border px-6 pt-5 pb-[18px] max-lg:flex-col max-lg:gap-4",
+						"flex shrink-0 items-start gap-8 border-b border-border px-6 py-5 max-lg:flex-col max-lg:gap-4",
 					),
 				],
 				[

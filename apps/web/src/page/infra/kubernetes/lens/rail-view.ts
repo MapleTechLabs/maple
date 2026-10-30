@@ -128,7 +128,7 @@ const railRow = <M>(h: HtmlBuilder<M>, service: RailService, isActive: boolean, 
 				cn(
 					"flex h-[34px] items-center gap-2.5 rounded-md px-2 transition-colors",
 					rowSelectedClass(isActive),
-					!isActive && "hover:bg-accent/50",
+					!isActive && "hover:bg-surface-sunken",
 				),
 			),
 		],

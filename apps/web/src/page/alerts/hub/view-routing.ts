@@ -304,8 +304,8 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 const ATTEMPT_CLASS = new Map<AlertDeliveryEventDocument["status"], string>([
 	["success", "bg-severity-info"],
 	["failed", "bg-severity-error"],
-	["queued", "bg-muted-foreground/40"],
-	["processing", "bg-muted-foreground/40"],
+	["queued", "bg-foreground-faint"],
+	["processing", "bg-foreground-faint"],
 ])
 
 // TODO(tooltip): the strip's hover tooltip ("Last N attempts delivered") is not drawn yet.

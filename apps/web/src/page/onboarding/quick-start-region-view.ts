@@ -126,7 +126,7 @@ export const regionStep = (h: H, choice: RegionChoice): Html =>
 								h,
 								{
 									size: "lg",
-									className: "min-w-[180px]",
+									className: "min-w-44",
 									isLoading: choice.isSaving,
 									attributes: [h.OnClick(Message.ClickedRegionContinue())],
 								},

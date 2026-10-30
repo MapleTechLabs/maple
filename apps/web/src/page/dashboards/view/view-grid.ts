@@ -40,7 +40,7 @@ const resizeHandle = (h: H): Html =>
 		h.DataAttribute("grid-resize-handle", ""),
 		h.AriaHidden(true),
 		h.Class(
-			"absolute right-0 bottom-0 size-5 cursor-se-resize touch-none opacity-0 transition-opacity group-hover/cell:opacity-100 group-[.is-layout-locked]/canvas:hidden after:absolute after:right-1 after:bottom-1 after:size-1.5 after:border-r-2 after:border-b-2 after:border-muted-foreground/60",
+			"absolute right-0 bottom-0 size-5 cursor-se-resize touch-none opacity-0 transition-opacity group-hover/cell:opacity-100 group-[.is-layout-locked]/canvas:hidden after:absolute after:right-1 after:bottom-1 after:size-1.5 after:border-r-2 after:border-b-2 after:border-foreground-subtle",
 		),
 	])
 

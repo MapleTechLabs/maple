@@ -163,7 +163,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 					cn(
 						"absolute inset-y-2 left-0 w-0.5 rounded-full",
 						isHeld
-							? "bg-muted-foreground/50"
+							? "bg-foreground-subtle"
 							: incident.severity === "critical"
 								? "bg-severity-error"
 								: "bg-severity-warn",
@@ -324,7 +324,7 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 							cn(
 								"absolute inset-y-0 rounded-xs",
 								bar.held
-									? "bg-muted-foreground/60"
+									? "bg-foreground-subtle"
 									: bar.severity === "critical"
 										? "bg-severity-error"
 										: "bg-severity-warn",
@@ -499,7 +499,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 									h.Class(
 										cn(
 											"absolute inset-y-0 left-0 rounded-xs",
-											isNear ? "bg-severity-warn" : "bg-muted-foreground/45",
+											isNear ? "bg-severity-warn" : "bg-foreground-faint",
 										),
 									),
 									h.Style({ width: `${Math.max(closeness * 100, 1.5)}%` }),

@@ -300,7 +300,7 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 							bins.map((bin, index) =>
 								h.div([
 									h.Key(String(index)),
-									h.Class(cn("flex-1 rounded-t-[2px]", BAND_CLASS[bin.band])),
+									h.Class(cn("flex-1 rounded-t-xs", BAND_CLASS[bin.band])),
 									h.Style({
 										height: `${peak > 0 ? Math.max((bin.share / peak) * 100, 2) : 2}%`,
 									}),

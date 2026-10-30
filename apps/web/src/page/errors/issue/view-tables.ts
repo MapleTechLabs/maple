@@ -33,7 +33,7 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 			[
 				h.span([
 					h.AriaHidden(true),
-					h.Class(cn("block h-full w-[3px]", isOpen ? "bg-severity-error" : "bg-border/60")),
+					h.Class(cn("block h-full w-[3px]", isOpen ? "bg-severity-error" : "bg-border-subtle")),
 				]),
 			],
 			"w-8 p-0",

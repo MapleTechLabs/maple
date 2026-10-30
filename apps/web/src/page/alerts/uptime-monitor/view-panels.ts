@@ -531,7 +531,7 @@ const checkBars = (
 				h.Href(traceHref(sample.traceId)),
 				h.Attribute("tabindex", "-1"),
 				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class("group absolute inset-y-0 -translate-x-1/2 hover:bg-foreground/5"),
+				h.Class("group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken"),
 				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
 			],
 			[
@@ -596,7 +596,7 @@ const cardRow = (h: H, key: string, color: string, label: string, value: string)
 				[h.Class("flex items-center gap-1.5 text-muted-foreground")],
 				[
 					h.span(
-						[h.Class("inline-block size-2 rounded-[2px]"), h.Style({ background: color })],
+						[h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })],
 						[],
 					),
 					label,
@@ -652,7 +652,7 @@ const legendItem = (h: H, key: string, swatch: Html, label: string): Html =>
 	h.span([h.Key(key), h.Class("flex items-center gap-1.5")], [swatch, label])
 
 const swatch = (h: H, color: string): Html =>
-	h.span([h.Class("inline-block size-2 rounded-[2px]"), h.Style({ background: color })], [])
+	h.span([h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })], [])
 
 const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Html => {
 	const timed = samples.some((sample) => sample.ok && sample.phases !== null)

@@ -219,7 +219,7 @@ export const step = (
 									cn(
 										"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium",
 										options.state === "current"
-											? "border-foreground/40 text-foreground"
+											? "border-border-strong text-foreground"
 											: "border-border text-muted-foreground",
 									),
 								),

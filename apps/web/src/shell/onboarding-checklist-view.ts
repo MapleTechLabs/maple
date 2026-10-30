@@ -118,7 +118,7 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep, index: number): Html =>
 							h.span(
 								[
 									h.Class(
-										"flex size-4.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-3xs text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary",
+										"flex size-4.5 shrink-0 items-center justify-center rounded-full border border-foreground-faint font-mono text-3xs text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary",
 									),
 									h.AriaHidden(true),
 								],

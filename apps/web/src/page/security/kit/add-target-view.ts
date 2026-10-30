@@ -182,7 +182,7 @@ const profileField = (h: H, model: Model): Html => {
 							h.Class(
 								cn(
 									"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-									isChecked ? "border-foreground/40 bg-accent/50" : "hover:bg-accent/30",
+									isChecked ? "border-border-strong bg-accent/50" : "hover:bg-accent/30",
 								),
 							),
 						],

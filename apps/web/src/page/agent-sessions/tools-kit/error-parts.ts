@@ -23,7 +23,7 @@ export const maskChip = <M>(h: HtmlBuilder<M>, label: string, raw: string, class
 				inlineCodeClassName(
 					"chip",
 					cn(
-						"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-2xs leading-3.75 font-normal text-muted-foreground",
+						"mx-px inline-block rounded-xs px-1 py-0 align-baseline text-2xs leading-3.75 font-normal text-muted-foreground",
 						className,
 					),
 				),

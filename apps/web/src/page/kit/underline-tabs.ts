@@ -77,7 +77,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 					h.Class(
 						cn(
 							underlineTabClass(tab.isCurrent),
-							"h-9 gap-[7px] px-3 first:pl-0.5",
+							"h-9 gap-2 px-3 first:pl-0.5",
 							tab.isCurrent ? "[&_svg]:text-foreground" : "[&_svg]:text-muted-foreground",
 							tab.isRouteActive && "active",
 						),

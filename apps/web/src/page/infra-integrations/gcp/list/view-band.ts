@@ -131,7 +131,7 @@ export const healthDot = <S extends string, M>(
 ): Html => {
 	const tone: Tone = health === "ok" ? "ok" : spec.cells[health].tone
 	return tone === "neutral"
-		? statusDot(h, { tone: "custom", size: "lg", className: "border border-muted-foreground/70" })
+		? statusDot(h, { tone: "custom", size: "lg", className: "border border-foreground-subtle" })
 		: statusDot(h, { tone, size: "lg" })
 }
 

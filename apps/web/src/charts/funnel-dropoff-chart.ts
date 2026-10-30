@@ -177,13 +177,13 @@ const groupBars = (h: H, ctx: ColumnContext, step: Step, index: number): Html =>
 					...(index > 0 && capH > 0
 						? [
 								h.div([
-									h.Class(cn("absolute inset-x-0 rounded-[3px]", LOST_CLASS)),
+									h.Class(cn("absolute inset-x-0 rounded-xs", LOST_CLASS)),
 									h.Style({ bottom: `${height * 100}%`, height: `${capH * 100}%` }),
 								]),
 							]
 						: []),
 					h.div([
-						h.Class("absolute inset-x-0 bottom-0 rounded-[3px]"),
+						h.Class("absolute inset-x-0 bottom-0 rounded-xs"),
 						h.Style({ height: `${height * 100}%`, "background-color": group.color }),
 					]),
 				],

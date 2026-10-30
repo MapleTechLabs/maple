@@ -107,7 +107,7 @@ export const queryTimeCard = (
 						: [
 								h.div(
 									[
-										h.Class("pointer-events-none absolute inset-x-0 border-t border-dotted border-muted-foreground/50"),
+										h.Class("pointer-events-none absolute inset-x-0 border-t border-dotted border-foreground-subtle"),
 										h.Style({ bottom: `${(earlierLimitMs / scaleMs) * 100}%` }),
 									],
 									[],

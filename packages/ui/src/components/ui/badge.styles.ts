@@ -42,7 +42,7 @@ export const badgeVariants = cva(
 				// Bordered meta chip on the page surface: services, environments, reopen markers.
 				meta: "border-border-subtle bg-background text-muted-foreground [button&,a&]:hover:bg-surface-sunken",
 				outline:
-					"border-input bg-background text-foreground dark:bg-input/32 [button&,a&]:hover:bg-accent/50 dark:[button&,a&]:hover:bg-input/48",
+					"border-input bg-background text-foreground dark:bg-input/32 [button&,a&]:hover:bg-surface-sunken dark:[button&,a&]:hover:bg-input/48",
 				secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
 				ok: TONE_SOFT.ok,
 				warn: TONE_SOFT.warn,

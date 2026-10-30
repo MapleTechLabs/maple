@@ -43,7 +43,7 @@ const drawnCheck = <M>(h: HtmlBuilder<M>, isChecked: boolean, className: string 
 					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
 					isChecked
 						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-foreground/40",
+						: "border-input bg-background group-hover:border-border-strong",
 					className,
 				),
 			),
@@ -141,7 +141,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 							layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
 							!options.isChecked
-								? "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]"
+								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
 								: options.accent === undefined && "border-primary bg-primary/5",
 						),
 					),

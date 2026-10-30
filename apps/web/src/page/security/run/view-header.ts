@@ -227,7 +227,7 @@ const phaseMark = (h: H, state: PhaseState): Html => {
 		case "skipped":
 			return h.span([
 				h.AriaHidden(true),
-				h.Class("size-4 rounded-full border-2 border-muted-foreground/40"),
+				h.Class("size-4 rounded-full border-2 border-foreground-faint"),
 			])
 	}
 }

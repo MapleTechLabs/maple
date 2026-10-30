@@ -30,7 +30,7 @@ type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 const SHOWN = 5
-const STATEMENT = "w-0 min-w-[260px] flex-1"
+const STATEMENT = "w-0 min-w-64 flex-1"
 const NUMBER = "text-right font-mono text-xs tabular-nums"
 const SUB = "truncate font-mono text-3xs text-muted-foreground"
 const MANY_ROWS = 10_000

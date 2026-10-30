@@ -147,7 +147,7 @@ const errorRow = (
 									[
 										h.Class(
 											cn(
-												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-[5px] text-2xs leading-3.5",
+												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-1.5 text-2xs leading-3.5",
 												TONE_TEXT.crit,
 											),
 										),
@@ -433,7 +433,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 				? h.div(
 						[
 							h.Class(
-								"flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono",
+								"flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono",
 							),
 						],
 						[

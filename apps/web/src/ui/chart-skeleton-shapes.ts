@@ -41,9 +41,9 @@ export const hbarGhost = <M>(h: HtmlBuilder<M>): Html =>
 				[
 					stub(h, "h-2.5 rounded-xs bg-foreground/10", { width: `${[72, 88, 60, 48, 66][i] ?? 0}%` }),
 					h.div(
-						[h.Class("h-3 overflow-hidden rounded-[3px] bg-foreground/5")],
+						[h.Class("h-3 overflow-hidden rounded-xs bg-foreground/5")],
 						[
-							stub(h, "h-full rounded-[3px] bg-foreground/10 animate-pulse", {
+							stub(h, "h-full rounded-xs bg-foreground/10 animate-pulse", {
 								width: `${w}%`,
 								"animation-delay": `${-i * 0.13}s`,
 							}),
@@ -70,9 +70,9 @@ export const funnelGhost = <M>(h: HtmlBuilder<M>): Html =>
 						],
 					),
 					h.div(
-						[h.Class("h-2.5 overflow-hidden rounded-[3px] bg-foreground/5")],
+						[h.Class("h-2.5 overflow-hidden rounded-xs bg-foreground/5")],
 						[
-							stub(h, "h-full rounded-[3px] bg-foreground/10 animate-pulse", {
+							stub(h, "h-full rounded-xs bg-foreground/10 animate-pulse", {
 								width: `${w}%`,
 								"animation-delay": `${-i * 0.13}s`,
 							}),
@@ -271,7 +271,7 @@ export const dropoffGhost = <M>(h: HtmlBuilder<M>): Html =>
 									stub(h, "h-2.5 rounded-xs bg-foreground/10", {
 										width: `${[60, 72, 56, 64][i] ?? 0}%`,
 									}),
-									stub(h, "h-4 w-12 rounded-[3px] bg-foreground/15"),
+									stub(h, "h-4 w-12 rounded-xs bg-foreground/15"),
 									stub(h, "h-2.5 w-8 rounded-xs bg-foreground/10"),
 								],
 							),

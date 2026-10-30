@@ -28,7 +28,7 @@ const COLUMNS: ReadonlyArray<{
 	hidden?: string
 	limitsOnly?: boolean
 }> = [
-	{ label: "Service", key: "displayName", width: "w-0 flex-1 min-w-[240px]" },
+	{ label: "Service", key: "displayName", width: "w-0 flex-1 min-w-60" },
 	{ label: "Memory", key: "memoryMax", width: "w-36", align: "right" },
 	{ label: "vCPU", key: "cpuMax", width: "w-36", align: "right" },
 	{ label: "Of limit", key: "peakOfLimit", width: "w-40", hidden: "hidden lg:flex", limitsOnly: true },
@@ -60,7 +60,7 @@ export const railwayTableLoading = (h: H): Html =>
 		{ ariaLabel: "Railway services" },
 		columns(h, false, undefined),
 		skeletonRows(h, 5, () => [
-			h.div([h.Class("w-0 min-w-[240px] flex-1")], [skeleton(h, "h-4 w-36")]),
+			h.div([h.Class("w-0 min-w-60 flex-1")], [skeleton(h, "h-4 w-36")]),
 			skeleton(h, "ml-auto h-3 w-36"),
 			skeleton(h, "ml-auto h-3 w-36"),
 			skeleton(h, "ml-auto h-3 w-20"),
@@ -121,7 +121,7 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[240px] flex-1")],
+				[h.Class("w-0 min-w-60 flex-1")],
 				[
 					h.div(
 						[

@@ -176,7 +176,7 @@ export const sessionListRow = <M>(
 			h.OnClick(open),
 			h.Class(
 				cn(
-					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 transition-colors hover:bg-accent/50 @2xl:gap-4",
+					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 transition-colors hover:bg-surface-sunken @2xl:gap-4",
 					lowSignal ? "py-1.5" : "py-2.5",
 				),
 			),

@@ -108,7 +108,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 						children: [
 							statusDot(h, {
 								tone: "custom",
-								className: isSelected ? option.dot : "bg-muted-foreground/40",
+								className: isSelected ? option.dot : "bg-foreground-faint",
 							}),
 							option.label,
 						],

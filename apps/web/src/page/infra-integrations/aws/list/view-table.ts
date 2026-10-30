@@ -399,7 +399,7 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 					view.health === "idle"
 						? statusDot(h, {
 								tone: "custom",
-								className: "mt-1.5 border border-muted-foreground/70",
+								className: "mt-1.5 border border-foreground-subtle",
 							})
 						: statusDot(h, { tone: HEALTH_TONE[view.health], className: "mt-1.5" }),
 					h.div(

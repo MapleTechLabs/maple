@@ -21,7 +21,7 @@ type Sort = Readonly<{ key: string | null; dir: SortDir }> | null
 const head = (sort: Sort, key: ContainerSortKey) => headSort(sort, key, (k) => Message.ClickedSort({ key: k }))
 
 const columns = (h: H, sort: Sort): ReadonlyArray<Html> => [
-	columnHead(h, { label: "Container", sort: head(sort, "containerName"), width: "w-0 flex-1 min-w-[260px]" }),
+	columnHead(h, { label: "Container", sort: head(sort, "containerName"), width: "w-0 flex-1 min-w-64" }),
 	columnHead(h, { label: "Peak saturation", sort: head(sort, "saturation"), width: "w-44", hidden: "hidden md:flex" }),
 	columnHead(h, { label: "CPU", sort: head(sort, "cpuPct"), align: "right", width: "w-32", hidden: "hidden lg:flex" }),
 	columnHead(h, {
@@ -40,7 +40,7 @@ export const containerTableLoading = (h: H): Html =>
 		{ ariaLabel: "Containers" },
 		columns(h, null),
 		skeletonRows(h, 6, () => [
-			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")]),
+			h.div([h.Class("w-0 min-w-64 flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")]),
 			h.div(
 				[h.Class("hidden w-44 space-y-1.5 md:block")],
 				[skeleton(h, "h-2.5 w-44"), skeleton(h, "h-2.5 w-44")],
@@ -76,7 +76,7 @@ const containerRow = (h: H, container: ContainerRow, inputs: ContainerTableInput
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],

@@ -98,7 +98,7 @@ export const markersOverlay = <M>(
 											[
 												h.Class(
 													cn(
-														"shrink-0 rounded-[3px] px-1 text-3xs tabular-nums",
+														"shrink-0 rounded-xs px-1 text-3xs tabular-nums",
 														"bg-surface-strong text-muted-foreground",
 													),
 												),

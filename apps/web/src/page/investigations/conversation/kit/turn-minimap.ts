@@ -146,7 +146,7 @@ const step = <M>(h: HtmlBuilder<M>, direction: "previous" | "next", target: Opti
 }
 
 const markerWidth = (distance: number | null): string =>
-	distance === 0 ? "w-6 bg-muted-foreground/75" : distance === 1 ? "w-4" : distance === 2 ? "w-2.5" : "w-2"
+	distance === 0 ? "w-6 bg-foreground-subtle" : distance === 1 ? "w-4" : distance === 2 ? "w-2.5" : "w-2"
 
 /** The rail, or nothing below two turns. `mount` is `MountTurnMinimap` lifted to the host. */
 export const turnMinimap = <M>(
@@ -212,7 +212,7 @@ export const turnMinimap = <M>(
 							h.DataAttribute("turn-current", String(currentIndex ?? 0)),
 						],
 						[
-							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border/20")], []),
+							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border-subtle")], []),
 							...items.map((item, index) =>
 								h.span(
 									[
@@ -222,7 +222,7 @@ export const turnMinimap = <M>(
 												"pointer-events-none absolute start-0 h-0.5 -translate-y-1/2 rounded-full transition-[background-color,width] duration-150",
 												visibleTurns.has(index)
 													? "bg-foreground/80"
-													: "bg-muted-foreground/35",
+													: "bg-foreground-faint",
 												markerWidth(
 													active === null ? null : Math.abs(index - active),
 												),

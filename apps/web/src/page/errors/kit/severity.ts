@@ -54,7 +54,7 @@ export const severityDot = <M>(h: HtmlBuilder<M>, severity: IssueSeverity | null
 		tone: "custom",
 		size: "lg",
 		className: cn(
-			severity === null ? "border border-muted-foreground/50" : SEVERITY_FILL[severity],
+			severity === null ? "border border-foreground-subtle" : SEVERITY_FILL[severity],
 			className,
 		),
 	})

@@ -22,7 +22,7 @@ export const TONE_FILL: Record<Tone, string> = {
 	ok: "bg-severity-info",
 	info: "bg-severity-info",
 	done: "bg-severity-debug",
-	neutral: "bg-muted-foreground/50",
+	neutral: "bg-foreground-subtle",
 } satisfies Record<Tone, string>
 
 /** Tinted surface + text: chips, badges, row highlights. */

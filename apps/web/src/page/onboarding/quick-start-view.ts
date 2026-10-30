@@ -260,7 +260,7 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 							"flex items-center gap-3 rounded-md border p-3 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 							isChecked
 								? "border-primary bg-primary/5"
-								: "border-border group-hover:border-foreground/30",
+								: "border-border group-hover:border-border-strong",
 						),
 					),
 				],

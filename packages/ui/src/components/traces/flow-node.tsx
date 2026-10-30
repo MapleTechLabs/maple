@@ -162,7 +162,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 				/>
 				<div
 					className={cn(
-						"relative w-[280px] rounded-lg border-2 border-dashed border-muted-foreground/30 bg-card/50",
+						"relative w-[280px] rounded-lg border-2 border-dashed border-foreground-faint bg-card/50",
 						"flex flex-col gap-1 px-3 py-2 transition-all duration-200",
 						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
 					)}
