@@ -1,10 +1,10 @@
 import { type LiftedRail, splitPageRails } from "@maple/web/shell/page-rails"
-import * as Dialog from "@maple/web/ui/dialog"
 import * as DialogView from "@maple/web/ui/dialog-view"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { Message } from "../message"
+import type { Html } from "foldkit/html"
+import type { ApplicationViewBuilder } from "../composition"
 import type { Model } from "../model"
+import { FilterDrawerBinding } from "./bindings"
 
 // The page shell's drawer: `SheetPopup side="left"`
 // around a copy of the page's own rail, which stays (hidden below `md`) in the page body.
@@ -28,20 +28,26 @@ export const filterRailOf = (model: Model, page: Html): Option.Option<LiftedRail
 		: Option.none()
 
 /** `{drawerOpen ? <div className="h-full min-h-0">{sidebar}</div> : null}` after the sr-only title. */
-export const filterDrawer = (h: HtmlBuilder<Message>, model: Model, maybeRail: Option.Option<LiftedRail>): Html =>
-	h.submodel({
-		slotId: `${model.filterDrawer.id}-dialog`,
-		model: model.filterDrawer,
-		view: DialogView.view,
-		viewInputs: {
-			className: "py-3",
-			side: "left",
-			hasDescription: false,
-			toView: ({ portal }) => portal,
-			toContent: () => [
-				DialogView.dialogTitle(h, "sheet", model.filterDrawer.id, "Filters", "sr-only"),
-				...Option.toArray(Option.map(maybeRail, (rail) => h.div([h.Class("h-full min-h-0")], rail.children))),
-			],
-		},
-		toParentMessage: (message: Dialog.Message) => Message.GotFilterDrawerMessage({ message }),
-	})
+export const filterDrawer = (
+	h: ApplicationViewBuilder,
+	model: Model,
+	maybeRail: Option.Option<LiftedRail>,
+): Html =>
+	h.block(
+		FilterDrawerBinding.embedView({
+			slotId: `${model.filterDrawer.id}-dialog`,
+			model: model.filterDrawer,
+			viewInputs: {
+				className: "py-3",
+				side: "left",
+				hasDescription: false,
+				toView: ({ portal }) => portal,
+				toContent: () => [
+					DialogView.dialogTitle(h, "sheet", model.filterDrawer.id, "Filters", "sr-only"),
+					...Option.toArray(
+						Option.map(maybeRail, (rail) => h.div([h.Class("h-full min-h-0")], rail.children)),
+					),
+				],
+			},
+		}),
+	)

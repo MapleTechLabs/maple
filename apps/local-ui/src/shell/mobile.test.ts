@@ -5,8 +5,9 @@ import { init } from "../main"
 import { Message } from "../message"
 import type { Model } from "../model"
 import { PageOutMessage } from "../page/contract"
-import { PageMessage } from "../page/registry"
-import * as Traces from "../page/traces"
+import { pageContextOf } from "../page/registry"
+import { Message as TracesMessage } from "../page/traces/message"
+import { init as initTraces, update as updateTraces } from "../page/traces/update"
 import { update } from "../update"
 import { foldPageOut } from "../update-page"
 
@@ -21,7 +22,8 @@ const flags = {
 }
 const urlOf = (hash: string) => Option.getOrThrow(fromString(`http://localhost/#${hash}`))
 const mobile = (): Model => init(flags, urlOf("/traces")).model
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 
 describe("mobile sidebar", () => {
 	test("the trigger opens and closes the sheet without touching the saved rail state", () => {
@@ -42,17 +44,21 @@ describe("mobile sidebar", () => {
 })
 
 describe("filters drawer", () => {
-	test("the page's Filters button opens it through the root", () => {
-		const step = update(
-			mobile(),
-			Message.GotPageMessage({ message: PageMessage.GotTracesMessage({ message: Traces.Message.ClickedOpenFilters() }) }),
+	test("the page's Filters button asks the root for it, and the root opens it", () => {
+		const context = pageContextOf(mobile())
+		const page = updateTraces(initTraces(context).model, TracesMessage.ClickedOpenFilters(), context)
+		expect(page.outMessage).toEqual(PageOutMessage.RequestedFilterDrawer())
+		expect(foldPageOut(mobile(), PageOutMessage.RequestedFilterDrawer()).model.filterDrawer.isOpen).toBe(
+			true,
 		)
-		expect(step.model.filterDrawer.isOpen).toBe(true)
 	})
 
 	test("a filter change on the same page keeps it open; another page starts it closed", () => {
 		const opened = foldPageOut(mobile(), PageOutMessage.RequestedFilterDrawer()).model
-		const refiltered = update(opened, Message.ChangedUrl({ url: urlOf("/traces?service=storefront") })).model
+		const refiltered = update(
+			opened,
+			Message.ChangedUrl({ url: urlOf("/traces?service=storefront") }),
+		).model
 		expect(refiltered.filterDrawer.isOpen).toBe(true)
 		const elsewhere = update(refiltered, Message.ChangedUrl({ url: urlOf("/logs") })).model
 		expect(elsewhere.filterDrawer.isOpen).toBe(false)

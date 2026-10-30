@@ -2,15 +2,23 @@ import { DEFAULT_LOCAL_PORT } from "../lib/constants"
 import { DOCS_CLI_REFERENCE, DOCS_LOCAL_MODE_INSTALL, INSTALL_METHODS } from "../lib/links"
 import { copyableField } from "@maple/web/ui/copyable-field"
 import { separator } from "@maple/web/ui/display"
-import * as TabsView from "@maple/web/ui/tabs-view"
-import { copyOf } from "../page/kit/copies"
+import { CopyMessage, copyOf } from "../page/kit/copies"
 import { button } from "@maple/web/ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/web/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/web/ui/empty"
 import { icon } from "@maple/web/ui/icon"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { ApplicationViewBuilder } from "../composition"
 import { Message } from "../message"
 import type { Model } from "../model"
 import type { Rejection } from "../server/state"
+import { InstallTabsBinding } from "./bindings"
 
 // The screens shown when the server is unreachable or refuses this page.
 
@@ -18,10 +26,11 @@ import type { Rejection } from "../server/state"
 const startCommand = (port: string): string =>
 	port === DEFAULT_LOCAL_PORT ? "maple start" : `maple start --port ${port}`
 
-const inlineCode = (h: HtmlBuilder<Message>, text: string) => h.code([h.Class("rounded bg-muted px-1")], [text])
+const inlineCode = (h: ApplicationViewBuilder, text: string) =>
+	h.code([h.Class("rounded bg-muted px-1")], [text])
 
 /** A hosted page (local.maple.dev) reaches the binary across the local-network gate. */
-const hostedHint = (h: HtmlBuilder<Message>): Html =>
+const hostedHint = (h: ApplicationViewBuilder): Html =>
 	h.p(
 		[h.Class("text-left text-xs text-muted-foreground")],
 		[
@@ -34,17 +43,26 @@ const hostedHint = (h: HtmlBuilder<Message>): Html =>
 		],
 	)
 
-const retry = (h: HtmlBuilder<Message>, className?: string): Html =>
-	button(h, { variant: "outline", size: "sm", className, attributes: [h.OnClick(Message.ClickedRetryConnection())] }, [
-		"Try again",
-	])
+const retry = (h: ApplicationViewBuilder, className?: string): Html =>
+	button(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			className,
+			attributes: [h.OnClick(Message.ClickedRetryConnection())],
+		},
+		["Try again"],
+	)
 
 /** The server answered but turned this page away (403 origin rejected, 400, ...). */
-export const rejectedState = (h: HtmlBuilder<Message>, rejection: Rejection): Html =>
+export const rejectedState = (h: ApplicationViewBuilder, rejection: Rejection): Html =>
 	empty(
 		h,
 		[
-			emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { className: "text-destructive" })]),
+			emptyMedia(h, { variant: "icon" }, [
+				icon(h, "CircleWarningIcon", { className: "text-destructive" }),
+			]),
 			emptyHeader(h, [
 				emptyTitle(h, ["Maple Local refused this page (", String(rejection.status), ")"]),
 				emptyDescription(h, [
@@ -76,48 +94,64 @@ export const rejectedState = (h: HtmlBuilder<Message>, rejection: Rejection): Ht
 		"h-full",
 	)
 
-const field = (h: HtmlBuilder<Message>, model: Model, id: string, label: string, value: string, copyLabel?: string) =>
+const field = (
+	h: ApplicationViewBuilder,
+	model: Model,
+	id: string,
+	label: string,
+	value: string,
+	copyLabel?: string,
+) =>
 	copyableField(h, {
 		id,
 		label: label === "" ? undefined : label,
 		copyLabel,
 		value,
 		copy: copyOf(model.copies, id),
-		toCopyMessage: (message) => Message.GotCopyMessage({ id, message }),
+		onCopy: Message.ReceivedCopyMessage({ message: CopyMessage.ClickedCopy({ id, text: value }) }),
 	})
 
-const docsLink = (h: HtmlBuilder<Message>, href: string, label: string) =>
+const docsLink = (h: ApplicationViewBuilder, href: string, label: string) =>
 	h.a(
-		[h.Href(href), h.Target("_blank"), h.Rel("noopener noreferrer"), h.Class("underline underline-offset-2 hover:no-underline")],
+		[
+			h.Href(href),
+			h.Target("_blank"),
+			h.Rel("noopener noreferrer"),
+			h.Class("underline underline-offset-2 hover:no-underline"),
+		],
 		[label],
 	)
 
 /** `InstallCommands`: Homebrew or the install script, for a machine without the CLI. */
-const installCommands = (h: HtmlBuilder<Message>, model: Model): Html =>
-	h.submodel({
-		slotId: "install-tabs",
-		model: model.installTabs,
-		view: TabsView.view,
-		toParentMessage: (message) => Message.GotInstallTabsMessage({ message }),
-		viewInputs: {
-			variant: "underline",
-			labels: INSTALL_METHODS.map((method) => method.label),
-			className: "gap-2",
-			listClassName: "justify-start",
-			panelClassName: "mt-0",
-			panel: (value) => {
-				const method = INSTALL_METHODS.find((entry) => entry.id === value)
-				return method === undefined ? undefined : [field(h, model, `install-${method.id}`, "", method.command, "Command")]
+const installCommands = (h: ApplicationViewBuilder, model: Model): Html =>
+	h.block(
+		InstallTabsBinding.embedView({
+			slotId: "install-tabs",
+			model: model.installTabs,
+			viewInputs: {
+				variant: "underline",
+				labels: INSTALL_METHODS.map((method) => method.label),
+				className: "gap-2",
+				listClassName: "justify-start",
+				panelClassName: "mt-0",
+				panel: (value) => {
+					const method = INSTALL_METHODS.find((entry) => entry.id === value)
+					return method === undefined
+						? undefined
+						: [field(h, model, `install-${method.id}`, "", method.command, "Command")]
+				},
 			},
-		},
-	})
+		}),
+	)
 
 /** Shown in place of the views when nothing answers on the expected port. */
-export const disconnectedState = (h: HtmlBuilder<Message>, model: Model): Html =>
+export const disconnectedState = (h: ApplicationViewBuilder, model: Model): Html =>
 	empty(
 		h,
 		[
-			emptyMedia(h, { variant: "icon" }, [icon(h, "ConnectionIcon", { className: "text-muted-foreground" })]),
+			emptyMedia(h, { variant: "icon" }, [
+				icon(h, "ConnectionIcon", { className: "text-muted-foreground" }),
+			]),
 			emptyHeader(h, [
 				emptyTitle(h, ["Can’t reach Maple Local"]),
 				emptyDescription(h, [
@@ -132,7 +166,11 @@ export const disconnectedState = (h: HtmlBuilder<Message>, model: Model): Html =
 					installCommands(h, model),
 					separator(h, "horizontal", undefined),
 					h.span(
-						[h.Class("text-left text-[11px] font-semibold uppercase tracking-widest text-muted-foreground")],
+						[
+							h.Class(
+								"text-left text-[11px] font-semibold uppercase tracking-widest text-muted-foreground",
+							),
+						],
 						["Already installed?"],
 					),
 					field(h, model, "start-maple", "Start Maple", startCommand(model.env.port)),
