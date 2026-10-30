@@ -6,6 +6,7 @@ import { Runtime } from "foldkit"
 import type { UrlRequest } from "foldkit/navigation"
 import type { Url } from "foldkit/url"
 import { trackAvatarImageLoads } from "./ui/avatar-image"
+import { crashView } from "./crash/view"
 import { labEnabled, labPathOf, startLab } from "./lab/boot"
 import { Flags, flags, init, Message, Model, subscriptions, update, view } from "./main"
 import { ResourcesLive } from "./platform/resources"
@@ -33,6 +34,8 @@ const startApplication = () =>
 					onUrlChange: (url: Url) => Message.ChangedUrl({ url }),
 				},
 				devTools: { Message },
+				// `instrument` wraps `crash.report` with the `foldkit.crash` span; this only adds the page.
+				crash: { view: crashView },
 			}),
 		),
 		{ flags },

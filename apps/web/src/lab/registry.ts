@@ -117,6 +117,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/crash",
+		title: "Crash page",
+		description:
+			"A button that crashes a real Foldkit program, so the crash page renders the way it does when the app dies.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp-dashboard",
 		title: "Google Cloud dashboard",
 		description:
