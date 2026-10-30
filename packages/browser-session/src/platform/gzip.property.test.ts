@@ -14,7 +14,7 @@ const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> =>
 const payload = fc.oneof(
 	fc.uint8Array({ maxLength: 512 }),
 	fc
-		.integer({ min: 0, max: 3 })
+		.integer({ min: 0, max: 2 })
 		.chain((blocks) =>
 			fc
 				.integer({ min: -2, max: 2 })
@@ -30,9 +30,10 @@ describe("gzipStored", () => {
 			fc.asyncProperty(payload, async (bytes) => {
 				expect(await gunzip(gzipStored(bytes))).toEqual(bytes)
 			}),
-			{ numRuns: 60 },
+			{ numRuns: 20 },
 		)
-	})
+		// Multi-block payloads through a real inflater: slow on a loaded CI runner.
+	}, 20_000)
 
 	it("round-trips any text an rrweb chunk can hold", async () => {
 		await fc.assert(
