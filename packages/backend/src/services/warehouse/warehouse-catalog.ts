@@ -23,8 +23,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SeverityText` casing varies by SDK ('Error' from Effect services, 'ERROR' from OTel SDKs), so filter on the OTel level number instead: `SeverityNumber BETWEEN 17 AND 20` is ERROR, 13-16 WARN, 9-12 INFO, 5-8 DEBUG, 1-4 TRACE, 21-24 FATAL. Where you must use text, use `upper(SeverityText) = 'ERROR'`.",
 		"`SeverityNumber` follows OTel: 1-4 Trace, 5-8 Debug, 9-12 Info, 13-16 Warn, 17-20 Error, 21-24 Fatal.",
 		"`ResourceAttributes` and `LogAttributes` are `Map(LowCardinality(String), String)` — access with `LogAttributes['key']`; missing keys return '' (empty string), not NULL.",
-		"Use `TimestampTime` (DateTime) for `$__timeFilter(TimestampTime)` if you want sort-key-prefix-friendly filtering; `Timestamp` is DateTime64 (nanosecond precision).",
-		"Sorting key: `(OrgId, ServiceName, TimestampTime, Timestamp)` — adding `ServiceName = '…'` to the WHERE clause speeds queries dramatically.",
+		"Sorting key: `(OrgId, toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`: filter on a `Timestamp` window and `ServiceName = '…'`. Partitions are daily on `TimestampTime` (DateTime), so `$__timeFilter(TimestampTime)` also skips whole days. `Timestamp` is DateTime64 (nanosecond precision).",
 	],
 	traces: [
 		"`StatusCode` values are Title Case: 'Ok', 'Error', 'Unset'. Filter with `StatusCode = 'Error'` (NOT `'ERROR'`).",
@@ -34,7 +33,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SampleRate` defaults to 1.0; multiply counts by `SampleRate` for unbiased throughput estimates.",
 		"Sorting key: `(OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)` — filter on `ServiceName` and a `Timestamp` window first.",
 		"To read whole traces by id, seek them through `trace_index`: `(ServiceName, toStartOfFiveMinutes(Timestamp), TraceId) IN (SELECT ServiceName, Bucket, TraceId FROM trace_index WHERE OrgId = … AND TraceId IN (…))`. A bare `TraceId = …` probes every daily partition.",
-		"For service-level metrics (per-service throughput, latency), prefer `service_overview_spans` — it's pre-filtered to entry-point spans and ~10× smaller.",
+		"Before scanning raw spans, check the rollups: per-service requests, errors and latency are in `service_overview_minutely` / `service_overview_hourly`, per span name in `service_operations_minutely` / `service_operations_hourly`, per HTTP route and status in `service_endpoint_details_hourly`, agent spans in `ai_trace_index`. Raw `traces` reads of the attribute maps run out of time past about a day without a `ServiceName` filter.",
 	],
 	ai_trace_index: [
 		"GenAI agent spans ONLY (every row carries a non-empty `VendorId`), with the `maple_ai.*` identity pre-extracted to plain columns. ALWAYS prefer this over `traces` + `mapContains(SpanAttributes, 'maple_ai.…')` for finding agent traces/sessions — the raw-traces scan reads the full attribute Map per span and times out on day-plus windows.",
@@ -67,9 +66,24 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Keeps 365 days. Sorting key: `(OrgId, Timestamp, TraceId)`.",
 	],
 	service_endpoint_details_hourly: [
+		"`HttpStatusCode` is a String: compare it as text (`HttpStatusCode = '500'`) or convert it (`toUInt16OrZero(HttpStatusCode) >= 500`).",
 		"HTTP Server spans with a response status, one row per (service, hour, env, normalized `SpanName` = `METHOD /route`, `HttpStatusCode`, `ErrorType` = `error.type`). ALWAYS prefer this over `traces` + `SpanAttributes['http.response.status_code']` for per-endpoint status, error-type, latency, body-size and user-agent breakdowns.",
 		"Aggregate state columns: merge `DurationQuantiles` with `quantilesTDigestMerge(0.5, 0.95, 0.99)` (NANOSECONDS), `BodySizeQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95, 0.99)` (bytes), `UserAgents` with `approx_top_kMerge(10)`, and `SlowestTraceId`/`SlowestTimestamp`/`SlowestBodySize` with `argMaxMerge` (`SlowestBodySize` -1 = no body size). Sum `SpanCount`/`EstimatedSpanCount`/`BodyCount`.",
 		"Keeps 90 days at hour grain. Sorting key: `(OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType)`.",
+	],
+	service_operations_hourly: [
+		"One row per (service, env, hour, `SpanName`). Sum `SpanCount` / `ErrorCount`; p50 / p95 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)[1]` / `[2]`.",
+		"No `CommitSha`, `ServiceNamespace`, `SpanKind` or attributes here: per-commit numbers are in `service_overview_hourly`.",
+	],
+	service_operations_minutely: [
+		"`service_operations_hourly` at minute grain (`Minute`), 90-day TTL. Same columns and the same `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)` merge; no `CommitSha`.",
+	],
+	service_overview_hourly: [
+		"One row per (service, hour, env, namespace, `CommitSha`) of entry-point spans. Sum `SpanCount` / `ErrorCount`; p50 / p95 / p99 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles)[1]` / `[2]` / `[3]`.",
+		"No `SpanName`: per-operation numbers are in `service_operations_hourly`. `CommitSha` is `vcs.ref.head.revision`.",
+	],
+	service_overview_minutely: [
+		"`service_overview_hourly` at minute grain (`Minute`), 90-day TTL, with the same columns and `quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles)` merge.",
 	],
 	service_overview_spans: [
 		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",

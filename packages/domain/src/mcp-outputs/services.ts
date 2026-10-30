@@ -274,6 +274,9 @@ export const QueryDataOutput = Schema.Struct({
 
 // run_sql
 
+/** A column name the warehouse rejected and the one `run_sql` reran with. */
+export const RunSqlRewrite = Schema.Struct({ from: Schema.String, to: Schema.String })
+
 export const RunSqlOutput = Schema.Struct({
 	rowCount: Schema.Number,
 	columns: Schema.Array(Schema.String),
@@ -288,6 +291,8 @@ export const RunSqlOutput = Schema.Struct({
 	windowApplied: Schema.optionalKey(Schema.Boolean),
 	/** The fully macro-expanded SQL that was executed, only when asked for (`show_sql`). */
 	expandedSql: Schema.optionalKey(Schema.String),
+	/** Column names the warehouse rejected and the server replaced before rerunning. */
+	rewrites: Schema.optionalKey(Schema.Array(RunSqlRewrite)),
 })
 
 // describe_warehouse_tables

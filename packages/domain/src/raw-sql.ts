@@ -1,6 +1,9 @@
 import { Schema } from "effect"
 import { maskLiteralsAndComments } from "@maple-dev/effect-orm/sql"
 
+/** Blanks literals and comments, keeping positions, so text searches only see SQL. */
+export { maskLiteralsAndComments }
+
 // The static half of raw-SQL validation: everything that can be decided from the
 // query text alone, without an org, a time window, or a granularity.
 //
@@ -537,6 +540,9 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 }
 
 const IDENT = "[A-Za-z_][A-Za-z0-9_]*"
+// A clause word after a table is never its alias: `FROM traces JOIN logs l` must still bind `l`.
+const NOT_ALIAS =
+	"(?!(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|OUTER|SEMI|ANTI|ASOF|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)\\b)"
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /**
@@ -552,12 +558,12 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 	)
 	const a = escapeRe(alias)
 	const binding = new RegExp(
-		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?${NOT_ALIAS}(${IDENT}))?(?=[\\s,)]|$)`,
 		"gi",
 	)
 	// `FROM a x, b y` binds every comma-separated table; a subquery or table function item ends the run.
 	const commaItem = new RegExp(
-		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?${NOT_ALIAS}(${IDENT}))?(?=[\\s,)]|$)`,
 		"iy",
 	)
 	const bindings = [...masked.matchAll(binding)].flatMap((m) => {
@@ -570,13 +576,7 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 		return items
 	})
 	for (const [table, bound] of bindings) {
-		const names =
-			bound === undefined ||
-			/^(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)$/i.test(
-				bound,
-			)
-				? [table]
-				: [table, bound]
+		const names = bound === undefined ? [table] : [table, bound]
 		if (names.some((n) => new RegExp(`^${a}$`, "i").test(n)) && !ctes.has(table.toLowerCase())) {
 			return true
 		}
