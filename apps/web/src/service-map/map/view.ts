@@ -27,8 +27,9 @@ const toSelf = (message: Message): Message => message
 export type MapViewOptions = Readonly<{
 	/** The side panel for the selected node (`renderDetailPanel`). */
 	detailPanel?: (selectedId: string) => Html
-	/** Shown when the graph has no nodes at all (`emptyState`). */
-	emptyState?: Html
+	/** Shown when the graph has no nodes at all. A thunk: viewInputs may only hold Html-building
+	 *  functions at the top level, so they run in the host's boundary. */
+	emptyState?: () => Html
 	/** `viewMode`: in 3D the scene replaces the canvas, without presentation controls or legend. */
 	viewMode?: "2d" | "3d"
 	render3D?: () => Html
@@ -138,7 +139,7 @@ const mapColumn = (h: ServiceMapViewBuilder, model: Model, options: MapViewOptio
 export const view = ServiceMapComposition.makeView.withInputs<MapViewOptions>((model, options, h) => {
 	if (model.graph.nodes.length === 0) {
 		if (model.source.rawNodes.length > 0) return hiddenState(h, model)
-		return options.emptyState ?? h.div([], [])
+		return options.emptyState?.() ?? h.div([], [])
 	}
 	if (!model.revealed && options.viewMode !== "3d") return serviceMapLoading(h)
 	const detail = Option.flatMap(model.selectedId, (id) =>

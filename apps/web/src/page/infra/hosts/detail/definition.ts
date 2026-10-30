@@ -1,5 +1,5 @@
 import { Block } from "foldkit"
-import { PageOutMessage } from "../../../contract"
+import { PageOutMessage } from "../../../out-message"
 import { Message } from "./message"
 import { Model } from "./model"
 

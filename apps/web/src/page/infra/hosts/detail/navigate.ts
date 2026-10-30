@@ -1,5 +1,5 @@
 import { AppRoute, hrefOf } from "../../../../route"
-import { PageOutMessage } from "../../../contract"
+import { PageOutMessage } from "../../../out-message"
 import type { Model } from "./model"
 
 export type Search = Model["search"]

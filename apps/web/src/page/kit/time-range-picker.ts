@@ -22,7 +22,7 @@ import {
 	SYSTEM_VALUE,
 	writeSelectedTimeZone,
 } from "../../platform/time-zone"
-import { PageOutMessage } from "../contract"
+import { PageOutMessage } from "../out-message"
 import { zoneListView } from "./timezone-select-view"
 import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
 import { isMounted } from "../../ui/overlay/transition"
