@@ -122,8 +122,7 @@ const US_PRD: MapleProfile = {
 const EU_PRD: MapleProfile = {
 	...US_PRD,
 	database: "declared",
-	// No scraper until `prod-eu` carries its own SD_INTERNAL_TOKEN (docs/eu-region-plan.md).
-	deploys: { ...US_PRD.deploys, sharedApps: false, scraper: false, awsSecurityBaseline: "regional" },
+	deploys: { ...US_PRD.deploys, sharedApps: false, awsSecurityBaseline: "regional" },
 	ingest: {
 		desiredCount: 1,
 		scaling: scaling(1, 3),
