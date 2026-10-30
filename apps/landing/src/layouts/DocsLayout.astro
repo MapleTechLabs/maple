@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import FontPreloads from "../components/FontPreloads.astro";
 import DocsSidebar from "../components/docs/DocsSidebar.astro";
 import TableOfContents from "../components/TableOfContents.astro";
 import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
@@ -46,6 +47,7 @@ const metaDescription = description.replaceAll("`", "");
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <link rel="icon" href="/favicon.ico" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <FontPreloads />
         <meta name="description" content={metaDescription} />
         <meta name="theme-color" content="#171410" />
         <meta name="robots" content={noindex ? "noindex" : "index,follow"} />
