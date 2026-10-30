@@ -32,6 +32,7 @@ import { apiTab } from "./view-api-tab"
 import { API_THEME_TOKENS } from "./view-api-charts"
 import { dependenciesTab } from "./view-dependencies"
 import { operationsTab } from "./view-operations"
+import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 
 // TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
@@ -67,6 +68,28 @@ const createAlert = (h: H, model: Model): Html =>
 		],
 		[icon(h, "BellIcon"), h.span([h.Class("hidden sm:inline")], ["Create alert"])],
 	)
+
+/** The first place the service runs, beside Create alert; the Overview's "Runs on" card lists them all. */
+const runsOn = (h: H, model: Model): Html => {
+	const links = runsOnLinks(model)
+	const first = links[0]
+	if (first === undefined) return null
+	const more = links.length - 1
+	return h.a(
+		[
+			h.AriaLabel(`Runs on ${first.label} ${first.name}`),
+			h.Title(links.map((link) => `${link.label}: ${link.name}`).join("\n")),
+			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
+			h.DataAttribute("slot", "button"),
+			h.Href(first.href),
+		],
+		[
+			icon(h, first.icon),
+			h.span([h.Class("hidden sm:inline")], [first.label]),
+			...(more > 0 ? [h.span([h.Class("text-muted-foreground")], [`+${more}`])] : []),
+		],
+	)
+}
 
 /** The Overview tab's failure card offers Try again, so Reload steps aside; other tabs have no retry. */
 const isTabFailed = (model: Model): boolean =>
@@ -109,7 +132,7 @@ const headerActions = (h: H, model: Model): Html => {
 			toView: (parts) =>
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-2")],
-					[...parts, createAlert(h, model), controls],
+					[...parts, runsOn(h, model), createAlert(h, model), controls],
 				),
 		},
 	})

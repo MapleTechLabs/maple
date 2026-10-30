@@ -9,11 +9,12 @@ import { keyValue, keyValueList } from "../../ui/key-value"
 import { panel } from "../../ui/panel"
 import { scrollArea } from "../../ui/scroll-area"
 import { docsLink } from "../kit/signal-empty-state"
+import { type RuntimeLink, runtimeLink, type ServiceRuntime, workloadLink } from "../kit/service-runtimes"
+import type { TimeSearch } from "../kit/time-controls"
 import type { Message } from "./message"
 
-// The service panel's Infrastructure tab: `ServiceWorkloadRow` and `ServiceInfraEmptyState`.
-// TODO(gcp): `GcpServiceWorkloads` renders only while a GCP connection collects metrics; the page
-// has no GCP status yet, so the tab shows what it shows without one (the Kubernetes rows).
+// The service panel's Infrastructure tab: the platform resources the service runs as, its
+// Kubernetes workloads, and how to link either when neither matched.
 
 type H = HtmlBuilder<Message>
 
@@ -23,7 +24,7 @@ const knownKindOf = (kind: string): KnownKind | null =>
 
 const LINK = "inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
 
-const podsHref = (workload: ServiceWorkload, kind: KnownKind | null): string => {
+const podsHref = (workload: ServiceWorkload, kind: KnownKind | null, time: TimeSearch): string => {
 	const namespaces = workload.namespace ? [workload.namespace] : undefined
 	const byKind =
 		kind === "deployment"
@@ -33,7 +34,7 @@ const podsHref = (workload: ServiceWorkload, kind: KnownKind | null): string => 
 				: kind === "daemonset"
 					? { daemonsets: [workload.workloadName] }
 					: {}
-	const href = hrefOf(AppRoute.InfraKubernetesPods({ search: { ...byKind, namespaces } }))
+	const href = hrefOf(AppRoute.InfraKubernetesPods({ search: { ...time, ...byKind, namespaces } }))
 	// Orders the search keys: the kind filter, then namespaces.
 	const [path, query] = href.split("?")
 	if (query === undefined) return href
@@ -44,7 +45,7 @@ const podsHref = (workload: ServiceWorkload, kind: KnownKind | null): string => 
 
 const utilization = (value: number | null): string => (value == null ? EMPTY_VALUE : formatPercent(value))
 
-const workloadRow = (h: H, workload: ServiceWorkload): Html => {
+const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html => {
 	const kind = knownKindOf(workload.workloadKind)
 	return panel(h, { padded: "sm", className: "space-y-2.5" }, [
 		h.div(
@@ -99,21 +100,13 @@ const workloadRow = (h: H, workload: ServiceWorkload): Html => {
 							h.a(
 								[
 									h.Class(LINK),
-									h.Href(
-										hrefOf(
-											AppRoute.InfraKubernetesWorkload({
-												kind,
-												workloadName: workload.workloadName,
-												search: {},
-											}),
-										),
-									),
+									h.Href(workloadLink(workload, time).href),
 								],
 								["View workload ", icon(h, "ArrowRightIcon", { size: 10 })],
 							),
 						]),
 				h.a(
-					[h.Class(LINK), h.Href(podsHref(workload, kind))],
+					[h.Class(LINK), h.Href(podsHref(workload, kind, time))],
 					["View pods ", icon(h, "ArrowRightIcon", { size: 10 })],
 				),
 			],
@@ -121,7 +114,48 @@ const workloadRow = (h: H, workload: ServiceWorkload): Html => {
 	])
 }
 
-/** `ServiceInfraEmptyState`: how to get Kubernetes context onto the service. */
+/** A platform resource the service runs as, linked to its infra page. */
+const runtimeRow = (h: H, link: RuntimeLink): Html =>
+	h.a(
+		[
+			h.Key(link.key),
+			h.Href(link.href),
+			h.Class(
+				"group block rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+			),
+		],
+		[
+			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-muted/40" }, [
+				eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
+					icon(h, link.icon, { size: 11 }),
+					h.span([], [link.label]),
+				]),
+				h.div(
+					[h.Class("flex items-center justify-between gap-2")],
+					[
+						h.p(
+							[h.Class("min-w-0 truncate font-mono text-xs font-medium text-foreground")],
+							[link.name],
+						),
+						icon(h, "ArrowRightIcon", {
+							size: 10,
+							className: "shrink-0 text-muted-foreground group-hover:text-primary",
+						}),
+					],
+				),
+				...(link.location.length === 0
+					? []
+					: [
+							h.p(
+								[h.Class("truncate text-3xs text-muted-foreground")],
+								[link.location.join(" · ")],
+							),
+						]),
+			]),
+		],
+	)
+
+/** No platform resource and no Kubernetes workload matched: how each one gets linked. */
 const infraEmptyState = (h: H): Html =>
 	h.div(
 		[h.Class("rounded-md border border-dashed bg-muted/20 p-4 space-y-3")],
@@ -130,15 +164,26 @@ const infraEmptyState = (h: H): Html =>
 				[h.Class("flex items-center gap-2")],
 				[
 					icon(h, "CubeIcon", { size: 14, className: "text-muted-foreground/50" }),
-					h.p([h.Class("text-xs font-medium text-foreground")], ["No Kubernetes workloads found"]),
+					h.p(
+						[h.Class("text-xs font-medium text-foreground")],
+						["Not linked to any infrastructure"],
+					),
 				],
 			),
 			h.p(
 				[h.Class("text-2xs text-muted-foreground leading-relaxed")],
 				[
-					"This service has no spans tagged with ",
+					"Name the service after its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker (",
+					inlineCode(h, {}, ["OTEL_SERVICE_NAME"]),
+					") and connect that platform under Infrastructure.",
+				],
+			),
+			h.p(
+				[h.Class("text-2xs text-muted-foreground leading-relaxed")],
+				[
+					"On Kubernetes, install the maple-k8s-infra Helm chart and label the namespace so spans carry ",
 					inlineCode(h, {}, ["k8s.deployment.name"]),
-					" in the selected window. Install the maple-k8s-infra Helm chart and label your namespace to enable infrastructure context:",
+					":",
 				],
 			),
 			h.pre(
@@ -149,23 +194,39 @@ const infraEmptyState = (h: H): Html =>
 		],
 	)
 
-export const infrastructureTab = (h: H, workloads: ReadonlyArray<ServiceWorkload>): ReadonlyArray<Html> => [
+const section = (h: H, title: string, rows: ReadonlyArray<Html>): Html =>
+	h.div([h.Class("space-y-2")], [eyebrow(h, { as: "h4" }, [title]), h.div([h.Class("space-y-2")], rows)])
+
+export const infrastructureTab = (
+	h: H,
+	workloads: ReadonlyArray<ServiceWorkload>,
+	runtimes: ReadonlyArray<ServiceRuntime>,
+	time: TimeSearch,
+): ReadonlyArray<Html> => [
 	scrollArea(h, { idPrefix: "service-map-infra-scroll", className: "h-full" }, [
 		h.div(
 			[h.Class("p-4 space-y-4")],
-			workloads.length === 0
+			workloads.length === 0 && runtimes.length === 0
 				? [infraEmptyState(h)]
 				: [
-						h.div(
-							[h.Class("space-y-2")],
-							[
-								eyebrow(h, { as: "h4" }, ["Kubernetes workloads"]),
-								h.div(
-									[h.Class("space-y-2")],
-									workloads.map((workload) => workloadRow(h, workload)),
-								),
-							],
-						),
+						...(runtimes.length === 0
+							? []
+							: [
+									section(
+										h,
+										"Runs on",
+										runtimes.map((runtime) => runtimeRow(h, runtimeLink(runtime, time))),
+									),
+								]),
+						...(workloads.length === 0
+							? []
+							: [
+									section(
+										h,
+										"Kubernetes workloads",
+										workloads.map((workload) => workloadRow(h, workload, time)),
+									),
+								]),
 					],
 		),
 	]),

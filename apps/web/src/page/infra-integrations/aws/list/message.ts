@@ -3,7 +3,8 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../../data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { AwsStatus, FleetRead, SparkRead, TracedService } from "../data"
+import { TracedService } from "../../kit/traced"
+import { AwsStatus, FleetRead, SparkRead } from "../data"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type

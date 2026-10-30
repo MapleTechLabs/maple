@@ -28,6 +28,7 @@ const withMap = (): Model => {
 		overview: [],
 		platforms: [],
 		workloads: [],
+		runtimes: [],
 	}
 	return step(
 		stored,

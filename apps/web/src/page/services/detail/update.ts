@@ -32,6 +32,7 @@ import {
 	FetchUptimeMonitors,
 	FetchUsage,
 	FetchWorkloads,
+	FetchRuntimes,
 } from "./command"
 import {
 	ALL_ENVIRONMENTS,
@@ -235,6 +236,30 @@ const commitsStep =
 	}
 
 /** What `OverviewTab` mounts: the panels' reads, the refinement once sampling shows, the commits. */
+/** Where the service runs, which the header links on every tab. */
+const runsOnSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
+	(model) => {
+		const input = { services: [model.serviceName], ...window }
+		return keyed(
+			model.workloads,
+			requestKey(context.orgId, "getServiceWorkloads", { data: input }),
+			mode,
+			(workloads) => ({ workloads }),
+			(key) => FetchWorkloads({ key, input }),
+		)
+	},
+	(model) => {
+		const input = { services: [model.serviceName], ...window }
+		return keyed(
+			model.runtimes,
+			requestKey(context.orgId, "getServiceRuntimes", { data: input }),
+			mode,
+			(runtimes) => ({ runtimes }),
+			(key) => FetchRuntimes({ key, input }),
+		)
+	},
+]
+
 const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	operationsStep(context, window, mode),
 	(model) => {
@@ -256,16 +281,6 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 			mode,
 			(usage) => ({ usage }),
 			(key) => FetchUsage({ key, input }),
-		)
-	},
-	(model) => {
-		const input = { services: [model.serviceName], ...window }
-		return keyed(
-			model.workloads,
-			requestKey(context.orgId, "getServiceWorkloads", { data: input }),
-			mode,
-			(workloads) => ({ workloads }),
-			(key) => FetchWorkloads({ key, input }),
 		)
 	},
 	dependenciesStep(context, window, mode),
@@ -494,6 +509,7 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	const window = windowOf(model, context, model.nowMs)
 	const requested = runSteps({ ...model, window }, [
 		overviewStep(context, window, mode),
+		...runsOnSteps(context, window, mode),
 		...tabSteps(model, context, window, mode),
 	])
 	return syncPeek(requested, context, mode)
@@ -547,6 +563,7 @@ export const init = (
 		uptimeMonitors: Keyed.idle(),
 		canCreateUptimeMonitors: false,
 		workloads: Keyed.idle(),
+		runtimes: Keyed.idle(),
 		dependencies: Keyed.idle(),
 		commits: {},
 		isDeploysExpanded: false,
@@ -786,6 +803,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result),
 				canCreateUptimeMonitors: isAdmin,
 			},
+		}),
+		CompletedFetchRuntimes: ({ key, result }) => ({
+			model: { ...model, runtimes: Keyed.accept(model.runtimes, key, result) },
 		}),
 		CompletedFetchWorkloads: ({ key, result }) => ({
 			model: { ...model, workloads: Keyed.accept(model.workloads, key, result) },

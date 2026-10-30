@@ -60,6 +60,7 @@ const BUNDLE: Bundle = {
 	overview: [overview("checkout"), overview("payments")],
 	platforms: [],
 	workloads: [],
+	runtimes: [],
 }
 
 /** `/service-map?view=3d` entered, windowed, with the prefs and the bundle in. */

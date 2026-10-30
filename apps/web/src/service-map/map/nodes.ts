@@ -159,7 +159,8 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 								]),
 								errCell(h, errorRate),
 								avgCell(h, avgLatencyMs),
-								podsCell(h, data),
+								// A service on a platform has no pods; the logo by its name already says where it runs.
+								...(data.infra === undefined && data.runsOn !== undefined ? [] : [podsCell(h, data)]),
 							],
 						),
 					],

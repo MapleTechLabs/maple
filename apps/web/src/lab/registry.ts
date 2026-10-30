@@ -235,6 +235,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-runtimes",
+		title: "Service runtimes",
+		description:
+			"The service page's Overview tab for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/service-map-runtimes",
+		title: "Service map runtimes",
+		description:
+			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/aws",
 		title: "AWS infrastructure",
 		description:

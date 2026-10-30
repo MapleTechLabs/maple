@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import { ServiceName } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import {
@@ -25,6 +26,7 @@ import {
 	FetchOverview,
 	FetchUptimeMonitors,
 	FetchUsage,
+	FetchRuntimes,
 	FetchWorkloads,
 } from "./command"
 import { LinkedCursorMessage, MountLinkedCursor } from "../../../charts/linked-cursor"
@@ -89,6 +91,7 @@ describe("service detail", () => {
 			FetchIssues.name,
 			FetchUsage.name,
 			FetchWorkloads.name,
+			FetchRuntimes.name,
 			FetchDependencies.name,
 			FetchUptimeMonitors.name,
 		]))
@@ -347,6 +350,65 @@ describe("service detail view", () => {
 			expectView(text("Unrouted paths")).toExist(),
 			click(role("button", { name: "Show anyway" })),
 			expectView(role("button", { name: "Hide" })).toExist(),
+		)
+	})
+})
+
+describe("where the service runs", () => {
+	const CLOUD_RUN = {
+		serviceName: Schema.decodeSync(ServiceName)("payment-svc"),
+		kind: "cloudRun" as const,
+		account: "acme-prod",
+		region: "europe-west1",
+		cluster: "",
+		railwayServiceId: "",
+		railwayEnvironmentId: "",
+		railwayEnvironmentName: "",
+	}
+	const withRuntimes = (runtimes: ReadonlyArray<typeof CLOUD_RUN>) => {
+		const model = entered()
+		const answered = pageUpdate(
+			model,
+			Message.CompletedFetchRuntimes({ key: model.runtimes.key ?? "", result: Result.succeed(runtimes) }),
+		).model
+		return pageUpdate(
+			answered,
+			Message.CompletedFetchWorkloads({ key: answered.workloads.key ?? "", result: Result.succeed([]) }),
+		).model
+	}
+	const RUN_HREF = "/infra/gcp/cloudRun/payment-svc?project=acme-prod&region=europe-west1"
+	const settled = [
+		themeResolved(),
+		Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+	]
+
+	test("a service on Cloud Run lists it under Runs on, linked to its Google Cloud page", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes([CLOUD_RUN])),
+			...settled,
+			expectView(text("Runs on")).toExist(),
+			expectView(role("link", { name: /payment-svc/ })).toHaveAttr("href", RUN_HREF),
+			expectView(text("Cloud Run service · acme-prod · europe-west1")).toExist(),
+		)
+	})
+
+	test("the header links the first place it runs", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes([CLOUD_RUN])),
+			...settled,
+			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr("href", RUN_HREF),
+		)
+	})
+
+	test("a service on no platform shows neither the card nor the header link", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes([])),
+			...settled,
+			expectView(text("Runs on")).not.toExist(),
+			expectView(role("link", { name: /^Runs on/ })).not.toExist(),
 		)
 	})
 })

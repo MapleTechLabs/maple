@@ -18,7 +18,7 @@ export const SOURCE_TITLE = {
 	aws: "AWS",
 } satisfies Record<SourceId, string>
 
-const SOURCE_ICON = {
+export const SOURCE_ICON = {
 	hosts: "ServerIcon",
 	containers: "DockerIcon",
 	kubernetes: "KubernetesIcon",

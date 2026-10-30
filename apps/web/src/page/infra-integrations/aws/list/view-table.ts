@@ -17,7 +17,7 @@ import { meter } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
 import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
-import type { TracedService } from "../data"
+import type { TracedService } from "../../kit/traced"
 import {
 	cpuShare,
 	type Health,

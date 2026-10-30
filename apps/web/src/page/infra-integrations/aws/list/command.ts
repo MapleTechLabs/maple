@@ -1,7 +1,8 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
-import { loadFleet, loadSparks, loadStatus, loadTraced, SparksInput } from "../data"
+import { loadTraced } from "../../kit/traced"
+import { loadFleet, loadSparks, loadStatus, SparksInput } from "../data"
 import { Message, RequestMode } from "./message"
 
 export const ResolveWindow = Command.define("ResolveAwsWindow", {

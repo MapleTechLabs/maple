@@ -1,7 +1,8 @@
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Array as Arr } from "effect"
-import type { FleetRead, SparkRead, TracedService } from "./data"
+import type { TracedService } from "../kit/traced"
+import type { FleetRead, SparkRead } from "./data"
 
 // What the AWS pages read off the metric rows: one view per resource, its health, and the summary.
 

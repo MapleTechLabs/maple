@@ -9,6 +9,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ServiceSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
+import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SortState } from "../../kit/table-sort"
 import { ENDPOINT_FILTERS } from "./derive-api"
@@ -130,6 +131,7 @@ export const Model = Schema.Struct({
 	/** Whether the reader may create monitors (org admins); read with the monitors. */
 	canCreateUptimeMonitors: Schema.Boolean,
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
+	runtimes: KeyedSchema(Schema.Array(ServiceRuntime), LoadFailure),
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
 	/** `commitQueryAtom(sha)`, shared by the deploy rows and the marker labels. */
 	commits: Schema.Record(Schema.String, CommitData.schema),
