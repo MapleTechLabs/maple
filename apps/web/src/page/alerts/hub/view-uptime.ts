@@ -96,12 +96,17 @@ const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolea
 /** The window's figures as the toolbar readout: the total, what is down now and the recent uptime. */
 const readout = (h: H, monitors: ReadonlyArray<UptimeMonitor>): ReadonlyArray<Html> => {
 	const summary = summarize(monitors)
+	const downNames = monitors
+		.filter((monitor) => displayStatus(monitor) === "down")
+		.map((monitor) => monitor.name)
 	return [
 		toolbarStat(h, { value: String(summary.total), label: pluralize(summary.total, "monitor") }),
 		toolbarStat(h, {
 			value: String(summary.down),
 			label: "down",
 			dot: summary.down > 0 ? "crit" : undefined,
+			// The rows sort down first; the tooltip names them without a scroll.
+			attributes: downNames.length === 0 ? [] : [h.Title(downNames.join(", "))],
 		}),
 		toolbarStat(h, {
 			value: formatShare(summary.share),

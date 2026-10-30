@@ -50,14 +50,9 @@ export const formatUtilizationPercent = (fraction: number): string => {
 	return rounded >= 10 ? `${Math.round(pct)}%` : `${rounded}%`
 }
 
-/** CPU in cores, comparable across a fleet's magnitudes: 0.004, 0.42, 3.92, 12. */
-export const formatCores = (cores: number): string => {
-	if (!Number.isFinite(cores)) return EMPTY_VALUE
-	if (cores === 0) return "0"
-	if (cores >= 10) return cores.toFixed(0)
-	if (cores >= 1) return cores.toFixed(2)
-	return cores.toFixed(3)
-}
+/** CPU in cores without trailing zeros: 0.004, 0.42, 1.5, 12.35. */
+export const formatCores = (cores: number): string =>
+	Number.isFinite(cores) ? String(Number(cores.toFixed(cores < 1 ? 3 : 2))) : EMPTY_VALUE
 
 /**
  * A node's usage / allocatable fraction, or NaN when allocatable was not collected

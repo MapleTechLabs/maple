@@ -395,7 +395,13 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 			h.div(
 				[h.Class(cn("flex items-start gap-2.5", NAME_COLUMN.width))],
 				[
-					statusDot(h, { tone: HEALTH_TONE[view.health], className: "mt-1.5" }),
+					// Idle is a hollow ring, as on GCP: nothing wrong, nothing running.
+					view.health === "idle"
+						? statusDot(h, {
+								tone: "custom",
+								className: "mt-1.5 border border-muted-foreground/70",
+							})
+						: statusDot(h, { tone: HEALTH_TONE[view.health], className: "mt-1.5" }),
 					h.div(
 						[h.Class("flex min-w-0 flex-col gap-0.5")],
 						[

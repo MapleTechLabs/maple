@@ -94,7 +94,7 @@ describe("railway service", () => {
 			{ update: pageUpdate, view },
 			given(loaded),
 			themeResolved(),
-			expectView(text("1.50 vCPU")).toExist(),
+			expectView(text("1.5 vCPU")).toExist(),
 		)
 	})
 

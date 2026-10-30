@@ -210,49 +210,57 @@ const content = (h: H, model: Model): Html =>
 				onRetry: Message.ClickedRetrySettings(),
 			}),
 		onData: () =>
-			settingsSections(h, [
-				settingsSection(
-					h,
-					{
-						id: "code-review-settings-reviewer",
-						title: "Reviewer",
-						description: ["The model every review and reply in this organization runs on."],
-						framed: false,
-					},
-					[modelSetting(h, model)],
-				),
-				settingsSection(
-					h,
-					{
-						id: "code-review-settings-defaults",
-						title: "Default review rules",
-						description: [
-							"Every repository starts from these. A repository can override any of them.",
-						],
-						framed: true,
-					},
-					Option.match(Option.fromNullishOr(model.defaultsForm), {
-						onNone: () => [],
-						onSome: (form) => [
-							formView(h, form, model.isAdmin, (message) =>
-								Message.GotDefaultsFormMessage({ message }),
-							),
-						],
-					}),
-				),
-				settingsSection(
-					h,
-					{
-						id: "code-review-settings-repositories",
-						title: "Repositories",
-						description: [
-							"Pick which repositories get reviews, and tune any of them on its own.",
-						],
-						framed: false,
-					},
-					[repositoriesSection(h, model)],
-				),
-			]),
+			// The settings column width, like every settings page.
+			h.div(
+				[h.Class("max-w-4xl")],
+				[
+					settingsSections(h, [
+						settingsSection(
+							h,
+							{
+								id: "code-review-settings-reviewer",
+								title: "Reviewer",
+								description: [
+									"The model every review and reply in this organization runs on.",
+								],
+								framed: false,
+							},
+							[modelSetting(h, model)],
+						),
+						settingsSection(
+							h,
+							{
+								id: "code-review-settings-defaults",
+								title: "Default review rules",
+								description: [
+									"Every repository starts from these. A repository can override any of them.",
+								],
+								framed: true,
+							},
+							Option.match(Option.fromNullishOr(model.defaultsForm), {
+								onNone: () => [],
+								onSome: (form) => [
+									formView(h, form, model.isAdmin, (message) =>
+										Message.GotDefaultsFormMessage({ message }),
+									),
+								],
+							}),
+						),
+						settingsSection(
+							h,
+							{
+								id: "code-review-settings-repositories",
+								title: "Repositories",
+								description: [
+									"Pick which repositories get reviews, and tune any of them on its own.",
+								],
+								framed: false,
+							},
+							[repositoriesSection(h, model)],
+						),
+					]),
+				],
+			),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>

@@ -99,7 +99,7 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 	const { endpoint } = peek
 	const mix = knownStatusMix(endpoint)
 	const topClient = codes.find((code) => code.name.startsWith("4"))
-	return statRail(h, { columns: 4, className: "overflow-hidden" }, [
+	return statRail(h, { columns: 4, className: "overflow-hidden sm:grid-cols-4" }, [
 		stat(
 			h,
 			"Req/s",
