@@ -3206,7 +3206,7 @@ async fn main() {
 
     let grpc_server = config
         .otlp_grpc_port
-        .map(|grpc_port| tokio::spawn(run_grpc_server(grpc_state, grpc_port, request_timeout)));
+        .map(|grpc_port| tokio::spawn(run_grpc_server(grpc_state, grpc_port)));
 
     let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -3303,15 +3303,9 @@ async fn shutdown_signal() {
     }
 }
 
-async fn run_grpc_server(state: Arc<AppState>, port: u16, request_timeout: Duration) {
+async fn run_grpc_server(state: Arc<AppState>, port: u16) {
     let addr = ([0, 0, 0, 0], port).into();
-    let mut builder = tonic::transport::Server::builder();
-    // A timed-out call ends `Cancelled`, which OTLP exporters retry. Zero disables it,
-    // as on the HTTP path.
-    if !request_timeout.is_zero() {
-        builder = builder.timeout(request_timeout);
-    }
-    let server = builder.add_routes(grpc_router(state).into());
+    let server = tonic::transport::Server::builder().add_routes(grpc_router(state).into());
 
     info!(port, "Maple OTLP gRPC server listening");
     if let Err(error) = server.serve_with_shutdown(addr, shutdown_signal()).await {
@@ -3377,7 +3371,9 @@ async fn grpc_admission(
     };
     let span = grpc_server_span(rpc_service, signal.path());
     let span_handle = span.clone();
-    let response = async move {
+    let request_timeout = state.config.request_timeout;
+    let path = request.uri().path().to_owned();
+    let admitted = async move {
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
             Ok((resolved, admission)) => {
@@ -3400,9 +3396,26 @@ async fn grpc_admission(
             }
             Err(status) => status.into_http(),
         }
-    }
-    .instrument(span)
-    .await;
+    };
+    // The HTTP path's deadline, enforced here so the span records it. `Unavailable`
+    // is that path's retryable 503. Zero disables it there too.
+    let response = if request_timeout.is_zero() {
+        admitted.instrument(span).await
+    } else if let Ok(response) = tokio::time::timeout(request_timeout, admitted)
+        .instrument(span)
+        .await
+    {
+        response
+    } else {
+        metrics::request_timed_out(&path);
+        warn!(
+            path,
+            timeout_secs = request_timeout.as_secs(),
+            "Abandoning gRPC export that exceeded the gateway timeout"
+        );
+        tonic::Status::unavailable("Ingest gateway timed out while accepting this request")
+            .into_http()
+    };
     record_grpc_outcome(&span_handle, &response);
     response
 }
@@ -14116,6 +14129,44 @@ mod tests {
             grpc_header_status(&declared),
             Some("8"),
             "a declared length past the raw limit is refused before the body is read"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn grpc_export_past_the_deadline_is_unavailable() {
+        use tonic::codegen::Service as _;
+
+        let queue_dir = unique_main_test_dir("grpc-deadline");
+        let mut state = test_app_state(
+            Arc::new(FakeKeyStore::default()),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        state.config.request_timeout = Duration::from_millis(50);
+        let mut router = grpc_router(Arc::new(state));
+
+        // A client that sends half a frame and then stalls.
+        let frame = grpc_frame(&test_log_request("stalled").encode_to_vec());
+        let half = Bytes::copy_from_slice(&frame[..frame.len() / 2]);
+        let stalled = futures_util::StreamExt::chain(
+            futures_util::stream::once(async move { Ok::<_, std::io::Error>(half) }),
+            futures_util::stream::pending(),
+        );
+        let mut request = grpc_export_request("MAPLE_TEST", Vec::new());
+        *request.body_mut() = axum::body::Body::from_stream(stalled);
+
+        let response = tokio::time::timeout(Duration::from_secs(5), router.call(request))
+            .await
+            .expect("the gateway answers at its own deadline")
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&response),
+            Some("14"),
+            "a stalled export is UNAVAILABLE, which exporters retry"
         );
 
         drop(std::fs::remove_dir_all(&queue_dir));

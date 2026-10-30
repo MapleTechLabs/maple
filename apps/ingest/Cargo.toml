@@ -132,6 +132,7 @@ items_after_statements = "allow"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
+futures-util = "0.3"
 proptest = { version = "1.10", default-features = false, features = ["std"] }
 
 [[bench]]
