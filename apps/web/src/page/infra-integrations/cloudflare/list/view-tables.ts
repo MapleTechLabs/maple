@@ -83,11 +83,11 @@ const zoneColumns = (
 	showLatency: boolean,
 ): ReadonlyArray<Html> => [
 	zoneHead(h, "Zone", NAME, { key: "zoneName", sort }),
-	...(showAccount ? [zoneHead(h, "Account", "w-[120px]", { hidden: "hidden lg:flex" })] : []),
-	zoneHead(h, "Requests", "w-[190px]", { key: "requests", sort }),
-	zoneHead(h, "Status mix", "w-[200px]", { key: "clientErrorRate", sort, hidden: "hidden md:flex" }),
-	zoneHead(h, "5xx", "w-[80px]", { key: "errorRate", sort, align: "right" }),
-	zoneHead(h, "Cache hit", "w-[120px]", {
+	...(showAccount ? [zoneHead(h, "Account", "w-32", { hidden: "hidden lg:flex" })] : []),
+	zoneHead(h, "Requests", "w-48", { key: "requests", sort }),
+	zoneHead(h, "Status mix", "w-52", { key: "clientErrorRate", sort, hidden: "hidden md:flex" }),
+	zoneHead(h, "5xx", "w-20", { key: "errorRate", sort, align: "right" }),
+	zoneHead(h, "Cache hit", "w-32", {
 		key: "cacheHitRate",
 		sort,
 		align: "right",
@@ -95,7 +95,7 @@ const zoneColumns = (
 	}),
 	...(showLatency
 		? [
-				zoneHead(h, "TTFB p99", "w-[80px]", {
+				zoneHead(h, "TTFB p99", "w-20", {
 					key: "ttfbP99Ms",
 					sort,
 					align: "right",
@@ -103,7 +103,7 @@ const zoneColumns = (
 				}),
 			]
 		: []),
-	zoneHead(h, "Bandwidth", "w-[100px]", { key: "bytes", sort, align: "right", hidden: "hidden md:flex" }),
+	zoneHead(h, "Bandwidth", "w-24", { key: "bytes", sort, align: "right", hidden: "hidden md:flex" }),
 ]
 
 export const zoneTableLoading = (h: H): Html =>
@@ -113,11 +113,11 @@ export const zoneTableLoading = (h: H): Html =>
 		zoneColumns(h, undefined, false, false),
 		skeletonRows(h, 4, () => [
 			h.div([h.Class(cn(NAME, "space-y-1.5"))], [skeleton(h, "h-3.5 w-40"), skeleton(h, "h-2.5 w-24")]),
-			skeleton(h, "h-4 w-[190px]"),
-			skeleton(h, "hidden h-1.5 w-[200px] md:block"),
-			skeleton(h, "h-3 w-[80px]"),
-			skeleton(h, "hidden h-3 w-[120px] lg:block"),
-			skeleton(h, "hidden h-3 w-[100px] md:block"),
+			skeleton(h, "h-4 w-48"),
+			skeleton(h, "hidden h-1.5 w-52 md:block"),
+			skeleton(h, "h-3 w-20"),
+			skeleton(h, "hidden h-3 w-32 lg:block"),
+			skeleton(h, "hidden h-3 w-24 md:block"),
 		]),
 	)
 
@@ -176,10 +176,10 @@ const statusMix = (h: H, zone: ZoneRow, rated: boolean): Html => {
 						title: undefined,
 					}
 	return h.div(
-		[h.Class("hidden w-[200px] items-center gap-2.5 md:flex")],
+		[h.Class("hidden w-52 items-center gap-2.5 md:flex")],
 		[
 			segmentedBar(h, {
-				className: "w-[100px] shrink-0 gap-px bg-transparent",
+				className: "w-24 shrink-0 gap-px bg-transparent",
 				minVisible: 2,
 				label: `2xx ${zone.requests2xx}, 3xx ${zone.requests3xx}, 4xx ${zone.errors4xx}, 5xx ${zone.errors5xx}`,
 				segments: [
@@ -248,17 +248,17 @@ const zoneRow = (
 						h.div(
 							[
 								h.Class(
-									"hidden w-[120px] truncate font-mono text-2xs text-muted-foreground lg:block",
+									"hidden w-32 truncate font-mono text-2xs text-muted-foreground lg:block",
 								),
 							],
 							[options.accounts.get(zone.serviceName) ?? EMPTY_VALUE],
 						),
 					]),
 			h.div(
-				[h.Class("flex w-[190px] items-center gap-3")],
+				[h.Class("flex w-48 items-center gap-3")],
 				[
 					h.span(
-						[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground/80")],
+						[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground-soft")],
 						[formatNumber(zone.requests)],
 					),
 					requestSpark(h, options.spark, zone, options.sparks?.get(zone.serviceName)),
@@ -269,7 +269,7 @@ const zoneRow = (
 				[
 					h.Class(
 						cn(
-							"w-[80px]",
+							"w-20",
 							NUMBER,
 							rated ? errorRateClass(zone.errorRate) : "text-muted-foreground",
 						),
@@ -278,10 +278,10 @@ const zoneRow = (
 				[rated ? formatErrorRate(zone.errorRate) : EMPTY_VALUE],
 			),
 			h.div(
-				[h.Class("hidden w-[120px] flex-col items-end gap-0.5 lg:flex")],
+				[h.Class("hidden w-32 flex-col items-end gap-0.5 lg:flex")],
 				[
 					h.span(
-						[h.Class("font-mono text-xs tabular-nums text-foreground/80")],
+						[h.Class("font-mono text-xs tabular-nums text-foreground-soft")],
 						[zone.cacheHitRate === null ? EMPTY_VALUE : formatPercentColumn(zone.cacheHitRate)],
 					),
 					h.span(
@@ -297,13 +297,13 @@ const zoneRow = (
 			...(options.showLatency
 				? [
 						h.div(
-							[h.Class(cn("hidden w-[80px] text-foreground/80 lg:block", NUMBER))],
+							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMBER))],
 							[zone.ttfbP99Ms > 0 ? formatLatency(zone.ttfbP99Ms) : EMPTY_VALUE],
 						),
 					]
 				: []),
 			h.div(
-				[h.Class(cn("hidden w-[100px] text-foreground/80 md:block", NUMBER))],
+				[h.Class(cn("hidden w-24 text-foreground-soft md:block", NUMBER))],
 				[formatBytes(zone.bytes)],
 			),
 		],
@@ -404,21 +404,21 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 						h.div(
 							[
 								h.Class(
-									"hidden w-[110px] truncate font-mono text-2xs text-muted-foreground lg:block",
+									"hidden w-28 truncate font-mono text-2xs text-muted-foreground lg:block",
 								),
 							],
 							[accounts.get(row.accountId) ?? EMPTY_VALUE],
 						),
 					]),
 			h.div(
-				[h.Class(cn("w-[90px] text-foreground/80", NUMBER))],
+				[h.Class(cn("w-24 text-foreground-soft", NUMBER))],
 				[invocationsOnly ? formatNumber(row.requests) : EMPTY_VALUE],
 			),
 			h.div(
 				[
 					h.Class(
 						cn(
-							"w-[80px]",
+							"w-20",
 							NUMBER,
 							invocationsOnly ? errorRateClass(row.errorRate) : "text-muted-foreground",
 						),
@@ -430,9 +430,9 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 				[
 					h.Class(
 						cn(
-							"hidden w-[80px] md:block",
+							"hidden w-20 md:block",
 							NUMBER,
-							row.cpuP99Ms >= CPU_HEAVY_P99_MS ? "text-severity-warn" : "text-foreground/80",
+							row.cpuP99Ms >= CPU_HEAVY_P99_MS ? "text-severity-warn" : "text-foreground-soft",
 						),
 					),
 				],
@@ -442,9 +442,9 @@ const workerRow = (h: H, row: WorkerListRow, accounts: ReadonlyMap<string, strin
 				[
 					h.Class(
 						cn(
-							"w-[100px]",
+							"w-24",
 							NUMBER,
-							row.durationP99Ms >= SLOW_P99_MS ? "text-severity-warn" : "text-foreground/80",
+							row.durationP99Ms >= SLOW_P99_MS ? "text-severity-warn" : "text-foreground-soft",
 						),
 					),
 				],
@@ -471,11 +471,11 @@ export const workerTable = (
 			columnHead(h, { label: "Worker", width: "w-0 flex-1 min-w-[220px]" }),
 			...(options.accounts === undefined
 				? []
-				: [columnHead(h, { label: "Account", width: "w-[110px]", hidden: "hidden lg:flex" })]),
-			columnHead(h, { label: "Invocations", align: "right", width: "w-[90px]" }),
-			columnHead(h, { label: "Errors", align: "right", width: "w-[80px]" }),
-			columnHead(h, { label: "CPU p99", align: "right", width: "w-[80px]", hidden: "hidden md:flex" }),
-			columnHead(h, { label: "Duration p99", align: "right", width: "w-[100px]" }),
+				: [columnHead(h, { label: "Account", width: "w-28", hidden: "hidden lg:flex" })]),
+			columnHead(h, { label: "Invocations", align: "right", width: "w-24" }),
+			columnHead(h, { label: "Errors", align: "right", width: "w-20" }),
+			columnHead(h, { label: "CPU p99", align: "right", width: "w-20", hidden: "hidden md:flex" }),
+			columnHead(h, { label: "Duration p99", align: "right", width: "w-24" }),
 		],
 		options.rows.length === 0
 			? [dataTableEmpty(h, [options.emptyMessage ?? "No Worker invocations in the selected window."])]
@@ -485,13 +485,13 @@ export const workerTable = (
 // QUEUES
 
 const QUEUE_ROW =
-	"flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0 hover:bg-muted/50"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken"
 
 const numCell = (h: H, value: string, hidden?: boolean): Html =>
 	h.div(
 		[
 			h.Class(
-				`w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80 ${hidden === true ? "hidden md:block" : ""}`,
+				`w-28 text-right font-mono text-xs tabular-nums text-foreground-soft ${hidden === true ? "hidden md:block" : ""}`,
 			),
 		],
 		[value],
@@ -524,15 +524,15 @@ export const queueTable = (
 		{ ariaLabel: "Cloudflare queues", isWaiting: options.isWaiting },
 		[
 			queueHead(h, "Queue", "queueName", sort, "w-0 flex-1 min-w-[220px]"),
-			queueHead(h, "Backlog avg", "backlogMessages", sort, "w-[110px]", "right"),
-			queueHead(h, "Backlog peak", "backlogMessagesMax", sort, "w-[110px]", "right"),
+			queueHead(h, "Backlog avg", "backlogMessages", sort, "w-28", "right"),
+			queueHead(h, "Backlog peak", "backlogMessagesMax", sort, "w-28", "right"),
 			columnHead(h, {
 				label: "Backlog size",
 				align: "right",
-				width: "w-[110px]",
+				width: "w-28",
 				hidden: "hidden md:flex",
 			}),
-			queueHead(h, "Consumers", "consumerConcurrency", sort, "w-[110px]", "right"),
+			queueHead(h, "Consumers", "consumerConcurrency", sort, "w-28", "right"),
 		],
 		sorted.length === 0
 			? [dataTableEmpty(h, ["No queue activity in the selected window."])]

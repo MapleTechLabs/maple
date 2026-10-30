@@ -129,7 +129,7 @@ const templateTile = <M>(h: HtmlBuilder<M>, template: AlertTemplate, serviceName
 			h.Class(
 				cn(
 					"group flex flex-col gap-1.5 rounded-md border bg-card p-3 text-left transition-colors",
-					"hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+					"hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 					tone?.hoverBorder,
 				),
 			),
@@ -156,7 +156,7 @@ const svgAttrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>
 /** `QuietMonitor`: a steady signal below the dashed threshold a rule would place. */
 const quietMonitor = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class("relative w-full max-w-[300px] overflow-hidden rounded-md border bg-card/50 px-4 py-3")],
+		[h.Class("relative w-full max-w-[300px] overflow-hidden rounded-md border bg-card/50 p-4")],
 		[
 			h.svg(
 				svgAttrs(h, {

@@ -117,7 +117,7 @@ export const verificationCard = <M>(
 			? [
 					note(
 						h,
-						"mt-2 text-xs text-muted-foreground/80",
+						"mt-2 text-xs text-foreground-subtle",
 						"Occurrences from builds that predate the merge were ignored. Those are older clients still running the broken version.",
 					),
 				]
@@ -141,7 +141,7 @@ export const verificationCard = <M>(
 			? [
 					note(
 						h,
-						"mt-2 text-xs text-muted-foreground/80",
+						"mt-2 text-xs text-foreground-subtle",
 						"First check was inconclusive; watching for longer.",
 					),
 				]

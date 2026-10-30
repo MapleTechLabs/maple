@@ -181,7 +181,7 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 					RESOLVES.map((line) =>
 						h.li(
 							[h.Class("flex gap-2")],
-							[h.span([h.AriaHidden(true), h.Class("select-none text-muted-foreground/50")], ["·"]), h.span([], [line])],
+							[h.span([h.AriaHidden(true), h.Class("select-none text-foreground-faint")], ["·"]), h.span([], [line])],
 						),
 					),
 				),

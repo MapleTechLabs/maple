@@ -72,7 +72,7 @@ const isFailed = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 const connectPanel = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const accent = providerOf("hazel-oauth")
 	return h.div(
-		[h.Class("space-y-2 rounded-md border border-dashed border-border/60 p-3")],
+		[h.Class("space-y-2 rounded-md border border-dashed border-border-subtle p-3")],
 		[
 			...(isFailed(inputs.model.status.data)
 				? [

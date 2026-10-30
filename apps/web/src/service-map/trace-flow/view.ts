@@ -125,7 +125,7 @@ const minimapColor = (graph: FlowGraph) => {
 
 const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 	h.div(
-		[h.Class("flex items-center justify-between border-b bg-muted/30 px-3 py-2 shrink-0")],
+		[h.Class("flex items-center justify-between border-b bg-surface-sunken px-3 py-2 shrink-0")],
 		[
 			h.span([h.Class("text-xs font-medium text-muted-foreground")], ["Flow View"]),
 			button(
@@ -178,7 +178,7 @@ export const view = <M>(
 						panels: [
 							controls(h, model.canvas, toCanvas),
 							miniMap(h, model.canvas, placed, {
-								className: "!bg-muted/50 !border-border",
+								className: "!bg-surface-sunken !border-border",
 								maskColor: "oklch(0.15 0 0 / 0.8)",
 								nodeColor: minimapColor(graph),
 							}),

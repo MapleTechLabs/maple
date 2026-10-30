@@ -39,7 +39,7 @@ const mono = (
 	h.div(
 		[h.Class("group/mono flex min-w-0 items-start gap-1.5")],
 		[
-			h.code([h.Class("min-w-0 break-all font-mono text-xs leading-5 text-foreground/90")], [value]),
+			h.code([h.Class("min-w-0 break-all font-mono text-xs leading-5 text-foreground-soft")], [value]),
 			CopyButton.view(h, {
 				model,
 				value,

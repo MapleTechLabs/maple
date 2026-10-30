@@ -21,7 +21,7 @@ export const isLive = (issue: V2Recommendation) => issue.status === "applied" ||
 
 const summary = (h: H, issue: V2Recommendation): Html =>
 	h.p(
-		[h.Class("text-base leading-relaxed text-foreground/90")],
+		[h.Class("text-base leading-relaxed text-foreground-soft")],
 		issue.kind === "double-emission"
 			? [
 					"Your spans emit both ",
@@ -99,7 +99,7 @@ const changeBreakdown = (h: H, issue: V2Recommendation): Html => {
 				...(issue.canonical_key
 					? [
 							h.div(
-								[h.Class("flex items-start gap-3 border-t border-border/60 px-4 py-3")],
+								[h.Class("flex items-start gap-3 border-t border-border-subtle px-4 py-3")],
 								[
 									icon(h, "CircleCheckIcon", {
 										size: 16,
@@ -132,7 +132,7 @@ const cautionCallout = (h: H, issue: V2Recommendation): Html =>
 		[h.Class("rounded-r-md border-l-2 border-severity-warn bg-severity-warn/8 px-4 py-3")],
 		[
 			h.p(
-				[h.Class("text-sm leading-relaxed text-foreground/90")],
+				[h.Class("text-sm leading-relaxed text-foreground-soft")],
 				[
 					h.span([h.Class("font-medium text-severity-warn")], ["Please note:"]),
 					" ",
@@ -166,7 +166,7 @@ const mappingBlock = (h: H, model: Model, issue: V2Recommendation): Html => {
 			}),
 			panel(h, { tone: "muted" }, [
 				h.div(
-					[h.Class("flex items-center justify-between border-b border-border/60 px-3 py-2")],
+					[h.Class("flex items-center justify-between border-b border-border-subtle px-3 py-2")],
 					[
 						h.span(
 							[h.Class("text-xs text-muted-foreground")],

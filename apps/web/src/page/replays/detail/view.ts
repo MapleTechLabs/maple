@@ -1,6 +1,6 @@
 import { shortId } from "@maple/ui/lib/ids"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { gradientFor, hostFromUrl } from "@maple/ui/lib/replay"
+import { hostFromUrl } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { parseChTimestampMs } from "../../../components/replays/replay-timeline"
 import { Struct } from "effect"
@@ -28,6 +28,7 @@ import { replaySurface, replayTransport } from "./view-player"
 import { sessionRail } from "./view-rail"
 import { copy } from "./view-session"
 import { replayTimeline } from "./view-timeline"
+import { warmAvatarTone } from "../../../ui/avatar-tone"
 
 // The replay detail page on `ResultPage`, with the replay studio.
 
@@ -78,7 +79,7 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 					h.div(
 						[
 							h.Class(
-								`grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(model.sessionId)} text-xs font-semibold text-white shadow-sm`,
+								`grid size-8 shrink-0 place-items-center rounded-full ${warmAvatarTone(model.sessionId)} text-xs font-semibold`,
 							),
 						],
 						[initialsFrom(label)],

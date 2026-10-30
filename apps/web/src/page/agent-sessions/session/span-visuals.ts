@@ -47,7 +47,7 @@ export const AGENT_TIME_TEXT = {
 	ttft: "text-chart-ai-ttft",
 	inference: "text-chart-ai-inference",
 	tool: "text-chart-ai-tool",
-	idle: "text-muted-foreground/70",
+	idle: "text-foreground-subtle",
 } satisfies Record<TimeBandKind, string>
 
 export const AGENT_TIME_LABEL = {

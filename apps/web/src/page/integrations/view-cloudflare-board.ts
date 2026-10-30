@@ -117,7 +117,7 @@ const resourceRow = (
 			[
 				h.Class(
 					cn(
-						"hidden w-[190px] min-w-0 shrink-0 self-center text-2xs @lg:block",
+						"hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block",
 						status.detailClass,
 					),
 				),
@@ -125,7 +125,7 @@ const resourceRow = (
 			detailView(h, status.detail),
 		),
 		h.div(
-			[h.Class("flex w-[124px] shrink-0 items-center justify-end gap-2.5 self-center")],
+			[h.Class("flex w-32 shrink-0 items-center justify-end gap-2.5 self-center")],
 			[
 				...(hasData && usage !== null ? [sparkline(h, model, name, usage)] : []),
 				h.span(
@@ -136,7 +136,7 @@ const resourceRow = (
 		),
 	]
 	const rowClass =
-		"group flex items-start gap-3 border-b border-border/60 px-3 py-2 transition-colors last:border-0"
+		"group flex items-start gap-3 border-b border-border-subtle px-3 py-2 transition-colors last:border-0"
 	return zoneLink
 		? h.a(
 				[
@@ -144,7 +144,7 @@ const resourceRow = (
 					h.Class(
 						cn(
 							rowClass,
-							"hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
+							"hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 						),
 					),
 				],
@@ -210,9 +210,9 @@ export const zoneBoard = (
 				onSort: Message.ClickedZoneSort({ key }),
 			},
 		})
-	return panel(h, { className: cn("@container border-border/60", className) }, [
+	return panel(h, { className: cn("@container border-border-subtle", className) }, [
 		panelHeader(h, {
-			className: "gap-2 border-border/60 pl-4 pr-2.5",
+			className: "gap-2 border-border-subtle pl-4 pr-2.5",
 			children: [
 				h.h3([h.Class("text-sm font-semibold")], ["Zones"]),
 				ToggleGroup.view(h, {
@@ -235,7 +235,7 @@ export const zoneBoard = (
 				}),
 				searchInput(h, {
 					id: "cloudflare-zone-search",
-					className: "w-full sm:w-[170px]",
+					className: "w-full sm:w-44",
 					value: card.zoneSearch,
 					placeholder: "Filter zones…",
 					onInput: (value) => Message.ChangedZoneSearch({ value }),
@@ -262,12 +262,12 @@ export const zoneBoard = (
 			[h.Class("flex flex-col")],
 			[
 				h.div(
-					[h.Class("flex items-center gap-3 border-b border-border/60 px-3 py-2")],
+					[h.Class("flex items-center gap-3 border-b border-border-subtle px-3 py-2")],
 					[
 						h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0")]),
 						head("Zone", "name", "min-w-0 flex-1", {}),
-						head("Status", "status", "w-[190px]", { hidden: "hidden @lg:flex" }),
-						head("24h requests", "requests", "w-[124px]", { align: "right" }),
+						head("Status", "status", "w-48", { hidden: "hidden @lg:flex" }),
+						head("24h requests", "requests", "w-32", { align: "right" }),
 					],
 				),
 				sorted.length === 0
@@ -307,9 +307,9 @@ export const workersCard = (
 	const scripts = workerServices.toSorted((a, b) => b.totalRequests - a.totalRequests)
 	const expanded = model.cloudflareCard.workersExpanded
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
-	return panel(h, { className: "h-fit border-border/60 lg:w-72 lg:shrink-0 xl:w-80" }, [
+	return panel(h, { className: "h-fit border-border-subtle lg:w-72 lg:shrink-0 xl:w-80" }, [
 		panelHeader(h, {
-			className: "border-border/60 py-3",
+			className: "border-border-subtle py-3",
 			children: [h.h3([h.Class("text-sm font-semibold")], ["Workers"])],
 			action: h.a(
 				[
@@ -322,7 +322,7 @@ export const workersCard = (
 		...(aggregate.kind === "issue" || aggregate.kind === "no-data"
 			? [
 					h.div(
-						[h.Class(cn("border-b border-border/60 px-4 py-2 text-2xs", aggregate.detailClass))],
+						[h.Class(cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass))],
 						detailView(h, aggregate.detail),
 					),
 				]
@@ -345,7 +345,7 @@ export const workersCard = (
 							h.div(
 								[
 									h.Class(
-										"flex items-center justify-between gap-3 border-b border-border/60 py-2.5 last:border-0",
+										"flex items-center justify-between gap-3 border-b border-border-subtle py-2.5 last:border-0",
 									),
 								],
 								[

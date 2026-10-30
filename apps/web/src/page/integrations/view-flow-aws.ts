@@ -166,7 +166,7 @@ const accountLine = (h: H, connection: V2AwsConnection): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-2 text-sm")],
 		[
-			icon(h, "CircleCheckIcon", { size: 14, className: "text-success" }),
+			icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
 			h.span([], ["AWS account ID"]),
 			h.span([h.Class("font-mono tabular-nums")], [connection.account_id]),
 			button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [

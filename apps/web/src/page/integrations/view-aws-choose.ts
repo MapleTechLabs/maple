@@ -59,7 +59,7 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 		[...REGIONS, ...extra].map((region) => {
 			const isPicked = selection.regions.includes(region.code)
 			return h.li(
-				[h.Class("border-b border-border/60")],
+				[h.Class("border-b border-border-subtle")],
 				[
 					h.label(
 						[h.Class("flex cursor-pointer items-center gap-3 py-2 text-sm")],
@@ -97,7 +97,7 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 				[
 					h.Class(
 						cn(
-							"flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5",
+							"flex items-center justify-between gap-3 rounded-md border border-border p-3",
 							!isPicked && "text-muted-foreground",
 						),
 					),

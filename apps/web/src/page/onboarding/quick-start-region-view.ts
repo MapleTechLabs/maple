@@ -19,15 +19,15 @@ export const REGION_CARDS = {
 		name: "United States",
 		place: "North America",
 		residency: "Data stays in the US",
-		accent: "#E5485B",
-		check: "border-[#E5485B] bg-[#E5485B] text-white",
+		accent: "var(--color-region-us)",
+		check: "border-region-us bg-region-us text-white",
 	},
 	eu: {
 		name: "European Union",
 		place: "Frankfurt, Germany",
 		residency: "Data stays in the EU",
-		accent: "#5B7CFF",
-		check: "border-[#5B7CFF] bg-[#5B7CFF] text-white",
+		accent: "var(--color-region-eu)",
+		check: "border-region-eu bg-region-eu text-white",
 	},
 } as const satisfies Record<Region, { name: string; place: string; residency: string; accent: string; check: string }>
 
@@ -39,7 +39,11 @@ const residency = (h: H, region: Region, isActive: boolean): Html => {
 				"inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground",
 			),
 			...(isActive
-				? [h.Style({ color: card.accent, "border-color": `${card.accent}66`, "background-color": `${card.accent}14` })]
+				? [h.Style({
+						color: card.accent,
+						"border-color": `color-mix(in oklab, ${card.accent} 40%, transparent)`,
+						"background-color": `color-mix(in oklab, ${card.accent} 8%, transparent)`,
+					})]
 				: []),
 		],
 		[

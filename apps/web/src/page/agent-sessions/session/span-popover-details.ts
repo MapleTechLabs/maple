@@ -46,10 +46,10 @@ const toolCallCard = (
 	options: Readonly<{ isFailed: boolean; statusCode: string; keyPrefix: string }>,
 ): Html =>
 	h.div(
-		[h.Class("min-w-0 overflow-hidden rounded-md border border-border/60")],
+		[h.Class("min-w-0 overflow-hidden rounded-md border border-border-subtle")],
 		[
 			h.div(
-				[h.Class("flex items-center gap-2 bg-muted/40 px-2.5 py-1.5")],
+				[h.Class("flex items-center gap-2 bg-surface-sunken px-2.5 py-1.5")],
 				[
 					h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-xs bg-chart-4")], []),
 					h.span([h.Class("shrink-0 font-medium font-mono text-chart-4 text-xs")], ["tool"]),
@@ -68,7 +68,7 @@ const toolCallCard = (
 								truncatedText(h, {
 									text: call.id,
 									mono: true,
-									className: "ml-auto max-w-40 shrink-0 text-2xs text-muted-foreground/80",
+									className: "ml-auto max-w-40 shrink-0 text-2xs text-foreground-subtle",
 								}),
 							]),
 				],
@@ -79,7 +79,7 @@ const toolCallCard = (
 						h.p(
 							[
 								h.Class(
-									"border-border/60 border-t px-2.5 py-1.5 text-muted-foreground text-xs",
+									"border-border-subtle border-t px-2.5 py-1.5 text-muted-foreground text-xs",
 								),
 							],
 							[call.description],
@@ -106,7 +106,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 	return b.div(
 		[
 			b.Class(
-				"flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5",
+				"flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 p-3",
 			),
 		],
 		[
@@ -172,7 +172,7 @@ const identityRows = (p: P, state: PanelState, span: AiSessionSpan, timeZone: st
 	]
 	return keyValueList(
 		p,
-		{ layout: "grid", divided: true, className: "rounded-md border border-border/60 px-2.5" },
+		{ layout: "grid", divided: true, className: "rounded-md border border-border-subtle px-2.5" },
 		rows.flatMap(([label, value]) =>
 			value === undefined
 				? []
@@ -229,7 +229,7 @@ const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, Pan
 
 /** `LogsSection`: the trace panel's span logs, read once the tab is open. */
 const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { timeZone }, p) =>
-	p.div([p.Class("overflow-hidden rounded-md border border-border/60")], [spanLogs(p, state, timeZone)]),
+	p.div([p.Class("overflow-hidden rounded-md border border-border-subtle")], [spanLogs(p, state, timeZone)]),
 )
 
 /** The call's own settings and identity, shown only where the span reported them. */
@@ -272,7 +272,7 @@ const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>
 				p.span(
 					[
 						p.Class(
-							"ml-auto flex items-baseline gap-1.5 font-mono text-2xs text-muted-foreground/70",
+							"ml-auto flex items-baseline gap-1.5 font-mono text-2xs text-foreground-subtle",
 						),
 					],
 					[

@@ -247,7 +247,7 @@ export const statGhost = <M>(h: HtmlBuilder<M>): Html =>
 		[h.Class("flex h-full w-full flex-col items-center justify-center gap-2.5")],
 		[
 			stub(h, "h-8 w-24 rounded-md bg-foreground/10 animate-pulse"),
-			stub(h, "h-3 w-14 rounded bg-foreground/10 animate-pulse", { "animation-delay": "0.2s" }),
+			stub(h, "h-3 w-14 rounded-sm bg-foreground/10 animate-pulse", { "animation-delay": "0.2s" }),
 		],
 	)
 

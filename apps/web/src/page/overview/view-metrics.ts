@@ -319,7 +319,7 @@ const cardContent = (
 						h.span(
 							[
 								h.Class(
-									"flex flex-1 items-center justify-center font-prose text-xs text-muted-foreground/70",
+									"flex flex-1 items-center justify-center font-prose text-xs text-foreground-subtle",
 								),
 							],
 							[STRIPPED_CAPTION[failureKind(cardFailure)]],

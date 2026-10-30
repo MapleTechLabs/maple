@@ -54,19 +54,19 @@ const COLUMNS: ReadonlyArray<{
 	metric?: boolean
 }> = [
 	{ label: "Database", key: "name", width: "w-0 flex-1 min-w-[220px]" },
-	{ label: "Branches", key: "branchCount", width: "w-[80px]", align: "right", hidden: "hidden md:flex" },
-	{ label: "Connections", key: "connectionsAvg", width: "w-[96px]", align: "right", metric: true },
-	{ label: "CPU (max)", key: "cpuMaxPercent", width: "w-[88px]", align: "right", metric: true },
+	{ label: "Branches", key: "branchCount", width: "w-20", align: "right", hidden: "hidden md:flex" },
+	{ label: "Connections", key: "connectionsAvg", width: "w-24", align: "right", metric: true },
+	{ label: "CPU (max)", key: "cpuMaxPercent", width: "w-24", align: "right", metric: true },
 	{
 		label: "Memory (max)",
 		key: "memMaxPercent",
-		width: "w-[104px]",
+		width: "w-28",
 		align: "right",
 		hidden: "hidden md:flex",
 		metric: true,
 	},
-	{ label: "Storage", key: "storageUsedPercent", width: "w-[80px]", align: "right", metric: true },
-	{ label: "Replica lag", key: "replicaLagMaxSeconds", width: "w-[88px]", align: "right", metric: true },
+	{ label: "Storage", key: "storageUsedPercent", width: "w-20", align: "right", metric: true },
+	{ label: "Replica lag", key: "replicaLagMaxSeconds", width: "w-24", align: "right", metric: true },
 ]
 
 /** `headerCells`: sortable heads only when a sort is given; `metricsPaused` drops the metric columns. */
@@ -95,12 +95,12 @@ export const databaseTableLoading = (h: H): Html =>
 		headerCells(h, undefined, false),
 		skeletonRows(h, 3, () => [
 			h.div([h.Class("w-0 min-w-[220px] flex-1")], [skeleton(h, "h-4 w-44")]),
-			skeleton(h, "hidden h-3 w-[80px] md:block"),
-			skeleton(h, "h-3 w-[96px]"),
-			skeleton(h, "h-3 w-[88px]"),
-			skeleton(h, "hidden h-3 w-[104px] md:block"),
-			skeleton(h, "h-3 w-[80px]"),
-			skeleton(h, "h-3 w-[88px]"),
+			skeleton(h, "hidden h-3 w-20 md:block"),
+			skeleton(h, "h-3 w-24"),
+			skeleton(h, "h-3 w-24"),
+			skeleton(h, "hidden h-3 w-28 md:block"),
+			skeleton(h, "h-3 w-20"),
+			skeleton(h, "h-3 w-24"),
 		]),
 	)
 
@@ -123,24 +123,24 @@ const toRow = (db: V2PlanetScaleDatabase, statsByName: ReadonlyMap<string, Datab
 	}
 }
 
-const CELL = "text-right font-mono text-xs tabular-nums text-foreground/80"
+const CELL = "text-right font-mono text-xs tabular-nums text-foreground-soft"
 
 const metaChip = (h: H, text: string): Html =>
 	h.span(
 		[h.Class("hidden shrink-0 xl:inline-flex")],
-		[h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])],
+		[h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])],
 	)
 
 const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
-	h.div([h.Class(cn("w-[96px]", CELL))], [row.hasStats ? formatNumber(row.connectionsAvg) : EMPTY_VALUE]),
+	h.div([h.Class(cn("w-24", CELL))], [row.hasStats ? formatNumber(row.connectionsAvg) : EMPTY_VALUE]),
 	h.div(
-		[h.Class(cn("w-[88px]", CELL, row.hasStats && utilizationClass(row.cpuMaxPercent)))],
+		[h.Class(cn("w-24", CELL, row.hasStats && utilizationClass(row.cpuMaxPercent)))],
 		[row.hasStats ? formatWholePercent(row.cpuMaxPercent / 100) : EMPTY_VALUE],
 	),
 	h.div(
 		[
 			h.Class(
-				cn("hidden w-[104px]", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)),
+				cn("hidden w-28", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)),
 			),
 		],
 		[row.hasStats ? formatWholePercent(row.memMaxPercent / 100) : EMPTY_VALUE],
@@ -149,7 +149,7 @@ const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 		[
 			h.Class(
 				cn(
-					"w-[80px]",
+					"w-20",
 					CELL,
 					row.storageUsedPercent !== MISSING && utilizationClass(row.storageUsedPercent),
 				),
@@ -158,7 +158,7 @@ const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 		[row.storageUsedPercent === MISSING ? EMPTY_VALUE : formatStoragePercent(row.storageUsedPercent)],
 	),
 	h.div(
-		[h.Class(cn("w-[88px]", CELL, row.hasStats && lagClass(row.replicaLagMaxSeconds)))],
+		[h.Class(cn("w-24", CELL, row.hasStats && lagClass(row.replicaLagMaxSeconds)))],
 		[row.hasStats ? formatLag(row.replicaLagMaxSeconds) : EMPTY_VALUE],
 	),
 ]
@@ -193,7 +193,7 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 					...(row.plan ? [metaChip(h, row.plan)] : []),
 				],
 			),
-			h.div([h.Class(cn("hidden w-[80px]", CELL, "md:block"))], [String(row.branchCount)]),
+			h.div([h.Class(cn("hidden w-20", CELL, "md:block"))], [String(row.branchCount)]),
 			...(metricsPaused ? [] : metricCells(h, row)),
 		],
 	)

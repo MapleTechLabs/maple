@@ -42,7 +42,7 @@ const versionItem = (
 					h.Class(
 						cn(
 							"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
-							"hover:bg-muted/50",
+							"hover:bg-surface-sunken",
 							rowSelectedClass(isPreviewing),
 						),
 					),
@@ -71,7 +71,7 @@ const versionItem = (
 													variant: "label",
 													className: isPreviewing
 														? "text-primary"
-														: "text-muted-foreground/70 group-hover:text-foreground/80",
+														: "text-foreground-subtle group-hover:text-foreground-soft",
 												},
 												[KIND_LABEL[version.changeKind]],
 											),
@@ -241,7 +241,7 @@ export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Cl
 		[
 			icon(h, "HistoryIcon", { className: "size-4 shrink-0 text-primary" }),
 			h.div(
-				[h.Class("flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground/80")],
+				[h.Class("flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground-soft")],
 				[
 					h.span([h.Class("font-semibold text-primary")], ["PREVIEW"]),
 					dot(h),

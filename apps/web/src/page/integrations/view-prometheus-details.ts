@@ -97,9 +97,9 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 					tableHeader(h, [
 						tableRow(h, [
 							tableHead(h, ["Time"], "w-full pl-3"),
-							tableHead(h, ["State"], "w-[64px]"),
-							tableHead(h, ["Duration"], "w-[70px]"),
-							tableHead(h, ["Samples"], "w-[72px] pr-3"),
+							tableHead(h, ["State"], "w-16"),
+							tableHead(h, ["Duration"], "w-16"),
+							tableHead(h, ["Samples"], "w-20 pr-3"),
 						]),
 					]),
 					tableBody(
@@ -278,7 +278,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 									...(failureMessage !== null && failureMessage !== ""
 										? [
 												h.p(
-													[h.Class("font-mono text-2xs text-muted-foreground/80")],
+													[h.Class("font-mono text-2xs text-foreground-subtle")],
 													[failureMessage],
 												),
 											]

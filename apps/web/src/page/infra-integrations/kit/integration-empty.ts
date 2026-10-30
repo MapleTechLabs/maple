@@ -31,7 +31,7 @@ export const integrationIconPlate = <M>(
 			h.AriaHidden(true),
 			h.Class(
 				cn(
-					"relative inline-flex shrink-0 items-center justify-center border border-border/60 bg-card",
+					"relative inline-flex shrink-0 items-center justify-center border border-border-subtle bg-card",
 					options.plateClassName ?? "size-12 rounded-lg",
 				),
 			),
@@ -83,7 +83,7 @@ export const integrationEmptyFeatures = <M>(
 					}),
 				],
 				[
-					panel(h, { className: "flex-1 gap-2 border-border/60 px-4 py-3.5" }, [
+					panel(h, { className: "flex-1 gap-2 border-border-subtle px-4 py-3.5" }, [
 						eyebrow(h, { variant: "label" }, [feature.label]),
 						h.span([h.Class("text-base/5 font-semibold tracking-tight")], [feature.title]),
 						h.p([h.Class("text-xs/4 text-muted-foreground")], [feature.description]),
@@ -94,7 +94,7 @@ export const integrationEmptyFeatures = <M>(
 	)
 
 const BACKER =
-	"absolute bottom-0.5 flex size-11 items-center justify-center rounded-[10px] border border-border/60 bg-muted text-muted-foreground/70 opacity-80"
+	"absolute bottom-0.5 flex size-11 items-center justify-center rounded-[10px] border border-border-subtle bg-muted text-foreground-subtle opacity-80"
 
 /** `IntegrationEmptyMedia`: two dim backer plates fanned behind the brand plate. */
 export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBrand): Html => {

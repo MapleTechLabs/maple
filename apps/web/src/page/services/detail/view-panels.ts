@@ -74,7 +74,7 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 									h.Type("button"),
 									h.OnClick(onViewAll),
 									h.Class(
-										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 									),
 								],
 								[
@@ -120,7 +120,7 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 													chartId: `op-${op.spanName}`,
 													values: op.sparkline.map((point) => point.count),
 													color,
-													className: "h-5 w-[88px]",
+													className: "h-5 w-24",
 													revision: 0,
 													fillOpacity: [0.5, 0.1],
 												},

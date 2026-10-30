@@ -101,7 +101,7 @@ const metricStrip = (
 				onSelect: Message.PickedMetric({ metric: metric.key }),
 				delay: (index % 4) * 60,
 				className: TILE_NARROW,
-				valueClassName: "@max-[560px]/page:text-[22px]",
+				valueClassName: "@max-[560px]/page:text-xl",
 			})
 		}),
 	)

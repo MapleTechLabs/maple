@@ -121,8 +121,8 @@ const providerTile = (
 				cn(
 					"relative flex flex-col items-start gap-2 overflow-hidden rounded-md border p-3 text-left transition-colors",
 					options.isSelected
-						? "border-(--tile-accent) bg-muted/40"
-						: "border-border/60 bg-card hover:border-border hover:bg-muted/50",
+						? "border-(--tile-accent) bg-surface-sunken"
+						: "border-border-subtle bg-card hover:border-border hover:bg-surface-sunken",
 				),
 			),
 			h.Style({ "--tile-accent": provider.accent }),
@@ -508,7 +508,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 					...(model.telegramChats !== null && model.telegramChats.length > 0
 						? [
 								h.div(
-									[h.Class("space-y-1 rounded-md border border-border/60 p-1")],
+									[h.Class("space-y-1 rounded-md border border-border-subtle p-1")],
 									model.telegramChats.map((chat) =>
 										h.button(
 											[
@@ -516,7 +516,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 												h.Type("button"),
 												h.OnClick(Message.ClickedTelegramChat({ chatId: chat.id })),
 												h.Class(
-													"flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted",
+													"flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted",
 												),
 											],
 											[
@@ -725,7 +725,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 													description: "destination-enabled-description",
 												},
 												framed: true,
-												className: "border-border/60 bg-card px-4 py-3",
+												className: "border-border-subtle bg-card px-4 py-3",
 												label: "Enabled",
 												description:
 													"Disabled destinations stay attached to rules but won't receive notifications.",

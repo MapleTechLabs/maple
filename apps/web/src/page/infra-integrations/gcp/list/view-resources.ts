@@ -29,15 +29,15 @@ import { workloadHref } from "./view-rows"
 // TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
 
 const ALL = "all"
-const CELL = "truncate font-mono text-xs text-foreground/80"
+const CELL = "truncate font-mono text-xs text-foreground-soft"
 
 const columns = (h: H): ReadonlyArray<Html> => [
 	columnHead(h, { label: "Resource", width: "w-0 flex-1 min-w-[220px]" }),
-	columnHead(h, { label: "Type", width: "w-[170px]" }),
-	columnHead(h, { label: "Project", width: "w-[200px]" }),
-	columnHead(h, { label: "Location", width: "w-[120px]" }),
-	columnHead(h, { label: "State", width: "w-[120px]" }),
-	columnHead(h, { label: "Labels", width: "w-[150px]", hidden: "hidden lg:flex" }),
+	columnHead(h, { label: "Type", width: "w-44" }),
+	columnHead(h, { label: "Project", width: "w-52" }),
+	columnHead(h, { label: "Location", width: "w-32" }),
+	columnHead(h, { label: "State", width: "w-32" }),
+	columnHead(h, { label: "Labels", width: "w-36", hidden: "hidden lg:flex" }),
 ]
 
 const loading = (h: H): Html =>
@@ -47,11 +47,11 @@ const loading = (h: H): Html =>
 		columns(h),
 		skeletonRows(h, 5, () => [
 			skeleton(h, "h-4 w-0 min-w-[220px] flex-1"),
-			skeleton(h, "h-3 w-[170px]"),
-			skeleton(h, "h-3 w-[200px]"),
-			skeleton(h, "h-3 w-[120px]"),
-			skeleton(h, "h-3 w-[120px]"),
-			skeleton(h, "hidden h-3 w-[150px] lg:block"),
+			skeleton(h, "h-3 w-44"),
+			skeleton(h, "h-3 w-52"),
+			skeleton(h, "h-3 w-32"),
+			skeleton(h, "h-3 w-32"),
+			skeleton(h, "hidden h-3 w-36 lg:block"),
 		]),
 	)
 
@@ -84,7 +84,7 @@ const filterSelect = (
 	})
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])
+	h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])
 
 const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch: TimeSearch): Html => {
 	const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
@@ -101,25 +101,25 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			],
 			[gcpResourceName(resource)],
 		),
-		h.div([h.Class("w-[170px] truncate text-xs text-foreground/80"), h.Title(type)], [type]),
-		h.div([h.Class(`w-[200px] ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
+		h.div([h.Class("w-44 truncate text-xs text-foreground-soft"), h.Title(type)], [type]),
+		h.div([h.Class(`w-52 ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
 		h.div(
 			[
-				h.Class(`w-[120px] ${CELL}`),
+				h.Class(`w-32 ${CELL}`),
 				...(resource.location === null ? [] : [h.Title(resource.location)]),
 			],
 			[resource.location ?? EMPTY_VALUE],
 		),
 		h.div(
 			[
-				h.Class("w-[120px] truncate text-xs text-foreground/80"),
+				h.Class("w-32 truncate text-xs text-foreground-soft"),
 				...(state === null ? [] : [h.Title(state)]),
 			],
 			[state ?? EMPTY_VALUE],
 		),
 		h.div(
 			[
-				h.Class("hidden w-[150px] items-center gap-2 whitespace-nowrap lg:flex"),
+				h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"),
 				h.Title(labels.join("\n")),
 			],
 			[
@@ -134,7 +134,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		? h.div(
 				[
 					h.Class(
-						"flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0 hover:bg-muted/50",
+						"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken",
 					),
 				],
 				cells,

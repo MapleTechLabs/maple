@@ -86,7 +86,7 @@ const stackTrace = (h: H, model: Model, eventId: string, stacktrace: string): Ht
 						h.pre(
 							[
 								h.Class(
-									"mt-1 max-h-80 overflow-auto rounded-sm bg-muted/40 p-2 font-mono text-3xs leading-relaxed",
+									"mt-1 max-h-80 overflow-auto rounded-sm bg-surface-sunken p-2 font-mono text-3xs leading-relaxed",
 								),
 							],
 							[stacktrace],

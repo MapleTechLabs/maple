@@ -180,9 +180,9 @@ const addMenu = (
 								h.Type("button"),
 								h.Class(
 									cn(
-										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground",
+										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground",
 										// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
-										menu.isOpen && "border-b border-border/60",
+										menu.isOpen && "border-b border-border-subtle",
 									),
 								),
 								h.DataAttribute("slot", "dropdown-menu-trigger"),
@@ -221,7 +221,7 @@ export const destinationList = (
 	const available = destinations.filter((d) => !ids.includes(d.id))
 	const unresolved = ids.filter((id) => !destinations.some((d) => d.id === id))
 	const canAdd = available.length > 0 || model.isAdmin
-	return panel(h, { className: "mt-3 divide-y divide-border/60 border-border/60" }, [
+	return panel(h, { className: "mt-3 divide-y divide-border-subtle border-border-subtle" }, [
 		...selected.map((destination) => selectedRow(h, model, tier, destination)),
 		...unresolved.map((id) => unresolvedRow(h, tier, id)),
 		...(selected.length === 0 && unresolved.length === 0

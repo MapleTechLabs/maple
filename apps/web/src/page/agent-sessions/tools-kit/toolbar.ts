@@ -80,7 +80,7 @@ const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig
 	searchInput(h, {
 		id: search.inputId,
 		size: "default",
-		className: cn("max-w-sm", "w-full font-mono sm:w-[260px]"),
+		className: cn("max-w-sm", "w-full font-mono sm:w-64"),
 		placeholder: "Tool name…",
 		value: search.value,
 		onInput: search.onInput,

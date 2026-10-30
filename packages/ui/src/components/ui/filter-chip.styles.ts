@@ -3,7 +3,7 @@ import type { Tone } from "../../lib/tone"
 
 // One look for every on/off filter chip: muted when off, foreground + border when on.
 export const filterChipVariants = cva(
-	"inline-flex shrink-0 cursor-pointer select-none items-center gap-1.5 whitespace-nowrap rounded-md border font-medium text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 border-transparent bg-muted/40 text-muted-foreground hover:text-foreground data-pressed:bg-background data-pressed:text-foreground [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:shrink-0",
+	"inline-flex shrink-0 cursor-pointer select-none items-center gap-1.5 whitespace-nowrap rounded-md border font-medium text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 border-transparent bg-surface-sunken text-muted-foreground hover:text-foreground data-pressed:bg-background data-pressed:text-foreground [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:shrink-0",
 	{
 		defaultVariants: { size: "sm" },
 		variants: {

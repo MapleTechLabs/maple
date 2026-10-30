@@ -5,7 +5,7 @@ export const tabsListStyles =
 
 export const tabsListVerticalStyles = "data-[orientation=vertical]:flex-col"
 
-export const tabsListDefaultStyles = "rounded-lg bg-muted p-0.5 text-muted-foreground/72"
+export const tabsListDefaultStyles = "rounded-lg bg-muted p-0.5 text-foreground-subtle"
 
 export const tabsListUnderlineStyles =
 	"data-[orientation=vertical]:px-1 data-[orientation=horizontal]:py-1 *:data-[slot=tabs-tab]:hover:bg-accent"

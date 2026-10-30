@@ -20,7 +20,7 @@ export const detailRailGroup = <M>(
 		[
 			h.DataAttribute("slot", "detail-rail-group"),
 			h.Class(
-				cn("flex flex-col gap-1.5 border-b border-border/60 px-4 py-3.5 last:border-b-0", className),
+				cn("flex flex-col gap-1.5 border-b border-border-subtle px-4 py-3.5 last:border-b-0", className),
 			),
 		],
 		[eyebrow(h, { as: "h3" }, [label]), h.div([h.Class("flex flex-col gap-1")], children)],
@@ -57,7 +57,7 @@ export const detailRailRow = <M>(
 						? []
 						: [
 								icon(h, options.icon, {
-									className: "size-3.5 shrink-0 text-muted-foreground/70",
+									className: "size-3.5 shrink-0 text-foreground-subtle",
 									attributes: [h.AriaHidden(true)],
 								}),
 							]),
@@ -68,7 +68,7 @@ export const detailRailRow = <M>(
 							...(options.hint
 								? [
 										h.span(
-											[h.Class("truncate text-3xs text-muted-foreground/70")],
+											[h.Class("truncate text-3xs text-foreground-subtle")],
 											[options.hint],
 										),
 									]
@@ -99,7 +99,7 @@ export const detailRailField = <M>(
 				[
 					h.span([], [options.label]),
 					...(options.hint
-						? [h.span([h.Class("text-3xs text-muted-foreground/70")], [options.hint])]
+						? [h.span([h.Class("text-3xs text-foreground-subtle")], [options.hint])]
 						: []),
 				],
 			),
@@ -140,7 +140,7 @@ export const detailRailMetaRow = <M>(
 				[
 					h.DataAttribute("slot", "detail-rail-meta-row"),
 					h.Class(
-						"group flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0",
+						"group flex items-baseline justify-between gap-3 border-b border-border-subtle py-1.5 last:border-0",
 					),
 				],
 				[
@@ -156,7 +156,7 @@ export const detailRailMetaRow = <M>(
 								: [
 										icon(h, options.icon, {
 											className:
-												"size-3.5 shrink-0 self-center text-muted-foreground/70",
+												"size-3.5 shrink-0 self-center text-foreground-subtle",
 										}),
 									]),
 							options.label,
@@ -172,7 +172,7 @@ export const detailRailMetaRow = <M>(
 									[
 										h.Class(
 											cn(
-												"break-all text-right font-mono text-2xs tabular-nums text-foreground/80",
+												"break-all text-right font-mono text-2xs tabular-nums text-foreground-soft",
 												options.valueClassName,
 											),
 										),

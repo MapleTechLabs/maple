@@ -30,7 +30,7 @@ export const incidentTimeline = <M>(
 		[
 			eyebrow(h, { as: "h2" }, ["Timeline"]),
 			h.ol(
-				[h.Class("divide-y divide-border/60 border-t border-border/60")],
+				[h.Class("divide-y divide-border-subtle border-t border-border-subtle")],
 				[
 					...options.entries.map((entry) => entryRow(h, entry, firstAt, timeZone)),
 					...(options.isLoading ? [h.li([h.Class("py-3")], [skeleton(h, "h-4 w-2/3")])] : []),
@@ -90,7 +90,7 @@ const entryRow = <M>(
 					...(entry.investigation
 						? [
 								h.div(
-									[h.Class("mt-2 space-y-2 rounded-md border bg-muted/30 px-3 py-2.5")],
+									[h.Class("mt-2 space-y-2 rounded-md border bg-surface-sunken p-3")],
 									[
 										...(entry.investigation.headline
 											? [

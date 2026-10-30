@@ -102,7 +102,7 @@ const installation = (h: H, model: Model, status: GithubIntegrationStatus): Html
 		[h.Class("flex flex-col gap-3")],
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-3 rounded-md border border-border px-3.5 py-3")],
+				[h.Class("flex flex-wrap items-center gap-3 rounded-md border border-border p-3")],
 				[
 					icon(h, "GithubIcon", { size: 18, className: "shrink-0" }),
 					h.div(
@@ -258,7 +258,7 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 					return h.div(
 						[
 							h.Class(
-								"flex items-center gap-4 border-b border-border/60 px-4 py-2.5 text-sm last:border-0",
+								"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
 							),
 						],
 						[

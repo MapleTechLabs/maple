@@ -28,7 +28,7 @@ const payloadHead = (
 		[
 			eyebrow(h, { variant: "mono" }, [options.label]),
 			h.span(
-				[h.Class("truncate text-2xs text-muted-foreground/50")],
+				[h.Class("truncate text-2xs text-foreground-faint")],
 				[options.attribute, ...(options.bytes > 0 ? [` · ${formatToolCount(options.bytes)} B`] : [])],
 			),
 			h.span([h.Class("grow")], []),
@@ -42,7 +42,7 @@ const notRecorded = (h: H, what: "arguments" | "result"): Html =>
 		[
 			h.span([h.Class("text-xs text-muted-foreground")], ["Not recorded"]),
 			h.span(
-				[h.Class("text-2xs leading-[15px] text-muted-foreground/70")],
+				[h.Class("text-2xs leading-[15px] text-foreground-subtle")],
 				["The span has no ", what, " attribute."],
 			),
 		],
@@ -75,7 +75,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 										? "text-foreground"
 										: line.folded !== undefined
 											? "text-muted-foreground"
-											: "text-foreground/80",
+											: "text-foreground-soft",
 								),
 							),
 						],
@@ -168,7 +168,7 @@ const argumentsBlock = (
 				? h.pre(
 						[
 							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/80",
+								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 							),
 						],
 						[args === undefined ? row.arguments : JSON.stringify(args, null, 2)],
@@ -184,7 +184,7 @@ const argumentsBlock = (
 			h.div(
 				[
 					h.Class(
-						"flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/70",
+						"flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
 					),
 				],
 				[
@@ -222,7 +222,7 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 				: h.pre(
 						[
 							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/80",
+								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 							),
 						],
 						[parsed === undefined ? row.result : JSON.stringify(parsed, null, 2)],
@@ -231,7 +231,7 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 				? []
 				: [
 						h.span(
-							[h.Class("font-mono text-2xs leading-3.5 text-muted-foreground/70")],
+							[h.Class("font-mono text-2xs leading-3.5 text-foreground-subtle")],
 							["Error message read from ", source],
 						),
 					]),
@@ -263,7 +263,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 									["What's wrong"],
 								),
 								h.span(
-									[h.Class("text-xs leading-4 text-foreground/80")],
+									[h.Class("text-xs leading-4 text-foreground-soft")],
 									[
 										h.span([h.Class("font-medium text-foreground")], [hint.subject]),
 										" ",
@@ -278,7 +278,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 						h.div(
 							[
 								h.Class(
-									"flex items-start gap-3 rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono",
+									"flex items-start gap-3 rounded-md border border-border bg-sidebar p-3 font-mono",
 								),
 							],
 							[

@@ -100,7 +100,7 @@ const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 								: h.span(
 										[h.Class("flex items-center gap-1.5 text-muted-foreground")],
 										[
-											icon(h, "CheckIcon", { size: 12, className: "text-success" }),
+											icon(h, "CheckIcon", { size: 12, className: "text-severity-info" }),
 											item.answer,
 										],
 									),
@@ -257,7 +257,7 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 				[
 					h.Class(
 						cn(
-							"flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+							"flex items-center gap-3 rounded-md border p-3 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 							isChecked
 								? "border-primary bg-primary/5"
 								: "border-border group-hover:border-foreground/30",

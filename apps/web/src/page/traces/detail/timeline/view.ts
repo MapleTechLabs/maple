@@ -191,7 +191,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			toolbar(h, model, bars.length, toolbarIds(inputs.idPrefix)),
 			alignedStrip(
 				h,
-				"shrink-0 border-b border-r border-border bg-muted/10",
+				"shrink-0 border-b border-r border-border bg-surface-faint",
 				"flex shrink-0",
 				"flex-1 min-w-0",
 				minimap(h, model),

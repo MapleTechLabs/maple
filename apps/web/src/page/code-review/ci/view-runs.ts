@@ -254,7 +254,7 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 								),
 							]),
 						],
-						{ className: "bg-muted/30" },
+						{ className: "bg-surface-sunken" },
 					),
 					tableBody(
 						h,

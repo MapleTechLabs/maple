@@ -106,7 +106,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 		[
 			h.AriaHasPopup("dialog"),
 			h.Class(
-				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-accent/40",
+				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-accent/50",
 			),
 			h.Type("button"),
 			h.OnClick(openSpan(model, finding.spanId)),
@@ -116,7 +116,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 				[h.Class(cn("shrink-0", STATUS_TEXT[status]))],
 				[finding.label, ...(finding.count > 1 ? [` ×${finding.count}`] : [])],
 			),
-			h.span([h.Class("shrink-0 text-muted-foreground/70")], [finding.turnText]),
+			h.span([h.Class("shrink-0 text-foreground-subtle")], [finding.turnText]),
 			...(finding.detail === undefined
 				? []
 				: [h.span([h.Class("min-w-0 truncate text-muted-foreground")], [finding.detail])]),
@@ -268,7 +268,7 @@ const disclosure = (
 			h.button(
 				[
 					h.AriaExpanded(isExpanded),
-					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-accent/40")),
+					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-accent/50")),
 					h.Type("button"),
 					h.OnClick(Message.ToggledChecks({ which: options.which, isOpen: !isExpanded })),
 				],
@@ -289,7 +289,7 @@ const disclosure = (
 const SIGNAL_MARK = {
 	captured: { glyph: "✓", tone: "text-severity-info", says: "captured:" },
 	missing: { glyph: "✕", tone: "text-severity-error", says: "not captured:" },
-	absent: { glyph: "–", tone: "text-muted-foreground/60", says: "nothing to capture:" },
+	absent: { glyph: "–", tone: "text-foreground-subtle", says: "nothing to capture:" },
 } satisfies Record<SessionCoverageSignal, { glyph: string; tone: string; says: string }>
 
 /** `coverageSignals`, labels and states only (the explanations live in the tooltips). */
@@ -335,7 +335,7 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 									"flex cursor-default items-baseline gap-1.5",
 									signal.state === "captured"
 										? "text-muted-foreground"
-										: "text-muted-foreground/60",
+										: "text-foreground-subtle",
 									signal.state === "missing" && "line-through",
 								),
 							),

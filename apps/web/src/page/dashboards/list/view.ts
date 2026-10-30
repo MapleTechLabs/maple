@@ -140,7 +140,7 @@ const degradedBanner = (h: H): Html =>
 	h.div(
 		[
 			h.Class(
-				"mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground",
+				"mb-3 flex items-start gap-2 rounded-md border border-border bg-surface-sunken p-2.5 text-xs text-muted-foreground",
 			),
 		],
 		[

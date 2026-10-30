@@ -17,7 +17,7 @@ export const alertDialogHeaderStyles = "flex flex-col gap-2 p-6 text-center max-
 export const alertDialogFooterStyles =
 	"flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-2xl)-1px)]"
 
-export const alertDialogFooterDefaultStyles = "border-t bg-muted/72 py-4"
+export const alertDialogFooterDefaultStyles = "border-t bg-surface-strong py-4"
 
 export const alertDialogFooterBareStyles = "pb-6"
 

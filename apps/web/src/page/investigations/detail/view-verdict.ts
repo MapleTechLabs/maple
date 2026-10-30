@@ -270,7 +270,7 @@ const runProgress = <M>(
 				h.span([], [countLabel(progress?.stepCount ?? 0, "step")]),
 				...(isStalled
 					? [
-							h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"]),
+							h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"]),
 							h.span(
 								[h.Class("text-severity-warn normal-case tracking-normal")],
 								[`no step for ${silenceLabel(silentFor)}`],
@@ -366,7 +366,7 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 				? h.div(
 						[
 							h.Class(
-								"flex items-start gap-3 rounded-md border border-severity-error/25 bg-severity-error/6 px-3 py-2.5",
+								"flex items-start gap-3 rounded-md border border-severity-error/25 bg-severity-error/6 p-3",
 							),
 						],
 						[
@@ -419,7 +419,7 @@ const partialList = <M>(
 						[
 							icon(h, iconName, {
 								size: 14,
-								className: "mt-0.5 shrink-0 text-muted-foreground/70",
+								className: "mt-0.5 shrink-0 text-foreground-subtle",
 							}),
 							h.span([h.Class("min-w-0")], [item]),
 						],
@@ -449,7 +449,7 @@ const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Htm
 		[
 			eyebrow(h, { as: "div", className: "flex flex-wrap items-center gap-2 text-severity-warn" }, [
 				"Partial result",
-				h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"]),
+				h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"]),
 				h.span([], ["No cause established"]),
 			]),
 			h.h2([h.Class(HEADING)], [headline]),

@@ -47,7 +47,7 @@ const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
 	h.div(
 		[
 			h.Key(row.containerName),
-			h.Class("flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0"),
+			h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"),
 		],
 		[
 			h.span(
@@ -58,7 +58,7 @@ const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
 				[
 					h.Class(
 						cn(
-							"w-[96px] text-right font-mono text-xs tabular-nums",
+							"w-24 text-right font-mono text-xs tabular-nums",
 							TONE_TEXT[restartTone(row.restarts, row.lastTerminatedReason)],
 						),
 					),
@@ -66,11 +66,11 @@ const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
 				[String(row.restarts)],
 			),
 			h.span(
-				[h.Class("w-[96px] text-right font-mono text-xs tabular-nums text-muted-foreground")],
+				[h.Class("w-24 text-right font-mono text-xs tabular-nums text-muted-foreground")],
 				[String(row.totalRestarts)],
 			),
 			h.span(
-				[h.Class("w-[160px] truncate text-right text-xs text-muted-foreground")],
+				[h.Class("w-40 truncate text-right text-xs text-muted-foreground")],
 				[row.lastTerminatedReason || EMPTY_VALUE],
 			),
 		],
@@ -89,9 +89,9 @@ export const podContainerRestarts = <M>(h: HtmlBuilder<M>, restarts: Restarts): 
 				{ ariaLabel: "Container restarts" },
 				[
 					columnHead(h, { label: "Container", width: "w-0 flex-1 min-w-[200px]" }),
-					columnHead(h, { label: "In window", align: "right", width: "w-[96px]" }),
-					columnHead(h, { label: "Total", align: "right", width: "w-[96px]" }),
-					columnHead(h, { label: "Last terminated", align: "right", width: "w-[160px]" }),
+					columnHead(h, { label: "In window", align: "right", width: "w-24" }),
+					columnHead(h, { label: "Total", align: "right", width: "w-24" }),
+					columnHead(h, { label: "Last terminated", align: "right", width: "w-40" }),
 				],
 				rows.map((row) => containerRow(h, row)),
 			),

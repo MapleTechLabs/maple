@@ -50,7 +50,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 	const selection = selectionOf(connection, card.selection)
 	return h.form(
 		[
-			h.Class("flex w-full flex-col gap-4 rounded-md border bg-muted/20 p-3"),
+			h.Class("flex w-full flex-col gap-4 rounded-md border bg-surface-faint p-3"),
 			h.OnSubmit(Message.SubmittedAwsMetrics({ id: connection.id })),
 		],
 		[
@@ -102,7 +102,7 @@ interface Step {
 }
 
 const STEP_GLYPH = {
-	done: { icon: "CircleCheckIcon", className: "text-success-foreground" },
+	done: { icon: "CircleCheckIcon", className: "text-severity-info" },
 	current: { icon: "ClockIcon", className: "text-muted-foreground" },
 	warn: { icon: "CircleWarningIcon", className: "text-severity-warn" },
 	crit: { icon: "CircleXmarkIcon", className: "text-severity-error" },
@@ -357,7 +357,7 @@ const ingestBody = (
 					[h.Class("w-full text-xs")],
 					[
 						h.thead(
-							[h.Class("bg-muted/30 text-left text-muted-foreground")],
+							[h.Class("bg-surface-sunken text-left text-muted-foreground")],
 							[
 								h.tr(
 									[],
@@ -563,7 +563,7 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const waiting = connection.verified_at === null
 	return h.div(
-		[h.Class("mt-2 flex w-full flex-col gap-3 rounded-md border bg-muted/20 p-3")],
+		[h.Class("mt-2 flex w-full flex-col gap-3 rounded-md border bg-surface-faint p-3")],
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],

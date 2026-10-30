@@ -81,6 +81,15 @@
 	   the dark-canvas value lives in .dark). */
 	--service-map-edge-core: oklch(1 0 0);
 	--border-hairline: 1px;
+	/* Initials avatars: warm tiles near the primary amber, the same in both themes. */
+	--avatar-1: oklch(0.7 0.15 59);
+	--avatar-2: oklch(0.76 0.13 80);
+	--avatar-3: oklch(0.66 0.14 40);
+	--avatar-4: oklch(0.68 0.1 25);
+	--avatar-5: oklch(0.72 0.07 65);
+	/* Data-residency region identity (onboarding region picker). */
+	--region-us: oklch(0.628 0.193 17.9);
+	--region-eu: oklch(0.631 0.198 269.4);
 	--severity-trace: oklch(0.552 0.016 285.938); /* zinc-500 */
 	--severity-debug: oklch(0.623 0.214 259.815); /* blue-500 */
 	--severity-info: oklch(0.696 0.17 162.48); /* emerald-500 */
@@ -414,6 +423,23 @@
 	--color-info-foreground: var(--info-foreground);
 	--color-info: var(--info);
 	--color-destructive-foreground: var(--destructive-foreground);
+	/* The opacity ladders, named. Text: soft (body copy a step under foreground), subtle (secondary
+	   meta), faint (separators, placeholders, empty cells). Surfaces: faint wash, sunken (wells, row
+	   hover), strong (selected, pressed). Use these instead of `/NN` modifiers on the base colours. */
+	--color-foreground-soft: color-mix(in oklab, var(--foreground) 80%, transparent);
+	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+	--color-foreground-faint: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+	--color-surface-faint: color-mix(in oklab, var(--muted) 20%, transparent);
+	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
+	--color-surface-strong: color-mix(in oklab, var(--muted) 60%, transparent);
+	--color-border-subtle: color-mix(in oklab, var(--border) 60%, transparent);
+	--color-avatar-1: var(--avatar-1);
+	--color-avatar-2: var(--avatar-2);
+	--color-avatar-3: var(--avatar-3);
+	--color-avatar-4: var(--avatar-4);
+	--color-avatar-5: var(--avatar-5);
+	--color-region-us: var(--region-us);
+	--color-region-eu: var(--region-eu);
 	@keyframes skeleton {
 		from {
 			transform: translateX(-100%);

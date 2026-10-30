@@ -162,8 +162,8 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50",
-					isSelected && "bg-muted/60",
+					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken",
+					isSelected && "bg-surface-strong",
 				),
 			),
 		],

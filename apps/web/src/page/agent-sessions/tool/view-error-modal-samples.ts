@@ -47,7 +47,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 						),
 					]
 				: paging === "loading"
-					? [h.span([h.Class("text-muted-foreground/60")], ["Loading…"])]
+					? [h.span([h.Class("text-foreground-subtle")], ["Loading…"])]
 					: paging === "failed"
 						? [
 								h.button(
@@ -112,7 +112,7 @@ export const samplesPane = (
 						[
 							h.span([h.Class("text-xs font-medium text-foreground")], ["Samples"]),
 							h.span(
-								[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+								[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 								[
 									formatToolCount(options.total),
 									" failed ",
@@ -126,7 +126,7 @@ export const samplesPane = (
 						[h.Class("flex items-center gap-2")],
 						[
 							h.span(
-								[h.Class("pr-1 text-2xs text-muted-foreground/60 max-md:hidden")],
+								[h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")],
 								["j / k"],
 							),
 							iconButton(
@@ -142,7 +142,7 @@ export const samplesPane = (
 								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
 							),
 							h.span(
-								[h.Class("w-[72px] text-center text-xs tabular-nums text-foreground")],
+								[h.Class("w-20 text-center text-xs tabular-nums text-foreground")],
 								[
 									rows.length === 0 ? "0" : String(current + 1),
 									" of ",
@@ -185,14 +185,14 @@ const sampleRow = (
 		[
 			h.Key(row.spanId),
 			h.DataAttribute("slot", "tool-error-sample"),
-			h.Class("border-b border-border/60"),
+			h.Class("border-b border-border-subtle"),
 		],
 		[
 			h.div(
 				[
 					h.Class(
 						cn(
-							"group relative flex w-full items-center gap-3.5 px-6 font-mono transition-colors hover:bg-muted/50",
+							"group relative flex w-full items-center gap-3.5 px-6 font-mono transition-colors hover:bg-surface-sunken",
 							options.isOpen ? "h-11" : "h-10",
 						),
 					),
@@ -219,7 +219,7 @@ const sampleRow = (
 					h.span(
 						[h.Class("flex min-w-0 shrink items-center gap-[5px] text-xs")],
 						[
-							h.span([h.Class("shrink-0 text-muted-foreground/70")], ["session"]),
+							h.span([h.Class("shrink-0 text-foreground-subtle")], ["session"]),
 							sessionLink(h, {
 								tool: inputs.tool,
 								sessionId: row.sessionId,
@@ -238,7 +238,7 @@ const sampleRow = (
 								h.span(
 									[
 										h.Class(
-											"hidden min-w-0 shrink truncate text-xs text-muted-foreground/70 xl:block",
+											"hidden min-w-0 shrink truncate text-xs text-foreground-subtle xl:block",
 										),
 									],
 									[row.service],
@@ -250,10 +250,10 @@ const sampleRow = (
 								h.span(
 									[
 										h.Class(
-											"hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-muted-foreground/70 md:block",
+											"hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-foreground-subtle md:block",
 										),
 									],
-									["variant ", h.span([h.Class("text-foreground/80")], [options.variant])],
+									["variant ", h.span([h.Class("text-foreground-soft")], [options.variant])],
 								),
 							]),
 					h.span([h.Class("grow")], []),
@@ -263,14 +263,14 @@ const sampleRow = (
 								h.span(
 									[
 										h.Class(
-											"hidden shrink-0 text-2xs tabular-nums text-muted-foreground/70 md:block",
+											"hidden shrink-0 text-2xs tabular-nums text-foreground-subtle md:block",
 										),
 									],
 									["args ", formatToolCount(row.argumentsBytes), " B"],
 								),
 							]),
 					h.span(
-						[h.Class("w-12 shrink-0 text-right text-xs tabular-nums text-foreground/80")],
+						[h.Class("w-12 shrink-0 text-right text-xs tabular-nums text-foreground-soft")],
 						[formatDurationNs(row.durationNs)],
 					),
 					h.a(

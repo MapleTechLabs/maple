@@ -101,7 +101,7 @@ function StatusBadge({
 	statusCode: string
 }) {
 	const { platform, cacheInfo, httpInfo } = desc
-	const base = "shrink-0 rounded px-1.5 py-0.5 text-3xs font-semibold"
+	const base = "shrink-0 rounded-sm px-1.5 py-0.5 text-3xs font-semibold"
 
 	if (platform?.outcome?.bad) {
 		return (
@@ -170,9 +170,9 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 					<div className="flex items-center gap-1.5 min-w-0 text-2xs">
 						<span className="font-semibold text-muted-foreground">Missing span</span>
 						<span className="flex-1" />
-						<TruncatedId value={span.spanId} kind="span" className="text-muted-foreground/60 truncate" />
+						<TruncatedId value={span.spanId} kind="span" className="text-foreground-subtle truncate" />
 					</div>
-					<div className="text-3xs italic text-muted-foreground/50">Not ingested or dropped</div>
+					<div className="text-3xs italic text-foreground-faint">Not ingested or dropped</div>
 				</div>
 				<Handle
 					type="source"
@@ -264,7 +264,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						<div className="flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground">
 							<ServiceDot serviceName={span.serviceName} className="size-1.5" />
 							<span className="truncate">{span.serviceName}</span>
-							<span className="shrink-0 text-muted-foreground/50">·</span>
+							<span className="shrink-0 text-foreground-faint">·</span>
 							<span className="shrink-0">{category.label}</span>
 							<span className="flex-1" />
 							<span className="shrink-0 tabular-nums" title={tooltip}>
@@ -275,7 +275,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 				</div>
 
 				{/* Cost rail: span duration as share of the trace */}
-				<div className="absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-muted/40">
+				<div className="absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-surface-sunken">
 					<div
 						className={cn("h-full", isError ? "bg-severity-error" : category.accent.rail)}
 						style={{ width: `${costFraction * 100}%` }}

@@ -92,7 +92,7 @@ export const toolBlock = (
 					? "border-severity-error/40 bg-severity-error/5"
 					: isOpen
 						? "border-border bg-card"
-						: "border-transparent bg-muted/30 hover:bg-muted/50",
+						: "border-transparent bg-surface-sunken hover:bg-surface-strong",
 			},
 			[
 				toolHeader(h, tool, isOpen, timeZone),

@@ -236,7 +236,7 @@ export const breakdownTable = (
 							h.Style(shareBarStyle(row.share)),
 							h.Class(
 								cn(
-									"group flex w-full items-center gap-3 border-b border-border/60 px-3 py-2 text-left transition-colors last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
+									"group flex w-full items-center gap-3 border-b border-border-subtle px-3 py-2 text-left transition-colors last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
 									"hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
 									rowSelectedClass(isSelected),
 								),
@@ -248,7 +248,7 @@ export const breakdownTable = (
 										h.span(
 											[
 												h.Class(
-													"w-6 text-right font-mono text-2xs tabular-nums text-muted-foreground/60 max-sm:hidden",
+													"w-6 text-right font-mono text-2xs tabular-nums text-foreground-subtle max-sm:hidden",
 												),
 											],
 											[String(index + 1)],
@@ -270,7 +270,7 @@ export const breakdownTable = (
 													"min-w-0 truncate text-xs transition-colors",
 													isSelected
 														? "font-medium text-foreground"
-														: "text-foreground/90 group-hover:text-foreground",
+														: "text-foreground-soft group-hover:text-foreground",
 												),
 											),
 											h.Title(
@@ -384,7 +384,7 @@ export const breakdownPanel = (
 							h.Type("button"),
 							h.OnClick(Message.ClickedExpandPanel({ panel: card.id })),
 							h.Class(
-								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:outline-none",
+								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
 							),
 						],
 						[

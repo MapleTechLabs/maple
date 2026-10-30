@@ -29,11 +29,11 @@ export const insightTriggerId = (fingerprint: string) => `ps-insight-${fingerpri
 const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): Html => {
 	const presentation = presentEvent(event.eventType)
 	return h.li(
-		[h.Class("flex items-baseline gap-2.5 border-l border-border/60 py-1.5 pl-3 text-xs")],
+		[h.Class("flex items-baseline gap-2.5 border-l border-border-subtle py-1.5 pl-3 text-xs")],
 		[
 			statusDot(h, { tone: presentation.tone, className: "mt-1" }),
 			h.span(
-				[h.Class("min-w-0 flex-1 truncate text-foreground/90"), h.Title(event.title)],
+				[h.Class("min-w-0 flex-1 truncate text-foreground-soft"), h.Title(event.title)],
 				[event.title],
 			),
 			...(event.branchName === ""
@@ -90,7 +90,7 @@ const activityLoading = (h: H): Html =>
 		[h.Class("flex flex-col")],
 		Array.from({ length: 4 }, (_, index) =>
 			h.li(
-				[h.Class("border-l border-border/60 py-1.5 pl-3")],
+				[h.Class("border-l border-border-subtle py-1.5 pl-3")],
 				[skeleton(h, cn("h-3", index % 2 === 0 ? "w-64" : "w-48"))],
 			),
 		),
@@ -184,7 +184,7 @@ const insightsList = (
 		return insightsNotice(h, [
 			"No queries recorded on",
 			" ",
-			h.span([h.Class("font-mono text-foreground/80")], [database, "/", response.branch]),
+			h.span([h.Class("font-mono text-foreground-soft")], [database, "/", response.branch]),
 			" ",
 			"in this window.",
 		])
@@ -263,7 +263,7 @@ const insightsList = (
 										...clock,
 										prefix: "last run",
 										mono: true,
-										className: "ml-auto text-muted-foreground/70",
+										className: "ml-auto text-foreground-subtle",
 										trigger: trigger(insightTriggerId(row.fingerprint)),
 									}),
 								]),

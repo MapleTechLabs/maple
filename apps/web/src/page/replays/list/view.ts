@@ -1,6 +1,5 @@
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { gradientFor } from "@maple/ui/lib/replay"
 import { Submodel } from "foldkit"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -38,6 +37,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { filtersRail } from "./view-filters"
+import { warmAvatarTone } from "../../../ui/avatar-tone"
 
 type H = HtmlBuilder<Message>
 
@@ -104,7 +104,7 @@ const activeUserFilter = (
 			h.div(
 				[
 					h.Class(
-						`grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(config.userId)} text-xs font-semibold text-white shadow-sm`,
+						`grid size-8 shrink-0 place-items-center rounded-full ${warmAvatarTone(config.userId)} text-xs font-semibold`,
 					),
 				],
 				[initialsFrom(config.userId)],

@@ -66,7 +66,7 @@ export const gcpMessage = <M>(h: HtmlBuilder<M>, text: string): Html => {
 								body.map((sentence) => h.li([], linked(h, sentence))),
 							),
 						]),
-			...(answer === null ? [] : [h.p([h.Class("text-2xs text-muted-foreground/80")], [answer])]),
+			...(answer === null ? [] : [h.p([h.Class("text-2xs text-foreground-subtle")], [answer])]),
 		],
 	)
 }

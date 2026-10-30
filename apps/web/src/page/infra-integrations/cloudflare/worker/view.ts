@@ -289,7 +289,7 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 	return panel(h, {}, [
 		panelHeader(h, { title: "Outcomes" }),
 		h.div(
-			[h.Class("divide-y divide-border/60")],
+			[h.Class("divide-y divide-border-subtle")],
 			totals.byStatus.map(({ status, count }) => {
 				const success = status === "success"
 				const share = totals.invocations > 0 ? count / totals.invocations : 0
@@ -337,7 +337,7 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 							],
 						}),
 						h.span(
-							[h.Class("w-20 text-right font-mono text-xs tabular-nums text-foreground/80")],
+							[h.Class("w-20 text-right font-mono text-xs tabular-nums text-foreground-soft")],
 							[formatNumber(count)],
 						),
 						h.span(

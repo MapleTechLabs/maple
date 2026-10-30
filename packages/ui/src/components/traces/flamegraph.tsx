@@ -157,14 +157,14 @@ export function Flamegraph({
 
 	return (
 		<div className="border">
-			<div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+			<div className="flex items-center justify-between border-b bg-surface-sunken px-3 py-2">
 				<div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
 					<span>Flamegraph</span>
 					{focusedSpan && (
 						<>
-							<span className="text-foreground/40">/</span>
+							<span className="text-foreground-subtle">/</span>
 							<span className="font-mono text-foreground">{focusedSpan.spanName}</span>
-							<span className="text-foreground/40">
+							<span className="text-foreground-subtle">
 								({formatDuration(focusedSpan.durationMs)})
 							</span>
 						</>
@@ -275,8 +275,8 @@ export function Flamegraph({
 				</div>
 			</div>
 
-			<div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-2xs text-muted-foreground">
-				<div className="flex items-center gap-3 text-foreground/30">
+			<div className="flex items-center justify-between border-t bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground">
+				<div className="flex items-center gap-3 text-foreground-faint">
 					<span>
 						<Kbd className="h-4 font-mono text-3xs">
 							Click

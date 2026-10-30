@@ -519,7 +519,7 @@ export const detailPanel = (
 				[
 					livePreview(h, model, timeZone),
 					h.p(
-						[h.Class("text-muted-foreground/80 text-2xs")],
+						[h.Class("text-foreground-subtle text-2xs")],
 						["That's the dashboard you'd get right now."],
 					),
 				],

@@ -19,13 +19,13 @@ const VARIANTS = {
 		item: "inline-flex min-w-0 items-baseline gap-1.5",
 		dot: "size-1.5 translate-y-[-1px]",
 		label: "max-w-[24ch] truncate text-2xs text-muted-foreground",
-		value: "font-mono text-2xs text-foreground/80 tabular-nums",
+		value: "font-mono text-2xs text-foreground-soft tabular-nums",
 	},
 	chip: {
 		root: "flex flex-wrap items-center gap-2",
 		item: "inline-flex items-center gap-1.5 rounded-full border bg-background px-2 py-0.5 text-2xs",
 		dot: "size-2",
-		label: "font-medium text-foreground/80",
+		label: "font-medium text-foreground-soft",
 		value: "font-mono text-muted-foreground tabular-nums",
 	},
 } as const
@@ -105,7 +105,7 @@ export const seriesLegend = <M>(
 				),
 			),
 			...(overflow > 0
-				? [h.span([h.Class("text-2xs text-muted-foreground/70")], ["+", String(overflow)])]
+				? [h.span([h.Class("text-2xs text-foreground-subtle")], ["+", String(overflow)])]
 				: []),
 		],
 	)

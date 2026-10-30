@@ -120,7 +120,7 @@ const invoiceRow = (
 const invoicesSkeleton = (h: H): Html =>
 	skeletonList(h, {
 		rows: 3,
-		className: "gap-0 divide-y divide-border/60",
+		className: "gap-0 divide-y divide-border-subtle",
 		renderRow: () =>
 			h.div(
 				[h.Class("flex items-center gap-4 py-2.5")],
@@ -244,7 +244,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 
 const ROW = "py-2.5 px-4 text-sm"
 
-const muted = (h: H, text: string): Html => h.span([h.Class("text-muted-foreground/70")], [text])
+const muted = (h: H, text: string): Html => h.span([h.Class("text-foreground-subtle")], [text])
 
 const detailsSkeleton = (h: H): Html =>
 	panel(
@@ -286,7 +286,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 			return panel(h, {}, [
 				keyValueList(
 					h,
-					{ layout: "grid", className: "gap-x-8 gap-y-0 divide-y divide-border/60 text-sm" },
+					{ layout: "grid", className: "gap-x-8 gap-y-0 divide-y divide-border-subtle text-sm" },
 					[
 						keyValue(h, { label: "Bill to", className: ROW }, [
 							details.name !== undefined && details.name !== null && details.name !== ""

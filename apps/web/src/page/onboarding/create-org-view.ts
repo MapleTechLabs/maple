@@ -145,7 +145,7 @@ type OrgRowOptions = Readonly<{
 /** An org the user can go to instead of creating one: an invitation, or one they already belong to. */
 const orgRow = (h: H, options: OrgRowOptions): Html =>
 	h.div(
-		[h.Class("flex items-center gap-3 rounded-md border border-dashed border-input px-3.5 py-3")],
+		[h.Class("flex items-center gap-3 rounded-md border border-dashed border-input p-3")],
 		[
 			options.imageUrl === ""
 				? h.span(
@@ -285,7 +285,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 							h.div(
 								[
 									h.Class(
-										"flex w-[200px] shrink-0 flex-col gap-4 border-r border-sidebar-border bg-sidebar p-3",
+										"flex w-52 shrink-0 flex-col gap-4 border-r border-sidebar-border bg-sidebar p-3",
 									),
 								],
 								[

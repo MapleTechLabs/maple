@@ -57,7 +57,7 @@ const rawPanel = (h: H, model: Model, log: LogRecord): Html => {
 			...cappedCode(
 				h,
 				payload,
-				"rounded-md border bg-muted/30 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
+				"rounded-md border bg-surface-sunken p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
 			),
 		],
 	)

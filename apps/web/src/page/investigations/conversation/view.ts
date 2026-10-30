@@ -136,7 +136,7 @@ export const emptyNotice = <M>(h: HtmlBuilder<M>, title: string, body: string): 
 				{
 					as: "p",
 					variant: "label",
-					className: "flex items-center gap-1.5 text-muted-foreground/70",
+					className: "flex items-center gap-1.5 text-foreground-subtle",
 				},
 				[h.span([], [title])],
 			),

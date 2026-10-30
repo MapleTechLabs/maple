@@ -33,14 +33,14 @@ const FACT_TONE = {
 } as const
 
 const RAIL_LINK =
-	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground/80 transition-colors hover:bg-muted/50 hover:text-foreground"
+	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground-soft transition-colors hover:bg-surface-sunken hover:text-foreground"
 
 const label = (h: H, text: string): Html => h.span([h.Class("min-w-0 flex-1 truncate")], [text])
 
 const chevron = (h: H): Html =>
 	icon(h, "ChevronRightIcon", {
 		size: 12,
-		className: "shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground",
+		className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
 	})
 
 const linkBody = (h: H, name: IconName, text: string): ReadonlyArray<Html> => [
@@ -60,7 +60,7 @@ const externalLink = (h: H, href: string, name: IconName, text: string): Html =>
 			label(h, text),
 			icon(h, "ExternalLinkIcon", {
 				size: 12,
-				className: "shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground",
+				className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
 			}),
 		],
 	)

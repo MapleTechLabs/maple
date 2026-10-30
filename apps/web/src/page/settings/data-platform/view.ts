@@ -188,7 +188,7 @@ const connectionPanel = (
 		h.div(
 			[
 				h.Class(
-					"bg-muted/30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3",
+					"bg-surface-sunken flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3",
 				),
 			],
 			[
@@ -298,7 +298,7 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 					h.AriaExpanded(isExpanded),
 					h.OnClick(Message.ToggledDrift({ name: entry.name })),
 					h.Class(
-						"hover:bg-muted/50 flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+						"hover:bg-surface-sunken flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
 					),
 				],
 				[
@@ -415,7 +415,7 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 							h.AriaExpanded(model.showUpToDate),
 							h.OnClick(Message.ToggledUpToDate()),
 							h.Class(
-								"hover:bg-muted/50 flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs transition-colors",
+								"hover:bg-surface-sunken flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs transition-colors",
 							),
 						],
 						[
@@ -611,7 +611,7 @@ const schemaSection = (h: H, model: Model, settings: OrgClickHouseSettingsRespon
 			h.div(
 				[
 					h.Class(
-						"bg-muted/30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3",
+						"bg-surface-sunken flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3",
 					),
 				],
 				[

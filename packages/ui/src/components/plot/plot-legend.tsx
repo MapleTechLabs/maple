@@ -279,7 +279,7 @@ function PlotLegendItem({ seriesKey }: { seriesKey: string }) {
 			onPointerEnter={() => actions.setActive(entry.key)}
 			onFocus={() => actions.setActive(entry.key)}
 			className={cn(
-				"flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-muted/50",
+				"flex items-center gap-1.5 rounded-sm px-1 py-0.5 hover:bg-surface-sunken",
 				isMuted && "opacity-40",
 				// Struck through as well as dimmed: opacity alone reads as "muted by
 				// someone else's highlight", and the two states have to be told apart
@@ -288,7 +288,7 @@ function PlotLegendItem({ seriesKey }: { seriesKey: string }) {
 				// Emphasis is carried by the OTHERS fading, as it is in the chart —
 				// brightening the picked row as well would double the contrast step and
 				// make a two-series legend look broken.
-				!isHidden && (isActive || (!hovering && isHighlighted)) && "bg-muted/50",
+				!isHidden && (isActive || (!hovering && isHighlighted)) && "bg-surface-sunken",
 			)}
 		>
 			<PlotLegendSwatch color={entry.color} dashed={entry.dashed} />

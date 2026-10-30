@@ -212,8 +212,8 @@ const labButton = (h: HtmlBuilder<Message>, label: string, isActive: boolean, on
 		[
 			h.Class(
 				isActive
-					? "rounded border border-border bg-accent px-2 py-1 text-xs"
-					: "rounded border border-border px-2 py-1 text-xs text-muted-foreground",
+					? "rounded-sm border border-border bg-accent px-2 py-1 text-xs"
+					: "rounded-sm border border-border px-2 py-1 text-xs text-muted-foreground",
 			),
 			h.Type("button"),
 			h.OnClick(onClick),

@@ -42,7 +42,7 @@ export const logFilter = (
 	const state = h.DataAttribute(isOpen ? "open" : "closed", "")
 	return h.div(
 		[
-			h.Class("rounded-md border border-border/60 bg-muted/32"),
+			h.Class("rounded-md border border-border-subtle bg-surface-sunken"),
 			state,
 			h.DataAttribute("slot", "collapsible"),
 		],
@@ -89,7 +89,7 @@ export const logFilter = (
 							],
 							[
 								h.div(
-									[h.Class("border-t border-border/60 p-3")],
+									[h.Class("border-t border-border-subtle p-3")],
 									[filterField(h, configure, options)],
 								),
 							],

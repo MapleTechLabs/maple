@@ -74,7 +74,7 @@ const muted = (h: H, text: string): Html => h.p([h.Class("text-sm text-muted-for
 /** What happens in the Supabase window, before it opens. */
 const windowSteps = (h: H): Html =>
 	h.div(
-		[h.Class("flex flex-col gap-2 rounded-md bg-muted/40 p-4")],
+		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
 		[
 			eyebrow(h, { variant: "mono" }, ["In the Supabase window"]),
 			h.ul(
@@ -90,7 +90,7 @@ const windowSteps = (h: H): Html =>
 
 const waitingBlock = (h: H): Html =>
 	h.div(
-		[h.Class("flex items-center gap-3 rounded-md bg-muted/40 p-4")],
+		[h.Class("flex items-center gap-3 rounded-md bg-surface-sunken p-4")],
 		[
 			icon(h, "ClockIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
 			h.div(
@@ -140,7 +140,7 @@ const selfHostedLine = (h: H): Html =>
 
 const revokedNotice = (h: H, status: SupabaseIntegrationStatus): Html =>
 	h.div(
-		[h.Class("flex gap-3 rounded-md border border-severity-warn/40 bg-card px-4 py-3"), h.Role("alert")],
+		[h.Class("flex gap-3 rounded-md border border-severity-warn/40 bg-card p-4"), h.Role("alert")],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0 text-severity-warn" }),
 			h.div(
@@ -251,7 +251,7 @@ const chooseRow = (h: H, model: Model, project: Project): Html => {
 			h.Key(project.ref),
 			h.Class(
 				cn(
-					"flex items-center gap-4 border-b border-border/60 px-4 py-2.5 text-sm last:border-0",
+					"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
 					isPaused && "opacity-60",
 				),
 			),

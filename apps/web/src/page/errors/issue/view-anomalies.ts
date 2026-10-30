@@ -40,7 +40,7 @@ export const relatedAnomaliesSection = <M>(
 					hint: countLabel(sorted.length, "detector incident"),
 				}),
 				h.div(
-					[h.Class("overflow-hidden rounded-md border border-border/60 divide-y divide-border/60")],
+					[h.Class("overflow-hidden rounded-md border border-border-subtle divide-y divide-border-subtle")],
 					sorted.map((incident) =>
 						anomalyRow(h, {
 							incident,

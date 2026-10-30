@@ -103,7 +103,7 @@ export const correlationStrips = (
 				[h.Class(cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t"))],
 				[
 					h.div(
-						[h.Class("flex w-[140px] shrink-0 flex-col gap-0.5")],
+						[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
 						[
 							h.span(
 								[h.Class("font-prose text-xs font-medium text-foreground")],
@@ -174,7 +174,7 @@ export const workloadCharts = (
 			const explore = h.a(
 				[
 					h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
-					h.Class("text-muted-foreground/60 transition-colors hover:text-foreground"),
+					h.Class("text-foreground-subtle transition-colors hover:text-foreground"),
 					h.Href(
 						hrefOf(
 							AppRoute.Metric({

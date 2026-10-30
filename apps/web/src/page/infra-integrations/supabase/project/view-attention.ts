@@ -18,7 +18,7 @@ const itemRow = (h: H, item: AttentionItem, timeZone: string): Html =>
 	h.li(
 		[
 			h.Key(item.key),
-			h.Class("flex flex-col gap-1 border-t border-border/60 px-4 py-3 first:border-t-0"),
+			h.Class("flex flex-col gap-1 border-t border-border-subtle px-4 py-3 first:border-t-0"),
 		],
 		[
 			eyebrow(h, { className: TONE_TEXT[item.tone] }, [item.label]),

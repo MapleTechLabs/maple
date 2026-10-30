@@ -123,7 +123,7 @@ export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 									cn(
 										"flex items-center gap-1 text-2xs tabular-nums",
 										signal.mergedPullRequestCount > 0
-											? "text-foreground/70"
+											? "text-foreground-soft"
 											: "text-muted-foreground",
 									),
 								),

@@ -97,7 +97,7 @@ const connected = (
 				h.div(
 					[
 						h.Class(
-							"flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-2xs text-muted-foreground",
+							"flex flex-col gap-1 rounded-md bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground",
 						),
 					],
 					[

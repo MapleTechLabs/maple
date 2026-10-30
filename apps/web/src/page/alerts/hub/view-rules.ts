@@ -212,7 +212,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 											[h.Key(group.key), h.Class("border-b last:border-b-0")],
 											[
 												h.div(
-													[h.Class("border-b bg-muted/30 px-4 py-2 text-xs")],
+													[h.Class("border-b bg-surface-sunken px-4 py-2 text-xs")],
 													[
 														h.span(
 															[h.Class("font-medium")],
@@ -305,7 +305,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 		},
 	]
 	return h.li(
-		[h.Key(rule.id), h.Class(cn(ROW_GRID, "relative px-4 py-3 hover:bg-muted/50"))],
+		[h.Key(rule.id), h.Class(cn(ROW_GRID, "relative px-4 py-3 hover:bg-surface-sunken"))],
 		[
 			statusDot(h, { tone: BUCKET_TONE.get(row.bucket) ?? "neutral", size: "lg" }),
 			h.div(

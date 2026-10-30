@@ -2,13 +2,13 @@ import type { ActorDocument } from "@maple/domain/http"
 import { internalAgentLabel } from "@maple/domain/system-agents"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { gradientFor } from "@maple/ui/lib/replay"
 import { AGENT_ACCENT } from "@maple/ui/lib/tone"
 import { shortId as truncateId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { avatarFallbackStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
+import { warmAvatarTone } from "../../../ui/avatar-tone"
 
 // Actor avatars and chips.
 // TODO(actor-directory): people should resolve through the Clerk member directory; here every
@@ -83,7 +83,7 @@ export const identityAvatar = <M>(
 			],
 		)
 	}
-	const gradient = cn("bg-gradient-to-br text-white", gradientFor(identity.seed))
+	const gradient = warmAvatarTone(identity.seed)
 	const mark =
 		identity.initials === "" ? icon(h, "UserIcon", { className: "size-[60%]" }) : identity.initials
 	// The initials show until the photo loads; photos are not loaded here yet.
@@ -91,7 +91,7 @@ export const identityAvatar = <M>(
 		return h.span(
 			[
 				h.AriaHidden(true),
-				h.Class(cn(avatarStyles, cn(base, "ring-1 ring-border/60"))),
+				h.Class(cn(avatarStyles, cn(base, "ring-1 ring-border-subtle"))),
 				h.DataAttribute("slot", "avatar"),
 			],
 			[

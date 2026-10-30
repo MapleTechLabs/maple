@@ -32,7 +32,7 @@ const cardClass = (interactive: boolean): string => cn(SHELL, interactive && LIN
 const chevron = <M>(h: HtmlBuilder<M>): Html =>
 	icon(h, "ChevronRightIcon", {
 		className:
-			"size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover/inline:text-muted-foreground",
+			"size-3.5 shrink-0 text-foreground-faint transition-colors group-hover/inline:text-muted-foreground",
 	})
 
 const metric = <M>(
@@ -66,7 +66,7 @@ const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Re
 			h.span(
 				[
 					h.Class(
-						"min-w-0 truncate rounded-sm border border-border/60 bg-background/60 px-1.5 py-0.5 text-2xs text-muted-foreground",
+						"min-w-0 truncate rounded-sm border border-border-subtle bg-background/60 px-1.5 py-0.5 text-2xs text-muted-foreground",
 					),
 					h.Title(service),
 				],
@@ -76,7 +76,7 @@ const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Re
 		...(services.length > shown.length
 			? [
 					h.span(
-						[h.Class("shrink-0 text-2xs text-muted-foreground/70")],
+						[h.Class("shrink-0 text-2xs text-foreground-subtle")],
 						["+", String(services.length - shown.length)],
 					),
 				]
@@ -218,7 +218,7 @@ const inlineTrace = <M>(h: HtmlBuilder<M>, data: InlineTraceData): Html =>
 					value: data.id,
 					kind: "trace",
 					length: 12,
-					className: "shrink-0 text-2xs text-muted-foreground/70",
+					className: "shrink-0 text-2xs text-foreground-subtle",
 				}),
 				...serviceChips(h, data.services ?? []),
 			],

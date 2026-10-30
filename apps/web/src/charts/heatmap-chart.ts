@@ -124,7 +124,7 @@ const tooltipBody = (
 							[h.Class("text-muted-foreground")],
 							[
 								h.span([], [tooltip.x]),
-								h.span([h.Class("px-1 text-muted-foreground/50")], ["·"]),
+								h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
 								h.span([], [label(tooltip.y)]),
 							],
 						),
@@ -228,7 +228,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 					: {
 							footer: h.p(
 								[
-									h.Class("pt-1 text-right text-3xs leading-3 tabular-nums text-muted-foreground/70"),
+									h.Class("pt-1 text-right text-3xs leading-3 tabular-nums text-foreground-subtle"),
 									h.Style({
 										height: `${FOOTNOTE_BLOCK_H}px`,
 										"padding-left": `${layout.gutter}px`,

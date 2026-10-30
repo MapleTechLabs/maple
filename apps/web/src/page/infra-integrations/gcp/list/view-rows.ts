@@ -143,7 +143,7 @@ export const spark = (
 /** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */
 const formatVolume = (value: number): string => formatNumber(value).replace(/\.0(?=[KMBT]$)/, "")
 
-const VOLUME_CELL = "flex w-[180px] items-center gap-3"
+const VOLUME_CELL = "flex w-44 items-center gap-3"
 const VOLUME_NUMBER_SLOT = "w-[56px] shrink-0"
 
 /** The head over a `volumeCell` column: its label ends where the right-aligned counts end. */
@@ -174,7 +174,7 @@ export const volumeCell = (
 					h.Class(
 						cn(
 							VOLUME_NUMBER_SLOT,
-							"text-right font-mono text-xs tabular-nums text-foreground/80",
+							"text-right font-mono text-xs tabular-nums text-foreground-soft",
 						),
 					),
 				],

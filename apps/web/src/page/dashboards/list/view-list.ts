@@ -209,7 +209,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 		dashboard.id,
 		[
 			h.Class(
-				"group relative flex items-center border-b border-border last:border-b-0 transition-colors hover:bg-muted/50 focus-within:bg-muted/50",
+				"group relative flex items-center border-b border-border last:border-b-0 transition-colors hover:bg-surface-sunken focus-within:bg-surface-sunken",
 			),
 		],
 		[
@@ -329,7 +329,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 						{
 							size: "icon-xs",
 							label: isFavorite ? `Unstar ${name}` : `Star ${name}`,
-							className: isFavorite ? "text-primary" : "text-muted-foreground/40",
+							className: isFavorite ? "text-primary" : "text-foreground-faint",
 							attributes: [
 								h.AriaPressed(String(isFavorite)),
 								h.OnClick(Message.ToggledFavorite({ id: dashboard.id })),
@@ -352,7 +352,7 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 			h.OnClick(Message.ClickedCreate()),
 			...(isReadOnly ? [h.Disabled(true)] : []),
 			h.Class(
-				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50",
+				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left transition-colors hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50",
 			),
 		],
 		[

@@ -68,7 +68,7 @@ const severityRule = (
 	const isLocked = !model.isAdmin || model.isSaving
 	const select = model.confidenceSelects[severity]
 	return h.div(
-		[h.Key(severity), h.Class("space-y-2 border-t border-border/60 pt-3")],
+		[h.Key(severity), h.Class("space-y-2 border-t border-border-subtle pt-3")],
 		[
 			h.div(
 				[h.Class("flex items-center justify-between gap-3")],
@@ -92,7 +92,7 @@ const severityRule = (
 												item,
 											})),
 											size: "sm",
-											className: "w-[100px]",
+											className: "w-24",
 											// `<SelectValue />` without a renderer prints the raw value.
 											renderValue: (value) => [value],
 											toView: (parts) => h.div([h.Class("contents")], parts),
@@ -177,7 +177,7 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft, isKnownMember: boole
 				}),
 				destinationsBlock(h, model, draft),
 				h.div(
-					[h.Class("flex justify-end border-t border-border/60 pt-3")],
+					[h.Class("flex justify-end border-t border-border-subtle pt-3")],
 					[
 						button(
 							h,

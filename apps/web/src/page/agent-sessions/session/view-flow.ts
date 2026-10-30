@@ -117,7 +117,7 @@ const laneLabel = (h: H, lane: FlowLane): Html => {
 		style: { "pointer-events": "none" },
 		children: [
 			h.div(
-				[h.Class("pointer-events-none w-[110px] text-xs")],
+				[h.Class("pointer-events-none w-28 text-xs")],
 				[
 					eyebrow(h, { as: "p", className: "text-primary" }, ["Turn ", String(lane.turn.index)]),
 					h.p(

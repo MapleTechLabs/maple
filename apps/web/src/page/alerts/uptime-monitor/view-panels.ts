@@ -785,7 +785,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 																"pointer-events-none absolute inset-x-0 border-t",
 																share === 0
 																	? "border-border"
-																	: "border-dashed border-border/60",
+																	: "border-dashed border-border-subtle",
 															),
 														),
 														h.Style({ bottom: `${share * 100}%` }),

@@ -31,7 +31,7 @@ import { sectionCard, viewAllButton } from "./view-panels"
 type H = HtmlBuilder<Message>
 
 const allEnvironments = (h: H): Html =>
-	h.span([h.Class("text-3xs text-muted-foreground/60")], ["all environments"])
+	h.span([h.Class("text-3xs text-foreground-subtle")], ["all environments"])
 
 const USAGE_STATS: ReadonlyArray<{
 	readonly key: keyof UsageTotals
@@ -97,7 +97,7 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 		[h.Key(label), h.Class("flex items-center gap-2 leading-none")],
 		[
 			h.span(
-				[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-muted-foreground/70"))],
+				[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle"))],
 				[label],
 			),
 			meter(h, {
@@ -147,7 +147,7 @@ const runsOnRow = (
 						itemDescription(
 							h,
 							[[link.label, ...link.location].join(" · ")],
-							"truncate text-3xs text-muted-foreground/60",
+							"truncate text-3xs text-foreground-subtle",
 						),
 					],
 					"gap-0 leading-tight",
@@ -233,7 +233,7 @@ const KIND_ICON = new Map<DependencyKind, IconName>([
 
 const STRIP_LIMIT = 8
 const CHIP =
-	"inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 
 const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 	target.kind === "service"
@@ -281,7 +281,7 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 								h.Type("button"),
 								h.OnClick(onViewAll),
 								h.Class(
-									"inline-flex items-center rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+									"inline-flex items-center rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 								),
 							],
 							[`+${hiddenCount} more`],

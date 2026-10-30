@@ -23,7 +23,7 @@ const keysUnavailable = (h: H): Html =>
 	h.p(
 		[
 			h.Class(
-				"rounded-md border border-dashed bg-muted/40 px-3 py-2 font-prose text-xs text-muted-foreground",
+				"rounded-md border border-dashed bg-surface-sunken px-3 py-2 font-prose text-xs text-muted-foreground",
 			),
 		],
 		[
@@ -114,7 +114,7 @@ const watchingStrip = (h: H): Html =>
 	h.div(
 		[
 			h.Class(
-				"flex items-center gap-2.5 rounded-md border border-dashed border-primary/30 bg-primary/5 px-4 py-3",
+				"flex items-center gap-2.5 rounded-md border border-dashed border-primary/30 bg-primary/5 p-4",
 			),
 		],
 		[
@@ -201,7 +201,7 @@ const waitingCard = (
 				[
 					listRow(h, {
 						onClick: Message.ClickedToggleExpanded(),
-						className: "flex-1 px-5 py-4 hover:bg-muted/50",
+						className: "flex-1 px-5 py-4 hover:bg-surface-sunken",
 						leading: h.span(
 							[
 								h.Class(

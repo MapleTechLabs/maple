@@ -362,7 +362,7 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 				[
 					...(errorType === undefined
 						? []
-						: [h.span([h.Class("text-foreground/80")], [errorType.name]), " · "]),
+						: [h.span([h.Class("text-foreground-soft")], [errorType.name]), " · "]),
 					routeList(summary.routes),
 				],
 			),
@@ -435,7 +435,7 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 			...(AsyncData.isFailure(model.endpointSeries.data)
 				? [
 						h.span(
-							[h.Class("text-2xs text-destructive-foreground")],
+							[h.Class("text-2xs text-severity-error")],
 							["Trends failed to load; Reload to retry."],
 						),
 					]
@@ -459,7 +459,7 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 				ariaLabel: "Filter routes",
 				onInput: (value) => Message.ChangedEndpointQuery({ value }),
 				onClear: Message.ChangedEndpointQuery({ value: "" }),
-				className: "ml-auto w-[240px]",
+				className: "ml-auto w-60",
 			}),
 		],
 	)
@@ -603,7 +603,7 @@ const loadingState = (h: H): Html =>
 								skeleton(h, "h-2.5 w-9"),
 								skeleton(h, "h-2.5 w-40"),
 								h.span([h.Class("flex-1")]),
-								skeleton(h, "h-2.5 w-[88px]"),
+								skeleton(h, "h-2.5 w-24"),
 								skeleton(h, "h-2.5 w-24"),
 								skeleton(h, "h-2.5 w-12"),
 							],
@@ -616,9 +616,9 @@ const loadingState = (h: H): Html =>
 
 /** `ApiEmptyState`: names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
-	const mono = (text: string) => h.span([h.Class("text-foreground/80")], [text])
+	const mono = (text: string) => h.span([h.Class("text-foreground-soft")], [text])
 	return panel(h, { className: "items-center gap-3.5 px-[18px] py-11 text-center" }, [
-		h.span([h.Class("text-title font-medium text-foreground/90")], ["No HTTP endpoints in this window"]),
+		h.span([h.Class("text-title font-medium text-foreground-soft")], ["No HTTP endpoints in this window"]),
 		h.span(
 			[h.Class("max-w-[620px] text-ui leading-[21px] text-muted-foreground")],
 			[

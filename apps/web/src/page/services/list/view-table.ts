@@ -213,7 +213,7 @@ const serviceRow = (
 				"class",
 				cn(
 					tableRowStyles,
-					"cursor-pointer border-l-2 border-l-transparent hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+					"cursor-pointer border-l-2 border-l-transparent hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 					health === "unhealthy" && "border-l-severity-error",
 				),
 			),
@@ -430,7 +430,7 @@ const desktopTable = (
 			: groupServices(services, mode).flatMap(([namespace, envGroups]) => [
 					...(mode === "namespace"
 						? [
-								groupHeaderRow(h, `ns-${namespace}`, "bg-muted/50 hover:bg-muted/50", [
+								groupHeaderRow(h, `ns-${namespace}`, "bg-surface-sunken hover:bg-surface-strong", [
 									namespaceLabel(h, namespace),
 									h.span(
 										[h.Class("text-xs text-muted-foreground")],
@@ -448,7 +448,7 @@ const desktopTable = (
 						groupHeaderRow(
 							h,
 							`env-${namespace}-${environment}`,
-							"bg-muted/30 hover:bg-muted/30",
+							"bg-surface-sunken hover:bg-surface-strong",
 							[
 								environmentBadge(h, environment),
 								h.span(
@@ -506,7 +506,7 @@ const mobileList = (
 										h.div(
 											[
 												h.Class(
-													"flex items-center gap-2 border-b bg-muted/50 px-3 py-2",
+													"flex items-center gap-2 border-b bg-surface-sunken px-3 py-2",
 												),
 											],
 											[
@@ -535,7 +535,7 @@ const mobileList = (
 											[
 												h.Class(
 													cn(
-														"flex items-center gap-2 border-b bg-muted/30 px-3 py-2",
+														"flex items-center gap-2 border-b bg-surface-sunken px-3 py-2",
 														mode === "namespace" && "pl-6",
 													),
 												),
@@ -556,7 +556,7 @@ const mobileList = (
 													),
 													h.Href(serviceHref(ctx.model, service)),
 													h.Class(
-														"flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+														"flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 													),
 												],
 												[
@@ -619,7 +619,7 @@ const mobileList = (
 																			h.span(
 																				[
 																					h.Class(
-																						"text-muted-foreground/60",
+																						"text-foreground-subtle",
 																					),
 																				],
 																				["P99", " "],
@@ -636,7 +636,7 @@ const mobileList = (
 																			h.span(
 																				[
 																					h.Class(
-																						"text-muted-foreground/60",
+																						"text-foreground-subtle",
 																					),
 																				],
 																				["Thru", " "],

@@ -9,7 +9,7 @@ export const traceIconStyles =
 
 export const traceTitleStyles = "min-w-0 truncate motion-reduce:shimmer-none"
 
-export const traceDescriptionStyles = "shrink-0 text-muted-foreground/70 tabular-nums"
+export const traceDescriptionStyles = "shrink-0 text-foreground-subtle tabular-nums"
 
 export const traceCollapsibleStyles = "flex w-full min-w-0 flex-col"
 

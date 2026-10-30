@@ -115,7 +115,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 						eyebrow(h, {}, ["Header"]),
 						token === null
 							? h.div(
-									[h.Class("bg-muted/40 text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs")],
+									[h.Class("bg-surface-sunken text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs")],
 									["Authorization: Bearer ", shown],
 								)
 							: copyableField(h, {

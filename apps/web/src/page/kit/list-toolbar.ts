@@ -22,7 +22,7 @@ export const listToolbar = <M>(h: HtmlBuilder<M>, options: ListToolbarOptions): 
 			h.Class(
 				cn(
 					"flex flex-wrap items-center gap-2 gap-y-1.5",
-					options.framed === true ? "border-b border-border/60 px-2 py-1.5" : "pb-3",
+					options.framed === true ? "border-b border-border-subtle px-2 py-1.5" : "pb-3",
 					options.className,
 				),
 			),

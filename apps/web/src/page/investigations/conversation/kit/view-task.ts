@@ -62,7 +62,7 @@ const taskLine = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html
 			traceIcon(h, [taskGlyph(h, part.status)], running ? "size-5" : undefined),
 			...(running
 				? []
-				: [traceIcon(h, [icon(h, agent.icon, { className: "size-3.5 text-muted-foreground/70" })])]),
+				: [traceIcon(h, [icon(h, agent.icon, { className: "size-3.5 text-foreground-subtle" })])]),
 			h.span(
 				[
 					h.Class(
@@ -74,12 +74,12 @@ const taskLine = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html
 			),
 			traceDescription(
 				h,
-				[h.span([h.Class("mr-1 text-muted-foreground/40")], ["·"]), part.prompt],
+				[h.span([h.Class("mr-1 text-foreground-faint")], ["·"]), part.prompt],
 				"min-w-0 shrink truncate text-2xs",
 			),
 			...outcomeTag(h, part),
 			...(running ? runningClock(h, host.clockMount) : []),
-			traceIcon(h, [icon(h, "ChevronRightIcon", { className: "size-3 text-muted-foreground/60" })]),
+			traceIcon(h, [icon(h, "ChevronRightIcon", { className: "size-3 text-foreground-subtle" })]),
 		],
 	)
 }
@@ -118,7 +118,7 @@ const sheetContent = <M>(
 			icon(h, agent.icon, { className: "size-3 shrink-0" }),
 			agent.label,
 			" sub-agent",
-			h.span([h.Class("text-muted-foreground/40")], ["·"]),
+			h.span([h.Class("text-foreground-faint")], ["·"]),
 			part.status === "running" ? "running" : (OUTCOME.get(part.status) ?? ""),
 		],
 	)

@@ -64,7 +64,7 @@ const kindPicker = (h: H, model: Model): Html =>
 						[
 							h.Role("radiogroup"),
 							h.AriaLabel("Monitor type"),
-							h.Class("flex w-fit flex-wrap gap-1 rounded-md border bg-muted/30 p-0.5"),
+							h.Class("flex w-fit flex-wrap gap-1 rounded-md border bg-surface-sunken p-0.5"),
 						],
 						KINDS.map((option) => {
 							const isSelected = model.form.kind === option.kind
@@ -175,7 +175,7 @@ const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 					h.pre(
 						[
 							h.Class(
-								"max-h-40 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap",
+								"max-h-40 overflow-auto rounded-md bg-surface-sunken p-2 font-mono text-xs whitespace-pre-wrap",
 							),
 						],
 						[result.body_prefix, ...(result.body_truncated ? ["…"] : [])],

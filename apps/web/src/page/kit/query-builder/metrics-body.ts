@@ -99,7 +99,7 @@ const breakdown = (h: H, model: Model, query: MetricsQuery, keys: ReadonlyArray<
 			anchorsInput: true,
 			renderItem: (item) => [item === NONE ? "Everything (no breakdown)" : item],
 			isUnfiltered: true,
-			className: "h-8 w-[220px] text-xs",
+			className: "h-8 w-56 text-xs",
 			toView: ({ field, rest }) => h.div([h.Class("contents")], [field, ...rest]),
 		},
 	})

@@ -54,7 +54,7 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 				[
 					eyebrow(h, { variant: "mono" }, ["Scope"]),
 					...(config.chips.length === 0
-						? [h.span([h.Class("text-2xs text-muted-foreground/60")], ["all tools · all models"])]
+						? [h.span([h.Class("text-2xs text-foreground-subtle")], ["all tools · all models"])]
 						: [
 								...config.chips.map((chip) => chipButton(h, chip, config.onRemove(chip))),
 								button(

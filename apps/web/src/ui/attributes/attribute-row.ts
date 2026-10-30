@@ -29,8 +29,8 @@ export const copyableValue = (
 			h.AriaLabel(`Copy ${options.label ?? "value"}`),
 			h.Class(
 				cn(
-					"-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors",
-					status === "idle" && "hover:bg-muted/50",
+					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+					status === "idle" && "hover:bg-surface-sunken",
 					status === "copied" && "bg-severity-info/20",
 					status === "error" && "bg-severity-error/20",
 					options.className,
@@ -78,7 +78,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 				[
 					h.Type("button"),
 					h.Class(
-						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-muted/50 rounded px-0.5 -mx-0.5 transition-colors",
+						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-surface-sunken rounded-sm px-0.5 -mx-0.5 transition-colors",
 					),
 					h.OnClick(Message.ToggledCollapsible({ key: `json:${id}`, defaultOpen: false }), stop),
 					h.Title(isExpanded ? "Collapse" : "Expand JSON"),
@@ -96,7 +96,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 						h.div(
 							[
 								h.Class(
-									"group/json relative mt-1 overflow-hidden rounded-md border bg-muted/30",
+									"group/json relative mt-1 overflow-hidden rounded-md border bg-surface-sunken",
 								),
 							],
 							[
@@ -117,7 +117,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 									label: "JSON",
 									iconSize: 10,
 									className:
-										"absolute top-1 right-1 border-border/60 bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
+										"absolute top-1 right-1 border-border-subtle bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
 									attributes: [
 										h.OnClick(
 											Message.ClickedCopy({ copyId: `json:${id}`, text: value }),
@@ -135,7 +135,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 
 const COMMIT_SHA_KEYS = new Set(["vcs.ref.head.revision"])
 const FULL_SHA = /^[0-9a-f]{40}$/i
-const COMMIT_SHA_CLASS = "-mx-0.5 cursor-pointer break-all rounded px-0.5 transition-colors hover:bg-muted/50"
+const COMMIT_SHA_CLASS = "-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 transition-colors hover:bg-surface-sunken"
 
 /** A commit SHA value as a commit link. TODO(commit-card): the hover card itself. */
 const commitShaValue = (h: H, id: string, value: string): Html =>
@@ -224,7 +224,7 @@ export const attributeRow = (
 		[
 			h.Key(attrKey),
 			h.Class(
-				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/50",
+				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-surface-sunken",
 			),
 		],
 		[

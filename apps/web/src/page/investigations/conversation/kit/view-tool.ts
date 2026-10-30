@@ -69,7 +69,7 @@ export const runningClock = <M>(h: HtmlBuilder<M>, mount: PanelHost<M>["clockMou
 		: [
 				h.span(
 					[
-						h.Class("shrink-0 tabular-nums text-2xs text-muted-foreground/60"),
+						h.Class("shrink-0 tabular-nums text-2xs text-foreground-subtle"),
 						h.Attribute("hidden", ""),
 						h.OnMount(mount),
 					],
@@ -194,7 +194,7 @@ export const toolRow = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>
 					traceDescription(
 						h,
 						[summary],
-						"min-w-0 shrink truncate font-mono text-2xs text-muted-foreground/60",
+						"min-w-0 shrink truncate font-mono text-2xs text-foreground-subtle",
 					),
 				]),
 		...(status === "running" && live ? runningClock(h, host.clockMount) : []),
@@ -258,7 +258,7 @@ export const toolGroup = <M>(
 									[],
 									[
 										...(index > 0
-											? [h.span([h.Class("text-muted-foreground/40")], [" · "])]
+											? [h.span([h.Class("text-foreground-faint")], [" · "])]
 											: []),
 										tool.label,
 										...(tool.count > 1
@@ -266,7 +266,7 @@ export const toolGroup = <M>(
 													h.span(
 														[
 															h.Class(
-																"font-normal tabular-nums text-muted-foreground/60",
+																"font-normal tabular-nums text-foreground-subtle",
 															),
 														],
 														[" ", `×${tool.count}`],
@@ -279,7 +279,7 @@ export const toolGroup = <M>(
 							...(hidden > 0
 								? [
 										h.span(
-											[h.Class("font-normal text-muted-foreground/60")],
+											[h.Class("font-normal text-foreground-subtle")],
 											[` +${hidden} more`],
 										),
 									]

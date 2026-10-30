@@ -104,7 +104,7 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 								h.Type("button"),
 								h.OnClick(Message.ClickedBranch({ repoId: repo.id, branch: branch.name })),
 								h.Class(
-									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted/50",
+									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-sunken",
 								),
 							],
 							[

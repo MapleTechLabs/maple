@@ -235,7 +235,7 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 				],
 			),
 			h.ul(
-				[h.Class("w-full divide-y divide-border/60 rounded-md border text-left")],
+				[h.Class("w-full divide-y divide-border-subtle rounded-md border text-left")],
 				rows.map((row) =>
 					h.li(
 						[h.Class("flex items-center gap-3 px-4 py-2.5")],

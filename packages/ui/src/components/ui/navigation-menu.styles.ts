@@ -1,7 +1,7 @@
 import { cva } from "class-variance-authority"
 
 export const navigationMenuTriggerStyle = cva(
-	"bg-background hover:bg-muted focus:bg-muted data-open:hover:bg-muted data-open:focus:bg-muted data-open:bg-muted/50 focus-visible:ring-ring/50 data-popup-open:bg-muted/50 data-popup-open:hover:bg-muted rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all focus-visible:ring-1 focus-visible:outline-1 disabled:opacity-50 group/navigation-menu-trigger inline-flex h-9 w-max items-center justify-center disabled:pointer-events-none outline-none",
+	"bg-background hover:bg-muted focus:bg-muted data-open:hover:bg-muted data-open:focus:bg-muted data-open:bg-surface-sunken focus-visible:ring-ring/50 data-popup-open:bg-surface-sunken data-popup-open:hover:bg-muted rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all focus-visible:ring-1 focus-visible:outline-1 disabled:opacity-50 group/navigation-menu-trigger inline-flex h-9 w-max items-center justify-center disabled:pointer-events-none outline-none",
 )
 
 export const navigationMenuStyles =
@@ -28,7 +28,7 @@ export const navigationMenuPopupStyles =
 export const navigationMenuViewportStyles = "relative size-full overflow-hidden"
 
 export const navigationMenuLinkStyles =
-	"data-active:focus:bg-muted data-active:hover:bg-muted data-active:bg-muted/50 focus-visible:ring-ring/50 hover:bg-muted focus:bg-muted flex items-center gap-2 rounded-lg p-2 text-xs transition-all outline-none focus-visible:ring-1 focus-visible:outline-1 [&_svg:not([class*='size-'])]:size-4 [[data-slot=navigation-menu-content]_&]:rounded-lg"
+	"data-active:focus:bg-muted data-active:hover:bg-muted data-active:bg-surface-sunken focus-visible:ring-ring/50 hover:bg-muted focus:bg-muted flex items-center gap-2 rounded-lg p-2 text-xs transition-all outline-none focus-visible:ring-1 focus-visible:outline-1 [&_svg:not([class*='size-'])]:size-4 [[data-slot=navigation-menu-content]_&]:rounded-lg"
 
 export const navigationMenuIndicatorStyles =
 	"data-[state=visible]:animate-in data-[state=hidden]:animate-out data-[state=hidden]:fade-out data-[state=visible]:fade-in top-full z-[1] flex h-1.5 items-end justify-center overflow-hidden"

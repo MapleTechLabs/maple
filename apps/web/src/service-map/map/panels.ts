@@ -181,7 +181,7 @@ export const serviceMapMiniMap = <M>(
 	return h.div(
 		[
 			h.Class(
-				"react-flow__panel bottom right react-flow__minimap pointer-events-none !bg-muted/50 !border-border max-sm:hidden",
+				"react-flow__panel bottom right react-flow__minimap pointer-events-none !bg-surface-sunken !border-border max-sm:hidden",
 			),
 			// The stylesheet's mask rule beats a `fill` attribute, so the dark mask goes through its variable.
 			h.Style({ "--xy-minimap-mask-background-color-props": MINIMAP_MASK }),

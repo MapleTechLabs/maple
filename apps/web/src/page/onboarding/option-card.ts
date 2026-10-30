@@ -135,7 +135,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 			]),
 			h.div(
 				[
-					...(isAccented ? [h.Style({ "border-color": options.accent ?? "", "background-color": `${options.accent ?? ""}0F` })] : []),
+					...(isAccented ? [h.Style({ "border-color": options.accent ?? "", "background-color": `color-mix(in oklab, ${options.accent ?? ""} 6%, transparent)` })] : []),
 					h.Class(
 						cn(
 							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
@@ -159,7 +159,7 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 			h.Class(
 				cn(
 					"flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 motion-reduce:transition-none",
-					isSelected ? "bg-primary/10" : "bg-muted/60 group-hover:bg-muted",
+					isSelected ? "bg-primary/10" : "bg-surface-strong group-hover:bg-muted",
 				),
 			),
 		],

@@ -20,7 +20,7 @@ export const dialogHeaderStyles =
 export const dialogFooterStyles =
 	"flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-2xl)-1px)]"
 
-export const dialogFooterDefaultStyles = "border-t bg-muted/72 py-4"
+export const dialogFooterDefaultStyles = "border-t bg-surface-strong py-4"
 
 export const dialogFooterBareStyles =
 	"in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pt-3 pt-4 pb-6"

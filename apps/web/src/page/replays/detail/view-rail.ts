@@ -165,7 +165,7 @@ const filterButton = (
 			h.Class(
 				cn(
 					"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
-					config.isActive ? config.selected : cn(config.tone, "hover:bg-muted/50"),
+					config.isActive ? config.selected : cn(config.tone, "hover:bg-surface-sunken"),
 					config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
 				),
 			),
@@ -254,7 +254,7 @@ const eventDetail = (h: H, ev: EventRow): Html => {
 						h.span(
 							[
 								h.Class(
-									"whitespace-pre-wrap break-words text-2xs leading-4 text-foreground/80",
+									"whitespace-pre-wrap break-words text-2xs leading-4 text-foreground-soft",
 								),
 							],
 							[ev.message],
@@ -276,7 +276,7 @@ const eventDetail = (h: H, ev: EventRow): Html => {
 							props.map(([key, value]) =>
 								h.span(
 									[h.Key(key)],
-									[key, "=", h.span([h.Class("text-foreground/80")], [value])],
+									[key, "=", h.span([h.Class("text-foreground-soft")], [value])],
 								),
 							),
 						),
@@ -326,7 +326,7 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 					h.Type("button"),
 					h.OnClick(Message.ClickedEvent({ index, timestamp: ev.timestamp })),
 					h.AriaExpanded(isOpen),
-					h.Class("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/50"),
+					h.Class("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-sunken"),
 					h.Title("Seek replay to this moment"),
 				],
 				[
@@ -362,7 +362,7 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 					h.span(
 						[
 							h.Class(
-								"flex w-[72px] shrink-0 items-center justify-end gap-1.5 text-3xs tabular-nums",
+								"flex w-20 shrink-0 items-center justify-end gap-1.5 text-3xs tabular-nums",
 							),
 						],
 						[
@@ -464,7 +464,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 			h.Key(summary.traceId),
 			h.Class(
 				cn(
-					"relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-muted/50",
+					"relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-surface-sunken",
 					isError && "bg-severity-error/5",
 				),
 			),
@@ -542,7 +542,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
 							h.Class(
-								"inline-flex shrink-0 items-center gap-1 text-2xs text-info-foreground underline-offset-2 hover:underline",
+								"inline-flex shrink-0 items-center gap-1 text-2xs text-severity-debug underline-offset-2 hover:underline",
 							),
 						],
 						["open", icon(h, "ExternalLinkIcon", { className: "size-3" })],

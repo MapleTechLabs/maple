@@ -164,7 +164,7 @@ const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 						h.span(
 							[
 								h.Class(
-									"ml-0.5 whitespace-nowrap text-3xs font-normal text-muted-foreground/70",
+									"ml-0.5 whitespace-nowrap text-3xs font-normal text-foreground-subtle",
 								),
 							],
 							[column.subLabel],
@@ -273,7 +273,7 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 				[h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"), ...triggerAttributes(h)],
 				[
 					h.span(
-						[h.Class("shrink-0 text-muted-foreground/70")],
+						[h.Class("shrink-0 text-foreground-subtle")],
 						[id.kind === "trace" ? "Trace" : "Session"],
 					),
 					h.span([h.Class("min-w-0 truncate font-mono text-muted-foreground")], [id.short]),
@@ -357,7 +357,7 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	// One line, in then out; the exact counts ride on the title.
 	const side = (part: typeof input) =>
 		h.span(
-			[h.Class(part.count > 0 ? part.tone : "text-muted-foreground/50")],
+			[h.Class(part.count > 0 ? part.tone : "text-foreground-faint")],
 			[part.count > 0 ? formatNumber(part.count) : EMPTY_VALUE],
 		)
 	return h.span(
@@ -383,7 +383,7 @@ const errorChip = (
 const errorChips = (h: H, row: DisplayRow): Html => {
 	// A measured zero reads "0"; the dash is kept for a value that does not apply.
 	if (row.errorSpanCount === 0)
-		return h.span([h.Class("font-mono text-xs tabular-nums text-muted-foreground/50")], ["0"])
+		return h.span([h.Class("font-mono text-xs tabular-nums text-foreground-faint")], ["0"])
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
 	return h.div(
@@ -438,7 +438,7 @@ const servicesCell = (h: H, services: ReadonlyArray<string>): Html | null => {
 }
 
 /** A cell with nothing to report reads as a muted dash, never blank. */
-const emptyCell = (h: H): Html => h.span([h.Class("text-xs text-muted-foreground/50")], [EMPTY_VALUE])
+const emptyCell = (h: H): Html => h.span([h.Class("text-xs text-foreground-faint")], [EMPTY_VALUE])
 
 const cellsOf = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html | null> => [
 	sessionCell(h, row, context),
@@ -459,7 +459,7 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 		cellsOf(h, row, context).map((cell, column) =>
 			tableCell(h, [cell ?? emptyCell(h)], cn(CELL_CLASS, COLUMNS[column]?.responsive)),
 		),
-		cn("cursor-pointer hover:bg-muted/50", ROW_LIFT_TOOLTIPS),
+		cn("cursor-pointer hover:bg-surface-sunken", ROW_LIFT_TOOLTIPS),
 		[
 			h.Key(row.sessionId),
 			h.DataAttribute("index", String(index)),

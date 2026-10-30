@@ -141,7 +141,7 @@ export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string): Html
 	h.span(
 		[
 			h.AriaLabel(`About ${title}`),
-			h.Class("inline-flex shrink-0 text-muted-foreground/50 hover:text-muted-foreground"),
+			h.Class("inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground"),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
 			h.Tabindex(0),
@@ -219,7 +219,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 					className: cn(
 						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs font-normal",
 						isExcluded
-							? "text-muted-foreground/70 line-through decoration-1 decoration-muted-foreground/50"
+							? "text-foreground-subtle line-through decoration-1 decoration-muted-foreground/50"
 							: "text-foreground",
 					),
 					attributes: [
@@ -349,7 +349,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 								: collapsedBadges(h, config.selected.length, excluded.length)),
 							icon(h, "ChevronDownIcon", {
 								className: cn(
-									"size-3.5 shrink-0 text-muted-foreground/40 transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
+									"size-3.5 shrink-0 text-foreground-faint transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
 									state.isOpen && "rotate-180",
 								),
 							}),

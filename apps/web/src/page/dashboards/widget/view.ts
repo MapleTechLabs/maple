@@ -96,7 +96,7 @@ const sparklineState = (model: Model, widget: Widget) => {
 const preview = (h: H, model: Model, timeZone: string): Html => {
 	const widget = previewWidgetOf(model)
 	return h.div(
-		[h.Class("border-b bg-muted/30 p-6")],
+		[h.Class("border-b bg-surface-sunken p-6")],
 		[
 			h.div(
 				[h.Class("flex justify-end mb-3")],
@@ -162,7 +162,7 @@ const editor = (h: H, model: Model, timeZone: string): Html =>
 				[preview(h, model, timeZone), queryEditor(h, model, timeZone)],
 			),
 			h.aside(
-				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-muted/20")],
+				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-surface-faint")],
 				[settingsRail(h, model, timeZone)],
 			),
 		],

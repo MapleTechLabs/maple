@@ -47,7 +47,7 @@ const groups = <M>(h: HtmlBuilder<M>, platform: Platform): ReadonlyArray<Html> =
 						[
 							eyebrow(h, { variant: "label", className: "mb-1", as: "h3" }, [group]),
 							h.div(
-								[h.Class("divide-y divide-border/60")],
+								[h.Class("divide-y divide-border-subtle")],
 								defs.map((def) => row(h, def, platform)),
 							),
 						],

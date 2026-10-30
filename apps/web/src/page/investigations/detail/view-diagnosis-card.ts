@@ -89,7 +89,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 						[
 							icon(h, "PulseIcon", { className: "size-3.5 text-muted-foreground" }),
 							eyebrow(h, { variant: "label" }, ["AI Diagnosis"]),
-							h.span([h.Class("text-muted-foreground/40")], ["·"]),
+							h.span([h.Class("text-foreground-faint")], ["·"]),
 							h.span(
 								[h.Class(`text-2xs font-medium capitalize ${CONFIDENCE_TONE[report.confidence] ?? ""}`)],
 								[report.confidence, " confidence"],
@@ -120,7 +120,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 								eyebrow(h, { variant: "label", as: "h4" }, ["Evidence"]),
 								...evidence.map((item, index) => {
 									const chips = evidenceChips(h, item, "card", trigger)
-									return h.keyed("div")(String(index), [h.Class("space-y-1.5 rounded-md bg-muted/40 p-3")], [
+									return h.keyed("div")(String(index), [h.Class("space-y-1.5 rounded-md bg-surface-sunken p-3")], [
 										...(item.note ? [h.p([h.Class("text-sm leading-relaxed text-foreground")], [item.note])] : []),
 										...(chips === null ? [] : [chips]),
 									])
@@ -154,7 +154,7 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 			h.button(
 				[
 					h.Class(
-						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/50",
+						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-sunken",
 					),
 					h.Type("button"),
 					h.OnClick(Message.ClickedReportAction({ index: action.index })),
@@ -174,7 +174,7 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 						attributes: [h.AriaLabel(glyph.label)],
 					}),
 					h.span([h.Class("min-w-0 flex-1 text-sm leading-relaxed text-foreground")], [action.text]),
-					icon(h, "ChevronRightIcon", { size: 14, className: "mt-1 shrink-0 text-muted-foreground/50" }),
+					icon(h, "ChevronRightIcon", { size: 14, className: "mt-1 shrink-0 text-foreground-faint" }),
 				],
 			),
 		],

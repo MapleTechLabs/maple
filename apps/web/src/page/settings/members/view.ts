@@ -236,7 +236,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 					[h.Colspan(columnCount)],
 				),
 			],
-			"border-l-2 border-l-primary bg-muted/40 hover:bg-muted/40",
+			"border-l-2 border-l-primary bg-surface-sunken hover:bg-surface-strong",
 			[h.Key(`${member.id}-confirm`)],
 		),
 	]

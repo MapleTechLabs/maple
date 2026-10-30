@@ -44,7 +44,7 @@ const REDUCER_OPTIONS = Object.entries(RAW_QUERY_REDUCER_LABELS).map(([value, la
 const header = (h: H, model: SqlView, sql: string): Html => {
 	const issue = rawSqlIssue(sql)
 	return h.div(
-		[h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")],
+		[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
 		[
 			iconButton(
 				h,
@@ -63,7 +63,7 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 						cn(
 							badgeVariants({
 								variant: "outline",
-								className: cn("font-mono text-2xs text-white border-0 shrink-0 bg-primary/80"),
+								className: cn("font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80"),
 							}),
 						),
 					),
@@ -135,7 +135,7 @@ const macros = (h: H): Html =>
 							variant: "ghost",
 							size: "xs",
 							className:
-								"h-auto rounded-sm bg-muted/40 px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted hover:text-foreground sm:h-auto sm:text-2xs",
+								"h-auto rounded-sm bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted hover:text-foreground sm:h-auto sm:text-2xs",
 							attributes: [h.OnClick(Message.ClickedSqlToken({ token }))],
 						},
 						[token],
@@ -181,7 +181,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 	const fill = elapsed === null ? 1 : Math.min(elapsed / timing.probeLimitMs, 1)
 	const shortest = shortestFittingInterval(form, timing)
 	return h.div(
-		[h.Class("space-y-1.5 rounded-md border px-3 py-2.5"), h.DataAttribute("testid", "query-time-meter")],
+		[h.Class("space-y-1.5 rounded-md border p-3"), h.DataAttribute("testid", "query-time-meter")],
 		[
 			h.div(
 				[h.Class("flex items-baseline justify-between gap-3 text-xs")],

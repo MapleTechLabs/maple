@@ -65,9 +65,9 @@ export const markerLegend = (h: H): Html =>
 const timeRuler = (h: H, totalMs: number): Html => {
 	const ticks = Array.from({ length: 7 }, (_, i) => (totalMs * i) / 6)
 	return h.div(
-		[h.Class("flex items-stretch border-b border-border/60 bg-muted/10")],
+		[h.Class("flex items-stretch border-b border-border-subtle bg-surface-faint")],
 		[
-			h.div([h.Class(cn(LANE_GUTTER, "shrink-0 border-r border-border/60"))], []),
+			h.div([h.Class(cn(LANE_GUTTER, "shrink-0 border-r border-border-subtle"))], []),
 			h.div(
 				[h.Class("relative h-5 flex-1")],
 				ticks.map((ms, i) =>
@@ -93,7 +93,7 @@ const timeRuler = (h: H, totalMs: number): Html => {
 
 const activityTrack = (h: H, model: Model, playhead: Playhead): Html =>
 	h.div(
-		[h.Class("flex items-stretch border-b border-border/60")],
+		[h.Class("flex items-stretch border-b border-border-subtle")],
 		[
 			activityGutterSlot(activityGutter, [h]),
 			h.div(
@@ -128,7 +128,7 @@ const activityGutter = (h: H): Html =>
 			h.Class(
 				cn(
 					LANE_GUTTER,
-					"flex shrink-0 items-center gap-1.5 border-r border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground",
+					"flex shrink-0 items-center gap-1.5 border-r border-border-subtle px-3 py-2 text-xs font-medium text-muted-foreground",
 				),
 			),
 		],
@@ -167,7 +167,7 @@ const tracesHeader = (h: H, count: number | null): Html =>
 		{
 			as: "div",
 			variant: "label",
-			className: "flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5",
+			className: "flex items-center gap-2 border-b border-border-subtle bg-surface-faint px-3 py-1.5",
 		},
 		[
 			icon(h, "PulseIcon", { className: "size-3.5" }),
@@ -221,7 +221,7 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 		[
 			h.div(
 				[
-					h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border/60 px-2 py-1 pl-6")),
+					h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6")),
 					h.Title(`${span.serviceName} · ${span.spanName}`),
 				],
 				[
@@ -263,21 +263,21 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 const spanLane = (h: H, frame: SeekFrame, traceId: string): Html => {
 	const data = frame.view.spans[traceId] ?? AsyncData.Loading()
 	return AsyncData.matchData(data, {
-		onEmpty: () => h.div([h.Class("bg-muted/10 px-3 py-2")], [skeleton(h, "h-3 w-1/2")]),
+		onEmpty: () => h.div([h.Class("bg-surface-faint px-3 py-2")], [skeleton(h, "h-3 w-1/2")]),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
 				variant: "inline",
 				title: "Couldn't load spans for this trace",
-				className: "bg-muted/10 px-3 py-2",
+				className: "bg-surface-faint px-3 py-2",
 			}),
 		onData: (spans) =>
 			spans.length === 0
-				? emptyMessage(h, { className: "bg-muted/10 py-2 text-2xs" }, [
+				? emptyMessage(h, { className: "bg-surface-faint py-2 text-2xs" }, [
 						"No spans found for this trace.",
 					])
 				: h.div(
-						[h.Class("max-h-56 space-y-px overflow-y-auto bg-muted/10 py-1")],
+						[h.Class("max-h-56 space-y-px overflow-y-auto bg-surface-faint py-1")],
 						[...spans]
 							.sort((a, b) => parseChTimestampMs(a.startTime) - parseChTimestampMs(b.startTime))
 							.map((span) => spanRowItem(h, frame, span)),
@@ -292,7 +292,7 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 	const leftPct = pct(range.displayStartMs, frame.timeline.activeTotalMs)
 	const widthPct = Math.max(0.6, pct(range.displayEndMs, frame.timeline.activeTotalMs) - leftPct)
 	return h.li(
-		[h.Key(summary.traceId), h.Class("border-b border-border/60 last:border-b-0")],
+		[h.Key(summary.traceId), h.Class("border-b border-border-subtle last:border-b-0")],
 		[
 			h.div(
 				[h.Class("flex items-stretch")],
@@ -302,7 +302,7 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 							h.Class(
 								cn(
 									LANE_GUTTER,
-									"flex shrink-0 items-center gap-1.5 border-r border-border/60 pr-2 pl-2 text-xs",
+									"flex shrink-0 items-center gap-1.5 border-r border-border-subtle pr-2 pl-2 text-xs",
 								),
 							),
 						],
@@ -338,7 +338,7 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 									h.Target("_blank"),
 									h.Rel("noreferrer"),
 									h.Class(
-										"group/trace flex min-w-0 flex-1 items-center rounded px-1 py-1.5 text-left transition-colors hover:bg-muted/50",
+										"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left transition-colors hover:bg-surface-sunken",
 									),
 								],
 								[
@@ -392,7 +392,7 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 								[
 									h.Class(
 										cn(
-											"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
+											"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded-sm px-1.5 text-3xs font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
 											isError
 												? "bg-severity-error ring-severity-error/40"
 												: "bg-primary ring-primary/40",
@@ -469,7 +469,7 @@ const tracesSlot = createLazy()
 
 const timelineHeader = (h: H): Html =>
 	h.div(
-		[h.Class("flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-3 py-2")],
+		[h.Class("flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2")],
 		[eyebrow(h, { variant: "label" }, ["Timeline"]), markerLegend(h)],
 	)
 

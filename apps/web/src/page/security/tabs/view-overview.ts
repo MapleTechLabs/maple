@@ -468,7 +468,7 @@ const listLink = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Ht
 			h.a(
 				[
 					h.Href(href),
-					h.Class("flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50"),
+					h.Class("flex items-center gap-4 px-4 py-3 transition-colors hover:bg-surface-sunken"),
 				],
 				children,
 			),

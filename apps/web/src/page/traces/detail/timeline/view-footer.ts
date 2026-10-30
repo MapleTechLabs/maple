@@ -17,19 +17,19 @@ export const footer = (h: H, model: Model): Html =>
 	h.div(
 		[
 			h.Class(
-				"flex shrink-0 items-center gap-3 border-t border-border bg-muted/30 px-2 py-1.5 text-3xs text-muted-foreground @min-[560px]/timeline:px-3",
+				"flex shrink-0 items-center gap-3 border-t border-border bg-surface-sunken px-2 py-1.5 text-3xs text-muted-foreground @min-[560px]/timeline:px-3",
 			),
 		],
 		[
 			h.div(
-				[h.Class("hidden shrink-0 items-center gap-3 text-foreground/30 @min-[560px]/timeline:flex")],
+				[h.Class("hidden shrink-0 items-center gap-3 text-foreground-faint @min-[560px]/timeline:flex")],
 				[
 					hint(h, "Drag", "zoom"),
 					hint(h, "W A S D", "navigate"),
 					hint(h, "/", "search"),
 					h.button(
 						[
-							h.Class("hover:text-foreground/70"),
+							h.Class("hover:text-foreground-soft"),
 							h.Type("button"),
 							h.OnClick(Message.ClickedShortcuts()),
 						],

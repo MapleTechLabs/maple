@@ -291,7 +291,7 @@ const description = (h: H, status: AwsStatus | null): Html | string => {
 	const regions = [
 		...new Set(status.connections.flatMap((connection) => connection.metric_stream?.regions ?? [])),
 	]
-	const mono = (text: string) => h.span([h.Class("font-mono text-xs text-foreground/80")], [text])
+	const mono = (text: string) => h.span([h.Class("font-mono text-xs text-foreground-soft")], [text])
 	return h.span(
 		[],
 		[

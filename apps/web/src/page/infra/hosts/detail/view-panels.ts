@@ -52,7 +52,7 @@ export const hostMetadataPanel = (h: H, model: Model, summary: NonNullable<HostS
 				}),
 			]),
 		],
-		"divide-y divide-border/60",
+		"divide-y divide-border-subtle",
 	)
 }
 

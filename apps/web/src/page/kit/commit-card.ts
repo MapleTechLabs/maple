@@ -223,7 +223,7 @@ const commitCard = <M>(
 					h.Target("_blank"),
 					h.Rel("noreferrer noopener"),
 					h.Class(
-						"flex items-center justify-center gap-1 font-medium text-primary transition-colors hover:bg-muted/50 px-3.5 py-2.5",
+						"flex items-center justify-center gap-1 font-medium text-primary transition-colors hover:bg-surface-sunken px-3.5 py-2.5",
 					),
 				],
 				["View on ", providerLabel, h.span([h.AriaHidden(true)], ["↗"])],

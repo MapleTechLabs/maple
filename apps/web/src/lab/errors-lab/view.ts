@@ -31,7 +31,7 @@ const toggleGroup = <M, T>(
 		[
 			eyebrow(h, {}, [label]),
 			h.div(
-				[h.Class("flex items-center gap-0.5 rounded-md border border-border/60 p-0.5")],
+				[h.Class("flex items-center gap-0.5 rounded-md border border-border-subtle p-0.5")],
 				options.map((option) =>
 					h.button(
 						[
@@ -39,7 +39,7 @@ const toggleGroup = <M, T>(
 							h.OnClick(onChange(option.value)),
 							h.Class(
 								cn(
-									"h-6 rounded px-2 text-xs transition-colors",
+									"h-6 rounded-sm px-2 text-xs transition-colors",
 									option.value === active
 										? "bg-muted text-foreground"
 										: "text-muted-foreground hover:text-foreground",
@@ -70,7 +70,7 @@ const labStatStrip = <M>(h: HtmlBuilder<M>, summary: { totalErrors: number; erro
 					],
 				),
 			),
-			h.span([h.Class("text-muted-foreground/60")], ["in the last 24 hours"]),
+			h.span([h.Class("text-foreground-subtle")], ["in the last 24 hours"]),
 		],
 	)
 

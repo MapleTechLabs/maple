@@ -131,7 +131,7 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 								[
 									h.span([h.Class("text-sm font-medium")], [check.title]),
 									h.span(
-										[h.Class("text-muted-foreground/70 text-2xs")],
+										[h.Class("text-foreground-subtle text-2xs")],
 										[CATEGORY_LABEL[check.category]],
 									),
 								],
@@ -145,7 +145,7 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 										),
 									]),
 							h.p(
-								[h.Class("text-muted-foreground/80 text-xs leading-relaxed")],
+								[h.Class("text-foreground-subtle text-xs leading-relaxed")],
 								[check.fix_hint],
 							),
 							...(check.affected.length === 0
@@ -162,7 +162,7 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 															h.span(
 																[
 																	h.Class(
-																		"text-muted-foreground/70 text-2xs",
+																		"text-foreground-subtle text-2xs",
 																	),
 																],
 																[
@@ -205,7 +205,7 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 				),
 				h.div([h.Class("grow")], []),
 				h.span(
-					[h.Class("text-muted-foreground/70 text-2xs")],
+					[h.Class("text-foreground-subtle text-2xs")],
 					[
 						"Last run ",
 						relativeTime(h, {
@@ -326,7 +326,7 @@ const passingDisclosure = (
 							h.AriaDisabled(false),
 							h.AriaExpanded(isOpen),
 							h.Class(
-								"group hover:bg-muted/50 flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
+								"group hover:bg-surface-sunken flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
 							),
 							...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 							h.DataAttribute("slot", "collapsible-trigger"),
@@ -393,7 +393,7 @@ const passingDisclosure = (
 																	: icon(h, "CircleInfoIcon", {
 																			size: 14,
 																			className:
-																				"text-muted-foreground/60 shrink-0",
+																				"text-foreground-subtle shrink-0",
 																		}),
 																h.span(
 																	[h.Class("min-w-0 flex-1 text-xs")],
@@ -414,7 +414,7 @@ const passingDisclosure = (
 																h.span(
 																	[
 																		h.Class(
-																			"text-muted-foreground/70 text-2xs",
+																			"text-foreground-subtle text-2xs",
 																		),
 																	],
 																	[CATEGORY_LABEL[check.category]],

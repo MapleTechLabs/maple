@@ -97,7 +97,7 @@ export const accountsStrip = (
 					h.Type("button"),
 					h.OnClick(Message.ClickedAccount({ accountId: account.accountId })),
 					h.Class(
-						"flex flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/50 md:border-b-0 md:border-l md:first:border-l-0",
+						"flex flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
 					),
 				],
 				[

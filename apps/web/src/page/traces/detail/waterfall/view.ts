@@ -16,7 +16,7 @@ const header = (h: HtmlBuilder<Message>, shown: number, total: number): Html =>
 	h.div(
 		[
 			h.Class(
-				"@container/row flex shrink-0 items-center border-b bg-muted/30 px-2 py-1.5 text-xs font-medium text-muted-foreground",
+				"@container/row flex shrink-0 items-center border-b bg-surface-sunken px-2 py-1.5 text-xs font-medium text-muted-foreground",
 			),
 		],
 		[

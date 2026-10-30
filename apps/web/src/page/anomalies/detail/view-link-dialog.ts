@@ -175,7 +175,7 @@ export const linkIssueDialog = (h: H, model: Model, incident: AnomalyIncidentDoc
 								),
 							]),
 							h.div(
-								[h.Class("flex items-center justify-between border-t border-border/60 px-3 py-2")],
+								[h.Class("flex items-center justify-between border-t border-border-subtle px-3 py-2")],
 								[
 									h.span(
 										[h.Class("text-xs text-muted-foreground")],

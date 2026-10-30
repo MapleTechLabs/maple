@@ -106,7 +106,7 @@ const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 								h.p(
 									[
 										h.Class(
-											"mt-2 break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground",
+											"mt-2 break-all rounded-md bg-surface-sunken p-2 font-mono text-xs text-muted-foreground",
 										),
 									],
 									[webhooks.last_error],
@@ -198,7 +198,7 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 				isLive
 					? metricsHealth(h, model, status, timeZone)
 					: h.div(
-							[h.Class("border-t border-border/60 p-4")],
+							[h.Class("border-t border-border-subtle p-4")],
 							[
 								liveChecklist(h, { title: "Checking the connection", rows: setup.checks }),
 								...(isWatchExpired(model.planetscaleCard, model.nowMs)

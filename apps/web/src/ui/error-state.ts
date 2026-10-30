@@ -122,15 +122,15 @@ const droppedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
 				y1: "30",
 				x2: "194",
 				y2: "30",
-				class: "stroke-destructive",
+				class: "stroke-severity-error",
 				"stroke-width": "1.5",
 				"stroke-dasharray": "3 5",
 				"stroke-linecap": "round",
 				opacity: "0.45",
 			}),
 		),
-		h.circle(attr(h, { cx: "118", cy: "30", r: "5.5", class: "fill-destructive", opacity: "0.35" })),
-		h.circle(attr(h, { cx: "118", cy: "30", r: "2.5", class: "fill-destructive" })),
+		h.circle(attr(h, { cx: "118", cy: "30", r: "5.5", class: "fill-severity-error", opacity: "0.35" })),
+		h.circle(attr(h, { cx: "118", cy: "30", r: "2.5", class: "fill-severity-error" })),
 	])
 
 /** `NarrowedSignalGlyph`: scattered lines funnelled into one, the request needs narrowing. */
@@ -173,8 +173,8 @@ const narrowedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
 				opacity: "0.7",
 			}),
 		),
-		h.circle(attr(h, { cx: "116", cy: "28", r: "5.5", class: "fill-warning", opacity: "0.35" })),
-		h.circle(attr(h, { cx: "116", cy: "28", r: "2.5", class: "fill-warning" })),
+		h.circle(attr(h, { cx: "116", cy: "28", r: "5.5", class: "fill-severity-warn", opacity: "0.35" })),
+		h.circle(attr(h, { cx: "116", cy: "28", r: "2.5", class: "fill-severity-warn" })),
 	])
 
 /** `LockedSignalGlyph`: a signal line that stops at a lock, with no trail past it. */
@@ -210,7 +210,7 @@ const lockedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
 				"stroke-width": "2",
 			}),
 		),
-		h.circle(attr(h, { cx: "100", cy: "32.5", r: "2.25", class: "fill-destructive" })),
+		h.circle(attr(h, { cx: "100", cy: "32.5", r: "2.25", class: "fill-severity-error" })),
 		h.line(
 			attr(h, {
 				x1: "124",
@@ -271,8 +271,8 @@ const lockTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
 	])
 
 const INLINE_TINT = {
-	outage: "bg-destructive/10 text-destructive",
-	fixable: "bg-warning/10 text-warning-foreground",
+	outage: "bg-severity-error/10 text-severity-error",
+	fixable: "bg-severity-warn/10 text-severity-warn",
 	access: "bg-muted text-muted-foreground",
 } satisfies Record<FailureKind, string>
 
@@ -554,7 +554,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			...autoRetry,
 		],
 		[
-			h.div([h.Class("rounded-md border bg-card/50 px-3 py-2.5")], [glyphFor(h, kind)]),
+			h.div([h.Class("rounded-md border bg-card/50 p-3")], [glyphFor(h, kind)]),
 			h.div(
 				[h.Class("max-w-md space-y-1")],
 				[

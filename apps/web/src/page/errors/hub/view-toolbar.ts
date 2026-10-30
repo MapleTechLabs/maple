@@ -60,7 +60,7 @@ export const statStrip = (h: H, model: Model): Html | null =>
 									stat(h, formatErrorRate(summary.errorRate), "of all spans"),
 								],
 							),
-							h.span([h.Class("text-xs text-muted-foreground/60")], ["in the last 24 hours"]),
+							h.span([h.Class("text-xs text-foreground-subtle")], ["in the last 24 hours"]),
 						],
 					),
 	})
@@ -154,7 +154,7 @@ export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null)
 				viewInputs: {
 					entries: SORT_ENTRIES,
 					size: "sm",
-					className: "h-7 w-[126px] text-xs",
+					className: "h-7 w-32 text-xs",
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
 				toParentMessage: (message) => Message.GotSortSelectMessage({ message }),
@@ -166,7 +166,7 @@ export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null)
 				viewInputs: {
 					entries: SEVERITY_ENTRIES,
 					size: "sm",
-					className: "h-7 w-[122px] text-xs",
+					className: "h-7 w-32 text-xs",
 					renderValue: (value) => severityContent(h, value, SEVERITY_TRIGGER_LABEL),
 					renderItem: (option) => severityContent(h, option.value, SEVERITY_FILTER_LABEL),
 					toView: (parts) => h.div([h.Class("contents")], parts),

@@ -29,7 +29,7 @@ export const sectionPanel = <M>(
 						panelTitle(h, [options.title]),
 						...(options.description === undefined
 							? []
-							: [h.p([h.Class("text-2xs text-muted-foreground/70")], [options.description])]),
+							: [h.p([h.Class("text-2xs text-foreground-subtle")], [options.description])]),
 					],
 				),
 			],

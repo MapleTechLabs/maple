@@ -84,10 +84,10 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 			],
 		),
 		keyValueList(h, { className: "grid grid-cols-2 gap-2 text-3xs" }, [
-			keyValue(h, { label: "CPU", mono: true, className: "rounded bg-muted/30 px-2 py-1" }, [
+			keyValue(h, { label: "CPU", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
 				utilization(workload.avgCpuLimitUtilization),
 			]),
-			keyValue(h, { label: "Memory", mono: true, className: "rounded bg-muted/30 px-2 py-1" }, [
+			keyValue(h, { label: "Memory", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
 				utilization(workload.avgMemoryLimitUtilization),
 			]),
 		]),
@@ -122,7 +122,7 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 			),
 		],
 		[
-			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-muted/50" }, [
+			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" }, [
 				eyebrow(h, { as: "div", className: "flex items-center gap-1.5" }, [
 					icon(h, link.icon, { size: 12 }),
 					h.span([], [link.label]),
@@ -155,12 +155,12 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 /** No platform resource and no Kubernetes workload matched: how each one gets linked. */
 const infraEmptyState = (h: H): Html =>
 	h.div(
-		[h.Class("rounded-md border border-dashed bg-muted/20 p-4 space-y-3")],
+		[h.Class("rounded-md border border-dashed bg-surface-faint p-4 space-y-3")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					icon(h, "CubeIcon", { size: 14, className: "text-muted-foreground/50" }),
+					icon(h, "CubeIcon", { size: 14, className: "text-foreground-faint" }),
 					h.p(
 						[h.Class("text-xs font-medium text-foreground")],
 						["Not linked to any infrastructure"],
@@ -184,7 +184,7 @@ const infraEmptyState = (h: H): Html =>
 				],
 			),
 			h.pre(
-				[h.Class("text-3xs bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto")],
+				[h.Class("text-3xs bg-muted px-2 py-1.5 rounded-sm font-mono text-foreground overflow-x-auto")],
 				["kubectl label namespace <ns> maple.io/instrument=true"],
 			),
 			docsLink(h, "kubernetes"),

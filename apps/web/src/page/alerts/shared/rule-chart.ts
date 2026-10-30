@@ -67,7 +67,7 @@ const RAIL_COLOR = new Map<RailStatus, string>([
 	["error", TONE_FILL.warn],
 	["skipped", "bg-muted-foreground/30"],
 	["healthy", "bg-chart-apdex/70"],
-	["empty", "bg-muted/50"],
+	["empty", "bg-surface-sunken"],
 ])
 
 const clamp01 = (value: number): number => (value < 0 ? 0 : value > 1 ? 1 : value)
@@ -629,7 +629,7 @@ const rail = <M>(
 				[
 					gutter("Incident"),
 					h.div(
-						[h.Class("relative h-1 flex-1 rounded-[1px] bg-muted/60")],
+						[h.Class("relative h-1 flex-1 rounded-[1px] bg-surface-strong")],
 						spans.map((span) =>
 							h.div([
 								h.Class(

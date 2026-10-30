@@ -36,7 +36,7 @@ const baselineShift = (h: H, value: number, baseline: number | undefined, format
 		[
 			...(baseline === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-muted-foreground/70"), h.Title("The version this one replaced")], [format(baseline), " →"])]),
+				: [h.span([h.Class("text-3xs text-foreground-subtle"), h.Title("The version this one replaced")], [format(baseline), " →"])]),
 			h.span([h.Class(cn(tone === "error" && "text-severity-error", tone === "warn" && "text-severity-warn"))], [format(value)]),
 		],
 	)
@@ -44,7 +44,7 @@ const baselineShift = (h: H, value: number, baseline: number | undefined, format
 const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html | null => {
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0))
-		return h.span([h.Class("font-mono text-xs text-muted-foreground/50")], [EMPTY_VALUE])
+		return h.span([h.Class("font-mono text-xs text-foreground-faint")], [EMPTY_VALUE])
 	return h.span(
 		[h.Class("inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums")],
 		[
@@ -71,7 +71,7 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 			[
 				h.span([h.Class("tabular-nums")], [String(names.length), " services"]),
 				...flagged.slice(0, 2).map((name) => serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1")),
-				...(flagged.length > 2 ? [h.span([h.Class("text-2xs text-muted-foreground/70")], [`+${flagged.length - 2}`])] : []),
+				...(flagged.length > 2 ? [h.span([h.Class("text-2xs text-foreground-subtle")], [`+${flagged.length - 2}`])] : []),
 			],
 		)
 	}
@@ -187,7 +187,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 						tableRow(h, [
 							h.td(
 								[
-									h.Attribute("class", cn(tableCellStyles, cn(eyebrowVariants({}), "bg-muted/40 py-1"))),
+									h.Attribute("class", cn(tableCellStyles, cn(eyebrowVariants({}), "bg-surface-sunken py-1"))),
 									h.Attribute("colspan", "6"),
 									h.DataAttribute("slot", "eyebrow"),
 								],
@@ -212,7 +212,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 											label: isOpen ? "Hide services" : "Show services",
 											hasTooltip: false,
 											className: cn(
-												"mt-1 text-muted-foreground/60 transition-transform hover:text-foreground",
+												"mt-1 text-foreground-subtle transition-transform hover:text-foreground",
 												isOpen && "rotate-90",
 												group.services.length <= 1 && "invisible",
 											),
@@ -285,7 +285,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 												serviceDot(h, { serviceName: service.serviceName }),
 												h.span([h.Class("min-w-0 truncate"), h.Title(service.serviceName)], [service.serviceName]),
 												...(service.environment && !input.environments?.length
-													? [h.span([h.Class("min-w-0 truncate text-muted-foreground/70")], [service.environment])]
+													? [h.span([h.Class("min-w-0 truncate text-foreground-subtle")], [service.environment])]
 													: []),
 												...(service.health === "healthy"
 													? []
@@ -318,7 +318,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 								),
 								tableCell(h, [], "py-1.5"),
 							],
-							"bg-muted/20",
+							"bg-surface-faint",
 							[h.Key(`${group.commitSha}:${service.serviceName}:${service.environment}`)],
 						),
 					)

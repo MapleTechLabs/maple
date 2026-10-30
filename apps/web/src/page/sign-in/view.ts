@@ -78,7 +78,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					[h.Class("space-y-2")],
 					[
 						h.h1(
-							[h.Class("font-display font-[650] text-[30px] leading-[1.1] tracking-tight")],
+							[h.Class("font-display font-semibold text-3xl leading-[1.1] tracking-tight")],
 							["Sign in to Maple"],
 						),
 						h.p(

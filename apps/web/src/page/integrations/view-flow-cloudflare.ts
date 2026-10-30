@@ -100,11 +100,11 @@ const accountList = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Html
 		[h.Class("flex flex-col rounded-md border border-border"), h.AriaLabel("Cloudflare accounts")],
 		accounts.map((account) =>
 			h.li(
-				[h.Class("flex items-center gap-3 border-t border-border/60 px-3.5 py-2.5 first:border-t-0")],
+				[h.Class("flex items-center gap-3 border-t border-border-subtle px-3.5 py-2.5 first:border-t-0")],
 				[
 					icon(h, account.revoked ? "CircleWarningIcon" : "CircleCheckIcon", {
 						size: 14,
-						className: account.revoked ? "shrink-0 text-severity-error" : "shrink-0 text-success",
+						className: account.revoked ? "shrink-0 text-severity-error" : "shrink-0 text-severity-info",
 					}),
 					h.div(
 						[h.Class("flex min-w-0 flex-1 flex-col")],

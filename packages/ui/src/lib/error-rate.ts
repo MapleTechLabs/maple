@@ -20,7 +20,7 @@ export function errorRateLevel(rate: number): ErrorRateLevel {
 export const ERROR_RATE_TEXT: Record<ErrorRateLevel, string> = {
 	crit: TONE_TEXT.crit,
 	warn: TONE_TEXT.warn,
-	neutral: "text-foreground/80",
+	neutral: "text-foreground-soft",
 } satisfies Record<ErrorRateLevel, string>
 
 export const ERROR_RATE_FILL: Record<ErrorRateLevel, string> = {

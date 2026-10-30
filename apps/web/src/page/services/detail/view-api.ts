@@ -33,13 +33,13 @@ type H = HtmlBuilder<Message>
 
 /** Below `md` the table keeps the endpoint, its rate, 4xx share and p95; the rest hide. */
 export const COLUMN = {
-	rate: "w-14 md:w-[176px]",
-	mix: "w-12 md:w-[176px]",
-	err: "hidden w-[72px] md:table-cell",
-	p50: "hidden w-[84px] md:table-cell",
-	p95: "w-16 md:w-[84px]",
-	p99: "hidden w-[84px] md:table-cell",
-	body: "hidden w-[88px] md:table-cell",
+	rate: "w-14 md:w-44",
+	mix: "w-12 md:w-44",
+	err: "hidden w-20 md:table-cell",
+	p50: "hidden w-20 md:table-cell",
+	p95: "w-16 md:w-20",
+	p99: "hidden w-20 md:table-cell",
+	body: "hidden w-24 md:table-cell",
 	chevron: "w-6 md:w-10",
 } as const
 
@@ -217,7 +217,7 @@ const endpointRow = (
 						[
 							// The wrapper hides it on narrow screens; the chart keeps its own flex layout.
 							h.div(
-								[h.Class("hidden h-5 w-[88px] md:block")],
+								[h.Class("hidden h-5 w-24 md:block")],
 								context.theme === null
 									? []
 									: [
@@ -226,7 +226,7 @@ const endpointRow = (
 												values: context.sparks.get(endpoint.spanName) ?? [],
 												token: SPARK_TOKENS.requests,
 												theme: context.theme,
-												className: cn("h-5 w-[88px]", isQuiet && "opacity-60"),
+												className: cn("h-5 w-24", isQuiet && "opacity-60"),
 												toMessage: (message) =>
 													Message.GotChartMessage({
 														chartId: "sparkline",
@@ -301,7 +301,7 @@ const endpointRow = (
 		],
 		cn(
 			"group/row h-12 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
-			isSelected ? "bg-accent hover:bg-accent" : "hover:bg-muted/50",
+			isSelected ? "bg-accent hover:bg-accent" : "hover:bg-surface-sunken",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)
@@ -376,7 +376,7 @@ const groupHeaderRow = (
 			cell("—", COLUMN.body),
 			tableCell(h, [], COLUMN.chevron),
 		],
-		"h-10 border-b bg-muted/30 hover:bg-muted/30",
+		"h-10 border-b bg-surface-sunken hover:bg-surface-strong",
 	)
 }
 
@@ -422,7 +422,7 @@ export const groupRows = (
 												[copy.explainer],
 											),
 											h.span(
-												[h.Class("truncate text-2xs text-muted-foreground/50")],
+												[h.Class("truncate text-2xs text-foreground-faint")],
 												[
 													sample.join("  ·  "),
 													remaining > 0

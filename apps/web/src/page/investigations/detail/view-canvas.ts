@@ -215,13 +215,13 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 						variant: "orDate",
 						tooltip: "title",
 						mono: true,
-						className: "mt-auto pt-0.5 text-4xs leading-3 text-muted-foreground/70",
+						className: "mt-auto pt-0.5 text-4xs leading-3 text-foreground-subtle",
 					}),
 				]
 			: []),
 	]
 	const shell = cn(
-		"flex size-full flex-col gap-1.5 overflow-hidden rounded-md border px-3 py-2.5",
+		"flex size-full flex-col gap-1.5 overflow-hidden rounded-md border p-3",
 		data.at ? "justify-start" : "justify-center",
 		isCurrent
 			? "border-primary bg-card"
@@ -251,7 +251,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 	h.div(
 		[
 			h.Class(
-				"relative flex size-full flex-col justify-center gap-1.5 overflow-hidden rounded-md border border-dashed bg-background px-3 py-2.5",
+				"relative flex size-full flex-col justify-center gap-1.5 overflow-hidden rounded-md border border-dashed bg-background p-3",
 			),
 		],
 		[
@@ -370,7 +370,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 								h.span(
 									[
 										h.Class(
-											"min-w-0 flex-1 truncate text-right text-4xs tracking-wider text-muted-foreground/60",
+											"min-w-0 flex-1 truncate text-right text-4xs tracking-wider text-foreground-subtle",
 										),
 									],
 									[data.promise],

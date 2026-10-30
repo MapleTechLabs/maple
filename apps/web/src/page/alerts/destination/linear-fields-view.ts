@@ -72,7 +72,7 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 	const accent = providerOf("linear")
 	const isAdmin = model.isAdmin === true
 	return h.div(
-		[h.Class("space-y-2 rounded-md border border-dashed border-border/60 p-3")],
+		[h.Class("space-y-2 rounded-md border border-dashed border-border-subtle p-3")],
 		[
 			h.p(
 				[h.Class("text-xs text-muted-foreground")],

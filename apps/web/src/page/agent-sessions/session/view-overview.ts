@@ -252,7 +252,7 @@ const ledgerRow = (
 								cn(
 									LEDGER_COUNT,
 									"font-mono text-xs tabular-nums",
-									tool.failed > 0 ? "text-severity-error" : "text-muted-foreground/50",
+									tool.failed > 0 ? "text-severity-error" : "text-foreground-faint",
 								),
 							),
 						],
@@ -327,7 +327,7 @@ const waiting = (h: H, model: Model, progress: LoadProgress): Html =>
 			),
 			loadIndicator(h, model, progress, "items-center"),
 			h.p(
-				[h.Class("text-xs text-muted-foreground/70")],
+				[h.Class("text-xs text-foreground-subtle")],
 				["The Traces, Flow and Transcript views already show what has loaded."],
 			),
 		],

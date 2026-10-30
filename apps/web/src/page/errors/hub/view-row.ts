@@ -42,14 +42,14 @@ export const LANE = {
 	select: "w-4 shrink-0",
 	severity: "w-6 shrink-0",
 	identity: "min-w-0 flex-1",
-	volume: "hidden w-[52px] shrink-0 items-center justify-end gap-2 @lg/page:flex @2xl/page:w-[148px]",
+	volume: "hidden w-[52px] shrink-0 items-center justify-end gap-2 @lg/page:flex @2xl/page:w-36",
 	spark: "hidden min-w-0 flex-1 @2xl/page:block",
 	count: "w-[52px] shrink-0 text-right",
 	// Inset so the right-aligned Events count and the left-aligned Service read as two columns.
-	service: "hidden w-[116px] shrink-0 pl-3 @xl/page:block",
-	state: "hidden w-[104px] shrink-0 @3xl/page:block",
+	service: "hidden w-28 shrink-0 pl-3 @xl/page:block",
+	state: "hidden w-28 shrink-0 @3xl/page:block",
 	actor: "w-5 shrink-0",
-	lastSeen: "w-[76px] shrink-0 whitespace-nowrap",
+	lastSeen: "w-20 shrink-0 whitespace-nowrap",
 } as const
 
 export const ROW_SHELL = "flex items-center gap-3 px-3"
@@ -60,7 +60,7 @@ type H = HtmlBuilder<Message>
 
 /** The column labels; the select lane carries the page-wide checkbox once rows exist. */
 export const signalHeader = (h: H, selection: HeaderSelection | null): Html =>
-	eyebrow(h, { as: "div", className: cn(ROW_SHELL, "h-7 border-b border-border/60 bg-muted/30") }, [
+	eyebrow(h, { as: "div", className: cn(ROW_SHELL, "h-7 border-b border-border-subtle bg-surface-sunken") }, [
 		h.span(
 			[h.Class(cn(LANE.select, "flex items-center justify-center"))],
 			selection === null
@@ -157,9 +157,9 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 					cn(
 						ROW_SHELL,
 						"group/row h-11 text-sm",
-						"hover:bg-muted/50 data-focused:bg-muted/40",
+						"hover:bg-surface-sunken data-focused:bg-surface-sunken",
 						"data-selected:bg-primary/10 data-selected:hover:bg-primary/15",
-						"focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+						"focus-visible:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 						"transition-colors",
 					),
 				),
@@ -283,7 +283,7 @@ const volumeLane = (
 				],
 				[
 					signal.windowCount === null
-						? h.span([h.Class("text-muted-foreground/50")], [EMPTY_VALUE])
+						? h.span([h.Class("text-foreground-faint")], [EMPTY_VALUE])
 						: h.span(
 								[
 									h.Class(

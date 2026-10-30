@@ -33,25 +33,25 @@ export const loadingTable = (h: H): Html =>
 			{ header: "Metric name", headClassName: "w-[40%]", skeleton: "w-48" },
 			{
 				header: "Type",
-				headClassName: `${MD_CELL} w-[100px]`,
+				headClassName: `${MD_CELL} w-24`,
 				cellClassName: MD_CELL,
 				skeleton: "w-16",
 			},
 			{
 				header: "Service",
-				headClassName: `${MD_CELL} w-[120px]`,
+				headClassName: `${MD_CELL} w-32`,
 				cellClassName: MD_CELL,
 				skeleton: "w-20",
 			},
 			{
 				header: "Points",
-				headClassName: `${MD_CELL} w-[100px]`,
+				headClassName: `${MD_CELL} w-24`,
 				cellClassName: MD_CELL,
 				skeleton: "w-12",
 			},
 			{
 				header: "Last seen",
-				headClassName: `${MD_CELL} w-[100px]`,
+				headClassName: `${MD_CELL} w-24`,
 				cellClassName: MD_CELL,
 				skeleton: "w-16",
 			},
@@ -123,7 +123,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				`${MD_CELL} text-xs text-muted-foreground`,
 			),
 		],
-		"hover:bg-muted/50",
+		"hover:bg-surface-sunken",
 	)
 
 /** The loaded table: rows up to `tableLimit`, dimmed while the next page loads. */
@@ -146,10 +146,10 @@ export const metricsTable = (
 						tableHeader(h, [
 							tableRow(h, [
 								tableHead(h, ["Metric name"], "w-[40%]"),
-								tableHead(h, ["Type"], "w-[100px]"),
-								tableHead(h, ["Service"], "w-[120px]"),
-								tableHead(h, ["Points"], "w-[100px]"),
-								tableHead(h, ["Last seen"], "w-[100px]"),
+								tableHead(h, ["Type"], "w-24"),
+								tableHead(h, ["Service"], "w-32"),
+								tableHead(h, ["Points"], "w-24"),
+								tableHead(h, ["Last seen"], "w-24"),
 							]),
 						]),
 						tableBody(

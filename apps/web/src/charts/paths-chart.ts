@@ -65,7 +65,7 @@ const ribbons = (h: H, graph: PathsLayout, isLit: (link: PathLink) => boolean, h
 			h.Class(
 				cn(
 					"pointer-events-none",
-					kind === "event" && "fill-[var(--chart-2)]",
+					kind === "event" && "fill-chart-2",
 					kind === "end" && "fill-foreground",
 					kind === "other" && "fill-foreground",
 				),
@@ -102,7 +102,7 @@ const nodeGroup = (
 				...attrs(h, { x: node.x, y: node.y, width: NODE_W, height: node.h, rx: 2 }),
 				h.Class(
 					cn(
-						node.kind === "event" && "fill-[var(--chart-2)]",
+						node.kind === "event" && "fill-chart-2",
 						node.kind === "end" && "fill-foreground/20",
 						node.kind === "other" && "fill-foreground/35",
 					),

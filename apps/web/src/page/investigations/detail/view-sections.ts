@@ -439,7 +439,7 @@ export const followUpComposer = (h: H): Html =>
 			h.Type("button"),
 			h.OnClick(Message.ClickedFollowUp()),
 			h.Class(
-				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left transition-colors hover:border-ring hover:bg-accent/40",
+				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left transition-colors hover:border-ring hover:bg-accent/50",
 			),
 		],
 		[
@@ -480,7 +480,7 @@ export const evidenceChips = (
 							traceId,
 							[
 								h.Href(`/traces/${traceId}`),
-								h.Class("rounded"),
+								h.Class("rounded-sm"),
 								...trigger(traceTipId(place, traceId)),
 							],
 							[
@@ -488,7 +488,7 @@ export const evidenceChips = (
 									h,
 									{
 										className:
-											"px-1.5 py-0.5 text-2xs text-primary transition-colors hover:bg-muted/70",
+											"px-1.5 py-0.5 text-2xs text-primary transition-colors hover:bg-surface-strong",
 									},
 									[shortId(traceId, "generic", { ellipsis: true })],
 								),
@@ -498,7 +498,7 @@ export const evidenceChips = (
 					...item.logPatterns.map((pattern) =>
 						inlineCode(
 							h,
-							{ className: "bg-muted/60 px-1.5 py-0.5 text-2xs text-muted-foreground" },
+							{ className: "bg-surface-strong px-1.5 py-0.5 text-2xs text-muted-foreground" },
 							[pattern],
 						),
 					),

@@ -158,7 +158,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 				[h.Class("mx-auto w-full max-w-2xl p-4")],
 				[
 					h.dl(
-						[h.Class("divide-y divide-border/60 rounded-lg border border-border/70")],
+						[h.Class("divide-y divide-border-subtle rounded-lg border border-border-subtle")],
 						rowsOf(model).map((row) =>
 							h.div(
 								[
@@ -168,7 +168,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 								[
 									h.dt([h.Class("text-xs text-muted-foreground")], [row.label]),
 									h.dd(
-										[h.Class("font-mono text-xs tabular-nums text-foreground/90")],
+										[h.Class("font-mono text-xs tabular-nums text-foreground-soft")],
 										[row.value ?? "—"],
 									),
 								],

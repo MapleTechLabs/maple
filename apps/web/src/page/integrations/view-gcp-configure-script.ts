@@ -77,7 +77,7 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 		[h.Class("overflow-clip rounded-md border")],
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2")],
+				[h.Class("flex flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
 				[
 					h.span(
 						[h.Class("font-mono text-xs text-muted-foreground")],

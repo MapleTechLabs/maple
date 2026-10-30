@@ -210,11 +210,11 @@ const regionChip = (h: H, region: string): Html => {
 			h.span(
 				[
 					h.Class(
-						"inline-flex items-center gap-1 rounded-sm border border-border/60 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground",
+						"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground",
 					),
 				],
 				[
-					h.span([h.Class("max-w-[22ch] truncate text-foreground/80")], [label]),
+					h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [label]),
 					button(
 						h,
 						{
@@ -285,7 +285,7 @@ const projectsStrip = (
 						h.Type("button"),
 						h.OnClick(Message.SelectedProject({ project })),
 						h.Class(
-							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/50 md:border-b-0 md:border-l md:first:border-l-0",
+							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
 						),
 					],
 					[

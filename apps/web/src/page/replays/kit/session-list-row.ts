@@ -40,7 +40,7 @@ const orgButton = <M>(
 	return h.button(
 		[
 			h.Type("button"),
-			h.Class(cn(className, "rounded hover:underline")),
+			h.Class(cn(className, "rounded-sm hover:underline")),
 			h.OnClick(onFilter(name), { propagation: "Stop" }),
 		],
 		[name],
@@ -176,7 +176,7 @@ export const sessionListRow = <M>(
 			h.OnClick(open),
 			h.Class(
 				cn(
-					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 transition-colors hover:bg-accent/40 @2xl:gap-4",
+					"group relative flex w-full cursor-pointer items-center gap-3 border-b border-border px-3 transition-colors hover:bg-accent/50 @2xl:gap-4",
 					lowSignal ? "py-1.5" : "py-2.5",
 				),
 			),
@@ -210,7 +210,7 @@ export const sessionListRow = <M>(
 				[
 					session.groupName
 						? orgButton(h, session.groupName, options.onFilterGroup)
-						: h.span([h.Class("text-xs text-muted-foreground/50")], [EMPTY_VALUE]),
+						: h.span([h.Class("text-xs text-foreground-faint")], [EMPTY_VALUE]),
 				],
 			),
 			h.div(

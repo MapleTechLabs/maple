@@ -67,15 +67,15 @@ const head = (h: H, sort: SortState): Html => {
 		})
 	return toolTableHead(h, [
 		sortable("Tool", "w-0 flex-1 min-w-0", "key"),
-		th(h, { label: "Volume", width: "w-[110px] shrink-0", hidden: "hidden @min-[720px]/panel:flex" }),
-		sortable("Calls", "w-[76px] shrink-0", "calls", "right"),
-		sortable("P50", "w-[76px] shrink-0", "p50", "right", "hidden @min-[900px]/panel:flex"),
-		sortable("P90", "w-[76px] shrink-0", "p90", "right"),
-		sortable("P95", "w-[76px] shrink-0", "p95", "right", "hidden @min-[900px]/panel:flex"),
-		sortable("Error rate", "w-[150px] shrink-0 pl-6", "errorRate"),
-		sortable("Errors", "w-[76px] shrink-0", "errors", "right", "hidden @min-[640px]/panel:flex"),
-		sortable("Sessions", "w-[76px] shrink-0", "sessions", "right", "hidden @min-[640px]/panel:flex"),
-		sortable("Last call", "w-[96px] shrink-0", "lastSeen", "right", "hidden @min-[800px]/panel:flex"),
+		th(h, { label: "Volume", width: "w-28 shrink-0", hidden: "hidden @min-[720px]/panel:flex" }),
+		sortable("Calls", "w-20 shrink-0", "calls", "right"),
+		sortable("P50", "w-20 shrink-0", "p50", "right", "hidden @min-[900px]/panel:flex"),
+		sortable("P90", "w-20 shrink-0", "p90", "right"),
+		sortable("P95", "w-20 shrink-0", "p95", "right", "hidden @min-[900px]/panel:flex"),
+		sortable("Error rate", "w-36 shrink-0 pl-6", "errorRate"),
+		sortable("Errors", "w-20 shrink-0", "errors", "right", "hidden @min-[640px]/panel:flex"),
+		sortable("Sessions", "w-20 shrink-0", "sessions", "right", "hidden @min-[640px]/panel:flex"),
+		sortable("Last call", "w-24 shrink-0", "lastSeen", "right", "hidden @min-[800px]/panel:flex"),
 		h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
 	])
 }
@@ -99,8 +99,8 @@ const duration = (h: H, value: number, isDriving: boolean, hidden?: string): Htm
 		[
 			h.Class(
 				cn(
-					"w-[76px] shrink-0 text-right font-mono text-xs tabular-nums",
-					isDriving ? "text-foreground/80" : "text-muted-foreground",
+					"w-20 shrink-0 text-right font-mono text-xs tabular-nums",
+					isDriving ? "text-foreground-soft" : "text-muted-foreground",
 					hidden,
 				),
 			),
@@ -140,7 +140,7 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 			],
 		),
 		h.span(
-			[h.Class("hidden h-[22px] w-[110px] shrink-0 @min-[720px]/panel:block")],
+			[h.Class("hidden h-[22px] w-28 shrink-0 @min-[720px]/panel:block")],
 			[
 				h.submodel({
 					slotId: `tool-spark-${row.key}`,
@@ -160,7 +160,7 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 			],
 		),
 		h.span(
-			[h.Class("w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
+			[h.Class("w-20 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
 			[formatToolCount(row.calls)],
 		),
 		duration(h, row.p50, inputs.percentile === "p50", "hidden @min-[900px]/panel:block"),
@@ -176,9 +176,9 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 			[
 				h.Class(
 					cn(
-						"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums @min-[640px]/panel:block",
+						"hidden w-20 shrink-0 text-right font-mono text-xs tabular-nums @min-[640px]/panel:block",
 						// The count takes the rate's tone, so one threshold colours both.
-						row.errors > 0 ? errorTone(row.errorRate).text : "text-muted-foreground/60",
+						row.errors > 0 ? errorTone(row.errorRate).text : "text-foreground-subtle",
 					),
 				),
 			],
@@ -187,7 +187,7 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 		h.span(
 			[
 				h.Class(
-					"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
+					"hidden w-20 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
 				),
 			],
 			[formatToolCount(row.sessions)],
@@ -199,10 +199,10 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 			nowMs: inputs.nowMs,
 			timeZone: inputs.timeZone,
 			className:
-				"hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block",
+				"hidden w-24 shrink-0 text-right font-mono text-2xs tabular-nums text-foreground-subtle @min-[800px]/panel:block",
 		}),
 		h.span(
-			[h.Class("flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60")],
+			[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
 			row.key === ""
 				? []
 				: [icon(h, "ChevronRightIcon", { size: 14, attributes: [h.AriaHidden(true)] })],
@@ -253,7 +253,7 @@ export const toolsTable = (h: H, inputs: ToolsTableInputs): Html =>
 				[
 					h.span([h.Class("text-xs font-medium text-foreground")], ["Tools"]),
 					h.span(
-						[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+						[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 						[formatToolCount(inputs.rows.length)],
 					),
 				],
