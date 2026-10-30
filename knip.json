@@ -15,9 +15,11 @@
 		"apps/landing": {
 			// scripts/figures/*.mjs generate blog figures and covers, run by hand with node.
 			// iso/ is a vendored drawing kit; only part of its API is used.
+			// The fontsource packages are read by path in src/lib/docs-og.ts for OG images;
+			// the site itself serves the subsets from scripts/fonts/subset-fonts.py.
 			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js", "scripts/figures/*.mjs"],
 			"ignore": ["src/components/blog/foldkit/iso/**"],
-			"ignoreDependencies": ["@paper-design/shaders"]
+			"ignoreDependencies": ["@paper-design/shaders", "@fontsource-variable/geist", "@fontsource-variable/geist-mono"]
 		},
 		"apps/api": {
 			// src/worker.ts was auto-detected from wrangler.jsonc's `main` until the
