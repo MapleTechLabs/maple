@@ -69,16 +69,30 @@ export type ReviewSignalLabelFile = Schema.Schema.Type<typeof ReviewSignalLabelF
 /** What GitHub shows of a comment it has folded away as outdated. */
 const OUTDATED_STUB = "This comment was marked as outdated."
 
+/** `pattern` replaced until the text stops changing, so a removal cannot leave a new match behind. */
+const replaceAll = (text: string, pattern: RegExp, replacement: string): string => {
+	const next = text.replace(pattern, replacement)
+	return next === text ? text : replaceAll(next, pattern, replacement)
+}
+
 /**
  * The text a reader sees: HTML comments gone, each `<details>` folded to its summary line, links
  * to their label, tags dropped. The same measure is applied to published and re-rendered comments.
+ * A character count for the eval, never rendered.
  */
 export const visibleText = (body: string): string =>
-	body
-		.replace(/<!--[\s\S]*?-->/g, "")
-		.replace(/<details(?: open)?>\s*<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/details>/g, "▸ $1")
-		.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-		.replace(/<\/?[a-z][^>]*>/gi, "")
+	replaceAll(
+		replaceAll(
+			replaceAll(body, /<!--[\s\S]*?-->/g, "").replace(
+				/<details(?: open)?>\s*<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/details>/g,
+				"▸ $1",
+			),
+			/\[([^\]]*)\]\([^)]*\)/g,
+			"$1",
+		),
+		/<\/?[a-z][^>]*>/gi,
+		"",
+	)
 		.replace(/\n{3,}/g, "\n\n")
 		.trim()
 
