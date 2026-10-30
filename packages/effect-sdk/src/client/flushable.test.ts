@@ -79,6 +79,9 @@ const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
 		).resourceSpans[0].scopeSpans[0].spans.map((span) => span.name),
 	)
 
+/** The `ErrorEvent` / `PromiseRejectionEvent` fields the global error handlers read. */
+type ShimEvent = Readonly<{ error?: Error | null; message?: string; filename?: string; reason?: Error }>
+
 // Minimal DOM event shim — vitest runs in node, where globalThis isn't an
 // EventTarget. Lets us drive `pagehide` / `visibilitychange` without jsdom.
 const setupDom = () => {
@@ -101,8 +104,8 @@ const setupDom = () => {
 		fire: (type: string) => {
 			for (const fn of listeners[type] ?? []) (fn as () => void)()
 		},
-		dispatch: (type: string, event: unknown) => {
-			for (const fn of listeners[type] ?? []) (fn as (event: unknown) => void)(event)
+		dispatch: (type: string, event: ShimEvent) => {
+			for (const fn of listeners[type] ?? []) (fn as (event: ShimEvent) => void)(event)
 		},
 		// A browser runs a microtask checkpoint after each listener; `fire` does not.
 		fireWithCheckpoints: async (type: string) => {
