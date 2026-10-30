@@ -23,6 +23,12 @@ describe("parseChildFindings", () => {
 		)
 	})
 
+	it("files a child's path repo-relative", () => {
+		assert.deepStrictEqual(anchors("./src/a.ts:4 | warn | correctness | T | Why | Fix | -"), [
+			["src/a.ts", 4, "warn"],
+		])
+	})
+
 	it("reads severities the way the review posts them", () => {
 		const line = (severity: string) => `src/a.ts:1 | ${severity} | correctness | Title | Why | Fix | -`
 		assert.deepStrictEqual(
@@ -73,6 +79,19 @@ describe("closeOutFindings", () => {
 })
 
 describe("unaccountedChildFindings", () => {
+	it("does not let a filed note account for a child's warning", () => {
+		const children = parseChildFindings("src/a.ts:10 | warn | correctness | A | Why | Fix | -")
+		const note = new PrReviewFinding({
+			path: "src/a.ts",
+			line: 10,
+			category: "correctness",
+			severity: "info",
+			title: "A",
+			body: "Why",
+		})
+		assert.lengthOf(unaccountedChildFindings(children, [note], []), 1)
+	})
+
 	it("lets one filed finding account for one of two nearby warnings", () => {
 		const children = parseChildFindings(
 			[

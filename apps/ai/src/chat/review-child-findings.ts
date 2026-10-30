@@ -27,6 +27,9 @@ export const makeChildFindings = (): ChildFindings => {
 	}
 }
 
+/** Repo-relative, so `./src/a.ts`, `/src/a.ts` and `src/a.ts` compare equal. */
+const canonicalPath = (path: string) => path.trim().replace(/^(\.\/|\/)+/, "")
+
 /** `path:line` once a list bullet and backticks are gone; a path never holds whitespace. */
 const ANCHOR = /^(\S+):(\d+)$/
 
@@ -48,7 +51,7 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 		const [, severity, category, title, why, fix, check] = parts
 		return [
 			{
-				path: anchor[1]!,
+				path: canonicalPath(anchor[1]!),
 				line: Number(anchor[2]),
 				severity: severityOf(severity!),
 				category: category!.toLowerCase(),
@@ -63,9 +66,6 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 /** How far apart two models may anchor the same issue. */
 const LINE_SLACK = 5
 
-/** Repo-relative, so `./src/a.ts`, `/src/a.ts` and `src/a.ts` compare equal. */
-const canonicalPath = (path: string) => path.trim().replace(/^(\.\/|\/)+/, "")
-
 const near = (a: { path: string; line: number }, b: { path?: string | null; line?: unknown }) =>
 	typeof b.path === "string" &&
 	canonicalPath(a.path) === canonicalPath(b.path) &&
@@ -78,11 +78,13 @@ export const unaccountedChildFindings = (
 	filed: ReadonlyArray<PrReviewFinding>,
 	dismissed: ReadonlyArray<PrReviewChildDismissal>,
 ): ReadonlyArray<PrReviewFindingSubmission> => {
-	// One filed finding or dismissal accounts for one child warning, so two nearby ones need two.
+	// One filed finding or dismissal accounts for one child warning, so two nearby ones need two. A
+	// note does not: downgrading a child's warning is a dismissal, said with its reason.
 	const claimed = new Set<PrReviewFinding | PrReviewChildDismissal>()
+	const accounts = [...filed.filter((finding) => finding.severity !== "info"), ...dismissed]
 	return children.filter((child) => {
 		if (child.severity === "info") return false
-		const match = [...filed, ...dismissed].find((entry) => !claimed.has(entry) && near(entry, child))
+		const match = accounts.find((entry) => !claimed.has(entry) && near(entry, child))
 		if (match !== undefined) claimed.add(match)
 		return match === undefined
 	})
