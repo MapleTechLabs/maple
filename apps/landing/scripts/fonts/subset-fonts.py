@@ -203,7 +203,8 @@ class TextCollector(html.parser.HTMLParser):
             self.runs.append(data)
 
 
-ESCAPE = re.compile(r"\\u\{?([0-9a-fA-F]{4,6})\}?")
+# `\u00e9` takes exactly four digits, `\u{1F341}` up to six inside braces.
+ESCAPE = re.compile(r"\\u(?:\{([0-9a-fA-F]{1,6})\}|([0-9a-fA-F]{4}))")
 
 
 def content() -> tuple[set[int], list[str]]:
@@ -224,7 +225,7 @@ def content() -> tuple[set[int], list[str]]:
     for path in [*DIST.rglob("*.js"), *DIST.rglob("*.css")]:
         text = path.read_text("utf-8", errors="ignore")
         cps.update(ord(c) for c in text)
-        cps.update(int(m, 16) for m in ESCAPE.findall(text))
+        cps.update(cp for cp in (int(a or b, 16) for a, b in ESCAPE.findall(text)) if cp <= 0x10FFFF)
     for run in runs:
         cps.update(ord(c) for c in run)
     # text-transform can draw the other case.
