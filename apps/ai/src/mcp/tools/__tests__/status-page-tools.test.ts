@@ -413,11 +413,30 @@ describe("status page tools outside the statusPages rollout", () => {
 	})
 
 	it("refuses every tool as unavailable, naming the missing capability", async () => {
+		// A real document, so the apply is refused by the gate and not by decoding.
+		const config = decode(
+			GetStatusPageConfigOutput,
+			await runToolDirect(rt, "get_status_page_config", { page: "acme-status" }),
+		).config
+		const incident = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
 		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
 			["list_status_pages", {}],
 			["get_status_page", { page: "acme-status" }],
 			["create_status_page_incident", { page: "acme-status", title: "x", message: "y" }],
+			["post_status_page_update", { incident, status: "identified", message: "y" }],
+			["resolve_status_page_incident", { incident, message: "y" }],
+			[
+				"schedule_status_page_maintenance",
+				{
+					page: "acme-status",
+					title: "x",
+					message: "y",
+					starts_at: "2026-08-01T02:00:00Z",
+					ends_at: "2026-08-01T03:00:00Z",
+				},
+			],
 			["get_status_page_config", { page: "acme-status" }],
+			["apply_status_page_config", { page: "acme-status", config }],
 		]
 		for (const [name, params] of calls) {
 			const result: McpToolResult = await runToolDirect(off, name, params)
