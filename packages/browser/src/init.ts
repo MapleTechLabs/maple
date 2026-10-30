@@ -334,8 +334,9 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 			// Before the provider shuts down, so an open navigation exports with it
 			resetNavigation()
 			// Both release their page-wide state before their first await.
-			const runtimeStopped = stopRuntime(true)
-			const tracingStopped = shutdownTracing?.()
+			// Handled from the start: either may reject while the other is still awaited.
+			const runtimeStopped = attempt(() => stopRuntime(true))
+			const tracingStopped = attempt(() => shutdownTracing?.())
 			shutdownTracing = undefined
 			const flushed = (async () => {
 				await attempt(() => runtimeStopped)

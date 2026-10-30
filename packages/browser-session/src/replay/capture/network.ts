@@ -38,7 +38,7 @@ const matchesUrl = (url: string, patterns: ReadonlyArray<string | RegExp>): bool
  * calls them: tokens, secrets, passwords, API keys, cookies, auth headers.
  */
 const CREDENTIAL_KEY =
-	/token|secret|pass(word|wd|phrase|code)|(^|[-_])pwd([-_]|$)|authori[sz]ation|(^|[-_])auth([-_]|$)|api[-_]?key|cookie|credential|private[-_]?key|access[-_]?key|(^|[-_])(otp|cvv|cvc|ssn)([-_]|$)|card[-_]?number/i
+	/token|secret|pass(word|wd|phrase|code)|(^|[-_])(pwd|pass)([-_]|$)|authori[sz]ation|(^|[-_])auth([-_]|$)|api[-_]?key|cookie|credential|private[-_]?key|access[-_]?key|(^|[-_])(otp|cvv|cvc|ssn)([-_]|$)|card[-_]?number/i
 /** A JSON member: a string key and its string (possibly cut off) or bare value. */
 const JSON_MEMBER = /"((?:[^"\\]|\\.)*)"(\s*:\s*)("(?:[^"\\]|\\.)*"?|[^\s,}\]"{[]+)/g
 /** A form field: `key=value`, at the start or after `&`. */
@@ -50,6 +50,8 @@ const REDACTED = "[REDACTED]"
  * a prefix too: a body cut mid-value still loses the value.
  */
 function redactCredentials(body: string): string {
+	const json = redactJson(body)
+	if (json !== undefined) return json
 	return body
 		.replace(JSON_MEMBER, (member, key: string, colon: string) =>
 			CREDENTIAL_KEY.test(key) ? `"${key}"${colon}"${REDACTED}"` : member,
@@ -57,6 +59,26 @@ function redactCredentials(body: string): string {
 		.replace(FORM_FIELD, (field, lead: string, key: string) =>
 			CREDENTIAL_KEY.test(safeDecode(key)) ? `${lead}${key}=${REDACTED}` : field,
 		)
+}
+
+/**
+ * A whole JSON body, walked: a credential key loses its value even when that
+ * value is an object or array, which the member regex cannot see into.
+ */
+function redactJson(body: string): string | undefined {
+	// Past this the regex pass is cheaper than a parse and re-serialize on the main thread.
+	if (body.length > 1024 * 1024) return undefined
+	const start = body.trimStart()[0]
+	if (start !== "{" && start !== "[") return undefined
+	try {
+		return JSON.stringify(
+			JSON.parse(body, (key, value: unknown) =>
+				key !== "" && CREDENTIAL_KEY.test(key) ? REDACTED : value,
+			),
+		)
+	} catch {
+		return undefined
+	}
 }
 
 function safeDecode(text: string): string {

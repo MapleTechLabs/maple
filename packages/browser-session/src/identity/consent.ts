@@ -292,6 +292,7 @@ export function mayPersistIdentifier(): boolean {
 /** Test seam. */
 export function resetConsentForTests(): void {
 	cancelPendingRevoke()
+	warnedAboutMissingGate = false
 	const state = consentState()
 	state.requireConsent = false
 	state.granted = false

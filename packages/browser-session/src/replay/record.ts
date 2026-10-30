@@ -529,11 +529,13 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		} finally {
 			inflightBytes -= body.length
 		}
-		if (outcome === "retry") {
+		// Every lost chunk backs off, not only a 429/5xx: an offline page or an
+		// endpoint answering 404 would otherwise re-snapshot every ten seconds for good.
+		if (outcome === "accepted") {
+			retriesInARow = 0
+		} else if (outcome !== "handed-off" && outcome !== "refused" && outcome !== "exhausted") {
 			retriesInARow++
 			retryAt = Date.now() + Math.min(MAX_RETRY_BACKOFF_MS, RETRY_BACKOFF_MS * 2 ** (retriesInARow - 1))
-		} else if (outcome === "accepted") {
-			retriesInARow = 0
 		}
 		// The transport already warned, and stops the channel for the rest of the page.
 		if (outcome === "refused") haltCapture()

@@ -205,11 +205,11 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		} else {
 			retriesInARow = 0
 		}
-		if (keepalive) return
 		// Only the rows on their first attempt: an unreachable endpoint must not
-		// turn into a POST every interval.
-		if (outcome === "retry") resend = fresh
-		else if (outcome === "failed" && pageTransitions === transitionsAtSend) retry = [...fresh, ...retry]
+		// turn into a POST every interval. A 429/5xx was not stored, keepalive or not.
+		if (outcome === "retry") resend = [...fresh, ...resend]
+		else if (!keepalive && outcome === "failed" && pageTransitions === transitionsAtSend)
+			retry = [...fresh, ...retry]
 	}
 
 	// One POST at a time: an error loop filling the buffer every few hundred

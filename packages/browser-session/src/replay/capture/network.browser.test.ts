@@ -202,6 +202,31 @@ describe("installNetworkCapture", () => {
 		}
 	})
 
+	it("blanks a credential key's whole value when it is an object, and a bare pass field", async () => {
+		const realFetch = window.fetch
+		window.fetch = async () =>
+			new Response('{"password":{"current":"hunter2","next":"hunter3"},"user":"ada"}', {
+				headers: { "content-type": "application/json" },
+			})
+		try {
+			const events: SessionEvent[] = []
+			uninstall = installNetworkCapture(
+				(event) => events.push(event),
+				() => false,
+				{ urls: ["https://api.test/"], maxLength: 1_000, requestBodies: true },
+			)
+			await fetch("https://api.test/login", { method: "POST", body: "user=ada&pass=hunter4" })
+			await vi.waitFor(() => expect(events.some((event) => event.type === "network")).toBe(true))
+			const attrs = events.find((event) => event.type === "network")?.attrs ?? {}
+			expect(attrs["response.body"]).toBe('{"password":"[REDACTED]","user":"ada"}')
+			expect(attrs["request.body"]).toBe("user=ada&pass=[REDACTED]")
+		} finally {
+			uninstall?.()
+			uninstall = undefined
+			window.fetch = realFetch
+		}
+	})
+
 	it("opens an XHR whose URL is null or an object with its own toString, as the browser does", async () => {
 		const events: SessionEvent[] = []
 		uninstall = installNetworkCapture(

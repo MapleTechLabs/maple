@@ -701,29 +701,45 @@ describe("startRecording stream integrity", () => {
 			snapshot(1_000)
 			outcomes.push(outcome)
 			await recorder.flush()
+			const lostAt = posted.length
 			// Emitted after the loss: these patch nodes the player never got.
 			emitRef!(incremental(3_000))
+			// The recovery snapshot waits out the backoff, never less than the ten-second floor.
 			await vi.advanceTimersByTimeAsync(0)
+			expect(takeFullSnapshot).not.toHaveBeenCalled()
+			await vi.advanceTimersByTimeAsync(10_000)
 			expect(takeFullSnapshot).toHaveBeenCalledTimes(1)
 			emitRef!(incremental(4_000))
 			await recorder.flush()
-			expect(types(posted.at(-1))).toEqual([META, FULL_SNAPSHOT, INCREMENTAL])
+			// What reaches ingest after the loss starts at the fresh snapshot.
+			expect(posted.slice(lostAt).flatMap((chunk) => types(chunk))).toEqual([
+				META,
+				FULL_SNAPSHOT,
+				INCREMENTAL,
+			])
 			recorder.stop()
 		},
 	)
 
-	it("re-snapshots at most once per ten seconds however many chunks fail", async () => {
+	it("backs off re-snapshots while chunks keep failing", async () => {
 		const recorder = startRecording(CONFIG, "session-1")
-		takeFullSnapshot.mockImplementation(() => snapshot(Date.now()))
+		const snapshotsAt: number[] = []
+		takeFullSnapshot.mockImplementation(() => {
+			snapshotsAt.push(Date.now())
+			snapshot(Date.now())
+		})
 		snapshot(1_000)
-		for (let i = 0; i < 5; i++) {
+		// An endpoint that never recovers (offline, a 404), flushed every second for five minutes.
+		for (let second = 0; second < 300; second++) {
 			outcomes.push("failed")
 			await recorder.flush()
 			await vi.advanceTimersByTimeAsync(1_000)
 		}
-		expect(takeFullSnapshot).toHaveBeenCalledTimes(1)
-		await vi.advanceTimersByTimeAsync(10_000)
-		expect(takeFullSnapshot).toHaveBeenCalledTimes(2)
+		const gaps = snapshotsAt.slice(1).map((at, i) => at - (snapshotsAt[i] ?? at))
+		expect(gaps.every((gap, i) => i === 0 || gap >= (gaps[i - 1] ?? 0))).toBe(true)
+		expect(gaps.at(-1)).toBeGreaterThanOrEqual(60_000)
+		// Fixed ten-second spacing would have been about 30.
+		expect(snapshotsAt.length).toBeLessThan(12)
 		recorder.stop()
 	})
 

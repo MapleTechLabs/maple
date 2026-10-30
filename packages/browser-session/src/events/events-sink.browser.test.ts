@@ -333,6 +333,23 @@ describe("startEventSink resend after a failed flush", () => {
 		sink.stop()
 	})
 
+	it("keeps rows a keepalive flush got a retry answer for, when the page stays (a tab switch)", async () => {
+		vi.useFakeTimers()
+		try {
+			const sink = startEventSink(CONFIG, "sess-retry-hidden")
+			post.mockResolvedValueOnce("retry")
+			sink.emit({ type: "custom", message: "first" })
+			await sink.flush(true)
+			await vi.advanceTimersByTimeAsync(5_000)
+			await sink.flush()
+			expect(post).toHaveBeenCalledTimes(2)
+			expect(rowsOf(1)).toEqual(rowsOf(0))
+			sink.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it("stops buffering for the page once ingest refuses the key", async () => {
 		const sink = startEventSink(CONFIG, "sess-refused")
 		post.mockResolvedValueOnce("refused")
