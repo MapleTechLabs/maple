@@ -120,13 +120,31 @@ const replaceIdentifier = (sql: string, written: string, replacement: string): s
 	)
 }
 
-/** Names the SQL defines itself (`AS x`, `x AS (`), which are never column typos. */
-export const definedNames = (sql: string): ReadonlySet<string> =>
-	new Set(
-		[...identifierText(sql).matchAll(/\bAS\s+([A-Za-z_][\w.]*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)].map(
+/** Words that can follow a closing parenthesis without being an alias. */
+const KEYWORDS_AFTER_PAREN = new Set(
+	(
+		"and or not in is like ilike between as on using where prewhere having qualify group order limit " +
+		"offset by asc desc nulls first last union except intersect settings format window over final " +
+		"sample array join left right inner outer full cross semi anti any all asof global then else end " +
+		"when from with into values interval"
+	).split(" "),
+)
+
+/**
+ * Names the SQL defines itself, which are never column typos: `AS x`, `x AS (`, and an
+ * alias straight after a closing parenthesis (`FROM (...) t`, `count() c`).
+ */
+export const definedNames = (sql: string): ReadonlySet<string> => {
+	const text = identifierText(sql)
+	return new Set([
+		...[...text.matchAll(/\bAS\s+([A-Za-z_][\w.]*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)].map(
 			(m) => m[1] ?? m[2],
 		),
-	)
+		...[...text.matchAll(/\)\s*([A-Za-z_]\w*)/g)]
+			.map((m) => m[1])
+			.filter((name) => !KEYWORDS_AFTER_PAREN.has(name.toLowerCase())),
+	])
+}
 
 /** The catalog table each qualifier names: `FROM traces t`, `JOIN logs AS l`, `FROM a, b`. */
 const tableQualifiers = (sql: string): ReadonlyMap<string, string> => {
