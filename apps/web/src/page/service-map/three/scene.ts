@@ -5,7 +5,7 @@ import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { type CameraCommand, cameraRig, type Size } from "./camera"
-import { HOP } from "./critters"
+import type { DuckClick } from "./critters"
 import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
 import { quacker } from "./quack"
 import { type Layout, layoutOf, sceneryKey, sceneryOf, worldOf } from "./world"
@@ -100,7 +100,7 @@ const pickDuck = (
 	scenery: THREE.Object3D,
 	event: MouseEvent,
 	size: Size,
-): (() => void) | null => {
+): (() => DuckClick) | null => {
 	const ducks: Array<THREE.Object3D> = []
 	scenery.traverse((node) => {
 		if (typeof node.userData.quack === "function") ducks.push(node)
@@ -249,11 +249,11 @@ export function startScene(
 			const moved = Math.hypot(event.clientX - state.pressed.x, event.clientY - state.pressed.y)
 			const duck =
 				moved <= DRAG_TOLERANCE ? pickDuck(camera, state.built.scenery.root, event, state.size) : null
-			if (duck !== null) {
-				duck()
-				quacks.quack()
-				// Keep drawing for the whole hop on a paused map, at any refresh rate.
-				state.awakeUntil = performance.now() + HOP * 1000 + 50
+			const clicked = duck === null ? null : duck()
+			if (clicked !== null) {
+				quacks.quack(clicked.alarm ? 3 : 2)
+				// Keep drawing for the whole hop or take-off on a paused map, at any refresh rate.
+				state.awakeUntil = performance.now() + clicked.seconds * 1000 + 50
 				return
 			}
 			if (delta <= 2 && moved <= DRAG_TOLERANCE) onSelect(null)
