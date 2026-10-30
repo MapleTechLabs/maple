@@ -1,6 +1,7 @@
 import { definePage } from "../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../code"
 
 /** `/recommendations/$recommendationKey`: one instance per recommendation. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["Recommendation"], key: (route) => route.recommendationKey },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.Recommendation)

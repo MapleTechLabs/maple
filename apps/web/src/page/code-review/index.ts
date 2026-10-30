@@ -1,6 +1,7 @@
 import { definePage } from "../contract"
 import { Message } from "./tabs"
 import { Model } from "./tabs"
+import { pageCode } from "../code"
 
 /**
  * `/code-review` and its tabs (Analytics, Pull requests, CI, Team, Issues, Settings) as one instance per
@@ -23,4 +24,4 @@ export const entry = definePage(
 	},
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.CodeReview)

@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /** `/infra/supabase/$projectRef`: one project's charts; a new ref is a new instance. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["InfraSupabaseProject"], key: (route) => `InfraSupabaseProject:${route.projectRef}` },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraSupabaseProject)

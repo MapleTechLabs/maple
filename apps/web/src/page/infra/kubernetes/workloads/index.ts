@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /** `/infra/kubernetes/workloads`: the workloads of one kind. Search changes arrive as `routeChanged`. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["InfraKubernetesWorkloads"] },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraKubernetesWorkloads)

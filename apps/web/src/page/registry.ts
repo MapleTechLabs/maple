@@ -229,7 +229,7 @@ export const loadPageCode = (id: string): Effect.Effect<void, PageLoadError> =>
 			onNone: () => Effect.void,
 			onSome: (page) =>
 				Effect.tryPromise({
-					try: (): Promise<LoadedPage> => page.load(),
+					try: (): Promise<LoadedPage> => page.loadModule().then((module) => module.implementation),
 					catch: (cause) =>
 						new PageLoadError({ message: `The ${id} page failed to load`, pageId: id, cause }),
 				}).pipe(

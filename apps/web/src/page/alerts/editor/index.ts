@@ -1,6 +1,7 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../code"
 
 /** `/alerts/create`: a new rule, a template, a chart's prefill, or `?ruleId=` to edit one. */
 export const entry = definePage(
@@ -13,4 +14,4 @@ export const entry = definePage(
 	},
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.AlertEditor)

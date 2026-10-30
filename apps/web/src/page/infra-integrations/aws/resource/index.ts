@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /** `/infra/aws/$kind/$name`: one resource's charts; another resource is a new instance. */
 export const entry = definePage(
@@ -13,4 +14,4 @@ export const entry = definePage(
 	},
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraAwsResource)

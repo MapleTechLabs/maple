@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./model"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /** `/infra/gcp/$service/$name`: one workload, or a Cloud SQL instance; each is its own instance. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["InfraGcpResource"], key: (route) => `InfraGcpResource:${route.service}:${route.name}` },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraGcpResource)
