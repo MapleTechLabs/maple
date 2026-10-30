@@ -12,7 +12,7 @@ import type { TimeSearch } from "./time-controls"
 // the service map panel's Infrastructure tab read these.
 
 export const ServiceRuntime = ServiceRuntimeRow
-export type ServiceRuntime = typeof ServiceRuntimeRow.Type
+export type ServiceRuntime = ServiceRuntimeRow
 
 export interface RuntimeLink {
 	readonly key: string
