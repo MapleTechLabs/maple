@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
+import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
@@ -1485,6 +1486,36 @@ export class ServiceWorkloadsResponse extends Schema.Class<ServiceWorkloadsRespo
 	data: Schema.Array(ServiceWorkloadRow),
 }) {}
 
+export class ServiceRuntimesRequest extends Schema.Class<ServiceRuntimesRequest>("ServiceRuntimesRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	services: Schema.Array(ServiceName),
+}) {}
+
+/**
+ * A platform resource a traced service runs as (`@maple/domain/service-runtimes`). The resource
+ * shares the service's name (a Worker's script name is the service name too).
+ */
+export const ServiceRuntimeRow = Schema.Struct({
+	serviceName: ServiceName,
+	kind: Schema.Literals(SERVICE_RUNTIME_KIND_IDS),
+	/** GCP project, AWS account or Cloudflare account; "" when the series carry none. */
+	account: Schema.String,
+	region: Schema.String,
+	/** ECS cluster. */
+	cluster: Schema.String,
+	railwayServiceId: Schema.String,
+	railwayEnvironmentId: Schema.String,
+	railwayEnvironmentName: Schema.String,
+})
+export type ServiceRuntimeRow = typeof ServiceRuntimeRow.Type
+
+export class ServiceRuntimesResponse extends Schema.Class<ServiceRuntimesResponse>("ServiceRuntimesResponse")(
+	{
+		data: Schema.Array(ServiceRuntimeRow),
+	},
+) {}
+
 export class ServiceMapBundleRequest extends Schema.Class<ServiceMapBundleRequest>("ServiceMapBundleRequest")(
 	{
 		startTime: TinybirdDateTime,
@@ -1504,6 +1535,8 @@ export class ServiceMapBundleResponse extends Schema.Class<ServiceMapBundleRespo
 	overview: Schema.Array(WireRow),
 	platforms: Schema.Array(ServicePlatformRow),
 	workloads: Schema.Array(ServiceWorkloadRow),
+	/** Optional so a web deploy ahead of the API still decodes the bundle. */
+	runtimes: Schema.optionalKey(Schema.Array(ServiceRuntimeRow)),
 }) {}
 
 export class ServiceUsageRequest extends Schema.Class<ServiceUsageRequest>("ServiceUsageRequest")({
@@ -3607,6 +3640,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceWorkloads", "/service-workloads", {
 			payload: ServiceWorkloadsRequest,
 			success: ServiceWorkloadsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceRuntimes", "/service-runtimes", {
+			payload: ServiceRuntimesRequest,
+			success: ServiceRuntimesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

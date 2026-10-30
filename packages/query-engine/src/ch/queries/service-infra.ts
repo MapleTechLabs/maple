@@ -34,6 +34,7 @@ import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } fro
 import { CHNumber } from "../schema"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
+import { SERVICE_RUNTIME_MARKERS, runtimeMetricServiceNames } from "@maple/domain/service-runtimes"
 
 export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
@@ -222,5 +223,85 @@ export function serviceWorkloadsSQL(
 			endTime: params.endTime,
 		},
 		{ rowSchema: ServiceWorkloadsOutputSchema },
+	)
+}
+
+// Service ↔ platform runtime: a resource's marker gauge under the service's names, one row per
+// resource with the keys its infra page reads. `metrics_gauge` sorts by (OrgId, ServiceName,
+// MetricName), so this reads only these services' marker series.
+
+export interface ServiceRuntimesOpts {
+	services: ReadonlyArray<string>
+}
+
+export interface ServiceRuntimesOutput {
+	/** The series' `service.name`; `tracedServiceOfRuntime` maps it to the traced service. */
+	readonly metricServiceName: string
+	readonly metricName: string
+	/** GCP project, AWS account or Cloudflare account. */
+	readonly account: string
+	readonly region: string
+	/** ECS cluster. */
+	readonly cluster: string
+	readonly railwayServiceId: string
+	readonly railwayEnvironmentId: string
+	readonly railwayEnvironmentName: string
+}
+
+const ServiceRuntimesOutputSchema: CompiledQueryRowSchema<ServiceRuntimesOutput> = Schema.Struct({
+	metricServiceName: Schema.String,
+	metricName: Schema.String,
+	account: Schema.String,
+	region: Schema.String,
+	cluster: Schema.String,
+	railwayServiceId: Schema.String,
+	railwayEnvironmentId: Schema.String,
+	railwayEnvironmentName: Schema.String,
+})
+
+export function serviceRuntimesSQL(
+	opts: ServiceRuntimesOpts,
+	params: { orgId: OrgId; startTime: string; endTime: string },
+): Effect.Effect<CompiledQuery<ServiceRuntimesOutput>, QueryBuilderError> {
+	const query = from(MetricsGauge)
+		.select(($) => ({
+			metricServiceName: $.ServiceName,
+			metricName: $.MetricName,
+			account: CH.if_(
+				$.ResourceAttributes.get("cloud.account.id").neq(""),
+				$.ResourceAttributes.get("cloud.account.id"),
+				$.ResourceAttributes.get("cloudflare.account.id"),
+			),
+			region: $.ResourceAttributes.get("cloud.region"),
+			cluster: $.Attributes.get("aws.dimension.cluster_name"),
+			railwayServiceId: $.ResourceAttributes.get("railway.service.id"),
+			railwayEnvironmentId: $.ResourceAttributes.get("railway.environment.id"),
+			railwayEnvironmentName: CH.max_($.ResourceAttributes.get("railway.environment.name")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			CH.inList($.ServiceName, opts.services.flatMap(runtimeMetricServiceNames)),
+			CH.inList($.MetricName, SERVICE_RUNTIME_MARKERS),
+		])
+		.groupBy(
+			"metricServiceName",
+			"metricName",
+			"account",
+			"region",
+			"cluster",
+			"railwayServiceId",
+			"railwayEnvironmentId",
+		)
+		.orderBy(["metricServiceName", "asc"], ["metricName", "asc"])
+		// A service runs as a few resources at most: one per region, cluster or environment.
+		.limit(Math.max(200, opts.services.length * 8))
+		.format("JSON")
+
+	return compile(
+		query,
+		{ orgId: params.orgId, startTime: params.startTime, endTime: params.endTime },
+		{ rowSchema: ServiceRuntimesOutputSchema },
 	)
 }

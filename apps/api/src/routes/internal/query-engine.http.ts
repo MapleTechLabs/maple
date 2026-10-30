@@ -60,6 +60,7 @@ import {
 	ServiceDependenciesBundleResponse,
 	ServiceMapBundleResponse,
 	ServiceWorkloadsResponse,
+	ServiceRuntimesResponse,
 	ServiceUsageResponse,
 	ServiceEndpointsResponse,
 	ServiceApiOverviewResponse,
@@ -155,6 +156,7 @@ import {
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
 import { isMapleService } from "@maple/domain/uptime"
+import { serviceRuntimeKindOfMarker, tracedServiceOfRuntime } from "@maple/domain/service-runtimes"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {
 	makeDashboardReads,
@@ -326,6 +328,32 @@ const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
 	avgCpuLimitUtilization: row.avgCpuLimitUtilization == null ? null : row.avgCpuLimitUtilization,
 	avgMemoryLimitUtilization: row.avgMemoryLimitUtilization == null ? null : row.avgMemoryLimitUtilization,
 })
+
+/** One row per resource. A Railway service is one resource per environment, whatever its regions. */
+const toServiceRuntimeRows = (rows: ReadonlyArray<CH.ServiceRuntimesOutput>) => {
+	const resources = rows.flatMap((row) => {
+		const kind = serviceRuntimeKindOfMarker(row.metricName)
+		if (kind === null) return []
+		const key =
+			kind === "railway"
+				? `railway|${row.railwayServiceId}|${row.railwayEnvironmentId}`
+				: [kind, row.metricServiceName, row.account, row.region, row.cluster].join("|")
+		return [
+			{
+				key,
+				serviceName: decodeServiceName(tracedServiceOfRuntime(row.metricServiceName)),
+				kind,
+				account: row.account,
+				region: row.region,
+				cluster: row.cluster,
+				railwayServiceId: row.railwayServiceId,
+				railwayEnvironmentId: row.railwayEnvironmentId,
+				railwayEnvironmentName: row.railwayEnvironmentName,
+			},
+		]
+	})
+	return Array.from(new Map(resources.map(({ key, ...row }) => [key, row])).values())
+}
 
 export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "queryEngine", (handlers) =>
 	Effect.gen(function* () {
@@ -1382,16 +1410,26 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						for (const row of overviewRows) services.add(row.serviceName)
 						services.delete("")
 
-						const workloadRows =
-							services.size === 0
-								? []
-								: yield* runQuery(Queries.serviceWorkloads, tenant, {
-										startTime: payload.startTime,
-										endTime: payload.endTime,
-										services: Array.from(services)
-											.sort()
-											.map((name) => decodeServiceName(name)),
-									})
+						const serviceNames = Array.from(services)
+							.sort()
+							.map((name) => decodeServiceName(name))
+						const window = { startTime: payload.startTime, endTime: payload.endTime }
+						const [workloadRows, runtimeRows] =
+							serviceNames.length === 0
+								? [[], []]
+								: yield* Effect.all(
+										[
+											runQuery(Queries.serviceWorkloads, tenant, {
+												...window,
+												services: serviceNames,
+											}),
+											runQuery(Queries.serviceRuntimes, tenant, {
+												...window,
+												services: serviceNames,
+											}),
+										],
+										{ concurrency: 2 },
+									)
 
 						return new ServiceMapBundleResponse({
 							dependencies: dependencyRows.map((row) => ({ ...row })),
@@ -1400,6 +1438,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							overview: overviewRows.map((row) => ({ ...row })),
 							platforms: platformRows.map(toServicePlatformRow),
 							workloads: workloadRows.map(toServiceWorkloadRow),
+							runtimes: toServiceRuntimeRows(runtimeRows),
 						})
 					}),
 				)
@@ -1469,6 +1508,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						}
 						const rows = yield* runQuery(Queries.serviceWorkloads, tenant, payload)
 						return new ServiceWorkloadsResponse({ data: rows.map(toServiceWorkloadRow) })
+					}),
+				)
+				.handle("serviceRuntimes", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						if (payload.services.length === 0) {
+							return new ServiceRuntimesResponse({ data: [] })
+						}
+						const rows = yield* runQuery(Queries.serviceRuntimes, tenant, payload)
+						return new ServiceRuntimesResponse({ data: toServiceRuntimeRows(rows) })
 					}),
 				)
 				.handle("serviceUsage", ({ payload }) =>

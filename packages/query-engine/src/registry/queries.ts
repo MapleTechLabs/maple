@@ -9,6 +9,7 @@ import type {
 	ServiceDbEdgesRequest,
 	ServiceDependenciesRequest,
 	ServiceWorkloadsRequest,
+	ServiceRuntimesRequest,
 	ServiceUsageRequest,
 	ErrorDetailTracesRequest,
 	ErrorRateByServiceRequest,
@@ -782,6 +783,17 @@ export const serviceWorkloads = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ServiceWorkloadsRequest, orgId: OrgId) =>
 		CH.serviceWorkloadsSQL(
+			{ services: payload.services },
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const serviceRuntimes = defineQuery({
+	id: "serviceRuntimes",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ServiceRuntimesRequest, orgId: OrgId) =>
+		CH.serviceRuntimesSQL(
 			{ services: payload.services },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),

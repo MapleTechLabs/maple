@@ -845,6 +845,13 @@ const infraFixtures: ReadonlyArray<BuilderFixture> = [
 		sampleValues: { workloadKind: "deployment" },
 	},
 	{
+		// registry `serviceRuntimes`.
+		module: "service-infra",
+		name: "serviceRuntimesSQL",
+		label: "default",
+		compile: () => runCompile(CH.serviceRuntimesSQL({ services: ["api", "checkout"] }, window)),
+	},
+	{
 		// backend ServiceMapRollupService, the hourly resolutions rollup.
 		module: "service-map-rollup",
 		name: "serviceMapResolutionsRollupSQL",

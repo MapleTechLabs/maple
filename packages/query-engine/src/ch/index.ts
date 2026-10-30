@@ -497,6 +497,9 @@ export {
 	serviceWorkloadsSQL,
 	type ServiceWorkloadsOpts,
 	type ServiceWorkloadsOutput,
+	serviceRuntimesSQL,
+	type ServiceRuntimesOpts,
+	type ServiceRuntimesOutput,
 } from "./queries/service-infra"
 
 // Queries — Alerts: removed. Alert evaluation now reuses the dashboard
