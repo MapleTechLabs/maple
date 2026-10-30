@@ -1,7 +1,8 @@
 import { CodeReviewAnalyticsQuery, CodeReviewListQuery } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { getAnalytics, listReviews } from "../kit/api"
+import { SEARCH_DEBOUNCE_MS } from "../kit/search"
 import { Message } from "./model"
 
 export const FetchReviews = Command.define("FetchCodeReviewReviews", {
@@ -25,3 +26,13 @@ export const FetchReviewAuthors = Command.define("FetchCodeReviewReviewAuthors",
 		),
 })
 
+/** The search box's debounce; a newer keystroke bumps the generation. */
+export const WaitSearchDebounce = Command.define("WaitCodeReviewPullRequestsSearchDebounce", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedSearchDebounce],
+	execute: ({ generation }) =>
+		Effect.as(
+			Effect.sleep(Duration.millis(SEARCH_DEBOUNCE_MS)),
+			Message.ElapsedSearchDebounce({ generation }),
+		),
+})

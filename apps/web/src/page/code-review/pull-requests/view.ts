@@ -13,6 +13,7 @@ import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
+import { searchBox } from "../kit/search"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
@@ -27,7 +28,10 @@ const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Object.entries(STATUS_LABELS)
 }))
 
 const isFiltered = (model: Model) =>
-	model.search.repo !== undefined || model.search.author !== undefined || model.search.status !== undefined
+	model.search.repo !== undefined ||
+	model.search.author !== undefined ||
+	model.search.status !== undefined ||
+	model.search.q !== undefined
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.reviews.data, {
@@ -114,7 +118,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			active: "pull-requests",
 			search: model.search,
 			toolbar: filters.actions,
-			filters: [...filters.filters, statusSelect(h, model)],
+			filters: [
+				searchBox(h, {
+					id: "code-review-pull-requests-search",
+					value: model.searchDraft,
+					placeholder: "Search pull requests…",
+					onInput: (value) => Message.ChangedSearchDraft({ value }),
+				}),
+				...filters.filters,
+				statusSelect(h, model),
+			],
 			overlay: h.submodel({
 				slotId: "code-review-pull-requests-sheet",
 				model: model.sheet,
