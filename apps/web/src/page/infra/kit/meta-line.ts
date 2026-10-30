@@ -31,7 +31,8 @@ export const metaLine = <M>(
 		],
 		present.map((item, index) =>
 			h.span(
-				[h.Class("flex shrink-0 items-center gap-x-2")],
+				// The last item shrinks so an overflowing line ends in an ellipsis, not a clipped word.
+				[h.Class(cn("flex items-center gap-x-2", index === present.length - 1 ? "min-w-0" : "shrink-0"))],
 				[
 					...(index > 0 ? [h.span([h.Class("text-foreground-faint")], ["·"])] : []),
 					typeof item === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [item]) : item,
