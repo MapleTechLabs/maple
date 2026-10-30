@@ -202,12 +202,40 @@ export const escapeCell = (value: string) =>
 	value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
 
 /**
- * The comment's section on production: what breaks, where the traffic is, which open errors live
- * in the changed files, and what the change adds to or removes from the telemetry.
+ * Open issues as one row per title, service and file: separate fingerprints of the same error read
+ * as the same row repeated, so they are summed.
+ */
+const groupIssues = (issues: PrReviewTelemetry["linkedIssues"]) =>
+	issues.reduce<
+		Array<{ title: string; service: string; path: string; occurrences: number; count: number }>
+	>((rows, issue) => {
+		const row = rows.find(
+			(item) =>
+				item.title === issue.title && item.service === issue.service && item.path === issue.path,
+		)
+		if (row === undefined) {
+			rows.push({
+				title: issue.title,
+				service: issue.service,
+				path: issue.path,
+				occurrences: issue.occurrences,
+				count: 1,
+			})
+		} else {
+			row.occurrences += issue.occurrences
+			row.count += 1
+		}
+		return rows
+	}, [])
+
+/**
+ * The section on production: what breaks, which open errors live in the changed files, and, on the
+ * check run only (`brief` is the comment), where the traffic is and what telemetry the change adds
+ * or removes.
  */
 export const renderTelemetryMarkdown = (
 	telemetry: PrReviewTelemetry | undefined,
-	options: { readonly blocking: boolean },
+	options: { readonly blocking: boolean; readonly brief?: boolean },
 ): ReadonlyArray<string> => {
 	if (telemetry === undefined) return []
 	const open = openContractBreaks(telemetry)
@@ -224,15 +252,16 @@ export const renderTelemetryMarkdown = (
 			"",
 		)
 	}
-	if (telemetry.linkedIssues.length > 0) {
+	const issues = groupIssues(telemetry.linkedIssues)
+	if (issues.length > 0) {
 		sections.push(
-			"<details open><summary>Open errors in the changed files</summary>",
+			`<details><summary>Open errors in the changed files (${issues.length})</summary>`,
 			"",
 			"| Issue | Service | Occurrences | File |",
 			"| --- | --- | ---: | --- |",
-			...telemetry.linkedIssues.map(
+			...issues.map(
 				(issue) =>
-					`| ${escapeCell(issue.title)} | ${escapeCell(issue.service)} | ${formatCount(issue.occurrences)} | \`${escapeCell(issue.path)}\` |`,
+					`| ${escapeCell(issue.title)}${issue.count > 1 ? ` (${issue.count} issues)` : ""} | ${escapeCell(issue.service)} | ${formatCount(issue.occurrences)} | \`${escapeCell(issue.path)}\` |`,
 			),
 			"",
 			"After this merges, Maple checks whether they stop.",
@@ -241,6 +270,7 @@ export const renderTelemetryMarkdown = (
 			"",
 		)
 	}
+	if (options.brief === true) return sections.length === 0 ? [] : ["### Production impact", "", ...sections]
 	if (telemetry.hotFiles.length > 0) {
 		sections.push(
 			`<details><summary>Production traffic of the changed files (last ${telemetry.windowDays} days)</summary>`,

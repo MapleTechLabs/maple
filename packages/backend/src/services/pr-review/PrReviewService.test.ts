@@ -134,6 +134,8 @@ const layerFor = (
 		readonly filesUnreadable?: { value: boolean }
 		/** The author's permission on the repository; `read` when absent. */
 		readonly permission?: string
+		/** Present: each request to hide earlier comments is recorded as `<number>:<keep marker>`. */
+		readonly hidden?: Array<string>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -159,6 +161,11 @@ const layerFor = (
 		resolveReviewThread: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				options.resolvedThreads?.push(`${input.threadId}:${input.reply}`)
+			}),
+		hideEarlierComments: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				options.hidden?.push(`${input.number}:${input.keep}`)
+				return 0
 			}),
 		fetchChangesSince: () => Effect.succeed({ paths: ["b.ts", "c.ts"], rewritten: false }),
 		fetchPullRequestHead: unused,
@@ -1069,6 +1076,7 @@ describe("PrReviewService.submitReview", () => {
 		const published: Array<PullRequestReviewPublication> = []
 		const begun: Array<Begun> = []
 		const resolvedThreads: Array<string> = []
+		const hidden: Array<string> = []
 		const threads: ReadonlyArray<PullRequestReviewThread> = [
 			{
 				id: "T1",
@@ -1133,15 +1141,21 @@ describe("PrReviewService.submitReview", () => {
 			)
 			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
-			// Two warnings and an unobservable route: 10 − 2 − 1.
-			assert.equal(publication.title, "Confidence 7/10 · 2 issues to address")
+			// Two open correctness warnings hold it at "needs attention", and F1, fixed, counts as history.
+			assert.equal(publication.title, "Confidence 6/10 · 2 issues to address")
+			assert.include(publication.summary, "1 defect fixed in earlier rounds")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
+			// Every published review folds away the summaries before it and keeps its own.
+			assert.deepEqual(
+				hidden,
+				published.map((item) => `${item.number}:${item.summaryComment.marker}`),
+			)
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
 				stored.report?.findings.map((f) => f.handle),
 				["F3"],
 			)
-		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads, resolvedThreads })))
+		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads, resolvedThreads, hidden })))
 	})
 
 	it.effect("drops a submission for a review that was superseded while it ran", () => {
@@ -1696,7 +1710,6 @@ describe("buildPublication", () => {
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
 		assert.include(comment, "🔴 **Confidence 4/10** · risky as written")
 		assert.include(comment, "<sub>1 critical −3 · 0/1 new units observable −1</sub>")
-		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
 		assert.include(comment, "<details><summary>🔴 <b>Critical</b> · gap</summary>")
 	})
 
@@ -1748,27 +1761,29 @@ describe("buildPublication", () => {
 		assert.include(comment, "1 critical −3 · 1 note")
 	})
 
-	it("folds what was checked away, with findings or without", () => {
-		const render = (findings: PrReviewReport["findings"]) =>
-			renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
-				report: new PrReviewReport({
-					...report(findings),
-					checked: ["OrgId is filtered (`q.ts:4`)"],
-				}),
-				partial: false,
-				headSha: HEAD,
-				repositoryUrl: REPO_URL,
-			})
+	// The comment is read on every push; evidence and inventories are one click away on the check.
+	it("keeps what was checked and the coverage table on the check run, and points the comment there", () => {
+		const input = {
+			report: new PrReviewReport({ ...report([]), checked: ["OrgId is filtered (`q.ts:4`)"] }),
+			partial: false,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		}
+		const check = renderCheckSummary(input)
 		assert.include(
-			render([]),
+			check,
 			"<details><summary>What was checked</summary>\n\n- OrgId is filtered (`q.ts:4`)",
 		)
-		assert.include(
-			render([
-				{ path: "a.ts", line: 1, category: "correctness", severity: "warn", title: "t", body: "b" },
-			]),
-			"<details><summary>What was checked</summary>",
-		)
+		assert.include(check, "Observability coverage: 0 of 1 changes observable")
+		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), input)
+		assert.notInclude(comment, "What was checked</summary>")
+		assert.notInclude(comment, "Observability coverage")
+		assert.include(comment, "coverage and telemetry details are on the Maple / review check")
+		const bare = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
+			...input,
+			report: new PrReviewReport({ ...report([]), coverage: [] }),
+		})
+		assert.notInclude(bare, "on the Maple / review check")
 	})
 
 	it("shows the confidence and reason, held down by what the findings allow", () => {
@@ -1788,14 +1803,14 @@ describe("buildPublication", () => {
 			})
 		assert.include(
 			render([]),
-			"🟢 **Confidence 10/10** · safe to merge\nSmall change, verified end to end.\n<sub>no findings · tests covered · risk low</sub>",
+			"🟢 **Confidence 10/10** · safe to merge. Small change, verified end to end.\n<sub>no findings · tests covered · risk low</sub>",
 		)
 		const critical = render([
 			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
 		])
 		assert.include(
 			critical,
-			"🔴 **Confidence 4/10** · risky as written\nHeld at 4 because a critical finding is open.",
+			"🔴 **Confidence 4/10** · risky as written. Held at 4 because a critical finding is open.",
 		)
 		assert.notInclude(critical, "verified end to end")
 		const partial = render([], true)

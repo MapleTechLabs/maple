@@ -440,6 +440,60 @@ describe("record_finding", () => {
 		}
 	}
 
+	// An inline comment the author reads in ten seconds: the body says what breaks, the fix is below it.
+	it("refuses an essay-length finding with what to cut, then saves the rewrite", async () => {
+		const { ledger, save } = setup()
+		const essay = { ...RETRY, body: Array.from({ length: 70 }, (_, i) => `word${i}`).join(" ") }
+		const refused = await save(essay)
+		assert.isTrue(Result.isFailure(refused))
+		const message = Result.isFailure(refused) ? refused.failure.message : ""
+		assert.include(message, "src/orders.ts:42")
+		assert.include(message, "its body is 70 words, over 60")
+		assert.lengthOf(ledger.findings(), 0)
+		assert.isTrue(Result.isSuccess(await save(RETRY)))
+		assert.lengthOf(ledger.findings(), 1)
+	})
+
+	it("stops refusing length after a few tries, so a finding is never lost to it", async () => {
+		const { ledger, save } = setup()
+		const essay = (line: number) => ({
+			...RETRY,
+			line,
+			title: `finding ${line}`,
+			suggestion: Array.from({ length: 40 }, () => "fix").join(" "),
+		})
+		const outcomes = []
+		for (const line of [1, 2, 3, 4, 5]) outcomes.push(Result.isSuccess(await save(essay(line))))
+		assert.deepStrictEqual(outcomes, [false, false, false, false, true])
+		assert.lengthOf(ledger.findings(), 1)
+	})
+
+	// A close-out is the pass's last call: refusing it would lose the review.
+	it("never refuses a close-out for length", async () => {
+		const { filed, submit } = setup([], true)
+		const result = await submit({
+			verdict: "issues",
+			summary: "Adds a retry to the order client.",
+			findings: [{ ...RETRY, body: Array.from({ length: 61 }, () => "w").join(" ") }],
+		})
+		assert.isTrue(Result.isSuccess(result))
+		assert.lengthOf(filed[0]!.report.findings, 1)
+	})
+
+	it("refuses a submission with an overlong finding once, then records it as given", async () => {
+		const { filed, submit } = setup()
+		const submission: PrReviewSubmission = {
+			verdict: "issues",
+			summary: "Adds a retry to the order client.",
+			findings: [{ ...RETRY, body: Array.from({ length: 61 }, () => "w").join(" ") }],
+		}
+		const first = await submit(submission)
+		assert.isTrue(Result.isFailure(first))
+		assert.include(Result.isFailure(first) ? first.failure.message : "", "over 60")
+		assert.isTrue(Result.isSuccess(await submit(submission)))
+		assert.lengthOf(filed[0]!.report.findings, 1)
+	})
+
 	it("saves a finding and adds it to the submitted report, dropping a restatement", async () => {
 		const { filed, ledger, save, submit } = setup()
 		assert.isTrue(Result.isSuccess(await save(RETRY)))
