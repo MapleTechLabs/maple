@@ -205,9 +205,12 @@ describe("installNetworkCapture", () => {
 	it("blanks a credential key's whole value when it is an object, and a bare pass field", async () => {
 		const realFetch = window.fetch
 		window.fetch = async () =>
-			new Response('{"password":{"current":"hunter2","next":"hunter3"},"user":"ada"}', {
-				headers: { "content-type": "application/json" },
-			})
+			new Response(
+				'{"password":{"current":"hunter2","next":"hunter3"},"user":"ada","raw":"user=ada&pass=hunter5"}',
+				{
+					headers: { "content-type": "application/json" },
+				},
+			)
 		try {
 			const events: SessionEvent[] = []
 			uninstall = installNetworkCapture(
@@ -218,7 +221,10 @@ describe("installNetworkCapture", () => {
 			await fetch("https://api.test/login", { method: "POST", body: "user=ada&pass=hunter4" })
 			await vi.waitFor(() => expect(events.some((event) => event.type === "network")).toBe(true))
 			const attrs = events.find((event) => event.type === "network")?.attrs ?? {}
-			expect(attrs["response.body"]).toBe('{"password":"[REDACTED]","user":"ada"}')
+			// A string value holding a form body is redacted too, and the JSON stays valid.
+			expect(attrs["response.body"]).toBe(
+				'{"password":"[REDACTED]","user":"ada","raw":"user=ada&pass=[REDACTED]"}',
+			)
 			expect(attrs["request.body"]).toBe("user=ada&pass=[REDACTED]")
 		} finally {
 			uninstall?.()

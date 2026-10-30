@@ -50,8 +50,11 @@ const REDACTED = "[REDACTED]"
  * a prefix too: a body cut mid-value still loses the value.
  */
 function redactCredentials(body: string): string {
-	const json = redactJson(body)
-	if (json !== undefined) return json
+	return redactJson(body) ?? redactText(body)
+}
+
+/** The text passes: JSON members and form fields, on a whole body or one string value. */
+function redactText(body: string): string {
 	return body
 		.replace(JSON_MEMBER, (member, key: string, colon: string) =>
 			CREDENTIAL_KEY.test(key) ? `"${key}"${colon}"${REDACTED}"` : member,
@@ -72,8 +75,13 @@ function redactJson(body: string): string | undefined {
 	if (start !== "{" && start !== "[") return undefined
 	try {
 		return JSON.stringify(
+			// A string value can itself carry `pass=…` or embedded JSON, so it gets the text passes.
 			JSON.parse(body, (key, value: unknown) =>
-				key !== "" && CREDENTIAL_KEY.test(key) ? REDACTED : value,
+				key !== "" && CREDENTIAL_KEY.test(key)
+					? REDACTED
+					: typeof value === "string"
+						? redactText(value)
+						: value,
 			),
 		)
 	} catch {
