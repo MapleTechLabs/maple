@@ -240,7 +240,7 @@ describe("buildReviewCompletion", () => {
 			"src/capture.ts:213 | warn | correctness | Queue can finish before the forced capture starts | " +
 			"A slow forced start lets the consumer ack the old session | Enqueue after the start returns | -\n" +
 			"src/capture.ts:40 | info | maintainability | Constant duplicated | Drifts | Share it | -"
-		const submitWith = () => {
+		const submitWith = (partial = false) => {
 			const filed: Array<SubmitPrReviewRequest> = []
 			const children = makeChildFindings()
 			children.observe(CHILD_ANSWER)
@@ -251,7 +251,7 @@ describe("buildReviewCompletion", () => {
 				(_org, _id, request) => Effect.sync(() => filed.push(request)),
 				makeRunUsage(),
 				MODEL_NAME,
-				false,
+				partial,
 				undefined,
 				undefined,
 				makeReviewLedger(),
@@ -306,6 +306,27 @@ describe("buildReviewCompletion", () => {
 				filed[0]!.report.findings.map((finding) => [finding.path, finding.category]),
 				[["src/queue.ts", "correctness"]],
 			)
+		})
+
+		it("files it straight away in a close-out, which is never refused", async () => {
+			const { filed, call } = submitWith(true)
+			assert.isTrue(Result.isSuccess(await call(CLEAN)))
+			assert.deepStrictEqual(
+				filed[0]!.report.findings.map((finding) => [finding.path, finding.line]),
+				[["src/capture.ts", 213]],
+			)
+		})
+
+		it("accepts a dismissal that spells the path with a leading ./", async () => {
+			const { filed, call } = submitWith()
+			const result = await call({
+				...CLEAN,
+				childDismissals: [
+					{ path: "./src/capture.ts", line: 213, reason: "The start resets the session." },
+				],
+			})
+			assert.isTrue(Result.isSuccess(result))
+			assert.lengthOf(filed[0]!.report.findings, 0)
 		})
 
 		it("records a review that dismisses it with a reason", async () => {

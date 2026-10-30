@@ -56,7 +56,12 @@ import {
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { mergeSavedFindings } from "@maple/backend/services/pr-review/findings"
-import { type ChildFindings, childFindingsRefusal, unaccountedChildFindings } from "./review-child-findings"
+import {
+	type ChildFindings,
+	childFindingsRefusal,
+	childFindingsToFile,
+	unaccountedChildFindings,
+} from "./review-child-findings"
 import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
 import { makeReviewLedger, type ReviewLedger } from "./review-ledger"
 
@@ -457,14 +462,15 @@ export const buildReviewCompletion = (
 				)
 			}
 			const unaccounted =
-				childFindings === undefined || partial
+				childFindings === undefined
 					? []
 					: unaccountedChildFindings(
 							childFindings.all(),
 							[...ledger.findings(), ...normalized.report.findings],
 							normalized.childDismissals,
 						)
-			if (unaccounted.length > 0 && !refusedChildren) {
+			// A close-out is not refused, but still files what the children found.
+			if (unaccounted.length > 0 && !partial && !refusedChildren) {
 				refusedChildren = true
 				return Effect.annotateCurrentSpan(
 					"maple.pr_review.unaccounted_child_findings",
@@ -476,13 +482,7 @@ export const buildReviewCompletion = (
 				)
 			}
 			// Refused once already: a peer's warning stands unless the reviewer says why it does not.
-			// An observability finding without an audit id is not postable as one; it stays a defect.
-			const childFiled = unaccounted.flatMap((raw) => {
-				const finding =
-					normalizePrReviewFinding(raw) ??
-					normalizePrReviewFinding({ ...raw, category: "correctness", checkId: null })
-				return finding === undefined ? [] : [finding]
-			})
+			const childFiled = childFindingsToFile(unaccounted)
 			const saved = [...ledger.findings(), ...childFiled]
 			const unreviewed =
 				normalized.report.verdict === "not_applicable" ? [] : (coverage?.unread() ?? [])

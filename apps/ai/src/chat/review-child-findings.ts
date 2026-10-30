@@ -4,7 +4,12 @@
  * A child's warning is a peer's finding: the parent may refute it, but not drop it unsaid. The
  * parent files each one or names it in `childDismissals` with why it does not hold.
  */
-import type { PrReviewChildDismissal, PrReviewFinding, PrReviewFindingSubmission } from "@maple/domain/http"
+import {
+	normalizePrReviewFinding,
+	type PrReviewChildDismissal,
+	type PrReviewFinding,
+	type PrReviewFindingSubmission,
+} from "@maple/domain/http"
 
 export interface ChildFindings {
 	/** One child's answer, as the parent received it. */
@@ -58,8 +63,14 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 /** How far apart two models may anchor the same issue. */
 const LINE_SLACK = 5
 
+/** Repo-relative, so `./src/a.ts`, `/src/a.ts` and `src/a.ts` compare equal. */
+const canonicalPath = (path: string) => path.trim().replace(/^(\.\/|\/)+/, "")
+
 const near = (a: { path: string; line: number }, b: { path?: string | null; line?: unknown }) =>
-	a.path === b.path?.trim() && typeof b.line === "number" && Math.abs(a.line - b.line) <= LINE_SLACK
+	typeof b.path === "string" &&
+	canonicalPath(a.path) === canonicalPath(b.path) &&
+	typeof b.line === "number" &&
+	Math.abs(a.line - b.line) <= LINE_SLACK
 
 /** The children's warnings and criticals the review neither files nor dismisses. */
 export const unaccountedChildFindings = (
@@ -76,6 +87,20 @@ export const unaccountedChildFindings = (
 		return match === undefined
 	})
 }
+
+/**
+ * Child warnings as findings the review can post. An observability one without an audit id is not
+ * postable as observability; it is still a defect, so it is filed as correctness.
+ */
+export const childFindingsToFile = (
+	unaccounted: ReadonlyArray<PrReviewFindingSubmission>,
+): ReadonlyArray<PrReviewFinding> =>
+	unaccounted.flatMap((raw) => {
+		const finding =
+			normalizePrReviewFinding(raw) ??
+			normalizePrReviewFinding({ ...raw, category: "correctness", checkId: null })
+		return finding === undefined ? [] : [finding]
+	})
 
 /** The one-time refusal `submit_review` answers with while a child's warning is unaccounted for. */
 export const childFindingsRefusal = (unaccounted: ReadonlyArray<PrReviewFindingSubmission>): string =>

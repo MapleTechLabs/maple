@@ -40,7 +40,7 @@ import {
 	PR_REVIEW_CONTINUE_PROMPT,
 } from "./prompts"
 import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
-import { makeChildFindings } from "./review-child-findings"
+import { childFindingsToFile, makeChildFindings, unaccountedChildFindings } from "./review-child-findings"
 import { makeReviewCoverage } from "./review-coverage"
 import { reviewFailureError, reviewFailureReason } from "./review-failure"
 import { makeReviewLedger } from "./review-ledger"
@@ -702,8 +702,15 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 							),
 						)
 				}
-				// Findings the pass saved are posted as a partial rather than lost with the report.
-				const saved = review?.ledger.findings() ?? []
+				// Findings the pass saved, and its children's warnings, are posted as a partial rather
+				// than lost with the report.
+				const ledgered = review?.ledger.findings() ?? []
+				const saved = [
+					...ledgered,
+					...childFindingsToFile(
+						unaccountedChildFindings(review?.childFindings?.all() ?? [], ledgered, []),
+					),
+				]
 				if (!submitted && prReviewId !== undefined && review !== undefined && saved.length > 0) {
 					submitted = yield* reviews
 						.submitReview(
