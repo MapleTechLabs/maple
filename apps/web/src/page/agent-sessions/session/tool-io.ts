@@ -161,7 +161,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 			h.Class(
 				cn(
 					"flex items-stretch",
-					half.direction === "in" ? "bg-black/[0.06]" : "border-border/60 border-t",
+					half.direction === "in" ? "bg-muted/50" : "border-border/60 border-t",
 					half.direction === "out" && half.isFailed && "bg-severity-error/5",
 				),
 			),
