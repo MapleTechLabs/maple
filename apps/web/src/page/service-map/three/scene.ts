@@ -6,6 +6,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { type CameraCommand, cameraRig, type Size } from "./camera"
 import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
+import { quacker } from "./quack"
 import { type Layout, layoutOf, sceneryKey, sceneryOf, worldOf } from "./world"
 
 // The 3D service map: an orthographic, flat renderer (dpr 1 to 2, antialias, alpha), its demand
@@ -63,18 +64,23 @@ const makeOrbit = (camera: THREE.OrthographicCamera, canvas: HTMLCanvasElement) 
 	return orbit
 }
 
+const aim = (camera: THREE.Camera, event: MouseEvent, size: Size): THREE.Raycaster => {
+	const raycaster = new THREE.Raycaster()
+	raycaster.setFromCamera(
+		new THREE.Vector2((event.offsetX / size.width) * 2 - 1, -(event.offsetY / size.height) * 2 + 1),
+		camera,
+	)
+	return raycaster
+}
+
 /** Raycasts the machines (R3F's event objects), nearest first; ids from `userData.pickId`. */
 const pick = (
-	raycaster: THREE.Raycaster,
 	camera: THREE.Camera,
 	world: THREE.Object3D,
 	event: MouseEvent,
 	size: Size,
 ): ReadonlyArray<string> => {
-	raycaster.setFromCamera(
-		new THREE.Vector2((event.offsetX / size.width) * 2 - 1, -(event.offsetY / size.height) * 2 + 1),
-		camera,
-	)
+	const raycaster = aim(camera, event, size)
 	return world.children
 		.filter((node) => typeof node.userData.pickId === "string")
 		.flatMap((machine) =>
@@ -84,6 +90,22 @@ const pick = (
 		)
 		.toSorted((a, b) => a.hit.distance - b.hit.distance)
 		.map(({ id }) => id)
+}
+
+/** The `userData.quack` of the duck under the pointer, if any. */
+const pickDuck = (
+	camera: THREE.Camera,
+	scenery: THREE.Object3D,
+	event: MouseEvent,
+	size: Size,
+): (() => void) | null => {
+	const ducks: Array<THREE.Object3D> = []
+	scenery.traverse((node) => {
+		if (typeof node.userData.quack === "function") ducks.push(node)
+	})
+	const raycaster = aim(camera, event, size)
+	const hit = ducks.find((duck) => raycaster.intersectObject(duck, true).length > 0)
+	return hit === undefined ? null : hit.userData.quack
 }
 
 /** Builds (or keeps) the scenery and rebuilds the world for `input`. */
@@ -203,6 +225,7 @@ export function startScene(
 	invalidate()
 	const observer = new ResizeObserver(resize)
 	observer.observe(container)
+	const quacks = quacker()
 	// R3F's click semantics: a miss within 2 px (and the canvas's own 5 px check) clears the
 	// selection; a machine click must start on that machine and travel at most DRAG_TOLERANCE.
 	const onPointerDown = (event: PointerEvent) => {
@@ -211,15 +234,24 @@ export function startScene(
 			y: event.clientY,
 			offsetX: event.offsetX,
 			offsetY: event.offsetY,
-			hits: [...pick(new THREE.Raycaster(), camera, state.built.world.root, event, state.size)],
+			hits: [...pick(camera, state.built.world.root, event, state.size)],
 		}
 	}
 	const onClick = (event: MouseEvent) => {
-		const hits = pick(new THREE.Raycaster(), camera, state.built.world.root, event, state.size)
+		const hits = pick(camera, state.built.world.root, event, state.size)
 		const delta = Math.hypot(event.offsetX - state.pressed.offsetX, event.offsetY - state.pressed.offsetY)
 		const first = hits[0]
 		if (first === undefined) {
 			const moved = Math.hypot(event.clientX - state.pressed.x, event.clientY - state.pressed.y)
+			const duck =
+				moved <= DRAG_TOLERANCE ? pickDuck(camera, state.built.scenery.root, event, state.size) : null
+			if (duck !== null) {
+				duck()
+				quacks.quack()
+				// Enough demand frames to play the whole hop on a paused map.
+				state.pending = 60
+				return
+			}
 			if (delta <= 2 && moved <= DRAG_TOLERANCE) onSelect(null)
 			return
 		}
@@ -249,6 +281,7 @@ export function startScene(
 			target.removeEventListener("click", onClick)
 			orbit.removeEventListener("change", invalidate)
 			orbit.dispose()
+			quacks.close()
 			disposeScope(state.built.world.scope, state.built.world.root)
 			disposeScope(state.built.scenery.scope, state.built.scenery.root)
 			renderer.dispose()
