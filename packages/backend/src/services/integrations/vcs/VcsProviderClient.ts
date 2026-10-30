@@ -222,6 +222,23 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
+	/**
+	 * Hide this App's earlier comments whose body starts with `prefix` as outdated, all but the one
+	 * carrying `keep`, so a pull request shows only its latest review. Answers how many it hid.
+	 */
+	readonly hideEarlierComments: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: { readonly number: number; readonly prefix: string; readonly keep: string },
+	) => Effect.Effect<
+		number,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
 	/** Reply on a finding's thread, then resolve it: a later head fixed it. */
 	readonly resolveReviewThread: (
 		installation: VcsInstallation,

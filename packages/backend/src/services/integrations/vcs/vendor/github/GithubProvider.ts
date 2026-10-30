@@ -1384,6 +1384,23 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						Effect.mapError(toVcsError),
 					)
 
+			// Needs `pull_requests: write`, like the comments it hides.
+			const hideEarlierComments: VcsProviderClient["hideEarlierComments"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.minimizeEarlierComments(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.number,
+						input.prefix,
+						input.keep,
+					)
+					.pipe(Effect.mapError(toVcsError))
+
 			const resolveReviewThread: VcsProviderClient["resolveReviewThread"] = (
 				installation,
 				repo,
@@ -1843,6 +1860,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchPullRequestContext,
 				fetchReviewThreads,
 				resolveReviewThread,
+				hideEarlierComments,
 				fetchChangesSince,
 				fetchPullRequestHead,
 				postPullRequestReply,

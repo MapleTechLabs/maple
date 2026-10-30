@@ -21,9 +21,9 @@ To review a repository that is not listed, click **Manage GitHub access** and gr
 
 Every push to a reviewed pull request gets a review of its head commit:
 
-- **A summary comment** with a confidence score and its reason, every finding, the deploy steps found in the diff, and the production traffic of the changed code.
+- **A summary comment** with a confidence score and its reason, every finding, and the deploy steps found in the diff. The summaries of earlier pushes are folded away as outdated, so the pull request shows one review.
 - **An inline review** with a comment on the line of each finding. A finding with an exact fix carries a GitHub suggestion you apply in one click.
-- **A check run** on the head commit.
+- **A check run** on the head commit, which also lists what the review checked, the production traffic of the changed code and the telemetry it adds or removes.
 
 Each finding has a severity (`critical`, `warn` or `info`) and a lens: correctness, security, performance, observability, convention, tests or maintainability. A finding keeps its handle (`F3`) across pushes. When a later push fixes it, the review marks it resolved.
 

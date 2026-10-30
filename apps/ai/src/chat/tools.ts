@@ -18,6 +18,8 @@ import {
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
 	normalizePrReviewFinding,
+	overlongFinding,
+	PR_REVIEW_FINDING_WORDS,
 	normalizePrReviewSubmission,
 	normalizeTriageSubmission,
 	PR_REVIEW_MAX_FINDINGS,
@@ -373,6 +375,16 @@ export const recordFindingTool = Tool.make(RECORD_FINDING, {
 	failureMode: "return",
 })
 
+/** Length refusals one pass gets from `record_finding` before it saves what it is given. */
+const MAX_LENGTH_REFUSALS = 4
+
+const overlongRefusal = (overlong: ReadonlyArray<string>) =>
+	[
+		`Not saved: ${overlong.length === 1 ? "a finding is" : `${overlong.length} findings are`} too long for an inline comment.`,
+		...overlong.map((item) => `- ${item}`),
+		`Rewrite ${overlong.length === 1 ? "it" : "them"}: the body in at most ${PR_REVIEW_FINDING_WORDS.body} words says what goes wrong, on what input, and what the user sees; the fix goes only in suggestion (at most ${PR_REVIEW_FINDING_WORDS.suggestion} words) or replacement, never in the body. Then call again.`,
+	].join("\n")
+
 /** What the model reads back after a `record_finding` call. */
 const recordAnswer = (outcome: ReturnType<ReviewLedger["record"]>, count: number): string => {
 	switch (outcome) {
@@ -443,6 +455,9 @@ export const buildReviewCompletion = (
 	let submitted = false
 	let refusedUnread = false
 	let refusedChildren = false
+	let refusedLong = false
+	// Bounded, so a model that cannot shorten a finding still files it rather than looping.
+	let lengthRefusals = 0
 	// Once only: a second call with files still unread is the agent submitting anyway. A close-out
 	// files what it has and a not_applicable verdict reads nothing, so neither is held.
 	const unreadToRefuse = (verdict: PrReviewVerdict): ReadonlyArray<string> => {
@@ -480,6 +495,17 @@ export const buildReviewCompletion = (
 					Effect.andThen(
 						Effect.fail(new MapleToolFailure({ message: childFindingsRefusal(unaccounted) })),
 					),
+				)
+			}
+			// Once only, and never for a close-out: a second call keeps what it was given.
+			const overlong =
+				partial || refusedLong
+					? []
+					: normalized.report.findings.flatMap((finding) => overlongFinding(finding) ?? [])
+			if (overlong.length > 0) {
+				refusedLong = true
+				return Effect.annotateCurrentSpan("maple.pr_review.overlong_findings", overlong.length).pipe(
+					Effect.andThen(Effect.fail(new MapleToolFailure({ message: overlongRefusal(overlong) }))),
 				)
 			}
 			// Refused once already: a peer's warning stands unless the reviewer says why it does not.
@@ -556,6 +582,15 @@ export const buildReviewCompletion = (
 						message:
 							"Not saved: a finding needs a path and a positive new-side line from a hunk you read, and an observability finding needs its audit check id.",
 					}),
+				)
+			}
+			const overlong = overlongFinding(finding)
+			if (overlong !== undefined && lengthRefusals < MAX_LENGTH_REFUSALS) {
+				lengthRefusals++
+				return Effect.annotateCurrentSpan("maple.pr_review.record_outcome", "overlong").pipe(
+					Effect.andThen(
+						Effect.fail(new MapleToolFailure({ message: overlongRefusal([overlong]) })),
+					),
 				)
 			}
 			const outcome = ledger.record(finding)

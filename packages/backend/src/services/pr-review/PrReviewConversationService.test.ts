@@ -112,6 +112,7 @@ const layerFor = (
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed([]),
 		resolveReviewThread: unused,
+		hideEarlierComments: unused,
 		fetchChangesSince: unused,
 		fetchPullRequestHead: () => Effect.succeed(options.pr ?? head()),
 		postPullRequestReply: (_installation, _repo, input) =>

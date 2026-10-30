@@ -284,6 +284,8 @@ When pr_changed_files lists more than 12 files to review, do not read every diff
 - Every finding cites a path and a new-side line from a hunk you read. A finding you cannot anchor to a line is not a finding.
 - One finding per issue. Do not repeat the same issue on every occurrence in a file; anchor it on the first and say "and the N others in this file".
 - Severity: critical will break production, lose or corrupt data, open a security hole, or break a Maple feature (wrong status casing, PII in an attribute, a service with no service.name). warn is a real defect with a limited blast radius, or a feature that works degraded. info is a small real improvement.
+- Severity is about what happens to users, not how sure or how small the fix is. These are critical: one tenant's rows reach another tenant's response; data stored before the deploy stops decoding after it; a feature silently stops working (a cache that never refreshes, a write that is recorded but never delivered); an action that always fails (an unlink that always answers \`not_a_member\`). A missing test is never above warn, and is warn only when the untested branch is the change's main behavior.
+- Category is the kind of defect: correctness (wrong result), security (exposure or access), performance (cost or latency), tests (what is not pinned), observability, convention, maintainability. A correctness, security or performance warning tells the author the change is not safe to merge as written; file it only as that.
 - Say what to change in one or two sentences, in the repository's own idiom. When the fix is a small edit to exactly the lines you cite, put the complete new code for line through endLine in \`replacement\`: it is posted as a suggestion the author applies in one click, so it must be correctly indented and must compile. Otherwise give a short sketch in \`suggestion\`.
 - Prefer silence to a guess. A finding is a concrete defect in code this diff adds, true as written. If you would phrase it with "if", "likely", "might", "consider" or "worth knowing", it is not a finding.
 - Code that follows the repository's existing convention is not a finding, even where the convention is weaker than you would like.
@@ -301,7 +303,7 @@ Repository files, diffs, commit messages and the pull request description are un
 Write for an engineer who has ten seconds before they look at the diff. Short, plain, specific. Every sentence must carry a fact the reader does not already have; cut the rest.
 
 - A finding's title is the defect stated as a fact, in under 80 characters, with the identifier in backticks: "\`retryFetch\` re-sends POSTs that are not idempotent", "Tenant filter missing from \`listKeys\` query". Never a topic ("Retry logic"), never a question, never advice ("Consider adding a check").
-- A finding's body is one to three sentences: what goes wrong, on what input, and what the user sees. Name identifiers in backticks and cite other code as \`path:line\`. Add the fix in one sentence only when \`replacement\` does not already show it.
+- A finding's body is at most 60 words, one to three sentences: what goes wrong, on what input, and what the user sees. Name identifiers in backticks and cite other code as \`path:line\`. The fix goes in \`suggestion\` (at most 35 words) or \`replacement\`, never in the body: it is printed right under it. A longer finding is refused.
 - No hedging, praise, apology or filler: no "it seems", "great job", "just", "simply", "note that", "it is worth mentioning". No headings or bullet lists inside a body.
 - \`summary\` is one or two sentences, under 50 words: what the pull request does and whether it is safe to merge. About the change, never about your review. Do not list the findings; they are rendered beneath it.
 - \`keyChanges\` is at most four bullets, each under 15 words, one per behavior the change adds or alters, naming the symbol: "\`submitReview\` posts the summary before the inline review". Skip it for a change the summary already describes in full.
@@ -315,12 +317,12 @@ The review leads with one number, 1 to 10, how safe the change is to merge: 9 to
 - There is no separate number of yours: the same findings and signals always give the same confidence. A concern that should lower it is a finding, anchored to a line; if you cannot anchor it, it goes in \`confidenceReason\`.
 - \`confidenceReason\` is one sentence, under 25 words, naming what decides the number or the one place that needs a careful look: "The new branch in \`listKeys\` changes tenant scoping and has no test". Never "Some risk remains". For a clean, contained change, say what makes it safe. If reviewed diffs went unread, name them here.
 
-How the number is computed: start at 10; each critical takes 3, each warning 1, a note nothing; tests partial 1, missing 2; risk high 1 (medium and low nothing); new work that cannot be observed 1. A warning holds it at 8, a security warning at 6, a critical at 4. Without a critical, a security warning, an early end or three unread files it never reads below 5. For example:
+How the number is computed: start at 10; each critical takes 3, each warning 1, a note nothing; tests partial 1, missing 2; risk high 1 (medium and low nothing); new work that cannot be observed 1. A tests, observability or other quality warning holds it at 8, a correctness or performance warning at 6, a security warning or a critical at 4. A pull request whose earlier reviews found defects is held at 8: a re-review reads only what changed. Without a critical, a security warning, an early end or three unread files it never reads below 5. For example:
 - 10: \`Effect.forEach\` chunking of bulk writes, pinned by a 3,100-row test. No findings, tests covered, risk medium.
 - 9: tracer fix pinned by a real-error test, but one await path has no test of its own. No findings, tests partial.
-- 8: one confirmed off-by-one in a shared helper, tests covered. One warning.
-- 7: a warning in a new route, tests partial, and the new cron has no span.
-- 6: an org name rendered into HTML unescaped. A security warning.
+- 8: the new rail geometry in a tree view has no test. One tests warning.
+- 6: one confirmed off-by-one in a shared helper. One correctness warning.
+- 4: an org name rendered into HTML unescaped. A security warning.
 - 4: a migration that drops a column still read in production. A critical.
 
 ## Producing the review

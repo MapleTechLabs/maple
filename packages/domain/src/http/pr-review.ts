@@ -636,6 +636,32 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 	})
 }
 
+/**
+ * Words a finding's body and its sketched fix may take. The posted bodies ran a median of 74 words
+ * and most closed by restating the fix printed under them; past these an inline comment reads as an
+ * essay. The fix goes in `suggestion` or `replacement`, never in the body.
+ */
+export const PR_REVIEW_FINDING_WORDS = { body: 60, suggestion: 35 } as const
+
+const wordCount = (text: string | undefined) => (text ?? "").split(/\s+/).filter((word) => word !== "").length
+
+/** What the reviewer is told to cut, or `undefined` for a finding within {@link PR_REVIEW_FINDING_WORDS}. */
+export const overlongFinding = (finding: PrReviewFinding): string | undefined => {
+	const body = wordCount(finding.body)
+	const suggestion = wordCount(finding.suggestion)
+	const over = [
+		...(body > PR_REVIEW_FINDING_WORDS.body
+			? [`its body is ${body} words, over ${PR_REVIEW_FINDING_WORDS.body}`]
+			: []),
+		...(suggestion > PR_REVIEW_FINDING_WORDS.suggestion
+			? [`its suggestion is ${suggestion} words, over ${PR_REVIEW_FINDING_WORDS.suggestion}`]
+			: []),
+	]
+	return over.length === 0
+		? undefined
+		: `${finding.path}:${finding.line} "${finding.title}": ${over.join(", and ")}`
+}
+
 /** Most findings one review keeps; the same cap applies to what `record_finding` saves. */
 export const PR_REVIEW_MAX_FINDINGS = MAX_FINDINGS
 
@@ -836,7 +862,7 @@ export interface PrReviewConfidenceResult {
 	/** A finding or an early end held the number below what the other signals gave. */
 	readonly capped: boolean
 	/** What held it down, when something did. */
-	readonly cappedBy?: "critical" | "warn" | "partial" | "unread"
+	readonly cappedBy?: "critical" | "warn" | "partial" | "unread" | "history"
 }
 
 /** Unread reviewed files at which a review reads as "needs attention"; fewer hold it at 8. */
@@ -868,20 +894,52 @@ const findingPhrase = (n: number, label: string) => `${n} ${label}${n === 1 ? ""
 const factor = (label: string, points: number) => (points > 0 ? `${label} −${points}` : label)
 
 /**
+ * Categories whose warning is a defect in what the change does, not in how it is tested or seen.
+ * An open one reads "needs attention": "likely safe to merge" beside a known bug is not true.
+ */
+export const PR_REVIEW_DEFECT_CATEGORIES: ReadonlySet<string> = new Set([
+	"correctness",
+	"security",
+	"performance",
+])
+
+/** A warning or critical in a defect category: one that holds a review at "needs attention". */
+export const isPrReviewDefect = (finding: {
+	readonly severity: PrReviewSeverity
+	readonly category?: string
+}) =>
+	finding.severity !== "info" &&
+	finding.category !== undefined &&
+	PR_REVIEW_DEFECT_CATEGORIES.has(finding.category)
+
+/**
+ * A finding in a defect category, notes included: what an earlier review of the same pull request
+ * counts toward its history once fixed. A bug filed as a note is still a bug the pass found, and on
+ * the review corpus counting them made a 9 or 10 rarer before a review that found another.
+ */
+export const isPrReviewDefectHistory = (finding: { readonly category?: string }) =>
+	finding.category !== undefined && PR_REVIEW_DEFECT_CATEGORIES.has(finding.category)
+
+/**
  * The review's confidence that the change is safe to merge, 1 to 10, computed from the report alone
  * so the same findings and signals always give the same number, and the comment can show the sum.
  *
  * It starts at 10 and takes whole points off per critical and warning, for untested behavior, a
  * high-risk area and new work that cannot be observed. Caps hold it down: a critical at 4 (2 with
- * more than one), a security warning at 6, any warning at 8, a review that ended early at 6, and
- * reviewed files left unread at 8 (6 from three files). Without one of the dangers that cap at 6 or
- * below, it never reads under 5. The reviewer's own number is not an input: a concern that should
- * move it is a finding. `undefined` for a pull request with nothing to review.
+ * more than one), a security warning at 4, a correctness or performance warning at 6, any other
+ * warning at 8, a review that ended early at 6, reviewed files left unread at 8 (6 from three
+ * files), and a pull request whose earlier reviews found defects at 8: a re-review reads only what
+ * changed, and on such pull requests the next pass found another defect about a quarter of the time.
+ * Without a critical, a security warning, an early end or three unread files it never reads under
+ * 5. The reviewer's own number is not an input: a concern that should move it is a finding.
+ * `undefined` for a pull request with nothing to review.
  */
 export const confidencePrReview = (
 	report: PrReviewReport,
 	carriedOpen: ReadonlyArray<{ readonly severity: PrReviewSeverity; readonly category?: string }> = [],
 	partial = false,
+	/** Defects ({@link isPrReviewDefectHistory}) earlier reviews of this pull request found and saw fixed. */
+	priorDefects = 0,
 ): PrReviewConfidenceResult | undefined => {
 	if (report.verdict === "not_applicable" && report.findings.length === 0 && carriedOpen.length === 0) {
 		return undefined
@@ -893,6 +951,10 @@ export const confidencePrReview = (
 	const warns = count("warn")
 	const notes = count("info")
 	const securityWarn = all.some((finding) => finding.severity === "warn" && finding.category === "security")
+	const defectWarn = all.find(
+		(finding) =>
+			finding.severity === "warn" && finding.category !== "security" && isPrReviewDefect(finding),
+	)
 	const unobservable = report.coverage.filter((unit) => !unit.instrumented).length
 	const unread = report.unreviewed?.length ?? 0
 	const D = PR_REVIEW_CONFIDENCE_DEDUCTION
@@ -918,31 +980,60 @@ export const confidencePrReview = (
 	const factors = [
 		...deductions.map(([label, points]) => factor(label, points)),
 		...(unread > 0 ? [`${unread} ${unread === 1 ? "file" : "files"} not read`] : []),
+		...(priorDefects > 0 ? [`${findingPhrase(priorDefects, "defect")} fixed in earlier rounds`] : []),
 	]
 	const total = deductions.reduce((sum, [, points]) => sum + points, 0)
 
-	// Every cap that applies; the tightest is what the comment says held it down.
+	// Every cap that applies; the tightest is what the comment says held it down. A danger cap
+	// lifts the floor, so the number can read red.
 	const caps: ReadonlyArray<{
 		readonly at: number
 		readonly by: NonNullable<PrReviewConfidenceResult["cappedBy"]>
 		readonly why: string
+		readonly danger?: true
 	}> = [
 		...(criticals > 1
-			? [{ at: 2, by: "critical" as const, why: `${criticals} critical findings are open` }]
+			? [
+					{
+						at: 2,
+						by: "critical" as const,
+						why: `${criticals} critical findings are open`,
+						danger: true as const,
+					},
+				]
 			: []),
-		...(criticals === 1 ? [{ at: 4, by: "critical" as const, why: "a critical finding is open" }] : []),
-		...(securityWarn ? [{ at: 6, by: "warn" as const, why: "a security warning is open" }] : []),
-		...(partial ? [{ at: 6, by: "partial" as const, why: "the review ended early" }] : []),
+		...(criticals === 1
+			? [{ at: 4, by: "critical" as const, why: "a critical finding is open", danger: true as const }]
+			: []),
+		...(securityWarn
+			? [{ at: 4, by: "warn" as const, why: "a security warning is open", danger: true as const }]
+			: []),
+		...(defectWarn !== undefined
+			? [{ at: 6, by: "warn" as const, why: `a ${defectWarn.category} warning is open` }]
+			: []),
+		...(partial
+			? [{ at: 6, by: "partial" as const, why: "the review ended early", danger: true as const }]
+			: []),
 		...(unread > 0
 			? [
 					{
 						at: unread >= PR_REVIEW_UNREAD_CAP_FILES ? 6 : 8,
 						by: "unread" as const,
 						why: `${unread} reviewed ${unread === 1 ? "file was" : "files were"} not read`,
+						...(unread >= PR_REVIEW_UNREAD_CAP_FILES ? { danger: true as const } : undefined),
 					},
 				]
 			: []),
 		...(warns > 0 ? [{ at: 8, by: "warn" as const, why: "a warning is open" }] : []),
+		...(priorDefects > 0
+			? [
+					{
+						at: 8,
+						by: "history" as const,
+						why: `earlier reviews of this pull request found ${findingPhrase(priorDefects, "defect")}`,
+					},
+				]
+			: []),
 	]
 	const binding = caps.reduce<(typeof caps)[number] | undefined>(
 		(tightest, cap) => (tightest === undefined || cap.at < tightest.at ? cap : tightest),
@@ -950,7 +1041,7 @@ export const confidencePrReview = (
 	)
 	const cap = binding?.at ?? PR_REVIEW_CONFIDENCE_MAX
 	// Ordinary warnings and soft signals say "needs attention" at worst; red is for the capped dangers.
-	const floor = cap > 6 ? PR_REVIEW_CONFIDENCE_FLOOR : 1
+	const floor = caps.some((item) => item.danger === true) ? 1 : PR_REVIEW_CONFIDENCE_FLOOR
 	const computed = Math.max(floor, PR_REVIEW_CONFIDENCE_MAX - total)
 	const confidence = toConfidence(Math.min(cap, computed))
 	if (binding !== undefined && computed > cap) {

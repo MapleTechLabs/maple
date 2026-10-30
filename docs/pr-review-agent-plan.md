@@ -106,7 +106,18 @@ gaps always score the same, and it is stored in `pr_reviews.score`.
 
 The headline is now a confidence level from 1 to 10 (`confidencePrReview`, same file), from "do not
 merge" to "safe to merge". It starts from the quality score, deducts for missing tests, a high-risk
-area and unobservable new work in whole points, and is capped by findings. The quality score is shown beneath it.
+area and unobservable new work in whole points, and is capped by findings: a critical or a security
+warning at 4, a correctness or performance warning at 6 ("needs attention", never "likely safe"
+beside a known bug), any other warning at 8, and a pull request whose earlier reviews found
+correctness, security or performance findings that are now fixed at 8, since a re-review reads only
+what changed. The quality score is shown beneath it.
+
+The caps are measured, not guessed: `review-signal.corpus.test.ts` reads back every review Maple
+published on a range of real pull requests (`__fixtures__/review-signal/`, refreshed with
+`bun run --cwd apps/ai review:signal <owner/repo> <first> <last>`), renders and scores each again with
+the current code, and holds bars on what a reader is shown, on a safe-band number beside an open
+defect, on heads a person labelled as missed (`labels.json`), and on how often the review after a 9 or
+10 found a new defect. It prints the before and after table on every run.
 
 ### Publishing to GitHub
 
@@ -123,9 +134,12 @@ area and unobservable new work in whole points, and is capped by findings. The q
 2. **One summary comment per review**, always, authored by the App and found again by its hidden
    `<!-- maple-pr-review <reviewId> <attempt> -->` line (`prReviewCommentMarker`). A "reviewing"
    notice is replaced by that review's result; the next review of the pull request starts its own
-   comment (#1051). It carries the confidence, verdict, counts, summary, findings linked to their
-   lines at the head SHA, what to change, and the coverage table. The comment and the check
-   summary share `renderReviewMarkdown`.
+   comment (#1051). Once it is posted, the App's earlier review comments on the pull request are
+   folded away as outdated (`hideEarlierComments`, GraphQL `minimizeComment`), so a reader sees one
+   review rather than one per push; a refusal is logged and leaves them open. It carries the
+   confidence, verdict, counts, summary and findings linked to their lines at the head SHA. The
+   comment and the check summary share `renderReviewMarkdown`; what was checked, the coverage
+   table, production traffic and the telemetry inventory are on the check run only.
 3. **A `COMMENT` review** with the findings at or above the repository's inline threshold (`warn`
    by default) inline, only when there are any. GitHub refuses the whole review with a 422 when
    one line is outside the diff; the inline notes are then dropped, since the summary comment
