@@ -84,9 +84,10 @@ const GENERIC_BASENAME =
 const stripExtension = (name: string) => name.replace(/\.[^.]+$/, "")
 
 /**
- * A changed file that at least this many, and this share, of one service's open issues point at is
- * where the service's frames land, not where its errors come from: a bundle shipped without source
- * maps names its entry file in every frame.
+ * A changed file that at least this many, and this share, of one service's open issues point at by
+ * name alone is where the service's frames land, not where its errors come from: a bundle shipped
+ * without source maps names its entry file in every frame. A frame with the file's directory is
+ * source-located and always kept.
  */
 const CATCH_ALL_MIN_ISSUES = 5
 const CATCH_ALL_SHARE = 0.5
@@ -96,18 +97,22 @@ const CATCH_ALL_SHARE = 0.5
  * extension, since a frame may be the compiled `.js` of a `.ts` file), or by a distinctive name
  * alone.
  */
-export const frameMatchesPath = (frame: string, path: string): boolean => {
+export const frameMatchesPath = (frame: string, path: string): boolean =>
+	frameMatchOf(frame, path) !== undefined
+
+/** How a top frame names a changed file: with its directory, by its name alone, or not at all. */
+const frameMatchOf = (frame: string, path: string): "directory" | "name" | undefined => {
 	const haystack = frame.toLowerCase().replace(/\\/g, "/")
 	const segments = path.toLowerCase().split("/")
 	const name = stripExtension(segments.at(-1) ?? "")
-	if (name.length === 0) return false
+	if (name.length === 0) return undefined
 	const dir = segments.at(-2)
-	if (dir !== undefined && haystack.includes(`${dir}/${name}.`)) return true
-	return (
-		!GENERIC_BASENAME.test(name) &&
+	if (dir !== undefined && haystack.includes(`${dir}/${name}.`)) return "directory"
+	return !GENERIC_BASENAME.test(name) &&
 		name.length >= 6 &&
 		new RegExp(`[/\\s(@]${escapeRegExp(name)}\\.`).test(haystack)
-	)
+		? "name"
+		: undefined
 }
 
 /**
@@ -303,15 +308,19 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		})
 	}
 
-	const matched = input.issues.map((issue) => ({
-		issue,
-		file: files.find((candidate) => frameMatchesPath(issue.topFrame, candidate.path)),
-	}))
+	const matched = input.issues.map((issue) => {
+		const file = files.find((candidate) => frameMatchesPath(issue.topFrame, candidate.path))
+		return {
+			issue,
+			file,
+			byName: file !== undefined && frameMatchOf(issue.topFrame, file.path) === "name",
+		}
+	})
 	const issuesPerService = new Map<string, number>()
 	const matchesPerFile = new Map<string, number>()
-	for (const { issue, file } of matched) {
+	for (const { issue, file, byName } of matched) {
 		issuesPerService.set(issue.service, (issuesPerService.get(issue.service) ?? 0) + 1)
-		if (file === undefined) continue
+		if (file === undefined || !byName) continue
 		const key = `${issue.service}\u0000${file.path}`
 		matchesPerFile.set(key, (matchesPerFile.get(key) ?? 0) + 1)
 	}
@@ -323,8 +332,8 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 	}
 
 	const linkedIssues = matched
-		.flatMap(({ issue, file }) =>
-			file === undefined || isCatchAll(issue.service, file.path)
+		.flatMap(({ issue, file, byName }) =>
+			file === undefined || (byName && isCatchAll(issue.service, file.path))
 				? []
 				: [
 						new PrReviewLinkedIssue({

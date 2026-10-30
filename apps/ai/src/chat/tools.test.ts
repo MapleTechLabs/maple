@@ -280,6 +280,34 @@ describe("buildReviewCompletion", () => {
 			assert.equal(filed[0]!.report.verdict, "issues")
 		})
 
+		it("files a child's observability warning without an audit id as a correctness finding", async () => {
+			const filed: Array<SubmitPrReviewRequest> = []
+			const children = makeChildFindings()
+			children.observe(
+				"src/queue.ts:7 | warn | observability | Consumer has no span | Untraced | Wrap it | -",
+			)
+			const completion = buildReviewCompletion(
+				REVIEW_SESSION,
+				tenantFor(human),
+				{ kind: "autonomous" },
+				(_org, _id, request) => Effect.sync(() => filed.push(request)),
+				makeRunUsage(),
+				MODEL_NAME,
+				false,
+				undefined,
+				undefined,
+				makeReviewLedger(),
+				children,
+			)!
+			const call = () => Effect.runPromise(Effect.result(completion.handlers[SUBMIT_REVIEW](CLEAN)))
+			assert.isTrue(Result.isFailure(await call()))
+			assert.isTrue(Result.isSuccess(await call()))
+			assert.deepStrictEqual(
+				filed[0]!.report.findings.map((finding) => [finding.path, finding.category]),
+				[["src/queue.ts", "correctness"]],
+			)
+		})
+
 		it("records a review that dismisses it with a reason", async () => {
 			const { filed, call } = submitWith()
 			const result = await call({

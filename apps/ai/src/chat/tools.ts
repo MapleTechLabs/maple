@@ -476,8 +476,11 @@ export const buildReviewCompletion = (
 				)
 			}
 			// Refused once already: a peer's warning stands unless the reviewer says why it does not.
+			// An observability finding without an audit id is not postable as one; it stays a defect.
 			const childFiled = unaccounted.flatMap((raw) => {
-				const finding = normalizePrReviewFinding(raw)
+				const finding =
+					normalizePrReviewFinding(raw) ??
+					normalizePrReviewFinding({ ...raw, category: "correctness", checkId: null })
 				return finding === undefined ? [] : [finding]
 			})
 			const saved = [...ledger.findings(), ...childFiled]
@@ -509,6 +512,7 @@ export const buildReviewCompletion = (
 						"maple.pr_review.resolved": resolved.length,
 						"maple.pr_review.child_findings": childFindings?.all().length ?? 0,
 						"maple.pr_review.child_findings_filed_unaccounted": childFiled.length,
+						"maple.pr_review.child_findings_dropped": unaccounted.length - childFiled.length,
 						"maple.pr_review.child_dismissals": normalized.childDismissals.length,
 						...(normalized.childDismissals.length > 0
 							? {

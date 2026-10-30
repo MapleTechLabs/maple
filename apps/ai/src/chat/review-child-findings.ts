@@ -66,13 +66,16 @@ export const unaccountedChildFindings = (
 	children: ReadonlyArray<PrReviewFindingSubmission>,
 	filed: ReadonlyArray<PrReviewFinding>,
 	dismissed: ReadonlyArray<PrReviewChildDismissal>,
-): ReadonlyArray<PrReviewFindingSubmission> =>
-	children.filter(
-		(child) =>
-			child.severity !== "info" &&
-			!filed.some((finding) => near(finding, child)) &&
-			!dismissed.some((dismissal) => near(dismissal, child)),
-	)
+): ReadonlyArray<PrReviewFindingSubmission> => {
+	// One filed finding or dismissal accounts for one child warning, so two nearby ones need two.
+	const claimed = new Set<PrReviewFinding | PrReviewChildDismissal>()
+	return children.filter((child) => {
+		if (child.severity === "info") return false
+		const match = [...filed, ...dismissed].find((entry) => !claimed.has(entry) && near(entry, child))
+		if (match !== undefined) claimed.add(match)
+		return match === undefined
+	})
+}
 
 /** The one-time refusal `submit_review` answers with while a child's warning is unaccounted for. */
 export const childFindingsRefusal = (unaccounted: ReadonlyArray<PrReviewFindingSubmission>): string =>

@@ -429,4 +429,22 @@ describe("analyzeTelemetry", () => {
 			[["charge", "src/payments/charge.ts"]],
 		)
 	})
+
+	it("keeps a service's issues whose frames name the changed file's directory", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("src/orders/checkout.ts", "@@ -1,1 +1,1 @@\n-a\n+b")],
+			catalog,
+			sources: [],
+			issues: ["a", "b", "c", "d", "e"].map((id, i) => ({
+				id,
+				fingerprintHash: id,
+				title: `Error ${id}`,
+				service: "orders",
+				topFrame: `at step${i} (/app/dist/orders/checkout.js:${10 * (i + 1)}:5)`,
+				occurrences: 10,
+				lastSeenAt: 1,
+			})),
+		})
+		assert.lengthOf(telemetry.linkedIssues, 5)
+	})
 })

@@ -1,3 +1,4 @@
+import { PrReviewFinding } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
 import { parseChildFindings, unaccountedChildFindings } from "./review-child-findings"
 
@@ -39,6 +40,24 @@ describe("parseChildFindings", () => {
 })
 
 describe("unaccountedChildFindings", () => {
+	it("lets one filed finding account for one of two nearby warnings", () => {
+		const children = parseChildFindings(
+			[
+				"src/a.ts:10 | warn | correctness | A | Why | Fix | -",
+				"src/a.ts:12 | warn | security | B | Why | Fix | -",
+			].join("\n"),
+		)
+		const filed = new PrReviewFinding({
+			path: "src/a.ts",
+			line: 11,
+			category: "correctness",
+			severity: "warn",
+			title: "A",
+			body: "Why",
+		})
+		assert.lengthOf(unaccountedChildFindings(children, [filed], []), 1)
+	})
+
 	it("gates every severity but a note", () => {
 		const children = parseChildFindings(
 			[
