@@ -5,7 +5,7 @@ import { parseWarehouseDateTime, relativeRangeSeconds } from "@maple/query-engin
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdStyles } from "@maple/ui/styles/ui/kbd"
-import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
+import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
 import { Clock, Effect, Option, Schema, type Stream } from "effect"
 import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -503,7 +503,7 @@ export const SelectTimeZone = Command.define("SelectTimeZone", {
 const HOTKEY_ATTRIBUTE = "time-range-hotkey"
 
 type KeyPress = Readonly<{
-	key: string
+	key?: string | undefined
 	metaKey: boolean
 	ctrlKey: boolean
 	altKey: boolean
@@ -512,7 +512,11 @@ type KeyPress = Readonly<{
 
 /** The `time.open` combo: a bare "D" (either case), no modifier held. */
 export const isOpenKey = (event: KeyPress): boolean =>
-	event.key.toLowerCase() === "d" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+	pressedKey(event).toLowerCase() === "d" &&
+	!event.metaKey &&
+	!event.ctrlKey &&
+	!event.altKey &&
+	!event.shiftKey
 
 /**
  * `useAppHotkey("time.open", () => setOpen(true))`: "D" outside fields and dialogs, unmodified,

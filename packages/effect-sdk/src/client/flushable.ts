@@ -32,6 +32,7 @@ import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
 import { browserDocument, browserNavigator, browserResourceAttributes } from "./browser-globals.js"
+import { isBrowserNoise } from "./error-noise.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import type { PrivacyOptions } from "./track.js"
@@ -359,7 +360,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		// louder error tracker.
 		const error: unknown =
 			event.error ?? (event.message && event.filename ? new Error(event.message) : undefined)
-		if (error === undefined) return
+		if (error === undefined || isBrowserNoise(error, event.filename)) return
 		captureException(error, {
 			name: "browser.uncaught_error",
 			attributes: {
@@ -375,6 +376,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
+		if (isBrowserNoise(event.reason)) return
 		captureException(event.reason, {
 			name: "browser.unhandled_rejection",
 			attributes: { "maple.exception.source": "unhandledrejection" },
