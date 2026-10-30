@@ -8,6 +8,7 @@ import { errorState } from "../../../ui/error-state"
 import { icon, type IconName } from "../../../ui/icon"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { panel, panelHeader } from "../../../ui/panel"
+import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -51,7 +52,7 @@ const KINDS: ReadonlyArray<{ kind: MonitorKind; label: string; icon: IconName; d
 	},
 ]
 
-/** The kind as one row of radios; the picked kind's sentence sits under it. */
+/** The kind as a segmented control; the picked kind's sentence sits under it. */
 const kindPicker = (h: H, model: Model): Html =>
 	h.section(
 		[h.AriaLabel("Type"), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
@@ -60,44 +61,20 @@ const kindPicker = (h: H, model: Model): Html =>
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-2")],
 				[
-					h.div(
-						[
-							h.Role("radiogroup"),
-							h.AriaLabel("Monitor type"),
-							h.Class("flex w-fit flex-wrap gap-1 rounded-md border bg-surface-sunken p-0.5"),
-						],
-						KINDS.map((option) => {
-							const isSelected = model.form.kind === option.kind
-							const isDisabled = model.editingId !== null && !isSelected
-							return h.button(
-								[
-									h.Key(option.kind),
-									h.Type("button"),
-									h.Role("radio"),
-									h.AriaChecked(isSelected),
-									...(isDisabled ? [h.Disabled(true)] : []),
-									h.OnClick(Message.PickedKind({ kind: option.kind })),
-									h.Class(
-										cn(
-											"flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-sm transition-colors",
-											isSelected
-												? "bg-background text-foreground shadow-xs ring-1 ring-border"
-												: "text-muted-foreground hover:text-foreground",
-											isDisabled &&
-												"cursor-not-allowed opacity-50 hover:text-muted-foreground",
-										),
-									),
-								],
-								[
-									icon(h, option.icon, {
-										size: 14,
-										className: isSelected ? "text-primary" : undefined,
-									}),
-									option.label,
-								],
-							)
-						}),
-					),
+					segmentedSelect(h, {
+						ariaLabel: "Monitor type",
+						size: "sm",
+						className: "w-fit",
+						value: model.form.kind,
+						onChange: (kind) => Message.PickedKind({ kind }),
+						// Editing keeps the kind: the others stay visible but can't be picked.
+						options: KINDS.map((option) => ({
+							value: option.kind,
+							label: option.label,
+							icon: icon(h, option.icon, { size: 14 }),
+							isDisabled: model.editingId !== null && option.kind !== model.form.kind,
+						})),
+					}),
 					h.p(
 						[h.Class("text-xs text-muted-foreground")],
 						[KINDS.find((option) => option.kind === model.form.kind)?.description ?? ""],
