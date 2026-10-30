@@ -94,7 +94,7 @@ export const statusMixBar = <M>(h: HtmlBuilder<M>, mix: StatusMix | null, classN
 		mix === null
 			? []
 			: [
-					h.div([h.Class("h-full bg-chart-3"), h.Style({ width: `${mix.ok * 100}%` })]),
+					h.div([h.Class(cn("h-full", TONE_FILL.ok)), h.Style({ width: `${mix.ok * 100}%` })]),
 					h.div([
 						h.Class(cn("h-full", TONE_FILL.warn)),
 						h.Style({ width: `${mix.client * 100}%` }),

@@ -226,7 +226,7 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 			? [h.p([h.Class("text-2xs text-muted-foreground")], ["No status codes recorded in this window."])]
 			: codes.slice(0, 4).map((code) => {
 					const tone = code.name.startsWith("2")
-						? { text: TONE_TEXT.info, bar: "bg-chart-3" }
+						? { text: TONE_TEXT.info, bar: TONE_FILL.ok }
 						: isServerError(code.name)
 							? { text: TONE_TEXT.crit, bar: TONE_FILL.crit }
 							: { text: TONE_TEXT.warn, bar: TONE_FILL.warn }

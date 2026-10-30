@@ -22,11 +22,11 @@ import type { SpanNodeData } from "../trace-data"
 export const ROW_PITCH = ROW_HEIGHT + ROW_GAP
 
 // The border carries the hue; the fill is that colour washed into the page background, so bars
-// read in both themes.
+// read in both themes. Oklab, not oklch: the backgrounds carry a hue that would rotate the mix.
 const NEUTRAL_BORDER = "var(--muted-foreground)"
 const ERROR_BORDER = "var(--severity-error)"
 const wash = (color: string, percent: number): string =>
-	`color-mix(in oklch, ${color} ${percent}%, var(--background))`
+	`color-mix(in oklab, ${color} ${percent}%, var(--background))`
 
 const barBorderFromHue = (hue: number | null, isError: boolean, statusPreset: boolean): string => {
 	if (isError && !statusPreset) return ERROR_BORDER
