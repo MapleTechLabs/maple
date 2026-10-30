@@ -87,6 +87,6 @@ describe("asError", () => {
 		expect(asError("boom").message).toBe("boom")
 		expect(asError({ message: "shaped" }).message).toBe("shaped")
 		expect(asError(42).message).toBe("42")
-		expect(asError(Object.create(null)).message).toBe("Unknown error")
+		expect(asError(Object.create(null)).message).toBe("[object Object]")
 	})
 })

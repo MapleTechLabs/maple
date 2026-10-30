@@ -22,6 +22,7 @@
 	},
 	"devDependencies": {
 		"@vitest/browser-playwright": "catalog:",
+		"fast-check": "^4.10.2",
 		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"

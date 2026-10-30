@@ -35,6 +35,7 @@ jobs:
             ingest: ${{ steps.filter.outputs.ingest == 'true' }}
             collector: ${{ steps.filter.outputs.collector == 'true' }}
             terraform: ${{ steps.filter.outputs.terraform == 'true' }}
+            browser-sdk: ${{ steps.filter.outputs.browser-sdk == 'true' }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -154,6 +155,13 @@ jobs:
                       terraform:
                         - '.github/workflows/ci.yml'
                         - 'packages/terraform-provider-maple/**'
+                      # Everything bundled into @maple-dev/browser's dist.
+                      browser-sdk:
+                        - *base
+                        - 'packages/browser/**'
+                        - 'packages/browser-session/**'
+                        - 'packages/sdk-core/**'
+                        - 'packages/tsconfig.browser.dts.json'
 
             - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
               with:
@@ -787,6 +795,41 @@ jobs:
                     exit 1
                   fi
 
+    # The built @maple-dev/browser in a real Chromium against a fake ingest: replay
+    # playback, privacy across every channel, unload delivery and consent.
+    browser-sdk-e2e:
+        name: Browser SDK e2e
+        needs: changes
+        if: ${{ needs.changes.outputs.browser-sdk == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: ./.github/actions/setup
+              with:
+                  install-filters: "@maple-dev/browser"
+
+            - name: Read Playwright version
+              id: playwright
+              working-directory: packages/browser
+              run: echo "version=$(bun -e 'console.log(require("playwright/package.json").version)')" >> "$GITHUB_OUTPUT"
+
+            - name: Cache Chromium
+              id: browser-cache
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
+            - name: Install Chromium
+              if: steps.browser-cache.outputs.cache-hit != 'true'
+              working-directory: packages/browser
+              run: bun run playwright install chromium
+
+            - name: Build the SDK and run the e2e suite
+              run: bun run --cwd packages/browser test:e2e
+
     # The single required check, and branch protection must require only this one:
     # skipped path-filtered jobs never report, so requiring them would hang forever.
     ci:
@@ -806,6 +849,7 @@ jobs:
             - ingest-rust
             - otel-collector
             - terraform-provider
+            - browser-sdk-e2e
         steps:
             - name: Fail if any job failed or was cancelled
               if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

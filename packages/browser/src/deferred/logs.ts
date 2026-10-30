@@ -73,13 +73,31 @@ export function startLogs(
 		ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
 		JsonLogsSerializer,
 	)
+	// Set from `pagehide` until that flush settles: the processor exports a few
+	// microtasks after the event, so the unload has to be remembered for it.
+	let leaving = false
 	const exporter = new ConsentLogExporter(
 		newestFirstOnExit(
 			stashOffline ? new OfflineLogExporter(otlp, stashOffline) : otlp,
 			JsonLogsSerializer,
+			0,
+			() => leaving,
 		),
 	)
-	// The browser processor flushes on `visibilitychange → hidden` and `pagehide` itself.
+	// The browser processor flushes on `visibilitychange → hidden` itself, but listens
+	// for `pagehide` on the document, where it never fires. Registered after the
+	// tracing listener, so the spans' flush goes first and leaves room for this one.
+	const onPageHide = (): void => {
+		leaving = true
+		void provider
+			.forceFlush()
+			.catch(() => {})
+			.finally(() => {
+				leaving = false
+			})
+	}
+	const canListen = typeof window !== "undefined" && typeof window.addEventListener === "function"
+	if (canListen) window.addEventListener("pagehide", onPageHide)
 	const provider = new LoggerProvider({
 		resource: resourceFromAttributes(resourceAttributes(config)),
 		processors: [new BatchLogRecordProcessor({ exporter, scheduledDelayMillis: 2_000 })],
@@ -97,6 +115,7 @@ export function startLogs(
 		}),
 	)
 	return async () => {
+		if (canListen) window.removeEventListener("pagehide", onPageHide)
 		detachLogSink()
 		await provider.shutdown()
 	}
