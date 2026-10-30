@@ -111,12 +111,14 @@ const CodeReviewIssuesSearchFields = {
 	severity: Schema.optional(PrReviewSeverity),
 	category: Schema.optional(PrReviewCategory),
 	state: Schema.optional(PrReviewFindingStatus),
+	q: Schema.optional(Schema.String),
 	review: Schema.optional(PrReviewId),
 }
 
 const CodeReviewListSearchFields = {
 	...CodeReviewSearchFields,
 	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
+	q: Schema.optional(Schema.String),
 	review: Schema.optional(PrReviewId),
 }
 

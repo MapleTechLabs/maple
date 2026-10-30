@@ -67,4 +67,25 @@ describe("code review issues", () => {
 			expectView(role("button", { name: "Clear filters" })).toExist(),
 		)
 	})
+
+	test("the search box puts the trimmed term in the URL once its debounce elapses", () => {
+		const typed = pageUpdate(windowed().model, Message.ChangedSearchDraft({ value: "  auth bug " }))
+		expect(names(typed.commands)).toEqual(["WaitCodeReviewIssuesSearchDebounce"])
+		const stale = pageUpdate(typed.model, Message.ElapsedSearchDebounce({ generation: 0 }))
+		expect(stale.outMessage).toBeUndefined()
+		const elapsed = pageUpdate(
+			typed.model,
+			Message.ElapsedSearchDebounce({ generation: typed.model.searchGeneration }),
+		)
+		expect(elapsed.outMessage).toMatchObject({ url: "/code-review/issues?q=auth+bug" })
+	})
+
+	test("a new search re-reads the list with the term, keeping what was typed", () => {
+		const typed = pageUpdate(windowed().model, Message.ChangedSearchDraft({ value: "auth " }))
+		const searched = routeChanged(typed.model, { search: { q: "auth" } }, context)
+		expect(searched.model.searchDraft).toBe("auth ")
+		expect(names(searched.commands)).toContain("FetchCodeReviewFindings")
+		const cleared = routeChanged(searched.model, { search: {} }, context)
+		expect(cleared.model.searchDraft).toBe("")
+	})
 })

@@ -320,6 +320,41 @@ describe("PrReviewAnalyticsService", () => {
 			}),
 		),
 	)
+
+	it.effect("searches reviews by author, title or number", () =>
+		provide(
+			Effect.gen(function* () {
+				yield* seed
+				const service = yield* PrReviewAnalyticsService
+				const numbers = (q: string) =>
+					Effect.map(service.listReviews(ORG, { ...window, q }), (response) =>
+						response.reviews.map((review) => review.number),
+					)
+				assert.deepStrictEqual(yield* numbers("LIN"), [11])
+				assert.deepStrictEqual(yield* numbers("pr 11"), [11])
+				assert.deepStrictEqual(yield* numbers("#11"), [11])
+				// LIKE wildcards are literal.
+				assert.deepStrictEqual(yield* numbers("%"), [])
+			}),
+		),
+	)
+
+	it.effect("searches findings by title, path, pull request or number", () =>
+		provide(
+			Effect.gen(function* () {
+				yield* seed
+				const service = yield* PrReviewAnalyticsService
+				const handles = (q: string) =>
+					Effect.map(service.listFindings(ORG, { ...window, q }), (response) =>
+						response.findings.map((finding) => finding.handle),
+					)
+				assert.deepStrictEqual(yield* handles("finding 2"), ["F2"])
+				assert.deepStrictEqual((yield* handles("index.ts")).toSorted(), ["F1", "F2"])
+				assert.deepStrictEqual((yield* handles("10")).toSorted(), ["F1", "F2"])
+				assert.deepStrictEqual(yield* handles("other/api"), [])
+			}),
+		),
+	)
 })
 
 describe("mergePrReviewConfig", () => {

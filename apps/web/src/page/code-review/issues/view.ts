@@ -20,6 +20,7 @@ import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
+import { searchBox } from "../kit/search"
 import { type FilterKey, Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
@@ -93,7 +94,8 @@ const isFiltered = (model: Model) =>
 	model.search.author !== undefined ||
 	model.search.severity !== undefined ||
 	model.search.category !== undefined ||
-	model.search.state !== undefined
+	model.search.state !== undefined ||
+	model.search.q !== undefined
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.findings.data, {
@@ -158,7 +160,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			active: "issues",
 			search: model.search,
 			toolbar: filters.actions,
-			filters: [...filters.filters, ...filterSelects(h, model)],
+			filters: [
+				searchBox(h, {
+					id: "code-review-issues-search",
+					value: model.searchDraft,
+					placeholder: "Search issues…",
+					onInput: (value) => Message.ChangedSearchDraft({ value }),
+				}),
+				...filters.filters,
+				...filterSelects(h, model),
+			],
 			overlay: h.submodel({
 				slotId: "code-review-issues-sheet",
 				model: model.sheet,
