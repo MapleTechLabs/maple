@@ -23,6 +23,7 @@ import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, ResolveThemeColors, type ThemeColors } from "../../../charts/theme-colors"
 import { chartEmpty, chartLoading } from "../../../ui/chart-state"
+import { textLink } from "../../../ui/text-link"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -403,17 +404,12 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 													: `${inputs.uncappedCount} features have no cap`,
 												...(model.isAdmin
 													? [
-															h.button(
-																[
-																	h.Class(
-																		"font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50",
-																	),
-																	...(model.isSavingCap
-																		? [h.Disabled(true)]
-																		: []),
-																	h.Type("button"),
-																	h.OnClick(Message.ClickedSetCaps()),
-																],
+															textLink(
+																h,
+																{
+																	onClick: Message.ClickedSetCaps(),
+																	isDisabled: model.isSavingCap,
+																},
 																["Set caps"],
 															),
 														]

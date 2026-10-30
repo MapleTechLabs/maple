@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
+import { cardButtonClass } from "../../../ui/card-button"
 import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
@@ -126,13 +127,8 @@ const templateTile = <M>(h: HtmlBuilder<M>, template: AlertTemplate, serviceName
 	return h.a(
 		[
 			h.Href(createHref({ template: template.id, serviceName })),
-			h.Class(
-				cn(
-					"group flex flex-col gap-1.5 rounded-md border bg-card p-3 text-left transition-colors",
-					"hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-					tone?.hoverBorder,
-				),
-			),
+			// A link, so it keeps the anchor and borrows the card button's surface.
+			h.Class(cardButtonClass(false, cn("flex flex-col gap-1.5 p-3", tone?.hoverBorder))),
 		],
 		[
 			h.div(

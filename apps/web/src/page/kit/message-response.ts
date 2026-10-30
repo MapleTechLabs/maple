@@ -2,6 +2,7 @@ import * as Markdown from "@foldkit/markdown"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { iconButton } from "../../ui/icon-button"
 
 // Lightweight markdown over Streamdown:
 // laid out with Streamdown's element classes. The parser loads on first use, never at startup.
@@ -66,17 +67,19 @@ const codeAction = <M>(
 	d: string,
 	onClick: M | undefined,
 ): Html =>
-	h.button(
-		[
-			h.AriaLabel(label),
-			h.Class(
-				"cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
-			),
-			h.DataAttribute("streamdown", slot),
-			h.Title(label),
-			h.Type("button"),
-			...(onClick === undefined ? [] : [h.OnClick(onClick)]),
-		],
+	iconButton(
+		h,
+		{
+			label,
+			size: "icon-xs",
+			hasTooltip: false,
+			className: "text-muted-foreground hover:text-foreground",
+			attributes: [
+				h.DataAttribute("streamdown", slot),
+				h.Title(label),
+				...(onClick === undefined ? [] : [h.OnClick(onClick)]),
+			],
+		},
 		[glyph(h, d)],
 	)
 

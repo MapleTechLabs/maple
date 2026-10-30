@@ -6,6 +6,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "../../../ui/button"
+import { textLink } from "../../../ui/text-link"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { meter } from "../../../ui/meter"
@@ -108,16 +109,9 @@ const spendTile = (h: H, model: Model): Html => {
 			value: "Unavailable",
 			valueClassName: "text-base",
 			compact: true,
-			action: h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedRetry()),
-					h.Class(
-						"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
-					),
-				],
-				["Retry"],
-			),
+			action: textLink(h, { tone: "muted", className: "text-2xs", onClick: Message.ClickedRetry() }, [
+				"Retry",
+			]),
 			subline: "Couldn't load the spend limit",
 		})
 	if (settings === null) {
@@ -138,14 +132,9 @@ const spendTile = (h: H, model: Model): Html => {
 		tone: isReached ? "warn" : undefined,
 		compact: true,
 		action: model.isAdmin
-			? h.button(
-					[
-						h.Type("button"),
-						h.OnClick(Message.ClickedSpendAndModels()),
-						h.Class(
-							"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
-						),
-					],
+			? textLink(
+					h,
+					{ tone: "muted", className: "text-2xs", onClick: Message.ClickedSpendAndModels() },
 					["Edit limit"],
 				)
 			: undefined,
@@ -555,11 +544,13 @@ const topFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAud
 	return panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Open leads",
-			action: h.a(
-				[
-					h.Href(hrefOf(AppRoute.SecurityFindings({ search: {} }))),
-					h.Class("text-xs text-muted-foreground underline-offset-2 hover:underline"),
-				],
+			action: textLink(
+				h,
+				{
+					tone: "muted",
+					className: "text-xs",
+					href: hrefOf(AppRoute.SecurityFindings({ search: {} })),
+				},
 				["All findings"],
 			),
 		}),

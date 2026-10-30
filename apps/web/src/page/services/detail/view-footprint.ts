@@ -12,6 +12,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { button } from "../../../ui/button"
 import { delta } from "../../../ui/delta"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
@@ -276,16 +277,18 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 			...visible.map((target) => stripChip(h, target, onViewAll)),
 			...(hiddenCount > 0
 				? [
-						h.button(
+						button(
+							h,
+							{
+								variant: "dashed",
+								size: "xs",
+								// Sized like the chips it follows, not like a toolbar button.
+								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
+								attributes: [h.OnClick(onViewAll)],
+							},
 							[
-								h.Type("button"),
-								h.OnClick(onViewAll),
-								h.Class(
-									"inline-flex items-center rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-								),
-							],
-							[`+${hiddenCount} more`],
-						),
+							`+${hiddenCount} more`,
+						]),
 					]
 				: []),
 			viewAllButton(h, onViewAll),

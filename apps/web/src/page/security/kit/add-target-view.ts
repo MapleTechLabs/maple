@@ -10,6 +10,7 @@ import * as Checkbox from "../../../ui/checkbox"
 import * as Field from "../../../ui/field"
 import { formDialog } from "../../../ui/form-dialog"
 import { icon } from "../../../ui/icon"
+import { iconButton } from "../../../ui/icon-button"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
 import * as RadioGroup from "../../../ui/radio-group"
 import * as SelectView from "../../../ui/select-view"
@@ -230,13 +231,14 @@ const scopeChip = (h: H, path: string): Html =>
 		[
 			icon(h, "FolderIcon", { size: 12, className: "text-muted-foreground" }),
 			h.span([h.Class("truncate")], [path]),
-			h.button(
-				[
-					h.Type("button"),
-					h.AriaLabel(`Remove ${path}`),
-					h.Class("rounded-xs p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"),
-					h.OnClick(Message.RemovedScopePath({ path })),
-				],
+			iconButton(
+				h,
+				{
+					label: `Remove ${path}`,
+					size: "icon-2xs",
+					className: "text-muted-foreground hover:text-foreground pointer-coarse:after:hidden",
+					attributes: [h.OnClick(Message.RemovedScopePath({ path }))],
+				},
 				[icon(h, "XmarkIcon", { size: 12 })],
 			),
 		],

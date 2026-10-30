@@ -3,6 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
+import { textLink } from "../../../ui/text-link"
 import { filterChip } from "../../../ui/filter-chip"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelHeader } from "../../../ui/panel"
@@ -162,16 +163,9 @@ const ledgerToggle = (h: H, label: string): Html =>
 	h.div(
 		[h.Class("border-t px-4 py-2.5")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.Class(
-						"text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground",
-					),
-					h.OnClick(Message.ToggledLedger()),
-				],
-				[label],
-			),
+			textLink(h, { tone: "muted", className: "text-xs underline", onClick: Message.ToggledLedger() }, [
+				label,
+			]),
 		],
 	)
 
@@ -323,15 +317,14 @@ export const eventsPanel = (
 					h.div(
 						[h.Class("border-t px-4 py-2.5")],
 						[
-							h.button(
-								[
-									h.Type("button"),
-									h.Disabled(model.isLoadingOlder),
-									h.Class(
-										"text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground",
-									),
-									h.OnClick(Message.ClickedLoadOlder()),
-								],
+							textLink(
+								h,
+								{
+									tone: "muted",
+									className: "text-xs underline",
+									onClick: Message.ClickedLoadOlder(),
+									isDisabled: model.isLoadingOlder,
+								},
 								[model.isLoadingOlder ? "Loading older events…" : "Load older events"],
 							),
 						],

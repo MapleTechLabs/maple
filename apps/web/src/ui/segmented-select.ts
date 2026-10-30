@@ -160,7 +160,8 @@ export const segmentedSelect = <T extends string, M>(
 							size: groupSize,
 							variant: "segment",
 							className: cn(
-								"relative",
+								// `isolate` keeps the -z-10 pill above the track's tint instead of behind it.
+								"relative isolate",
 								segmentItemHeight[size],
 								size === "xs" && XS_ITEM,
 								"data-pressed:border-transparent data-pressed:bg-transparent data-pressed:shadow-none dark:data-pressed:bg-transparent",
@@ -168,7 +169,8 @@ export const segmentedSelect = <T extends string, M>(
 						}),
 					),
 					slot: "toggle",
-					tabIndex: isSelected ? 0 : -1,
+					// Stateless, so no arrow-key roving: every enabled option is its own tab stop.
+					tabIndex: (option.isDisabled ?? false) ? -1 : 0,
 					attributes: [
 						h.AriaDisabled(option.isDisabled ?? false),
 						h.AriaLabel(option.ariaLabel ?? option.label),

@@ -6,6 +6,7 @@ import { hasMultipleRegions } from "../../lib/region"
 import type { ClerkOrganization, UserInvitation } from "../../platform/clerk"
 import { switchTargetOf } from "../../shell/clerk-org-switcher"
 import { button } from "../../ui/button"
+import { textLink } from "../../ui/text-link"
 import { icon, type IconName } from "../../ui/icon"
 import { input } from "../../ui/input"
 import { Message, type Model, MountDitherField } from "./create-org"
@@ -41,12 +42,13 @@ const header = (h: H, email: string | null): Html =>
 				[h.Class("flex min-w-0 items-center gap-3 text-xs")],
 				[
 					...(email === null ? [] : [h.span([h.Class("truncate text-muted-foreground")], [email])]),
-					h.button(
-						[
-							h.Type("button"),
-							h.Class("shrink-0 text-foreground underline-offset-4 hover:underline"),
-							h.OnClick(Message.ClickedSignOut()),
-						],
+					textLink(
+						h,
+						{
+							tone: "muted",
+							className: "shrink-0 text-foreground underline-offset-4",
+							onClick: Message.ClickedSignOut(),
+						},
 						["Sign out"],
 					),
 				],

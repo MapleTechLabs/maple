@@ -122,14 +122,14 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 
 const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 	if (!model.isNotesOpen)
-		return h.button(
-			[
-				h.Type("button"),
-				h.OnClick(Message.ClickedAddNotes()),
-				h.Class(
-					"flex w-full items-center gap-1.5 rounded-md border border-dashed border-border-subtle px-3 py-1.5 text-left text-xs text-muted-foreground hover:border-border hover:text-foreground",
-				),
-			],
+		return button(
+			h,
+			{
+				variant: "dashed",
+				size: "xs",
+				className: "w-full justify-start",
+				attributes: [h.OnClick(Message.ClickedAddNotes())],
+			},
 			[icon(h, "PlusIcon", { size: 12 }), "Add notes"],
 		)
 	const state = fieldStateOf(form.notes, model.mountedForm?.notes)

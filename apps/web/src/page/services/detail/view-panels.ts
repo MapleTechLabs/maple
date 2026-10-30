@@ -6,6 +6,7 @@ import * as Chart from "../../../charts/chart"
 import * as Sparkline from "../../../charts/sparkline"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { backdropBar } from "../../../ui/meter"
+import { textLink } from "../../../ui/text-link"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { truncatedText } from "../../../ui/truncated-text"
 import { errorRateValue, latencyValue } from "../../../ui/values"
@@ -32,16 +33,7 @@ export const sectionCard = (
 
 /** `ViewAllButton`: jumps from an Overview card to the full tab. */
 export const viewAllButton = (h: H, onClick: Message): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(onClick),
-			h.Class(
-				"text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-			),
-		],
-		["View all →"],
-	)
+	textLink(h, { className: "text-xs", onClick }, ["View all →"])
 
 const PANEL_LIMIT = 5
 const SPARKLINE_MODEL = Chart.init()

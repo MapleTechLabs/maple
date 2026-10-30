@@ -7,6 +7,7 @@ import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../../ui/icon"
+import { textLink } from "../../../../ui/text-link"
 import { listFooter } from "../../../../ui/list-footer"
 import { panel, panelHeader, panelTitle } from "../../../../ui/panel"
 import { segmentedSelect } from "../../../../ui/segmented-select"
@@ -26,8 +27,6 @@ type H = HtmlBuilder<Message>
 
 const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken"
-const MONO_LINK =
-	"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
 
 const warehouseTimeToMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
 
@@ -250,12 +249,14 @@ const stored = (
 			...(collectedFrom === null ? [] : [h.span([], ["collected from ", collectedFrom])]),
 			...(canSearchLive
 				? [
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.ClickedSearchLive()),
-								h.Class(cn(MONO_LINK, "ml-auto")),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								isMono: true,
+								className: "ml-auto text-3xs",
+								onClick: Message.ClickedSearchLive(),
+							},
 							["Search all ", dimension.noun, " in Cloudflare"],
 						),
 					]
