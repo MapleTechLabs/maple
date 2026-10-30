@@ -203,7 +203,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					),
 					tabs: hostsViewTabs(h, "containers", model.search),
 					filters: filtersRail(h, model),
-					scrollClassName: "gap-6",
+					gap: "lg",
 				},
 				[
 					activeFilterChips(h, {

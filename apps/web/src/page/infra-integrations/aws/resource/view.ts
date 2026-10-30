@@ -391,7 +391,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-4",
+					gap: "md",
 					titleContent: hero.title,
 					actions: h.div(
 						[h.Class("flex flex-wrap items-center gap-2")],

@@ -412,7 +412,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						dashboardPage(
 							h,
 							{
-								scrollClassName: "gap-6",
+								gap: "lg",
 								filters: planetscaleSidebar(
 									h,
 									model,

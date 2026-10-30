@@ -106,7 +106,7 @@ export type SearchToolbarOptions<M> = Readonly<{
 	className?: string
 }>
 
-/** `SearchToolbar` over `SearchInput size="default"` (w-64), on the shared list toolbar. */
+/** `SearchToolbar` over `SearchInput size="sm"` (w-64), on the shared list toolbar. */
 export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOptions<M>): Html =>
 	listToolbar(h, {
 		// Parents space their sections; the list toolbar's own bottom padding would double it.
@@ -116,7 +116,7 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 			[
 				searchInput(h, {
 					id: options.id,
-					size: "default",
+					size: "sm",
 					className: "w-64",
 					placeholder: options.placeholder,
 					value: options.value,

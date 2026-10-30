@@ -263,7 +263,7 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 						return dashboardPage(
 							h,
 							{
-								scrollClassName: "gap-6",
+								gap: "lg",
 								titleContent: hero.title,
 								actions:
 									headerActions.length === 0

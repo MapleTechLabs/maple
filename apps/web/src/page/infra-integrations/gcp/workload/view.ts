@@ -429,7 +429,7 @@ export const workloadPageView = (
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
+					gap: "lg",
 					titleContent: hero.title,
 					actions: pageTime(h, {
 						search: model.search,

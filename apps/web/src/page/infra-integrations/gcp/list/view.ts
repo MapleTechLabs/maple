@@ -698,7 +698,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
+					gap: "lg",
 					...titleRow(h, page.header, model, page.isFailed),
 					tabs: page.tabs,
 				},

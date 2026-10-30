@@ -57,7 +57,9 @@ const tagFilter = (h: H, model: Model, allTags: ReadonlyArray<string>): Html =>
 	allTags.length === 0
 		? disabledReason(
 				h,
-				button(h, { variant: "outline", className: "shrink-0", isDisabled: true }, ["Tags"]),
+				button(h, { variant: "outline", size: "sm", className: "shrink-0", isDisabled: true }, [
+					"Tags",
+				]),
 			)
 		: h.submodel({
 				slotId: "dashboards-tag-filter",
@@ -92,9 +94,11 @@ const sortMenu = (h: H, model: Model): Html => {
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						button(h, { variant: "outline", className: "shrink-0", attributes: trigger }, [
-							SORT_LABELS[sort],
-						]),
+						button(
+							h,
+							{ variant: "outline", size: "sm", className: "shrink-0", attributes: trigger },
+							[SORT_LABELS[sort]],
+						),
 					),
 				),
 		},
@@ -110,6 +114,7 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 			value: scopeOf(model.search),
 			onChange: (scope) => Message.ChangedScope({ scope }),
 			ariaLabel: "Filter dashboards by favorite",
+			size: "sm",
 			className: "shrink-0",
 		}),
 		trailing: [

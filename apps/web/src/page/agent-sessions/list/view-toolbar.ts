@@ -15,11 +15,11 @@ type H = HtmlBuilder<Message>
 
 const ERRORS_LABEL_ID = "agent-sessions-errors-label"
 
-/** `ToolbarSearch` (debounced 300 ms), default size. */
+/** `ToolbarSearch` (debounced 300 ms), toolbar size. */
 const toolbarSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: "agent-sessions-search",
-		size: "default",
+		size: "sm",
 		className: cn("max-w-sm", "w-full sm:max-w-sm"),
 		placeholder: "Session or trace ID…",
 		value: model.searchInput,

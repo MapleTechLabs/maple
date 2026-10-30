@@ -251,7 +251,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
-			scrollClassName: "gap-6",
+			gap: "lg",
 			titleContent: hero.title,
 			actions: pageTime(h, {
 				search: model.search,
