@@ -179,7 +179,7 @@ const toolbar = (
 			}),
 			searchInput(h, {
 				id: "investigations-search",
-				size: "default",
+				size: "sm",
 				className: "w-auto min-w-56 max-w-sm flex-1",
 				placeholder: "Search subjects and findings",
 				value: model.searchDraft,

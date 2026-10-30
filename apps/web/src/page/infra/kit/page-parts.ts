@@ -116,7 +116,7 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 			[
 				searchInput(h, {
 					id: options.id,
-					size: "default",
+					size: "sm",
 					className: "w-64",
 					placeholder: options.placeholder,
 					value: options.value,

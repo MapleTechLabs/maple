@@ -167,7 +167,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						toFrame,
 					),
 					rightPanel: rightPanel(h, model),
-					scrollClassName: "gap-6",
+					gap: "lg",
 				},
 				[
 					hero.body,

@@ -79,7 +79,7 @@ export type ToolbarConfig<M> = Readonly<{
 const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig<M>["nameSearch"]>): Html =>
 	searchInput(h, {
 		id: search.inputId,
-		size: "default",
+		size: "sm",
 		className: cn("max-w-sm", "w-full font-mono sm:w-64"),
 		placeholder: "Tool name…",
 		value: search.value,

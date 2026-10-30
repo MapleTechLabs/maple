@@ -100,7 +100,8 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 			title: "Code Review",
 			actions: options.toolbar,
 			tabs: tabs(options),
-			scrollClassName: "gap-6 pb-8",
+			gap: "lg",
+			scrollClassName: "pb-8",
 		},
 		options.filters === undefined || options.filters.length === 0
 			? children

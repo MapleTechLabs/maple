@@ -80,7 +80,7 @@ const typeItem =
 const toolbarSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: "metrics-search",
-		size: "default",
+		size: "sm",
 		className: "max-w-sm w-64",
 		placeholder: "Search metrics…",
 		value: model.searchInput,

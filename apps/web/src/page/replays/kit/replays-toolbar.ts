@@ -60,7 +60,7 @@ export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOpti
 			placeholder: "Search by URL…",
 			onInput: options.onInput,
 			onClear: options.onClear,
-			size: "default",
+			size: "sm",
 			className: cn("max-w-sm", "w-full sm:max-w-sm"),
 		}),
 		trailing: [

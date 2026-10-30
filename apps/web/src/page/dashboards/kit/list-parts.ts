@@ -45,7 +45,7 @@ export const toolbarSearch = <M>(
 ): Html =>
 	searchInput(h, {
 		id: options.id,
-		size: "default",
+		size: "sm",
 		className: cn("max-w-sm", options.className),
 		placeholder: options.placeholder,
 		value: options.draft,

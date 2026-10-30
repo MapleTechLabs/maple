@@ -495,6 +495,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const row = titleRow(h, model, status?.accountName ?? null, hasData ? listScopeOf(model, data) : null)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
-		[dashboardPage(h, { scrollClassName: "gap-6", ...row }, [statusView(h, model, spark)])],
+		[dashboardPage(h, { gap: "lg", ...row }, [statusView(h, model, spark)])],
 	)
 })

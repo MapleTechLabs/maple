@@ -482,7 +482,7 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
+					gap: "lg",
 					titleContent: hero.title,
 					actions: !isTimed
 						? undefined

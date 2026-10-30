@@ -271,7 +271,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 const rulesSearch = (h: H, value: string): Html =>
 	searchInput(h, {
 		id: "alerts-rules-search",
-		size: "default",
+		size: "sm",
 		className: "w-full max-w-xs",
 		placeholder: "Search rules, services, tags…",
 		value,

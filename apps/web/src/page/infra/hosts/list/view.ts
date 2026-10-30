@@ -139,7 +139,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						],
 					),
 					tabs: hostsViewTabs(h, "hosts", model.search),
-					scrollClassName: "gap-6",
+					gap: "lg",
 				},
 				[
 					body(h, model, inputs),
