@@ -10,6 +10,7 @@ import { skeleton } from "../../ui/skeleton"
 import { icon, type IconName } from "../../ui/icon"
 import { input } from "../../ui/input"
 import { label } from "../../ui/label"
+import { billThroughAnotherOrgLink } from "./bill-through-link"
 import { Message } from "./quick-start"
 import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
 import { isAlreadyInvited, type Team, TeamMessage } from "./quick-start-team"
@@ -299,6 +300,7 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 						],
 					),
 					isCustomerLoading ? pricingSkeleton(h) : pricing,
+					h.div([h.Class("mt-8")], [billThroughAnotherOrgLink(h)]),
 				],
 			),
 		],

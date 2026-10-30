@@ -67,7 +67,11 @@ export const saveSelectedPlanKnown = (orgId: string, mayRenderApp: boolean): Eff
 // GATE
 
 /** Routes that render their own onboarding or billing UI: never sent away for want of a plan. */
-const isAllowedWithoutPlan = AppRoute.isAnyOf(["SelectPlan", "QuickStart", "CliLogin", "McpAuthorize"])
+const isPlanFreeRoute = AppRoute.isAnyOf(["SelectPlan", "QuickStart", "CliLogin", "McpAuthorize"])
+
+// Billing settings too: an org with no plan links itself to the org that pays for it there.
+const isAllowedWithoutPlan = (route: AppRoute): boolean =>
+	isPlanFreeRoute(route) || (route._tag === "Settings" && route.search.tab === "billing")
 
 /** Public paths that never read org data (`isOrgIndependentPath`). */
 const isOrgIndependent = AppRoute.isAnyOf(["Unsubscribe"])

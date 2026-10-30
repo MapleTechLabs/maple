@@ -8,6 +8,7 @@ import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../../platform/resources"
 import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
+import { billThroughAnotherOrgLink } from "./bill-through-link"
 import * as PricingCards from "./pricing-cards"
 import * as PricingCardsView from "./pricing-cards-view"
 
@@ -142,6 +143,7 @@ export const view = (h: H, model: Model, customer: BillingCustomer | undefined):
 							}),
 						],
 					),
+					billThroughAnotherOrgLink(h),
 				],
 			),
 		],
