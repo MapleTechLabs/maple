@@ -87,22 +87,23 @@ export const mapCanvas = (
 					slotId: "service-map",
 					model: map,
 					viewInputs: {
-						emptyState: signalEmptyState(h, {
-							signal: "traces",
-							noun: "services",
-							range: rangeOf(inputs.context),
-							onWidenRange: Message.ClickedWidenRange(),
-							maybePresence: presenceOf(inputs.maybePresence, "traces"),
-							nowMs: Option.match(inputs.maybePresence, {
-								onNone: () => 0,
-								onSome: (result) => result.nowMs,
+						emptyState: () =>
+							signalEmptyState(h, {
+								signal: "traces",
+								noun: "services",
+								range: rangeOf(inputs.context),
+								onWidenRange: Message.ClickedWidenRange(),
+								maybePresence: presenceOf(inputs.maybePresence, "traces"),
+								nowMs: Option.match(inputs.maybePresence, {
+									onNone: () => 0,
+									onSome: (result) => result.nowMs,
+								}),
+								guide: {
+									id: GUIDE_ID,
+									endpoint: inputs.context.env.otlpEndpoint,
+									embedCopy: embedGuideCopy(h, model),
+								},
 							}),
-							guide: {
-								id: GUIDE_ID,
-								endpoint: inputs.context.env.otlpEndpoint,
-								embedCopy: embedGuideCopy(h, model),
-							},
-						}),
 						detailPanel: detailPanel(h, data, map, inputs),
 					},
 				}),
