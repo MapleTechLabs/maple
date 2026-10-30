@@ -33,6 +33,8 @@ export interface PrepareRawSqlInput {
 	readonly workload: RawSqlWorkload
 	/** `$__timeGroup` keys every row at the range start: one bucket per group. Alert evaluation sets it. */
 	readonly wholeRange?: boolean
+	/** Return the first 1,000 rows of a longer result instead of failing on the cap. */
+	readonly truncateAtCap?: boolean
 }
 
 export interface PreparedRawSql {
@@ -153,7 +155,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// modifiers attached to the inner result (`WITH TOTALS`, `LIMIT BY`,
 	// `WITH FILL`) are discarded by the outer SELECT.
 	return {
-		sql: `SELECT * FROM (\n${splitTerminalClauses(sql).body.trim()}\n) AS maple_raw_sql_limited\nLIMIT ${RAW_SQL_FETCH_ROW_LIMIT}`,
+		sql: `SELECT * FROM (\n${splitTerminalClauses(sql).body.trim()}\n) AS maple_raw_sql_limited\nLIMIT ${input.truncateAtCap === true ? MAX_RAW_SQL_RESULT_ROWS : RAW_SQL_FETCH_ROW_LIMIT}`,
 		granularitySeconds: granularity,
 	} satisfies PreparedRawSql
 })

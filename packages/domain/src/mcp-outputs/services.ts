@@ -291,6 +291,8 @@ export const RunSqlOutput = Schema.Struct({
 	windowApplied: Schema.optionalKey(Schema.Boolean),
 	/** The fully macro-expanded SQL that was executed, only when asked for (`show_sql`). */
 	expandedSql: Schema.optionalKey(Schema.String),
+	/** The result stopped at the 1,000-row cap, so more rows may exist. */
+	atRowCap: Schema.optionalKey(Schema.Boolean),
 	/** Column names the warehouse rejected and the server replaced before rerunning. */
 	rewrites: Schema.optionalKey(Schema.Array(RunSqlRewrite)),
 })

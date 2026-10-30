@@ -21,10 +21,29 @@ const GATEWAY_WRAPPED = {
 	type: "UNKNOWN_IDENTIFIER",
 }
 
+const FALLBACK_ID = "aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbb"
+const issued: Array<string> = []
 let rt: EvalRuntime
 
 beforeAll(() => {
 	installFakeWarehouse([
+		// Records every statement and matches none of them.
+		{
+			match: (sql) => {
+				issued.push(sql)
+				return false
+			},
+			rows: [],
+		},
+		{
+			match: (sql) => sql.includes(FALLBACK_ID) && sql.includes("FROM trace_index"),
+			failure: unknown("ServiceName"),
+		},
+		{ match: (sql) => sql.includes(FALLBACK_ID), rows: [{ n: 1 }] },
+		{
+			match: (sql) => sql.includes("FROM product_events"),
+			rows: Array.from({ length: 1000 }, (_, i) => ({ n: i })),
+		},
 		{ match: (sql) => sql.includes("service.name"), failure: unknown("service.name") },
 		{ match: (sql) => sql.includes("FROM alert_checks"), failure: GATEWAY_WRAPPED },
 		{ match: (sql) => /\bbogus\b/.test(sql), failure: unknown("bogus") },
@@ -90,5 +109,51 @@ describe("run_sql recovery", () => {
 		expect(text).not.toContain("maple_us")
 		expect(text).not.toContain("maple_raw_sql_limited")
 		expect(text).not.toContain("org_x")
+	})
+
+	it("stops at the row cap instead of failing on a longer result", async () => {
+		const result = await runToolDirect(rt, "run_sql", {
+			...WINDOW,
+			sql: "SELECT number AS n FROM product_events WHERE $__orgFilter",
+		})
+		expect(result.isError).not.toBe(true)
+		expect(issued.at(-1)).toMatch(/LIMIT 1000\b/)
+		const output = Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent)
+		expect(output.rowCount).toBe(1000)
+		expect(output.atRowCap).toBe(true)
+		expect(markdown(result)).toContain("Stopped at the 1000-row cap")
+	})
+
+	it("trusts a full page the query's own LIMIT asked for", async () => {
+		const result = await runToolDirect(rt, "run_sql", {
+			...WINDOW,
+			sql: "SELECT number AS n FROM product_events WHERE $__orgFilter LIMIT 1000",
+		})
+		const output = Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent)
+		expect(output.rowCount).toBe(1000)
+		expect(output.atRowCap).toBeUndefined()
+		expect(markdown(result)).not.toContain("row cap")
+	})
+
+	it("reads the count, not the offset, of LIMIT offset, count", async () => {
+		const result = await runToolDirect(rt, "run_sql", {
+			...WINDOW,
+			sql: "SELECT number AS n FROM product_events WHERE $__orgFilter LIMIT 10, 5000",
+		})
+		expect(Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent).atRowCap).toBe(true)
+	})
+
+	// The seek names `ServiceName`/`Timestamp`, which an outer query over a subquery may lack.
+	it("runs a trace-id lookup as written when the warehouse cannot analyse the seeked form", async () => {
+		const result = await runToolDirect(rt, "run_sql", {
+			...WINDOW,
+			sql: `SELECT count() AS n FROM (SELECT TraceId FROM traces WHERE $__orgFilter) WHERE TraceId = '${FALLBACK_ID}'`,
+		})
+		expect(result.isError).not.toBe(true)
+		expect(Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent).rows).toEqual([{ n: 1 }])
+		const lookups = issued.filter((sql) => sql.includes(FALLBACK_ID))
+		expect(lookups).toHaveLength(2)
+		expect(lookups[0]).toContain("FROM trace_index")
+		expect(lookups[1]).not.toContain("FROM trace_index")
 	})
 })

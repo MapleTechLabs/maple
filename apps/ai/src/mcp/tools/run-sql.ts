@@ -6,8 +6,9 @@ import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
-import { MAX_RAW_SQL_RESULT_ROWS } from "@maple/domain/raw-sql"
+import { MAX_RAW_SQL_RESULT_ROWS, maskLiteralsAndComments } from "@maple/domain/raw-sql"
 import { rawSqlErrorText } from "../lib/raw-sql-error-text"
+import { withTraceIndexSeek } from "../lib/trace-seek"
 import { doc } from "../lib/tool-doc"
 import {
 	listWarehouseTables,
@@ -181,7 +182,7 @@ const runSqlSchema = Schema.Struct({
 
 const runSqlDescription =
 	"Run one read-only ClickHouse SELECT against the org's warehouse and return its rows: " +
-	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the true count reported. ` +
+	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the count reported. ` +
 	"Use it to answer what query_data cannot express, to spot-check data, or to test SQL before saving it " +
 	"as a raw_sql widget with add_dashboard_widget. For trends and top-N prefer query_data. " +
 	"Spans are in `traces` (there is no otel_spans, otel_traces or spans table) and log lines in `logs`. " +
@@ -291,6 +292,16 @@ const withCallerErrorText =
 				})
 			: error
 
+// The cap leaves no overflow row, so only a statement's own LIMIT within the cap proves it whole.
+const OWN_LIMIT = /\bLIMIT\s+(\d+)(?:\s*,\s*(\d+)|\s+OFFSET\s+\d+)?\s*;?\s*$/i
+
+/** The statement ends in its own LIMIT of at most the cap, so a full page is its answer, not ours. */
+const limitedWithinCap = (sql: string): boolean => {
+	const own = OWN_LIMIT.exec(maskLiteralsAndComments(sql).trimEnd())
+	// `LIMIT offset, count` puts the count second.
+	return own !== null && Number(own[2] ?? own[1]) <= MAX_RAW_SQL_RESULT_ROWS
+}
+
 type RawSqlRun = ReturnType<typeof runRawSql>
 
 interface FixFailure {
@@ -315,7 +326,14 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 			const granularitySeconds = params.granularity_seconds ?? autoBucketSeconds(st, et)
 
 			const execute = (sql: string) =>
-				runRawSql({ tenant, sql, startTime: st, endTime: et, granularitySeconds })
+				runRawSql({
+					tenant,
+					sql,
+					startTime: st,
+					endTime: et,
+					granularitySeconds,
+					truncateAtCap: true,
+				})
 
 			// A misspelt column with exactly one right answer is fixed and rerun rather than
 			// costing the agent a round trip; each pass fixes the name the warehouse reported.
@@ -341,7 +359,22 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 					}),
 				)
 
-			const { rows, columns, rowCount, expandedSql, rewrites } = yield* runFixing(params.sql, []).pipe(
+			// An unbounded trace-id lookup reads through `trace_index`. If the warehouse cannot
+			// analyse that form (the predicate sits where `ServiceName` is not in scope), the
+			// query runs as written; any other failure is the seek's to report.
+			const seeked = withTraceIndexSeek(params.sql)
+			const run =
+				seeked === undefined
+					? runFixing(params.sql, [])
+					: runFixing(seeked, []).pipe(
+							Effect.catch((failure) =>
+								failure.error._tag === "@maple/http/errors/WarehouseInvalidSqlError"
+									? runFixing(params.sql, [])
+									: Effect.fail(failure),
+							),
+						)
+
+			const { rows, columns, rowCount, expandedSql, rewrites } = yield* run.pipe(
 				Effect.mapError(({ error, sql, rewrites }) =>
 					// Macro/safety failures (a missing `$__orgFilter` above all) are caller-fixable.
 					error._tag === "@maple/http/errors/RawSqlValidationError"
@@ -385,12 +418,20 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 				timeRange: { start: st, end: et },
 				maxCellChars,
 				windowApplied: usesWindow(expandedSql, st, et),
+				...(rowCount >= MAX_RAW_SQL_RESULT_ROWS && !limitedWithinCap(params.sql)
+					? { atRowCap: true }
+					: undefined),
 				...(rewrites.length === 0 ? undefined : { rewrites: [...rewrites] }),
 				...(params.show_sql === true ? { expandedSql } : undefined),
 			}
 		}),
 		render: (output) => {
 			const notices = [
+				...(output.atRowCap === true
+					? [
+							`Stopped at the ${MAX_RAW_SQL_RESULT_ROWS}-row cap, so more rows may exist; aggregate or add a LIMIT to see all of them.`,
+						]
+					: []),
 				...(output.rewrites ?? []).map(
 					(r) =>
 						`Ran with \`${r.to}\` for \`${r.from}\`, which is not a column here; use \`${r.to}\` directly.`,
