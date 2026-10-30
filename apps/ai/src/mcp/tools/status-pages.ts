@@ -137,6 +137,34 @@ const tenantInRollout = Effect.fnUntraced(function* (tool: string) {
 	return tenant
 })
 
+/** The same resource entries the REST routes write, so MCP edits show up per incident. */
+const auditIncidentCreated = Effect.fnUntraced(function* (incident: StatusPageIncidentRecord) {
+	const tenant = yield* CurrentMcpTenant
+	yield* (yield* AuditLogService).record({
+		orgId: tenant.orgId,
+		...auditAttribution(tenant, yield* CurrentAuditActor),
+		action: "status_page_incident.created",
+		resourceId: incident.id,
+		metadata: {
+			title: incident.title,
+			kind: incident.kind,
+			page_id: incident.pageId,
+			published: incident.published,
+		},
+	})
+})
+
+const auditUpdatePosted = Effect.fnUntraced(function* (incident: StatusPageIncidentRecord) {
+	const tenant = yield* CurrentMcpTenant
+	yield* (yield* AuditLogService).record({
+		orgId: tenant.orgId,
+		...auditAttribution(tenant, yield* CurrentAuditActor),
+		action: "status_page_incident.update_posted",
+		resourceId: incident.id,
+		metadata: { status: incident.status, page_id: incident.pageId, active: isActiveIncident(incident) },
+	})
+})
+
 /** A page by its id, REST id (`stp_…`), slug or exact name. */
 const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref: string) {
 	const service = yield* StatusPagesService
@@ -478,6 +506,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					createdBy: tenant.userId,
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
+			yield* auditIncidentCreated(created)
 			return { action: "created" as const, incident: toIncidentRow(created) }
 		}),
 		render: (output) => renderIncident("Status page incident opened", output),
@@ -529,6 +558,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					publish: params.publish === true,
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
+			yield* auditUpdatePosted(posted)
 			return { action: "updated" as const, incident: toIncidentRow(posted) }
 		}),
 		render: (output) => renderIncident("Status page update posted", output),
@@ -565,6 +595,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					publish: params.publish === true,
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
+			yield* auditUpdatePosted(updated)
 			return { action: "resolved" as const, incident: toIncidentRow(updated) }
 		}),
 		render: (output) => renderIncident("Status page incident resolved", output),
@@ -610,6 +641,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					createdBy: tenant.userId,
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
+			yield* auditIncidentCreated(created)
 			return { action: "scheduled" as const, incident: toIncidentRow(created) }
 		}),
 		render: (output) => renderIncident("Maintenance scheduled", output),
