@@ -3211,9 +3211,14 @@ async fn main() {
     let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await;
-    // Its exports must land in the WAL before the drain below reads it.
+    // Its exports must land in the WAL before the drain below reads it. It stops only
+    // on the shutdown signal, which a failed `axum::serve` never saw, so abort it then.
     if let Some(grpc_server) = grpc_server {
-        drop(grpc_server.await);
+        if serve_result.is_err() {
+            grpc_server.abort();
+        } else {
+            drop(grpc_server.await);
+        }
     }
 
     // Intake has stopped (graceful shutdown drained in-flight requests), but
