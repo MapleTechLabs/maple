@@ -6,7 +6,7 @@ import { icon, type IconName } from "@maple/web/ui/icon"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { SignalPresence, TelemetrySignal } from "../../data/signal-presence"
-import { type ConnectGuideOptions, connectGuide } from "./connect-guide"
+import { type GuideCopies, connectGuide } from "./connect-guide"
 
 // A signal's empty state. "No traces" means three things: filters
 // excluded everything, this window is quiet, or nothing was ever sent (the on-ramp).
@@ -49,7 +49,7 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	detail?: Html
 	maybePresence: Option.Option<SignalPresence>
 	nowMs: number
-	guide: Omit<ConnectGuideOptions<M>, "note">
+	guide: Readonly<{ id: string; endpoint: string }> & GuideCopies<M>
 }>
 
 export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyStateOptions<M>): Html => {

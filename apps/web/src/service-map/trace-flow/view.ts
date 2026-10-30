@@ -3,6 +3,7 @@ import { Option } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
+import type { AttachFlowCanvasRequirement } from "../xyflow/attach"
 import type * as Canvas from "../xyflow/canvas"
 import { handlePoint, type PlacedNode, type Viewport } from "../xyflow/geometry"
 import { controls, dotBackground, miniMap } from "../xyflow/panels"
@@ -143,7 +144,7 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 
 /** `TraceFlowView` for a trace that fits the flow view. */
 export const view = <M>(
-	h: HtmlBuilder<M>,
+	h: HtmlBuilder<M, AttachFlowCanvasRequirement>,
 	graph: FlowGraph,
 	model: Model,
 	toMessage: (message: Message) => M,

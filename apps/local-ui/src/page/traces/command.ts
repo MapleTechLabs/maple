@@ -1,5 +1,6 @@
 import { Clock, Duration, Effect, Layer, Option, Schema } from "effect"
 import { readCached, recordCached } from "../../data/cached"
+import { EffectsLayer as CopiesEffectsLayer } from "../kit/copies"
 import type { LoadFailure } from "../../data/local-query"
 import { facetsFromCached, facetsKey, facetsToCached, pagesFromCached, pagesToCached, tracesKey } from "./cache"
 import { fetchTraceFacets } from "./fetch-facets"
@@ -151,6 +152,7 @@ export const EffectsLayer = Layer.mergeAll(
 	FetchFacets.layer,
 	WaitSearchDebounce.layer,
 	WaitDurationDebounce.layer,
+	CopiesEffectsLayer,
 )
 
 /** Any Command the page's update returns. */

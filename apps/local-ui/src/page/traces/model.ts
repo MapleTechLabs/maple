@@ -1,7 +1,7 @@
-import * as CopyButton from "@maple/web/ui/copy-button"
 import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
+import { Copies } from "../kit/copies"
 
 // The traces list and its facets, as Schemas.
 
@@ -75,7 +75,6 @@ export const Model = Schema.TaggedStruct("TracesPage", {
 	sections: FilterSections.FilterSectionsBlock.Model,
 	isRefreshing: Schema.Boolean,
 	/** The empty state's connect guide: its endpoint and exporter environment copy buttons. */
-	endpointCopy: CopyButton.CopyButtonBlock.Model,
-	envCopy: CopyButton.CopyButtonBlock.Model,
+	copies: Copies,
 })
 export type Model = typeof Model.Type

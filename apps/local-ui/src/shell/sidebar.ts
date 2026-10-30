@@ -16,7 +16,8 @@ import {
 	sidebarRail,
 	sidebarTrigger,
 } from "@maple/web/ui/sidebar"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
+import type { ApplicationViewBuilder } from "../composition"
 import { Message } from "../message"
 import type { Model } from "../model"
 import { hrefFor } from "../route"
@@ -29,7 +30,7 @@ import { activeSection, NAV_GROUPS } from "./nav"
 const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
 /** `AppSidebar`'s children, shared by the desktop rail and the mobile sheet. */
-const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): ReadonlyArray<Html> => {
+const sidebarRegions = (h: ApplicationViewBuilder, model: Model, linkQuery: URLSearchParams): ReadonlyArray<Html> => {
 	const active = activeSection(model.route)
 	const state = model.isSidebarOpen ? "expanded" : "collapsed"
 	return [
@@ -82,11 +83,11 @@ const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSea
 }
 
 /** `AppSidebar` above `md`; `linkQuery` is the context every section link carries (range, service filter). */
-export const appSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
+export const appSidebar = (h: ApplicationViewBuilder, model: Model, linkQuery: URLSearchParams): Html =>
 	sidebarDesktop(h, model.isSidebarOpen ? "expanded" : "collapsed", sidebarRegions(h, model, linkQuery))
 
 /** `<Sidebar>` below `md`: the same children in `SheetPopup side="left"` (packages/ui sidebar.tsx). */
-export const mobileSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
+export const mobileSidebar = (h: ApplicationViewBuilder, model: Model, linkQuery: URLSearchParams): Html =>
 	leftSheet(
 		h,
 		{

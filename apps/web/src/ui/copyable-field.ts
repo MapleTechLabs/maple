@@ -25,8 +25,10 @@ export type CopyableFieldOptions<M> = Readonly<{
 	value: string
 	label?: string
 	copyLabel?: string
-	copy: CopyButton.Model
-	toCopyMessage: (message: CopyButton.Message) => M
+	/** The copy status the parent owns (a `CopyButton.Model` or any `{ status }` record entry). */
+	copy: Readonly<{ status: CopyButton.CopyStatus }>
+	/** Dispatched on click; the parent writes `value` to the clipboard and updates `copy`. */
+	onCopy: M
 	/** Set for a secret: the reveal toggle and whether it is showing. */
 	masked?: Readonly<{ isVisible: boolean; onToggle: M }>
 }>
@@ -64,10 +66,9 @@ export const copyableField = <M>(h: HtmlBuilder<M>, options: CopyableFieldOption
 									],
 								),
 							]),
-					CopyButton.view(h, {
-						model: options.copy,
-						toParentMessage: options.toCopyMessage,
-						value: options.value,
+					CopyButton.copyButton(h, {
+						status: options.copy.status,
+						onClick: options.onCopy,
 						label: options.copyLabel || options.label || "Value",
 						className: INPUT_GROUP_COPY_CLASS,
 					}),

@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
+import { CopyMessage } from "../kit/copies"
 import { TraceFacets, TracePages, TraceRow } from "./model"
 
 /** A sidebar facet the list takes one value of: its URL param. */
@@ -36,6 +37,8 @@ export const Message = defineMessageUnion({
 	ClickedExitSpanScope: {},
 	ChangedRange: { range: Schema.String },
 	ClickedWidenRange: {},
+	/** A copy fact from the empty state's connect guide, carrying the button's id. */
+	ReceivedCopyMessage: { message: CopyMessage },
 	/** The root saw the fragment change under the open page: sync the search, load what it needs. */
 	InformedOfLocationChange: {},
 })

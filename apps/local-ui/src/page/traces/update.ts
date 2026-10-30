@@ -4,6 +4,7 @@ import { Option, Result } from "effect"
 import { AsyncData } from "foldkit"
 import { accept, acceptCached, canExtend, idle } from "../../data/slot"
 import { queryOf } from "../../route"
+import { updateCopy } from "../kit/copies"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import {
 	FetchNextPage,
@@ -17,15 +18,16 @@ import { TracesComposition } from "./composition"
 import { nextCursor } from "./fetch-traces"
 import { clearedFilters, filtersOf } from "./filters"
 import { boundsOf, fetchAfterCache, load } from "./load"
+import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 
 export type UpdateReturn = Readonly<{
 	model: Model
-	commands?: ReadonlyArray<TracesCommand>
+	commands?: ReadonlyArray<TracesCommand | ReturnType<typeof updateCopy<Message>>["commands"][number]>
 	outMessage?: PageOutMessage
 }>
-/** The page's own fields; the filter sections and copy buttons are assembled by their Bindings. */
-type PageFields = Omit<Model, "sections" | "endpointCopy" | "envCopy">
+/** The page's own fields; the filter sections are assembled by their Binding. */
+type PageFields = Omit<Model, "sections">
 
 /** The draft formatted from the committed range, as `RangeFilterSection` seeds and re-syncs it. */
 const durationDraftOf = (query: URLSearchParams, version: number): Model["duration"] => {
@@ -61,6 +63,7 @@ export const init = TracesComposition.makeInit((context: PageContext) => {
 		search: { text: q, version: 0, sent: q },
 		duration: durationDraftOf(query, 0),
 		isRefreshing: false,
+		copies: {},
 	}
 	return { model, commands: [ReadClock()] }
 })
@@ -236,6 +239,10 @@ export const update = TracesComposition.makeUpdate.withContext((context: PageCon
 		ClickedExitSpanScope: (model) => navigate(model, context, { scope: null }),
 		ChangedRange: (model, { range }) => setRange(model, context, range),
 		ClickedWidenRange: (model) => setRange(model, context, WIDEST_RANGE),
+		ReceivedCopyMessage: (model, { message }) => {
+			const next = updateCopy(model.copies, message, (copyMessage) => Message.ReceivedCopyMessage({ message: copyMessage }))
+			return { model: { ...model, copies: next.copies }, commands: next.commands }
+		},
 		InformedOfLocationChange: (model) => locationChanged(model, context),
 	}
 })

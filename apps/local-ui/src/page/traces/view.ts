@@ -1,5 +1,4 @@
 import { cn } from "@maple/ui/lib/utils"
-import type * as CopyButton from "@maple/web/ui/copy-button"
 import { listFooter } from "@maple/web/ui/list-footer"
 import { table, tableBody, tableHead, tableHeader, tableRow } from "@maple/web/ui/table"
 import { tableSkeleton } from "@maple/web/ui/table-skeleton"
@@ -14,9 +13,8 @@ import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { errorState } from "../kit/view-states"
 import { activeFilterCount, filtersOf } from "./filters"
-import { EndpointCopyBinding, EnvCopyBinding, TracesComposition, type TracesViewBuilder } from "./composition"
+import { TracesComposition } from "./composition"
 import { Message } from "./message"
-import type { Model } from "./model"
 import { traceRow } from "./view-row"
 import { sidebar } from "./view-sidebar"
 import { tracesToolbar } from "./view-toolbar"
@@ -45,14 +43,6 @@ const hasNewDataSince = (inputs: TracesViewInputs, sinceMs: number): boolean =>
 
 const GUIDE_ID = "traces-empty"
 
-/** The connect guide's copy buttons are this page's own Blocks. */
-const embedGuideCopy =
-	(h: TracesViewBuilder, model: Model) =>
-	(slot: "endpoint" | "env", viewInputs: CopyButton.CopyButtonViewInputs): Html =>
-		slot === "endpoint"
-			? h.block(EndpointCopyBinding.embedView({ slotId: `${GUIDE_ID}-endpoint`, model: model.endpointCopy, viewInputs }))
-			: h.block(EnvCopyBinding.embedView({ slotId: `${GUIDE_ID}-env`, model: model.envCopy, viewInputs }))
-
 export const view = TracesComposition.makeView.withInputs<TracesViewInputs>((model, inputs, h) => {
 	const { context } = inputs
 	const query = queryOf(context.location)
@@ -77,7 +67,12 @@ export const view = TracesComposition.makeView.withInputs<TracesViewInputs>((mod
 				onWidenRange: Message.ClickedWidenRange(),
 				maybePresence: presenceOf(inputs.maybePresence, "traces"),
 				nowMs: Option.match(inputs.maybePresence, { onNone: () => 0, onSome: (result) => result.nowMs }),
-				guide: { id: GUIDE_ID, endpoint: context.env.otlpEndpoint, embedCopy: embedGuideCopy(h, model) },
+				guide: {
+					id: GUIDE_ID,
+					endpoint: context.env.otlpEndpoint,
+					copies: model.copies,
+					toCopyMessage: (message) => Message.ReceivedCopyMessage({ message }),
+				},
 			})
 		return h.div(
 			[h.Class(cn(model.traces.isPlaceholder && "opacity-60 transition-opacity"))],

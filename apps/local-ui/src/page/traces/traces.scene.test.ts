@@ -55,7 +55,7 @@ const loaded = (rows: ReadonlyArray<TraceRow>) => {
 
 describe("local traces list", () => {
 	test("entry reads the clock, then asks for the list and the facets", () => {
-		expect((init(context).commands ?? []).map(({ name }) => name)).toContain("ReadTracesClock")
+		expect((init(context).commands ?? []).map(({ name }) => name)).toContain("Traces/ReadTracesClock")
 		expect((anchored().commands ?? []).map(({ name }) => name)).toEqual(expect.arrayContaining([FetchTraces.name, FetchFacets.name]))
 	})
 
@@ -124,12 +124,12 @@ describe("local traces list", () => {
 
 	test("a next page asked for before a same-minute Reload is dropped when it lands", () => {
 		const more = pageUpdate(fullList(), Message.ClickedLoadMore())
-		expect(names(more.commands)).toEqual(["FetchNextLocalTracesPage"])
+		expect(names(more.commands)).toEqual(["Traces/FetchNextLocalTracesPage"])
 		const reloaded = pageUpdate(more.model, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
 		const late = Message.SucceededFetchNextPage({ key: reloaded.traces.key ?? "", generation: more.model.pageGeneration, page: [row("late")] })
 		expect(pageUpdate(reloaded, late).model.traces).toEqual(reloaded.traces)
 		// It is stopped too, so it never writes its stale pages into the cache.
-		expect(names(stopSuperseded(lanes(more.model), lanes(reloaded), outcomeOf))).toContain("FetchNextLocalTracesPage.Interrupt")
+		expect(names(stopSuperseded(lanes(more.model), lanes(reloaded), outcomeOf))).toContain("Traces/FetchNextLocalTracesPage.Interrupt")
 	})
 
 	test("a fresh cached empty list asks for signal presence like a fetched one", () => {

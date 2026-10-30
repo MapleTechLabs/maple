@@ -1,15 +1,15 @@
 import { Option } from "effect"
+import { toParentMessage } from "foldkit/test"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
 import { init } from "../main"
 import { Message } from "../message"
 import type { Model } from "../model"
 import { PageOutMessage } from "../page/contract"
-import { pageContextOf } from "../page/registry"
+import { pageContextOf, TracesBinding } from "../page/registry"
 import { Message as TracesMessage } from "../page/traces/message"
 import { init as initTraces, update as updateTraces } from "../page/traces/update"
 import { update } from "../update"
-import { foldPageOut } from "../update-page"
 
 const flags = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
@@ -22,6 +22,9 @@ const flags = {
 }
 const urlOf = (hash: string) => Option.getOrThrow(fromString(`http://localhost/#${hash}`))
 const mobile = (): Model => init(flags, urlOf("/traces")).model
+/** The traces page's Filters button, delivered through the root's page Binding. */
+const openFilters = (model: Model): Model =>
+	update(model, toParentMessage(TracesBinding, TracesMessage.ClickedOpenFilters())).model
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
 
@@ -48,13 +51,11 @@ describe("filters drawer", () => {
 		const context = pageContextOf(mobile())
 		const page = updateTraces(initTraces(context).model, TracesMessage.ClickedOpenFilters(), context)
 		expect(page.outMessage).toEqual(PageOutMessage.RequestedFilterDrawer())
-		expect(foldPageOut(mobile(), PageOutMessage.RequestedFilterDrawer()).model.filterDrawer.isOpen).toBe(
-			true,
-		)
+		expect(openFilters(mobile()).filterDrawer.isOpen).toBe(true)
 	})
 
 	test("a filter change on the same page keeps it open; another page starts it closed", () => {
-		const opened = foldPageOut(mobile(), PageOutMessage.RequestedFilterDrawer()).model
+		const opened = openFilters(mobile())
 		const refiltered = update(
 			opened,
 			Message.ChangedUrl({ url: urlOf("/traces?service=storefront") }),
