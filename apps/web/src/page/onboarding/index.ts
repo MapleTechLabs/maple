@@ -8,7 +8,7 @@ import { clearSessionToken } from "../../platform/auth-api"
 import { signOutOfClerk } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
-import { needsRegion, planOf, wrongRegionOf } from "./plan-gate"
+import { leaveTargetOf, needsRegion, planOf, wrongRegionOf } from "./plan-gate"
 import * as OrgSwitcher from "../../shell/clerk-org-switcher"
 import * as Menu from "../../ui/menu"
 import type { PageContext, PageSubscriptionInput } from "../contract"
@@ -75,6 +75,7 @@ export const Message = defineMessageUnion({
 	GotUserMenuMessage: { message: Menu.Message },
 	CompletedLogOut: {},
 	CompletedMountClerkCard: {},
+	CompletedLeaveForRegion: {},
 })
 export type Message = typeof Message.Type
 
@@ -173,13 +174,18 @@ const fresh = <ScreenModel extends Screen, ScreenMessage>(
 
 export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Option<Step> =>
 	key.startsWith("WrongRegion:")
-		? Option.flatMap(wrongRegionOf(inputs.maybeOrganization), (region) =>
-				fresh(
+		? Option.flatMap(wrongRegionOf(inputs.maybeOrganization), (region) => {
+				const href = hrefOf(route)
+				const target = leaveTargetOf(region, href, inputs.memberships)
+				return fresh(
 					key,
-					{ model: ClerkScreens.WrongRegion.make({ region, href: hrefOf(route) }) },
-					toClerkSignIn,
-				),
-			)
+					{
+						model: ClerkScreens.WrongRegion.make({ region, href, isLeaving: target !== null }),
+						commands: target === null ? [] : [LeaveForRegion({ url: target })],
+					},
+					(message: Message) => message,
+				)
+			})
 		: AppRoute.matchOrElse<Option.Option<Step>>(
 				route,
 				{
@@ -286,6 +292,13 @@ export const LogOut = Command.define("OnboardingLogOut", {
 	),
 })
 
+/** `WrongRegionScreen` for a user with no org here: the same page on the org's own region. */
+export const LeaveForRegion = Command.define("OnboardingLeaveForRegion", {
+	args: { url: Schema.String },
+	messages: [Message.CompletedLeaveForRegion],
+	execute: ({ url }) => load(url).pipe(Effect.as(Message.CompletedLeaveForRegion())),
+})
+
 /** The account menu's only item logs out. */
 const updateUserMenu = (model: Model, message: Menu.Message): Step => {
 	const next = Menu.update(model.userMenu, message)
@@ -363,5 +376,6 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 				: unchanged(model),
 		GotUserMenuMessage: ({ message: child }) => updateUserMenu(model, child),
 		CompletedLogOut: () => unchanged(model),
+		CompletedLeaveForRegion: () => unchanged(model),
 	})
 }

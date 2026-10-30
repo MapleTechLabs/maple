@@ -201,6 +201,8 @@ const wrongRegionView = (
 	inputs: Inputs,
 	screen: ClerkScreens.WrongRegion,
 ): Html => {
+	// The page is on its way to the org's region.
+	if (screen.isLeaving) return bootSplash(h)
 	const orgName = Option.match(inputs.maybeOrganization, {
 		onNone: () => "This organization",
 		onSome: (org) => org.name,
