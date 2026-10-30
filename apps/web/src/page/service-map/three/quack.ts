@@ -2,7 +2,8 @@
 // open and close (the "wah"). No audio file; the context opens on the first click, inside the gesture.
 
 export interface Quacker {
-	readonly quack: () => void
+	/** `times` "wak"s in a row: two for a poke, more when the duck takes fright. */
+	readonly quack: (times: number) => void
 	readonly close: () => void
 }
 
@@ -54,13 +55,12 @@ export function wak(audio: BaseAudioContext, at: number, pitch: number) {
 
 export function quacker(): Quacker {
 	const state: Voicebox = { audio: null }
-	const quack = () => {
+	const quack = (times: number) => {
 		const audio = state.audio ?? new AudioContext()
 		state.audio = audio
 		const now = audio.currentTime
 		const pitch = 210 + Math.random() * 40
-		wak(audio, now, pitch)
-		wak(audio, now + 0.2, pitch * 0.93)
+		Array.from({ length: times }, (_, i) => wak(audio, now + i * 0.2, pitch * 0.93 ** i))
 	}
 	return {
 		quack,

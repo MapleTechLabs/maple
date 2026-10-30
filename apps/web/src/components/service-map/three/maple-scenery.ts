@@ -391,6 +391,40 @@ export function drawBird(sketch: Sketch, stock: Prototypes, color: string) {
 	sketch.solid(stock.box, { position: [0, 0, 0], scale: [0.12, 0.03, 0.035], color })
 }
 
+/** A Maple blimp: a faceted envelope with tapered ends, a red band, tail fins and a gondola,
+ * built at the origin facing +x. */
+export function drawBlimp(sketch: Sketch, stock: Prototypes, palette: InkPalette) {
+	const red = palette.gifts[0] ?? palette.selected
+	const across: Vec3 = [0, 0, -Math.PI / 2]
+	sketch.solid(stock.log, {
+		position: [0, 0, 0],
+		rotation: across,
+		scale: [0.32, 1, 0.32],
+		color: palette.birch,
+	})
+	sketch.solid(stock.log, {
+		position: [0.1, 0, 0],
+		rotation: across,
+		scale: [0.325, 0.14, 0.325],
+		color: red,
+	})
+	sketch.solid(stock.cap, {
+		position: [0.7, 0, 0],
+		rotation: across,
+		scale: [0.32, 0.4, 0.32],
+		color: palette.birch,
+	})
+	sketch.solid(stock.cap, {
+		position: [-0.75, 0, 0],
+		rotation: [0, 0, Math.PI / 2],
+		scale: [0.32, 0.5, 0.32],
+		color: palette.birch,
+	})
+	sketch.solid(stock.box, { position: [-0.82, 0.24, 0], scale: [0.26, 0.28, 0.03], color: red })
+	sketch.solid(stock.box, { position: [-0.82, 0, 0], scale: [0.26, 0.03, 0.72], color: red })
+	sketch.solid(stock.box, { position: [0.05, -0.37, 0], scale: [0.36, 0.1, 0.13], color: palette.soil })
+}
+
 /** The meadow floor: one flat blob under every zone with an inked edge, grass tufts and
  * a few flowers along its border. The paper only shows past this natural edge. */
 export function drawMeadow(
