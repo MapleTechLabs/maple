@@ -12,10 +12,10 @@ import { eyebrow } from "../../../../ui/eyebrow"
 import { formDialog } from "../../../../ui/form-dialog"
 import { icon } from "../../../../ui/icon"
 import { skeleton } from "../../../../ui/skeleton"
+import { rowLink } from "../../../../ui/table"
 import { failureMessage } from "../../../../data/load-failure"
 import { relativeTime } from "../../../kit/relative-time"
 import { emptyActions } from "../../../kit/signal-empty-state"
-import { ROW_STRETCHED_LINK_CLASS } from "../../shared/links"
 import { publicPath, statusPageHref } from "../../shared/status-page-commands"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -92,13 +92,12 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 					h.div(
 						[h.Class("min-w-0")],
 						[
-							h.a(
-								[
-									h.Href(statusPageHref(page.id)),
-									h.Class(
-										cn("block truncate text-sm font-medium", ROW_STRETCHED_LINK_CLASS),
-									),
-								],
+							rowLink(
+								h,
+								{
+									href: statusPageHref(page.id),
+									className: "block truncate text-sm font-medium",
+								},
 								[page.name],
 							),
 							h.p(
