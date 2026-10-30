@@ -48,7 +48,7 @@ export const selectItemStyles =
 
 export const selectItemIndicatorStyles = "col-start-1"
 
-export const selectItemIndicatorIconStyles = "size-4"
+export const selectItemIndicatorIconStyles = "size-4 sm:size-3.5"
 
 export const selectItemTextStyles = "col-start-2 min-w-0"
 
