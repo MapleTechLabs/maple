@@ -66,7 +66,7 @@ const stackRail = (h: H, connection: V2AwsConnection | null): Html =>
 			{
 				icon: "LayersIcon",
 				title: "One CloudFormation stack",
-				detail: "In us-east-1. The metric stream comes later, on Go live",
+				detail: "In us-east-1. IAM is global, so the role reads every region. Metric streams go to the regions you pick on Go live",
 			},
 		],
 		trust: "The role trusts only short-lived tokens Maple signs for this connection. Maple stores no access keys. Delete the stack to revoke access.",
@@ -505,7 +505,7 @@ const liveRows = (
 			: {
 					state: "done",
 					title: "Role stack applied",
-					detail: "In us-east-1",
+					detail: "In us-east-1. IAM is global, so this covers every region",
 				},
 		connection.last_check_error !== null
 			? { state: "failed", title: "Role refused", detail: connection.last_check_error }
