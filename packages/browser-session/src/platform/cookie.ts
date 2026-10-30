@@ -2,6 +2,8 @@
 // `Domain=`: a visit claim scoped host-only while the visitor id spans
 // subdomains would stop deduplicating exactly on the marketing-site → app hop.
 
+import { randomUuid } from "./uuid"
+
 interface CookieScope {
 	/** Scope cookies to the registered domain so subdomains share them. */
 	crossSubdomainCookie: boolean
@@ -156,7 +158,7 @@ function probeCookieDomain(): string {
 	if (typeof document === "undefined" || typeof location === "undefined") return ""
 	const probe = "__maple_probe"
 	// Random, so another tab probing at the same moment cannot confirm our candidate.
-	const value = Math.random().toString(36).slice(2)
+	const value = randomUuid().slice(0, 8)
 	for (const candidate of candidateDomains(location.hostname)) {
 		if (setRawCookie(probe, value, candidate, 60)) {
 			setRawCookie(probe, "", candidate, 0)

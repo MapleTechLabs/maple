@@ -11,6 +11,7 @@
  */
 
 import { cookieDomain, deleteRawCookie, readRawCookie, setRawCookie } from "../platform/cookie"
+import { randomUuid } from "../platform/uuid"
 import { IDLE_TIMEOUT_MS } from "../session/idle"
 
 const STORAGE_KEY = "maple.visit"
@@ -82,7 +83,7 @@ export function claimVisit(at: number, persist: boolean): boolean {
 		if (at > marker.at) writeMarker({ at, token: marker.token }, persist)
 		return false
 	}
-	const token = Math.random().toString(36).slice(2, 12) || "0"
+	const token = randomUuid().slice(0, 8)
 	writeMarker({ at, token }, persist)
 	return readMarker(persist)?.token === token
 }
