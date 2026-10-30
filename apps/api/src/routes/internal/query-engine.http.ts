@@ -1413,20 +1413,26 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const serviceNames = Array.from(services)
 							.sort()
 							.map((name) => decodeServiceName(name))
-						const window = { startTime: payload.startTime, endTime: payload.endTime }
+						const range = { startTime: payload.startTime, endTime: payload.endTime }
 						const [workloadRows, runtimeRows] =
 							serviceNames.length === 0
 								? [[], []]
 								: yield* Effect.all(
 										[
 											runQuery(Queries.serviceWorkloads, tenant, {
-												...window,
+												...range,
 												services: serviceNames,
 											}),
+											// The map draws without platform labels rather than fail on them.
 											runQuery(Queries.serviceRuntimes, tenant, {
-												...window,
+												...range,
 												services: serviceNames,
-											}),
+											}).pipe(
+												Effect.tapCause((cause) =>
+													Effect.logWarning("service map runtimes failed", cause),
+												),
+												Effect.orElseSucceed((): ReadonlyArray<CH.ServiceRuntimesOutput> => []),
+											),
 										],
 										{ concurrency: 2 },
 									)
