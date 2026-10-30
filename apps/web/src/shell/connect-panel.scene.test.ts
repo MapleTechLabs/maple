@@ -1,9 +1,20 @@
 import * as Animation from "@foldkit/ui/animation"
 import { ingestUrl } from "../lib/services/common/ingest-url"
+import { mcpUrl } from "../lib/services/common/mcp-url"
+import { cursorInstallUrl, vscodeInstallUrl } from "../components/settings/mcp-client-config"
 import { click, Command, expect, given, Mount, role, scene, selector, text } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import * as Popover from "../ui/popover"
-import { FetchKeys, FetchOverview, init, Message, type Model, ResolveWindow, update } from "./connect-panel"
+import {
+	close,
+	FetchKeys,
+	FetchOverview,
+	init,
+	Message,
+	type Model,
+	ResolveWindow,
+	update,
+} from "./connect-panel"
 import { view } from "./connect-panel-view"
 
 /** The top bar's Connect popover (`ConnectButton`): the panel's reads go out when it opens. */
@@ -196,5 +207,39 @@ describe("connect panel update", () => {
 			"FetchConnectIngestKeys",
 		)
 		expectVitest(reopened.model.keys._tag).toBe("Ready")
+	})
+
+	test("navigating away closes an open panel and stops its poll", () => {
+		const polling = update(
+			open(init()).model,
+			Message.ResolvedWindow({ orgId: ORG, window }),
+			context,
+		).model
+		const closed = close(polling).model
+		expectVitest(closed.popover.isOpen).toBe(false)
+		expectVitest(update(closed, Message.TickedPoll(), context).commands ?? []).toEqual([])
+	})
+
+	test("the MCP card links straight into Cursor and VS Code, and to every other client", () => {
+		scene(
+			config,
+			given(init()),
+			...opened,
+			Command.resolve(FetchKeys({ orgId: ORG }), Message.FailedLoadKeys({ orgId: ORG })),
+			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
+			Command.resolve(
+				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
+				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
+			),
+			expect(role("link", { name: "Add to Cursor" })).toHaveAttr(
+				"href",
+				cursorInstallUrl(`${mcpUrl}/mcp`),
+			),
+			expect(role("link", { name: "Add to VS Code" })).toHaveAttr(
+				"href",
+				vscodeInstallUrl(`${mcpUrl}/mcp`),
+			),
+			expect(role("link", { name: "All clients" })).toHaveAttr("href", "/settings?tab=mcp"),
+		)
 	})
 })
