@@ -251,6 +251,9 @@ export const TOKEN_FALLBACK: Readonly<Record<string, string>> = {
 	"--severity-warn": "#ebb432",
 	"--severity-error": "#e85d4b",
 	"--severity-fatal": "#c43d2e",
+	"--info": "#4a9eff",
+	"--success": "#49a866",
+	"--warning": "#ebb432",
 } satisfies Record<string, string>
 
 /**
