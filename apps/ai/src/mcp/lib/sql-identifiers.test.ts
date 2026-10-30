@@ -98,6 +98,15 @@ describe("fixUnknownIdentifier", () => {
 		).toBe("SELECT t.TraceId FROM `traces` AS t WHERE $__orgFilter(t)")
 	})
 
+	it("fixes a qualified column only from the table the qualifier names", () => {
+		const sql =
+			"SELECT t.body FROM logs l JOIN traces t ON l.TraceId = t.TraceId WHERE $__orgFilter(l) AND $__orgFilter(t)"
+		expect(fixUnknownIdentifier(sql, unknown("t.body"))).toBeUndefined()
+		expect(fixUnknownIdentifier(sql.replace("t.body", "l.body"), unknown("l.body"))?.sql).toContain(
+			"SELECT l.Body FROM",
+		)
+	})
+
 	it("never rewrites a backtick-quoted alias the query defines", () => {
 		const sql =
 			"SELECT ServiceName AS `service.name` FROM traces WHERE $__orgFilter ORDER BY `service.name`"
