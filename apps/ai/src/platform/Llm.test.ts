@@ -468,7 +468,7 @@ const sseBody = (
  * The one tool the streaming fixtures declare. A `tool-call` part is decoded against the toolkit
  * the call declared, so a stream that returns one is only readable with the tool in hand.
  */
-const listServices = Tool.make("list_services", { parameters: Schema.Struct({}) })
+const listServices = Tool.make("list_services")
 
 /**
  * How one streaming fixture is shaped: the wire, plus whether the call declares a tool. Only a
