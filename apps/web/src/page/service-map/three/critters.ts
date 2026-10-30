@@ -26,7 +26,11 @@ export function clock(scope: Scope, running: Running): { value: number } {
 	return elapsed
 }
 
-/** Mallards paddle a steady loop round the lake. */
+/** Seconds a clicked duck spends hopping. */
+export const HOP = 0.45
+
+/** Mallards paddle a steady loop round the lake. A click makes one hop and quack: each duck's
+ * hit box carries `userData.quack`, which the scene's click handler calls. */
 export function ducks(
 	scope: Scope,
 	{
@@ -41,17 +45,36 @@ export function ducks(
 		phase,
 		lane: (hash(i, 8.1) - 0.5) * 0.7,
 		speed: 0.13,
+		/** When the current hop lands, in seconds on `performance.now()`'s clock. */
+		landsAt: 0,
 	}))
 	const draw = (sketch: Sketch) => {
 		const stock = prototypes()
 		drawDuck(sketch, stock, palette)
 		stock.dispose()
 	}
-	const groups = flock.map(() => group({}, [sketchDrawing(draw, palette.ink)]))
+	// The duck is tiny on screen, so a roomier invisible box takes its clicks.
+	const target = (duck: (typeof flock)[number]) => {
+		const box = mesh(
+			new THREE.BoxGeometry(0.4, 0.3, 0.3),
+			new THREE.MeshBasicMaterial({ visible: false }),
+			{
+				position: [0, 0.1, 0],
+			},
+		)
+		box.userData.quack = () => {
+			duck.landsAt = performance.now() / 1000 + HOP
+		}
+		return box
+	}
+	const groups = flock.map((duck) =>
+		group({}, [group({}, [sketchDrawing(draw, palette.ink)]), target(duck)]),
+	)
 	scope.frames.push(() => {
 		flock.forEach((duck, i) => {
 			const node = groups[i]
-			if (!node) return
+			const body = node?.children[0]
+			if (!node || !body) return
 			const s = (duck.phase * water.length + elapsed.value * duck.speed) % water.length
 			const point = water.at(s)
 			// The tangent is the outward normal turned a quarter: (-nz, nx).
@@ -61,6 +84,11 @@ export function ducks(
 				point.z - point.nz * duck.lane * point.w,
 			)
 			node.rotation.y = Math.atan2(-point.nx, -point.nz)
+			// The hop runs on real time, so a paused map still answers the click.
+			const left = Math.max(0, duck.landsAt - performance.now() / 1000)
+			const t = 1 - left / HOP
+			body.position.y = left > 0 ? Math.sin(Math.PI * t) * 0.12 : 0
+			body.rotation.z = left > 0 ? Math.sin(Math.PI * 2 * t) * 0.25 : 0
 		})
 	})
 	return groups
