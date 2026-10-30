@@ -1,5 +1,5 @@
 import { TRACE_BUCKET_FN } from "@maple/domain/tinybird/datasources"
-import { maskLiteralsAndComments, rawSqlIssue } from "@maple/domain/raw-sql"
+import { MAX_RAW_SQL_LENGTH, maskLiteralsAndComments, rawSqlIssue } from "@maple/domain/raw-sql"
 import { definedNames, referencedTableNames } from "./sql-identifiers"
 
 const ID = "'[0-9a-fA-F]{16,32}'"
@@ -47,7 +47,7 @@ export const withTraceIndexSeek = (sql: string): string | undefined => {
 		)
 	})
 	if (hits.length === 0) return undefined
-	return hits.reduceRight((text, m) => {
+	const seeked = hits.reduceRight((text, m) => {
 		const q = m[1] === undefined ? "" : `${m[1]}.`
 		const ids = m[0].match(new RegExp(ID, "g"))?.join(", ") ?? ""
 		const seek =
@@ -55,4 +55,6 @@ export const withTraceIndexSeek = (sql: string): string | undefined => {
 			`(SELECT ServiceName, Bucket, TraceId FROM trace_index WHERE $__orgFilter AND TraceId IN (${ids}))`
 		return `${text.slice(0, m.index)}(${m[0]} AND ${seek})${text.slice(m.index + m[0].length)}`
 	}, sql)
+	// The seek adds text; a statement it pushes past the length limit runs as written.
+	return seeked.length > MAX_RAW_SQL_LENGTH ? undefined : seeked
 }

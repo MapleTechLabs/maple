@@ -27,6 +27,14 @@ let rt: EvalRuntime
 
 beforeAll(() => {
 	installFakeWarehouse([
+		// Records every statement and matches none of them.
+		{
+			match: (sql) => {
+				issued.push(sql)
+				return false
+			},
+			rows: [],
+		},
 		{
 			match: (sql) => sql.includes(FALLBACK_ID) && sql.includes("FROM trace_index"),
 			failure: unknown("ServiceName"),
@@ -34,10 +42,7 @@ beforeAll(() => {
 		{ match: (sql) => sql.includes(FALLBACK_ID), rows: [{ n: 1 }] },
 		{
 			match: (sql) => sql.includes("FROM product_events"),
-			rows: (sql) => {
-				issued.push(sql)
-				return Array.from({ length: 1000 }, (_, i) => ({ n: i }))
-			},
+			rows: Array.from({ length: 1000 }, (_, i) => ({ n: i })),
 		},
 		{ match: (sql) => sql.includes("service.name"), failure: unknown("service.name") },
 		{ match: (sql) => sql.includes("FROM alert_checks"), failure: GATEWAY_WRAPPED },
@@ -138,5 +143,9 @@ describe("run_sql recovery", () => {
 		})
 		expect(result.isError).not.toBe(true)
 		expect(Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent).rows).toEqual([{ n: 1 }])
+		const lookups = issued.filter((sql) => sql.includes(FALLBACK_ID))
+		expect(lookups).toHaveLength(2)
+		expect(lookups[0]).toContain("FROM trace_index")
+		expect(lookups[1]).not.toContain("FROM trace_index")
 	})
 })
