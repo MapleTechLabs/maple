@@ -168,7 +168,8 @@ export const segmentedSelect = <T extends string, M>(
 						}),
 					),
 					slot: "toggle",
-					tabIndex: isSelected ? 0 : -1,
+					// Stateless, so no arrow-key roving: every enabled option is its own tab stop.
+					tabIndex: (option.isDisabled ?? false) ? -1 : 0,
 					attributes: [
 						h.AriaDisabled(option.isDisabled ?? false),
 						h.AriaLabel(option.ariaLabel ?? option.label),

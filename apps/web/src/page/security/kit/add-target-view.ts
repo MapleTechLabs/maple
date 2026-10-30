@@ -236,7 +236,7 @@ const scopeChip = (h: H, path: string): Html =>
 				{
 					label: `Remove ${path}`,
 					size: "icon-2xs",
-					className: "text-muted-foreground hover:text-foreground",
+					className: "text-muted-foreground hover:text-foreground pointer-coarse:after:hidden",
 					attributes: [h.OnClick(Message.RemovedScopePath({ path }))],
 				},
 				[icon(h, "XmarkIcon", { size: 12 })],

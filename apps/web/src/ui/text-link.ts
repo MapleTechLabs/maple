@@ -22,7 +22,10 @@ export type TextLinkOptions<M> = Readonly<
 		isMono?: boolean
 		className?: string
 		attributes?: ReadonlyArray<Attribute<M> | ChildAttribute>
-	} & ({ href: string } | { onClick: M; isDisabled?: boolean })
+	} & (
+		| { href: string; onClick?: never; isDisabled?: never }
+		| { onClick: M; isDisabled?: boolean; href?: never }
+	)
 >
 
 export const textLinkClass = (tone: TextLinkTone = "primary", isMono = false, className?: string): string =>
@@ -35,7 +38,7 @@ export const textLink = <M>(
 ): Html => {
 	const className = h.Class(textLinkClass(options.tone, options.isMono, options.className))
 	const extra = options.attributes ?? []
-	if ("href" in options) return h.a([className, h.Href(options.href), ...extra], children)
+	if (options.href !== undefined) return h.a([className, h.Href(options.href), ...extra], children)
 	return h.button(
 		[
 			h.Type("button"),

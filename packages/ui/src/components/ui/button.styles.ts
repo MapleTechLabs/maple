@@ -32,7 +32,7 @@ export const buttonVariants = cva(
 				"destructive-outline":
 					"border-input bg-popover not-dark:bg-clip-padding text-destructive-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] hover:border-destructive/32 hover:bg-destructive/4 data-pressed:border-destructive/32 data-pressed:bg-destructive/4 *:data-[slot=button-loading-indicator]:text-foreground dark:bg-input/32 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none",
 				// Add-a-row affordances ("Add threshold", "New dashboard"): an outline that reads as an empty slot.
-				dashed: "border-dashed border-input bg-transparent text-muted-foreground hover:bg-surface-sunken hover:text-foreground data-pressed:bg-surface-sunken *:data-[slot=button-loading-indicator]:text-foreground",
+				dashed: "active:scale-100! border-dashed border-input bg-transparent text-muted-foreground hover:bg-surface-sunken hover:text-foreground data-pressed:bg-surface-sunken *:data-[slot=button-loading-indicator]:text-foreground",
 				ghost: "border-transparent text-foreground hover:bg-accent data-pressed:bg-accent *:data-[slot=button-loading-indicator]:text-foreground",
 				link: "border-transparent text-primary underline-offset-4 active:scale-100! hover:underline data-pressed:underline *:data-[slot=button-loading-indicator]:text-foreground",
 				outline:

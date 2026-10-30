@@ -126,7 +126,8 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 							size: "icon-2xs",
 							// The native title carries the shortcut hint, so no tooltip trigger per row.
 							hasTooltip: false,
-							className: "text-muted-foreground hover:text-foreground",
+							// No coarse-pointer hit area: it would cover the span label beside it.
+							className: "text-muted-foreground hover:text-foreground pointer-coarse:after:hidden",
 							attributes: [
 								h.Tabindex(-1),
 								h.Title(`${verb} — ⌥ for the whole subtree`),

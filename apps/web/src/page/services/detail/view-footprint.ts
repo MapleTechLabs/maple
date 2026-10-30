@@ -277,7 +277,16 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 			...visible.map((target) => stripChip(h, target, onViewAll)),
 			...(hiddenCount > 0
 				? [
-						button(h, { variant: "dashed", size: "xs", attributes: [h.OnClick(onViewAll)] }, [
+						button(
+							h,
+							{
+								variant: "dashed",
+								size: "xs",
+								// Sized like the chips it follows, not like a toolbar button.
+								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
+								attributes: [h.OnClick(onViewAll)],
+							},
+							[
 							`+${hiddenCount} more`,
 						]),
 					]
