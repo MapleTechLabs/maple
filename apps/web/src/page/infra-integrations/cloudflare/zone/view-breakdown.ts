@@ -128,7 +128,7 @@ const table = (
 			isWaiting: options.isWaiting,
 		},
 		[
-			head(dimension.column, "key", "w-0 flex-1 min-w-[220px]"),
+			head(dimension.column, "key", "w-0 flex-1 min-w-56"),
 			head("Requests", "requests", "w-28"),
 			head("Error rate", "errorRate", "w-24"),
 			head("Bandwidth", "bytes", "w-24", "hidden md:flex"),
@@ -147,7 +147,7 @@ const table = (
 						],
 						[
 							h.div(
-								[h.Class("w-0 min-w-[220px] flex-1 truncate")],
+								[h.Class("w-0 min-w-56 flex-1 truncate")],
 								[
 									options.selected === null
 										? h.span(

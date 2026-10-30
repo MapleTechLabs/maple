@@ -29,7 +29,7 @@ const rowMarker = (h: H, state: RowState): Html =>
 			? spinner(h, "size-3.5 text-muted-foreground")
 			: h.span([
 					h.AriaHidden(true),
-					h.Class("size-3.5 rounded-full border border-dashed border-muted-foreground/60"),
+					h.Class("size-3.5 rounded-full border border-dashed border-foreground-subtle"),
 				])
 
 const overdueHelp = (h: H): Html =>

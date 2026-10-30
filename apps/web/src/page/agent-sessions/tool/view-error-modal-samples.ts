@@ -29,7 +29,7 @@ const SAMPLES_PAGE = 25
 const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const paging = pagingOf(model)
 	return h.div(
-		[h.Class("flex h-9 items-center gap-[9px] px-6 font-mono text-xs")],
+		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
 		[
 			h.span(
 				[h.Class("text-muted-foreground")],
@@ -217,7 +217,7 @@ const sampleRow = (
 					}),
 					h.span([h.Class("shrink-0 text-xs text-foreground")], [time]),
 					h.span(
-						[h.Class("flex min-w-0 shrink items-center gap-[5px] text-xs")],
+						[h.Class("flex min-w-0 shrink items-center gap-1.5 text-xs")],
 						[
 							h.span([h.Class("shrink-0 text-foreground-subtle")], ["session"]),
 							sessionLink(h, {
@@ -250,7 +250,7 @@ const sampleRow = (
 								h.span(
 									[
 										h.Class(
-											"hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-foreground-subtle md:block",
+											"hidden shrink-0 rounded-sm border border-border px-1.5 text-2xs leading-3.5 text-foreground-subtle md:block",
 										),
 									],
 									["variant ", h.span([h.Class("text-foreground-soft")], [options.variant])],
@@ -285,7 +285,7 @@ const sampleRow = (
 								)}`,
 							),
 							h.Class(
-								"relative flex shrink-0 items-center gap-[5px] text-2xs text-muted-foreground transition-colors hover:text-foreground",
+								"relative flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground transition-colors hover:text-foreground",
 							),
 						],
 						[

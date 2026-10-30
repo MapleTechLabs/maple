@@ -605,7 +605,7 @@ export const databasesTable = (
 
 // The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
 
-const GENERIC_NAME = "w-0 flex-1 min-w-[240px]"
+const GENERIC_NAME = "w-0 flex-1 min-w-60"
 const VALUE_WIDTH = "w-28"
 
 const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [

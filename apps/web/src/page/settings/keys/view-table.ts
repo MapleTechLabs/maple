@@ -36,7 +36,7 @@ const TYPE_BADGE = {
 } as const satisfies { readonly [Type in KeyType]: "muted" | "ok" }
 
 const COL = {
-	name: "w-0 min-w-[180px] flex-1",
+	name: "w-0 min-w-44 flex-1",
 	access: "hidden w-36 shrink-0 @xl:block",
 	createdBy: "hidden w-36 shrink-0 @min-[820px]:block",
 	lastUsed: "hidden w-20 shrink-0 @2xl:block",
@@ -210,7 +210,7 @@ export const keysTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, input
 }
 
 const DEVICE_COL = {
-	name: "w-0 min-w-[180px] flex-1",
+	name: "w-0 min-w-44 flex-1",
 	owner: "hidden w-44 shrink-0 @xl:block",
 	created: "hidden w-28 shrink-0 @2xl:block",
 	lastUsed: "hidden w-20 shrink-0 @lg:block",

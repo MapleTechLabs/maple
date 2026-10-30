@@ -47,7 +47,7 @@ const rail = (h: H, marker: Html): Html =>
 	h.span(
 		[h.Class("relative flex h-full justify-center")],
 		[
-			h.span([h.AriaHidden(true), h.Class("h-full w-px bg-border/60 group-last/row:h-5")]),
+			h.span([h.AriaHidden(true), h.Class("h-full w-px bg-border-subtle group-last/row:h-5")]),
 			h.span([h.Class("absolute top-2.5 flex justify-center")], [marker]),
 		],
 	)

@@ -202,10 +202,10 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 
 const stageBar = (h: H, stage: Stage, fade: number): Html =>
 	h.div(
-		[h.Class("relative h-2.5 w-full overflow-hidden rounded-[3px] bg-foreground/5")],
+		[h.Class("relative h-2.5 w-full overflow-hidden rounded-xs bg-foreground/5")],
 		[
 			h.div([
-				h.Class("absolute inset-y-0 left-0 rounded-[3px]"),
+				h.Class("absolute inset-y-0 left-0 rounded-xs"),
 				h.Style({
 					width: `${stage.widthPct * 100}%`,
 					"background-color": stage.color,

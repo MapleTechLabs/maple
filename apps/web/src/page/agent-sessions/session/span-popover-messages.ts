@@ -207,7 +207,7 @@ const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionS
 								),
 							]
 						: []),
-					h.span([h.AriaHidden(true), h.Class("h-px min-w-4 flex-1 bg-border/60")], []),
+					h.span([h.AriaHidden(true), h.Class("h-px min-w-4 flex-1 bg-border-subtle")], []),
 					...(hasText ? [viewSwitch(h, { rendered, isRaw, rawKey: `${key}:raw` })] : []),
 				],
 			),

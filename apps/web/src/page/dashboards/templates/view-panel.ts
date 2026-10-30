@@ -211,7 +211,7 @@ const requirementBlock = (
 							? h.span(
 									[
 										h.Class(
-											"bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-[3px]",
+											"bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-xs",
 										),
 									],
 									[icon(h, "CheckIcon", { size: 10, className: "text-background" })],

@@ -68,7 +68,7 @@ const axisGrid = (h: H, ticks: ReadonlyArray<AxisTick>): ReadonlyArray<Html> =>
 			[
 				h.Key(String(tick.fraction)),
 				h.AriaHidden(true),
-				h.Class("absolute inset-y-0 w-px bg-border/40"),
+				h.Class("absolute inset-y-0 w-px bg-border-subtle"),
 				h.Style({ left: `${tick.fraction * 100}%` }),
 			],
 			[],
@@ -177,7 +177,7 @@ const turnHeader = (
 	return h.div(
 		[
 			h.Class(
-				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-accent/50",
+				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-surface-sunken",
 			),
 		],
 		[
@@ -326,7 +326,7 @@ const spanRow = (
 			h.AriaHasPopup("dialog"),
 			h.Class(
 				cn(
-					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-accent/50",
+					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-surface-sunken",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 					isErrored && "bg-severity-error/6",
 					state.isFocused && "bg-accent/60",

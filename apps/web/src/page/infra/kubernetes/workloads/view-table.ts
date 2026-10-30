@@ -22,7 +22,7 @@ type H = HtmlBuilder<Message>
 const columns = (h: H, sort: SortState | null, kind: WorkloadKind | undefined): ReadonlyArray<Html> => {
 	const head = (key: WorkloadSortKey) => headSort(sort, key, (k) => Message.ClickedSort({ key: k }))
 	return [
-		columnHead(h, { label: "Workload", sort: head("workloadName"), width: "w-0 flex-1 min-w-[260px]" }),
+		columnHead(h, { label: "Workload", sort: head("workloadName"), width: "w-0 flex-1 min-w-64" }),
 		columnHead(h, { label: kind === "job" ? "Completions" : "Ready", width: "w-28" }),
 		columnHead(h, { label: "Pods", sort: head("podCount"), align: "right", width: "w-[60px]" }),
 		columnHead(h, { label: "Restarts", sort: head("restarts"), align: "right", width: "w-36" }),
@@ -44,7 +44,7 @@ export const workloadTableLoading = (h: H): Html =>
 		{ ariaLabel: "Workloads" },
 		columns(h, null, undefined),
 		skeletonRows(h, 4, () => [
-			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")]),
+			h.div([h.Class("w-0 min-w-64 flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")]),
 			skeleton(h, "h-3 w-28"),
 			skeleton(h, "h-3 w-[60px]"),
 			skeleton(h, "h-3 w-36"),
@@ -106,7 +106,7 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],

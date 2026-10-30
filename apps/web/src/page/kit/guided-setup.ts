@@ -92,8 +92,8 @@ export const frameworkPicker = <M>(
 									? "border-primary text-primary"
 									: "border-primary bg-primary/10 text-primary"
 								: compact
-									? "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
-									: "border-border hover:border-foreground/30",
+									? "border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
+									: "border-border hover:border-border-strong",
 						),
 					),
 				],
@@ -335,7 +335,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						h.a(
 							[
 								h.Class(
-									"mt-3 flex items-center justify-between gap-3 rounded-md border border-border p-3 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground",
+									"mt-3 flex items-center justify-between gap-3 rounded-md border border-border p-3 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground",
 								),
 								h.Href(docsUrl(docs.page)),
 								h.Target("_blank"),

@@ -30,7 +30,7 @@ const INERT_SORT = { isActive: false, dir: "desc" } satisfies Readonly<{ isActiv
 const columns = <M>(h: HtmlBuilder<M>, sort: SortState | null, onSort?: OnSort<M>): ReadonlyArray<Html> => {
 	const sortOf = (key: HostSortKey) => (onSort === undefined ? INERT_SORT : headSort(sort, key, onSort))
 	return [
-		columnHead(h, { label: "Host", sort: sortOf("hostName"), width: "w-0 flex-1 min-w-[260px]" }),
+		columnHead(h, { label: "Host", sort: sortOf("hostName"), width: "w-0 flex-1 min-w-64" }),
 		columnHead(h, { label: "Usage", width: "w-52" }),
 		columnHead(h, {
 			label: "Load 15m",
@@ -50,7 +50,7 @@ export const hostTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		columns<M>(h, null),
 		skeletonRows(h, 6, () => [
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-32")],
 			),
 			skeleton(h, "h-9 w-52"),
@@ -76,7 +76,7 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],

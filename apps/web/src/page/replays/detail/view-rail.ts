@@ -518,7 +518,7 @@ const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 				],
 			),
 			h.div(
-				[h.Class("flex items-center gap-2 pl-[3.125rem]")],
+				[h.Class("flex items-center gap-2 pl-[50px]")],
 				[
 					h.span(
 						[h.Class("min-w-0 truncate text-2xs text-muted-foreground")],

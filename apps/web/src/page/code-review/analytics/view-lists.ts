@@ -103,7 +103,7 @@ export const outcomesCard = <M>(
 			tone: TONE_FILL.neutral,
 		},
 		{ key: "failed", label: "Failed", value: current.failedReviews, tone: TONE_FILL.crit },
-		{ key: "skipped", label: "Skipped", value: current.skippedReviews, tone: "bg-muted-foreground/30" },
+		{ key: "skipped", label: "Skipped", value: current.skippedReviews, tone: "bg-foreground-faint" },
 	]
 	return analyticsPanel(h, { title: "Review outcomes" }, [
 		barList(

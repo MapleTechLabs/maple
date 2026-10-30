@@ -65,7 +65,7 @@ type RailStatus = "breached" | "error" | "skipped" | "healthy" | "empty"
 const RAIL_COLOR = new Map<RailStatus, string>([
 	["breached", TONE_FILL.crit],
 	["error", TONE_FILL.warn],
-	["skipped", "bg-muted-foreground/30"],
+	["skipped", "bg-foreground-faint"],
 	["healthy", "bg-chart-apdex/70"],
 	["empty", "bg-surface-sunken"],
 ])

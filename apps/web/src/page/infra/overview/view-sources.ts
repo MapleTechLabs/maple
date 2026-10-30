@@ -25,7 +25,7 @@ const SEGMENT_CLASS = {
 	unbounded:
 		"bg-[repeating-linear-gradient(135deg,var(--muted-foreground)_0_1.5px,transparent_1.5px_4px)] opacity-60",
 	// Healthy but barely used: muted, not a warning.
-	idle: "bg-muted-foreground/40",
+	idle: "bg-foreground-faint",
 } satisfies Record<HealthSegment["key"], string>
 
 const SEGMENT_LABEL = {

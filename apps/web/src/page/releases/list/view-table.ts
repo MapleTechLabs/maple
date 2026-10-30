@@ -155,7 +155,7 @@ const pillId = (...parts: ReadonlyArray<string>): string =>
 	`releases-pill-${parts.join("-").replace(/[^A-Za-z0-9_-]/g, "_")}`
 
 const HEADERS: ReadonlyArray<readonly [string, string | undefined]> = [
-	["Release", "w-[46%] min-w-[260px]"],
+	["Release", "w-[46%] min-w-64"],
 	["Services", undefined],
 	["Deployed", "whitespace-nowrap"],
 	["Error rate", "whitespace-nowrap"],

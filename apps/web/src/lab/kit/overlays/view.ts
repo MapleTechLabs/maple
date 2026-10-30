@@ -83,7 +83,7 @@ const itemLink = (h: H, name: OverlayItem, isActive: boolean): Html =>
 					"rounded-md border px-2 py-1 font-mono text-xs transition-colors",
 					isActive
 						? "active border-foreground/20 bg-accent font-medium text-foreground"
-						: "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+						: "border-border text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
 				),
 			),
 			...(isActive ? [h.DataAttribute("status", "active")] : []),

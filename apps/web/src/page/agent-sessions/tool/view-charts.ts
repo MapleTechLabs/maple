@@ -95,7 +95,7 @@ const cell = (
 			h.Class(
 				cn(
 					"flex min-w-0 flex-col",
-					"gap-3.5 border-b border-border px-6 pt-[22px] pb-5 @min-[900px]/page:[&:nth-child(odd)]:border-r",
+					"gap-3.5 border-b border-border px-6 py-5 @min-[900px]/page:[&:nth-child(odd)]:border-r",
 				),
 			),
 		],

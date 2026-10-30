@@ -106,7 +106,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 		[
 			h.AriaHasPopup("dialog"),
 			h.Class(
-				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-accent/50",
+				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-surface-sunken",
 			),
 			h.Type("button"),
 			h.OnClick(openSpan(model, finding.spanId)),
@@ -268,7 +268,7 @@ const disclosure = (
 			h.button(
 				[
 					h.AriaExpanded(isExpanded),
-					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-accent/50")),
+					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken")),
 					h.Type("button"),
 					h.OnClick(Message.ToggledChecks({ which: options.which, isOpen: !isExpanded })),
 				],

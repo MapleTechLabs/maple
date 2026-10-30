@@ -163,7 +163,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 				h,
 				[
 					...(features.length > 0 ? [dataIncluded(h, features, true)] : []),
-					separator(h, "horizontal", "bg-border/60"),
+					separator(h, "horizontal", "bg-border-subtle"),
 					platformFeatures(h, getPlanSlug(plan)),
 				],
 				"flex flex-col gap-5 flex-1",
@@ -235,7 +235,7 @@ const enterpriseCard = (h: H): Html =>
 				h,
 				[
 					dataIncluded(h, ENTERPRISE_DATA_FEATURES, false),
-					separator(h, "horizontal", "bg-border/60"),
+					separator(h, "horizontal", "bg-border-subtle"),
 					platformFeatures(h, "enterprise"),
 				],
 				"flex flex-col gap-5 flex-1",

@@ -293,7 +293,7 @@ const viewsFor = <M>(
 			h.blockquote(
 				streamdown(
 					"blockquote",
-					"my-4 border-muted-foreground/30 border-l-4 pl-4 text-muted-foreground italic",
+					"my-4 border-foreground-faint border-l-4 pl-4 text-muted-foreground italic",
 				)(h),
 				blocks,
 			),

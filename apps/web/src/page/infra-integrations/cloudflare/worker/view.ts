@@ -332,7 +332,7 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 								{
 									key: status,
 									value: count,
-									className: success ? "bg-muted-foreground/60" : "bg-severity-error",
+									className: success ? "bg-foreground-subtle" : "bg-severity-error",
 								},
 							],
 						}),

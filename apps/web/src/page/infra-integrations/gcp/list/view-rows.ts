@@ -30,7 +30,7 @@ export type RowsContext = Readonly<{
 	locale: string
 }>
 
-export const NAME = "w-0 min-w-[220px] flex-1"
+export const NAME = "w-0 min-w-56 flex-1"
 export const NUMBER = "text-right font-mono text-xs tabular-nums"
 export const SUB = "font-mono text-3xs text-muted-foreground"
 
@@ -115,7 +115,7 @@ export const spark = (
 			? // All zeros is no traffic, not a flat line of data: a muted dash keeps the slot.
 				h.div(
 					[h.Class("flex h-5 min-w-0 flex-1 items-center")],
-					[h.span([h.AriaHidden(true), h.Class("h-px w-3 bg-muted-foreground/50")])],
+					[h.span([h.AriaHidden(true), h.Class("h-px w-3 bg-foreground-subtle")])],
 				)
 			: h.div(
 					[h.Class("h-5 min-w-0 flex-1")],

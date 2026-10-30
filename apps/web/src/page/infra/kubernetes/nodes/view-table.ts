@@ -20,7 +20,7 @@ type H = HtmlBuilder<Message>
 const columns = (h: H, sort: SortState | null): ReadonlyArray<Html> => {
 	const head = (key: NodeSortKey) => headSort(sort, key, (k) => Message.ClickedSort({ key: k }))
 	return [
-		columnHead(h, { label: "Node", sort: head("nodeName"), width: "w-0 flex-1 min-w-[260px]" }),
+		columnHead(h, { label: "Node", sort: head("nodeName"), width: "w-0 flex-1 min-w-64" }),
 		columnHead(h, { label: "CPU / allocatable", sort: head("cpuUtilization"), width: "w-44", hidden: "hidden md:flex" }),
 		columnHead(h, {
 			label: "Memory / allocatable",
@@ -39,7 +39,7 @@ export const nodeTableLoading = (h: H): Html =>
 		{ ariaLabel: "Nodes" },
 		columns(h, null),
 		skeletonRows(h, 4, () => [
-			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")]),
+			h.div([h.Class("w-0 min-w-64 flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")]),
 			skeleton(h, "hidden h-3 w-44 md:block"),
 			skeleton(h, "hidden h-3 w-44 lg:block"),
 			skeleton(h, "hidden h-3 w-24 md:block"),
@@ -74,7 +74,7 @@ const nodeRow = (h: H, node: NodeRow, inputs: NodeTableInputs): Html =>
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],

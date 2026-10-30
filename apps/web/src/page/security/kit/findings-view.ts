@@ -28,11 +28,11 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 			cn(
 				"inline-block size-2.5 shrink-0 rounded-full",
 				bucket === "informational"
-					? "border-2 border-muted-foreground/60"
+					? "border-2 border-foreground-subtle"
 					: bucket === "needs_validation"
 						? "border-2 border-dashed border-muted-foreground"
 						: bucket === "rejected"
-							? "bg-muted-foreground/30"
+							? "bg-foreground-faint"
 							: SECURITY_SEVERITY_FILL[bucket],
 				className,
 			),
@@ -83,7 +83,7 @@ export const unverifiedChip = <M>(h: HtmlBuilder<M>): Html =>
 		[
 			h.Title("Severity estimated from the source; not proven by running the code"),
 			h.Class(
-				"rounded-sm border border-dashed border-muted-foreground/50 px-1.5 py-px text-2xs text-muted-foreground",
+				"rounded-sm border border-dashed border-foreground-subtle px-1.5 py-px text-2xs text-muted-foreground",
 			),
 		],
 		["Unverified"],

@@ -433,6 +433,8 @@
 	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
 	--color-surface-strong: color-mix(in oklab, var(--muted) 60%, transparent);
 	--color-border-subtle: color-mix(in oklab, var(--border) 60%, transparent);
+	/* Hover and selected outline on pickable cards. */
+	--color-border-strong: color-mix(in oklab, var(--foreground) 30%, transparent);
 	--color-avatar-1: var(--avatar-1);
 	--color-avatar-2: var(--avatar-2);
 	--color-avatar-3: var(--avatar-3);

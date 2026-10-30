@@ -47,7 +47,7 @@ export const selectableTile = <M>(h: HtmlBuilder<M>, options: TileOptions<M>): H
 	})
 
 const sublineText = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
-	h.span([h.Class("inline-flex items-center gap-[5px] font-mono tabular-nums")], children)
+	h.span([h.Class("inline-flex items-center gap-1.5 font-mono tabular-nums")], children)
 
 /** `ToolDeltaValue`: the change in the metric's own unit, graded by `toolDelta`. */
 const deltaValue = <M>(h: HtmlBuilder<M>, change: ToolDelta): Html =>

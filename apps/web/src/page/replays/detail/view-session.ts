@@ -134,7 +134,7 @@ const summary = (h: H, session: ReplayDetail): Html => {
 						segmentedBar(h, {
 							segments: [
 								{ key: "active", value: share.active, className: "bg-primary" },
-								{ key: "idle", value: share.idle, className: "bg-muted-foreground/40" },
+								{ key: "idle", value: share.idle, className: "bg-foreground-faint" },
 							],
 							total: 100,
 							className: "mt-3 h-1 gap-px bg-muted",
@@ -150,7 +150,7 @@ const summary = (h: H, session: ReplayDetail): Html => {
 									: [
 											legend(
 												h,
-												"bg-muted-foreground/40",
+												"bg-foreground-faint",
 												"Idle",
 												formatSessionDuration(idle),
 											),

@@ -47,7 +47,7 @@ const STATUS_CELLS: ReadonlyArray<Readonly<{ status: HostStatus; hint: string; t
 const STATUS_SEGMENT = new Map<HostStatus, string>([
 	["active", TONE_FILL.info],
 	["idle", TONE_FILL.warn],
-	["ended", "bg-muted-foreground/40"],
+	["ended", "bg-foreground-faint"],
 ])
 
 const NODE_SORT_ACCESSORS: SortAccessors<NodeRow> = new Map<string, (row: NodeRow) => string | number>([

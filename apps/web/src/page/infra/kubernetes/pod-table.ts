@@ -64,7 +64,7 @@ const columns = <M>(
 			? { isActive: sort !== null && sort.key === key, dir: sort?.dir ?? "desc" }
 			: headSort(sort, key, onSort)
 	return [
-		columnHead(h, { label: "Pod", sort: head("podName"), width: "w-0 flex-1 min-w-[260px]" }),
+		columnHead(h, { label: "Pod", sort: head("podName"), width: "w-0 flex-1 min-w-64" }),
 		columnHead(h, {
 			label: "Peak saturation",
 			sort: head("saturation"),
@@ -96,7 +96,7 @@ export const podTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		columns(h, null, undefined),
 		skeletonRows(h, 6, () => [
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")],
 			),
 			h.div(
@@ -165,7 +165,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],

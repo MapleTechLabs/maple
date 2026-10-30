@@ -284,7 +284,7 @@ const runProgress = <M>(
 					const isLast = index === steps.length - 1
 					return h.keyed("li")(
 						`${step.at}-${step.tool}-${index}`,
-						[h.Class("flex items-baseline gap-2.5 py-[3px] text-xs")],
+						[h.Class("flex items-baseline gap-2.5 py-1 text-xs")],
 						[
 							statusDot(h, {
 								tone: "custom",
@@ -295,7 +295,7 @@ const runProgress = <M>(
 										? "bg-primary"
 										: isLast && isStalled
 											? TONE_FILL.warn
-											: "bg-muted-foreground/35",
+											: "bg-foreground-faint",
 								),
 							}),
 							h.span(

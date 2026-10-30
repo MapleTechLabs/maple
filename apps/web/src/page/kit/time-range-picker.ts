@@ -347,7 +347,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 					)
 				}),
 			),
-			h.div([h.Class("mx-3 mt-1 h-px bg-border/60")], []),
+			h.div([h.Class("mx-3 mt-1 h-px bg-border-subtle")], []),
 			h.button(
 				[
 					h.Type("button"),

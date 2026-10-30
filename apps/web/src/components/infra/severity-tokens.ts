@@ -45,8 +45,8 @@ export const BAR_VALUE_TONE: Record<SeverityLevel, string> = {
 /** Status dot fill. */
 export const STATUS_DOT: Record<HostStatus, string> = {
 	active: TONE_FILL.ok,
-	idle: "bg-muted-foreground/60",
-	ended: "bg-muted-foreground/40",
+	idle: "bg-foreground-subtle",
+	ended: "bg-foreground-faint",
 } satisfies Record<HostStatus, string>
 
 /** Status dot ring. */

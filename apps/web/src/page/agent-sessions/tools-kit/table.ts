@@ -138,7 +138,7 @@ export const toolRowClass = (isSelected: boolean): string =>
 
 export const toolTableFooter = <M>(h: HtmlBuilder<M>, subject: string, detail: string): Html =>
 	h.div(
-		[h.Class("flex h-9 items-center gap-[9px] px-2.5 font-mono text-xs")],
+		[h.Class("flex h-9 items-center gap-2 px-2.5 font-mono text-xs")],
 		[
 			h.span([h.Class("text-muted-foreground")], [subject]),
 			h.span([h.Class("text-foreground-subtle")], [detail]),

@@ -25,7 +25,7 @@ const drawnCheck = (h: H, isChecked: boolean, className: string): Html =>
 					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
 					isChecked
 						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-foreground/40",
+						: "border-input bg-background group-hover:border-border-strong",
 					className,
 				),
 			),
@@ -70,7 +70,7 @@ const optionCard = (h: H, name: string, isChecked: boolean): Html =>
 							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 							"items-start gap-3 p-4",
 							!isChecked
-								? "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]"
+								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
 								: "border-primary bg-primary/5",
 						),
 					),

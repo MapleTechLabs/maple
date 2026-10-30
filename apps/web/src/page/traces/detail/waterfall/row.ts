@@ -130,7 +130,7 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				[
 					h.span(
 						[
-							h.Class(cn("size-2 rounded-[2px]", statusFill(span.statusCode))),
+							h.Class(cn("size-2 rounded-xs", statusFill(span.statusCode))),
 							h.Title(span.statusCode === "" ? "Unset" : span.statusCode),
 						],
 						[],

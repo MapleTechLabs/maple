@@ -116,7 +116,7 @@ export const accountsStrip = (
 						[h.Class("block h-1 w-full overflow-hidden rounded-full bg-muted")],
 						[
 							h.span([
-								h.Class("block h-full rounded-full bg-muted-foreground/60"),
+								h.Class("block h-full rounded-full bg-foreground-subtle"),
 								h.Style({ width: `${Math.max(fraction * 100, fraction > 0 ? 1.5 : 0)}%` }),
 							]),
 						],

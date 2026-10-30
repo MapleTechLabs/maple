@@ -439,7 +439,7 @@ export const followUpComposer = (h: H): Html =>
 			h.Type("button"),
 			h.OnClick(Message.ClickedFollowUp()),
 			h.Class(
-				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left transition-colors hover:border-ring hover:bg-accent/50",
+				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left transition-colors hover:border-ring hover:bg-surface-sunken",
 			),
 		],
 		[

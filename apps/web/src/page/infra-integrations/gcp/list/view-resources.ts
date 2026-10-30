@@ -32,7 +32,7 @@ const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground-soft"
 
 const columns = (h: H): ReadonlyArray<Html> => [
-	columnHead(h, { label: "Resource", width: "w-0 flex-1 min-w-[220px]" }),
+	columnHead(h, { label: "Resource", width: "w-0 flex-1 min-w-56" }),
 	columnHead(h, { label: "Type", width: "w-44" }),
 	columnHead(h, { label: "Project", width: "w-52" }),
 	columnHead(h, { label: "Location", width: "w-32" }),
@@ -46,7 +46,7 @@ const loading = (h: H): Html =>
 		{ ariaLabel: "Google Cloud resources" },
 		columns(h),
 		skeletonRows(h, 5, () => [
-			skeleton(h, "h-4 w-0 min-w-[220px] flex-1"),
+			skeleton(h, "h-4 w-0 min-w-56 flex-1"),
 			skeleton(h, "h-3 w-44"),
 			skeleton(h, "h-3 w-52"),
 			skeleton(h, "h-3 w-32"),
@@ -95,7 +95,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div(
 			[
 				h.Class(
-					"w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
 				),
 				h.Title(resource.name),
 			],

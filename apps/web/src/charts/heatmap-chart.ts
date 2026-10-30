@@ -78,7 +78,7 @@ const emptyState = (h: H, inputs: HeatmapChartInputs): Html => {
 						[
 							h.div(
 								[
-									h.Class("grid grid-cols-8 gap-[2px] rounded-sm p-[3px]"),
+									h.Class("grid grid-cols-8 gap-0.5 rounded-sm p-[3px]"),
 									h.Style({ background: grout(inputs.theme) }),
 								],
 								Array.from({ length: 32 }, (_, i) =>

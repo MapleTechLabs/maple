@@ -120,7 +120,7 @@ const body = (
 										[
 											h.Attribute(
 												"class",
-												"pointer-events-none absolute inset-y-0 w-px bg-border/40",
+												"pointer-events-none absolute inset-y-0 w-px bg-border-subtle",
 											),
 											h.Style({ left: tickLeft(offset, model) }),
 										],

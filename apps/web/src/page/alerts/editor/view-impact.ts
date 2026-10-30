@@ -222,7 +222,7 @@ const fireRail = (
 						h.Class(
 							cn(
 								"absolute inset-y-0 min-w-0.5 rounded-[1px]",
-								tone === "crit" ? "bg-severity-error" : "bg-muted-foreground/60",
+								tone === "crit" ? "bg-severity-error" : "bg-foreground-subtle",
 							),
 						),
 						h.Style({ left: `${mark.left * 100}%`, width: `${mark.width * 100}%` }),

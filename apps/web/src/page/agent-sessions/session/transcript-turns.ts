@@ -20,7 +20,7 @@ const summariseTurn = (chapter: Extract<TranscriptRow, { kind: "turn" }>): strin
 		...(chapter.toolNames.length > 0 ? [chapter.toolNames.join(", ")] : []),
 	].join(" · ")
 
-const rule = (h: H): Html => h.span([h.AriaHidden(true), h.Class("h-px grow bg-border/60")], [])
+const rule = (h: H): Html => h.span([h.AriaHidden(true), h.Class("h-px grow bg-border-subtle")], [])
 
 export const turnChapter = (
 	h: H,

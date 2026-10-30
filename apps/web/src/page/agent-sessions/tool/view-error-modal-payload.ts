@@ -61,7 +61,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 				? h.span(
 						[
 							h.Class(
-								"my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error",
+								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error",
 							),
 						],
 						['"', line.missingKey, '"', h.span([h.Class("opacity-80")], ["missing, required"])],
@@ -85,7 +85,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 				? []
 				: [
 						h.span(
-							[h.Class("ml-2 rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground")],
+							[h.Class("ml-2 rounded-xs bg-muted px-1 text-2xs text-muted-foreground")],
 							[line.folded],
 						),
 					]),
@@ -101,7 +101,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 											h.span(
 												[
 													h.Class(
-														"rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground",
+														"rounded-xs bg-muted px-1 text-2xs text-muted-foreground",
 													),
 												],
 												["+", formatToolCount(line.note.hiddenBytes), " B not shown"],
@@ -253,7 +253,7 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 						h.div(
 							[
 								h.Class(
-									"flex items-baseline gap-3 rounded-md border border-severity-error/20 bg-severity-error/[0.07] px-3 py-[9px] font-mono",
+									"flex items-baseline gap-3 rounded-md border border-severity-error/20 bg-severity-error/[0.07] px-3 py-2 font-mono",
 								),
 							],
 							[

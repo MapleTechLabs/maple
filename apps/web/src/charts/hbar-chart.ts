@@ -111,12 +111,12 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 							}),
 							h.div(
 								[
-									h.Class("relative w-full overflow-hidden rounded-[3px] bg-foreground/5"),
+									h.Class("relative w-full overflow-hidden rounded-xs bg-foreground/5"),
 									h.Style({ height: `${barH}px` }),
 								],
 								[
 									h.div([
-										h.Class("absolute inset-y-0 left-0 rounded-[3px]"),
+										h.Class("absolute inset-y-0 left-0 rounded-xs"),
 										h.Style({
 											width: `${bar.widthPct * 100}%`,
 											"background-color": bar.color,

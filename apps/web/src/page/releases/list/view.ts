@@ -53,7 +53,7 @@ const loadingSkeleton = (h: H): Html =>
 			tableSkeleton(h, {
 				rows: 8,
 				columns: [
-					{ header: "Release", headClassName: "w-[46%] min-w-[260px]", skeleton: "w-48" },
+					{ header: "Release", headClassName: "w-[46%] min-w-64", skeleton: "w-48" },
 					{ header: "Services" },
 					{ header: "Deployed", headClassName: "whitespace-nowrap" },
 					{ header: "Error rate", headClassName: "whitespace-nowrap", skeleton: "w-12" },
