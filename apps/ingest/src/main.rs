@@ -3420,8 +3420,9 @@ async fn grpc_admission(
     response
 }
 
-/// The HTTP path's raw body cap. Past it the call ends `ResourceExhausted`, a client
-/// error OTLP exporters do not retry; tonic finds the `Status` in the body error.
+/// The HTTP path's raw body cap, and one message per export (`SingleGrpcFrame`).
+/// Both refusals are client errors OTLP exporters do not retry; tonic finds the
+/// `Status` in the body error.
 fn limit_grpc_body(request: &mut Request, max_bytes: usize) -> Result<(), tonic::Status> {
     use http_body_util::BodyExt as _;
 
@@ -3437,16 +3438,63 @@ fn limit_grpc_body(request: &mut Request, max_bytes: usize) -> Result<(), tonic:
         return Err(too_large());
     }
     let body = std::mem::take(request.body_mut());
-    *request.body_mut() = axum::body::Body::new(
-        http_body_util::Limited::new(body, max_bytes).map_err(move |error| {
-            if error.is::<http_body_util::LengthLimitError>() {
-                axum::BoxError::from(too_large())
-            } else {
-                error
-            }
-        }),
-    );
+    let mut frame = SingleGrpcFrame::default();
+    let limited = http_body_util::Limited::new(body, max_bytes).map_err(move |error| {
+        if error.is::<http_body_util::LengthLimitError>() {
+            axum::BoxError::from(too_large())
+        } else {
+            error
+        }
+    });
+    let guarded = futures_util::StreamExt::map(limited.into_data_stream(), move |chunk| {
+        let chunk = chunk?;
+        frame.check(&chunk)?;
+        Ok::<_, axum::BoxError>(chunk)
+    });
+    *request.body_mut() = axum::body::Body::from_stream(guarded);
     Ok(())
+}
+
+/// Tracks the gRPC framing of a unary export body. tonic's unary path decodes every
+/// frame, each up to the decoded limit, but an export is one message: a byte past
+/// the first frame is refused before tonic reads it.
+#[derive(Default)]
+struct SingleGrpcFrame {
+    header: [u8; 5],
+    header_len: usize,
+    body_left: usize,
+    complete: bool,
+}
+
+impl SingleGrpcFrame {
+    fn check(&mut self, mut chunk: &[u8]) -> Result<(), tonic::Status> {
+        while !chunk.is_empty() {
+            if self.complete {
+                return Err(tonic::Status::invalid_argument(
+                    "An OTLP export carries exactly one gRPC message",
+                ));
+            }
+            if self.header_len < self.header.len() {
+                let take = (self.header.len() - self.header_len).min(chunk.len());
+                self.header[self.header_len..self.header_len + take]
+                    .copy_from_slice(&chunk[..take]);
+                self.header_len += take;
+                chunk = &chunk[take..];
+                if self.header_len == self.header.len() {
+                    let [_, a, b, c, d] = self.header;
+                    self.body_left =
+                        usize::try_from(u32::from_be_bytes([a, b, c, d])).unwrap_or(usize::MAX);
+                    self.complete = self.body_left == 0;
+                }
+            } else {
+                let take = self.body_left.min(chunk.len());
+                self.body_left -= take;
+                chunk = &chunk[take..];
+                self.complete = self.body_left == 0;
+            }
+        }
+        Ok(())
+    }
 }
 
 async fn admit_grpc_export(
@@ -14106,6 +14154,22 @@ mod tests {
             grpc_header_status(&inflated),
             Some("8"),
             "gzip that inflates past the decoded limit is RESOURCE_EXHAUSTED"
+        );
+
+        // Each extra frame would be decompressed up to the decoded limit.
+        let mut two_frames = gzip_grpc_frame(&message(16));
+        two_frames.extend(gzip_grpc_frame(&message(16)));
+        let extra_frame = {
+            let mut request = grpc_export_request("MAPLE_TEST", two_frames);
+            request
+                .headers_mut()
+                .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+            router.call(request).await.unwrap()
+        };
+        assert_eq!(
+            grpc_header_status(&extra_frame),
+            Some("3"),
+            "a second message in one export is INVALID_ARGUMENT"
         );
 
         let oversized = grpc_frame(&message(2 * raw_limit));

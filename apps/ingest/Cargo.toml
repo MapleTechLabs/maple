@@ -13,6 +13,7 @@ base64 = "0.22.1"
 bytes = "1"
 chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 flate2 = "1.1.5"
+futures-util = "0.3"
 http-body-util = "0.1"
 hmac = "0.12.1"
 dotenvy = "0.15.7"
@@ -132,7 +133,6 @@ items_after_statements = "allow"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
-futures-util = "0.3"
 proptest = { version = "1.10", default-features = false, features = ["std"] }
 
 [[bench]]
