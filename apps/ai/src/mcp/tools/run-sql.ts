@@ -293,12 +293,13 @@ const withCallerErrorText =
 			: error
 
 // The cap leaves no overflow row, so only a statement's own LIMIT within the cap proves it whole.
-const OWN_LIMIT = /\bLIMIT\s+(\d+)(?:\s*(?:,|OFFSET)\s*\d+)?\s*;?\s*$/i
+const OWN_LIMIT = /\bLIMIT\s+(\d+)(?:\s*,\s*(\d+)|\s+OFFSET\s+\d+)?\s*;?\s*$/i
 
 /** The statement ends in its own LIMIT of at most the cap, so a full page is its answer, not ours. */
 const limitedWithinCap = (sql: string): boolean => {
 	const own = OWN_LIMIT.exec(maskLiteralsAndComments(sql).trimEnd())
-	return own !== null && Number(own[1]) <= MAX_RAW_SQL_RESULT_ROWS
+	// `LIMIT offset, count` puts the count second.
+	return own !== null && Number(own[2] ?? own[1]) <= MAX_RAW_SQL_RESULT_ROWS
 }
 
 type RawSqlRun = ReturnType<typeof runRawSql>

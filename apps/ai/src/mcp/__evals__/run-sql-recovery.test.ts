@@ -135,6 +135,14 @@ describe("run_sql recovery", () => {
 		expect(markdown(result)).not.toContain("row cap")
 	})
 
+	it("reads the count, not the offset, of LIMIT offset, count", async () => {
+		const result = await runToolDirect(rt, "run_sql", {
+			...WINDOW,
+			sql: "SELECT number AS n FROM product_events WHERE $__orgFilter LIMIT 10, 5000",
+		})
+		expect(Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent).atRowCap).toBe(true)
+	})
+
 	// The seek names `ServiceName`/`Timestamp`, which an outer query over a subquery may lack.
 	it("runs a trace-id lookup as written when the warehouse cannot analyse the seeked form", async () => {
 		const result = await runToolDirect(rt, "run_sql", {
