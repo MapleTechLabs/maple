@@ -63,7 +63,7 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 						cn(
 							badgeVariants({
 								variant: "outline",
-								className: cn("font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80"),
+								className: cn("font-mono text-2xs text-white border-0 shrink-0 bg-primary/80"),
 							}),
 						),
 					),
