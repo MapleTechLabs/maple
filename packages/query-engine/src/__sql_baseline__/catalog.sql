@@ -5007,7 +5007,7 @@ SELECT
           AND metrics_gauge.MetricName IN ('gcp.cloud_run.container.instance.count', 'gcp.cloud_functions.instance.count', 'aws.ecs.cpu_utilization', 'aws.lambda.duration', 'railway.cpu.usage', 'cloudflare.worker.cpu_time')
         GROUP BY metricServiceName, metricName, account, region, cluster, railwayServiceId, railwayEnvironmentId
         ORDER BY metricServiceName ASC, metricName ASC
-        LIMIT 200
+        LIMIT 10000
         FORMAT JSON
 
 -- builder:service-infra:serviceWorkloadsSQL:default  [e9f241ba]

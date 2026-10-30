@@ -498,6 +498,8 @@ export {
 	type ServiceWorkloadsOpts,
 	type ServiceWorkloadsOutput,
 	serviceRuntimesSQL,
+	serviceRuntimeResources,
+	type ServiceRuntimeResource,
 	type ServiceRuntimesOpts,
 	type ServiceRuntimesOutput,
 } from "./queries/service-infra"
