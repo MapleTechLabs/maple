@@ -860,6 +860,18 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, { respond: { status: 503, body: "x".repeat(5000) } })))
 	})
 
+	it.effect("names a host Cloudflare refused to reach instead of reporting its 530", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const result = yield* service.testHttp(httpConfig("http://fbi.com/"))
+			assert.isFalse(result.ok)
+			assert.strictEqual(result.statusCode, null)
+			assert.strictEqual(result.failedAssertion, null)
+			assert.strictEqual(result.error, "Couldn't reach fbi.com: it doesn't resolve to a public address")
+		}).pipe(Effect.provide(makeLayer(testDb, { respond: { status: 530, body: "error code: 1016\n" } })))
+	})
+
 	it.effect(
 		"tests as the probe checks: implicit 2xx, the configured content-type, the probe user-agent",
 		() => {
