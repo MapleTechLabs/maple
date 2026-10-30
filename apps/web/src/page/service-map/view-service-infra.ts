@@ -173,9 +173,9 @@ const infraEmptyState = (h: H): Html =>
 			h.p(
 				[h.Class("text-2xs text-muted-foreground leading-relaxed")],
 				[
-					"Name the service after its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker (",
+					"Set ",
 					inlineCode(h, {}, ["OTEL_SERVICE_NAME"]),
-					") and connect that platform under Infrastructure.",
+					" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure.",
 				],
 			),
 			h.p(
