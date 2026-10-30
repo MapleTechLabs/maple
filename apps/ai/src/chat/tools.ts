@@ -466,7 +466,8 @@ export const buildReviewCompletion = (
 					? []
 					: unaccountedChildFindings(
 							childFindings.all(),
-							[...ledger.findings(), ...normalized.report.findings],
+							// Deduplicated as the report is, so a finding saved and repeated counts once.
+							mergeSavedFindings(ledger.findings(), normalized.report.findings),
 							normalized.childDismissals,
 						)
 			// A close-out is not refused, but still files what the children found.

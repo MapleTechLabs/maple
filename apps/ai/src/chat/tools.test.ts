@@ -329,6 +329,43 @@ describe("buildReviewCompletion", () => {
 			assert.lengthOf(filed[0]!.report.findings, 0)
 		})
 
+		it("counts a finding saved and repeated in the submission once", async () => {
+			const children = makeChildFindings()
+			children.observe(
+				[
+					"src/capture.ts:213 | warn | correctness | Queue acks early | Why | Fix | -",
+					"src/capture.ts:216 | warn | security | Secret in a log | Why | Fix | -",
+				].join("\n"),
+			)
+			const completion = buildReviewCompletion(
+				REVIEW_SESSION,
+				tenantFor(human),
+				{ kind: "autonomous" },
+				() => Effect.void,
+				makeRunUsage(),
+				MODEL_NAME,
+				false,
+				undefined,
+				undefined,
+				makeReviewLedger(),
+				children,
+			)!
+			const finding = {
+				path: "src/capture.ts",
+				line: 214,
+				severity: "warn",
+				category: "correctness",
+				title: "Queue acks before the forced capture starts",
+				body: "Why",
+			}
+			await Effect.runPromise(completion.handlers[RECORD_FINDING](finding))
+			const result = await Effect.runPromise(
+				Effect.result(completion.handlers[SUBMIT_REVIEW]({ ...CLEAN, findings: [finding] })),
+			)
+			assert.isTrue(Result.isFailure(result))
+			assert.include(Result.isFailure(result) ? result.failure.message : "", "src/capture.ts:216")
+		})
+
 		it("records a review that dismisses it with a reason", async () => {
 			const { filed, call } = submitWith()
 			const result = await call({
