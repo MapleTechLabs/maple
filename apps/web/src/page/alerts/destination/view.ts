@@ -296,6 +296,33 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 				]),
 			]
 		}
+		case "google-chat": {
+			const fieldIds = ids("google-chat-webhook", true)
+			return [
+				fieldBlock(h, [
+					fieldLabel(
+						h,
+						{ ids: fieldIds, className: "text-xs", state: stateOf(form.webhookUrl) },
+						"Google Chat webhook URL",
+					),
+					textInput(h, model, {
+						name: "google-chat-webhook",
+						field: "webhookUrl",
+						placeholder: isEditing
+							? "Leave blank to keep current webhook"
+							: "https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...",
+						className: "font-mono text-xs",
+						type: "password",
+						hasDescription: true,
+					}),
+					fieldDescription(
+						h,
+						{ ids: fieldIds, className: "text-2xs", state: stateOf(form.webhookUrl) },
+						"In Google Chat: open the space → Apps & integrations → Webhooks → Add webhook, then copy the URL.",
+					),
+				]),
+			]
+		}
 		case "telegram":
 			return telegramFields(h, model, isEditing)
 		case "webhook":

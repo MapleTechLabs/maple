@@ -609,7 +609,7 @@ export type DestinationFormState = {
 	type: AlertDestinationType
 	name: string
 	enabled: boolean
-	/** Discord incoming-webhook URL. */
+	/** Discord or Google Chat incoming-webhook URL. */
 	webhookUrl: string
 	integrationKey: string
 	url: string
@@ -707,6 +707,8 @@ export function suggestedDestinationName(form: DestinationFormState): string {
 			return "Discord"
 		case "telegram":
 			return "Telegram"
+		case "google-chat":
+			return "Google Chat"
 		case "email":
 			return "Email"
 	}
@@ -793,6 +795,13 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				bot_token: form.telegramBotToken.trim(),
 				chat_id: form.telegramChatId.trim(),
 			}
+		case "google-chat":
+			return {
+				type: "google-chat",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				webhook_url: form.webhookUrl.trim(),
+			}
 		case "email":
 			return {
 				type: "email",
@@ -875,6 +884,15 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 			const webhookUrl = form.webhookUrl.trim()
 			return {
 				type: "discord",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
+		case "google-chat": {
+			const webhookUrl = form.webhookUrl.trim()
+			return {
+				type: "google-chat",
 				enabled: form.enabled,
 				...(name ? { name } : undefined),
 				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),

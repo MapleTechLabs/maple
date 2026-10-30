@@ -24,6 +24,7 @@ export const AlertDestinationType = Schema.Literals([
 	"hazel-oauth",
 	"discord",
 	"telegram",
+	"google-chat",
 	"email",
 	"chat",
 	"linear",
@@ -332,6 +333,17 @@ export class TelegramAlertDestinationConfig extends Schema.Class<TelegramAlertDe
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/** A Google Chat space's incoming webhook (`https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…`). */
+export class GoogleChatAlertDestinationConfig extends Schema.Class<GoogleChatAlertDestinationConfig>(
+	"GoogleChatAlertDestinationConfig",
+)({
+	type: Schema.Literal("google-chat"),
+	name: ChannelLabel,
+	/** Write-only: the `key` and `token` query parameters are the credential. */
+	webhookUrl: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 /**
  * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
  * from the workspace row, never taken from the request — the workspace must belong to the org, and
@@ -387,6 +399,7 @@ export const AlertDestinationCreateRequest = Schema.Union([
 	HazelOAuthAlertDestinationConfig,
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
+	GoogleChatAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	ChatAlertDestinationConfig,
 	LinearAlertDestinationConfig,
@@ -439,6 +452,14 @@ export class UpdateTelegramAlertDestinationConfig extends Schema.Class<UpdateTel
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateGoogleChatAlertDestinationConfig extends Schema.Class<UpdateGoogleChatAlertDestinationConfig>(
+	"UpdateGoogleChatAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	webhookUrl: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export class UpdateEmailAlertDestinationConfig extends Schema.Class<UpdateEmailAlertDestinationConfig>(
 	"UpdateEmailAlertDestinationConfig",
 )({
@@ -484,6 +505,10 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("telegram"),
 		...UpdateTelegramAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("google-chat"),
+		...UpdateGoogleChatAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("email"),

@@ -121,6 +121,21 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 		},
 	],
 	[
+		"google-chat",
+		{
+			type: "google-chat",
+			label: "Google Chat",
+			description: "Post alerts to a Google Chat space via incoming webhook.",
+			accent: "#00AC47",
+			accentBg: "rgba(0,172,71,0.16)",
+			accentText: "light-dark(#00762F, #34C26B)",
+			accentOn: INK_ON_BRIGHT_ACCENT,
+			fallbackIcon: "GoogleChatIcon",
+			docsUrl: "https://maple.dev/docs/alerting/notification-destinations#google-chat",
+			docsLabel: "Google Chat setup guide",
+		},
+	],
+	[
 		"email",
 		{
 			type: "email",
@@ -196,6 +211,7 @@ export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"email",
 	"webhook",
 	"telegram",
+	"google-chat",
 	"hazel-oauth",
 	"linear",
 ]

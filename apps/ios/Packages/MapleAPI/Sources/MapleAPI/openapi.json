@@ -6799,6 +6799,7 @@
           "hazel-oauth",
           "discord",
           "telegram",
+          "google-chat",
           "email",
           "chat",
           "linear"

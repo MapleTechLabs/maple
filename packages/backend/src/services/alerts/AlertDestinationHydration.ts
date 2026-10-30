@@ -55,6 +55,10 @@ const DestinationSecretConfigSchema = Schema.Union([
 		chatId: Schema.String,
 	}),
 	Schema.Struct({
+		type: Schema.Literal("google-chat"),
+		webhookUrl: Schema.String,
+	}),
+	Schema.Struct({
 		type: Schema.Literal("chat"),
 		// The `chat_workspaces` row id — no token here either: the connector's credential is
 		// opened from that row, scoped to the destination's org, at dispatch time.
