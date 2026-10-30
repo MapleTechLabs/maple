@@ -4,7 +4,10 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { panelBody } from "../../../ui/panel"
 import {
+	type CheckHealth,
+	checkHealth,
 	displayStatus,
+	medianOf,
 	type RecentCheck,
 	STATUS_TONE,
 	statusLabel,
@@ -34,7 +37,17 @@ export const uptimeStatusSquare = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor)
 		[],
 	)
 
-/** One bar per check, oldest first: passed, failed, or an empty slot muted. */
+/** Fill per check health: green fading as checks slow, amber when slow or partly failing, red when failing. */
+export const CHECK_HEALTH_FILL = {
+	fast: TONE_FILL.ok,
+	slower: "bg-severity-info/60",
+	slow: "bg-severity-warn/55",
+	someFailed: TONE_FILL.warn,
+	mostlyFailed: TONE_FILL.crit,
+	none: "bg-muted",
+} satisfies Record<CheckHealth, string>
+
+/** One bar per check, oldest first, filled by `checkHealth`; an empty slot is muted. */
 export const recentChecksStrip = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -48,6 +61,9 @@ export const recentChecksStrip = <M>(
 	const recent = options.recent.slice(-slots)
 	const padding = Math.max(0, slots - recent.length)
 	const passed = recent.filter((check) => check.ok).length
+	const medianMs = medianOf(
+		recent.flatMap((check) => (check.duration_ms === null ? [] : [check.duration_ms])),
+	)
 	const label = recent.length === 0 ? "No checks yet" : `${passed} of ${recent.length} recent checks passed`
 	return h.div(
 		[
@@ -69,9 +85,16 @@ export const recentChecksStrip = <M>(
 								"w-1 min-w-0 flex-1 rounded-[1px]",
 								options.isMuted === true
 									? "bg-muted"
-									: check.ok
-										? "bg-success"
-										: "bg-destructive",
+									: CHECK_HEALTH_FILL[
+											checkHealth(
+												{
+													total: 1,
+													failed: check.ok ? 0 : 1,
+													latencyMs: check.duration_ms,
+												},
+												medianMs,
+											)
+										],
 							),
 						),
 					],
