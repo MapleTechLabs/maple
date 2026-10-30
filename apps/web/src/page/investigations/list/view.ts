@@ -159,6 +159,7 @@ const toolbar = (
 				view: SelectView.view,
 				viewInputs: {
 					entries: KIND_ENTRIES,
+					size: "sm",
 					className: "w-36",
 					renderValue: (value) => [kindLabel(value)],
 					toView: (parts) => h.div([h.Class("contents")], parts),
@@ -171,6 +172,7 @@ const toolbar = (
 				view: SelectView.view,
 				viewInputs: {
 					entries: SORT_ENTRIES,
+					size: "sm",
 					className: "w-44",
 					renderValue: (value) => [sortLabel(value)],
 					toView: (parts) => h.div([h.Class("contents")], parts),

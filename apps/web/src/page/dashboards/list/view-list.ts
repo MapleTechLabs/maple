@@ -114,6 +114,7 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 			value: scopeOf(model.search),
 			onChange: (scope) => Message.ChangedScope({ scope }),
 			ariaLabel: "Filter dashboards by favorite",
+			size: "sm",
 			className: "shrink-0",
 		}),
 		trailing: [

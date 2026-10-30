@@ -267,7 +267,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 	)
 }
 
-/** `SearchInput size="default"`. */
+/** `SearchInput size="sm"`, the toolbar size. */
 const rulesSearch = (h: H, value: string): Html =>
 	searchInput(h, {
 		id: "alerts-rules-search",
