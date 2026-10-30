@@ -100,6 +100,7 @@ const filters = (h: H, model: Model): Html =>
 			entries: TYPE_ENTRIES,
 			renderItem: typeItem(h, AsyncData.getData(model.summary.data)),
 			ariaLabel: "Metric type",
+			size: "sm",
 			className: "w-auto min-w-0",
 			toView: (parts) =>
 				h.div(

@@ -259,6 +259,7 @@ export const templateList = (
 						value: model.filter,
 						onChange: (filter) => Message.ChangedFilter({ filter }),
 						ariaLabel: "Filter templates by readiness",
+						size: "sm",
 						className: "shrink-0",
 					}),
 				],
