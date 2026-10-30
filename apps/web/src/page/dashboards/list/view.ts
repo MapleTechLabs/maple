@@ -1,5 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -8,6 +6,7 @@ import { button } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import type { LoadFailure } from "../../../data/load-failure"
 import { icon } from "../../../ui/icon"
+import { pageTitle } from "../../../ui/page-layout"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { headerSummary } from "./derive"
@@ -178,7 +177,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				]
 			: []
 	const reason = readOnlyReason(model)
-	const title = h.div([], [h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Dashboards"]), ...summary])
+	const title = h.div([], [pageTitle(h, { className: "leading-8" }, ["Dashboards"]), ...summary])
 	return dashboardPage(
 		h,
 		{

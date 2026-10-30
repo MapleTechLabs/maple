@@ -24,8 +24,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
+import { rowLink } from "../../../ui/table"
 import { severityBadge } from "../shared/badges"
-import { incidentHref, ROW_STRETCHED_LINK_CLASS, ruleHref } from "../shared/links"
+import { incidentHref, ruleHref } from "../shared/links"
 import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
 
@@ -179,12 +180,13 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 										"Held",
 									])
 								: severityBadge(h, incident.severity),
-							h.a(
-								[
-									h.Class(cn("min-w-0 truncate font-medium", ROW_STRETCHED_LINK_CLASS)),
-									h.Href(incidentHref(incident.id)),
-									h.Title(incidentTitle(incident)),
-								],
+							rowLink(
+								h,
+								{
+									href: incidentHref(incident.id),
+									className: "min-w-0 truncate font-medium",
+									attributes: [h.Title(incidentTitle(incident))],
+								},
 								[isHeld ? `${incident.ruleName}: waiting on data` : incidentTitle(incident)],
 							),
 						],
@@ -396,16 +398,13 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 					),
 				],
 			),
-			h.a(
-				[
-					h.Class(
-						cn(
-							"inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground group-hover:bg-accent",
-							ROW_STRETCHED_LINK_CLASS,
-						),
-					),
-					h.Href(ruleHref(spot.rule.id)),
-				],
+			rowLink(
+				h,
+				{
+					href: ruleHref(spot.rule.id),
+					className:
+						"inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground group-hover:bg-accent",
+				},
 				[meta.action, icon(h, "ArrowRightIcon", { className: "size-3 text-muted-foreground" })],
 			),
 		],
@@ -475,12 +474,13 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 			h.div(
 				[h.Class("min-w-0")],
 				[
-					h.a(
-						[
-							h.Class(cn("block truncate text-sm", ROW_STRETCHED_LINK_CLASS)),
-							h.Href(ruleHref(rule.id)),
-							h.Title(rule.name),
-						],
+					rowLink(
+						h,
+						{
+							href: ruleHref(rule.id),
+							className: "block truncate text-sm",
+							attributes: [h.Title(rule.name)],
+						},
 						[rule.name],
 					),
 					...(row.groupKey !== null

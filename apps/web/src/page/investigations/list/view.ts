@@ -18,6 +18,7 @@ import { button, linkButton } from "../../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
+import { pageTitle } from "../../../ui/page-layout"
 import { icon } from "../../../ui/icon"
 import { listRow } from "../../../ui/list-row"
 import { panel } from "../../../ui/panel"
@@ -357,6 +358,8 @@ const HERO_SUGGESTIONS = [
 	"Which service is slowest right now, and why?",
 ]
 
+const HUB_TITLE = "Ask, and Maple goes and finds out."
+
 /** `HubHero`: the first-run page. */
 const hubHero = (h: H, model: Model): Html => {
 	const presence = presenceOf(model.presence, "traces")
@@ -373,14 +376,9 @@ const hubHero = (h: H, model: Model): Html => {
 							h.div(
 								[h.Class("flex flex-wrap items-baseline gap-3")],
 								[
-									h.h1(
-										[
-											h.Class(
-												"font-display text-2xl font-semibold leading-[1.1] tracking-tight text-foreground",
-											),
-										],
-										["Ask, and Maple goes and finds out."],
-									),
+									pageTitle(h, { title: HUB_TITLE, className: "text-foreground" }, [
+										HUB_TITLE,
+									]),
 								],
 							),
 							h.p(

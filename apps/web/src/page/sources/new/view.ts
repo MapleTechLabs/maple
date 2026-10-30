@@ -1,4 +1,5 @@
 import { Submodel } from "foldkit"
+import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
@@ -6,6 +7,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
+import { pageTitle } from "../../../ui/page-layout"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { FlowHost, Model } from "./model"
@@ -33,8 +35,6 @@ const metaOf = (model: Model) =>
 			? integrationMeta(model.integration)
 			: null
 
-const TITLE_CLASS = "font-display text-2xl font-medium tracking-tight"
-
 /** The source's mark, its title and the trail under it; `titleId` names the drawer's dialog by it. */
 export const titleContent = (h: H, model: Model, titleId?: string): Html => {
 	const meta = metaOf(model)
@@ -55,12 +55,12 @@ export const titleContent = (h: H, model: Model, titleId?: string): Html => {
 						),
 					]),
 			h.div(
-				[h.Class("space-y-2")],
+				[h.Class("min-w-0 space-y-2")],
 				[
 					// In the drawer the title is the dialog's name, under the onboarding page's own h1.
 					titleId === undefined
-						? h.h1([h.Class(TITLE_CLASS)], [titleOf(model)])
-						: h.h2([h.Class(TITLE_CLASS), h.Id(titleId)], [titleOf(model)]),
+						? pageTitle(h, { title: titleOf(model) }, [titleOf(model)])
+						: h.h2([h.Class(pageTitleStyles), h.Id(titleId)], [titleOf(model)]),
 					trail(h, model),
 				],
 			),

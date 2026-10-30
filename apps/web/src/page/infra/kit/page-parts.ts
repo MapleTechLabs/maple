@@ -1,4 +1,3 @@
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { DocsPage } from "../../../lib/docs"
 import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -6,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
+import { pageTitle } from "../../../ui/page-layout"
 import { searchInput } from "../../../ui/search-input"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
@@ -28,46 +28,6 @@ const isHtmlList = (value: Html | ReadonlyArray<Html>): value is ReadonlyArray<H
 const trailingOf = (trailing: PageHeroOptions["trailing"]): ReadonlyArray<Html> =>
 	trailing === undefined ? [] : isHtmlList(trailing) ? trailing : [trailing]
 
-export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =>
-	h.header(
-		[h.Class(cn("flex flex-wrap items-start gap-x-6 gap-y-3", options.className))],
-		[
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-1")],
-				[
-					h.div(
-						[h.Class("flex flex-wrap items-baseline gap-3")],
-						[
-							h.h1(
-								[
-									h.Class(
-										"font-display text-2xl font-semibold leading-[1.1] tracking-tight text-foreground",
-									),
-								],
-								[options.title],
-							),
-							...trailingOf(options.trailing),
-						],
-					),
-					...(options.description === undefined || options.description === ""
-						? []
-						: [
-								h.p(
-									[h.Class("max-w-2xl font-prose text-sm text-muted-foreground")],
-									[options.description],
-								),
-							]),
-					...(options.meta === undefined
-						? []
-						: [h.div([h.Class("mt-2 flex flex-wrap items-center gap-2")], options.meta)]),
-				],
-			),
-			...(options.actions === undefined || options.actions.length === 0
-				? []
-				: [h.div([h.Class("flex shrink-0 items-center gap-2")], options.actions)]),
-		],
-	)
-
 /**
  * `pageHero` split for `dashboardPage`: the title, its trailing badge and the description go in the
  * header beside the time controls (one title row on every page); meta opens the body.
@@ -83,7 +43,14 @@ export const pageHeroParts = <M>(
 				// Centred, not baseline: a small chip on a baseline rides high beside the large title.
 				[h.Class("flex min-w-0 flex-wrap items-center gap-3")],
 				[
-					h.h1([h.Class(cn(pageTitleStyles, "leading-8 text-foreground"))], [options.title]),
+					pageTitle(
+						h,
+						{
+							title: typeof options.title === "string" ? options.title : undefined,
+							className: "min-w-0 leading-8 text-foreground",
+						},
+						[options.title],
+					),
 					...trailingOf(options.trailing),
 				],
 			),
@@ -102,6 +69,23 @@ export const pageHeroParts = <M>(
 			? null
 			: h.div([h.Class("flex flex-wrap items-center gap-2")], options.meta),
 })
+
+/** `PageHero` for a page that draws its header in the body: `pageHeroParts` with actions beside it. */
+export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html => {
+	const parts = pageHeroParts(h, options)
+	return h.header(
+		[h.Class(cn("flex flex-wrap items-start gap-x-6 gap-y-3", options.className))],
+		[
+			h.div(
+				[h.Class("min-w-0 flex-1 space-y-2")],
+				parts.body === null ? [parts.title] : [parts.title, parts.body],
+			),
+			...(options.actions === undefined || options.actions.length === 0
+				? []
+				: [h.div([h.Class("flex shrink-0 items-center gap-2")], options.actions)]),
+		],
+	)
+}
 
 /** The header's right side: a page's own actions before its time controls. */
 export const headerActions = <M>(h: HtmlBuilder<M>, extra: ReadonlyArray<Html>, controls: Html): Html =>

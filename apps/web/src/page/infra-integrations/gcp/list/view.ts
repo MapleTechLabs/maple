@@ -43,7 +43,7 @@ import { integrationConnectCta } from "../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
-import { linkTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../infra/kit/view-tabs"
 import { pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import type * as TimeRangePicker from "../../../kit/time-range-picker"
 import { pageTime } from "../../kit/page-time"
@@ -558,7 +558,7 @@ export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 	const health = input.projectHealth
 	const tabs =
 		views.length > 1
-			? linkTabStrip(
+			? viewTabStrip(
 					h,
 					"Google Cloud views",
 					views.map((option) => ({

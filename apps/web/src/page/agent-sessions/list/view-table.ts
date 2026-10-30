@@ -8,7 +8,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { icon, type IconName } from "../../../ui/icon"
 import { loadingMoreRow } from "../../../ui/list-footer"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { rowLink, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { servicePills } from "../../../ui/trace-badges"
 import type { DetectedModel } from "../kit/detected-models"
@@ -127,9 +127,7 @@ export const listSkeleton = (h: H): Html =>
 		})),
 	})
 
-// A row link stretched over its row, and the lift for tooltips above it.
-const ROW_STRETCHED_LINK_CLASS =
-	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+// The lift for tooltips above the row link.
 const ROW_LIFT_TOOLTIPS = "[&_[data-slot=tooltip-trigger]]:relative [&_[data-slot=tooltip-trigger]]:z-10"
 
 const triggerAttributes = (h: H): ReadonlyArray<Attribute<Message>> => [
@@ -234,7 +232,7 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 	return h.div(
 		[h.Class("min-w-0")],
 		[
-			h.a([h.AriaHidden(true), h.Class(ROW_STRETCHED_LINK_CLASS), h.Href(href), h.Tabindex(-1)], []),
+			rowLink(h, { href, attributes: [h.AriaHidden(true), h.Tabindex(-1)] }),
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-2")],
 				[

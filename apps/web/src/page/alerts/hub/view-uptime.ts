@@ -17,9 +17,9 @@ import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { searchInput } from "../../../ui/search-input"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
+import { ROW_LINK_LIFT, rowLink } from "../../../ui/table"
 import { emptyActions, filteredEmpty } from "../../kit/signal-empty-state"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
-import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "../shared/links"
 import { isoMs } from "../shared/time"
 import { monitorHref, newMonitorHref } from "../shared/uptime-commands"
 import {
@@ -263,16 +263,12 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 									h.div(
 										[h.Class("flex min-w-0 items-center gap-2")],
 										[
-											h.a(
-												[
-													h.Href(monitorHref(monitor.id)),
-													h.Class(
-														cn(
-															"truncate text-sm font-medium",
-															ROW_STRETCHED_LINK_CLASS,
-														),
-													),
-												],
+											rowLink(
+												h,
+												{
+													href: monitorHref(monitor.id),
+													className: "truncate text-sm font-medium",
+												},
 												[monitor.name],
 											),
 											...(displayStatus(monitor) === "up"
