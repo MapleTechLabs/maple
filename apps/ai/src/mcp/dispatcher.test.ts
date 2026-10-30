@@ -270,6 +270,7 @@ describe("MCP dispatcher", () => {
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
+				expect(dispatchSpan.attributes.get("maple.mcp.error.message")).toContain("inspect_trace")
 
 				// The inner registry span still FAILS with the decode error (the typed
 				// error stays in the error channel); the SDK exporter is what turns it
