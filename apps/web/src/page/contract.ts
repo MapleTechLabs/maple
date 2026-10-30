@@ -9,6 +9,7 @@ import type { Resources } from "../platform/resources"
 import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import type { NavSurface } from "../shell/nav"
+import type { PageSourceRef } from "../shell/source-link"
 import { ToastType } from "../ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
@@ -170,6 +171,11 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
 	/** `DashboardPage`'s `breadcrumbs`. */
 	readonly breadcrumbs: (model: Model) => ReadonlyArray<BreadcrumbEntry>
+	/**
+	 * Where the page's data comes from: the top bar links to that source. `null` until the page
+	 * knows (a host's `src_` id arrives with its summary).
+	 */
+	readonly source?: (model: Model) => PageSourceRef | null
 	/** `DashboardPage`'s `topbarActions`: the page's own controls after the shell's top-bar buttons. */
 	readonly topbarActions?: Submodel.View<Model, Message, PageViewInputs>
 	/**
@@ -427,6 +433,10 @@ export const definePage = <
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		breadcrumbs: (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 			isOwnSlot(slot) ? spec.breadcrumbs(slot.model) : [],
+		/** Whether the page links to a source at all, so the root reads the sources on entry. */
+		hasSource: spec.source !== undefined,
+		source: (slot: PageSlotBase): PageSourceRef | null =>
+			isOwnSlot(slot) && spec.source !== undefined ? spec.source(slot.model) : null,
 		/** The root embeds this; it renders the page's own view under its own boundary. */
 		hostView: Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>((slot, inputs, h) =>
 			isOwnSlot(slot)

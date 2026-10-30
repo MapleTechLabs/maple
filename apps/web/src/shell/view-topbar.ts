@@ -14,6 +14,7 @@ import { separator } from "../ui/display"
 import { sidebarTrigger } from "../ui/sidebar"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { type SourceLink, sourceLinkButton } from "./source-link"
 
 // The top bar's breadcrumbs.
 
@@ -67,6 +68,8 @@ export const topbar = (
 	/** `FilterSidebarTrigger` / `RightSidebarTrigger`: below `lg`, one per rail the page renders. */
 	railTriggers: ReadonlyArray<Html> = [],
 	showsConnect = true,
+	/** Where the page's data comes from (`source-link.ts`). */
+	sourceLink: SourceLink | null = null,
 ): Html =>
 	h.header(
 		[
@@ -96,6 +99,7 @@ export const topbar = (
 					...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
 					...(showsConnect ? [connectButton(h, model)] : []),
 					...railTriggers,
+					...(sourceLink === null ? [] : [sourceLinkButton(h, sourceLink)]),
 					pageActions,
 				],
 			),

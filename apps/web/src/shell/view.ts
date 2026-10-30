@@ -31,6 +31,7 @@ import { FLAGGED_HREFS } from "./palette/entries"
 import { paletteView } from "./palette/view"
 import { shortcutsDialogView } from "./palette/shortcuts-view"
 import { paletteContextOf } from "./update-palette"
+import type { SourceLink } from "./source-link"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
@@ -111,6 +112,8 @@ export type FrameInputs = Readonly<{
 	page: () => Html
 	/** `DashboardPage`'s `topbarActions`, after the shell's own buttons. */
 	topbarActions: () => Html
+	/** The page's source, linked from the top bar. */
+	sourceLink?: SourceLink | null
 }>
 
 const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: ShellClerk): Html =>
@@ -175,6 +178,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 							inputs.topbarActions(),
 							railTriggers,
 							!hidesTopbarConnect(inputs.currentPath),
+							inputs.sourceLink ?? null,
 						),
 						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
 						...(inputs.clerk === undefined || inputs.clerk === null

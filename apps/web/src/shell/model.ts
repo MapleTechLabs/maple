@@ -1,4 +1,5 @@
 import { InfraSurfaceLiteral } from "@maple/domain/http"
+import { V2Source } from "@maple/domain/http/v2"
 import type { BillingCustomer } from "@maple/domain/http"
 import type { ClerkOrganization, ClerkUser } from "../platform/clerk"
 import { Option, Schema } from "effect"
@@ -29,6 +30,7 @@ export const LoadFailure = Schema.Literal("Failed")
 export const InfraPresenceData = AsyncData.Schema(Schema.Array(InfraSurfaceLiteral), LoadFailure)
 export const DashboardsData = AsyncData.Schema(Schema.Array(PinnedDashboardRow), LoadFailure)
 export const NamespacesData = AsyncData.Schema(Schema.Array(Schema.String), LoadFailure)
+export const SourcesData = AsyncData.Schema(Schema.Array(V2Source), LoadFailure)
 
 export const OpenMenu = Schema.Struct({ menu: Menu, maybePosition: Schema.Option(PopupPosition) })
 export type OpenMenu = typeof OpenMenu.Type
@@ -75,6 +77,8 @@ export const Model = Schema.Struct({
 	rememberedSurfaces: Schema.Record(Schema.String, Schema.Array(NavSurface)),
 	dashboards: DashboardsData.schema,
 	namespaces: NamespacesData.schema,
+	/** The org's sources, read once a page links to its source (`source-link.ts`). */
+	sources: SourcesData.schema,
 	/** The self-hosted namespace menu's search query; each opening starts blank. */
 	namespaceQuery: Schema.String,
 	/** The collapsed rail's tooltips: one Tooltip shared by every rail button. */
@@ -154,6 +158,7 @@ export const init = (flags: ShellFlags): Model => ({
 	rememberedSurfaces: flags.rememberedSurfaces ?? {},
 	dashboards: DashboardsData.Idle(),
 	namespaces: NamespacesData.Idle(),
+	sources: SourcesData.Idle(),
 	namespaceQuery: "",
 	isAppOutdated: false,
 	railTooltip: initRailTooltip(),

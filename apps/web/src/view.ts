@@ -1,5 +1,6 @@
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { Option } from "effect"
+import { AsyncData } from "foldkit"
 import { createKeyedLazy, type Document, type Html, type HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
@@ -12,12 +13,14 @@ import {
 	isBarePageRoute,
 	type PageMessage,
 	pageBreadcrumbs,
+	pageSource,
 	viewPage,
 	viewPageTopbarActions,
 } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
+import { resolveSourceLink, type SourceLink } from "./shell/source-link"
 import * as ToastView from "./ui/toast-view"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
@@ -140,6 +143,14 @@ const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 		: h.empty
 }
 
+/** The open page's source, once it names one. */
+const sourceLinkOf = (model: Model): SourceLink | null => {
+	const ref = model.page === null ? null : pageSource(model.page)
+	return ref === null
+		? null
+		: resolveSourceLink(ref, Option.getOrNull(AsyncData.getData(model.shell.sources)))
+}
+
 /** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
@@ -156,6 +167,7 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
 				page: () => pageView(model, h, "shell"),
 				topbarActions: () => topbarActionsView(model, h),
+				sourceLink: sourceLinkOf(model),
 			},
 		}),
 		...shellOverlays(model, h, currentPath, clerk),

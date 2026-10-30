@@ -1908,6 +1908,8 @@ export class HostDetailSummaryResponse extends Schema.Class<HostDetailSummaryRes
 			hostArch: Schema.String,
 			cloudProvider: Schema.String,
 			cloudRegion: Schema.String,
+			/** The `src_` id of the source the host last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuPct: Schema.Number,
@@ -2186,6 +2188,8 @@ export class ContainerDetailSummaryResponse extends Schema.Class<ContainerDetail
 			composeProject: Schema.String,
 			composeService: Schema.String,
 			runtime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuPct: Schema.Number,
@@ -2767,6 +2771,8 @@ export class PodDetailSummaryResponse extends Schema.Class<PodDetailSummaryRespo
 			podUid: Schema.String,
 			computeType: Schema.String,
 			podStartTime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuUsage: Schema.Number,
@@ -2901,6 +2907,8 @@ export class NodeDetailSummaryResponse extends Schema.Class<NodeDetailSummaryRes
 			nodeUid: Schema.String,
 			kubeletVersion: Schema.String,
 			containerRuntime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			...NodeCapacityFields,
@@ -3017,6 +3025,8 @@ export class WorkloadDetailSummaryResponse extends Schema.Class<WorkloadDetailSu
 			kind: WorkloadKindLiteral,
 			namespace: Schema.String,
 			podCount: Schema.Number,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			avgCpuLimitPct: Schema.Number,

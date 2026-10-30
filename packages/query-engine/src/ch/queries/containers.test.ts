@@ -294,6 +294,7 @@ describe("container rows decode timestamps to DateTime.Utc", () => {
 					composeProject: "",
 					composeService: "",
 					runtime: "docker",
+					sourceId: "",
 					firstSeen: "2024-01-01 09:00:00.000000000",
 					lastSeen: "2024-01-01 10:00:00.500000000",
 					cpuPct: 0.1,

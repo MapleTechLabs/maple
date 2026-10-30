@@ -1,4 +1,5 @@
 import { InfraSurfaceLiteral } from "@maple/domain/http"
+import { V2Source } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
@@ -32,6 +33,8 @@ export const Message = defineMessageUnion({
 	PressedSidebarShortcut: {},
 	/** A page reads `useInfraSurfaces` itself (the infra overview, Kubernetes workloads). */
 	RequestedInfraSurfaces: {},
+	/** A page links to its source: read the org's sources, again when `isRefresh` (one may be new). */
+	RequestedSources: { isRefresh: Schema.Boolean },
 	ChangedViewport: { isMobile: Schema.Boolean },
 	DismissedMobileNav: {},
 	ChangedFilterViewport: { isCollapsed: Schema.Boolean },
@@ -68,6 +71,8 @@ export const Message = defineMessageUnion({
 	CompletedReloadPage: {},
 	SucceededLoadInfraPresence: { orgId: Schema.String, surfaces: Schema.Array(InfraSurfaceLiteral) },
 	FailedLoadInfraPresence: { orgId: Schema.String },
+	SucceededLoadSources: { orgId: Schema.String, sources: Schema.Array(V2Source) },
+	FailedLoadSources: { orgId: Schema.String },
 	SucceededLoadIntegration: { orgId: Schema.String, integration: Integration, isConnected: Schema.Boolean },
 	FailedLoadIntegration: { orgId: Schema.String, integration: Integration },
 	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
