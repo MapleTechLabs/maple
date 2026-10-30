@@ -107,6 +107,25 @@ describe("fixUnknownIdentifier", () => {
 		)
 	})
 
+	it("never renames a table alias declared without AS", () => {
+		const sql = "SELECT service FROM traces service WHERE $__orgFilter(service)"
+		expect(fixUnknownIdentifier(sql, unknown("service"))).toBeUndefined()
+	})
+
+	it("ignores a table named in a # comment", () => {
+		expect(
+			fixUnknownIdentifier(
+				"SELECT service.name FROM logs WHERE $__orgFilter #, traces",
+				unknown("service.name"),
+			)?.sql,
+		).toBe("SELECT ServiceName FROM logs WHERE $__orgFilter #, traces")
+	})
+
+	it("fixes a column qualified by a later item of a comma-separated FROM", () => {
+		const sql = "SELECT t.span_name FROM logs l, traces t WHERE $__orgFilter(l) AND $__orgFilter(t)"
+		expect(fixUnknownIdentifier(sql, unknown("t.span_name"))?.sql).toContain("SELECT t.SpanName FROM")
+	})
+
 	it("never rewrites a backtick-quoted alias the query defines", () => {
 		const sql =
 			"SELECT ServiceName AS `service.name` FROM traces WHERE $__orgFilter ORDER BY `service.name`"

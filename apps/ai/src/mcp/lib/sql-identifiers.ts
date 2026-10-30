@@ -13,9 +13,9 @@ export const unknownIdentifierName = (message: string): string | undefined => {
 	return match?.[1] ?? match?.[2] ?? match?.[3]
 }
 
-// String literals (with '' and \' escapes), comments, and backtick or double-quoted identifiers.
+// String literals (with '' and \' escapes), `--`/`#`/`/* */` comments, and quoted identifiers.
 const SQL_TOKEN =
-	/'(?:[^'\\]|\\[\s\S]|'')*'?|--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|`(?:[^`]|``)*`?|"(?:[^"]|"")*"?/g
+	/'(?:[^'\\]|\\[\s\S]|'')*'?|--[^\n]*|#[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|`(?:[^`]|``)*`?|"(?:[^"]|"")*"?/g
 
 /**
  * The SQL with literals and comments blanked and quoted identifiers unquoted, keeping every
@@ -152,8 +152,10 @@ export const fixUnknownIdentifier = (
 	message: string,
 ): { readonly sql: string; readonly rewrite: IdentifierRewrite } | undefined => {
 	const written = unknownIdentifierName(message)
-	if (written === undefined || definedNames(sql).has(written)) return undefined
-	const to = identifierFix(written, referencedTables(sql), tableQualifiers(sql))
+	const qualifiers = tableQualifiers(sql)
+	// A table alias is a name the query defines, `AS` or not; renaming it breaks the FROM.
+	if (written === undefined || definedNames(sql).has(written) || qualifiers.has(written)) return undefined
+	const to = identifierFix(written, referencedTables(sql), qualifiers)
 	if (to === undefined) return undefined
 	const fixed = replaceIdentifier(sql, written, to)
 	return fixed === sql ? undefined : { sql: fixed, rewrite: { from: written, to } }
