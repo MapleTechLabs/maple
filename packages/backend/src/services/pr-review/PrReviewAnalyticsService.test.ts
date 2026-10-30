@@ -351,6 +351,8 @@ describe("PrReviewAnalyticsService", () => {
 				assert.deepStrictEqual(yield* handles("finding 2"), ["F2"])
 				assert.deepStrictEqual((yield* handles("index.ts")).toSorted(), ["F1", "F2"])
 				assert.deepStrictEqual((yield* handles("10")).toSorted(), ["F1", "F2"])
+				assert.deepStrictEqual((yield* handles("pr 10")).toSorted(), ["F1", "F2"])
+				assert.deepStrictEqual((yield* handles("acme/web")).toSorted(), ["F1", "F2"])
 				assert.deepStrictEqual(yield* handles("other/api"), [])
 			}),
 		),
