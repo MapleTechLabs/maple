@@ -84,6 +84,7 @@ describe("parseGoogleChatWebhookUrl", () => {
 		["another host", "https://evil.test/v1/spaces/AAAA/messages?key=k&token=t"],
 		["plain http", "http://chat.googleapis.com/v1/spaces/AAAA/messages?key=k&token=t"],
 		["no token", "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=k"],
+		["an empty token", "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=k&token="],
 		["a space link", "https://chat.google.com/room/AAAA"],
 		["not a URL", "secret-token"],
 	])("rejects %s", (_label, url) => {
@@ -148,6 +149,12 @@ describe("googleChatTransport.render", () => {
 			body.cardsV2[0].card.sections[0].widgets[0].textParagraph.text,
 			'<b>checkout</b> &gt; 5% <a href="https://docs.test/r">runbook</a> [x](javascript:alert(1))',
 		)
+	})
+
+	it("does not let a rule name mention the whole space", () => {
+		const body = JSON.parse(render({ context: { ...context, ruleName: "<users/all> checkout" } }).body)
+		assert.notInclude(body.text, "<users/all>")
+		assert.include(body.text, "checkout")
 	})
 
 	it("says what a revoked or deleted webhook means", () => {

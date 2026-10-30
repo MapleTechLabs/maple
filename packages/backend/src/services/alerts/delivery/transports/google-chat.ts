@@ -30,8 +30,8 @@ export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly
 			return url.protocol === "https:" &&
 				url.host === GOOGLE_CHAT_HOST &&
 				space?.[1] !== undefined &&
-				url.searchParams.has("key") &&
-				url.searchParams.has("token")
+				(url.searchParams.get("key") ?? "").length > 0 &&
+				(url.searchParams.get("token") ?? "").length > 0
 				? Option.some({ spaceId: space[1] })
 				: Option.none()
 		}),
@@ -52,6 +52,9 @@ const markdownToCardHtml = (markdown: string): string =>
 			/^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : match,
 		)
 		.replace(/\n/g, "<br>")
+
+/** `<users/all>` in a message's `text` is a mention; a rule name or template must not ping a space. */
+const neutralizeMentions = (value: string): string => value.replace(/<(?=users\/)/gi, "<\u200B")
 
 const paragraph = (html: string) => ({ textParagraph: { text: html } })
 
@@ -96,7 +99,7 @@ export const buildGoogleChatMessage = (input: RenderInput<Config>) => {
 			]
 	return {
 		// The notification and the text clients without cards show.
-		text: truncate(title, 300),
+		text: neutralizeMentions(truncate(title, 300)),
 		cardsV2: [
 			{
 				cardId: "maple-alert",

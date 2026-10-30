@@ -386,3 +386,21 @@ describe("destination dialog", () => {
 		expect(late.outMessage).toEqual(OutMessage.CreatedDestination({ id: CREATED }))
 	})
 })
+
+describe("Google Chat destination form", () => {
+	const form = (webhookUrl: string) => ({ ...opened().form, type: "google-chat" as const, webhookUrl })
+
+	test("saves only a space's webhook URL with its key and token", () => {
+		expect(
+			isFormReady(form("https://chat.googleapis.com/v1/spaces/AAAA/messages?key=k&token=t"), false),
+		).toBe(true)
+		expect(isFormReady(form("https://chat.google.com/room/AAAA"), false)).toBe(false)
+		expect(
+			isFormReady(form("https://chat.googleapis.com/v1/spaces/AAAA/messages?key=k&token="), false),
+		).toBe(false)
+	})
+
+	test("keeps the stored webhook when an edit leaves the URL blank", () => {
+		expect(isFormReady({ ...form(""), name: "Ops" }, true)).toBe(true)
+	})
+})

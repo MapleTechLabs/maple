@@ -259,8 +259,8 @@ export const isValidGoogleChatWebhookUrl = (raw: string): boolean => {
 		url.protocol === "https:" &&
 		url.host === "chat.googleapis.com" &&
 		/^\/v1\/spaces\/[A-Za-z0-9_-]+\/messages$/.test(url.pathname) &&
-		url.searchParams.has("key") &&
-		url.searchParams.has("token")
+		(url.searchParams.get("key") ?? "").length > 0 &&
+		(url.searchParams.get("token") ?? "").length > 0
 	)
 }
 
