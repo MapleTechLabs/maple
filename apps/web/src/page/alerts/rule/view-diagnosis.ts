@@ -230,7 +230,7 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 														{
 															variant: "link",
 															size: "xs",
-															className: "text-muted-foreground/80 hover:text-foreground",
+															className: "text-foreground-subtle hover:text-foreground",
 															attributes: [h.OnClick(Message.ClickedShowAllEvidence({ stageId: stage.id }))],
 														},
 														["+", String(hiddenEvidence), " more"],

@@ -87,7 +87,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 		h.div(
 			[
 				h.AriaLabelledBy("rule-severity-label"),
-				h.Class("grid grid-cols-2 gap-1 rounded-md bg-muted/30 p-0.5"),
+				h.Class("grid grid-cols-2 gap-1 rounded-md bg-surface-sunken p-0.5"),
 				h.DataAttribute("filled", ""),
 				h.Role("radiogroup"),
 			],
@@ -102,7 +102,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 						"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 						isSelected
 							? option.selected
-							: "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+							: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
 					),
 					{
 						children: [
@@ -269,7 +269,7 @@ const intervalPicker = (
 			[
 				h.AriaLabelledBy("rule-interval-label"),
 				h.Class(
-					"grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-1 rounded-md bg-muted/30 p-0.5",
+					"grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-1 rounded-md bg-surface-sunken p-0.5",
 				),
 				h.DataAttribute("filled", ""),
 				h.Role("radiogroup"),
@@ -288,8 +288,8 @@ const intervalPicker = (
 							? isBlocked
 								? "border-severity-warn/60 bg-severity-warn/10 text-severity-warn"
 								: "border-primary/50 bg-primary/10 text-foreground"
-							: "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-						!isSelected && isBlocked && "text-muted-foreground/60",
+							: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+						!isSelected && isBlocked && "text-foreground-subtle",
 					),
 					{
 						children: [

@@ -331,10 +331,10 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.Class(
 								cn(
 									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs transition-colors",
-									"before:absolute before:inset-y-1 before:left-0 before:w-[2px] before:rounded-r before:bg-transparent before:transition-colors",
-									"hover:bg-muted/50",
+									"before:absolute before:inset-y-1 before:left-0 before:w-[2px] before:rounded-r-sm before:bg-transparent before:transition-colors",
+									"hover:bg-surface-sunken",
 									isActive && "text-foreground before:bg-primary",
-									!isActive && "text-foreground/80",
+									!isActive && "text-foreground-soft",
 								),
 							),
 						],
@@ -353,7 +353,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 					h.Type("button"),
 					h.OnClick(Message.ClickedCustomRange(customSeed(inputs))),
 					h.Class(
-						"mt-1 flex h-7 items-center gap-2 pl-3 pr-2 text-left text-xs text-foreground/80 transition-colors hover:bg-muted/50 hover:text-foreground",
+						"mt-1 flex h-7 items-center gap-2 pl-3 pr-2 text-left text-xs text-foreground-soft transition-colors hover:bg-surface-sunken hover:text-foreground",
 					),
 				],
 				[
@@ -378,7 +378,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.Type("button"),
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
-								"flex h-7 items-center justify-center rounded-md border border-border/60 bg-background/30 font-mono text-2xs tracking-wide text-foreground/90 transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs tracking-wide text-foreground-soft transition-colors hover:border-border hover:bg-surface-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[value],
@@ -416,12 +416,12 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 							"focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
 							model.isShorthandInvalid
 								? "border-destructive/70"
-								: "border-border/60 hover:border-border",
+								: "border-border-subtle hover:border-border",
 						),
 					),
 				],
 				[
-					h.span([h.Class("font-mono text-2xs text-muted-foreground/70 select-none")], ["›"]),
+					h.span([h.Class("font-mono text-2xs text-foreground-subtle select-none")], ["›"]),
 					h.input([
 						h.Value(model.shorthand),
 						h.OnInput((value) => Message.ChangedShorthand({ value })),
@@ -432,7 +432,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 						),
 						h.Placeholder("Any duration, e.g. 90m"),
 						h.Class(
-							"flex-1 bg-transparent font-mono text-sm tracking-tight text-foreground placeholder:text-muted-foreground/50 focus:outline-none",
+							"flex-1 bg-transparent font-mono text-sm tracking-tight text-foreground placeholder:text-foreground-faint focus:outline-none",
 						),
 						h.Spellcheck(false),
 						h.Autocomplete("off"),
@@ -549,7 +549,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 		[
 			h.Id(anchorId),
 			h.Class(
-				"flex items-center justify-between gap-3 border-t border-border/60 bg-muted/20 px-4 py-2",
+				"flex items-center justify-between gap-3 border-t border-border-subtle bg-surface-faint px-4 py-2",
 			),
 		],
 		[
@@ -567,7 +567,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 						cn(
 							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
 							"text-2xs tracking-tight outline-none transition-colors",
-							"hover:bg-muted/60 focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-muted/60",
+							"hover:bg-surface-strong focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-surface-strong",
 						),
 					),
 					h.DataAttribute("slot", "combobox-trigger"),
@@ -576,12 +576,12 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 					h.Type("button"),
 				],
 				[
-					icon(h, "GlobeIcon", { className: "size-3 shrink-0 text-muted-foreground/70" }),
-					h.span([h.Class("truncate font-mono text-foreground/90")], [timeZone]),
+					icon(h, "GlobeIcon", { className: "size-3 shrink-0 text-foreground-subtle" }),
+					h.span([h.Class("truncate font-mono text-foreground-soft")], [timeZone]),
 					h.keyed("span")(
 						`utc-offset-${fallbackZone}`,
 						[
-							h.Class("shrink-0 font-mono text-muted-foreground/70"),
+							h.Class("shrink-0 font-mono text-foreground-subtle"),
 							h.OnMount(MountUtcOffset({ timeZone: fallbackZone })),
 						],
 						[model.utcOffset?.label ?? ""],
@@ -672,7 +672,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 										h.div(
 											[
 												h.Class(
-													"w-full shrink-0 border-b border-border/60 sm:w-[168px] sm:border-r sm:border-b-0",
+													"w-full shrink-0 border-b border-border-subtle sm:w-44 sm:border-r sm:border-b-0",
 												),
 											],
 											[presetList(h, inputs)],

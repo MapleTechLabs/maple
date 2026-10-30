@@ -137,7 +137,7 @@ const showsUpRail = (h: H, integration: ScrapeIntegration): Html =>
 /** WarpStream's two endpoints and where each one's URL and key come from. */
 const warpstreamGuide = (h: H): Html =>
 	h.div(
-		[h.Class("flex flex-col gap-2 rounded-md bg-muted/40 p-4")],
+		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
 		[
 			h.h3([h.Class("text-sm font-medium")], ["Where to find it in WarpStream"]),
 			h.ul(
@@ -214,7 +214,7 @@ const failedRow = (
 			h.pre(
 				[
 					h.Class(
-						"overflow-x-auto rounded-md bg-muted/40 p-3 font-mono text-xs text-severity-error whitespace-pre-wrap [overflow-wrap:anywhere]",
+						"overflow-x-auto rounded-md bg-surface-sunken p-3 font-mono text-xs text-severity-error whitespace-pre-wrap [overflow-wrap:anywhere]",
 					),
 				],
 				[error],

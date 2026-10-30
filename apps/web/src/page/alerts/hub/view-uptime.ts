@@ -232,7 +232,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 	const isPaused = displayStatus(monitor) === "paused"
 	const recent = monitor.state.recent
 	return h.li(
-		[h.Key(monitor.id), h.Class("relative py-3 pr-2 pl-4 hover:bg-muted/25")],
+		[h.Key(monitor.id), h.Class("relative py-3 pr-2 pl-4 hover:bg-surface-faint")],
 		[
 			h.div(
 				[h.Class(ROW_GRID)],
@@ -291,7 +291,7 @@ const namespaceLabel = (h: H, namespace: string): Html =>
 
 const groupHeader = (h: H, [namespace, monitors]: MonitorGroup): Html =>
 	h.li(
-		[h.Key(`ns-${namespace}`), h.Class("flex items-center gap-2 bg-muted/50 py-2 pr-2 pl-4")],
+		[h.Key(`ns-${namespace}`), h.Class("flex items-center gap-2 bg-surface-sunken py-2 pr-2 pl-4")],
 		[
 			namespaceLabel(h, namespace),
 			h.span([h.Class("text-xs text-muted-foreground")], [countLabel(monitors.length, "monitor")]),

@@ -165,7 +165,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				"hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell",
 			),
 		],
-		cn("cursor-pointer transition-colors hover:bg-muted/50", isSelected && "bg-muted/60"),
+		cn("cursor-pointer transition-colors hover:bg-surface-sunken", isSelected && "bg-surface-strong"),
 		[h.Key(review.id), h.OnClick(open)],
 	)
 }
@@ -185,7 +185,7 @@ export const reviewTable = (h: H, reviews: ReadonlyArray<CodeReviewListItem>, co
 						tableHead(h, ["Reviewed"], "hidden w-28 px-4 text-right font-normal sm:table-cell"),
 					]),
 				],
-				{ className: "bg-muted/30" },
+				{ className: "bg-surface-sunken" },
 			),
 			tableBody(
 				h,

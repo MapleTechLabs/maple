@@ -87,7 +87,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 			emptyMessage(h, { className: "flex flex-col items-center gap-1 py-12 text-sm" }, [
 				h.span([], ["No releases detected in this window."]),
 				h.span(
-					[h.Class("text-xs text-muted-foreground/70")],
+					[h.Class("text-xs text-foreground-subtle")],
 					[
 						"Releases compare errors and latency before and after each deploy. Release tracking needs spans to carry the ",
 						inlineCode(h, {}, ["vcs.ref.head.revision"]),
@@ -111,9 +111,9 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 					...(flagged > 0
 						? [stat(h, formatNumber(flagged), [pluralize(flagged, "release"), " with errors up"], "text-severity-error")]
 						: []),
-					h.span([h.Class("text-muted-foreground/70")], ["Each release is compared with the version it replaced"]),
+					h.span([h.Class("text-foreground-subtle")], ["Each release is compared with the version it replaced"]),
 					...(response.truncated
-						? [h.span([h.Class("text-muted-foreground/70")], ["Showing the newest ", formatNumber(response.releases.length), " rows"])]
+						? [h.span([h.Class("text-foreground-subtle")], ["Showing the newest ", formatNumber(response.releases.length), " rows"])]
 						: []),
 				],
 			),
@@ -160,7 +160,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 							...(issues?.hasMore === true
 								? [
 										h.span(
-											[h.Class("px-0.5 text-2xs text-muted-foreground/70")],
+											[h.Class("px-0.5 text-2xs text-foreground-subtle")],
 											["Issue counts cover the 100 most recently active issues introduced in this window."],
 										),
 									]

@@ -34,7 +34,7 @@ const ready = (h: H, info: AuthorizationInfo, workspace: Html): Html =>
 		[h.Class("space-y-4")],
 		[
 			h.div(
-				[h.Class("space-y-1 border border-border bg-muted/30 p-3")],
+				[h.Class("space-y-1 border border-border bg-surface-sunken p-3")],
 				[
 					muted(h, "text-xs", ["Requesting client"]),
 					h.p(

@@ -423,7 +423,7 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		h.div(
 			[
 				h.Class(
-					"flex flex-col divide-y divide-border/60 border-t border-border/60 @md:flex-row @md:divide-x @md:divide-y-0",
+					"flex flex-col divide-y divide-border-subtle border-t border-border-subtle @md:flex-row @md:divide-x @md:divide-y-0",
 				),
 			],
 			[

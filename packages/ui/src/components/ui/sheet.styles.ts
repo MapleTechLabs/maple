@@ -38,7 +38,7 @@ export const sheetHeaderStyles =
 
 export const sheetFooterStyles = "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end"
 
-export const sheetFooterDefaultStyles = "border-t bg-muted/72 py-4"
+export const sheetFooterDefaultStyles = "border-t bg-surface-strong py-4"
 
 export const sheetFooterBareStyles =
 	"in-[[data-slot=sheet-popup]:has([data-slot=sheet-panel])]:pt-3 pt-4 pb-6"

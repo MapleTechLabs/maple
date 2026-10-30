@@ -93,8 +93,8 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 		[
 			h.span([h.Class("truncate font-mono")], [config.originDatabase]),
 			config.originHost
-				? h.span([h.Class("truncate text-3xs text-muted-foreground/60")], [config.originHost])
-				: h.span([h.Class("shrink-0 text-3xs text-muted-foreground/60")], ["private origin"]),
+				? h.span([h.Class("truncate text-3xs text-foreground-subtle")], [config.originHost])
+				: h.span([h.Class("shrink-0 text-3xs text-foreground-subtle")], ["private origin"]),
 		],
 	)
 }
@@ -131,7 +131,7 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 								truncatedId(h, {
 									value: config.id,
 									length: 8,
-									className: "shrink-0 text-3xs text-muted-foreground/60",
+									className: "shrink-0 text-3xs text-foreground-subtle",
 								}),
 							],
 						),
@@ -140,7 +140,7 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 							[
 								icon(h, "ArrowRightIcon", {
 									size: 12,
-									className: "shrink-0 text-muted-foreground/60",
+									className: "shrink-0 text-foreground-subtle",
 								}),
 								hyperdriveOrigin(h, config),
 							],
@@ -253,7 +253,7 @@ const branchRows = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): Re
 						h,
 						{
 							className:
-								"flex-row items-center justify-between gap-2 border-border/60 px-2.5 py-2 text-xs opacity-70",
+								"flex-row items-center justify-between gap-2 border-border-subtle px-2.5 py-2 text-xs opacity-70",
 						},
 						[
 							h.div(
@@ -330,7 +330,7 @@ export const queryActivity = (
 			{
 				dashed: true,
 				className:
-					"flex h-44 flex-col items-center justify-center gap-1.5 border-border/60 bg-muted/10 text-xs",
+					"flex h-44 flex-col items-center justify-center gap-1.5 border-border-subtle bg-surface-faint text-xs",
 			},
 			[
 				"No database query spans in this window",

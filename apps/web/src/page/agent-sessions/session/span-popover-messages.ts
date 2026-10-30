@@ -72,10 +72,10 @@ export const payloadCard = (
 	options: Readonly<{ label: string; name?: string; meta?: string; body?: string; key: string }>,
 ): Html =>
 	h.div(
-		[h.Class("min-w-0 overflow-hidden rounded-md border border-border/60")],
+		[h.Class("min-w-0 overflow-hidden rounded-md border border-border-subtle")],
 		[
 			h.div(
-				[h.Class("flex items-center gap-2 bg-muted/40 px-2.5 py-1.5")],
+				[h.Class("flex items-center gap-2 bg-surface-sunken px-2.5 py-1.5")],
 				[
 					h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-xs bg-chart-4")], []),
 					h.span([h.Class("shrink-0 font-medium font-mono text-chart-4 text-xs")], [options.label]),
@@ -93,7 +93,7 @@ export const payloadCard = (
 								h.span(
 									[
 										h.Class(
-											"ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground/80",
+											"ml-auto min-w-0 truncate font-mono text-2xs text-foreground-subtle",
 										),
 									],
 									[options.meta],
@@ -111,7 +111,7 @@ const payloadBody = (h: H, model: Model, text: string, copyLabel: string, key: s
 	const { formatted, isJson } = jsonPayload(text)
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	return h.div(
-		[h.Class("flex items-start gap-1.5 border-border/60 border-t bg-background/50 px-2.5 py-2")],
+		[h.Class("flex items-start gap-1.5 border-border-subtle border-t bg-background/50 px-2.5 py-2")],
 		[
 			h.div(
 				[h.Class("min-w-0 grow")],
@@ -202,7 +202,7 @@ const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionS
 					...(message.origin === "output"
 						? [
 								h.span(
-									[h.Class("min-w-0 truncate font-mono text-2xs text-muted-foreground/80")],
+									[h.Class("min-w-0 truncate font-mono text-2xs text-foreground-subtle")],
 									[callMetaLine(span)],
 								),
 							]
@@ -265,7 +265,7 @@ const systemMessageRow = (h: H, model: Model, message: SpanMessage, key: string)
 	const isOpen = disclosed(model.openRows, key, false)
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	const text = collapsedText(message.parts)
-	return panel(h, { tone: "muted", className: "border-border/60" }, [
+	return panel(h, { tone: "muted", className: "border-border-subtle" }, [
 		h.button(
 			[
 				h.AriaExpanded(isOpen),

@@ -158,7 +158,7 @@ const sourceRowPending = <M>(h: HtmlBuilder<M>): Html =>
 			h.span(
 				[h.Class("flex w-52 shrink-0 items-center gap-3")],
 				[
-					skeleton(h, "size-[18px] shrink-0 rounded"),
+					skeleton(h, "size-[18px] shrink-0 rounded-sm"),
 					h.span(
 						[h.Class("flex min-w-0 flex-col gap-0.5")],
 						[skeleton(h, "my-0.5 h-4 w-24"), skeleton(h, "my-0.5 h-3 w-16")],

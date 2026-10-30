@@ -8,7 +8,7 @@ import { icon } from "../../../ui/icon"
 const VISIBLE_LIMIT = 6
 
 const CHIP_CLASS =
-	"inline-flex items-center gap-1 rounded-sm border border-border/60 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
+	"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
 
 const MONO_LINK =
 	"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
@@ -42,7 +42,7 @@ export const filterChipRail = <C extends FilterChip, M>(
 				h.span(
 					[h.Key(`${chip.key}:${chip.value}`), h.Class(CHIP_CLASS)],
 					[
-						h.span([h.Class("max-w-[22ch] truncate text-foreground/80")], [chip.label]),
+						h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [chip.label]),
 						button(
 							h,
 							{

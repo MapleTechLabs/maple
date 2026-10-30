@@ -322,7 +322,7 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 												h.span(
 													[
 														h.Class(
-															"ml-1 text-4xs tabular-nums text-muted-foreground/70",
+															"ml-1 text-4xs tabular-nums text-foreground-subtle",
 														),
 													],
 													[String(infraCount)],

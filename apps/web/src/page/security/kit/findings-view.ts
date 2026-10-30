@@ -123,7 +123,7 @@ const tabButton = <M>(
 					"flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
 					isActive
 						? "border-border bg-muted font-medium text-foreground"
-						: "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+						: "border-transparent text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
 				),
 			),
 		],
@@ -186,7 +186,7 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 	const note = noteOf(finding)
 	const attributes: ReadonlyArray<Attribute<M>> = [
 		h.Class(
-			"flex h-10 w-full min-w-0 items-center gap-3 pr-3 pl-8 text-left outline-none hover:bg-muted/50 focus-visible:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+			"flex h-10 w-full min-w-0 items-center gap-3 pr-3 pl-8 text-left outline-none hover:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		),
 	]
 	const children = [
@@ -235,7 +235,7 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 		),
 	]
 	return h.li(
-		[h.Key(`${finding.targetId}/${finding.fingerprint}`), h.Class("border-b border-border/60")],
+		[h.Key(`${finding.targetId}/${finding.fingerprint}`), h.Class("border-b border-border-subtle")],
 		[
 			"href" in options.open
 				? h.a([h.Href(options.open.href), ...attributes], children)
@@ -277,7 +277,7 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 							h.AriaExpanded(!isCollapsed),
 							h.OnClick(options.onToggle(bucket)),
 							h.Class(
-								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border/60 bg-muted/60 px-3 text-left backdrop-blur hover:bg-muted",
+								"sticky top-0 z-[1] flex h-9 w-full items-center gap-2 border-b border-border-subtle bg-surface-strong px-3 text-left backdrop-blur hover:bg-muted",
 							),
 						],
 						[

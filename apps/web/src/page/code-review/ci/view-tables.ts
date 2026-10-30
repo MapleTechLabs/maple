@@ -42,7 +42,7 @@ const head = (h: H, cells: ReadonlyArray<readonly [string, string, string?]>) =>
 				),
 			),
 		],
-		{ className: "bg-muted/30" },
+		{ className: "bg-surface-sunken" },
 	)
 
 /** Where the streak began and the commit that last passed. */
@@ -183,7 +183,7 @@ const workflowRow = (
 				"hidden px-4 sm:table-cell",
 			),
 		],
-		cn("cursor-pointer transition-colors hover:bg-muted/50", isActive && "bg-muted/60"),
+		cn("cursor-pointer transition-colors hover:bg-surface-sunken", isActive && "bg-surface-strong"),
 		[h.Key(`${row.owner}/${row.repository}/${row.pipeline}`), h.OnClick(select)],
 	)
 }

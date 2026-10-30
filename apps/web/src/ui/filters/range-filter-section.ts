@@ -97,7 +97,7 @@ const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): H
 		[
 			...(config.hint === undefined || config.hint === ""
 				? []
-				: [h.p([h.Class("text-xs text-muted-foreground/70")], [config.hint])]),
+				: [h.p([h.Class("text-xs text-foreground-subtle")], [config.hint])]),
 			...(histogram === null ? [] : [histogram]),
 			h.div(
 				[h.Class("flex items-center gap-1.5")],
@@ -242,7 +242,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 						: []),
 					icon(h, "ChevronDownIcon", {
 						className: cn(
-							"size-3.5 shrink-0 text-muted-foreground/40 transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
+							"size-3.5 shrink-0 text-foreground-faint transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
 							isOpen && "rotate-180",
 						),
 					}),

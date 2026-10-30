@@ -267,7 +267,7 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 						[h.Class("mt-auto truncate text-3xs text-muted-foreground")],
 						[
 							`error.type `,
-							h.span([h.Class("text-foreground/80")], [errorType.errorType]),
+							h.span([h.Class("text-foreground-soft")], [errorType.errorType]),
 							` on most ${errorType.httpStatusCode}s`,
 						],
 					),
@@ -362,7 +362,7 @@ const bodyCard = (h: H, detail: EndpointDetail): Html =>
 					[h.Class("text-2xs text-muted-foreground")],
 					[
 						"No request carried ",
-						h.span([h.Class("text-foreground/80")], ["http.request.body.size"]),
+						h.span([h.Class("text-foreground-soft")], ["http.request.body.size"]),
 						".",
 					],
 				)
@@ -437,14 +437,14 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								h.Key(`${request.traceId}-${request.timestamp}`),
 								h.Href(hrefOf(AppRoute.Trace({ traceId: request.traceId, search: {} }))),
 								h.Class(
-									"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-muted/50",
+									"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-surface-sunken",
 								),
 							],
 							[
 								truncatedId(h, {
 									value: request.traceId,
 									kind: "trace",
-									className: "w-16 shrink-0 text-info-foreground sm:w-20",
+									className: "w-16 shrink-0 text-severity-debug sm:w-20",
 								}),
 								h.span(
 									[h.Class("w-14 shrink-0 text-right")],

@@ -90,7 +90,7 @@ export const confidenceMeter = <M>(
 ): Html => {
 	if (confidence === null)
 		return h.span(
-			[h.Class(cn("text-xs text-muted-foreground/60", className)), h.Title("No diagnosis yet")],
+			[h.Class(cn("text-xs text-foreground-subtle", className)), h.Title("No diagnosis yet")],
 			[EMPTY_VALUE],
 		)
 	const filled = FILLED[confidence]

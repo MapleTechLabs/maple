@@ -119,7 +119,7 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 		],
 		onSome: (commit) => [
 			h.span([h.Class("truncate")], [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
-			h.span([h.Class("truncate text-muted-foreground/70")], [commit.repoFullName]),
+			h.span([h.Class("truncate text-foreground-subtle")], [commit.repoFullName]),
 			h.a(
 				[
 					h.Href(commit.htmlUrl),
@@ -312,7 +312,7 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 					},
 				],
 			}),
-			h.span([h.Class("text-2xs text-muted-foreground/70")], [caption]),
+			h.span([h.Class("text-2xs text-foreground-subtle")], [caption]),
 		],
 	)
 }

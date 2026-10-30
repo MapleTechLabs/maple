@@ -40,7 +40,7 @@ export const metricsHealth = (
 	const excluded = status.scrape_target?.exclude_branches ?? []
 	const isOpen = model.planetscaleCard.isDetailsOpen
 	return h.div(
-		[h.Class("border-t border-border/60 p-4")],
+		[h.Class("border-t border-border-subtle p-4")],
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2 text-xs")],
@@ -112,7 +112,7 @@ export const metricsHealth = (
 						h.p(
 							[
 								h.Class(
-									"mt-2 break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground",
+									"mt-2 break-all rounded-md bg-surface-sunken p-2 font-mono text-xs text-muted-foreground",
 								),
 							],
 							[metricsLastError(status) ?? ""],

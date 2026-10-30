@@ -335,7 +335,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						h.a(
 							[
 								h.Class(
-									"mt-3 flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground",
+									"mt-3 flex items-center justify-between gap-3 rounded-md border border-border p-3 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground",
 								),
 								h.Href(docsUrl(docs.page)),
 								h.Target("_blank"),

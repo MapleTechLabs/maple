@@ -69,7 +69,7 @@ const title = (h: H, model: Model, name: string): Html => {
 		{
 			title: shown,
 			className: cn(
-				!isReadOnly && "cursor-pointer hover:text-foreground/80",
+				!isReadOnly && "cursor-pointer hover:text-foreground-soft",
 				isBlank && "text-muted-foreground",
 			),
 			attributes: [
@@ -156,7 +156,7 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 									`${className} flex items-center justify-center rounded-md border border-dashed border-border bg-card/40`,
 								),
 							],
-							[icon(h, glyph, { size: 16, className: "text-muted-foreground/50" })],
+							[icon(h, glyph, { size: 16, className: "text-foreground-faint" })],
 						),
 					),
 				),

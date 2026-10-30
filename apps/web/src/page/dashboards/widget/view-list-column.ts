@@ -66,7 +66,7 @@ export const listColumnRow = (
 					h.DataAttribute(GRIP_ATTRIBUTE, ""),
 					h.AriaLabel(`Reorder ${column.header || column.field || `column ${index + 1}`}`),
 					h.Class(
-						"shrink-0 cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing",
+						"shrink-0 cursor-grab touch-none text-foreground-faint hover:text-muted-foreground active:cursor-grabbing",
 					),
 					h.OnKeyDownPreventDefault((key) =>
 						key === "ArrowUp"

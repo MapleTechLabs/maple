@@ -182,7 +182,7 @@ export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
 		h.span([h.Class("font-medium")], ["No data in the selected time range"]),
 		h.span(
-			[h.Class("text-3xs text-muted-foreground/70 max-w-full line-clamp-3")],
+			[h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3")],
 			["Widen the time range or check the query's filters."],
 		),
 	])
@@ -206,7 +206,7 @@ const mutedError = <M>(
 						h.span(
 							[
 								h.Class(
-									"text-3xs text-muted-foreground/70 max-w-full text-center line-clamp-3",
+									"text-3xs text-foreground-subtle max-w-full text-center line-clamp-3",
 								),
 							],
 							[state.message],

@@ -45,7 +45,7 @@ export const investigationChip = <M>(
 			statusDot(h, { tone: "custom", className: "bg-current" }),
 			h.span([h.Class(cn("truncate", options.compact === true && "hidden @xl/page:inline"))], [label]),
 			...(withConfidence && investigation.confidence && investigation.status === "diagnosed"
-				? [h.span([h.Class("text-muted-foreground/60")], ["· ", investigation.confidence])]
+				? [h.span([h.Class("text-foreground-subtle")], ["· ", investigation.confidence])]
 				: []),
 		],
 	)

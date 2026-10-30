@@ -86,7 +86,7 @@ export const markersOverlay = <M>(
 							h.Class(
 								cn(
 									"pointer-events-auto flex cursor-pointer items-center justify-center gap-1 rounded-[5px] border px-1.5 font-mono text-2xs leading-none backdrop-blur-sm transition-colors",
-									"border-border/60 bg-popover/85 text-muted-foreground hover:text-popover-foreground",
+									"border-border-subtle bg-popover/85 text-muted-foreground hover:text-popover-foreground",
 								),
 							),
 						],
@@ -99,7 +99,7 @@ export const markersOverlay = <M>(
 												h.Class(
 													cn(
 														"shrink-0 rounded-[3px] px-1 text-3xs tabular-nums",
-														"bg-muted/70 text-muted-foreground",
+														"bg-surface-strong text-muted-foreground",
 													),
 												),
 											],

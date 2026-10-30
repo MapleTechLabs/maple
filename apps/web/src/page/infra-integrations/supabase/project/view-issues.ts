@@ -19,7 +19,7 @@ const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string): Html => {
 	return h.li(
 		[
 			h.Key(`${issue.source}:${issue.message}`),
-			h.Class("flex items-center gap-4 border-t border-border/60 px-4 py-2 text-xs first:border-t-0"),
+			h.Class("flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0"),
 		],
 		[
 			h.span(

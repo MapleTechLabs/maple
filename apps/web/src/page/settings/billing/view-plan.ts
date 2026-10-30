@@ -102,7 +102,7 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, can
 	const activeIds = new Set(spend.addOns.map((addOn) => addOn.id))
 	const available = plans.filter((plan) => plan.addOn === true && !activeIds.has(plan.id))
 	const activeCharges = spend.charges.filter((charge) => charge.kind === "addOn")
-	return panel(h, { className: "divide-y divide-border/60" }, [
+	return panel(h, { className: "divide-y divide-border-subtle" }, [
 		planLine(h, {
 			key: "plan",
 			name: sentenceCasePlanName(spend.planName),
@@ -243,7 +243,7 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 				[
 					eyebrow(h, {}, ["Included every cycle"]),
 					h.p(
-						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground/80")],
+						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground-soft")],
 						[included.length > 0 ? included : "Allotments are set on your contract."],
 					),
 				],
@@ -312,7 +312,7 @@ const offerPanel = (
 				[
 					eyebrow(h, {}, ["Included every cycle"]),
 					h.p(
-						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground/80")],
+						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground-soft")],
 						[
 							includedRun(plan),
 							...(retention === undefined

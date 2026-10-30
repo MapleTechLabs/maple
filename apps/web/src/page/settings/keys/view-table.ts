@@ -37,15 +37,15 @@ const TYPE_BADGE = {
 
 const COL = {
 	name: "w-0 min-w-[180px] flex-1",
-	access: "hidden w-[150px] shrink-0 @xl:block",
-	createdBy: "hidden w-[140px] shrink-0 @min-[820px]:block",
-	lastUsed: "hidden w-[80px] shrink-0 @2xl:block",
-	expires: "w-[100px] shrink-0",
+	access: "hidden w-36 shrink-0 @xl:block",
+	createdBy: "hidden w-36 shrink-0 @min-[820px]:block",
+	lastUsed: "hidden w-20 shrink-0 @2xl:block",
+	expires: "w-24 shrink-0",
 	menu: "w-7 shrink-0",
 }
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-0"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 transition-colors last:border-0"
 
 const typeBadge = (h: H, type: KeyType): Html =>
 	badge(h, { variant: TYPE_BADGE[type], size: "sm", mono: true }, [KEY_TYPE_LABELS[type]])
@@ -111,7 +111,7 @@ const apiRow = (
 			: []),
 	]
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-muted/50"))],
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken"))],
 		[
 			h.div(
 				[h.Class(cn(COL.name, "flex flex-col gap-1"))],
@@ -142,7 +142,7 @@ const apiRow = (
 			),
 			truncatedText(h, {
 				text: keyAccessSummary(row),
-				className: cn(COL.access, "text-foreground/80 text-2xs"),
+				className: cn(COL.access, "text-foreground-soft text-2xs"),
 			}),
 			h.div(
 				[h.Class(COL.createdBy)],
@@ -152,7 +152,7 @@ const apiRow = (
 						[
 							truncatedText(h, {
 								text: key.created_by_email ?? EMPTY_VALUE,
-								className: "text-foreground/80",
+								className: "text-foreground-soft",
 							}),
 							h.span([h.Class("text-muted-foreground truncate")], [formatDate(key.created_at)]),
 						],
@@ -211,10 +211,10 @@ export const keysTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, input
 
 const DEVICE_COL = {
 	name: "w-0 min-w-[180px] flex-1",
-	owner: "hidden w-[180px] shrink-0 @xl:block",
-	created: "hidden w-[110px] shrink-0 @2xl:block",
-	lastUsed: "hidden w-[80px] shrink-0 @lg:block",
-	expires: "w-[100px] shrink-0",
+	owner: "hidden w-44 shrink-0 @xl:block",
+	created: "hidden w-28 shrink-0 @2xl:block",
+	lastUsed: "hidden w-20 shrink-0 @lg:block",
+	expires: "w-24 shrink-0",
 	menu: "w-7 shrink-0",
 }
 
@@ -239,7 +239,7 @@ const deviceRow = (
 			]
 		: []
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-muted/50"))],
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-surface-sunken"))],
 		[
 			h.div(
 				[h.Class(cn(DEVICE_COL.name, "flex min-w-0 items-center gap-2"))],
@@ -250,7 +250,7 @@ const deviceRow = (
 			),
 			truncatedText(h, {
 				text: key.created_by_email ?? EMPTY_VALUE,
-				className: cn(DEVICE_COL.owner, "text-foreground/80 text-2xs"),
+				className: cn(DEVICE_COL.owner, "text-foreground-soft text-2xs"),
 			}),
 			h.span(
 				[h.Class(cn(DEVICE_COL.created, "text-muted-foreground truncate text-2xs"))],

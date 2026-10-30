@@ -33,7 +33,7 @@ export const thresholds = (h: H, state: EditorState): Html =>
 									h.Value(threshold.color.startsWith("#") ? threshold.color : "#ef4444"),
 									h.OnInput((color) => Message.ChangedThresholdColor({ index, color })),
 									h.Class(
-										"h-8 w-8 shrink-0 cursor-pointer rounded border bg-transparent p-0.5",
+										"h-8 w-8 shrink-0 cursor-pointer rounded-sm border bg-transparent p-0.5",
 									),
 									h.AriaLabel("Threshold color"),
 								]),

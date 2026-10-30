@@ -203,7 +203,7 @@ const messageRow = (
 							h.Class(
 								cn(
 									"mt-1.5 max-w-prose overflow-x-auto rounded-md border px-3 py-2 text-sm",
-									isAgent ? AGENT_ACCENT.surface : "border-border/60 bg-muted/40",
+									isAgent ? AGENT_ACCENT.surface : "border-border-subtle bg-surface-sunken",
 								),
 							),
 						],

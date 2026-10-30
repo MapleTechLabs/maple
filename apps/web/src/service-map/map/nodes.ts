@@ -54,7 +54,7 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class("ml-auto flex flex-col items-end gap-px")],
 		[
-			eyebrow(h, { className: "text-4xs text-muted-foreground/60" }, ["pods"]),
+			eyebrow(h, { className: "text-4xs text-foreground-subtle" }, ["pods"]),
 			data.infra
 				? tooltipTrigger(h, [
 						h.span(
@@ -64,13 +64,13 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 								),
 							],
 							[
-								icon(h, "CubeIcon", { size: 10, className: "text-muted-foreground/70" }),
+								icon(h, "CubeIcon", { size: 10, className: "text-foreground-subtle" }),
 								String(data.infra.podCount),
 							],
 						),
 					])
 				: h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-muted-foreground/30")],
+						[h.Class("font-mono text-2xs tabular-nums text-foreground-faint")],
 						[EMPTY_VALUE],
 					),
 		],
@@ -100,7 +100,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 			[
 				h.Class(
 					cn(
-						"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
+						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
 						selected
 							? selectedBorderClass(errorRate)
 							: "border-border hover:border-foreground/30",
@@ -121,7 +121,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 										size: 12,
 										className: cn(
 											"shrink-0",
-											!platformIcon.branded && "text-muted-foreground/80",
+											!platformIcon.branded && "text-foreground-subtle",
 										),
 									}),
 								]),
@@ -138,14 +138,14 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 														h,
 														{
 															className:
-																"shrink-0 text-4xs text-muted-foreground/60",
+																"shrink-0 text-4xs text-foreground-subtle",
 														},
 														[runtimeInfo.short],
 													)
 												: tooltipTrigger(h, [
 														icon(h, runtimeInfo.icon, {
 															size: 12,
-															className: "shrink-0 text-muted-foreground/70",
+															className: "shrink-0 text-foreground-subtle",
 														}),
 													]),
 										]),
@@ -222,7 +222,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 		h.div(
 			[
 				h.Class(
-					"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
+					"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
 				),
 				h.Style(tintedCard(color, 0.12, 0.4, selected)),
 			],
@@ -291,7 +291,7 @@ const namespaceAggregateNode = <M>(
 		h.div(
 			[
 				h.Class(
-					"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
+					"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
 				),
 				h.Style(tintedCard(color, 0.1, 0.55, selected)),
 				h.Title("Collapsed namespace. Click to expand"),

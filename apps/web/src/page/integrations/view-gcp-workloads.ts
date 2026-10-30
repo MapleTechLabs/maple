@@ -60,9 +60,9 @@ const workloads = (h: H, model: Model, className: string): Html => {
 		)
 	const manyProjects =
 		new Set(all.map((row) => gcpWorkloadProject(row.service, row.workload.keys))).size > 1
-	return panel(h, { className: cn("@container border-border/60", className) }, [
+	return panel(h, { className: cn("@container border-border-subtle", className) }, [
 		panelHeader(h, {
-			className: "gap-2 border-border/60 pr-2.5",
+			className: "gap-2 border-border-subtle pr-2.5",
 			children: [
 				h.div(
 					[h.Class("flex min-w-0 flex-1 items-baseline gap-3")],
@@ -98,7 +98,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 			? []
 			: [
 					h.p(
-						[h.Class("border-b border-border/60 px-4 py-2 text-2xs text-severity-warn")],
+						[h.Class("border-b border-border-subtle px-4 py-2 text-2xs text-severity-warn")],
 						[`${gcpTitles(unread)} metrics could not be read. Reload to try again.`],
 					),
 				]),
@@ -132,7 +132,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 										),
 									),
 									h.Class(
-										"group flex items-center gap-3 border-b border-border/60 px-4 py-2.5 transition-colors last:border-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
+										"group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 transition-colors last:border-0 hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 									),
 								],
 								[
@@ -204,9 +204,9 @@ const resources = (h: H, model: Model, className: string): Html => {
 	const inventory = inventoryOf(model)
 	if (inventory === null) return skeleton(h, cn("h-40 rounded-md", className))
 	const types = inventory === "failed" ? [] : inventory.types.toSorted((a, b) => b.count - a.count)
-	return panel(h, { className: cn("h-fit border-border/60", className) }, [
+	return panel(h, { className: cn("h-fit border-border-subtle", className) }, [
 		panelHeader(h, {
-			className: "border-border/60",
+			className: "border-border-subtle",
 			children: [h.h3([h.Class("text-sm font-semibold")], ["Resources"])],
 			action: h.span([h.Class("text-2xs text-muted-foreground")], ["listed hourly"]),
 		}),
@@ -231,7 +231,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 											),
 										),
 										h.Class(
-											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
+											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 										),
 									],
 									[
@@ -252,7 +252,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 					h.footer(
 						[
 							h.Class(
-								"flex items-center justify-between gap-3 border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground",
+								"flex items-center justify-between gap-3 border-t border-border-subtle px-4 py-2.5 text-xs text-muted-foreground",
 							),
 						],
 						[

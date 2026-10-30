@@ -70,7 +70,7 @@ export function latencyLevel(ms: number, scale: LatencyScale = "p95", budgetMs?:
  */
 export const LATENCY_TEXT_TONE: Record<LatencyLevel, string> = {
 	quiet: "text-muted-foreground",
-	nominal: "text-foreground/70",
+	nominal: "text-foreground-soft",
 	elevated: "text-foreground",
 	slow: "text-severity-warn",
 	critical: "text-severity-error",

@@ -73,7 +73,7 @@ export const hostDetailHeader = (h: H, inputs: HeaderInputs): HostHeaderParts =>
 			nowMs: inputs.nowMs,
 			timeZone: inputs.timeZone,
 			prefix: "last reported",
-			className: "text-2xs text-muted-foreground/80",
+			className: "text-2xs text-foreground-subtle",
 		}),
 	]
 	const percentItem = (eyebrow: string, value: number) =>

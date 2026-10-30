@@ -168,7 +168,7 @@ const statePreview = (h: H, model: Model): Html =>
 			h.pre(
 				[
 					h.Class(
-						"max-h-72 overflow-auto rounded-none border bg-muted/30 p-2 font-mono text-2xs leading-relaxed",
+						"max-h-72 overflow-auto rounded-none border bg-surface-sunken p-2 font-mono text-2xs leading-relaxed",
 					),
 				],
 				[

@@ -41,7 +41,7 @@ const loadingState = (h: HtmlBuilder<Message>): Html =>
 						[
 							skeleton(h, "size-1.5 shrink-0 rounded-full"),
 							skeleton(h, "h-3 w-16 shrink-0"),
-							skeleton(h, "h-3 w-[72px] shrink-0"),
+							skeleton(h, "h-3 w-20 shrink-0"),
 							skeleton(h, "h-3 flex-1"),
 						],
 					),

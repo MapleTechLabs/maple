@@ -68,24 +68,24 @@ const columns = <M>(
 		columnHead(h, {
 			label: "Peak saturation",
 			sort: head("saturation"),
-			width: "w-[176px]",
+			width: "w-44",
 			hidden: "hidden md:flex",
 		}),
 		columnHead(h, {
 			label: "CPU cores",
 			sort: head("cpuUsage"),
 			align: "right",
-			width: "w-[132px]",
+			width: "w-32",
 			hidden: "hidden lg:flex",
 		}),
 		columnHead(h, {
 			label: "Mem of limit",
 			sort: head("memoryLimitPct"),
 			align: "right",
-			width: "w-[120px]",
+			width: "w-32",
 			hidden: "hidden lg:flex",
 		}),
-		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-[100px]" }),
+		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-24" }),
 	]
 }
 
@@ -100,12 +100,12 @@ export const podTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 				[skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")],
 			),
 			h.div(
-				[h.Class("hidden w-[176px] space-y-1.5 md:block")],
-				[skeleton(h, "h-2.5 w-[176px]"), skeleton(h, "h-2.5 w-[176px]")],
+				[h.Class("hidden w-44 space-y-1.5 md:block")],
+				[skeleton(h, "h-2.5 w-44"), skeleton(h, "h-2.5 w-44")],
 			),
-			skeleton(h, "hidden h-3 w-[132px] lg:block"),
-			skeleton(h, "hidden h-3 w-[120px] lg:block"),
-			skeleton(h, "h-3 w-[100px]"),
+			skeleton(h, "hidden h-3 w-32 lg:block"),
+			skeleton(h, "hidden h-3 w-32 lg:block"),
+			skeleton(h, "h-3 w-24"),
 		]),
 	)
 
@@ -202,7 +202,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 				],
 			),
 			h.div(
-				[h.Class("hidden w-[176px] md:block")],
+				[h.Class("hidden w-44 md:block")],
 				[
 					meterRows(h, [
 						{ label: "CPU", fraction: pod.cpuLimitPctPeak },
@@ -211,11 +211,11 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 				],
 			),
 			h.div(
-				[h.Class("hidden w-[132px] text-right lg:block")],
+				[h.Class("hidden w-32 text-right lg:block")],
 				[avgPeak(h, { avg: pod.cpuUsage, peak: pod.cpuUsagePeak, format: formatCores })],
 			),
 			h.div(
-				[h.Class("hidden w-[120px] text-right lg:block")],
+				[h.Class("hidden w-32 text-right lg:block")],
 				[
 					avgPeak(h, {
 						avg: pod.memoryLimitPct,
@@ -225,7 +225,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 				],
 			),
 			h.div(
-				[h.Class("w-[100px] text-right")],
+				[h.Class("w-24 text-right")],
 				[
 					relativeTime(h, {
 						value: pod.lastSeen,

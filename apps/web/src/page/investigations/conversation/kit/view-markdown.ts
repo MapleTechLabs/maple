@@ -126,7 +126,7 @@ const tableView =
 							),
 						),
 					],
-					{ className: "bg-muted/40" },
+					{ className: "bg-surface-sunken" },
 				),
 				tableBody(
 					h,

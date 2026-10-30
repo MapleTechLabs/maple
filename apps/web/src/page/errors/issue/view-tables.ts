@@ -130,7 +130,7 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 					),
 					h.Class(
 						cn(
-							"inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5",
+							"inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface-sunken px-2 py-0.5",
 							"font-mono text-2xs text-muted-foreground tabular-nums",
 							"transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary",
 						),

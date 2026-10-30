@@ -102,7 +102,7 @@ const statusBadge = <M>(
 	statusCode: string,
 ): Html | null => {
 	const { platform, cacheInfo, httpInfo } = desc
-	const base = "shrink-0 rounded px-1.5 py-0.5 text-3xs font-semibold"
+	const base = "shrink-0 rounded-sm px-1.5 py-0.5 text-3xs font-semibold"
 	if (platform?.outcome?.bad) {
 		return h.span(
 			[h.Class(cn(base, outcomeBadgeStyle(true))), h.Title(`${platform.label} outcome`)],
@@ -165,14 +165,14 @@ const missingCard = <M>(
 					h.span([h.Class("flex-1")]),
 					h.span(
 						[
-							h.Class(cn("font-mono tabular-nums", "text-muted-foreground/60 truncate")),
+							h.Class(cn("font-mono tabular-nums", "text-foreground-subtle truncate")),
 							h.Title(data.span.spanId),
 						],
 						[shortId(data.span.spanId, "span")],
 					),
 				],
 			),
-			h.div([h.Class("text-3xs italic text-muted-foreground/50")], ["Not ingested or dropped"]),
+			h.div([h.Class("text-3xs italic text-foreground-faint")], ["Not ingested or dropped"]),
 		],
 	),
 	flowHandle(h, nodeId, "source", "bottom", HANDLE_CLASSES),
@@ -280,7 +280,7 @@ export const flowSpanNode = <M>(
 									[
 										serviceDot(h, span.serviceName, "size-1.5"),
 										h.span([h.Class("truncate")], [span.serviceName]),
-										h.span([h.Class("shrink-0 text-muted-foreground/50")], ["·"]),
+										h.span([h.Class("shrink-0 text-foreground-faint")], ["·"]),
 										h.span([h.Class("shrink-0")], [category.label]),
 										h.span([h.Class("flex-1")]),
 										h.span([h.Class("shrink-0 tabular-nums"), h.Title(tooltip)], [main]),
@@ -293,7 +293,7 @@ export const flowSpanNode = <M>(
 				h.div(
 					[
 						h.Class(
-							"absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-muted/40",
+							"absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-surface-sunken",
 						),
 					],
 					[

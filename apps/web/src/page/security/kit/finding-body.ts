@@ -33,13 +33,13 @@ const prose = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
 
 const labelled = <M>(h: HtmlBuilder<M>, label: string, text: string): Html =>
 	h.div(
-		[h.Class("flex flex-col gap-1.5 rounded-md border px-3 py-2.5")],
+		[h.Class("flex flex-col gap-1.5 rounded-md border p-3")],
 		[eyebrow(h, { as: "div" }, [label]), h.p([h.Class("text-sm")], [text])],
 	)
 
 const codeBlock = <M>(h: HtmlBuilder<M>, text: string, label?: string): Html =>
 	h.div(
-		[h.Class("overflow-hidden rounded-md border bg-muted/40")],
+		[h.Class("overflow-hidden rounded-md border bg-surface-sunken")],
 		[
 			...(label === undefined
 				? []

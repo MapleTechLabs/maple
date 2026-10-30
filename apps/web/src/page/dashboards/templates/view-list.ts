@@ -51,7 +51,7 @@ const templateRow = (
 				cn(
 					"flex min-h-9 w-full items-center text-left transition-colors",
 					rowSelectedClass(isSelected),
-					!isSelected && "hover:bg-muted/50",
+					!isSelected && "hover:bg-surface-sunken",
 				),
 			),
 		],
@@ -95,7 +95,7 @@ const templateRow = (
 											cn(
 												truncatedTextStyles,
 												truncatedTextMonoStyles,
-												"text-muted-foreground/80 max-w-31.5 shrink-0 text-right text-2xs",
+												"text-foreground-subtle max-w-31.5 shrink-0 text-right text-2xs",
 											),
 										),
 										h.Title(status),
@@ -204,7 +204,7 @@ const groups = (
 							[],
 							[
 								h.div(
-									[h.Class("text-muted-foreground/70 pt-3.5 pr-4 pb-1 pl-12.5 text-2xs")],
+									[h.Class("text-foreground-subtle pt-3.5 pr-4 pb-1 pl-12.5 text-2xs")],
 									[CATEGORY_LABELS.get(category) ?? category],
 								),
 								...templates.map(row),
@@ -315,7 +315,7 @@ export const templateList = (
 					h.Type("button"),
 					h.OnClick(Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID })),
 					h.Class(
-						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left transition-colors hover:bg-muted/50",
+						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left transition-colors hover:bg-surface-sunken",
 					),
 				],
 				[

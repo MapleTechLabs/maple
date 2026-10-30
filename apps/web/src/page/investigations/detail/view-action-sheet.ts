@@ -45,7 +45,7 @@ export const actionSheetContent = (
 						icon(h, glyph.icon, { size: 12, className: "shrink-0" }),
 						"Proposed action ",
 						String(action.index + 1).padStart(2, "0"),
-						h.span([h.Class("text-muted-foreground/40")], ["·"]),
+						h.span([h.Class("text-foreground-faint")], ["·"]),
 						glyph.label,
 					],
 				),
@@ -74,7 +74,7 @@ export const actionSheetContent = (
 						h.span(
 							[
 								h.Class(
-									"rounded border border-dashed px-2 py-1 text-3xs tracking-wider text-muted-foreground/70",
+									"rounded-sm border border-dashed px-2 py-1 text-3xs tracking-wider text-foreground-subtle",
 								),
 							],
 							[action.promise],
@@ -112,7 +112,7 @@ export const actionSheetContent = (
 											),
 											...(report.affectedScope
 												? [
-														h.span([h.Class("text-muted-foreground/40")], ["·"]),
+														h.span([h.Class("text-foreground-faint")], ["·"]),
 														h.span([], [report.affectedScope]),
 													]
 												: []),
@@ -132,7 +132,7 @@ export const actionSheetContent = (
 										const chips = evidenceChips(h, item, "sheet", trigger)
 										return h.keyed("div")(
 											String(index),
-											[h.Class("flex flex-col gap-1.5 rounded-md bg-muted/40 p-3")],
+											[h.Class("flex flex-col gap-1.5 rounded-md bg-surface-sunken p-3")],
 											[
 												...(item.note
 													? [

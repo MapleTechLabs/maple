@@ -206,7 +206,7 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 						h.span(
 							[
 								h.Class(
-									"w-3 shrink-0 text-right text-2xs tabular-nums text-muted-foreground/70",
+									"w-3 shrink-0 text-right text-2xs tabular-nums text-foreground-subtle",
 								),
 							],
 							[item.shortcut],
@@ -232,7 +232,7 @@ const content = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>): ReadonlyArray<H
 			: []
 	return [
 		h.div(
-			[h.Class("flex items-center gap-2 border-b border-border/60 px-3")],
+			[h.Class("flex items-center gap-2 border-b border-border-subtle px-3")],
 			[
 				h.input([
 					...activeDescendant,

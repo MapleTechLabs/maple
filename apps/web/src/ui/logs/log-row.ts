@@ -63,11 +63,11 @@ const ROW_CHIP_LIMIT = 2
 
 // Row and row action classes
 const ROW_CLASS =
-	"hover:bg-muted/50 data-[expanded]:bg-muted/40 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+	"hover:bg-surface-sunken data-[expanded]:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 const EXPAND_BUTTON_CLASS =
-	"-mr-1.5 shrink-0 flex h-4 items-center justify-center w-4 text-muted-foreground/40 group-hover/row:text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:text-foreground"
+	"-mr-1.5 shrink-0 flex h-4 items-center justify-center w-4 text-foreground-faint group-hover/row:text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:text-foreground"
 const ROW_ACTION_CLASS =
-	"inline-flex size-5 items-center justify-center rounded text-3xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex size-5 items-center justify-center rounded-sm text-3xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 const ACTIONS_CLASS =
 	"absolute right-0 hidden items-center gap-0.5 rounded-md border border-border bg-background p-0.5 group-hover/row:flex group-data-[focused]/row:flex group-focus-within/row:flex"
 const ICON_BUTTON_CLASS = cn(
@@ -103,8 +103,8 @@ const pinnedCell = <Message>(h: HtmlBuilder<Message>, cell: PinnedCell): Html =>
 				cn(
 					"block min-w-0 truncate",
 					cn(
-						"shrink-0 text-foreground/80 hidden md:block",
-						cell.isEmpty && "text-muted-foreground/40",
+						"shrink-0 text-foreground-soft hidden md:block",
+						cell.isEmpty && "text-foreground-faint",
 						cell.isNumeric && "tabular-nums",
 					),
 				),
@@ -167,7 +167,7 @@ export const logRow = <Message>(
 				width: "100%",
 				transform: `translateY(${start}px)`,
 			}),
-			rowClass(h, "border-b border-border/60"),
+			rowClass(h, "border-b border-border-subtle"),
 		],
 		[
 			h.div(
@@ -213,14 +213,14 @@ export const logRow = <Message>(
 					),
 					h.span(
 						[
-							rowClass(h, "shrink-0 w-[92px] text-foreground/70 tabular-nums"),
+							rowClass(h, "shrink-0 w-24 text-foreground-soft tabular-nums"),
 							h.Title(row.timeTitle),
 						],
 						row.timeFraction === ""
 							? [row.timeMain]
 							: [
 									row.timeMain,
-									h.span([rowClass(h, "text-muted-foreground/50")], [row.timeFraction]),
+									h.span([rowClass(h, "text-foreground-faint")], [row.timeFraction]),
 								],
 					),
 					h.span(

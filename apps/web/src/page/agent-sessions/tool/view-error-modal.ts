@@ -68,7 +68,7 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 			[h.Class("contents")],
 			[
 				...(index > 0
-					? [h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"])]
+					? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])]
 					: []),
 				typeof item === "string" ? h.span([h.Class("text-muted-foreground")], [item]) : item,
 			],
@@ -120,14 +120,14 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 			h.div(
 				[
 					h.Class(
-						"flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/80",
+						"flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
 					),
 				],
 				[
 					h.span([], [inputs.tool]),
-					h.span([h.Class("text-muted-foreground/40")], ["/"]),
+					h.span([h.Class("text-foreground-faint")], ["/"]),
 					h.span([], ["errors"]),
-					h.span([h.Class("text-muted-foreground/40")], ["/"]),
+					h.span([h.Class("text-foreground-faint")], ["/"]),
 					h.span([], [String(position.index + 1), " of ", String(position.total)]),
 					...(group.errorType === ""
 						? []
@@ -135,7 +135,7 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 								h.span(
 									[
 										h.Class(
-											"ml-1 rounded-sm border border-border px-[5px] text-2xs text-muted-foreground/70",
+											"ml-1 rounded-sm border border-border px-[5px] text-2xs text-foreground-subtle",
 										),
 									],
 									["error.type ", group.errorType],
@@ -178,7 +178,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 						bucket.unit,
 					]),
 					h.span(
-						[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+						[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 						["max ", formatToolCount(Math.max(0, ...group.spark))],
 					),
 				],
@@ -193,7 +193,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 				className: "h-11 w-[340px] shrink-0",
 			}),
 			h.div(
-				[h.Class("flex justify-between font-mono text-2xs leading-3.5 text-muted-foreground/70")],
+				[h.Class("flex justify-between font-mono text-2xs leading-3.5 text-foreground-subtle")],
 				[
 					h.span([], [windowRangeLabel(range.startMs, range.startMs, timeZone)]),
 					h.span([], [windowRangeLabel(range.endMs, range.endMs, timeZone)]),

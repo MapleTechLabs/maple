@@ -56,7 +56,7 @@ const tabLink = <M>(
 										"text-2xs tabular-nums",
 										options.isActive
 											? "text-muted-foreground"
-											: "text-muted-foreground/60",
+											: "text-foreground-subtle",
 									),
 								),
 							],

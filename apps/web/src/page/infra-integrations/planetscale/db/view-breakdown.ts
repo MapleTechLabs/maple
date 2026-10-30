@@ -142,7 +142,7 @@ const rowsOf = (candidates: ReadonlyArray<BranchCandidate>, spec: MeasureSpec) =
 }
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])
+	h.span([h.Class("font-mono text-3xs text-foreground-subtle")], [text])
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
 	h.div(
@@ -153,7 +153,7 @@ const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): Readonly
 					h.Class(
 						cn(
 							"truncate text-sm",
-							row.isOther ? "text-muted-foreground" : "font-mono text-foreground/90",
+							row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
 							isSelected && "text-primary",
 						),
 					),
@@ -170,7 +170,7 @@ const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): Readonly
 		[
 			h.Class(
 				cn(
-					"w-[120px] text-right font-mono text-xs tabular-nums text-foreground/80",
+					"w-32 text-right font-mono text-xs tabular-nums text-foreground-soft",
 					row.hasValue && spec.className?.(row.value),
 				),
 			),
@@ -194,10 +194,10 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 	const spec: MeasureSpec = MEASURES[inputs.measure]
 	const { rows, total, max } = rowsOf(inputs.candidates, spec)
 	const sorted = sortRowsByField(rows.map(toSortRow), inputs.sort, (row) => !row.isOther && row.production)
-	return panel(h, { className: "border-border/60" }, [
+	return panel(h, { className: "border-border-subtle" }, [
 		panelHeader(h, {
 			title: "Branches",
-			className: "border-border/60 px-3 py-2",
+			className: "border-border-subtle px-3 py-2",
 			action: segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Measure",
@@ -221,7 +221,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 				}),
 				columnHead(h, {
 					label: spec.label,
-					width: "w-[120px]",
+					width: "w-32",
 					align: "right",
 					sort: {
 						onSort: Message.ClickedBreakdownSort({ key: "value" }),
@@ -247,8 +247,8 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 								h.AriaPressed(String(isSelected)),
 								h.Class(
 									cn(
-										"flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-muted/50",
-										isSelected && "bg-muted/60",
+										"flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-surface-sunken",
+										isSelected && "bg-surface-strong",
 									),
 								),
 								...styleAttrs,
@@ -261,7 +261,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 					}),
 		),
 		h.div(
-			[h.Class("border-t border-border/60 px-3 py-1.5 text-2xs text-muted-foreground")],
+			[h.Class("border-t border-border-subtle px-3 py-1.5 text-2xs text-muted-foreground")],
 			[
 				spec.additive
 					? `Bars show share of ${formatNumber(total)} total across ${countLabel(inputs.candidates.length, "branch", "branches")}.`
@@ -272,7 +272,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 }
 
 export const breakdownLoading = (h: H): Html =>
-	panel(h, { className: "border-border/60" }, [
-		panelHeader(h, { className: "border-border/60 px-3 py-2", children: [skeleton(h, "h-4 w-56")] }),
+	panel(h, { className: "border-border-subtle" }, [
+		panelHeader(h, { className: "border-border-subtle px-3 py-2", children: [skeleton(h, "h-4 w-56")] }),
 		skeletonList(h, { rows: 5, rowClassName: "h-4", gap: "2", className: "p-3" }),
 	])

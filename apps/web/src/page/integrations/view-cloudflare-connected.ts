@@ -36,13 +36,13 @@ type H = HtmlBuilder<Message>
 const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Html | null =>
 	accounts.length < 2
 		? null
-		: panel(h, { className: "border-border/60" }, [
+		: panel(h, { className: "border-border-subtle" }, [
 				panelHeader(h, {
 					title: `Connected accounts (${accounts.length})`,
-					className: "border-border/60",
+					className: "border-border-subtle",
 				}),
 				h.ul(
-					[h.Class("divide-y divide-border/60")],
+					[h.Class("divide-y divide-border-subtle")],
 					accounts.map((account) =>
 						item(h, { variant: "flush", size: "lg", className: "py-2.5", tag: "li" }, [
 							itemMedia(h, {}, [

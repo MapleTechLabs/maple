@@ -49,7 +49,7 @@ const card = (
 			h.Class(
 				cn(
 					"group bg-card flex items-center gap-3 rounded-md border px-3 py-3 text-left transition-colors",
-					"hover:bg-muted/50 focus-visible:ring-ring outline-none focus-visible:ring-2",
+					"hover:bg-surface-sunken focus-visible:ring-ring outline-none focus-visible:ring-2",
 				),
 			),
 		],

@@ -39,7 +39,7 @@ const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text
 const header = (h: H, rawSql: RawSqlState): Html => {
 	const issue = rawSqlIssue(rawSql.draft.sql)
 	return h.div(
-		[h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")],
+		[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
 		[
 			iconButton(
 				h,
@@ -57,7 +57,7 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 					h.Class(
 						badgeVariants({
 							variant: "outline",
-							className: "font-mono text-2xs text-white border-0 shrink-0 bg-primary/80",
+							className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
 						}),
 					),
 					h.DataAttribute("slot", "badge"),
@@ -158,7 +158,7 @@ const chipRow = (
 				h,
 				token,
 				index < MACRO_HINTS.length
-					? "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+					? "bg-surface-sunken text-muted-foreground hover:bg-muted hover:text-foreground"
 					: "bg-primary/10 text-primary hover:bg-primary/20",
 				trigger(chipTriggerId(index)),
 			),

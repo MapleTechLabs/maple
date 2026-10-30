@@ -167,7 +167,7 @@ export function TraceFlowView({
 
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
-			<div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2 shrink-0">
+			<div className="flex items-center justify-between border-b bg-surface-sunken px-3 py-2 shrink-0">
 				<span className="text-xs font-medium text-muted-foreground">Flow View</span>
 				<Button
 					variant="ghost"
@@ -227,13 +227,13 @@ export function TraceFlowView({
 				</ReactFlow>
 			</div>
 
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-2xs text-muted-foreground shrink-0">
+			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-surface-sunken px-3 py-2.5 text-2xs text-muted-foreground shrink-0">
 				<span className="font-medium">Click to select</span>
-				<span className="text-foreground/30">|</span>
+				<span className="text-foreground-faint">|</span>
 				<span className="font-medium">Scroll to zoom</span>
-				<span className="text-foreground/30">|</span>
+				<span className="text-foreground-faint">|</span>
 				<span className="font-medium">Drag to pan</span>
-				<span className="text-foreground/30">|</span>
+				<span className="text-foreground-faint">|</span>
 				<div className="flex items-center gap-3">
 					{services.map((service) => (
 						<div key={service} className="flex items-center gap-1.5">
@@ -244,7 +244,7 @@ export function TraceFlowView({
 				</div>
 				{presentCategories.length > 0 && (
 					<>
-						<span className="text-foreground/30">|</span>
+						<span className="text-foreground-faint">|</span>
 						<div className="flex items-center gap-3">
 							{presentCategories.map((category) => (
 								<div key={category.id} className="flex items-center gap-1.5">

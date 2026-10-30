@@ -18,7 +18,7 @@ export const selectTriggerVariants = cva(
 
 export const selectTriggerIconClassName = "-me-1 size-4 opacity-80 sm:size-3.5"
 
-export const selectButtonValueStyles = "flex-1 truncate in-data-placeholder:text-muted-foreground/72"
+export const selectButtonValueStyles = "flex-1 truncate in-data-placeholder:text-foreground-subtle"
 
 export const selectButtonStyles = "min-w-0"
 

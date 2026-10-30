@@ -102,7 +102,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 				...(status.workspaceName !== null && status.workspaceName !== ""
 					? [
 							h.div(
-								[h.Class("rounded-md bg-muted/40 px-3 py-2 text-2xs text-muted-foreground")],
+								[h.Class("rounded-md bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground")],
 								[
 									h.div(
 										[h.Class("[overflow-wrap:anywhere]")],

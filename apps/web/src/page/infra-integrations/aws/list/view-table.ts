@@ -58,7 +58,7 @@ type Column = Readonly<{
 }>
 
 const MUTED = "font-mono text-2xs text-muted-foreground"
-const NUMBER = "font-mono text-xs tabular-nums text-foreground/80"
+const NUMBER = "font-mono text-xs tabular-nums text-foreground-soft"
 
 const reading = (view: ResourceView, key: string) => view.readings[key]?.value ?? null
 

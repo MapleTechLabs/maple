@@ -48,7 +48,7 @@ const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: 
 
 const history = (h: H, model: Model, user: Extract<TranscriptRow, { kind: "user" }>): Html =>
 	h.div(
-		[h.Class("flex flex-col gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2.5")],
+		[h.Class("flex flex-col gap-3 rounded-md border border-border-subtle bg-surface-faint p-3")],
 		[
 			h.p(
 				[h.Class("text-2xs text-muted-foreground")],
@@ -95,7 +95,7 @@ export const userBlock = (
 				h.div(
 					[
 						h.Class(
-							"mr-8 ml-auto w-fit max-w-[85%] rounded-lg rounded-tr-sm bg-muted/50 px-3.5 py-2.5",
+							"mr-8 ml-auto w-fit max-w-[85%] rounded-lg rounded-tr-sm bg-surface-sunken px-3.5 py-2.5",
 						),
 					],
 					[messageBodyView(h, model, { text: user.text, rowKey: user.key })],
@@ -135,7 +135,7 @@ export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, {
 					? []
 					: [
 							h.span(
-								[h.Class("min-w-0 grow truncate text-muted-foreground/70 text-xs")],
+								[h.Class("min-w-0 grow truncate text-foreground-subtle text-xs")],
 								[firstLine(system.text)],
 							),
 						]),
@@ -150,7 +150,7 @@ export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, {
 		...(isOpen
 			? [
 					h.div(
-						[h.Class("mt-1 flex items-start gap-1.5 rounded-lg bg-muted/30 px-3.5 py-2.5")],
+						[h.Class("mt-1 flex items-start gap-1.5 rounded-lg bg-surface-sunken px-3.5 py-2.5")],
 						[
 							h.div(
 								[h.Class("min-w-0 grow")],

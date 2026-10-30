@@ -57,7 +57,7 @@ const header = (h: H, model: Model, query: QueryDraft): Html => {
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
 					labSelect(h, model, `source:${query.id}`, query.dataSource, DATA_SOURCES, {
-						className: "w-[120px]",
+						className: "w-32",
 						toView: (parts) =>
 							h.div(
 								[h.Class("flex items-center gap-2")],

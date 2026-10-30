@@ -201,7 +201,7 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 					h.div(
 						[
 							h.Class(
-								"grid grid-cols-2 gap-1.5 rounded-md border border-border bg-muted/30 p-3 font-mono text-xs",
+								"grid grid-cols-2 gap-1.5 rounded-md border border-border bg-surface-sunken p-3 font-mono text-xs",
 							),
 						],
 						step.codes.map((code) => h.span([h.Key(code)], [code])),

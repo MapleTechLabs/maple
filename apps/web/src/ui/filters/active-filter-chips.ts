@@ -46,7 +46,7 @@ export const activeFilterChips = <M>(
 								"inline-flex max-w-full items-center gap-1.5 rounded-md border py-1 pr-1 pl-2 text-xs",
 								isNegated
 									? "border-dashed border-destructive/40 bg-destructive/5 text-destructive"
-									: "border-border/60 bg-muted/40 text-foreground",
+									: "border-border-subtle bg-surface-sunken text-foreground",
 							),
 						),
 					],

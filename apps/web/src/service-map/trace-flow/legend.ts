@@ -6,11 +6,11 @@ import type { SpanCategory } from "./span-category"
 
 // The hint, service and category legend under `TraceFlowView`.
 
-const separator = <M>(h: HtmlBuilder<M>): Html => h.span([h.Class("text-foreground/30")], ["·"])
+const separator = <M>(h: HtmlBuilder<M>): Html => h.span([h.Class("text-foreground-faint")], ["·"])
 
 // Hints are instructions, not legend entries: lighter weight and tone so they read as their own group.
 const hint = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.span([h.Class("text-muted-foreground/70")], [text])
+	h.span([h.Class("text-foreground-subtle")], [text])
 
 export const flowLegend = <M>(
 	h: HtmlBuilder<M>,
@@ -20,7 +20,7 @@ export const flowLegend = <M>(
 	h.div(
 		[
 			h.Class(
-				"flex flex-wrap items-center gap-x-10 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
+				"flex flex-wrap items-center gap-x-10 gap-y-2 border-t bg-surface-sunken px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
 			),
 		],
 		[

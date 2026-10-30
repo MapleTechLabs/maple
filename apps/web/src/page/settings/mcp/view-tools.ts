@@ -57,7 +57,7 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 					...(isOpen ? [h.AriaControls(panelId)] : []),
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
-					h.Class("flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-muted/50"),
+					h.Class("flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken"),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),
 					h.Tabindex(0),

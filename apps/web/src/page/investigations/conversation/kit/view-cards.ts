@@ -54,7 +54,7 @@ const formatValue = (value: unknown, timeZone: string): Formatted => {
 }
 
 const RAW_CLASS =
-	"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug"
+	"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-surface-sunken p-2 font-mono text-2xs leading-snug"
 
 /** `KeyValueFallback`: the proposal's arguments, one row each. */
 const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string): Html =>

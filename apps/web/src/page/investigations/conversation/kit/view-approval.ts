@@ -67,7 +67,7 @@ const parsedArray = (value: unknown): ReadonlyArray<unknown> | undefined => {
 
 const widgetRow = <M>(h: HtmlBuilder<M>, widget: Widget): Html =>
 	h.div(
-		[h.Class("flex items-center gap-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5")],
+		[h.Class("flex items-center gap-2 rounded-md border border-border-subtle bg-background/60 px-2 py-1.5")],
 		[
 			icon(h, vizIcon(widget.visualization), { className: "size-3.5 shrink-0 text-muted-foreground" }),
 			h.span([h.Class("truncate text-xs font-medium")], [widget.title]),
@@ -198,7 +198,7 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 							h.div(
 								[
 									h.Class(
-										"rounded-md border border-dashed border-border/60 px-2 py-1.5 text-2xs text-muted-foreground",
+										"rounded-md border border-dashed border-border-subtle px-2 py-1.5 text-2xs text-muted-foreground",
 									),
 								],
 								["Template will generate widgets automatically."],
@@ -288,7 +288,7 @@ const addWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 		[h.Class("space-y-3")],
 		[
 			heading(h, "PlusIcon", ["Add widget"], asString(obj.dashboard_id) ?? EMPTY_VALUE),
-			panel(h, { tone: "background", className: "border-border/60 bg-background/60 p-2" }, [
+			panel(h, { tone: "background", className: "border-border-subtle bg-background/60 p-2" }, [
 				h.div(
 					[h.Class("flex items-center gap-2")],
 					[

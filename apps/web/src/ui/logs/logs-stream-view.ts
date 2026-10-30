@@ -86,7 +86,7 @@ const columnHeader = (
 		},
 		[
 			h.span([h.AriaHidden(true), h.Class("-mr-1.5 shrink-0 w-4")]),
-			h.span([h.Class("shrink-0 w-[92px]"), h.Title(`Times in ${timeZone}`)], ["Time"]),
+			h.span([h.Class("shrink-0 w-24"), h.Title(`Times in ${timeZone}`)], ["Time"]),
 			h.span([h.Class("shrink-0 w-11")], ["Level"]),
 			h.span([h.Class("shrink-0 w-40 hidden md:inline-block")], ["Service"]),
 			...pinnedColumns.map((key) => {
@@ -94,7 +94,7 @@ const columnHeader = (
 				const parts = pinnedColumnParts(key)
 				return h.span(
 					[
-						h.Class("shrink-0 min-w-0 hidden md:flex text-foreground/60 whitespace-nowrap"),
+						h.Class("shrink-0 min-w-0 hidden md:flex text-foreground-subtle whitespace-nowrap"),
 						h.Style({ width: PINNED_COL_WIDTH }),
 						h.Title(key),
 					],

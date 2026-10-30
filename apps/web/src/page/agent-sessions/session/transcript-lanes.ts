@@ -204,7 +204,7 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 		])
 	const scope = note.scope === "session" ? `${note.anyCaptured ? "most of " : ""}this session` : "this turn"
 	return h.div(
-		[h.Class("mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-muted/30 px-4 py-3")],
+		[h.Class("mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-surface-sunken px-4 py-3")],
 		[
 			icon(h, "CircleInfoIcon", { size: 16, className: "mt-0.5 shrink-0 text-muted-foreground" }),
 			h.div(

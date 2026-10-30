@@ -43,7 +43,7 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 	h.div(
 		[
 			h.Key(caller.serviceName),
-			h.Class("flex items-center gap-4 border-b border-border/60 px-4 py-2.5 last:border-0"),
+			h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 last:border-0"),
 		],
 		[
 			h.a(

@@ -75,7 +75,7 @@ const keysUnavailable = (h: H): Html =>
 	h.p(
 		[
 			h.Class(
-				"rounded-md border border-dashed bg-muted/40 px-3 py-2 font-prose text-xs text-muted-foreground",
+				"rounded-md border border-dashed bg-surface-sunken px-3 py-2 font-prose text-xs text-muted-foreground",
 			),
 		],
 		[

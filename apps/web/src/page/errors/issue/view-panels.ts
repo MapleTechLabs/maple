@@ -65,7 +65,7 @@ const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean
 				],
 			),
 			...(pr.title ? [itemDescription(h, [pr.title], "line-clamp-1")] : []),
-			...(hint ? [itemDescription(h, [hint], "text-muted-foreground/80")] : []),
+			...(hint ? [itemDescription(h, [hint], "text-foreground-subtle")] : []),
 		]),
 		iconButton(
 			h,

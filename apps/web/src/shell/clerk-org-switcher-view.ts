@@ -274,7 +274,7 @@ const createFields = (h: H, model: Model): ReadonlyArray<Html> => [
 		? []
 		: [
 				h.div(
-					[h.Class("text-destructive text-xs text-sm"), h.DataAttribute("slot", "field-error")],
+					[h.Class("text-destructive text-xs"), h.DataAttribute("slot", "field-error")],
 					[model.errorMessage],
 				),
 			]),
@@ -318,7 +318,7 @@ const regionField = (h: H, model: Model): Html => {
 					[
 						h.Id(RadioGroup.labelId(`${regionIdOf(model, region)}-input`)),
 						h.Class(
-							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-[[data-checked]]:bg-accent/64",
+							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-accent/50 has-[[data-checked]]:bg-accent/64",
 						),
 					],
 					[

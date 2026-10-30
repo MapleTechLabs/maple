@@ -21,7 +21,7 @@ const zoneRow = (h: H, accountId: string, zone: ZoneChoice["zones"][number]): Ht
 		[
 			h.Key(inputId),
 			h.Id(Checkbox.labelId(inputId)),
-			h.Class("flex min-w-0 items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-muted/50"),
+			h.Class("flex min-w-0 items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-surface-sunken"),
 		],
 		[
 			...Checkbox.view(h, {
@@ -92,7 +92,7 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 				? h.p(
 						[
 							h.Class(
-								"rounded-md border border-border/60 px-3 py-4 text-xs text-muted-foreground",
+								"rounded-md border border-border-subtle px-3 py-4 text-xs text-muted-foreground",
 							),
 						],
 						[account.zones.length === 0 ? "No zones found yet." : "No zones match the filter."],
@@ -100,7 +100,7 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 				: h.div(
 						[
 							h.Class(
-								"flex max-h-64 flex-col overflow-y-auto overscroll-contain rounded-md border border-border/60 py-1",
+								"flex max-h-64 flex-col overflow-y-auto overscroll-contain rounded-md border border-border-subtle py-1",
 							),
 						],
 						shown.map((zone) => zoneRow(h, account.accountId, zone)),

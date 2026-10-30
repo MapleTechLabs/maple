@@ -119,7 +119,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html => {
 	const kind = KIND_TAG[issue.kind]
 	return h.div(
-		[h.Key(issue.id), h.Class("hover:bg-muted/50 flex items-start gap-3 px-4 py-3 transition-colors")],
+		[h.Key(issue.id), h.Class("hover:bg-surface-sunken flex items-start gap-3 px-4 py-3 transition-colors")],
 		[
 			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [
 				kind.label,
@@ -245,7 +245,7 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 			h.Key(mapping.id),
 			h.Class(
 				cn(
-					"hover:bg-muted/50 flex items-center gap-3 border-t px-4 py-2.5 transition-colors",
+					"hover:bg-surface-sunken flex items-center gap-3 border-t px-4 py-2.5 transition-colors",
 					!mapping.enabled && "text-muted-foreground",
 				),
 			),

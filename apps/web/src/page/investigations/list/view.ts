@@ -114,7 +114,7 @@ const toolbar = (
 								h.span(
 									[
 										h.Class(
-											"text-muted-foreground/70 tabular-nums group-data-active/tab:text-muted-foreground",
+											"text-foreground-subtle tabular-nums group-data-active/tab:text-muted-foreground",
 										),
 									],
 									[String(counts.get(value) ?? 0)],
@@ -159,7 +159,7 @@ const toolbar = (
 				view: SelectView.view,
 				viewInputs: {
 					entries: KIND_ENTRIES,
-					className: "w-[140px]",
+					className: "w-36",
 					renderValue: (value) => [kindLabel(value)],
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
@@ -171,7 +171,7 @@ const toolbar = (
 				view: SelectView.view,
 				viewInputs: {
 					entries: SORT_ENTRIES,
-					className: "w-[168px]",
+					className: "w-44",
 					renderValue: (value) => [sortLabel(value)],
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
@@ -205,7 +205,7 @@ const rowFinding = (h: H, investigation: V2Investigation): Html => {
 			[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground")],
 			[statusDot(h, { tone: "live" }), truncatedText(h, { text: finding.text })],
 		)
-	if (finding.kind === "none") return h.span([h.Class("text-xs text-muted-foreground/60")], [EMPTY_VALUE])
+	if (finding.kind === "none") return h.span([h.Class("text-xs text-foreground-subtle")], [EMPTY_VALUE])
 	return h.span(
 		[
 			h.Class(
@@ -406,7 +406,7 @@ const hubHero = (h: H, model: Model): Html => {
 									...(model.isCreating ? [h.Disabled(true)] : []),
 									h.OnClick(Message.ClickedSuggestion({ title: suggestion })),
 									h.Class(
-										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-ring hover:bg-accent/40 disabled:opacity-60",
+										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-ring hover:bg-accent/50 disabled:opacity-60",
 									),
 								],
 								[

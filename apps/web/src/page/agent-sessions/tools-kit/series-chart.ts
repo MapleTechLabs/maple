@@ -174,7 +174,7 @@ export const seriesChart = <M>(
 											h.span(
 												[
 													h.AriaHidden(true),
-													h.Class("text-xs text-muted-foreground/60"),
+													h.Class("text-xs text-foreground-subtle"),
 												],
 												["·"],
 											),
@@ -199,7 +199,7 @@ export const seriesChart = <M>(
 								]
 							: []),
 						h.span(
-							[h.Class("font-mono text-2xs text-muted-foreground/60")],
+							[h.Class("font-mono text-2xs text-foreground-subtle")],
 							bucketMs === null ? [] : [`${bucketLabel(bucketMs)} buckets`],
 						),
 					],

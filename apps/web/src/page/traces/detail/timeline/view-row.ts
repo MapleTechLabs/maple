@@ -148,7 +148,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 					attr(
 						h,
 						cn(
-							"truncate font-mono font-medium text-foreground/90",
+							"truncate font-mono font-medium text-foreground-soft",
 							bar.isError && TONE_TEXT.crit,
 							bar.span.isMissing === true && "italic text-muted-foreground",
 						),
@@ -189,7 +189,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 							[
 								attr(
 									h,
-									"flex items-center gap-0.5 shrink-0 text-4xs text-muted-foreground/70",
+									"flex items-center gap-0.5 shrink-0 text-4xs text-foreground-subtle",
 								),
 								h.Title(countLabel(bar.childCount, "hidden span")),
 							],
@@ -298,14 +298,14 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 						[attr(h, "flex min-w-0 flex-1 items-center overflow-hidden")],
 						[
 							h.span(
-								[attr(h, cn("hidden truncate px-1.5 text-foreground/90", fit.inside))],
+								[attr(h, cn("hidden truncate px-1.5 text-foreground-soft", fit.inside))],
 								[bar.span.spanName],
 							),
 							h.span(
 								[
 									attr(
 										h,
-										"ml-auto hidden shrink-0 px-1.5 text-foreground/50 tabular-nums @min-[140px]/bar:inline",
+										"ml-auto hidden shrink-0 px-1.5 text-foreground-subtle tabular-nums @min-[140px]/bar:inline",
 									),
 								],
 								[durationLabel],
@@ -325,7 +325,7 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							...(isLabelLeft ? [h.DataAttribute("side", "left")] : []),
 							...(isOffscreen ? [h.Style({ visibility: "hidden" })] : []),
 						],
-						[h.span([attr(h, "text-foreground/90")], [bar.span.spanName]), " · ", durationLabel],
+						[h.span([attr(h, "text-foreground-soft")], [bar.span.spanName]), " · ", durationLabel],
 					),
 				],
 			),
@@ -347,8 +347,8 @@ export const timelineRow = (h: H, bar: Bar, state: RowState): Html => {
 				h,
 				cn(
 					"absolute left-0 right-0 flex items-stretch cursor-pointer select-none",
-					"hover:bg-muted/50",
-					state.isHovered && "bg-muted/50",
+					"hover:bg-surface-sunken",
+					state.isHovered && "bg-surface-sunken",
 					state.isSelected && "bg-primary/10",
 					state.isFocused && "ring-1 ring-inset ring-primary/60",
 					state.isMatched && "ring-1 ring-inset ring-primary/40",

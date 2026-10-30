@@ -183,7 +183,7 @@ export const segmentedSelect = <T extends string, M>(
 									[
 										h.AriaHidden(true),
 										h.Class(
-											"-z-10 absolute inset-0 rounded-md bg-background shadow-sm ring-1 ring-border/70 dark:bg-input dark:ring-white/10",
+											"-z-10 absolute inset-0 rounded-md bg-background shadow-sm ring-1 ring-border-subtle dark:bg-input dark:ring-white/10",
 										),
 										h.Style({ opacity: "1" }),
 									],

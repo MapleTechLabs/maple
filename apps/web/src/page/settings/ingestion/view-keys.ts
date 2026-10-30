@@ -83,7 +83,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap")],
 		[
-			h.span([h.Class("w-full shrink-0 text-sm sm:w-[120px]")], [label]),
+			h.span([h.Class("w-full shrink-0 text-sm sm:w-32")], [label]),
 			eyebrow(
 				h,
 				{ variant: "mono", className: cn("hidden w-14 shrink-0 sm:block", options.badgeClass) },
@@ -96,7 +96,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 					...(options.description
 						? [
 								h.span(
-									[h.Class("font-prose text-muted-foreground/70 text-2xs leading-3.5")],
+									[h.Class("font-prose text-foreground-subtle text-2xs leading-3.5")],
 									[options.description],
 								),
 							]
@@ -203,12 +203,12 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			}),
 		]
 	return [
-		row("public", "Public key", "Client", "text-info", "For browser and client-side telemetry SDKs"),
+		row("public", "Public key", "Client", "text-severity-debug", "For browser and client-side telemetry SDKs"),
 		row(
 			"private",
 			"Private key",
 			"Server",
-			"text-warning",
+			"text-severity-warn",
 			"For server-side ingestion and backend services",
 		),
 	]

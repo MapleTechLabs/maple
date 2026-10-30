@@ -284,7 +284,7 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 		[
 			h.Class(
 				cn(
-					"relative inline-flex shrink-0 items-center justify-center rounded-md border border-border/60 bg-card",
+					"relative inline-flex shrink-0 items-center justify-center rounded-md border border-border-subtle bg-card",
 					options.className,
 				),
 			),

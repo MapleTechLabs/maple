@@ -91,7 +91,7 @@ const rootSpanCell = (
 					truncatedText(h, { text: stamp, className: "text-3xs text-muted-foreground" }, [
 						h.span([h.Class("hidden @min-[480px]/page:inline")], [stamp, " "]),
 						h.span(
-							[h.Class("text-muted-foreground/60")],
+							[h.Class("text-foreground-subtle")],
 							[
 								"(",
 								h.time(
@@ -130,8 +130,8 @@ export const traceRow = (
 				"class",
 				cn(
 					tableRowStyles,
-					state.isActive && "bg-muted/60",
-					"hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+					state.isActive && "bg-surface-strong",
+					"hover:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),
 			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.

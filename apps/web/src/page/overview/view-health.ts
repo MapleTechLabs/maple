@@ -73,7 +73,7 @@ const railAction = <M>(h: HtmlBuilder<M>, slice: SliceSearch, health?: ServiceHe
 		[
 			h.Href(servicesHref(slice, health)),
 			h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`),
-			h.Class("text-muted-foreground/40 transition-colors hover:text-foreground"),
+			h.Class("text-foreground-faint transition-colors hover:text-foreground"),
 		],
 		[icon(h, "ArrowRightIcon", { className: "size-3" })],
 	)
@@ -177,7 +177,7 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				[
 					eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
 					h.p(
-						[h.Class("mt-0.5 font-prose text-2xs text-muted-foreground/70")],
+						[h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")],
 						["Status reflects active alerts and baseline anomalies."],
 					),
 				],

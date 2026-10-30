@@ -154,10 +154,10 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 									h.OnClick(Message.ClickedRangePreset({ value: option.key })),
 									h.Class(
 										cn(
-											"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-muted/50",
+											"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-surface-sunken",
 											option.key === activeKey
 												? "font-medium text-foreground"
-												: "text-foreground/80",
+												: "text-foreground-soft",
 										),
 									),
 								],
@@ -170,7 +170,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 								h.Type("button"),
 								h.Class(
 									cn(
-										"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-muted/50 hover:text-foreground",
+										"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-surface-sunken hover:text-foreground",
 										range.kind === "custom"
 											? "font-medium text-foreground"
 											: "text-muted-foreground",
@@ -295,12 +295,12 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 	const isDenied = entry.outcome === "denied"
 	const label = auditActionLabel(entry.action) ?? entry.action
 	return h.div(
-		[h.Key(entry.id), ...(isExpanded ? [h.Class("bg-muted/10")] : [])],
+		[h.Key(entry.id), ...(isExpanded ? [h.Class("bg-surface-faint")] : [])],
 		[
 			h.div(
 				[
 					h.Class(
-						"hover:bg-muted/50 relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors @md:flex-nowrap",
+						"hover:bg-surface-sunken relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors @md:flex-nowrap",
 					),
 				],
 				[
@@ -323,7 +323,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 							icon(h, "ChevronRightIcon", {
 								size: 12,
 								className: cn(
-									"text-muted-foreground/60 shrink-0 transition-transform",
+									"text-foreground-subtle shrink-0 transition-transform",
 									isExpanded && "rotate-90",
 								),
 							}),

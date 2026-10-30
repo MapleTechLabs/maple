@@ -24,7 +24,7 @@ const meterRow = <M>(h: HtmlBuilder<M>, row: MeterRow, hideLabel: boolean): Html
 								h.Class(
 									cn(
 										"w-8",
-										"shrink-0 font-mono text-3xs tracking-wider text-muted-foreground/70",
+										"shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle",
 									),
 								),
 							],

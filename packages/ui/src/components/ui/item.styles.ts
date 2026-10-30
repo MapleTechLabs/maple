@@ -7,9 +7,9 @@ export const itemVariants = cva(
 			variant: {
 				default: "border-transparent",
 				outline: "border-border",
-				muted: "bg-muted/50 border-transparent",
+				muted: "bg-surface-sunken border-transparent",
 				// Raised panel row on the page surface (integration headers, linked resources).
-				card: "rounded-lg border-border/60 bg-card",
+				card: "rounded-lg border-border-subtle bg-card",
 				// Row inside a `divide-y` list: no frame of its own.
 				flush: "rounded-none border-transparent",
 			},

@@ -89,7 +89,7 @@ export const metricCell = <M>(
 	h.div(
 		[h.Class("flex flex-col gap-px")],
 		[
-			eyebrow(h, { className: "text-4xs text-muted-foreground/60" }, [label]),
+			eyebrow(h, { className: "text-4xs text-foreground-subtle" }, [label]),
 			h.span(
 				[
 					h.Class(

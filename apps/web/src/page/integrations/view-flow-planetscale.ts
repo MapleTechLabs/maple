@@ -133,7 +133,7 @@ const authorizePart = (h: H, model: Model, status: V2PlanetScaleIntegration | nu
 			h.span(
 				[h.Class("inline-flex items-center gap-2 text-sm")],
 				[
-					icon(h, "CircleCheckIcon", { size: 14, className: "text-success" }),
+					icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
 					status.organization === null ? "Authorized" : `Authorized for ${status.organization}`,
 				],
 			),

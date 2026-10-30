@@ -114,7 +114,7 @@ const bars = (
 				}),
 	])
 
-const PATH_ROW = "flex items-center gap-4 border-t border-border/60 px-4 py-2 text-xs"
+const PATH_ROW = "flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs"
 
 const topPathsList = (h: H, paths: SupabaseApiTopPathsResponse): Html =>
 	paths.paths.length === 0

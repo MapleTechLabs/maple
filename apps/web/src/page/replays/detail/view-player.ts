@@ -236,7 +236,7 @@ const statusOverlay = (
 							"This session wasn’t recorded. Replay is off or unsampled for this app. Its traces and events are still below.",
 							h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "sessionReplay")]),
 						])
-	return h.div([h.Class("absolute inset-0 bg-muted/30")], [body])
+	return h.div([h.Class("absolute inset-0 bg-surface-sunken")], [body])
 }
 
 /** What the stage reads: everything but the playhead, so a tick reuses it. */
@@ -326,7 +326,7 @@ const playOverlay = (h: H, stage: Stage): Html =>
 
 const urlBar = (h: H, urlInitial: string): Html =>
 	h.div(
-		[h.Class("flex items-center gap-3 border-b border-border bg-muted/40 px-3.5 py-2.5")],
+		[h.Class("flex items-center gap-3 border-b border-border bg-surface-sunken px-3.5 py-2.5")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-1.5"), h.AriaHidden(true)],

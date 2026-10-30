@@ -66,7 +66,7 @@ const ITEM_CLASS = {
 	done: "text-muted-foreground",
 	current: "text-foreground border-primary border-b pb-0.5 font-medium",
 	next: "text-muted-foreground",
-	blocked: "text-warning border-warning border-b pb-0.5 font-medium",
+	blocked: "text-severity-warn border-severity-warn border-b pb-0.5 font-medium",
 } satisfies Record<TrailItem["state"], string>
 
 const item = (h: H, entry: TrailItem): Html =>
@@ -77,9 +77,9 @@ const item = (h: H, entry: TrailItem): Html =>
 		],
 		[
 			...(entry.state === "done"
-				? [icon(h, "CheckIcon", { size: 12, className: "text-success" })]
+				? [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" })]
 				: entry.state === "blocked"
-					? [icon(h, "AlertWarningIcon", { size: 12, className: "text-warning" })]
+					? [icon(h, "AlertWarningIcon", { size: 12, className: "text-severity-warn" })]
 					: []),
 			entry.label,
 		],
@@ -94,7 +94,7 @@ export const trail = (h: H, model: Model): Html =>
 				: [
 						// An arrow, not a slash: the steps are a flow, not a path back up.
 						h.li(
-							[h.AriaHidden(true), h.Class("inline-flex text-muted-foreground/60")],
+							[h.AriaHidden(true), h.Class("inline-flex text-foreground-subtle")],
 							[icon(h, "ArrowRightIcon", { size: 12 })],
 						),
 						item(h, entry),

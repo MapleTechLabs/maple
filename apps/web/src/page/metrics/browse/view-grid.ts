@@ -124,7 +124,7 @@ const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: 
 			h.Key(entryKey(entry.metricName, entry.metricType)),
 			h.Type("button"),
 			h.Class(
-				"group flex flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40",
+				"group flex flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/50",
 			),
 			h.OnClick(
 				Message.ClickedMetricCard({ metricName: entry.metricName, metricType: entry.metricType }),

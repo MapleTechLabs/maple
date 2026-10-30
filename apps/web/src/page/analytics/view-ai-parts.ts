@@ -106,7 +106,7 @@ export const aiPanel = (
 						panelTitle(h, [options.title]),
 						...(options.hint === undefined
 							? []
-							: [h.div([h.Class("mt-0.5 text-2xs text-muted-foreground/70")], [options.hint])]),
+							: [h.div([h.Class("mt-0.5 text-2xs text-foreground-subtle")], [options.hint])]),
 					],
 				),
 			],
@@ -121,7 +121,7 @@ export const aiPanel = (
 							h.Type("button"),
 							h.OnClick(Message.ClickedExpandPanel({ panel: options.expand.id })),
 							h.Class(
-								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:outline-none",
+								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border-subtle px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
 							),
 						],
 						[
@@ -200,7 +200,7 @@ export const aiProductCard = (
 								h.span(
 									[
 										h.Class(
-											"shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80",
+											"shrink-0 font-mono text-3xs tabular-nums text-foreground-subtle",
 										),
 										h.Title(
 											"Crawler fetches the site served, per visit this product sent",
@@ -252,11 +252,11 @@ const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
 const shareChange = (h: H, share: number, points: number | null): Html => {
 	if (points === null)
 		return h.span(
-			[h.Class("text-muted-foreground/70"), h.Title("No visits from it in the previous period")],
+			[h.Class("text-foreground-subtle"), h.Title("No visits from it in the previous period")],
 			["New"],
 		)
 	const before = share - points / 100
-	if (Math.abs(points) < 0.05) return h.span([h.Class("text-muted-foreground/70")], ["No change"])
+	if (Math.abs(points) < 0.05) return h.span([h.Class("text-foreground-subtle")], ["No change"])
 	return h.span(
 		[
 			h.Title(
@@ -290,18 +290,18 @@ export const rankingTable = (h: H, ranks: ReadonlyArray<AiReferralRank>, surface
 				[
 					h.Key(rank.product.id),
 					h.Style(shareBarStyle(rank.share)),
-					h.Class("flex items-center gap-4 border-b border-border/60 px-4 py-2 last:border-0"),
+					h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2 last:border-0"),
 				],
 				[
 					h.span(
-						[h.Class("w-5 text-right font-mono text-2xs tabular-nums text-muted-foreground/60")],
+						[h.Class("w-5 text-right font-mono text-2xs tabular-nums text-foreground-subtle")],
 						[String(index + 1)],
 					),
 					h.span(
 						[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
 						[
 							aiProductIcon(h, rank.product.id),
-							h.span([h.Class("truncate text-xs text-foreground/90")], [rank.product.label]),
+							h.span([h.Class("truncate text-xs text-foreground-soft")], [rank.product.label]),
 						],
 					),
 					h.span(
@@ -355,7 +355,7 @@ export const crawlerTable = (
 		{ ariaLabel: "AI crawlers", maxHeight: surface.maxHeight, stickySurfaceClass: surface.surfaceClass },
 		[
 			columnHead(h, { label: "Crawler", width: "w-0 flex-1 min-w-0" }),
-			columnHead(h, { label: "Purpose", width: "w-[72px]" }),
+			columnHead(h, { label: "Purpose", width: "w-20" }),
 			columnHead(h, { label: "Pages", width: "w-12", align: "right" }),
 			columnHead(h, {
 				label: "Fetches",
@@ -376,18 +376,18 @@ export const crawlerTable = (
 			return h.div(
 				[
 					h.Key(row.crawler),
-					h.Class("flex items-center gap-4 border-b border-border/60 px-4 py-2 last:border-0"),
+					h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2 last:border-0"),
 				],
 				[
 					h.span(
 						[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
 						[
 							aiProductIcon(h, product?.id ?? ""),
-							h.span([h.Class("truncate text-xs text-foreground/90")], [row.crawler]),
+							h.span([h.Class("truncate text-xs text-foreground-soft")], [row.crawler]),
 						],
 					),
 					h.span(
-						[h.Class("flex w-[72px] shrink-0")],
+						[h.Class("flex w-20 shrink-0")],
 						purpose === undefined ? [] : [purposeBadge(h, purpose)],
 					),
 					h.span(
@@ -395,7 +395,7 @@ export const crawlerTable = (
 							h.Class(
 								cn(
 									"w-12 text-right font-mono text-2xs tabular-nums",
-									row.pages === 0 && "text-muted-foreground/60",
+									row.pages === 0 && "text-foreground-subtle",
 								),
 							),
 						],
@@ -487,7 +487,7 @@ export const contentFormats = (h: H, formats: AiCrawlers["formats"]): Html => {
 								h.span(
 									[
 										h.Class(
-											"flex size-7 shrink-0 items-center justify-center rounded-sm border bg-muted/40 text-muted-foreground",
+											"flex size-7 shrink-0 items-center justify-center rounded-sm border bg-surface-sunken text-muted-foreground",
 										),
 									],
 									[icon(h, entry.icon, { size: 14 })],
@@ -540,7 +540,7 @@ export const contentFormats = (h: H, formats: AiCrawlers["formats"]): Html => {
 			...(other !== undefined && other.requests > 0
 				? [
 						h.div(
-							[h.Class("flex items-center gap-1.5 px-1 text-2xs text-muted-foreground/70")],
+							[h.Class("flex items-center gap-1.5 px-1 text-2xs text-foreground-subtle")],
 							[
 								icon(h, "FileIcon", { size: 12 }),
 								plural(other.requests, "other fetch", "other fetches"),

@@ -81,7 +81,7 @@ const codeAction = <M>(
 	)
 
 export const LINE_CLASS =
-	"block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-ui before:text-right before:text-muted-foreground/50 before:font-mono before:select-none"
+	"block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-ui before:text-right before:text-foreground-faint before:font-mono before:select-none"
 const TOKEN_CLASS =
 	"text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))] bg-[var(--sdm-tbg)] dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]"
 
@@ -219,7 +219,7 @@ const viewsFor = <M>(
 	const views: Markdown.Views = {
 		...Markdown.defaultViews,
 		InlineCode: ({ value }) =>
-			h.code(streamdown("inline-code", "rounded bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
+			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
 		// Link text is re-rendered with images as plain labels, at any nesting depth
 		// (`[**![a](u)**](d)`), so a linked image never puts an anchor inside an anchor.
@@ -300,7 +300,7 @@ const viewsFor = <M>(
 				[h.DataAttribute("streamdown", "table-wrapper")],
 				[
 					h.table(streamdown("table", "w-full border-collapse border border-border")(h), [
-						h.thead(streamdown("table-header", "bg-muted/80")(h), [headerRow]),
+						h.thead(streamdown("table-header", "bg-surface-strong")(h), [headerRow]),
 						h.tbody(streamdown("table-body", "divide-y divide-border")(h), bodyRows),
 					]),
 				],

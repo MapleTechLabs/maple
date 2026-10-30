@@ -172,7 +172,7 @@ export const billedOrgsSection = (h: H, model: Model, account: BillingAccount, t
 		[
 			panel(
 				h,
-				{ className: "divide-y divide-border/60" },
+				{ className: "divide-y divide-border-subtle" },
 				account.members.map((member) => memberRow(h, model, member, timeZone)),
 			),
 			...(AsyncData.isFailure(model.accountUsage)

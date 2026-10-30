@@ -176,7 +176,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 														h.pre(
 															[
 																h.Class(
-																	"overflow-x-auto whitespace-pre rounded-md border bg-muted/30 px-3 py-2.5 font-mono text-xs leading-relaxed",
+																	"overflow-x-auto whitespace-pre rounded-md border bg-surface-sunken p-3 font-mono text-xs leading-relaxed",
 																),
 															],
 															[

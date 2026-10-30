@@ -282,7 +282,7 @@ const featureRow = (
 						),
 			]),
 		],
-		cn(isEditing && "bg-muted/40"),
+		cn(isEditing && "bg-surface-sunken"),
 		[h.Key(feature.featureId)],
 	)
 }

@@ -31,7 +31,7 @@ const GROUP_BAR_H = 8
 export const PERCENT_FLOOR = { floor: 0.0005 }
 const LEGEND_H = 18
 
-const sep = (h: H, glyph: string): Html => h.span([h.Class("px-1 text-muted-foreground/50")], [glyph])
+const sep = (h: H, glyph: string): Html => h.span([h.Class("px-1 text-foreground-faint")], [glyph])
 
 const swatch = (h: H, className: string, color: string): Html =>
 	h.span([h.Class(className), h.Style({ "background-color": color })])
@@ -79,13 +79,13 @@ const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flag
 	if (hovered !== undefined)
 		return [
 			swatch(h, "mr-1 inline-block size-2 rounded-xs align-middle", hovered.color),
-			h.span([h.Class("text-foreground/90")], [fmtValue(hovered.value, flags.unit)]),
+			h.span([h.Class("text-foreground-soft")], [fmtValue(hovered.value, flags.unit)]),
 			...(flags.showShareOfFirst
 				? [sep(h, "·"), h.span([], [formatPercent(hovered.pctOfFirst, PERCENT_FLOOR)])]
 				: []),
 		]
 	return [
-		h.span([h.Class("text-foreground/90")], [fmtValue(stage.value, flags.unit)]),
+		h.span([h.Class("text-foreground-soft")], [fmtValue(stage.value, flags.unit)]),
 		...(flags.showShareOfFirst
 			? [sep(h, "·"), h.span([], [formatPercent(stage.pctOfFirst, PERCENT_FLOOR)])]
 			: []),
@@ -176,7 +176,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 										h.Class(
 											cn(
 												"truncate",
-												stage.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
+												stage.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
 											),
 										),
 										h.Title(stage.name),

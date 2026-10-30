@@ -70,7 +70,7 @@ const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 								? []
 								: [
 										h.p(
-											[h.Class("text-muted-foreground/70 text-3xs mt-0.5 font-medium")],
+											[h.Class("text-foreground-subtle text-3xs mt-0.5 font-medium")],
 											[feature.detail],
 										),
 									]),
@@ -200,8 +200,8 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 		],
 		cn(
 			"flex flex-col transition-colors",
-			isActive && "bg-muted/60",
-			isUpgrade && "bg-muted/30 ring-1 ring-primary/30",
+			isActive && "bg-surface-strong",
+			isUpgrade && "bg-surface-sunken ring-1 ring-primary/30",
 		),
 	)
 }

@@ -47,7 +47,7 @@ const liveBadge = (h: H, model: Model): ReadonlyArray<Html> => {
 						"inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium tabular-nums",
 						count > 0
 							? cn(TONE_SOFT.ok, TONE_BORDER.ok)
-							: "border-border/60 text-muted-foreground",
+							: "border-border-subtle text-muted-foreground",
 					),
 				),
 				h.Title(`${count} ${noun} active in the last ${minutes} ${pluralize(minutes, "minute")}`),

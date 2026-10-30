@@ -199,7 +199,7 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 				),
 			),
 			h.div(
-				[h.Class("mt-1 flex justify-between text-3xs tabular-nums text-muted-foreground/60")],
+				[h.Class("mt-1 flex justify-between text-3xs tabular-nums text-foreground-subtle")],
 				[
 					h.span([], [formatValue(first.from, unit)]),
 					h.span([], [formatValue(middle.from, unit)]),

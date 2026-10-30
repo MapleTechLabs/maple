@@ -106,7 +106,7 @@ const beforeAfter = <M>(
 		[
 			...(before === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-muted-foreground/70")], [format(before), " →"])]),
+				: [h.span([h.Class("text-3xs text-foreground-subtle")], [format(before), " →"])]),
 			h.span(
 				[
 					h.Class(
@@ -151,7 +151,7 @@ const serviceRow = <M>(
 							serviceDot(h, { serviceName: impact.serviceName }),
 							impact.serviceName,
 							...(impact.environment && !environments?.length
-								? [h.span([h.Class("text-muted-foreground/70")], [impact.environment])]
+								? [h.span([h.Class("text-foreground-subtle")], [impact.environment])]
 								: []),
 							...(impact.health === "healthy"
 								? []
@@ -204,7 +204,7 @@ const serviceRow = <M>(
 				),
 			),
 		],
-		"border-border/60",
+		"border-border-subtle",
 		[h.Key(`${impact.serviceName}:${impact.environment}`)],
 	)
 
@@ -224,7 +224,7 @@ export const deployServices = <M>(
 		{
 			title: "Services",
 			action: h.span(
-				[h.Class("text-2xs text-muted-foreground/70")],
+				[h.Class("text-2xs text-foreground-subtle")],
 				["against the version each replaced"],
 			),
 		},
@@ -281,7 +281,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 			]),
 		])
 	const action = h.span(
-		[h.Class("text-2xs text-muted-foreground/70")],
+		[h.Class("text-2xs text-foreground-subtle")],
 		["since ", h.span([h.Class("font-mono")], [shortReleaseLabel(state.base)])],
 	)
 	if (state._tag === "Loading")
@@ -314,7 +314,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 							[
 								h.Key(commit.sha),
 								h.Class(
-									"flex items-start gap-2.5 border-t border-border/60 px-4 py-2 text-xs first:border-t-0",
+									"flex items-start gap-2.5 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0",
 								),
 							],
 							[
@@ -354,7 +354,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 								h.span(
 									[
 										h.Class(
-											"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70",
+											"shrink-0 font-mono text-2xs tabular-nums text-foreground-subtle",
 										),
 									],
 									[
@@ -373,7 +373,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 								h.div(
 									[
 										h.Class(
-											"border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground/70",
+											"border-t border-border-subtle px-4 py-2 text-2xs text-foreground-subtle",
 										),
 									],
 									[String(hidden), " older ", pluralize(hidden, "commit"), " not shown"],
@@ -428,7 +428,7 @@ const issueLine = <M>(
 					variant: "orDate",
 					mono: true,
 					tooltip: "title",
-					className: "w-14 text-right text-xs text-muted-foreground/70",
+					className: "w-14 text-right text-xs text-foreground-subtle",
 				}),
 			],
 		),
@@ -457,7 +457,7 @@ export const issueList = <M>(
 				[
 					h.Class(
 						options.issues.length === 0
-							? "text-2xs text-muted-foreground/70"
+							? "text-2xs text-foreground-subtle"
 							: options.tone === "error"
 								? "text-2xs font-medium text-severity-error"
 								: options.tone === "warn"

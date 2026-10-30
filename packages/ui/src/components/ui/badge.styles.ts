@@ -38,9 +38,9 @@ export const badgeVariants = cva(
 				info: TONE_SOFT.info,
 				done: TONE_SOFT.done,
 				// Neutral tinted chip: counts, kinds, quiet metadata.
-				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-muted/80",
+				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-surface-strong",
 				// Bordered meta chip on the page surface: services, environments, reopen markers.
-				meta: "border-border/70 bg-background text-muted-foreground [button&,a&]:hover:bg-muted/50",
+				meta: "border-border-subtle bg-background text-muted-foreground [button&,a&]:hover:bg-surface-sunken",
 				outline:
 					"border-input bg-background text-foreground dark:bg-input/32 [button&,a&]:hover:bg-accent/50 dark:[button&,a&]:hover:bg-input/48",
 				secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
@@ -48,7 +48,7 @@ export const badgeVariants = cva(
 				warn: TONE_SOFT.warn,
 				// Tiny uppercase label chip (System, Current, Pinned). Sizes itself, so it
 				// resets the size variant; recolour with className.
-				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-wide sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-muted/80 [button&,a&]:hover:text-foreground",
+				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-wide sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-surface-strong [button&,a&]:hover:text-foreground",
 			},
 		},
 	},

@@ -67,7 +67,7 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 											h.Class(
 												cn(
 													"min-w-0 flex-1 truncate",
-													entry.ended ? "text-muted-foreground" : "text-foreground/90",
+													entry.ended ? "text-muted-foreground" : "text-foreground-soft",
 												),
 											),
 										],
@@ -83,7 +83,7 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 										h.Class(
 											cn(
 												"absolute inset-y-0 left-0 rounded-sm",
-												entry.ended ? "bg-foreground/25" : "bg-[var(--chart-2)]",
+												entry.ended ? "bg-foreground/25" : "bg-chart-2",
 											),
 										),
 										h.Style({ width: `${entry.share * 100}%` }),
@@ -127,7 +127,7 @@ const tooltip = (h: H, hovered: Step, prev: Step, left: number, unit: string | u
 				"converted",
 				fmtValue(hovered.value, unit),
 				formatPercent(hovered.ofPrev ?? 0),
-				"text-success-foreground",
+				"text-severity-info",
 			),
 			tipRow(
 				h,
@@ -204,7 +204,7 @@ const plainBars = (h: H, step: Step, prev: Step | undefined): ReadonlyArray<Html
 				]
 			: []),
 		h.div([
-			h.Class("absolute inset-x-0 bottom-0 rounded-sm bg-[var(--chart-2)]"),
+			h.Class("absolute inset-x-0 bottom-0 rounded-sm bg-chart-2"),
 			h.Style({
 				height: `${Math.max(step.ofFirst * 100, step.value > 0 ? 1.5 : 0)}%`,
 				transition: "height 220ms ease",
@@ -219,7 +219,7 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 	return h.span(
 		[
 			h.Class(
-				"absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-xs ring-1 ring-border/60",
+				"absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-xs ring-1 ring-border-subtle",
 			),
 			h.DataAttribute("slot", "funnel-dropoff-pill"),
 		],
@@ -237,7 +237,7 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 			...(ctx.pillLoss && lostShare > 0
 				? [
 						h.span(
-							[h.Class("flex items-center gap-1 text-foreground/80")],
+							[h.Class("flex items-center gap-1 text-foreground-soft")],
 							[icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }), formatPercent(lostShare)],
 						),
 					]
@@ -273,7 +273,7 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 							h.Class(
 								cn(
 									"truncate text-2xs font-medium",
-									step.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
+									step.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
 								),
 							),
 							h.Title(step.name),

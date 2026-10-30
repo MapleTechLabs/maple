@@ -117,7 +117,7 @@ export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 				[h.Class("flex flex-wrap gap-1.5 text-xs")],
 				changes.map((change) =>
 					h.li(
-						[h.Key(change.field), h.Class("rounded-sm border bg-muted/30 px-2 py-1")],
+						[h.Key(change.field), h.Class("rounded-sm border bg-surface-sunken px-2 py-1")],
 						[
 							h.span([h.Class("text-muted-foreground")], [change.field, " "]),
 							h.span(
@@ -213,7 +213,7 @@ const fireRail = (
 			h.span([h.Class("text-right text-2xs text-muted-foreground")], [label]),
 			h.div(
 				[
-					h.Class("relative h-2 rounded-sm bg-muted/50"),
+					h.Class("relative h-2 rounded-sm bg-surface-sunken"),
 					h.AriaLabel(`${label}: ${marks.length} alerts`),
 				],
 				marks.map((mark) =>

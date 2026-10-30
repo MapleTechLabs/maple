@@ -59,7 +59,7 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 					variant: "orDate",
 					mono: true,
 					tooltip: "title",
-					className: "w-14 text-right text-xs text-muted-foreground/70",
+					className: "w-14 text-right text-xs text-foreground-subtle",
 				}),
 			],
 		),
@@ -116,7 +116,7 @@ const errorRateChip = (h: H, deploy: DeployEntry): Html => {
 			mono: true,
 			className: cn(
 				"cursor-default",
-				level === "neutral" ? "bg-transparent text-muted-foreground/60" : TONE_SOFT[level],
+				level === "neutral" ? "bg-transparent text-foreground-subtle" : TONE_SOFT[level],
 			),
 			attributes: [
 				h.Title(
@@ -161,7 +161,7 @@ const rowMeta = (
 		variant: "orDate",
 		mono: true,
 		tooltip: "title",
-		className: "ml-auto shrink-0 cursor-default text-muted-foreground/70",
+		className: "ml-auto shrink-0 cursor-default text-foreground-subtle",
 	}),
 ]
 
@@ -171,7 +171,7 @@ const deploysEmpty = (h: H): Html =>
 	emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
 		h.span([], ["No deploys detected in this window."]),
 		h.span(
-			[h.Class("text-muted-foreground/70")],
+			[h.Class("text-foreground-subtle")],
 			[
 				"Deploy tracking needs spans to carry the",
 				" ",
@@ -240,7 +240,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 				deploys.length === 0
 					? undefined
 					: h.span(
-							[h.Class("text-xs text-muted-foreground/70")],
+							[h.Class("text-xs text-foreground-subtle")],
 							[countLabel(deploys.length, "version"), " in window"],
 						),
 		},
@@ -256,7 +256,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 										h.div(
 											[
 												h.Class(
-													"px-2 py-1.5 text-center text-2xs text-muted-foreground/70",
+													"px-2 py-1.5 text-center text-2xs text-foreground-subtle",
 												),
 											],
 											[

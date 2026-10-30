@@ -88,7 +88,7 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 										},
 										[
 											SIGNAL_LABEL[incident.signalType],
-											h.span([h.Class("text-muted-foreground/60")], [" · "]),
+											h.span([h.Class("text-foreground-subtle")], [" · "]),
 											incident.serviceName,
 										],
 									),
@@ -174,7 +174,7 @@ export const signalChart = (
 				h,
 				{
 					dashed: true,
-					className: "flex h-64 w-full items-center justify-center border-border/60 py-0 text-xs",
+					className: "flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
 				},
 				["No signal data in window"],
 			)
@@ -298,7 +298,7 @@ export const linkedIssueCard = (
 	const issueId = incident.errorIssueId
 	if (issueId === null)
 		return h.div(
-			[h.Class("rounded-md border border-dashed border-border/60 p-4")],
+			[h.Class("rounded-md border border-dashed border-border-subtle p-4")],
 			[
 				h.div(
 					[h.Class("flex flex-wrap items-center justify-between gap-3")],

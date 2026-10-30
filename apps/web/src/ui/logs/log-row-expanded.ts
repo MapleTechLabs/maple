@@ -57,7 +57,7 @@ export const logRowExpanded = <Message>(
 	const { shown, omitted } = capForDisplay(formatted)
 	const lines = shown.split("\n")
 	return h.div(
-		[h.Class("border-t border-border/60 bg-muted/20 px-3 py-3 pl-9 font-mono")],
+		[h.Class("border-t border-border-subtle bg-surface-faint px-3 py-3 pl-9 font-mono")],
 		[
 			h.div(
 				[h.Class("max-h-[60vh] space-y-3 overflow-auto")],
@@ -65,7 +65,7 @@ export const logRowExpanded = <Message>(
 					h.div(
 						[
 							h.Class(
-								"relative rounded-md border border-border/60 bg-background/60 py-2 pl-3 pr-24",
+								"relative rounded-md border border-border-subtle bg-background/60 py-2 pl-3 pr-24",
 							),
 						],
 						[

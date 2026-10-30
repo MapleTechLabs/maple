@@ -62,7 +62,7 @@ const deltaSubline = <M>(h: HtmlBuilder<M>, change: ToolDelta | null, windowLabe
 		? null
 		: sublineText(h, [
 				deltaValue(h, change),
-				h.span([h.Class("text-muted-foreground/60")], ["vs prev ", windowLabel]),
+				h.span([h.Class("text-foreground-subtle")], ["vs prev ", windowLabel]),
 			])
 
 export type MetricStripConfig<M> = Readonly<{
@@ -93,7 +93,7 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 					: sublineText(h, [
 							h.span([], [formatPercent(share)]),
 							h.span(
-								[h.Class("text-muted-foreground/60")],
+								[h.Class("text-foreground-subtle")],
 								["of all ", formatToolCount(config.allSessions), " sessions"],
 							),
 						]),

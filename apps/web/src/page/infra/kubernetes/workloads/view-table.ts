@@ -23,18 +23,18 @@ const columns = (h: H, sort: SortState | null, kind: WorkloadKind | undefined): 
 	const head = (key: WorkloadSortKey) => headSort(sort, key, (k) => Message.ClickedSort({ key: k }))
 	return [
 		columnHead(h, { label: "Workload", sort: head("workloadName"), width: "w-0 flex-1 min-w-[260px]" }),
-		columnHead(h, { label: kind === "job" ? "Completions" : "Ready", width: "w-[110px]" }),
+		columnHead(h, { label: kind === "job" ? "Completions" : "Ready", width: "w-28" }),
 		columnHead(h, { label: "Pods", sort: head("podCount"), align: "right", width: "w-[60px]" }),
-		columnHead(h, { label: "Restarts", sort: head("restarts"), align: "right", width: "w-[140px]" }),
-		columnHead(h, { label: "CPU peak", sort: head("peakCpuLimitPct"), align: "right", width: "w-[140px]", hidden: "hidden md:flex" }),
+		columnHead(h, { label: "Restarts", sort: head("restarts"), align: "right", width: "w-36" }),
+		columnHead(h, { label: "CPU peak", sort: head("peakCpuLimitPct"), align: "right", width: "w-36", hidden: "hidden md:flex" }),
 		columnHead(h, {
 			label: "Memory peak",
 			sort: head("peakMemoryLimitPct"),
 			align: "right",
-			width: "w-[140px]",
+			width: "w-36",
 			hidden: "hidden lg:flex",
 		}),
-		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-[100px]" }),
+		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-24" }),
 	]
 }
 
@@ -45,12 +45,12 @@ export const workloadTableLoading = (h: H): Html =>
 		columns(h, null, undefined),
 		skeletonRows(h, 4, () => [
 			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")]),
-			skeleton(h, "h-3 w-[110px]"),
+			skeleton(h, "h-3 w-28"),
 			skeleton(h, "h-3 w-[60px]"),
-			skeleton(h, "h-3 w-[140px]"),
-			skeleton(h, "hidden h-3 w-[140px] md:block"),
-			skeleton(h, "hidden h-3 w-[140px] lg:block"),
-			skeleton(h, "h-3 w-[100px]"),
+			skeleton(h, "h-3 w-36"),
+			skeleton(h, "hidden h-3 w-36 md:block"),
+			skeleton(h, "hidden h-3 w-36 lg:block"),
+			skeleton(h, "h-3 w-24"),
 		]),
 	)
 
@@ -122,16 +122,16 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 					metaLine(h, [wl.namespace && `ns ${wl.namespace}`, `kind ${inputs.kind}`]),
 				],
 			),
-			h.div([h.Class("w-[110px] font-mono text-xs tabular-nums")], [replicaCell(h, wl, inputs.kind)]),
+			h.div([h.Class("w-28 font-mono text-xs tabular-nums")], [replicaCell(h, wl, inputs.kind)]),
 			h.div(
-				[h.Class("w-[60px] text-right font-mono text-xs tabular-nums text-foreground/80")],
+				[h.Class("w-[60px] text-right font-mono text-xs tabular-nums text-foreground-soft")],
 				[wl.podCount.toLocaleString("en-US")],
 			),
 			h.div(
 				[
 					h.Class(
 						cn(
-							"flex w-[140px] flex-col items-end font-mono text-xs tabular-nums",
+							"flex w-36 flex-col items-end font-mono text-xs tabular-nums",
 							TONE_TEXT[restartTone(wl.restarts, wl.lastTerminatedReason)],
 						),
 					),
@@ -144,15 +144,15 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 				],
 			),
 			h.div(
-				[h.Class("hidden w-[140px] md:block")],
+				[h.Class("hidden w-36 md:block")],
 				[meterRows(h, [{ label: "CPU", fraction: wl.peakCpuLimitPct }], { hideLabels: true })],
 			),
 			h.div(
-				[h.Class("hidden w-[140px] lg:block")],
+				[h.Class("hidden w-36 lg:block")],
 				[meterRows(h, [{ label: "MEM", fraction: wl.peakMemoryLimitPct }], { hideLabels: true })],
 			),
 			h.div(
-				[h.Class("w-[100px] text-right")],
+				[h.Class("w-24 text-right")],
 				[
 					relativeTime(h, {
 						value: wl.lastSeen,

@@ -37,7 +37,7 @@ export const toolIoSummary = (
 		[
 			icon(h, "ArrowDownIcon", {
 				size: 10,
-				className: "text-muted-foreground/70",
+				className: "text-foreground-subtle",
 				attributes: [h.AriaHidden(true)],
 			}),
 			args === undefined ? "not captured" : formatBytes(args.byteLength),
@@ -161,7 +161,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 			h.Class(
 				cn(
 					"flex items-stretch",
-					half.direction === "in" ? "bg-black/[0.06]" : "border-border/60 border-t",
+					half.direction === "in" ? "bg-black/[0.06]" : "border-border-subtle border-t",
 					half.direction === "out" && half.isFailed && "bg-severity-error/5",
 				),
 			),
@@ -220,7 +220,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 
 const missingHalf = (h: H, label: string, note: string): Html =>
 	h.div(
-		[h.Class("flex items-center border-input border-t border-dashed bg-muted/20 py-2.5 pr-3")],
+		[h.Class("flex items-center border-input border-t border-dashed bg-surface-faint py-2.5 pr-3")],
 		[
 			h.span(
 				[h.Class("flex w-8 shrink-0 justify-center")],
@@ -259,14 +259,14 @@ export const toolIo = (
 			h.div(
 				[
 					h.Class(
-						"flex items-center gap-2.5 border-input border-t border-dashed bg-muted/20 px-3 py-2.5",
+						"flex items-center gap-2.5 border-input border-t border-dashed bg-surface-faint px-3 py-2.5",
 					),
 				],
 				[
 					h.span(
 						[
 							h.AriaHidden(true),
-							h.Class("flex shrink-0 items-center gap-0.5 text-muted-foreground/60"),
+							h.Class("flex shrink-0 items-center gap-0.5 text-foreground-subtle"),
 						],
 						[icon(h, "ArrowDownIcon", { size: 10 }), icon(h, "ArrowUpIcon", { size: 10 })],
 					),

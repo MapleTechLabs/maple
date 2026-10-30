@@ -23,7 +23,7 @@ export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
 const STALE_DOT = "border-[1.5px] border-muted-foreground bg-transparent"
 
 export const ROW_CLASS =
-	"group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+	"group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none"
 
 export const FINDINGS_LIST_CLASS = "flex flex-col overflow-hidden rounded-md border"
 const FINDINGS_ROW_CLASS = "-mt-px border-t"

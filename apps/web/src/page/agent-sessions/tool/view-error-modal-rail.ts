@@ -60,7 +60,7 @@ const variantsSection = (
 				[
 					h.span([h.Class(RAIL_TITLE)], ["Variants"]),
 					h.span(
-						[h.Class("font-mono text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+						[h.Class("font-mono text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 						[formatToolCount(total), " raw messages"],
 					),
 				],
@@ -74,7 +74,7 @@ const variantsSection = (
 						h.Class(
 							cn(
 								"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs transition-colors",
-								isSelected ? "bg-primary/10" : "hover:bg-muted/50",
+								isSelected ? "bg-primary/10" : "hover:bg-surface-sunken",
 							),
 						),
 						h.Title(unwrapToolErrorText(row.message).text),
@@ -105,7 +105,7 @@ const variantsSection = (
 				)
 			}),
 			h.p(
-				[h.Class("pt-1 font-mono text-2xs leading-[15px] text-muted-foreground/70")],
+				[h.Class("pt-1 font-mono text-2xs leading-[15px] text-foreground-subtle")],
 				[
 					isOnlyIndex
 						? "Grouped because only the array index differs."
@@ -187,12 +187,12 @@ export const sessionLink = (
 
 const sessionRowClass = (isSelected: boolean) =>
 	cn(
-		"group flex w-full shrink-0 items-center gap-3 border-b border-border/60 pr-4 pl-4 text-left transition-colors",
+		"group flex w-full shrink-0 items-center gap-3 border-b border-border-subtle pr-4 pl-4 text-left transition-colors",
 		rowSelectedClass(isSelected),
-		!isSelected && "hover:bg-muted/50",
+		!isSelected && "hover:bg-surface-sunken",
 	)
 
-const LAST_CLASS = "w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70"
+const LAST_CLASS = "w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-foreground-subtle"
 
 /** Which sessions hit this group; `All sessions` is the way back out of a selection. */
 const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorDetail): Html => {
@@ -206,7 +206,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 				[
 					h.span([h.Class(RAIL_TITLE)], ["Sessions"]),
 					h.span(
-						[h.Class("font-mono text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+						[h.Class("font-mono text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 						[formatToolCount(group.sessions)],
 					),
 				],
@@ -286,7 +286,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 										h.span(
 											[
 												h.Class(
-													"w-full truncate font-mono text-2xs leading-3.5 text-muted-foreground/70",
+													"w-full truncate font-mono text-2xs leading-3.5 text-foreground-subtle",
 												),
 											],
 											[
@@ -330,7 +330,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 							formatToolCount(group.sessions),
 						],
 					),
-					h.span([h.Class("text-muted-foreground/60")], ["by hits"]),
+					h.span([h.Class("text-foreground-subtle")], ["by hits"]),
 				],
 			),
 		],

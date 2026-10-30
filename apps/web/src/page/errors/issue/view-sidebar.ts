@@ -32,7 +32,7 @@ type H = HtmlBuilder<Message>
 const GHOST_TRIGGER = cn(
 	"-mr-1.5 h-7 min-h-0 w-auto min-w-0 max-w-full gap-1.5 px-1.5 text-sm font-medium",
 	"border-transparent bg-transparent shadow-none before:hidden dark:bg-transparent",
-	"hover:bg-muted/60 data-popup-open:bg-muted/60",
+	"hover:bg-surface-strong data-popup-open:bg-surface-strong",
 )
 
 const SEVERITY_SOURCE_HINT = {
@@ -167,7 +167,7 @@ const issueIdCopy = (h: H, model: Model, id: string): Html =>
 				Message.GotIssueIdCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: id }) }),
 			),
 			h.Class(
-				"group/copy -mr-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-mono text-xs tabular-nums text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				"group/copy -mr-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-mono text-xs tabular-nums text-muted-foreground transition-colors hover:bg-surface-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 			),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),

@@ -25,7 +25,7 @@ import { panelScope, type Trigger } from "./view-scope"
 type H = HtmlBuilder<Message>
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0 hover:bg-muted/50"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken"
 const MONO_LINK =
 	"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
 
@@ -52,7 +52,7 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 	h.label(
 		[
 			h.Class(
-				"flex h-6 items-center gap-1.5 rounded-sm border border-border/60 bg-background/60 px-2 transition-colors focus-within:border-ring min-w-0 max-w-xs flex-1",
+				"flex h-6 items-center gap-1.5 rounded-sm border border-border-subtle bg-background/60 px-2 transition-colors focus-within:border-ring min-w-0 max-w-xs flex-1",
 			),
 		],
 		[
@@ -130,9 +130,9 @@ const table = (
 		},
 		[
 			head(dimension.column, "key", "w-0 flex-1 min-w-[220px]"),
-			head("Requests", "requests", "w-[110px]"),
-			head("Error rate", "errorRate", "w-[90px]"),
-			head("Bandwidth", "bytes", "w-[90px]", "hidden md:flex"),
+			head("Requests", "requests", "w-28"),
+			head("Error rate", "errorRate", "w-24"),
+			head("Bandwidth", "bytes", "w-24", "hidden md:flex"),
 		],
 		sorted.length === 0
 			? [dataTableEmpty(h, [options.emptyMessage])]
@@ -184,7 +184,7 @@ const table = (
 							h.div(
 								[
 									h.Class(
-										"w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80",
+										"w-28 text-right font-mono text-xs tabular-nums text-foreground-soft",
 									),
 									h.Title(`${formatPercent(row.share)} of listed requests`),
 								],
@@ -194,7 +194,7 @@ const table = (
 								[
 									h.Class(
 										cn(
-											"w-[90px] text-right font-mono text-xs tabular-nums",
+											"w-24 text-right font-mono text-xs tabular-nums",
 											errorRateClass(row.errorRate),
 										),
 									),
@@ -204,7 +204,7 @@ const table = (
 							h.div(
 								[
 									h.Class(
-										"hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block",
+										"hidden w-24 text-right font-mono text-xs tabular-nums text-foreground-soft md:block",
 									),
 								],
 								[formatBytes(row.bytes)],

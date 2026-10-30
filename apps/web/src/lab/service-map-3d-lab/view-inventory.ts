@@ -19,7 +19,7 @@ export const healthDot = (h: H, node: Node3D): Html =>
 	})
 
 const ROW_CLASS =
-	"group flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
+	"group flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
 
 const row = (h: H, node: Node3D): Html =>
 	h.button(

@@ -49,10 +49,10 @@ const INDENT_PX = 14
 const AXIS_EDGE_FRACTION = 0.9
 
 const COL_SPAN = "w-[398px] max-w-[46%] min-w-0 shrink-0 flex items-center gap-1.5"
-const COL_MODEL = "hidden w-[150px] shrink-0 truncate px-2 text-muted-foreground @3xl:block"
+const COL_MODEL = "hidden w-36 shrink-0 truncate px-2 text-muted-foreground @3xl:block"
 const COL_TOKENS =
-	"hidden w-[132px] shrink-0 truncate px-2 text-right tabular-nums text-muted-foreground @3xl:block"
-const COL_TOKENS_SPLIT = "hidden w-[132px] shrink-0 items-center gap-1.5 px-2 @3xl:flex"
+	"hidden w-32 shrink-0 truncate px-2 text-right tabular-nums text-muted-foreground @3xl:block"
+const COL_TOKENS_SPLIT = "hidden w-32 shrink-0 items-center gap-1.5 px-2 @3xl:flex"
 const COL_AXIS = "relative ml-3 min-w-0 flex-1 self-stretch"
 const COL_DUR = "w-[60px] shrink-0 pl-2 text-right tabular-nums"
 
@@ -177,7 +177,7 @@ const turnHeader = (
 	return h.div(
 		[
 			h.Class(
-				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-accent/40",
+				"flex h-full w-full items-center rounded-md bg-card px-2.5 text-left text-xs hover:bg-accent/50",
 			),
 		],
 		[
@@ -293,7 +293,7 @@ const spanCell = (
 			}),
 			...(heading.operation === undefined
 				? []
-				: [h.span([h.Class("shrink-0 text-muted-foreground/70")], [heading.operation])]),
+				: [h.span([h.Class("shrink-0 text-foreground-subtle")], [heading.operation])]),
 			...(heading.subject === undefined
 				? []
 				: [h.span([h.Class("max-w-[60%] shrink-0 truncate font-medium")], [heading.subject])]),
@@ -326,7 +326,7 @@ const spanRow = (
 			h.AriaHasPopup("dialog"),
 			h.Class(
 				cn(
-					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-accent/40",
+					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-accent/50",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 					isErrored && "bg-severity-error/6",
 					state.isFocused && "bg-accent/60",

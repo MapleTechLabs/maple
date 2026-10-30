@@ -133,7 +133,7 @@ export const tabList = (h: H, model: Model, values: ReadonlyArray<TabValue>): Ht
 
 const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 	h.button(
-		[h.Class("block w-full p-2 text-left hover:bg-muted/50 cursor-pointer"), h.Type("button")],
+		[h.Class("block w-full p-2 text-left hover:bg-surface-sunken cursor-pointer"), h.Type("button")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 text-3xs text-muted-foreground mb-1")],

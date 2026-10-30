@@ -19,7 +19,7 @@ export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): 
 	h.ul(
 		[
 			h.Class(
-				"flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground marker:text-muted-foreground/50",
+				"flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground marker:text-foreground-faint",
 			),
 		],
 		items.map((item) => h.li([], [item])),

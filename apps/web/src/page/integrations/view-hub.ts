@@ -65,7 +65,7 @@ const connectedRow = (
 			h.Type("button"),
 			h.OnClick(onSelect(entry.id)),
 			h.Class(
-				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
 			),
 		],
 		[
@@ -110,7 +110,7 @@ const connectedRow = (
 			...(connected?.stat
 				? [
 						h.span(
-							[h.Class("hidden min-w-0 flex-1 truncate text-sm text-foreground/90 md:block")],
+							[h.Class("hidden min-w-0 flex-1 truncate text-sm text-foreground-soft md:block")],
 							[connected.stat],
 						),
 					]
@@ -145,7 +145,7 @@ const connectedRow = (
 						: []),
 					icon(h, "ChevronRightIcon", {
 						size: 14,
-						className: "text-muted-foreground/70 transition-colors group-hover:text-foreground",
+						className: "text-foreground-subtle transition-colors group-hover:text-foreground",
 					}),
 				],
 			),
@@ -161,7 +161,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 			h.Type("button"),
 			h.OnClick(onSelect(entry.id)),
 			h.Class(
-				"group flex items-center gap-4 rounded-md border border-border/60 bg-card p-4 text-left outline-none transition-colors hover:border-border hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+				"group flex items-center gap-4 rounded-md border border-border-subtle bg-card p-4 text-left outline-none transition-colors hover:border-border hover:bg-surface-sunken focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
 			),
 		],
 		[
@@ -313,7 +313,7 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 												]),
 									],
 								),
-								panel(h, { className: "divide-y divide-border/60 border-border/60" }, [
+								panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
 									...connected.map(({ entry, overview }) =>
 										connectedRow(h, entry, overview, onSelect),
 									),

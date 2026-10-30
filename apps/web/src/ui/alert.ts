@@ -13,7 +13,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 // The shared `info` variant reuses the green severity hue of `ok`; info reads blue here. `done`
 // keeps its shared tinted variant; its glyph is what sets it apart from info.
 const variantOverride = (variant: AlertOptions["variant"]): string | undefined =>
-	variant === "info" ? "border-info/32 bg-info/4 [&>svg]:text-info" : undefined
+	variant === "info" ? "border-severity-debug/32 bg-severity-debug/4 [&>svg]:text-severity-debug" : undefined
 
 type Children = ReadonlyArray<Html | string>
 

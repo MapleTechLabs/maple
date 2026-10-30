@@ -29,11 +29,11 @@ const COLUMNS: ReadonlyArray<{
 	limitsOnly?: boolean
 }> = [
 	{ label: "Service", key: "displayName", width: "w-0 flex-1 min-w-[240px]" },
-	{ label: "Memory", key: "memoryMax", width: "w-[150px]", align: "right" },
-	{ label: "vCPU", key: "cpuMax", width: "w-[140px]", align: "right" },
-	{ label: "Of limit", key: "peakOfLimit", width: "w-[160px]", hidden: "hidden lg:flex", limitsOnly: true },
-	{ label: "Replicas", key: "replicas", width: "w-[80px]", align: "right" },
-	{ label: "Last seen", key: "lastSeen", width: "w-[100px]", align: "right" },
+	{ label: "Memory", key: "memoryMax", width: "w-36", align: "right" },
+	{ label: "vCPU", key: "cpuMax", width: "w-36", align: "right" },
+	{ label: "Of limit", key: "peakOfLimit", width: "w-40", hidden: "hidden lg:flex", limitsOnly: true },
+	{ label: "Replicas", key: "replicas", width: "w-20", align: "right" },
+	{ label: "Last seen", key: "lastSeen", width: "w-24", align: "right" },
 ]
 
 const columns = (h: H, showLimits: boolean, sort: Sort<SortKey> | undefined): ReadonlyArray<Html> =>
@@ -61,10 +61,10 @@ export const railwayTableLoading = (h: H): Html =>
 		columns(h, false, undefined),
 		skeletonRows(h, 5, () => [
 			h.div([h.Class("w-0 min-w-[240px] flex-1")], [skeleton(h, "h-4 w-36")]),
-			skeleton(h, "ml-auto h-3 w-[150px]"),
-			skeleton(h, "ml-auto h-3 w-[140px]"),
-			skeleton(h, "ml-auto h-3 w-[80px]"),
-			skeleton(h, "h-3 w-[100px]"),
+			skeleton(h, "ml-auto h-3 w-36"),
+			skeleton(h, "ml-auto h-3 w-36"),
+			skeleton(h, "ml-auto h-3 w-20"),
+			skeleton(h, "h-3 w-24"),
 		]),
 	)
 
@@ -135,7 +135,7 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 				],
 			),
 			h.div(
-				[h.Class("w-[150px] text-right")],
+				[h.Class("w-36 text-right")],
 				[
 					avgPeak(
 						h,
@@ -145,7 +145,7 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 				],
 			),
 			h.div(
-				[h.Class("w-[140px] text-right")],
+				[h.Class("w-36 text-right")],
 				[
 					avgPeak(
 						h,
@@ -157,7 +157,7 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 			...(showLimits
 				? [
 						h.div(
-							[h.Class("hidden w-[160px] lg:block")],
+							[h.Class("hidden w-40 lg:block")],
 							[
 								meterRows(h, [
 									{ label: "CPU", fraction: view.cpuOfLimit },
@@ -168,11 +168,11 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 					]
 				: []),
 			h.div(
-				[h.Class("w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80")],
+				[h.Class("w-20 text-right font-mono text-xs tabular-nums text-foreground-soft")],
 				[String(view.replicas)],
 			),
 			h.div(
-				[h.Class("w-[100px] text-right")],
+				[h.Class("w-24 text-right")],
 				[
 					relativeTime(h, {
 						value: view.lastSeen,
@@ -206,7 +206,7 @@ export const railwayTable = (h: H, inputs: RailwayTableInputs): Html =>
 			h.div(
 				[
 					h.Class(
-						"flex items-center gap-2.5 border-b border-border/60 bg-muted/30 px-4 py-2 font-mono text-2xs",
+						"flex items-center gap-2.5 border-b border-border-subtle bg-surface-sunken px-4 py-2 font-mono text-2xs",
 					),
 				],
 				[

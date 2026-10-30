@@ -170,7 +170,7 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-stretch px-2 bg-muted/30",
+					"@container/row group flex items-stretch px-2 bg-surface-sunken",
 					ctx.isSelected && "bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]",
 				),
 			),
@@ -207,7 +207,7 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 					truncatedId(h, {
 						value: span.spanId,
 						kind: "span",
-						className: "w-16 text-right text-3xs text-muted-foreground/50 truncate",
+						className: "w-16 text-right text-3xs text-foreground-faint truncate",
 					}),
 					h.div([h.Class("w-14")], []),
 				],
@@ -247,7 +247,7 @@ const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html
 					],
 					[span.serviceName],
 				),
-				h.span([h.Class("shrink-0 text-muted-foreground/60")], [getSpanKindLabel(span.spanKind)]),
+				h.span([h.Class("shrink-0 text-foreground-subtle")], [getSpanKindLabel(span.spanKind)]),
 			],
 		),
 	]
@@ -296,7 +296,7 @@ const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpIn
 				[
 					h.Class(
 						cn(
-							"px-1 py-0.5 rounded text-3xs font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
+							"px-1 py-0.5 rounded-sm text-3xs font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
 							HTTP_METHOD_COLORS[httpInfo.method] ?? "bg-muted-foreground",
 						),
 					),
@@ -337,7 +337,7 @@ const locationLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Htm
 				h.Title(location.line === "" ? location.path : `${location.path}:${location.line}`),
 			],
 			[
-				...(isSameFile ? [] : [h.span([h.Class("text-foreground/80")], [location.file])]),
+				...(isSameFile ? [] : [h.span([h.Class("text-foreground-soft")], [location.file])]),
 				...(location.line === ""
 					? []
 					: [h.span([h.Class("text-muted-foreground")], [":", location.line])]),
@@ -461,7 +461,7 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-stretch hover:bg-muted/50 cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"@container/row group flex items-stretch hover:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					span.statusCode === "Error" && "bg-severity-error/5",
 					ctx.isSelected && "bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]",
 				),

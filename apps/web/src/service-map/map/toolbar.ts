@@ -236,7 +236,7 @@ const presentationControls = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, tr
 
 const bar = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: Trigger, portal: Html | null): Html =>
 	h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2")],
+		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
 		[
 			...Option.match(inputs.focus, {
 				onNone: () => [focusCombobox(h, inputs)],

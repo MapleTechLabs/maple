@@ -227,7 +227,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
 					h.Class(
-						"group flex w-full items-center gap-2 px-4 py-2.5 text-left outline-none focus-visible:bg-muted/40",
+						"group flex w-full items-center gap-2 px-4 py-2.5 text-left outline-none focus-visible:bg-surface-sunken",
 					),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),
@@ -264,7 +264,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 							],
 							[
 								h.div(
-									[h.Class("divide-y divide-border/60")],
+									[h.Class("divide-y divide-border-subtle")],
 									costBreakdown(spend).map((line) =>
 										h.div(
 											[

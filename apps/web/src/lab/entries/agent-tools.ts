@@ -260,8 +260,8 @@ const update = (model: Model, message: Message): Return =>
 
 const toggleClass = (isActive: boolean): string =>
 	isActive
-		? "rounded border border-border bg-accent px-2 py-1 text-xs"
-		: "rounded border border-border px-2 py-1 text-xs text-muted-foreground"
+		? "rounded-sm border border-border bg-accent px-2 py-1 text-xs"
+		: "rounded-sm border border-border px-2 py-1 text-xs text-muted-foreground"
 
 const labButton = (h: HtmlBuilder<Message>, label: string, isActive: boolean, onClick: Message): Html =>
 	h.button([h.Class(toggleClass(isActive)), h.Type("button"), h.OnClick(onClick)], [label])

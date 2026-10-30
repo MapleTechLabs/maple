@@ -373,11 +373,11 @@ const logTable = (
 	return table(h, {}, [
 		tableHeader(h, [
 			tableRow(h, [
-				tableHead(h, ["Status"], "w-[150px]"),
-				tableHead(h, ["Event"], "w-[128px]"),
-				tableHead(h, ["Destination"], "w-[240px]"),
+				tableHead(h, ["Status"], "w-36"),
+				tableHead(h, ["Event"], "w-32"),
+				tableHead(h, ["Destination"], "w-60"),
 				tableHead(h, ["Detail"]),
-				tableHead(h, ["Time"], "w-[88px] text-right"),
+				tableHead(h, ["Time"], "w-24 text-right"),
 			]),
 		]),
 		tableBody(
@@ -386,7 +386,7 @@ const logTable = (
 				tableRow(h, [
 					h.td(
 						[
-							h.Attribute("class", cn(tableCellStyles, "bg-muted/30 py-1.5")),
+							h.Attribute("class", cn(tableCellStyles, "bg-surface-sunken py-1.5")),
 							h.Attribute("colspan", "5"),
 							h.DataAttribute("slot", "table-cell"),
 						],
@@ -394,7 +394,7 @@ const logTable = (
 							eyebrow(h, { className: "flex items-center gap-2" }, [
 								group.label,
 								h.span(
-									[h.Class("tracking-normal normal-case text-muted-foreground/60 tabular-nums")],
+									[h.Class("tracking-normal normal-case text-foreground-subtle tabular-nums")],
 									[String(group.events.length), " ", pluralize(group.events.length, "attempt")],
 								),
 							]),

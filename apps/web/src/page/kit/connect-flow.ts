@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow, eyebrowVariants } from "../../ui/eyebrow"
 import { icon, type IconName } from "../../ui/icon"
 import { spinner } from "../../ui/spinner"
 
@@ -81,7 +81,7 @@ export const choiceTiles = <M>(h: HtmlBuilder<M>, tiles: ReadonlyArray<ChoiceTil
 									h.span(
 										[
 											h.Class(
-												"font-mono text-3xs uppercase tracking-wide text-primary",
+												cn(eyebrowVariants({ variant: "mono" }), "text-primary"),
 											),
 										],
 										[tile.tag],
@@ -113,7 +113,7 @@ export type StatusTone = "idle" | "working" | "ok" | "error"
 
 const STATUS_ICON = {
 	idle: { name: "ClockIcon", className: "text-muted-foreground" },
-	ok: { name: "CircleCheckIcon", className: "text-success" },
+	ok: { name: "CircleCheckIcon", className: "text-severity-info" },
 	error: { name: "CircleWarningIcon", className: "text-severity-error" },
 } satisfies Record<Exclude<StatusTone, "working">, { name: IconName; className: string }>
 
@@ -138,7 +138,7 @@ export const statusRow = <M>(h: HtmlBuilder<M>, options: StatusRowOptions, child
 		[
 			h.Class(
 				cn(
-					"flex items-start gap-3 rounded-md border bg-card px-4 py-3",
+					"flex items-start gap-3 rounded-md border bg-card p-4",
 					options.tone === "error" ? "border-severity-error/40" : "border-border",
 				),
 			),
@@ -166,7 +166,7 @@ export const foundChips = <M>(
 		[h.Class("flex flex-wrap gap-1.5")],
 		chips.map((chip) =>
 			h.li(
-				[h.Class("rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-2xs")],
+				[h.Class("rounded-sm border border-border-subtle bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs")],
 				[
 					chip.label,
 					...(chip.detail === undefined
@@ -232,7 +232,7 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 									[
 										icon(h, "ShieldCheckIcon", {
 											size: 14,
-											className: "mt-px shrink-0 text-success",
+											className: "mt-px shrink-0 text-severity-info",
 										}),
 										options.trust,
 									],
@@ -273,9 +273,9 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 /** On Go live: the source exists, so leaving the page is safe. */
 export const savedBanner = <M>(h: HtmlBuilder<M>, text: string, meta?: string): Html =>
 	h.div(
-		[h.Class("flex items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm")],
+		[h.Class("flex items-center gap-3 rounded-md border border-border bg-card p-4 text-sm")],
 		[
-			icon(h, "ShieldCheckIcon", { size: 14, className: "shrink-0 text-success" }),
+			icon(h, "ShieldCheckIcon", { size: 14, className: "shrink-0 text-severity-info" }),
 			h.span([h.Class("flex-1")], [text]),
 			...(meta === undefined ? [] : [h.span([h.Class("text-xs text-muted-foreground")], [meta])]),
 		],
@@ -293,7 +293,7 @@ export type CheckRow = Readonly<{
 }>
 
 const CHECK_ICON = {
-	done: { name: "CircleCheckIcon", className: "text-success" },
+	done: { name: "CircleCheckIcon", className: "text-severity-info" },
 	waiting: { name: "ClockIcon", className: "text-muted-foreground" },
 	failed: { name: "CircleWarningIcon", className: "text-severity-error" },
 } satisfies Record<Exclude<CheckState, "working">, { name: IconName; className: string }>
@@ -339,7 +339,7 @@ export const liveChecklist = <M>(
 				options.rows.map((row) =>
 					h.li(
 						[
-							h.Class("flex gap-3 border-t border-border/60 px-5 py-3 first:border-t-0"),
+							h.Class("flex gap-3 border-t border-border-subtle px-5 py-3 first:border-t-0"),
 							h.DataAttribute("state", row.state),
 						],
 						[

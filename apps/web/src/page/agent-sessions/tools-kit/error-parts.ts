@@ -99,7 +99,7 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 						h.span(
 							[
 								h.Class(
-									"line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground/80",
+									"line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground-soft",
 								),
 							],
 							headingTokens(h, tail),
@@ -113,15 +113,15 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
 	switch (token.kind) {
 		case "text":
-			return [h.span([h.Class("text-foreground/80")], [token.text])]
+			return [h.span([h.Class("text-foreground-soft")], [token.text])]
 		case "value":
 			return [h.span([h.Class("font-medium text-foreground")], [token.text])]
 		case "mask":
 			return [maskChip(h, token.label, token.raw)]
 		case "at":
-			return [h.span([h.Class("text-muted-foreground/60")], [" at "])]
+			return [h.span([h.Class("text-foreground-subtle")], [" at "])]
 		case "break":
-			return [h.span([h.Class("text-muted-foreground/60")], [" ⏎ "])]
+			return [h.span([h.Class("text-foreground-subtle")], [" ⏎ "])]
 		case "path":
 			return pathParts(h, token.parts, "font-medium text-foreground")
 	}
@@ -215,7 +215,7 @@ export const failureStatusLine = <M>(
 		[
 			statusDot(h, { tone: STATUS_TONE[status.kind] }),
 			h.span([h.Class("text-foreground")], [lead]),
-			...(detail === undefined ? [] : [h.span([h.Class("text-muted-foreground/70")], [detail])]),
+			...(detail === undefined ? [] : [h.span([h.Class("text-foreground-subtle")], [detail])]),
 		],
 	)
 }
