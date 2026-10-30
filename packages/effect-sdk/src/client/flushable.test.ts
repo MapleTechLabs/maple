@@ -101,6 +101,9 @@ const setupDom = () => {
 		fire: (type: string) => {
 			for (const fn of listeners[type] ?? []) (fn as () => void)()
 		},
+		dispatch: (type: string, event: unknown) => {
+			for (const fn of listeners[type] ?? []) (fn as (event: unknown) => void)(event)
+		},
 		// A browser runs a microtask checkpoint after each listener; `fire` does not.
 		fireWithCheckpoints: async (type: string) => {
 			for (const fn of listeners[type] ?? []) {
@@ -412,6 +415,33 @@ describe("MapleFlush.make (client)", () => {
 		expect(dom.listenerCount("pagehide")).toBe(0)
 		expect(dom.listenerCount("pageshow")).toBe(0)
 		expect(dom.listenerCount("visibilitychange")).toBe(0)
+	})
+
+	it("reports the app's uncaught errors and drops extension and ResizeObserver noise", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make(baseConfig)
+		const extensionFrame = new Error("Failed to connect to MetaMask")
+		extensionFrame.stack =
+			"i: Failed to connect to MetaMask\n    at Object.connect (chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js:12:4822)"
+
+		dom.dispatch("error", {
+			error: null,
+			message: "ResizeObserver loop completed with undelivered notifications.",
+			filename: "https://app.test/",
+		})
+		dom.dispatch("error", { error: new Error("boom"), filename: "chrome-extension://abc/content.js" })
+		dom.dispatch("unhandledrejection", { reason: extensionFrame })
+		dom.dispatch("error", { error: new TypeError("app bug"), filename: "https://app.test/assets/app.js" })
+		dom.dispatch("unhandledrejection", { reason: new Error("app rejection") })
+		await telemetry.flush()
+
+		expect(spanNames(calls)).toEqual(["browser.uncaught_error", "browser.unhandled_rejection"])
+		await telemetry.dispose()
 	})
 
 	it("auto-flushes on the interval, and dispose() stops the timer", async () => {
