@@ -6,6 +6,7 @@
  *
  * Clocks are read inside steps or the store only: the body replays.
  */
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId } from "@maple/domain/http"
 import type { SandboxError } from "@maple/backend/sandbox/contract"
@@ -426,10 +427,26 @@ export const auditWithAgents = <E, R>(
 		const credits = yield* SecurityAuditCredits
 		const httpClient = yield* HttpClient.HttpClient
 		const ownKey = options.ownKey === true
+		const billingCustomers = yield* BillingCustomerResolver
 		const bill = (agentId: string, kind: "sandbox" | "model", usd: number) =>
 			ownKey
 				? Effect.void
-				: trackSecurityAuditCharge({ orgId, runId: payload.runId, agentId, kind, usd }).pipe(
+				: billingCustomers.customerFor(orgId).pipe(
+						Effect.flatMap((customerId) =>
+							trackSecurityAuditCharge({
+								customerId,
+								runId: payload.runId,
+								agentId,
+								kind,
+								usd,
+							}),
+						),
+						// Fire-and-forget like the track itself; the reservation ledger stays the record.
+						Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
+							Effect.logWarning("Security audit charge not tracked").pipe(
+								Effect.annotateLogs({ orgId, agentId, kind, usd, error: error.message }),
+							),
+						),
 						Effect.provideService(HttpClient.HttpClient, httpClient),
 					)
 		/**

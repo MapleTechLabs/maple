@@ -1,4 +1,5 @@
 import { BillingCustomer } from "@maple/domain/http"
+import { BillingAccount, BillingAccountOrg } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { V2McpConnection } from "@maple/domain/http/v2"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
@@ -242,7 +243,7 @@ describe("settings page", () => {
 		})
 		const returning: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, true).model },
+			tab: { _tag: "Billing", model: Billing.init(true, true, true).model },
 		}
 		const polled = pageUpdate(
 			returning,
@@ -281,7 +282,7 @@ describe("settings page", () => {
 		})
 		const away: Model = {
 			...mcpLoaded(),
-			kept: [{ _tag: "Billing", model: Billing.init(true, true).model }],
+			kept: [{ _tag: "Billing", model: Billing.init(true, true, true).model }],
 		}
 		const settled = pageUpdate(
 			away,
@@ -342,10 +343,30 @@ describe("settings page", () => {
 	test("usage that fails while the customer answers shows the account error with Try again, not skeletons", () => {
 		const billing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, false).model },
+			tab: { _tag: "Billing", model: Billing.init(true, false, true).model },
 		}
-		const failed = pageUpdate(
+		// The account settles first: an org that pays for itself.
+		const standalone = pageUpdate(
 			billing,
+			Message.GotBillingMessage({
+				message: BillingMessage.CompletedFetchAccount({
+					result: Result.succeed(
+						new BillingAccount({
+							orgId: context.orgId,
+							role: "standalone",
+							billingOrg: new BillingAccountOrg({
+								orgId: context.orgId,
+								name: "Acme",
+								imageUrl: null,
+							}),
+							members: [],
+						}),
+					),
+				}),
+			}),
+		).model
+		const failed = pageUpdate(
+			standalone,
 			Message.GotBillingMessage({
 				message: BillingMessage.CompletedFetchUsage({
 					// Not retryable, so the row draws Try again without the network auto-retry probe.
@@ -395,7 +416,7 @@ describe("settings page", () => {
 		const customer = new BillingCustomer({ id: "org_acme", subscriptions: [] })
 		const editing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: { ...Billing.init(true, false).model, isSavingCap: true } },
+			tab: { _tag: "Billing", model: { ...Billing.init(true, false, true).model, isSavingCap: true } },
 		}
 		const saved = pageUpdate(
 			editing,
@@ -418,7 +439,7 @@ describe("settings page", () => {
 	test("a customer re-read without a toast still re-reads the app's customer", () => {
 		const billing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, false).model },
+			tab: { _tag: "Billing", model: Billing.init(true, false, true).model },
 		}
 		const retried = pageUpdate(
 			billing,

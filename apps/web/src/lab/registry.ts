@@ -53,6 +53,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/billing-orgs",
+		title: "Billing orgs",
+		description:
+			"The Billing tab for a member org, a billing org with members, and a standalone org linking to another (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp",
 		title: "Google Cloud log filter",
 		description:

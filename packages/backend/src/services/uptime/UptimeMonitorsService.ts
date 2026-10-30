@@ -1,4 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import { randomBytes, randomUUID } from "node:crypto"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -10,6 +11,7 @@ import {
 	UptimeMonitors,
 	type UptimeMonitorRow,
 	type UptimeMonitorStateRow,
+	OrgBillingLinks,
 } from "@maple/db/tables"
 import {
 	UptimeMonitorLimitReachedError,
@@ -609,14 +611,39 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const lockOrgMonitors = (db: MapleDb, orgId: OrgId) =>
 				db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
 
-			const countMonitors = (db: MapleDb, orgId: OrgId) =>
-				db
-					.run(
+			/**
+			 * Monitors counted against the plan `orgId` bills to: the billing org's and every member's,
+			 * since a member draws on its billing org's allowance. Takes that pool's lock too.
+			 */
+			const countPooledMonitors = (db: MapleDb, orgId: OrgId) =>
+				Effect.gen(function* () {
+					// Shared with other creates, exclusive with link writes: the pool cannot change mid-count.
+					yield* db.execute(
+						Orm.sql`select pg_advisory_xact_lock_shared(hashtext('org_billing_links'))`,
+					)
+					const [link] = yield* db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ billingOrgId: $.billingOrgId }))
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					)
+					const payer = link?.billingOrgId ?? orgId
+					yield* db.execute(
+						Orm.sql`select pg_advisory_xact_lock(hashtext(${payer}), hashtext('uptime_monitor_pool'))`,
+					)
+					const members = yield* db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ orgId: $.orgId }))
+							.where(($) => [$.billingOrgId.eq(payer)]),
+					)
+					const pool = [payer, ...members.map((member) => member.orgId)]
+					const rows = yield* db.run(
 						PG.from(UptimeMonitors)
 							.select(() => ({ count: PG.count() }))
-							.where(($) => [$.orgId.eq(orgId)]),
+							.where(($) => [PG.inList($.orgId, pool)]),
 					)
-					.pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
+					return { count: Number(rows[0]?.count ?? 0), payer: ownBillingCustomer(payer) }
+				})
 
 			const create = Effect.fn("UptimeMonitorsService.create")(function* (
 				orgId: OrgId,
@@ -628,8 +655,18 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const failuresToDown = yield* validateFailuresToDown(
 					input.failuresToDown ?? DEFAULT_FAILURES_TO_DOWN,
 				)
-				// Read before the transaction; the count is checked against it under the org lock.
-				const limit = yield* allowance.limit(orgId)
+				// The cap is read before the transaction, for the payer as it stands now, so no Autumn
+				// call runs under the link lock. Re-read under the lock only if a link moved it since.
+				const [linked] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ billingOrgId: $.billingOrgId }))
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				)
+				const expectedPayer = ownBillingCustomer(linked?.billingOrgId ?? orgId)
+				const expectedLimit = yield* allowance.limit(expectedPayer)
 
 				const now = yield* Clock.currentTimeMillis
 				const id = UptimeMonitorId.make(randomUUID())
@@ -637,12 +674,18 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const enabled = input.enabled !== false
 				const serviceName = input.serviceName ?? null
 				const destinationIds = Arr.dedupe(input.destinationIds ?? [])
-				yield* dbExecute((db) =>
+				const payer = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							// One lock for the count and the rule checks: concurrent creates cannot both pass a full plan.
 							yield* lockOrgMonitors(db, orgId)
-							yield* ensureWithinLimit(limit, yield* countMonitors(db, orgId))
+							const pooled = yield* countPooledMonitors(db, orgId)
+							// A link landing a moment ago changes both the pool and whose plan caps it.
+							const limit =
+								pooled.payer === expectedPayer
+									? expectedLimit
+									: yield* allowance.limit(pooled.payer)
+							yield* ensureWithinLimit(limit, pooled.count)
 							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
 							yield* db.run(
 								PG.insertInto(AlertRules).values({
@@ -688,10 +731,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									updatedAt: now,
 								}),
 							)
+							// Metered to the payer this create was counted against, even if a link lands next.
+							return pooled.payer
 						}),
 					),
 				)
-				yield* allowance.track(orgId, id, 1)
+				yield* allowance.track(payer, id, 1)
 				return yield* requireMonitor(orgId, id).pipe(
 					Effect.catchTag("@maple/http/errors/UptimeMonitorNotFoundError", () =>
 						Effect.fail(
@@ -867,6 +912,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						Effect.gen(function* () {
 							// The lock update and rule writes take, so neither recreates a rule for a gone monitor.
 							yield* lockOrgMonitors(db, orgId)
+							// Shared with creates, exclusive with link writes: a link's monitor count stays exact.
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock_shared(hashtext('org_billing_links'))`,
+							)
 							const removed = yield* db.run(
 								PG.deleteFrom(UptimeMonitors)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
@@ -874,12 +923,19 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							)
 							const ruleId = removed[0]?.alertRuleId ?? null
 							if (ruleId !== null) yield* deleteRuleRows(db, orgId, ruleId)
-							return removed
+							// The payer as of this delete: a link or unlink after it moves the rest.
+							const [link] = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ billingOrgId: $.billingOrgId }))
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							)
+							return { removed, payer: ownBillingCustomer(link?.billingOrgId ?? orgId) }
 						}),
 					),
 				)
-				if (deleted.length === 0) return yield* notFound(monitorId)
-				yield* allowance.track(orgId, monitorId, -1)
+				if (deleted.removed.length === 0) return yield* notFound(monitorId)
+				yield* allowance.track(deleted.payer, monitorId, -1)
 				return monitorId
 			})
 

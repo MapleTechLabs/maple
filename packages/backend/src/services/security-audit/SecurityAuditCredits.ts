@@ -3,6 +3,7 @@
  * directly; otherwise audits are paid in AI credits (model cost marked up, plus a sandbox fee per
  * agent), so a start needs a plan that includes them and credits to spend.
  */
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { BillingCustomer } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
@@ -81,6 +82,7 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 			const env = yield* Env
 			const edgeCache = yield* EdgeCacheService
 			const autumn = yield* AutumnClient
+			const billingCustomers = yield* BillingCustomerResolver
 			const orgKeys = yield* OrgOpenRouterKeyService
 
 			const ensure: SecurityAuditCreditsApi["ensure"] = Effect.fn("SecurityAuditCredits.ensure")(
@@ -92,11 +94,15 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 					yield* Effect.annotateCurrentSpan("maple.llm.byok", ownKey)
 					if (ownKey) return
 					const nowMs = yield* Clock.currentTimeMillis
-					const missing = yield* readCustomerCached(
-						edgeCache,
-						orgId,
-						autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
-					).pipe(
+					// A member org spends the credits of the org that pays for it.
+					const missing = yield* billingCustomers.customerFor(orgId).pipe(
+						Effect.flatMap((customerId) =>
+							readCustomerCached(
+								edgeCache,
+								customerId,
+								autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
+							),
+						),
 						Effect.flatMap(({ result }) => ensureOk(result)),
 						Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 						Effect.map((customer) => missingCredits(customer, nowMs)),
@@ -105,6 +111,8 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 							"@maple/http/errors/BillingNotConfiguredError": (error) =>
 								Effect.fail(new SecurityAuditCreditsUnavailable({ message: error.message })),
 							"@maple/http/errors/BillingUpstreamError": (error) =>
+								Effect.fail(new SecurityAuditCreditsUnavailable({ message: error.message })),
+							"@maple/http/errors/BillingAccountPersistenceError": (error) =>
 								Effect.fail(new SecurityAuditCreditsUnavailable({ message: error.message })),
 						}),
 					)
@@ -121,7 +129,9 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrgOpenRouterKeyService.layer)),
+		Layer.provide(
+			Layer.mergeAll(AutumnClient.layer, OrgOpenRouterKeyService.layer, BillingCustomerResolver.layer),
+		),
 	)
 
 	/** Every org may start, for tests and harnesses. */

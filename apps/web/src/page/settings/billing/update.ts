@@ -1,10 +1,14 @@
 import {
 	AttachRequest,
+	type BillingAccount,
 	type BillingCustomer,
+	BillingLinkRejectedError,
 	type BillingProfile,
 	BillingNotConfiguredError,
 	CustomerPortalRequest,
+	LinkBillingOrgRequest,
 } from "@maple/domain/http"
+import { OrgId } from "@maple/domain"
 import {
 	buildCheckoutSuccessUrl,
 	CHECKOUT_CONFIRM_POLL_MS,
@@ -25,11 +29,12 @@ import * as Chart from "../../../charts/chart"
 import { trackProduct } from "../../../data/analytics"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiClient, MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
+import { currentClerkUser } from "../../../platform/clerk"
 import * as Dialog from "../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Details from "./details/update"
-import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -137,6 +142,88 @@ const FetchRuleStats = Command.define("FetchBillingRuleStats", {
 				query: { start_time: start, end_time: new Date(nowMs).toISOString() },
 			})
 		}).pipe(loaded((result) => Message.CompletedFetchRuleStats({ result }))),
+})
+
+/** Which org pays for this one: it decides what else the tab may read. */
+const FetchAccount = Command.define("FetchBillingAccount", {
+	messages: [Message.CompletedFetchAccount],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getBillingAccount()).pipe(
+		withinDeadline,
+		loaded((result) => Message.CompletedFetchAccount({ result })),
+	),
+})
+
+const FetchAccountUsage = Command.define("FetchBillingAccountUsage", {
+	messages: [Message.CompletedFetchAccountUsage],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getBillingAccountUsage()).pipe(
+		loaded((result) => Message.CompletedFetchAccountUsage({ result })),
+	),
+})
+
+/** The viewer's other orgs where they are an admin: linking needs admin on both sides. */
+const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
+	messages: [Message.CompletedFetchOrgChoices],
+	execute: currentClerkUser.pipe(
+		Effect.map((user): ReadonlyArray<OrgChoice> => {
+			const activeId = window.Clerk?.organization?.id
+			return (user.organizationMemberships ?? [])
+				.filter(
+					(membership) =>
+						membership.role === "org:admin" && membership.organization.id !== activeId,
+				)
+				.map(({ organization }) => ({
+					orgId: OrgId.make(organization.id),
+					name: organization.name,
+					imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
+				}))
+				.toSorted((a, b) => a.name.localeCompare(b.name))
+		}),
+		loaded((result) => Message.CompletedFetchOrgChoices({ result })),
+	),
+})
+
+const isLinkRejected = Schema.is(BillingLinkRejectedError)
+
+/** A refusal keeps the server's sentence for the person who asked; anything else is a plain failure. */
+/** Above the server's 10s budget for cancelling the org's own plans, plus a wait on the link lock. */
+const LINK_TIMEOUT = Duration.seconds(30)
+
+const withinLinkDeadline = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+	Effect.timeoutOrElse(effect, { duration: LINK_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) })
+
+const toLinkFailure = (error: unknown) => ({
+	rejection: isLinkRejected(error) ? error.message : null,
+	failure: toLoadFailure(error),
+})
+
+const Link = Command.define("LinkBillingOrg", {
+	args: { billingOrgId: OrgId, orgName: Schema.String },
+	messages: [Message.CompletedLink],
+	execute: ({ billingOrgId, orgName }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.billing.linkBillingOrg({ payload: new LinkBillingOrgRequest({ billingOrgId }) }),
+		).pipe(
+			withinLinkDeadline,
+			Effect.catchDefect((defect) => Effect.fail(defect)),
+			Effect.mapError(toLinkFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedLink({ orgName, result })),
+		),
+})
+
+const Unlink = Command.define("UnlinkBillingOrg", {
+	args: { orgId: OrgId, isSelf: Schema.Boolean },
+	messages: [Message.CompletedUnlink],
+	execute: ({ orgId, isSelf }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.billing.unlinkBillingOrg({ params: { orgId } }),
+		).pipe(
+			withinLinkDeadline,
+			Effect.catchDefect((defect) => Effect.fail(defect)),
+			Effect.mapError(toLinkFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedUnlink({ isSelf, result })),
+		),
 })
 
 // WRITES
@@ -256,16 +343,20 @@ export const profileOf = (model: Model): Option.Option<BillingProfile> => AsyncD
 
 // UPDATE
 
-/** `isReturning`: the tab opened with `?checkout=complete`, so it waits on the Stripe to Autumn sync. */
-export const init = (isAdmin: boolean, isReturning: boolean): Return => ({
+/**
+ * `isReturning`: the tab opened with `?checkout=complete`, so it waits on the Stripe to Autumn sync.
+ * Invoices and details wait for the account: a member org's billing lives on its billing org.
+ */
+export const init = (isAdmin: boolean, isReturning: boolean, isClerk: boolean): Return => ({
 	model: {
 		isAdmin,
+		isClerk,
 		checkoutReturn: isReturning ? "Confirming" : "Idle",
 		plans: AsyncData.Loading(),
 		usage: AsyncData.Loading(),
 		daily: AsyncData.Loading(),
-		invoices: AsyncData.Loading(),
-		profile: AsyncData.Loading(),
+		invoices: AsyncData.Idle(),
+		profile: AsyncData.Idle(),
 		ruleStats: AsyncData.Idle(),
 		editingCap: null,
 		capDraft: "",
@@ -277,13 +368,22 @@ export const init = (isAdmin: boolean, isReturning: boolean): Return => ({
 		details: Details.init(),
 		themeColors: null,
 		chart: Chart.init(),
+		account: AsyncData.Loading(),
+		accountUsage: AsyncData.Idle(),
+		orgChoices: AsyncData.Idle(),
+		linkOrgId: null,
+		linkDialog: Dialog.init("billing-link", "alert-dialog"),
+		isLinking: false,
+		linkRejection: null,
+		unlinkOrgId: null,
+		unlinkDialog: Dialog.init("billing-unlink", "alert-dialog"),
+		isUnlinking: false,
 	},
 	commands: [
 		FetchPlans(),
 		FetchUsage(),
 		FetchDaily(),
-		FetchInvoices(),
-		FetchProfile(),
+		FetchAccount(),
 		...(isReturning ? [WaitCheckoutPoll(), WaitCheckoutTimeout()] : []),
 	],
 })
@@ -323,21 +423,29 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	}
 }
 
+/** `revisitData` for a read the account gates: one never asked for stays unasked. */
+const revisitIfRead = <A, E, C>(data: AsyncData.AsyncData<A, E>, read: () => C) =>
+	AsyncData.isIdle(data) ? { data, commands: [] } : revisitData(data, read)
+
 /** Back on the tab: plans, usage, spend, invoices and details stay up while they load again. */
 export const revisit = (model: Model): Return => {
 	const plans = revisitData(model.plans, FetchPlans)
 	const usage = revisitData(model.usage, FetchUsage)
 	const daily = revisitData(model.daily, FetchDaily)
-	const invoices = revisitData(model.invoices, FetchInvoices)
-	const profile = revisitData(model.profile, FetchProfile)
+	const account = revisitData(model.account, FetchAccount)
+	const invoices = revisitIfRead(model.invoices, FetchInvoices)
+	const profile = revisitIfRead(model.profile, FetchProfile)
+	const accountUsage = revisitIfRead(model.accountUsage, FetchAccountUsage)
 	return {
 		model: {
 			...model,
 			plans: plans.data,
 			usage: usage.data,
 			daily: daily.data,
+			account: account.data,
 			invoices: invoices.data,
 			profile: profile.data,
+			accountUsage: accountUsage.data,
 			// Back to idle so the settings page asks again for the current cycle; this is also the retry.
 			ruleStats: AsyncData.Idle(),
 		},
@@ -345,10 +453,99 @@ export const revisit = (model: Model): Return => {
 			...plans.commands,
 			...usage.commands,
 			...daily.commands,
+			...account.commands,
 			...invoices.commands,
 			...profile.commands,
+			...accountUsage.commands,
 		],
 	}
+}
+
+/** A gated read: started when the account allows it and it is not already up, dropped when not. */
+const gated = <A, E, C>(
+	data: AsyncData.AsyncData<A, E>,
+	isWanted: boolean,
+	isFresh: boolean,
+	read: () => C,
+): { data: AsyncData.AsyncData<A, E>; commands: ReadonlyArray<C> } => {
+	if (!isWanted) return { data: AsyncData.Idle(), commands: [] }
+	if (AsyncData.isIdle(data) || AsyncData.isFailure(data))
+		return { data: AsyncData.Loading(), commands: [read()] }
+	return isFresh ? { data: revalidate(data), commands: [read()] } : { data, commands: [] }
+}
+
+/** The account settled: start the reads its role allows. `isFresh` re-reads ones already loaded (after a link change). */
+const applyAccount = (model: Model, account: BillingAccount, isFresh: boolean): Return => {
+	const isMember = account.role === "member"
+	const invoices = gated(model.invoices, !isMember, isFresh, FetchInvoices)
+	const profile = gated(model.profile, !isMember, isFresh, FetchProfile)
+	const accountUsage = gated(
+		model.accountUsage,
+		account.role === "billing_org" && account.members.length > 0,
+		isFresh,
+		FetchAccountUsage,
+	)
+	const orgChoices = gated(
+		model.orgChoices,
+		account.role === "standalone" && model.isAdmin && model.isClerk,
+		false,
+		FetchOrgChoices,
+	)
+	return {
+		model: {
+			...model,
+			account: AsyncData.Success({ data: account }),
+			invoices: invoices.data,
+			profile: profile.data,
+			accountUsage: accountUsage.data,
+			orgChoices: orgChoices.data,
+		},
+		commands: [
+			...invoices.commands,
+			...profile.commands,
+			...accountUsage.commands,
+			...orgChoices.commands,
+		],
+	}
+}
+
+export const accountOf = (model: Model): BillingAccount | null =>
+	AsyncData.getOrElse(model.account, () => null)
+
+const liftLinkDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, linkDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotLinkDialogMessage({ message }),
+	),
+})
+
+const liftUnlinkDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, unlinkDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotUnlinkDialogMessage({ message }),
+	),
+})
+
+/** The org picked to pay for this one: the draft, else the first choice the select shows. */
+export const linkTargetOf = (model: Model): OrgChoice | null => {
+	const choices = AsyncData.getOrElse(model.orgChoices, () => [])
+	return choices.find((choice) => choice.orgId === model.linkOrgId) ?? choices[0] ?? null
+}
+
+/** The account changed hands: the customer, its usage and spend are now another org's. */
+const afterLinkChange = (model: Model, account: BillingAccount): Return => {
+	const applied = applyAccount(
+		{
+			...model,
+			plans: revalidate(model.plans),
+			usage: revalidate(model.usage),
+			daily: revalidate(model.daily),
+			ruleStats: AsyncData.Idle(),
+		},
+		account,
+		true,
+	)
+	return { ...applied, commands: [FetchPlans(), FetchUsage(), FetchDaily(), ...(applied.commands ?? [])] }
 }
 
 export const update = (
@@ -543,6 +740,133 @@ export const update = (
 				outMessage: step.outMessage,
 			})
 		},
+		CompletedFetchAccount: ({ result }) =>
+			Result.match(result, {
+				onSuccess: (account) => {
+					const previous = accountOf(model)
+					// A re-read after a failed link or unlink can find that it landed after all.
+					const moved =
+						previous !== null &&
+						(previous.role !== account.role ||
+							previous.billingOrg.orgId !== account.billingOrg.orgId)
+					return moved
+						? staleCustomer(afterLinkChange(model, account))
+						: same(applyAccount(model, account, false))
+				},
+				onFailure: () =>
+					same({ model: { ...model, account: AsyncData.settle(model.account, result) } }),
+			}),
+		CompletedFetchAccountUsage: ({ result }) =>
+			same({ model: { ...model, accountUsage: AsyncData.settle(model.accountUsage, result) } }),
+		CompletedFetchOrgChoices: ({ result }) =>
+			same({ model: { ...model, orgChoices: AsyncData.settle(model.orgChoices, result) } }),
+		ClickedRetryAccount: () =>
+			same({ model: { ...model, account: AsyncData.Loading() }, commands: [FetchAccount()] }),
+		ClickedRetryAccountUsage: () =>
+			same({ model: { ...model, accountUsage: AsyncData.Loading() }, commands: [FetchAccountUsage()] }),
+		ChangedLinkOrg: ({ value }) => {
+			const choice = AsyncData.getOrElse(model.orgChoices, () => []).find((org) => org.orgId === value)
+			return same({ model: { ...model, linkOrgId: choice?.orgId ?? null, linkRejection: null } })
+		},
+		ClickedLink: () =>
+			linkTargetOf(model) === null || model.isLinking
+				? same({ model })
+				: same(liftLinkDialog({ ...model, linkRejection: null }, Dialog.open(model.linkDialog))),
+		GotLinkDialogMessage: ({ message: child }) =>
+			model.isLinking
+				? same({ model })
+				: same(liftLinkDialog(model, Dialog.update(model.linkDialog, child))),
+		ClickedConfirmLink: () => {
+			const target = linkTargetOf(model)
+			return target === null || model.isLinking
+				? same({ model })
+				: same({
+						model: { ...model, isLinking: true },
+						commands: [Link({ billingOrgId: target.orgId, orgName: target.name })],
+					})
+		},
+		CompletedLink: ({ orgName, result }) => {
+			const closed = liftLinkDialog({ ...model, isLinking: false }, Dialog.close(model.linkDialog))
+			return Result.match(result, {
+				onSuccess: (account) => {
+					const changed = afterLinkChange(closed.model, account)
+					return staleCustomer({
+						model: { ...changed.model, linkOrgId: null },
+						commands: [...(closed.commands ?? []), ...(changed.commands ?? [])],
+						outMessage: toast("success", `Now billed through ${orgName}`),
+					})
+				},
+				// Either way, read where billing stands now: an unexplained failure may have landed
+				// after all, and a rejection can mean another session changed the link.
+				onFailure: ({ rejection, failure }) =>
+					rejection === null
+						? same({
+								...closed,
+								commands: [...(closed.commands ?? []), FetchAccount()],
+								outMessage: toast(
+									"error",
+									"Couldn't change how this org is billed",
+									failure.message,
+								),
+							})
+						: same({
+								model: { ...closed.model, linkRejection: rejection },
+								commands: [...(closed.commands ?? []), FetchAccount()],
+							}),
+			})
+		},
+		ClickedUnlink: ({ orgId }) =>
+			model.isUnlinking
+				? same({ model })
+				: same(liftUnlinkDialog({ ...model, unlinkOrgId: orgId }, Dialog.open(model.unlinkDialog))),
+		GotUnlinkDialogMessage: ({ message: child }) =>
+			model.isUnlinking
+				? same({ model })
+				: same(liftUnlinkDialog(model, Dialog.update(model.unlinkDialog, child))),
+		ClickedConfirmUnlink: () => {
+			const account = accountOf(model)
+			const orgId = model.unlinkOrgId
+			if (account === null || orgId === null || model.isUnlinking) return same({ model })
+			// A member leaves its billing org by unlinking itself, never the org that pays.
+			const isSelf = account.role === "member"
+			return same({
+				model: { ...model, isUnlinking: true },
+				commands: [Unlink({ orgId: isSelf ? account.orgId : orgId, isSelf })],
+			})
+		},
+		CompletedUnlink: ({ isSelf, result }) => {
+			const closed = liftUnlinkDialog(
+				{ ...model, isUnlinking: false, unlinkOrgId: null },
+				Dialog.close(model.unlinkDialog),
+			)
+			return Result.match(result, {
+				onSuccess: (account) => {
+					const changed = afterLinkChange(closed.model, account)
+					const step = {
+						model: changed.model,
+						commands: [...(closed.commands ?? []), ...(changed.commands ?? [])],
+						outMessage: toast(
+							"success",
+							isSelf ? "This org now has its own billing" : "Organization removed from billing",
+						),
+					}
+					// Only this org's own payer changes when it leaves; a removed member's is not ours.
+					return isSelf ? staleCustomer(step) : same(step)
+				},
+				// The unlink may have committed before the failure, or another session may have
+				// removed the link already: read where billing stands now.
+				onFailure: ({ rejection, failure }) =>
+					same({
+						...closed,
+						commands: [...(closed.commands ?? []), FetchAccount()],
+						outMessage: toast(
+							"error",
+							"Couldn't stop the billing link",
+							rejection ?? failure.message,
+						),
+					}),
+			})
+		},
 		ResolvedThemeColors: ({ colors }) => same({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ message: child }) => {
 			const step = Chart.update(model.chart, child)
@@ -561,7 +885,9 @@ export const requestRuleStats = (
 	customer: BillingCustomer | null,
 	nowMs: number,
 ): Return | null => {
-	if (!AsyncData.isIdle(model.ruleStats) || nowMs <= 0) return null
+	const account = accountOf(model)
+	if (!AsyncData.isIdle(model.ruleStats) || nowMs <= 0 || account === null || account.role === "member")
+		return null
 	const spend = spendModelOf(model, customer, nowMs)
 	return spend === null
 		? null

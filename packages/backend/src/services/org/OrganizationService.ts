@@ -1,4 +1,8 @@
 import { createClerkClient } from "@clerk/backend"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
+import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import {
 	ChooseOrganizationRegionResponse,
 	CreateOrganizationResponse,
@@ -18,6 +22,7 @@ import {
 	organizationRegionMetadata,
 	organizationRegionOpen,
 } from "@maple/domain/organization-regions"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	Actors,
@@ -56,6 +61,7 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 	OrgIngestKeys,
+	OrgBillingLinks,
 	OrgOpenRouterKeys,
 	OrgIngestRules,
 	OrgIngestRuleSettings,
@@ -202,6 +208,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	SupabaseConnections,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	OrgOpenRouterKeys,
+	// A deleted member org stops being billed to anyone. A billing org with members is refused.
+	OrgBillingLinks,
 	// Drop rules and the hash salt: a recreated org must not silently lose data to old rules.
 	OrgIngestRules,
 	OrgIngestRuleSettings,
@@ -332,6 +340,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 
 			const autumn = yield* AutumnClient
 			const regions = yield* OrganizationRegionService
+			const httpClient = yield* HttpClient.HttpClient
 
 			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
 				roles: ReadonlyArray<RoleName>,
@@ -478,7 +487,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				const customer = yield* autumn
-					.getOrCreateCustomer(orgId, { expand: [] })
+					.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: [] })
 					.pipe(Effect.mapError((error) => toProviderError(error)))
 				if (customer.statusCode !== 200) {
 					return yield* new OrganizationProviderError({
@@ -526,6 +535,55 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				yield* requireAdmin(roles, "delete the organization")
+				// Under the link lock, like every link write and monitor create or delete: the member
+				// check, the monitor count and the link's removal see one state. Once the link is gone,
+				// monitors made before the purge bill to the org itself.
+				const { link, monitorCount } = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
+							)
+							// Its members would be left billed to a customer nobody can reach.
+							const members = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ orgId: $.orgId }))
+									.where(($) => [$.billingOrgId.eq(orgId)])
+									.limit(1),
+							)
+							if (members.length > 0) {
+								return yield* new OrganizationForbiddenError({
+									message:
+										"Other organizations are billed through this one. Unlink them in billing settings before deleting it.",
+								})
+							}
+							// A member's monitors count against its billing org; purging them must give the count back.
+							const [current] = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ billingOrgId: $.billingOrgId }))
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							)
+							if (current === undefined) return { link: current, monitorCount: 0 }
+							const [counted] = yield* db.run(
+								PG.from(UptimeMonitors)
+									.select(() => ({ count: PG.count() }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							yield* db.run(PG.deleteFrom(OrgBillingLinks).where(($) => [$.orgId.eq(orgId)]))
+							return { link: current, monitorCount: Number(counted?.count ?? 0) }
+						}),
+					),
+				)
+				// Before the purge: a failed purge retried finds no link and could not give the count back.
+				if (link !== undefined && monitorCount > 0) {
+					yield* trackFeatureUsage({
+						customerId: ownBillingCustomer(link.billingOrgId),
+						featureId: UPTIME_MONITORS_FEATURE_ID,
+						value: -monitorCount,
+						idempotencyKey: `org_delete:${orgId}:uptime_monitors`,
+					}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+				}
 				yield* purgeOrgScopedRows(orgId)
 				yield* deleteClerkOrganization(orgId)
 				return new DeleteOrganizationResponse({ deleted: true })
@@ -541,6 +599,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer)),
+		Layer.provide(
+			Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer, FetchHttpClient.layer),
+		),
 	)
 }

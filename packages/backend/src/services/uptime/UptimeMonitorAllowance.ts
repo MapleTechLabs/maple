@@ -5,10 +5,11 @@
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import {
 	BillingCustomer,
+	type BillingCustomerId,
 	UptimeMonitorLimitReachedError,
 	UptimeMonitorPersistenceError,
 } from "@maple/domain/http"
-import type { OrgId, UptimeMonitorId } from "@maple/domain/primitives"
+import type { UptimeMonitorId } from "@maple/domain/primitives"
 import { EdgeCacheService } from "@maple/cache"
 import { Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -43,10 +44,22 @@ export const ensureWithinLimit = (
 	Option.isSome(limit) && existing >= limit.value ? Effect.fail(limitReached(limit.value)) : Effect.void
 
 export interface UptimeMonitorAllowanceApi {
-	/** The org's monitor cap; None when uncapped. Count against it with `ensureWithinLimit`. */
-	readonly limit: (orgId: OrgId) => Effect.Effect<Option.Option<number>, UptimeMonitorPersistenceError>
-	/** Meters a created (+1) or deleted (-1) monitor. Never fails: a dropped event is logged. */
-	readonly track: (orgId: OrgId, monitorId: UptimeMonitorId, delta: 1 | -1) => Effect.Effect<void>
+	/**
+	 * The monitor cap of `customerId`'s plan, None when uncapped: the payer read under the shared
+	 * link lock, so the cap and the pool it is counted against agree. Check with `ensureWithinLimit`.
+	 */
+	readonly limit: (
+		customerId: BillingCustomerId,
+	) => Effect.Effect<Option.Option<number>, UptimeMonitorPersistenceError>
+	/**
+	 * Meters a created (+1) or deleted (-1) monitor to `customerId`, the payer read inside the write's
+	 * transaction under the shared link lock. Never fails: a dropped event is logged.
+	 */
+	readonly track: (
+		customerId: BillingCustomerId,
+		monitorId: UptimeMonitorId,
+		delta: 1 | -1,
+	) => Effect.Effect<void>
 }
 
 export class UptimeMonitorAllowance extends Context.Service<
@@ -59,16 +72,16 @@ export class UptimeMonitorAllowance extends Context.Service<
 		const autumn = yield* AutumnClient
 		const httpClient = yield* HttpClient.HttpClient
 		// Maple's own org and deployments without billing (self-hosted, local dev) are uncapped.
-		const unmetered = (orgId: OrgId) =>
-			orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)
+		const unmetered = (customerId: BillingCustomerId) =>
+			customerId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)
 
 		const limit: UptimeMonitorAllowanceApi["limit"] = Effect.fn("UptimeMonitorAllowance.limit")(
-			function* (orgId) {
-				if (unmetered(orgId)) return Option.none<number>()
+			function* (customerId) {
+				if (unmetered(customerId)) return Option.none<number>()
 				const cap = yield* readCustomerCached(
 					edgeCache,
-					orgId,
-					autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
+					customerId,
+					autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
 				).pipe(
 					Effect.flatMap(({ result }) => ensureOk(result)),
 					Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
@@ -90,9 +103,9 @@ export class UptimeMonitorAllowance extends Context.Service<
 			},
 		)
 
-		const track: UptimeMonitorAllowanceApi["track"] = (orgId, monitorId, delta) =>
+		const track: UptimeMonitorAllowanceApi["track"] = (customerId, monitorId, delta) =>
 			trackFeatureUsage({
-				orgId,
+				customerId,
 				featureId: UPTIME_MONITORS_FEATURE_ID,
 				value: delta,
 				idempotencyKey: `uptime_monitor:${monitorId}:${delta > 0 ? "created" : "deleted"}`,

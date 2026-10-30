@@ -246,7 +246,12 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Billing": {
-			const step = Billing.init(visibilityOf(model).isAdmin, model.search.checkout === "complete")
+			const visibility = visibilityOf(model)
+			const step = Billing.init(
+				visibility.isAdmin,
+				model.search.checkout === "complete",
+				visibility.isClerk,
+			)
 			return {
 				model: { ...model, tab: { _tag: "Billing", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>

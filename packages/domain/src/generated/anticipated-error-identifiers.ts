@@ -25,6 +25,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/AwsIntegrationUnavailableError",
 	"@maple/http/errors/BillingConflictError",
 	"@maple/http/errors/BillingForbiddenError",
+	"@maple/http/errors/BillingLinkRejectedError",
+	"@maple/http/errors/BillingManagedByBillingOrgError",
 	"@maple/http/errors/BillingPaymentRequiredError",
 	"@maple/http/errors/BillingProfileUnavailableError",
 	"@maple/http/errors/BillingRateLimitedError",
