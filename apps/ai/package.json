@@ -33,15 +33,15 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/security-audit": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"@yielded/agent": "0.1.0-beta.190",
-		"@yielded/agent-platform-cloudflare": "0.1.0-beta.190",
+		"@yielded/agent": "0.1.0-beta.191",
+		"@yielded/agent-platform-cloudflare": "0.1.0-beta.191",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
-		"@yielded/agent-testing": "0.1.0-beta.190",
+		"@yielded/agent-testing": "0.1.0-beta.191",
 		"gpt-tokenizer": "^4.1.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"

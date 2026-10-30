@@ -1,8 +1,8 @@
 diff --git a/dist/OpenRouterLanguageModel.js b/dist/OpenRouterLanguageModel.js
-index b4ea95b..59ae99f 100644
+index 591840c..49f33eb 100644
 --- a/dist/OpenRouterLanguageModel.js
 +++ b/dist/OpenRouterLanguageModel.js
-@@ -745,7 +745,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -737,7 +737,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
        reasoning: undefined
      }
    };
@@ -26,7 +26,7 @@ index b4ea95b..59ae99f 100644
      const parts = [];
      if (Predicate.isNotUndefined(event.error)) {
        finishReason = "error";
-@@ -1021,7 +1036,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -1012,7 +1027,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
      }
      // Usage is only emitted by the last part of the stream, so we need to
      // handle flushing any remaining text / reasoning / tool calls
@@ -44,7 +44,7 @@ index b4ea95b..59ae99f 100644
        // Fix for Gemini 3 thoughtSignature: when there are tool calls with encrypted
        // reasoning (thoughtSignature), the model returns 'stop' but expects continuation.
        // Override to 'tool-calls' so the SDK knows to continue the conversation.
-@@ -1099,6 +1123,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -1090,6 +1114,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
          response: buildHttpResponseDetails(response),
          metadata
        });

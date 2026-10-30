@@ -1,5 +1,5 @@
 diff --git a/dist/internal/internal.js b/dist/internal/internal.js
-index ba15b51..04c40f3 100644
+index 6c1b1c1..5c4c861 100644
 --- a/dist/internal/internal.js
 +++ b/dist/internal/internal.js
 @@ -14,7 +14,8 @@ import * as Scope from "effect/Scope";
@@ -9,19 +9,19 @@ index ba15b51..04c40f3 100644
 -const getCurrentSuite = V.TestRunner.getCurrentSuite;
 +// Patched (maple): Bun aliases vitest but does not expose TestRunner. Resolve only for layer tests.
 +const getCurrentSuite = () => V.TestRunner.getCurrentSuite();
- const runPromise = /*#__PURE__*/Effect.fnUntraced(function* (effect, _ctx) {
-   const exit = yield* Effect.exit(effect);
-   if (Exit.isFailure(exit)) {
-@@ -28,6 +29,8 @@ const runPromise = /*#__PURE__*/Effect.fnUntraced(function* (effect, _ctx) {
+ const runPromise = (effect, ctx) => Effect.runPromise(
+ // Only the test is interruptible: once the signal aborts, the fiber stops
+ // at its next interruptible step, which would skip reporting the defects
+@@ -32,6 +33,8 @@ Effect.uninterruptibleMask(restore => Effect.gen(function* () {
    signal: ctx?.signal
- }));
+ });
  const settleOnAbort = (ctx, promise) => {
 +  // Patched (maple): Bun's `bun test` context has no `signal`.
 +  if (!ctx?.signal) return promise;
    // Vitest stops awaiting the promise once the signal aborts (timeout or
    // cancellation), so only then add a hook that waits for the finalizers.
    // Registering it unconditionally would change the teardown of every test.
-@@ -141,15 +144,19 @@ const makeTester = (mapEffect, it) => {
+@@ -149,15 +152,19 @@ const makeTester = (mapEffect, it) => {
    const register = test => (name, self, timeout) => test(name, testOptions(timeout), withFixturesOf(self, ctx => run(ctx, [ctx], self)));
    const each = cases => (name, self, timeout) => it.for(cases)(name, testOptions(timeout), withFixturesOf(self, (args, ctx) => run(ctx, [args, ctx], self).then(constVoid)));
    const prop = (name, arbitraries, self, timeout) => registerProp(it, name, arbitraries, (values, ctx) => Effect.mapEager(mapEffect(Effect.suspend(() => self(values, ctx))), value => value !== false), timeout);
@@ -44,7 +44,7 @@ index ba15b51..04c40f3 100644
  const makeProp = it => (name, arbitraries, self, timeout) => registerProp(it, name, arbitraries, (values, ctx) => {
    const result = self(values, ctx);
 diff --git a/src/internal/internal.ts b/src/internal/internal.ts
-index 356c99e..5252b63 100644
+index e6ab75a..8089779 100644
 --- a/src/internal/internal.ts
 +++ b/src/internal/internal.ts
 @@ -18,7 +18,8 @@ import * as TestConsole from "effect/testing/TestConsole"
@@ -55,10 +55,10 @@ index 356c99e..5252b63 100644
 +// Patched (maple): Bun aliases vitest but does not expose TestRunner. Resolve only for layer tests.
 +const getCurrentSuite = () => V.TestRunner.getCurrentSuite()
  
- const runPromise: <E, A>(
-   _: Effect.Effect<A, E, never>,
-@@ -38,6 +39,8 @@ const runPromise: <E, A>(
- }, (effect, _, ctx) => Effect.runPromise(effect, { signal: ctx?.signal }))
+ const runPromise = <E, A>(
+   effect: Effect.Effect<A, E>,
+@@ -44,6 +45,8 @@ const runPromise = <E, A>(
+   )
  
  const settleOnAbort = <A>(ctx: Vitest.TestContext, promise: Promise<A>) => {
 +  // Patched (maple): Bun's `bun test` context has no `signal`.
@@ -66,7 +66,7 @@ index 356c99e..5252b63 100644
    // Vitest stops awaiting the promise once the signal aborts (timeout or
    // cancellation), so only then add a hook that waits for the finalizers.
    // Registering it unconditionally would change the teardown of every test.
-@@ -279,15 +282,19 @@ const makeTester = <R, ExtraContext>(
+@@ -290,15 +293,19 @@ const makeTester = <R, ExtraContext>(
        timeout
      )
  
