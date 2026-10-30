@@ -21,6 +21,7 @@ import {
 	type ChatWorkspaceId as ChatWorkspaceIdType,
 	type OrgId,
 	type UserId,
+	parseGoogleChatWebhookUrl,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -48,7 +49,6 @@ import {
 } from "@maple/backend/services/org/OrgMembersService"
 import { ChatAlertPoster, type ChatChannelChoice } from "./ChatAlertPoster"
 import { LinearIssueTracker } from "./LinearIssueTracker"
-import { parseGoogleChatWebhookUrl } from "./delivery/transports/google-chat"
 import { PAGERDUTY_ROUTING_KEY_PATTERN, verifyPagerDutyRoutingKey } from "./delivery/transports/pagerduty"
 import {
 	fetchTelegramChats,

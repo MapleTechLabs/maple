@@ -1,11 +1,11 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
-import { AlertDestinationId } from "@maple/domain/http"
+import { AlertDestinationId, parseGoogleChatWebhookUrl } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/primitives"
 import { assert, describe, it } from "@effect/vitest"
 import { Option, Schema } from "effect"
 import type { DispatchContext } from "../context"
 import type { RenderInput, SecretConfigOf } from "../Transport"
-import { googleChatTransport, parseGoogleChatWebhookUrl } from "./google-chat"
+import { googleChatTransport } from "./google-chat"
 
 const WEBHOOK_URL =
 	"https://chat.googleapis.com/v1/spaces/AAAAbc-12_x/messages?key=api-key&token=secret-token"

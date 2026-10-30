@@ -1,4 +1,9 @@
-import { type AlertDestinationDocument, AlertDestinationId, AlertDestinationType } from "@maple/domain/http"
+import {
+	type AlertDestinationDocument,
+	AlertDestinationId,
+	AlertDestinationType,
+	parseGoogleChatWebhookUrl,
+} from "@maple/domain/http"
 import {
 	V2AlertDestinationCreateParams,
 	V2AlertDestinationUpdateParams,
@@ -251,18 +256,9 @@ export const isValidPagerDutyKey = (key: string): boolean => /^[A-Za-z0-9]{32}$/
 export const isValidTelegramToken = (token: string): boolean =>
 	/^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(token.trim())
 
-/** Mirrors the server's check, so a pasted space link or bare token is caught before save. */
-export const isValidGoogleChatWebhookUrl = (raw: string): boolean => {
-	const url = URL.parse(raw.trim())
-	return (
-		url !== null &&
-		url.protocol === "https:" &&
-		url.host === "chat.googleapis.com" &&
-		/^\/v1\/spaces\/[A-Za-z0-9_-]+\/messages$/.test(url.pathname) &&
-		(url.searchParams.get("key") ?? "").length > 0 &&
-		(url.searchParams.get("token") ?? "").length > 0
-	)
-}
+/** The server's own check, so a pasted space link or bare token is caught before save. */
+export const isValidGoogleChatWebhookUrl = (raw: string): boolean =>
+	Option.isSome(parseGoogleChatWebhookUrl(raw))
 
 export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean => {
 	if (isEditing && form.name.trim().length === 0) return false

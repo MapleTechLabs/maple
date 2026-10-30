@@ -1,4 +1,4 @@
-import { Array as Arr, Order, Schema } from "effect"
+import { Array as Arr, Option, Order, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../query-engine"
 import {
 	AlertDeliveryEventId,
@@ -371,6 +371,27 @@ export class LinearAlertDestinationConfig extends Schema.Class<LinearAlertDestin
 	teamId: NonEmptyString,
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
+
+const GOOGLE_CHAT_HOST = "chat.googleapis.com"
+const SPACE_MESSAGES_PATH = /^\/v1\/spaces\/([A-Za-z0-9_-]+)\/messages$/
+
+/**
+ * An incoming webhook URL, as Google Chat's "Apps & integrations → Webhooks" hands it out. The
+ * `key` and `token` query parameters are the credential; the path names the space.
+ */
+export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly spaceId: string }> =>
+	Option.liftThrowable(() => new URL(raw.trim()))().pipe(
+		Option.flatMap((url) => {
+			const space = SPACE_MESSAGES_PATH.exec(url.pathname)
+			return url.protocol === "https:" &&
+				url.host === GOOGLE_CHAT_HOST &&
+				space?.[1] !== undefined &&
+				(url.searchParams.get("key") ?? "").length > 0 &&
+				(url.searchParams.get("token") ?? "").length > 0
+				? Option.some({ spaceId: space[1] })
+				: Option.none()
+		}),
+	)
 
 export const MAX_EMAIL_RECIPIENTS = 10
 
