@@ -80,6 +80,7 @@ import { SourceRemovalService } from "@maple/backend/services/integrations/Sourc
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
@@ -133,6 +134,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
 	StatusPagesService.layer,
+	// The `statusPages` rollout gate on the status page routes.
+	OrganizationFeatureFlagsService.layer,
 	// Read-only: previews of unsaved pages.
 	StatusPageSnapshotBuilder.layer,
 	// Needs the `StatusPageStore` port, which only the deployed Worker binds.

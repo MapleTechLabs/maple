@@ -53,14 +53,14 @@ export const SearchEntry = Schema.Struct({ id: Schema.String, title: Schema.Stri
 export type SearchEntry = typeof SearchEntry.Type
 
 /** Nav rows an org rollout flag can hide; the shell passes the ones it shows. */
-export const FLAGGED_HREFS: ReadonlySet<string> = new Set(["/releases", "/security"])
+export const FLAGGED_HREFS: ReadonlySet<string> = new Set(["/releases", "/security", "/status-pages"])
 
 const icon = (name: IconName): Glyph => ({ _tag: "Icon", name })
 const href = (url: string): Target => ({ _tag: "Href", href: url })
 
 /** `paletteNavItems`: every section, its children and their views, deduplicated by title and href. */
 const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
-	const rows = navGroups({ releases: true, securityAudit: true }).flatMap((group) =>
+	const rows = navGroups({ releases: true, securityAudit: true, statusPages: true }).flatMap((group) =>
 		group.items.flatMap((item) => [
 			{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
 			...(item.subItems ?? []).flatMap((sub) => [

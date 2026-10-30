@@ -8,7 +8,9 @@ import {
 	ListStatusPagesOutput,
 	StatusPageIncidentMutationOutput,
 } from "@maple/domain/mcp-outputs"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { executeSql } from "@maple/backend/platform/test-pglite"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 
@@ -398,5 +400,30 @@ describe("status page tools", () => {
 			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
 			expect(after.structuredContent.config).toEqual(read.structuredContent.config)
 		})
+	})
+})
+
+describe("status page tools outside the statusPages rollout", () => {
+	let off: EvalRuntime
+	beforeAll(() => {
+		off = makeEvalRuntime(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS))
+	})
+	afterAll(async () => {
+		await off.dispose()
+	})
+
+	it("refuses every tool as unavailable, naming the missing capability", async () => {
+		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+			["list_status_pages", {}],
+			["get_status_page", { page: "acme-status" }],
+			["create_status_page_incident", { page: "acme-status", title: "x", message: "y" }],
+			["get_status_page_config", { page: "acme-status" }],
+		]
+		for (const [name, params] of calls) {
+			const result: McpToolResult = await runToolDirect(off, name, params)
+			expect(result.isError).toBe(true)
+			expect(result.failureCategory).toBe("unavailable")
+			expect(markdown(result)).toContain("not enabled for this organization")
+		}
 	})
 })

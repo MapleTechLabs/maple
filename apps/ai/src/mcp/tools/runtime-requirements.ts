@@ -19,6 +19,7 @@ import type { VcsCommitService } from "@maple/backend/services/integrations/vcs/
 import type { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import type { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import type { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import type { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import type { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import type { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
@@ -55,6 +56,7 @@ export type McpToolRuntimeRequirements =
 	| SetupAuditService
 	| StatusPageSnapshotBuilder
 	| StatusPagesService
+	| OrganizationFeatureFlagsService
 	| UptimeMonitorsService
 	| IngestRuleService
 	| VcsCommitService

@@ -141,6 +141,20 @@ export class StatusPagePersistenceError extends HttpTaggedError<StatusPagePersis
 	},
 ) {}
 
+/** The org is not in the `statusPages` rollout. */
+export class StatusPagesDisabledError extends HttpTaggedError<StatusPagesDisabledError>()(
+	"@maple/http/errors/StatusPagesDisabledError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "status_pages_disabled",
+		title: "Status pages are not enabled",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "public_message",
+	},
+) {}
+
 /** A page as its owners see it; the break-glass hash never leaves the service. */
 export const StatusPageRecord = Schema.Struct({
 	id: StatusPageId,

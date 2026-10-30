@@ -13,7 +13,7 @@ const organization: ClerkOrganization = {
 	homeRegion: "us",
 	isServedHere: true,
 	isRegionOpen: false,
-	flags: { aiAutoTriage: false, releases: false, securityAudit: false },
+	flags: { aiAutoTriage: false, releases: false, securityAudit: false, statusPages: false },
 }
 
 const customerWith = (status: string | null): CustomerSlot => ({

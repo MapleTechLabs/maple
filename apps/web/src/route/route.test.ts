@@ -2,7 +2,7 @@ import { Option } from "effect"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
 import { DATA_INTEGRATIONS } from "./data-integrations"
-import { AppRoute, hrefOf, routeRedirect, urlToAppRoute } from "./index"
+import { AppRoute, flaggedRouteRedirect, hrefOf, routeRedirect, urlToAppRoute } from "./index"
 
 const parse = (path: string) => urlToAppRoute(Option.getOrThrow(fromString(`http://maple.test${path}`)))
 
@@ -62,6 +62,16 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/alerts/status-pages/stp_abc?tab=%22incidents%22"))).toEqual(
 			Option.some({ url: "/status-pages/stp_abc", isReplace: true }),
 		)
+	})
+
+	test("an org outside the statusPages rollout is sent home from every status page route", () => {
+		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
+			expect(flaggedRouteRedirect(parse(path), { statusPages: false })).toEqual(
+				Option.some({ url: "/", isReplace: true }),
+			)
+			expect(flaggedRouteRedirect(parse(path), { statusPages: true })).toEqual(Option.none())
+		}
+		expect(flaggedRouteRedirect(parse("/services"), { statusPages: false })).toEqual(Option.none())
 	})
 
 	test("a literal sibling wins over a param route", () => {

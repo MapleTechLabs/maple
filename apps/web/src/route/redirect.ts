@@ -1,3 +1,4 @@
+import type { OrganizationFeatureFlags } from "@maple/domain/organization-feature-flags"
 import { Option, Schema } from "effect"
 import { AppRoute } from "./app-route"
 import { hrefOf } from "./routers"
@@ -85,3 +86,14 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 		},
 		() => Option.none(),
 	)
+
+const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage"])
+
+/** A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`). */
+export const flaggedRouteRedirect = (
+	route: AppRoute,
+	flags: Pick<OrganizationFeatureFlags, "statusPages">,
+): Option.Option<Redirect> =>
+	!flags.statusPages && isStatusPageRoute(route)
+		? redirect(AppRoute.Home({ search: {} }), true)
+		: Option.none()

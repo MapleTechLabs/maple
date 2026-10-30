@@ -38,6 +38,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
@@ -122,6 +123,19 @@ const toIncidentRow = (incident: StatusPageIncidentRecord): typeof StatusPageInc
 		updateCount: incident.updates.length,
 	}
 }
+
+/** The caller's tenant, once its org is in the `statusPages` rollout. */
+const tenantInRollout = Effect.fnUntraced(function* (tool: string) {
+	const tenant = yield* CurrentMcpTenant
+	const flags = yield* (yield* OrganizationFeatureFlagsService).flags(tenant.orgId)
+	if (!flags.statusPages) {
+		return yield* new McpUnavailableError({
+			message: `${tool} needs status pages, which are not enabled for this organization.`,
+			capability: "status_pages",
+		})
+	}
+	return tenant
+})
 
 /** A page by its id, REST id (`stp_…`), slug or exact name. */
 const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref: string) {
@@ -243,7 +257,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Checking status pages"],
 		handler: Effect.fn("McpTool.listStatusPages")(function* () {
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout("list_status_pages")
 			const service = yield* StatusPagesService
 			const pages = yield* service
 				.list(tenant.orgId)
@@ -306,7 +320,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Reading a status page"],
 		handler: Effect.fn("McpTool.getStatusPage")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout("get_status_page")
 			const service = yield* StatusPagesService
 			const builder = yield* StatusPageSnapshotBuilder
 			const page = yield* resolvePage("get_status_page", tenant.orgId, params.page)
@@ -446,7 +460,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		phrases: ["Opening a status page incident"],
 		handler: Effect.fn("McpTool.createStatusPageIncident")(function* (params) {
 			const tool = "create_status_page_incident"
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout(tool)
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			const components = yield* pageComponents(tool, tenant.orgId, page.id)
@@ -490,7 +504,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		phrases: ["Posting a status page update"],
 		handler: Effect.fn("McpTool.postStatusPageUpdate")(function* (params) {
 			const tool = "post_status_page_update"
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout(tool)
 			const service = yield* StatusPagesService
 			const incidentId = yield* decodeIncidentId(params.incident)
 			const current = yield* service
@@ -535,7 +549,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		phrases: ["Resolving a status page incident"],
 		handler: Effect.fn("McpTool.resolveStatusPageIncident")(function* (params) {
 			const tool = "resolve_status_page_incident"
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout(tool)
 			const service = yield* StatusPagesService
 			const incidentId = yield* decodeIncidentId(params.incident)
 			const current = yield* service
@@ -576,7 +590,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		phrases: ["Scheduling maintenance"],
 		handler: Effect.fn("McpTool.scheduleStatusPageMaintenance")(function* (params) {
 			const tool = "schedule_status_page_maintenance"
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout(tool)
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			const components = yield* pageComponents(tool, tenant.orgId, page.id)
@@ -614,7 +628,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		phrases: ["Reading a status page config"],
 		handler: Effect.fn("McpTool.getStatusPageConfig")(function* (params) {
 			const tool = "get_status_page_config"
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout(tool)
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			const config = yield* service
@@ -652,7 +666,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		phrases: ["Applying a status page config"],
 		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
 			const tool = "apply_status_page_config"
-			const tenant = yield* CurrentMcpTenant
+			const tenant = yield* tenantInRollout(tool)
 			yield* requireAdmin(
 				tenant.roles,
 				() =>

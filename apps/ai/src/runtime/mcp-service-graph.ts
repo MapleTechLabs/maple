@@ -6,13 +6,21 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { PrReviewConversationService } from "@maple/backend/services/pr-review/PrReviewConversationService"
 
-export const McpServicesLive = McpToolExecutor.layer.pipe(
-	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
-)
+/** The tool executor over the given org rollout flags; tests pass a fixed answer. */
+export const mcpServicesWithFeatureFlags = (
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService, never, Env>,
+) =>
+	McpToolExecutor.layer.pipe(
+		Layer.provide(featureFlags),
+		Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
+	)
+
+export const McpServicesLive = mcpServicesWithFeatureFlags(OrganizationFeatureFlagsService.layer)
 
 /**
  * What applying a proposal somebody approved from a chat platform needs, and nothing else.
