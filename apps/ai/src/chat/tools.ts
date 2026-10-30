@@ -487,6 +487,14 @@ export const buildReviewCompletion = (
 			const unreviewed =
 				normalized.report.verdict === "not_applicable" ? [] : (coverage?.unread() ?? [])
 			const report = withSavedFindings(normalized.report, saved, unreviewed)
+			const childPosted = childFiled.filter((child) =>
+				report.findings.some(
+					(finding) =>
+						finding.path === child.path &&
+						finding.line === child.line &&
+						finding.title === child.title,
+				),
+			).length
 			return submitReview(
 				tenant.orgId,
 				reviewId,
@@ -511,8 +519,9 @@ export const buildReviewCompletion = (
 						"maple.pr_review.verdict": report.verdict,
 						"maple.pr_review.resolved": resolved.length,
 						"maple.pr_review.child_findings": childFindings?.all().length ?? 0,
-						"maple.pr_review.child_findings_filed_unaccounted": childFiled.length,
-						"maple.pr_review.child_findings_dropped": unaccounted.length - childFiled.length,
+						"maple.pr_review.child_findings_filed_unaccounted": childPosted,
+						// Unpostable, or cut by the report's finding cap.
+						"maple.pr_review.child_findings_dropped": unaccounted.length - childPosted,
 						"maple.pr_review.child_dismissals": normalized.childDismissals.length,
 						...(normalized.childDismissals.length > 0
 							? {

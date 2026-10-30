@@ -430,6 +430,37 @@ describe("analyzeTelemetry", () => {
 		)
 	})
 
+	it("matches a frame's whole directory segment and prefers it over a name-only match", () => {
+		const linked = (files: ReadonlyArray<string>, topFrame: string) =>
+			analyzeTelemetry({
+				files: files.map((path) => file(path, "@@ -1,1 +1,1 @@\n-a\n+b")),
+				catalog,
+				sources: [],
+				issues: ["a", "b", "c", "d", "e"].map((id) => ({
+					id,
+					fingerprintHash: id,
+					title: `Error ${id}`,
+					service: "shop",
+					topFrame,
+					occurrences: 10,
+					lastSeenAt: 1,
+				})),
+			}).linkedIssues.map((issue) => issue.path)
+		// Matched by name only, `public-api` not being `api`: the bundle entry, so unlinked.
+		assert.deepStrictEqual(
+			linked(["src/api/worker-app.ts"], "at f (/dist/public-api/worker-app.js:1:9)"),
+			[],
+		)
+		// The `orders` file is named with its directory, so it is chosen and kept.
+		assert.deepStrictEqual(
+			linked(
+				["src/admin/checkout.ts", "src/orders/checkout.ts"],
+				"at f (/dist/orders/checkout.js:4:2)",
+			),
+			Array(5).fill("src/orders/checkout.ts"),
+		)
+	})
+
 	it("keeps a service's issues whose frames name the changed file's directory", () => {
 		const telemetry = analyzeTelemetry({
 			files: [file("src/orders/checkout.ts", "@@ -1,1 +1,1 @@\n-a\n+b")],

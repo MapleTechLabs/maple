@@ -107,7 +107,13 @@ const frameMatchOf = (frame: string, path: string): "directory" | "name" | undef
 	const name = stripExtension(segments.at(-1) ?? "")
 	if (name.length === 0) return undefined
 	const dir = segments.at(-2)
-	if (dir !== undefined && haystack.includes(`${dir}/${name}.`)) return "directory"
+	// The whole directory segment: `api/worker-app.` must not match inside `public-api/worker-app.`.
+	if (
+		dir !== undefined &&
+		new RegExp(`(^|[/\\s(@])${escapeRegExp(dir)}/${escapeRegExp(name)}\\.`).test(haystack)
+	) {
+		return "directory"
+	}
 	return !GENERIC_BASENAME.test(name) &&
 		name.length >= 6 &&
 		new RegExp(`[/\\s(@]${escapeRegExp(name)}\\.`).test(haystack)
@@ -308,13 +314,14 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		})
 	}
 
+	// A file the frame names with its directory wins over one it names only by the same file name.
 	const matched = input.issues.map((issue) => {
-		const file = files.find((candidate) => frameMatchesPath(issue.topFrame, candidate.path))
-		return {
-			issue,
-			file,
-			byName: file !== undefined && frameMatchOf(issue.topFrame, file.path) === "name",
-		}
+		const byDirectory = files.find(
+			(candidate) => frameMatchOf(issue.topFrame, candidate.path) === "directory",
+		)
+		const file =
+			byDirectory ?? files.find((candidate) => frameMatchOf(issue.topFrame, candidate.path) === "name")
+		return { issue, file, byName: file !== undefined && byDirectory === undefined }
 	})
 	const issuesPerService = new Map<string, number>()
 	const matchesPerFile = new Map<string, number>()
