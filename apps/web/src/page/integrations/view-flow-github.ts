@@ -258,7 +258,7 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 					return h.div(
 						[
 							h.Class(
-								"flex items-center gap-4 border-b border-border/40 px-4 py-2.5 text-sm last:border-0",
+								"flex items-center gap-4 border-b border-border/60 px-4 py-2.5 text-sm last:border-0",
 							),
 						],
 						[

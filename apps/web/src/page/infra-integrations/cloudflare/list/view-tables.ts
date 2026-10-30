@@ -485,7 +485,7 @@ export const workerTable = (
 // QUEUES
 
 const QUEUE_ROW =
-	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
+	"flex items-center gap-4 border-b border-border/60 px-4 py-3 last:border-0 hover:bg-muted/50"
 
 const numCell = (h: H, value: string, hidden?: boolean): Html =>
 	h.div(

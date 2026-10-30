@@ -298,7 +298,7 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 					h.AriaExpanded(isExpanded),
 					h.OnClick(Message.ToggledDrift({ name: entry.name })),
 					h.Class(
-						"hover:bg-muted/20 flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+						"hover:bg-muted/50 flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
 					),
 				],
 				[
@@ -415,7 +415,7 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 							h.AriaExpanded(model.showUpToDate),
 							h.OnClick(Message.ToggledUpToDate()),
 							h.Class(
-								"hover:bg-muted/20 flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs transition-colors",
+								"hover:bg-muted/50 flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs transition-colors",
 							),
 						],
 						[
@@ -697,7 +697,7 @@ const usageSection = (h: H, model: Model): Html => {
 			eyebrow: stat.label,
 			value,
 			action: icon(h, stat.icon, {
-				size: 13,
+				size: 14,
 				className: cn("shrink-0", stat.tone),
 				attributes: [h.AriaHidden(true)],
 			}),

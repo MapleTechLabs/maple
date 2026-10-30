@@ -94,7 +94,7 @@ export const statusMixBar = <M>(h: HtmlBuilder<M>, mix: StatusMix | null, classN
 		mix === null
 			? []
 			: [
-					h.div([h.Class("h-full bg-chart-3"), h.Style({ width: `${mix.ok * 100}%` })]),
+					h.div([h.Class(cn("h-full", TONE_FILL.ok)), h.Style({ width: `${mix.ok * 100}%` })]),
 					h.div([
 						h.Class(cn("h-full", TONE_FILL.warn)),
 						h.Style({ width: `${mix.client * 100}%` }),
@@ -301,7 +301,7 @@ const endpointRow = (
 		],
 		cn(
 			"group/row h-12 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
-			isSelected ? "bg-accent hover:bg-accent" : "hover:bg-muted/40",
+			isSelected ? "bg-accent hover:bg-accent" : "hover:bg-muted/50",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)

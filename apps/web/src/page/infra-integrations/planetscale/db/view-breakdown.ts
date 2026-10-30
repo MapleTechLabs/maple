@@ -247,8 +247,8 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 								h.AriaPressed(String(isSelected)),
 								h.Class(
 									cn(
-										"flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-muted/40",
-										isSelected && "bg-muted/40",
+										"flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-muted/50",
+										isSelected && "bg-muted/60",
 									),
 								),
 								...styleAttrs,

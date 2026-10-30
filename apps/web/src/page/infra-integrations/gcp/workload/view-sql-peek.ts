@@ -199,13 +199,13 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 		[
 			sectionHead(h, "Called by", more > 0 ? `the busiest, +${more} more` : "client spans"),
 			h.div(
-				[h.Class("border-y border-border/70")],
+				[h.Class("border-y border-border/60")],
 				services.map((service) =>
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch }))),
 							h.Class(
-								"flex items-center gap-3 border-b border-border/40 px-1 py-2 transition-colors last:border-0 hover:bg-muted/50",
+								"flex items-center gap-3 border-b border-border/60 px-1 py-2 transition-colors last:border-0 hover:bg-muted/50",
 							),
 						],
 						[
@@ -241,7 +241,7 @@ const spanRow = (h: H, span: StatementSpan, slowestMs: number, timeZone: string)
 			),
 			h.AriaLabel(`Open trace: ${span.serviceName}, ${formatLatency(span.durationMs)}`),
 			h.Class(
-				"flex items-center gap-3 border-b border-border/40 px-1 py-2 transition-colors last:border-0 hover:bg-muted/50",
+				"flex items-center gap-3 border-b border-border/60 px-1 py-2 transition-colors last:border-0 hover:bg-muted/50",
 			),
 		],
 		[
@@ -286,7 +286,7 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 						[
 							h.Class(
 								cn(
-									"border-y border-border/70",
+									"border-y border-border/60",
 									refreshingClass(AsyncData.isRefreshing(inputs.spans)),
 								),
 							),

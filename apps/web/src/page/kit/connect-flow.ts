@@ -26,7 +26,7 @@ export type StepCardOptions = Readonly<{
 /** The step's one card: a titled body. */
 export const stepCard = <M>(h: HtmlBuilder<M>, options: StepCardOptions, children: Children): Html =>
 	h.section(
-		[h.Class("flex flex-col gap-5 rounded-lg border border-border bg-card p-5")],
+		[h.Class("flex flex-col gap-5 rounded-md border border-border bg-card p-5")],
 		[
 			h.header(
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
@@ -81,7 +81,7 @@ export const choiceTiles = <M>(h: HtmlBuilder<M>, tiles: ReadonlyArray<ChoiceTil
 									h.span(
 										[
 											h.Class(
-												"font-mono text-[10px] uppercase tracking-wide text-primary",
+												"font-mono text-3xs uppercase tracking-wide text-primary",
 											),
 										],
 										[tile.tag],
@@ -138,7 +138,7 @@ export const statusRow = <M>(h: HtmlBuilder<M>, options: StatusRowOptions, child
 		[
 			h.Class(
 				cn(
-					"flex items-start gap-3 rounded-lg border bg-card px-4 py-3",
+					"flex items-start gap-3 rounded-md border bg-card px-4 py-3",
 					options.tone === "error" ? "border-severity-error/40" : "border-border",
 				),
 			),
@@ -166,7 +166,7 @@ export const foundChips = <M>(
 		[h.Class("flex flex-wrap gap-1.5")],
 		chips.map((chip) =>
 			h.li(
-				[h.Class("rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]")],
+				[h.Class("rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-2xs")],
 				[
 					chip.label,
 					...(chip.detail === undefined
@@ -196,7 +196,7 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 		[h.Class("flex flex-col gap-3")],
 		[
 			h.div(
-				[h.Class("flex flex-col gap-4 rounded-lg border border-border bg-card p-4")],
+				[h.Class("flex flex-col gap-4 rounded-md border border-border bg-card p-4")],
 				[
 					eyebrow(h, { variant: "label" }, [options.eyebrow]),
 					h.ul(
@@ -273,7 +273,7 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 /** On Go live: the source exists, so leaving the page is safe. */
 export const savedBanner = <M>(h: HtmlBuilder<M>, text: string, meta?: string): Html =>
 	h.div(
-		[h.Class("flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm")],
+		[h.Class("flex items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm")],
 		[
 			icon(h, "ShieldCheckIcon", { size: 14, className: "shrink-0 text-success" }),
 			h.span([h.Class("flex-1")], [text]),
@@ -317,7 +317,7 @@ export const liveChecklist = <M>(
 ): Html =>
 	h.section(
 		[
-			h.Class("flex flex-col rounded-lg border border-border bg-card"),
+			h.Class("flex flex-col rounded-md border border-border bg-card"),
 			h.AriaLabel(options.title ?? "Going live"),
 		],
 		[

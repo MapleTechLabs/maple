@@ -80,7 +80,7 @@ const statementRow = (
 			...(isPeeked ? [h.AriaCurrent("true")] : []),
 			h.Class(
 				cn(
-					"flex w-full cursor-pointer items-center gap-4 border-b border-border/40 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+					"flex w-full cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
 					rowSelectedClass(isPeeked),
 				),
 			),
@@ -256,7 +256,7 @@ export const appWaitCallout = (
 			? `The gap is waiting for a connection: ${instanceName} sat at ${Math.round(peak.open)} of ${peak.max}${idle > 0 ? `, and ${idle} of them were idle in transaction` : ""}. Fix the pool, not the query.`
 			: "The time is spent outside the database: the network, or waiting on the connection pool."
 	return h.div(
-		[h.Class("@container rounded-lg border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error/40")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],

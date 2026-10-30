@@ -74,7 +74,7 @@ const variantsSection = (
 						h.Class(
 							cn(
 								"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs transition-colors",
-								isSelected ? "bg-primary/10" : "hover:bg-muted/40",
+								isSelected ? "bg-primary/10" : "hover:bg-muted/50",
 							),
 						),
 						h.Title(unwrapToolErrorText(row.message).text),
@@ -187,9 +187,9 @@ export const sessionLink = (
 
 const sessionRowClass = (isSelected: boolean) =>
 	cn(
-		"group flex w-full shrink-0 items-center gap-3 border-b border-border/50 pr-4 pl-4 text-left transition-colors",
+		"group flex w-full shrink-0 items-center gap-3 border-b border-border/60 pr-4 pl-4 text-left transition-colors",
 		rowSelectedClass(isSelected),
-		!isSelected && "hover:bg-muted/30",
+		!isSelected && "hover:bg-muted/50",
 	)
 
 const LAST_CLASS = "w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70"

@@ -18,7 +18,7 @@ import type { ApiBucket } from "./model-tabs"
 
 /** The status classes' colours; 2xx stays calm, 4xx is the warning hue, 5xx the error one. */
 export const STATUS_COLORS = {
-	"2xx": "var(--chart-3)",
+	"2xx": "var(--severity-info)",
 	"4xx": "var(--warning)",
 	"5xx": "var(--severity-error)",
 	unknown: "var(--muted-foreground)",
@@ -39,7 +39,7 @@ export const SPARK_TOKENS = {
 /** Every token the API tab paints on canvas; resolved once by the page's theme Mount. */
 export const API_THEME_TOKENS = [
 	...Object.values(SPARK_TOKENS),
-	"--chart-3",
+	"--severity-info",
 	"--muted-foreground",
 	...LATENCY_SERIES.map((series) => series.token),
 	"--border",

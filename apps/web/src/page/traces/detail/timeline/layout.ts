@@ -21,20 +21,22 @@ import type { SpanNodeData } from "../trace-data"
 
 export const ROW_PITCH = ROW_HEIGHT + ROW_GAP
 
-const ERROR_HUE = 25
-const NEUTRAL_FILL = "oklch(0.22 0.005 0)"
-const NEUTRAL_BORDER = "oklch(0.45 0.02 0)"
-
-const barFillFromHue = (hue: number | null, isError: boolean, statusPreset: boolean): string => {
-	if (isError && !statusPreset) return `oklch(0.22 0.06 ${ERROR_HUE})`
-	if (hue === null) return NEUTRAL_FILL
-	return `oklch(0.22 0.015 ${hue})`
-}
+// The border carries the hue; the fill is that colour washed into the page background, so bars
+// read in both themes. Oklab, not oklch: the backgrounds carry a hue that would rotate the mix.
+const NEUTRAL_BORDER = "var(--muted-foreground)"
+const ERROR_BORDER = "var(--severity-error)"
+const wash = (color: string, percent: number): string =>
+	`color-mix(in oklab, ${color} ${percent}%, var(--background))`
 
 const barBorderFromHue = (hue: number | null, isError: boolean, statusPreset: boolean): string => {
-	if (isError && !statusPreset) return `oklch(0.62 0.22 ${ERROR_HUE})`
+	if (isError && !statusPreset) return ERROR_BORDER
 	if (hue === null) return NEUTRAL_BORDER
 	return `oklch(0.55 0.18 ${hue})`
+}
+
+const barFillFromHue = (hue: number | null, isError: boolean, statusPreset: boolean): string => {
+	if (isError && !statusPreset) return wash(ERROR_BORDER, 22)
+	return wash(barBorderFromHue(hue, false, statusPreset), hue === null ? 12 : 16)
 }
 
 /** `TimelineBar` over `SpanNodeData`. */

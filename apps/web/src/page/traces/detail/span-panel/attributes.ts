@@ -144,7 +144,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 	return h.div(
 		[
 			h.Class(
-				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40",
+				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/50",
 			),
 		],
 		[
@@ -260,7 +260,7 @@ const genAiSection = (
 									h.div(
 										[
 											h.Class(
-												"divide-y divide-border/40 border-t border-border/60 bg-muted/15",
+												"divide-y divide-border/60 border-t border-border/60 bg-muted/15",
 											),
 										],
 										group.fields.map((field) =>

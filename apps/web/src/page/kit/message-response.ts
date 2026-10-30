@@ -81,7 +81,7 @@ const codeAction = <M>(
 	)
 
 export const LINE_CLASS =
-	"block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-[13px] before:text-right before:text-muted-foreground/50 before:font-mono before:select-none"
+	"block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-ui before:text-right before:text-muted-foreground/50 before:font-mono before:select-none"
 const TOKEN_CLASS =
 	"text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))] bg-[var(--sdm-tbg)] dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]"
 
@@ -97,7 +97,7 @@ const codeBlock = <M>(
 	return h.div(
 		[
 			h.Class(
-				"relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2",
+				"relative my-4 flex w-full flex-col gap-2 rounded-md border border-border bg-sidebar p-2",
 			),
 			h.DataAttribute("language", language),
 			h.DataAttribute("streamdown", "code-block"),

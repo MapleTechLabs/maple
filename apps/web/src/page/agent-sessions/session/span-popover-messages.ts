@@ -72,7 +72,7 @@ export const payloadCard = (
 	options: Readonly<{ label: string; name?: string; meta?: string; body?: string; key: string }>,
 ): Html =>
 	h.div(
-		[h.Class("min-w-0 overflow-hidden rounded-md border border-border/70")],
+		[h.Class("min-w-0 overflow-hidden rounded-md border border-border/60")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 bg-muted/40 px-2.5 py-1.5")],
@@ -275,7 +275,7 @@ const systemMessageRow = (h: H, model: Model, message: SpanMessage, key: string)
 			],
 			[
 				icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
-					size: 11,
+					size: 12,
 					className: "shrink-0 text-muted-foreground",
 				}),
 				eyebrow(h, { variant: "mono", className: "shrink-0" }, [message.role]),

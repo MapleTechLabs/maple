@@ -131,7 +131,7 @@ const contextList = (
 			const isCurrent = key === selectedKey
 			const cells = [
 				h.span(
-					[h.Class("w-[92px] shrink-0 tabular-nums text-foreground/75")],
+					[h.Class("w-[92px] shrink-0 tabular-nums text-foreground/70")],
 					logTime(h, row.timestamp, timeZone),
 				),
 				h.span(
@@ -152,7 +152,7 @@ const contextList = (
 									? "text-foreground"
 									: QUIET_SEVERITIES.has(row.severityText.toUpperCase())
 										? "text-muted-foreground"
-										: "text-foreground/85",
+										: "text-foreground/80",
 							),
 						),
 					],
@@ -164,7 +164,7 @@ const contextList = (
 					h.Key(key),
 					...(isCurrent ? [h.AriaCurrent("true"), h.OnMount(CenterContextRow())] : []),
 					h.Style({ "border-left-color": getSeverityColor(row.severityText) }),
-					h.Class("border-b border-l-2 border-b-border/70 font-mono text-xs last:border-b-0"),
+					h.Class("border-b border-l-2 border-b-border/60 font-mono text-xs last:border-b-0"),
 				],
 				[
 					isCurrent

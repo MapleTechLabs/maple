@@ -122,7 +122,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 					],
 					[
 						icon(h, GLYPH[data.glyph], {
-							size: 13,
+							size: 14,
 							className: cn(
 								"relative",
 								isCurrent ? null : data.glyph === "verdict" ? TONE_TEXT.info : TONE_TEXT.crit,
@@ -221,7 +221,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 			: []),
 	]
 	const shell = cn(
-		"flex size-full flex-col gap-1.5 overflow-hidden rounded-lg border px-3 py-2.5",
+		"flex size-full flex-col gap-1.5 overflow-hidden rounded-md border px-3 py-2.5",
 		data.at ? "justify-start" : "justify-center",
 		isCurrent
 			? "border-primary bg-card"
@@ -251,7 +251,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 	h.div(
 		[
 			h.Class(
-				"relative flex size-full flex-col justify-center gap-1.5 overflow-hidden rounded-lg border border-dashed bg-background px-3 py-2.5",
+				"relative flex size-full flex-col justify-center gap-1.5 overflow-hidden rounded-md border border-dashed bg-background px-3 py-2.5",
 			),
 		],
 		[
@@ -264,7 +264,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 								"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-dashed",
 							),
 						],
-						[icon(h, "ClockIcon", { size: 13, className: "text-muted-foreground" })],
+						[icon(h, "ClockIcon", { size: 14, className: "text-muted-foreground" })],
 					),
 					eyebrow(h, { className: "min-w-0 flex-1 leading-[1.3] text-muted-foreground" }, [
 						data.word,
@@ -290,7 +290,7 @@ const actionGhostNode = (h: H, id: string): ReadonlyArray<Html> => [
 		[
 			h.AriaHidden(true),
 			h.Class(
-				"pointer-events-none flex size-full items-center gap-2.5 rounded-lg border border-dashed bg-card/40 px-3",
+				"pointer-events-none flex size-full items-center gap-2.5 rounded-md border border-dashed bg-card/40 px-3",
 			),
 		],
 		[
@@ -326,7 +326,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 				h.OnClick(Message.ClickedAction({ index: data.index })),
 				h.OnKeyDownPreventDefault(openKey(data.index)),
 				h.Class(
-					"flex size-full cursor-pointer items-center gap-2.5 rounded-lg border bg-card px-3 transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
 				),
 			],
 			[

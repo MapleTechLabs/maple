@@ -232,7 +232,7 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 	return h.div(
 		[
 			h.Class(
-				"flex flex-col items-center gap-5 rounded-lg border border-severity-warn/40 bg-severity-warn/5 px-6 py-10 text-center",
+				"flex flex-col items-center gap-5 rounded-md border border-severity-warn/40 bg-severity-warn/5 px-6 py-10 text-center",
 			),
 		],
 		[

@@ -115,7 +115,7 @@ const runDetails = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: s
 					h.AriaExpanded(isOpen),
 					h.OnClick(Message.ToggledDetails()),
 					h.Class(
-						"flex w-full items-center gap-2.5 rounded-md border bg-card px-4 py-3 text-left hover:bg-muted/40",
+						"flex w-full items-center gap-2.5 rounded-md border bg-card px-4 py-3 text-left hover:bg-muted/50",
 					),
 				],
 				[

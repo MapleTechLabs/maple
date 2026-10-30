@@ -224,7 +224,7 @@ export const attributeRow = (
 		[
 			h.Key(attrKey),
 			h.Class(
-				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40",
+				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/50",
 			),
 		],
 		[

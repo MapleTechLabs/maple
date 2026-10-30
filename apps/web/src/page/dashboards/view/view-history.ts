@@ -42,7 +42,7 @@ const versionItem = (
 					h.Class(
 						cn(
 							"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
-							"hover:bg-muted/40",
+							"hover:bg-muted/50",
 							rowSelectedClass(isPreviewing),
 						),
 					),

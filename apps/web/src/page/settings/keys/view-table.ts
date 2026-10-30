@@ -45,7 +45,7 @@ const COL = {
 }
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0"
+	"flex items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-0"
 
 const typeBadge = (h: H, type: KeyType): Html =>
 	badge(h, { variant: TYPE_BADGE[type], size: "sm", mono: true }, [KEY_TYPE_LABELS[type]])
@@ -111,7 +111,7 @@ const apiRow = (
 			: []),
 	]
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-muted/20"))],
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-muted/50"))],
 		[
 			h.div(
 				[h.Class(cn(COL.name, "flex flex-col gap-1"))],
@@ -239,7 +239,7 @@ const deviceRow = (
 			]
 		: []
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-muted/20"))],
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-muted/50"))],
 		[
 			h.div(
 				[h.Class(cn(DEVICE_COL.name, "flex min-w-0 items-center gap-2"))],

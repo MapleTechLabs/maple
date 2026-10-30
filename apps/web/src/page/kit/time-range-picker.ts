@@ -416,7 +416,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 							"focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
 							model.isShorthandInvalid
 								? "border-destructive/70"
-								: "border-border/70 hover:border-border",
+								: "border-border/60 hover:border-border",
 						),
 					),
 				],
@@ -549,7 +549,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 		[
 			h.Id(anchorId),
 			h.Class(
-				"flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2",
+				"flex items-center justify-between gap-3 border-t border-border/60 bg-muted/20 px-4 py-2",
 			),
 		],
 		[
@@ -672,7 +672,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 										h.div(
 											[
 												h.Class(
-													"w-full shrink-0 border-b border-border/70 sm:w-[168px] sm:border-r sm:border-b-0",
+													"w-full shrink-0 border-b border-border/60 sm:w-[168px] sm:border-r sm:border-b-0",
 												),
 											],
 											[presetList(h, inputs)],

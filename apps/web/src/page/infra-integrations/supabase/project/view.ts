@@ -152,7 +152,7 @@ const heroActions = (h: H, model: Model, project: DiscoveredProject | null): Rea
 			href: supabaseDashboardHref(model.projectRef),
 			attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
 		},
-		["Open in Supabase", icon(h, "ExternalLinkIcon", { size: 12 })],
+		["Open in Supabase", icon(h, "ExternalLinkIcon", { size: 14 })],
 	),
 ]
 
@@ -194,8 +194,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					scrollClassName: "gap-4",
 					titleContent: hero.title,
-					actions:
-						headerActions(h, actions, timeControls),
+					actions: headerActions(h, actions, timeControls),
 				},
 				[
 					hero.body,

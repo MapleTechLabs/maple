@@ -221,7 +221,7 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 		[
 			h.div(
 				[
-					h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border/40 px-2 py-1 pl-6")),
+					h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border/60 px-2 py-1 pl-6")),
 					h.Title(`${span.serviceName} · ${span.spanName}`),
 				],
 				[
@@ -292,7 +292,7 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 	const leftPct = pct(range.displayStartMs, frame.timeline.activeTotalMs)
 	const widthPct = Math.max(0.6, pct(range.displayEndMs, frame.timeline.activeTotalMs) - leftPct)
 	return h.li(
-		[h.Key(summary.traceId), h.Class("border-b border-border/40 last:border-b-0")],
+		[h.Key(summary.traceId), h.Class("border-b border-border/60 last:border-b-0")],
 		[
 			h.div(
 				[h.Class("flex items-stretch")],

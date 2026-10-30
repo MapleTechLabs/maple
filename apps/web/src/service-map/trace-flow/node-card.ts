@@ -245,8 +245,8 @@ export const flowSpanNode = <M>(
 							],
 							[
 								category.id === "cache" && cacheInfo?.system
-									? cacheSystemIcon(h, cacheInfo.system, 13)
-									: icon(h, category.icon, { size: 13 }),
+									? cacheSystemIcon(h, cacheInfo.system, 14)
+									: icon(h, category.icon, { size: 14 }),
 							],
 						),
 						h.div(

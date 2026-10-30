@@ -140,7 +140,7 @@ const selfHostedLine = (h: H): Html =>
 
 const revokedNotice = (h: H, status: SupabaseIntegrationStatus): Html =>
 	h.div(
-		[h.Class("flex gap-3 rounded-lg border border-severity-warn/40 bg-card px-4 py-3"), h.Role("alert")],
+		[h.Class("flex gap-3 rounded-md border border-severity-warn/40 bg-card px-4 py-3"), h.Role("alert")],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0 text-severity-warn" }),
 			h.div(
@@ -251,7 +251,7 @@ const chooseRow = (h: H, model: Model, project: Project): Html => {
 			h.Key(project.ref),
 			h.Class(
 				cn(
-					"flex items-center gap-4 border-b border-border/40 px-4 py-2.5 text-sm last:border-0",
+					"flex items-center gap-4 border-b border-border/60 px-4 py-2.5 text-sm last:border-0",
 					isPaused && "opacity-60",
 				),
 			),

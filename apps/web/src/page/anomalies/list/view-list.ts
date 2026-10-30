@@ -59,7 +59,7 @@ const group = (
 			...(isOpen
 				? [
 						h.div(
-							[h.Id(`anomaly-group-${key}`), h.Role("list"), h.Class("divide-y divide-border/40")],
+							[h.Id(`anomaly-group-${key}`), h.Role("list"), h.Class("divide-y divide-border/60")],
 							clusterByService(incidents).map((cluster) =>
 								h.div(
 									[h.Key(cluster.key + (cluster.incidents[0]?.id ?? ""))],
@@ -69,7 +69,7 @@ const group = (
 													h.div(
 														[
 															h.Class(
-																"flex h-7 items-center gap-1.5 border-b border-border/40 bg-muted/20 pl-5 text-2xs text-muted-foreground",
+																"flex h-7 items-center gap-1.5 border-b border-border/60 bg-muted/20 pl-5 text-2xs text-muted-foreground",
 															),
 														],
 														[
@@ -82,7 +82,7 @@ const group = (
 												]
 											: []),
 										h.div(
-											[h.Class("divide-y divide-border/40")],
+											[h.Class("divide-y divide-border/60")],
 											cluster.incidents.map((incident) =>
 												h.div(
 													[h.Key(incident.id), h.Role("listitem")],

@@ -82,7 +82,7 @@ export const inlineNote = (h: H, children: ReadonlyArray<Html | string>, classNa
 			),
 		],
 		[
-			icon(h, "CircleQuestionIcon", { size: 13, className: "mt-0.5 shrink-0 text-muted-foreground" }),
+			icon(h, "CircleQuestionIcon", { size: 14, className: "mt-0.5 shrink-0 text-muted-foreground" }),
 			h.p([h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")], children),
 		],
 	)

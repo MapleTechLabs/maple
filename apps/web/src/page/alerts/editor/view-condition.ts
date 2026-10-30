@@ -305,7 +305,7 @@ const intervalPicker = (
 							...(isRaw
 								? [
 										h.span(
-											[h.Class("text-[11px] font-normal tabular-nums opacity-80")],
+											[h.Class("text-2xs font-normal tabular-nums opacity-80")],
 											[`${option.limitSeconds} s limit`],
 										),
 									]

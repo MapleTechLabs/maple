@@ -28,7 +28,7 @@ const loadingBody = (h: H): ReadonlyArray<Html> => [
 	skeletonList(h, {
 		rows: SKELETON_ROWS,
 		renderRow: (index) => signalRowSkeleton(h, index),
-		className: "gap-0 divide-y divide-border/40",
+		className: "gap-0 divide-y divide-border/60",
 	}),
 ]
 
@@ -50,13 +50,13 @@ const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => {
 			skeletonList(h, {
 				rows: LOAD_MORE_SKELETON_ROWS,
 				renderRow: (index) => signalRowSkeleton(h, index),
-				className: "gap-0 divide-y divide-border/40 border-t border-border/40",
+				className: "gap-0 divide-y divide-border/60 border-t border-border/60",
 			}),
 		]
 	}
 	return [
 		h.div(
-			[h.Class("flex items-center justify-center gap-3 border-t border-border/40 p-4")],
+			[h.Class("flex items-center justify-center gap-3 border-t border-border/60 p-4")],
 			[
 				...(paging === "failed"
 					? [h.span([h.Class("text-xs text-muted-foreground")], ["Couldn't load more errors."])]
@@ -142,7 +142,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 			[
 				signalHeader(h, selection),
 				h.div(
-					[h.Role("list"), h.Class("divide-y divide-border/40"), h.OnMount(MountRowSelect())],
+					[h.Role("list"), h.Class("divide-y divide-border/60"), h.OnMount(MountRowSelect())],
 					signals.map((signal, index) =>
 						h.div(
 							[h.Key(signal.id), h.Role("listitem")],

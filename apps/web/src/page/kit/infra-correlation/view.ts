@@ -63,7 +63,7 @@ const section = (h: H, model: Model, correlation: InfraCorrelation, timeZone: st
 							h.span([h.Class("text-xs font-medium text-foreground")], [correlation.title]),
 							h.a(
 								[h.Href(correlationHref(correlation)), h.Class(LINK_CLASS)],
-								["View in Infrastructure", icon(h, "ExternalLinkIcon", { size: 11 })],
+								["View in Infrastructure", icon(h, "ExternalLinkIcon", { size: 12 })],
 							),
 						],
 					),

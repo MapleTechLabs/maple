@@ -349,7 +349,7 @@ const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 				[
 					"Open in Sessions",
 					icon(h, "ExternalLinkIcon", {
-						size: 11,
+						size: 12,
 						className: "text-muted-foreground",
 						attributes: [h.AriaHidden(true)],
 					}),

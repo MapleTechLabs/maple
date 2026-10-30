@@ -136,7 +136,7 @@ const resourceRow = (
 		),
 	]
 	const rowClass =
-		"group flex items-start gap-3 border-b border-border/40 px-3 py-2 transition-colors last:border-0"
+		"group flex items-start gap-3 border-b border-border/60 px-3 py-2 transition-colors last:border-0"
 	return zoneLink
 		? h.a(
 				[
@@ -144,7 +144,7 @@ const resourceRow = (
 					h.Class(
 						cn(
 							rowClass,
-							"hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+							"hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
 						),
 					),
 				],
@@ -322,7 +322,7 @@ export const workersCard = (
 		...(aggregate.kind === "issue" || aggregate.kind === "no-data"
 			? [
 					h.div(
-						[h.Class(cn("border-b border-border/40 px-4 py-2 text-2xs", aggregate.detailClass))],
+						[h.Class(cn("border-b border-border/60 px-4 py-2 text-2xs", aggregate.detailClass))],
 						detailView(h, aggregate.detail),
 					),
 				]
@@ -345,7 +345,7 @@ export const workersCard = (
 							h.div(
 								[
 									h.Class(
-										"flex items-center justify-between gap-3 border-b border-border/40 py-2.5 last:border-0",
+										"flex items-center justify-between gap-3 border-b border-border/60 py-2.5 last:border-0",
 									),
 								],
 								[

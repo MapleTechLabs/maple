@@ -287,7 +287,7 @@ const spanCell = (
 		],
 		[
 			icon(h, isErrored ? "CircleXmarkIcon" : CATEGORY_ICON[category], {
-				size: 13,
+				size: 14,
 				className: cn("shrink-0", isErrored ? "text-severity-error" : CATEGORY_TEXT[category]),
 				attributes: [h.AriaHidden(true)],
 			}),

@@ -50,7 +50,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 	const selection = selectionOf(connection, card.selection)
 	return h.form(
 		[
-			h.Class("flex w-full flex-col gap-4 rounded-lg border bg-muted/20 p-3"),
+			h.Class("flex w-full flex-col gap-4 rounded-md border bg-muted/20 p-3"),
 			h.OnSubmit(Message.SubmittedAwsMetrics({ id: connection.id })),
 		],
 		[
@@ -121,7 +121,7 @@ const stepGlyph = (h: H, state: StepState, index: number): Html =>
 		? h.span(
 				[
 					h.Class(
-						"flex size-4 shrink-0 items-center justify-center rounded-full border text-[10px] tabular-nums text-muted-foreground",
+						"flex size-4 shrink-0 items-center justify-center rounded-full border text-3xs tabular-nums text-muted-foreground",
 					),
 				],
 				[String(index + 1)],
@@ -563,7 +563,7 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const waiting = connection.verified_at === null
 	return h.div(
-		[h.Class("mt-2 flex w-full flex-col gap-3 rounded-lg border bg-muted/20 p-3")],
+		[h.Class("mt-2 flex w-full flex-col gap-3 rounded-md border bg-muted/20 p-3")],
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
@@ -594,7 +594,7 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 		.filter((stack) => focusId === null || stack.connectionId === focusId)
 		.map((stack) =>
 			h.div(
-				[h.Class("flex flex-col gap-3 rounded-lg border p-4")],
+				[h.Class("flex flex-col gap-3 rounded-md border p-4")],
 				[
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-2")],

@@ -33,7 +33,7 @@ const quietRunRow = <M>(
 			h.OnClick(onToggle),
 			h.AriaExpanded(item.expanded),
 			h.Class(
-				"flex w-full items-center gap-3 border-b border-border bg-muted/30 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @2xl:gap-4",
+				"flex w-full items-center gap-3 border-b border-border bg-muted/30 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @2xl:gap-4",
 			),
 		],
 		[

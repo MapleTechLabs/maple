@@ -67,7 +67,7 @@ export const metaStrip = (
 								),
 								h.Title(`View trace ${log.traceId}`),
 							],
-							[icon(h, "PulseIcon", { size: 10 }), "trace:", shortId(log.traceId, "trace")],
+							[icon(h, "PulseIcon", { size: 12 }), "trace:", shortId(log.traceId, "trace")],
 						),
 					]
 				: []),

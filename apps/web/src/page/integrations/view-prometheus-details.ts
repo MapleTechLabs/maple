@@ -375,6 +375,6 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 
 const sectionTitle = (h: H, iconName: "PulseIcon" | "ExternalLinkIcon" | "HistoryIcon", text: string): Html =>
 	eyebrow(h, { variant: "label", className: "flex items-center gap-2", as: "div" }, [
-		icon(h, iconName, { size: 13 }),
+		icon(h, iconName, { size: 14 }),
 		text,
 	])

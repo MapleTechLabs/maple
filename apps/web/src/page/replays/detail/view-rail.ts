@@ -165,7 +165,7 @@ const filterButton = (
 			h.Class(
 				cn(
 					"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
-					config.isActive ? config.selected : cn(config.tone, "hover:bg-muted/60"),
+					config.isActive ? config.selected : cn(config.tone, "hover:bg-muted/50"),
 					config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
 				),
 			),
@@ -206,7 +206,7 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 					},
 					[
 						icon(h, EVENT_KIND_VISUALS[filter].icon, {
-							size: 13,
+							size: 14,
 							attributes: [h.AriaHidden(true)],
 						}),
 					],
@@ -226,7 +226,7 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 						h.DataAttribute("base-ui-popover-trigger", ""),
 					],
 				},
-				[icon(h, "CircleInfoIcon", { size: 13 })],
+				[icon(h, "CircleInfoIcon", { size: 14 })],
 			),
 		],
 	)

@@ -119,7 +119,7 @@ const filteredEmpty = (h: H, query: string): Html =>
 		noun: "templates",
 		title: `No template matches “${query.trim()}”`,
 		description: "Try a shorter term. Or start blank and add the widgets you want.",
-		icon: icon(h, "MagnifierIcon", { size: 17 }),
+		icon: icon(h, "MagnifierIcon", { size: 16 }),
 		onClear: Message.ChangedSearchDraft({ value: "" }),
 		clearLabel: "Clear search",
 		className: "py-14",
@@ -131,7 +131,7 @@ const filterHidEverything = (h: H, filter: ReadinessFilter, matched: number, isS
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [
-					icon(h, filter === "ready" ? "CircleWarningIcon" : "CircleCheckIcon", { size: 17 }),
+					icon(h, filter === "ready" ? "CircleWarningIcon" : "CircleCheckIcon", { size: 16 }),
 				]),
 				emptyTitle(h, [
 					filter === "ready" ? "None of these are ready yet" : "These are all ready to use",
@@ -325,7 +325,7 @@ export const templateList = (
 								"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-input border-dashed",
 							),
 						],
-						[icon(h, "PlusIcon", { size: 11, className: "text-muted-foreground" })],
+						[icon(h, "PlusIcon", { size: 12, className: "text-muted-foreground" })],
 					),
 					h.span(
 						[h.Class("flex min-w-0 grow items-baseline gap-2.25")],
@@ -334,7 +334,7 @@ export const templateList = (
 							h.span([h.Class("text-muted-foreground text-2xs")], ["start from nothing"]),
 						],
 					),
-					icon(h, "ArrowRightIcon", { size: 13, className: "text-muted-foreground shrink-0" }),
+					icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 				],
 			),
 		],

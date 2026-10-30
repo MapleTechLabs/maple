@@ -207,7 +207,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 				[h.div([h.Class(cn("h-full rounded-full", TONE_FILL[tone])), h.Style({ width: `${fill * 100}%` })], [])],
 			),
 			h.div(
-				[h.Class("relative h-3 text-[10px] tabular-nums text-muted-foreground"), h.AriaHidden(true)],
+				[h.Class("relative h-3 text-3xs tabular-nums text-muted-foreground"), h.AriaHidden(true)],
 				METER_TICKS.map((tickMs) =>
 					h.span(
 						[

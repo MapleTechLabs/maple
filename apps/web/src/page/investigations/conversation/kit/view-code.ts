@@ -96,7 +96,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string
 	return h.div(
 		[
 			h.Class(
-				"relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2",
+				"relative my-4 flex w-full flex-col gap-2 rounded-md border border-border bg-sidebar p-2",
 			),
 			h.DataAttribute("language", language),
 			h.DataAttribute("streamdown", "code-block"),

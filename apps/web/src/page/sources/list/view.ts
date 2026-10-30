@@ -206,7 +206,7 @@ const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => 
 	const missing = PULL_SOURCE_PLATFORMS.filter((platform: PullSourcePlatform) => !present.has(platform))
 	if (missing.length === 0) return null
 	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-4 py-3")],
+		[h.Class("flex flex-wrap items-center gap-2 rounded-md border border-dashed px-4 py-3")],
 		[
 			h.span([h.Class("text-muted-foreground mr-auto text-xs")], ["Pull more data in without an SDK"]),
 			...missing.map((platform) =>

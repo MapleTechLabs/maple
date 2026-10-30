@@ -44,7 +44,7 @@ const tabLink = <M>(
 			h.Href(options.href),
 		],
 		[
-			icon(h, options.iconName, { size: 13, attributes: [h.AriaHidden(true)] }),
+			icon(h, options.iconName, { size: 14, attributes: [h.AriaHidden(true)] }),
 			options.label,
 			...(options.count === undefined
 				? []

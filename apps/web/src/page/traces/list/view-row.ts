@@ -130,7 +130,7 @@ export const traceRow = (
 				"class",
 				cn(
 					tableRowStyles,
-					state.isActive && "bg-muted/40",
+					state.isActive && "bg-muted/60",
 					"hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),

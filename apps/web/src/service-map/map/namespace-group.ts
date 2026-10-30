@@ -36,8 +36,9 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number, onCollapse: M): H
 						"pointer-events-auto absolute left-2.5 top-2 flex max-w-[calc(100%-1.25rem)] items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-widest",
 					),
 					h.Style({
-						color: `oklch(0.82 0.12 ${hue})`,
-						"background-color": `oklch(0.24 0.04 ${hue} / 0.92)`,
+						// Mixed against the theme so the label reads on the light canvas too.
+						color: `color-mix(in oklab, oklch(0.62 0.14 ${hue}) 70%, var(--foreground))`,
+						"background-color": `color-mix(in oklab, oklch(0.62 0.11 ${hue}) 14%, var(--background))`,
 						"border-color": `oklch(0.66 0.12 ${hue} / 0.4)`,
 					}),
 				],

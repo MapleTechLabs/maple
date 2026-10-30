@@ -124,7 +124,7 @@ export const teamStep = (h: H, team: Team): Html => {
 				[
 					h.AriaLabel("Tools"),
 					h.Class(
-						"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card",
+						"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
 					),
 				],
 				TOOLS.map((tool) => toolRow(h, tool)),
@@ -226,7 +226,7 @@ export const teamPreview = (h: H): Html =>
 			),
 			...SURFACES.map((surface) =>
 				h.div(
-					[h.Class("flex flex-col gap-2.5 rounded-xl border border-border bg-background p-3.5")],
+					[h.Class("flex flex-col gap-2.5 rounded-md border border-border bg-background p-3.5")],
 					[
 						h.div(
 							[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],

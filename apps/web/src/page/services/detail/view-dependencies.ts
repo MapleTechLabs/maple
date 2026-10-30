@@ -115,7 +115,7 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 				latencyValue(h, { ms: row.p95DurationMs, scale: "p95", className: "text-xs" }),
 			),
 		],
-		"cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+		"cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		[
 			h.Key(row.id),
 			h.Attribute("tabindex", "0"),

@@ -47,7 +47,7 @@ const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((
 				h,
 				{
 					dashed: true,
-					className: "flex h-44 w-full items-center justify-center border-border/50 py-0 text-xs",
+					className: "flex h-44 w-full items-center justify-center border-border/60 py-0 text-xs",
 				},
 				["No activity in this window"],
 			)

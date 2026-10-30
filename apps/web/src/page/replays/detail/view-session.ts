@@ -72,7 +72,7 @@ const stat = (h: H, iconName: IconName, label: string, count: number, isDanger =
 		[
 			h.Class(
 				cn(
-					"flex flex-col gap-0.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5",
+					"flex flex-col gap-0.5 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5",
 					isDanger && "border-severity-error/30 bg-severity-error/5",
 				),
 			),
@@ -125,7 +125,7 @@ const summary = (h: H, session: ReplayDetail): Html => {
 			: null
 	const isErrored = session.errorCount > 0
 	return h.section(
-		[h.Class("border-b border-border/40 px-4 py-3.5")],
+		[h.Class("border-b border-border/60 px-4 py-3.5")],
 		[
 			statFigure(h, { value: formatSessionDuration(total), unit: "on the page" }),
 			...(share === null

@@ -164,7 +164,7 @@ const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 						h.span(
 							[
 								h.Class(
-									"ml-0.5 whitespace-nowrap text-[10px] font-normal text-muted-foreground/70",
+									"ml-0.5 whitespace-nowrap text-3xs font-normal text-muted-foreground/70",
 								),
 							],
 							[column.subLabel],
@@ -245,7 +245,7 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						],
 						[
 							icon(h, vendorIcon(row.vendorId), {
-								size: 15,
+								size: 16,
 								style: { color: vendorColor(row.vendorId) },
 								attributes: [h.AriaHidden(true)],
 							}),

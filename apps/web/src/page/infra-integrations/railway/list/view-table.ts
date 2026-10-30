@@ -82,7 +82,10 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 				[
 					"paused",
 					...(sync.lastSyncedAt !== null
-						? [" · last data ", relativeTime(h, { tooltip: "title", value: sync.lastSyncedAt, ...clock })]
+						? [
+								" · last data ",
+								relativeTime(h, { tooltip: "title", value: sync.lastSyncedAt, ...clock }),
+							]
 						: []),
 				],
 			)
@@ -203,7 +206,7 @@ export const railwayTable = (h: H, inputs: RailwayTableInputs): Html =>
 			h.div(
 				[
 					h.Class(
-						"flex items-center gap-2.5 border-b border-border/40 bg-muted/30 px-4 py-2 font-mono text-2xs",
+						"flex items-center gap-2.5 border-b border-border/60 bg-muted/30 px-4 py-2 font-mono text-2xs",
 					),
 				],
 				[

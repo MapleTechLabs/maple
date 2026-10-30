@@ -185,14 +185,14 @@ const sampleRow = (
 		[
 			h.Key(row.spanId),
 			h.DataAttribute("slot", "tool-error-sample"),
-			h.Class("border-b border-border/50"),
+			h.Class("border-b border-border/60"),
 		],
 		[
 			h.div(
 				[
 					h.Class(
 						cn(
-							"group relative flex w-full items-center gap-3.5 px-6 font-mono transition-colors hover:bg-muted/30",
+							"group relative flex w-full items-center gap-3.5 px-6 font-mono transition-colors hover:bg-muted/50",
 							options.isOpen ? "h-11" : "h-10",
 						),
 					),
@@ -253,7 +253,7 @@ const sampleRow = (
 											"hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-muted-foreground/70 md:block",
 										),
 									],
-									["variant ", h.span([h.Class("text-foreground/85")], [options.variant])],
+									["variant ", h.span([h.Class("text-foreground/80")], [options.variant])],
 								),
 							]),
 					h.span([h.Class("grow")], []),
@@ -270,7 +270,7 @@ const sampleRow = (
 								),
 							]),
 					h.span(
-						[h.Class("w-12 shrink-0 text-right text-xs tabular-nums text-foreground/85")],
+						[h.Class("w-12 shrink-0 text-right text-xs tabular-nums text-foreground/80")],
 						[formatDurationNs(row.durationNs)],
 					),
 					h.a(
@@ -290,7 +290,7 @@ const sampleRow = (
 						],
 						[
 							"Open trace",
-							icon(h, "ExternalLinkIcon", { size: 11, attributes: [h.AriaHidden(true)] }),
+							icon(h, "ExternalLinkIcon", { size: 12, attributes: [h.AriaHidden(true)] }),
 						],
 					),
 				],

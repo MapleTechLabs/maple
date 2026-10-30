@@ -142,7 +142,7 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 							[
 								h.Key(query.queryId),
 								h.Class(
-									"flex items-start gap-3 border-t border-border/40 px-4 py-2.5 first:border-t-0",
+									"flex items-start gap-3 border-t border-border/60 px-4 py-2.5 first:border-t-0",
 								),
 							],
 							[

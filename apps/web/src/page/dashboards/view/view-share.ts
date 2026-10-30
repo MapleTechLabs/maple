@@ -20,8 +20,18 @@ type H = HtmlBuilder<Message>
 const wrap = (message: ShareMessage) => Message.GotShareMessage({ message })
 
 const ACCESS: ReadonlyArray<Readonly<{ value: Access; icon: IconName; title: string; body: string }>> = [
-	{ value: "off", icon: "LockIcon", title: "Not shared", body: "Only members of this organization with access to Maple can see it." },
-	{ value: "org", icon: "ShieldIcon", title: "Anyone in this organization", body: "Signed-in members of this organization can open the link." },
+	{
+		value: "off",
+		icon: "LockIcon",
+		title: "Not shared",
+		body: "Only members of this organization with access to Maple can see it.",
+	},
+	{
+		value: "org",
+		icon: "ShieldIcon",
+		title: "Anyone in this organization",
+		body: "Signed-in members of this organization can open the link.",
+	},
 	{
 		value: "public",
 		icon: "GlobeIcon",
@@ -33,12 +43,27 @@ const ACCESS: ReadonlyArray<Readonly<{ value: Access; icon: IconName; title: str
 /** `NoticeRow`: a muted (or error) line with the warning glyph. */
 export const noticeRow = (h: H, tone: "muted" | "error", children: ReadonlyArray<Html | string>): Html =>
 	h.div(
-		[h.Class(cn("flex items-start gap-2 text-xs leading-relaxed", tone === "error" ? TONE_TEXT.crit : "text-muted-foreground"))],
-		[icon(h, "CircleWarningIcon", { size: 13, className: "mt-0.5 shrink-0" }), h.p([h.Class("min-w-0")], children)],
+		[
+			h.Class(
+				cn(
+					"flex items-start gap-2 text-xs leading-relaxed",
+					tone === "error" ? TONE_TEXT.crit : "text-muted-foreground",
+				),
+			),
+		],
+		[
+			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0" }),
+			h.p([h.Class("min-w-0")], children),
+		],
 	)
 
 /** `ShareLinkRow`: the copyable link, and Replace behind a confirmation. */
-export const shareLinkRow = (h: H, model: Model, url: string, replaceWarning: string): ReadonlyArray<Html> => [
+export const shareLinkRow = (
+	h: H,
+	model: Model,
+	url: string,
+	replaceWarning: string,
+): ReadonlyArray<Html> => [
 	h.div(
 		[h.Class("flex items-center gap-2")],
 		[
@@ -54,10 +79,15 @@ export const shareLinkRow = (h: H, model: Model, url: string, replaceWarning: st
 					}),
 				],
 			),
-			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(wrap(ShareMessage.ClickedReplace()))] }, [
-				icon(h, "ArrowRotateClockwiseIcon"),
-				"Replace",
-			]),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					attributes: [h.OnClick(wrap(ShareMessage.ClickedReplace()))],
+				},
+				[icon(h, "ArrowRotateClockwiseIcon"), "Replace"],
+			),
 		],
 	),
 	confirmDialog(h, {
@@ -72,7 +102,11 @@ export const shareLinkRow = (h: H, model: Model, url: string, replaceWarning: st
 	}),
 ]
 
-const accessOption = (h: H, config: RadioGroup.RadioGroupViewConfig<Message>, option: (typeof ACCESS)[number]): Html =>
+const accessOption = (
+	h: H,
+	config: RadioGroup.RadioGroupViewConfig<Message>,
+	option: (typeof ACCESS)[number],
+): Html =>
 	h.label(
 		[
 			h.For(`share-${option.value}`),
@@ -83,8 +117,9 @@ const accessOption = (h: H, config: RadioGroup.RadioGroupViewConfig<Message>, op
 		],
 		[
 			icon(h, option.icon, {
-				size: 15,
-				className: "mt-0.5 shrink-0 text-muted-foreground transition-colors group-has-[[data-checked]]:text-primary",
+				size: 16,
+				className:
+					"mt-0.5 shrink-0 text-muted-foreground transition-colors group-has-[[data-checked]]:text-primary",
 			}),
 			h.div(
 				[h.Class("min-w-0 flex-1 space-y-0.5")],
@@ -104,7 +139,11 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(model.sharing.pendingAccess ?? serverAccess),
 		toParentMessage: (message) => wrap(ShareMessage.GotAccessMessage({ message })),
-		items: ACCESS.map((option) => ({ value: option.value, id: `share-${option.value}-radio`, inputId: `share-${option.value}` })),
+		items: ACCESS.map((option) => ({
+			value: option.value,
+			id: `share-${option.value}-radio`,
+			inputId: `share-${option.value}`,
+		})),
 	}
 	const unsupported = unsupportedShareWidgets(model.document?.widgets ?? [])
 	return [
@@ -124,7 +163,9 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 		...(unsupported.length > 0 && boardShare !== undefined
 			? [
 					noticeRow(h, "muted", [
-						unsupported.length === 1 ? "1 widget won't render for viewers" : `${unsupported.length} widgets won't render for viewers`,
+						unsupported.length === 1
+							? "1 widget won't render for viewers"
+							: `${unsupported.length} widgets won't render for viewers`,
 						": ",
 						unsupported.map((widget) => widget.title).join(", "),
 						". Shared views support",
@@ -154,10 +195,17 @@ export const shareDialog = (h: H, model: Model): Html => {
 			toContent: (close) => [
 				DialogView.dialogHeader(h, "dialog", [
 					DialogView.dialogTitle(h, "dialog", id, "Share dashboard"),
-					DialogView.dialogDescription(h, "dialog", id, "Anyone you share with sees this dashboard's data, but cannot edit it."),
+					DialogView.dialogDescription(
+						h,
+						"dialog",
+						id,
+						"Anyone you share with sees this dashboard's data, but cannot edit it.",
+					),
 				]),
 				DialogView.dialogPanel(h, "dialog", id, panelContent(h, model), "space-y-4"),
-				DialogView.dialogFooter(h, "dialog", [button(h, { variant: "outline", attributes: close }, ["Done"])]),
+				DialogView.dialogFooter(h, "dialog", [
+					button(h, { variant: "outline", attributes: close }, ["Done"]),
+				]),
 			],
 		},
 	})

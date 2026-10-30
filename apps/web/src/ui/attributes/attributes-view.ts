@@ -151,10 +151,10 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 							key: `${options.section}:${group.namespace}`,
 							defaultOpen: group.entries.length <= 8 || query !== "",
 							triggerClassName:
-								"group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground",
+								"group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground",
 							trigger: [
 								icon(h, "ChevronRightIcon", {
-									size: 11,
+									size: 12,
 									className: "transition-transform group-data-[panel-open]:rotate-90",
 								}),
 								h.span(
@@ -169,7 +169,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 								h.div(
 									[
 										h.Class(
-											"divide-y divide-border/40 border-t border-border/60 bg-muted/15",
+											"divide-y divide-border/60 border-t border-border/60 bg-muted/15",
 										),
 									],
 									group.entries.map(([key, value]) =>

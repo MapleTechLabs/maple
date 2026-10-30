@@ -243,7 +243,7 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 				[
 					eyebrow(h, {}, ["Included every cycle"]),
 					h.p(
-						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground/85")],
+						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground/80")],
 						[included.length > 0 ? included : "Allotments are set on your contract."],
 					),
 				],
@@ -312,7 +312,7 @@ const offerPanel = (
 				[
 					eyebrow(h, {}, ["Included every cycle"]),
 					h.p(
-						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground/85")],
+						[h.Class("mt-2 font-mono text-2xs leading-relaxed text-foreground/80")],
 						[
 							includedRun(plan),
 							...(retention === undefined
@@ -484,7 +484,7 @@ export const planSection = (
 					},
 					[
 						"Compare plans",
-						icon(h, "ArrowRightIcon", { className: "size-3", attributes: [h.AriaHidden(true)] }),
+						icon(h, "ArrowRightIcon", { className: "size-3.5", attributes: [h.AriaHidden(true)] }),
 					],
 				),
 			}),

@@ -200,7 +200,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 		],
 		cn(
 			"flex flex-col transition-colors",
-			isActive && "bg-muted/40",
+			isActive && "bg-muted/60",
 			isUpgrade && "bg-muted/30 ring-1 ring-primary/30",
 		),
 	)

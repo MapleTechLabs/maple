@@ -35,7 +35,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 		[
 			h.Class(
 				cn(
-					"mx-3 my-2 rounded-lg border border-severity-error/25 bg-severity-error/4 px-3 py-2.5",
+					"mx-3 my-2 rounded-md border border-severity-error/25 bg-severity-error/4 px-3 py-2.5",
 					input.className,
 				),
 			),

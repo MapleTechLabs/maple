@@ -231,7 +231,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 						[
 							"View all",
 							icon(h, "ArrowRightIcon", {
-								className: "size-3",
+								className: "size-3.5",
 								attributes: [h.AriaHidden(true)],
 							}),
 						],

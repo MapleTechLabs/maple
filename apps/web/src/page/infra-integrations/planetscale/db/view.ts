@@ -255,7 +255,7 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model))
 	if (chips.length === 0) return []
 	const chipClass =
-		"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
+		"inline-flex items-center gap-1 rounded-sm border border-border/60 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
 	return [
 		h.div(
 			[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],

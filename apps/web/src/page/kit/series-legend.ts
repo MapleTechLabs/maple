@@ -19,7 +19,7 @@ const VARIANTS = {
 		item: "inline-flex min-w-0 items-baseline gap-1.5",
 		dot: "size-1.5 translate-y-[-1px]",
 		label: "max-w-[24ch] truncate text-2xs text-muted-foreground",
-		value: "font-mono text-2xs text-foreground/85 tabular-nums",
+		value: "font-mono text-2xs text-foreground/80 tabular-nums",
 	},
 	chip: {
 		root: "flex flex-wrap items-center gap-2",

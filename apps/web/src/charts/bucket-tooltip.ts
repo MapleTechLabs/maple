@@ -16,7 +16,7 @@ export const bucketTooltipBody = <Message>(
 		[h.Class("grid min-w-[9rem] max-w-[22rem] items-start gap-1.5"), portal],
 		[
 			h.div(
-				[h.Class("border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
+				[h.Class("border-border/60 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
 				[tooltip.heading],
 			),
 			h.div(
@@ -72,10 +72,17 @@ export const bucketTooltipBody = <Message>(
 				? []
 				: [
 						h.div(
-							[h.Class("flex items-center justify-between gap-3 border-border/50 border-t pt-1.5 leading-none")],
+							[
+								h.Class(
+									"flex items-center justify-between gap-3 border-border/60 border-t pt-1.5 leading-none",
+								),
+							],
 							[
 								h.span([h.Class("text-muted-foreground")], ["Total"]),
-								h.span([h.Class("font-mono font-semibold text-foreground tabular-nums")], [tooltip.total]),
+								h.span(
+									[h.Class("font-mono font-semibold text-foreground tabular-nums")],
+									[tooltip.total],
+								),
 							],
 						),
 					]),

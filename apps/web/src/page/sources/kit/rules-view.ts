@@ -63,7 +63,7 @@ const signalCard = <P>(
 			h.Class(
 				cn(
 					"flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 transition-colors",
-					isChecked ? "border-primary/60 bg-primary/[0.06]" : "hover:bg-muted/30",
+					isChecked ? "border-primary/60 bg-primary/[0.06]" : "hover:bg-muted/50",
 				),
 			),
 		],

@@ -204,5 +204,5 @@ const linkedIssueChip = <M>(h: HtmlBuilder<M>, issueId: ErrorIssueId): Html =>
 			h.Href(hrefOf(AppRoute.ErrorIssue({ issueId, search: {} }))),
 			h.Title("Open linked issue"),
 		],
-		[icon(h, "LinkIcon", { size: 11 }), shortIssueId(issueId)],
+		[icon(h, "LinkIcon", { size: 12 }), shortIssueId(issueId)],
 	)

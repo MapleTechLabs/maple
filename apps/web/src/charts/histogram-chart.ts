@@ -87,7 +87,7 @@ export const countTooltipBody = (
 		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
 		[
 			h.div(
-				[h.Class("border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
+				[h.Class("border-border/60 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
 				[heading],
 			),
 			h.div(

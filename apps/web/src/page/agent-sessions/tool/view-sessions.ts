@@ -39,7 +39,7 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 		[
 			h.Key(session.sessionId),
 			h.Class(
-				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none",
+				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
 			),
 			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
 			h.Href(
@@ -168,7 +168,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 						[
 							"Open in Sessions",
 							icon(h, "ExternalLinkIcon", {
-								size: 11,
+								size: 12,
 								className: "text-muted-foreground",
 								attributes: [h.AriaHidden(true)],
 							}),
