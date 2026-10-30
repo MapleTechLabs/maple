@@ -277,6 +277,9 @@ describe("rawSqlIssue org filter placement", () => {
 		"WITH f AS (SELECT 'org_abc' AS OrgId) SELECT * FROM traces t JOIN f ON 1 = 1 WHERE $__orgFilter(f)",
 		"SELECT * FROM traces t JOIN numbers(1) n ON 1 = 1 WHERE $__orgFilter(n)",
 		"SELECT * FROM traces t WHERE $__orgFilter(x)",
+		// An unaliased first table must not let a joined subquery's alias bind.
+		"SELECT * FROM traces JOIN (SELECT 'org_abc' AS OrgId) f ON 1 = 1 WHERE $__orgFilter(f)",
+		"SELECT * FROM traces CROSS JOIN (SELECT 'org_abc' AS OrgId) f WHERE $__orgFilter(f)",
 	])("rejects an alias that is not a table read in FROM/JOIN: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.message).toContain("must name a table read in FROM or JOIN")
 	})
@@ -286,6 +289,8 @@ describe("rawSqlIssue org filter placement", () => {
 		"SELECT 1 FROM traces WHERE $__orgFilter(traces)",
 		"SELECT 1 FROM maple.traces t FINAL WHERE $__orgFilter(t)",
 		"SELECT 1 FROM traces t LEFT JOIN logs AS l ON t.TraceId = l.TraceId WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces JOIN logs l ON traces.TraceId = l.TraceId WHERE $__orgFilter(traces) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces FINAL JOIN logs l ON traces.TraceId = l.TraceId WHERE $__orgFilter(traces) AND $__orgFilter(l)",
 	])("accepts an alias bound to a table: %s", (sql) => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})
