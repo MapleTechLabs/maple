@@ -64,6 +64,7 @@ import { withToolTranscript } from "@/chat/close-out"
 import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS } from "@/chat/permissions"
 import { normalizeArguments, argumentWarnings } from "@/mcp/lib/decode-issues"
 import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
+import { makeChildFindings } from "@/chat/review-child-findings"
 import { makeReviewCoverage } from "@/chat/review-coverage"
 import { makeReviewLedger } from "@/chat/review-ledger"
 import { runChatTurn, type SettledChild } from "@/chat/run"
@@ -1045,7 +1046,11 @@ export const reviewLocally = async (
 	}
 
 	// Shared by the pass and its close-out, as in production.
-	const reviewState = { coverage: makeReviewCoverage(kickoff), ledger: makeReviewLedger() }
+	const reviewState = {
+		coverage: makeReviewCoverage(kickoff),
+		ledger: makeReviewLedger(),
+		childFindings: makeChildFindings(),
+	}
 	const pass = (turn: {
 		readonly text: string
 		readonly history: ReadonlyArray<ChatMessage>
