@@ -2,10 +2,9 @@ import { skeleton, skeletonList } from "@maple/web/ui/skeleton"
 import { traceIdBadge } from "@maple/web/ui/trace-badges"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyState } from "../kit/view-states"
-import type { Message } from "./message"
 
 /** `TraceDetailLoading`: shaped like the loaded page (strip, spectrum bar, waterfall rows). */
-export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
+export const traceDetailLoading = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("space-y-4 p-4")],
 		[
@@ -14,7 +13,10 @@ export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 				[
 					skeleton(h, "h-8 w-32"),
 					skeleton(h, "h-1.5 w-full rounded-full"),
-					h.div([h.Class("flex gap-4")], [skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")]),
+					h.div(
+						[h.Class("flex gap-4")],
+						[skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")],
+					),
 				],
 			),
 			skeletonList(h, {
@@ -38,7 +40,7 @@ export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 	)
 
 /** No spans for this id: outside retention, or not arrived yet. */
-export const traceNotFound = (h: HtmlBuilder<Message>, traceId: string): Html =>
+export const traceNotFound = <M>(h: HtmlBuilder<M>, traceId: string): Html =>
 	emptyState(h, {
 		title: "Trace not found",
 		hint: ["It may be outside the store's retention, or its spans have not arrived yet."],

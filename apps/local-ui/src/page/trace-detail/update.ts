@@ -1,128 +1,136 @@
-import * as Timeline from "@maple/web/page/traces/detail/timeline"
 import type { TraceData } from "@maple/web/page/traces/detail/trace-data"
-import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
 import * as TraceFlow from "@maple/web/service-map/trace-flow/trace-flow"
-import * as Tabs from "@maple/web/ui/tabs"
 import { Option, Result } from "effect"
-import { AsyncData, Command, type Update } from "foldkit"
+import { AsyncData, Update } from "foldkit"
+import { initAndSet } from "foldkit/bindingInit"
 import type { Cached } from "../../data/cached"
 import { accept, acceptCached, idle, keyOf, request } from "../../data/slot"
 import type { LoadFailure } from "../../data/local-query"
-import type { Resources } from "../../platform/resources"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams } from "../contract"
-import { FetchTrace } from "./command"
-import { Message } from "./message"
+import { FetchTrace, type TraceDetailCommand } from "./command"
+import {
+	LogSheetBinding,
+	PanelAttributesBinding,
+	PanelTabsBinding,
+	TabsBinding,
+	TraceDetailComposition,
+} from "./composition"
+import { makeFieldsStep, makeNoopStep, makeStep } from "./definition"
+import type { Message } from "./message"
 import type { Model } from "./model"
-import { enterTab, selectedSpanOf, selectInTab, TAB_VALUES, viewOf } from "./tabs"
+import { PANEL_ATTRIBUTES_ID } from "./panel-model"
+import { enterTabStep, selectInTabStep } from "./tabs"
 import { initPanel, refetchPanel, updatePanel } from "./update-panel"
+import { isTraceView, selectedSpanOf, viewOf } from "./views"
 
-export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
+type PageResult = Readonly<{
+	model: Model
+	commands?: ReadonlyArray<TraceDetailCommand>
+	outMessage?: PageOutMessage
+}>
 
 /** `TraceViewTabs`' default colour-by. */
 const DEFAULT_COLOR_BY = "service"
 
 const traceKey = (traceId: string) => keyOf("trace", { traceId })
 
-/** Runs `then` on the first step's Model, keeping both steps' Commands and the later OutMessage. */
-export const chain = (first: UpdateReturn, then: (model: Model) => UpdateReturn): UpdateReturn => {
-	const second = then(first.model)
-	return {
-		model: second.model,
-		commands: [...(first.commands ?? []), ...(second.commands ?? [])],
-		outMessage: second.outMessage ?? first.outMessage,
-	}
-}
-
 export const loadedTrace = (model: Model) => Option.flatten(AsyncData.getData(model.trace.data))
 
 /** A filter-style hash change: replace the entry with the new params. */
-export const setParams = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
+const setParams = (
+	model: Model,
+	context: PageContext,
+	updates: Record<string, string | null>,
+): PageResult => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
 
+/** No panel: its log sheet goes with it. */
+const closePanelStep = makeFieldsStep(() => ({ panel: () => null, panelLogSheet: () => Option.none() }))
+
 /** The span panel follows the hash's `spanId`; a new selection mounts a new panel. */
-const syncPanel = (model: Model, context: PageContext): UpdateReturn =>
-	Option.match(loadedTrace(model), {
-		onNone: () => ({ model: { ...model, panel: null } }),
-		onSome: (trace) => {
-			const span = selectedSpanOf(trace, context)
-			if (span === undefined) return { model: { ...model, panel: null } }
-			if (model.panel !== null && model.panel.span.spanId === span.spanId) return { model }
-			const next = initPanel(span, context.env.apiBase)
+const syncPanelStep = (context: PageContext) =>
+	makeStep((model: Model) => {
+		const maybeTrace = loadedTrace(model)
+		if (Option.isNone(maybeTrace)) return closePanelStep
+		const span = selectedSpanOf(maybeTrace.value, context)
+		if (span === undefined) return closePanelStep
+		if (model.panel !== null && model.panel.span.spanId === span.spanId) return makeNoopStep()
+		const next = initPanel(span, context.env.apiBase)
+		return Update.combineSteps([
+			makeStep((current: Model) => ({
+				model: { ...current, panel: next.panel, panelLogSheet: Option.none() },
+				commands: next.commands ?? [],
+			})),
 			// The panel component stays mounted across selections, so its tab does too.
-			const panel = model.panel === null ? next.panel : { ...next.panel, tabs: model.panel.tabs }
-			return { model: { ...model, panel }, commands: next.commands }
-		},
+			model.panel === null ? PanelTabsBinding.requestReset({ selected: "details" }) : makeNoopStep(),
+			makeStep((current: Model) =>
+				initAndSet(PanelAttributesBinding, current, { args: [PANEL_ATTRIBUTES_ID] }),
+			),
+		])
 	})
 
 /** A loaded trace mounts the hash's tab and, with a `spanId`, the span panel. */
-const onLoaded = (model: Model, context: PageContext): UpdateReturn =>
-	Option.match(loadedTrace(model), {
-		onNone: () => ({ model: { ...model, timeline: null, waterfall: null, flow: null, panel: null } }),
-		onSome: (trace) => {
-			const tab = enterTab(model, trace, viewOf(context), selectedSpanOf(trace, context)?.spanId ?? null)
-			return chain(tab, (next) => syncPanel(next, context))
-		},
-	})
-
-export const init = (
-	context: PageContext,
-	traceId: string,
-): Readonly<{ model: Model; commands: Commands }> => {
-	const key = traceKey(traceId)
-	return {
-		model: {
-			_tag: "TraceDetailPage",
-			traceId,
-			trace: { ...idle(), key, data: AsyncData.Loading() },
-			traceUpdatedAtMs: 0,
-			isRefreshing: false,
-			tabs: Tabs.init({ idBase: 23, values: TAB_VALUES, selected: viewOf(context) }),
-			colorBy: DEFAULT_COLOR_BY,
-			timeline: null,
-			waterfall: null,
-			flow: null,
-			panel: null,
-			pointer: null,
-		},
-		commands: [FetchTrace({ key, traceId, apiBase: context.env.apiBase, readsCache: true })],
-	}
-}
+const onLoadedStep = (context: PageContext) =>
+	makeStep((model: Model) =>
+		Option.match(loadedTrace(model), {
+			onNone: () =>
+				Update.combineSteps([
+					makeFieldsStep(() => ({
+						timeline: () => Option.none(),
+						waterfall: () => Option.none(),
+						flow: () => null,
+					})),
+					closePanelStep,
+				]),
+			onSome: (trace) =>
+				Update.combineSteps([
+					enterTabStep(trace, viewOf(context), selectedSpanOf(trace, context)?.spanId ?? null),
+					syncPanelStep(context),
+				]),
+		}),
+	)
 
 /** The hash changed: a new `view` swaps the tab, a new `spanId` the selection and the panel. */
-export const locationChanged = (model: Model, context: PageContext): UpdateReturn =>
-	Option.match(loadedTrace(model), {
-		onNone: () => ({ model: { ...model, tabs: { ...model.tabs, selected: viewOf(context) } } }),
-		onSome: (trace) => {
-			const view = viewOf(context)
-			const spanId = selectedSpanOf(trace, context)?.spanId ?? null
-			const previousSpanId = model.panel?.span.spanId ?? null
-			const tabbed =
-				model.tabs.selected !== view
-					? enterTab(model, trace, view, spanId)
-					: previousSpanId !== spanId
-						? selectInTab(model, spanId)
-						: { model }
-			return chain(tabbed, (next) => syncPanel(next, context))
-		},
-	})
+const locationChangedStep = (context: PageContext) =>
+	makeStep((model: Model) =>
+		Option.match(loadedTrace(model), {
+			onNone: () => TabsBinding.informOfSelection({ value: viewOf(context) }),
+			onSome: (trace) => {
+				const view = viewOf(context)
+				const spanId = selectedSpanOf(trace, context)?.spanId ?? null
+				const previousSpanId = model.panel?.span.spanId ?? null
+				const tabbed =
+					model.tabs.selected !== view
+						? enterTabStep(trace, view, spanId)
+						: previousSpanId !== spanId
+							? selectInTabStep(spanId)
+							: makeNoopStep()
+				return Update.combineSteps([tabbed, syncPanelStep(context)])
+			},
+		}),
+	)
 
 /** `onSelectSpan`: the span goes in the hash; re-selecting the selected span changes nothing. */
-const selectSpan = (model: Model, context: PageContext, spanId: string): UpdateReturn =>
+const selectSpan = (model: Model, context: PageContext, spanId: string): PageResult =>
 	queryOf(context.location).get("spanId") === spanId ? { model } : setParams(model, context, { spanId })
 
 /** `RefreshButton` without `advance`: `invalidateQueries(["local"])` refetches the trace in place. */
-const refresh = (model: Model, context: PageContext): UpdateReturn => {
+const refresh = (model: Model, context: PageContext): PageResult => {
 	if (model.isRefreshing || model.trace.key === null) return { model }
 	const trace = Option.getOrElse(request(model.trace, model.trace.key, true), () => model.trace)
 	const panel = model.panel === null ? null : refetchPanel(model.panel, context.env.apiBase)
 	return {
 		model: { ...model, trace, isRefreshing: true, panel: panel === null ? null : panel.panel },
 		commands: [
-			FetchTrace({ key: model.trace.key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false }),
+			FetchTrace({
+				key: model.trace.key,
+				traceId: model.traceId,
+				apiBase: context.env.apiBase,
+				readsCache: false,
+			}),
 			...(panel?.commands ?? []),
 		],
 		outMessage: PageOutMessage.RefetchedInPlace(),
@@ -130,126 +138,170 @@ const refresh = (model: Model, context: PageContext): UpdateReturn => {
 }
 
 /** `onBack`: history back, else the list with the detail-only params dropped. */
-const back = (model: Model, context: PageContext): UpdateReturn => {
+const back = (model: Model, context: PageContext): PageResult => {
 	const query = queryOf(context.location)
 	query.delete("spanId")
 	query.delete("view")
 	const search = query.toString()
-	return { model, outMessage: PageOutMessage.RequestedBack({ fallbackHash: `#/traces${search ? `?${search}` : ""}` }) }
+	return {
+		model,
+		outMessage: PageOutMessage.RequestedBack({ fallbackHash: `#/traces${search ? `?${search}` : ""}` }),
+	}
 }
 
 /** The cache answered first: show it (a first load mounts the tab and panel), then fetch unless fresh. */
-const settleCached = (model: Model, context: PageContext, key: string, cached: Cached<Option.Option<TraceData>>): UpdateReturn => {
-	if (model.trace.key !== key) return { model }
-	const next: Model = { ...model, trace: acceptCached(model.trace, key, cached, cached.isFresh), traceUpdatedAtMs: cached.updatedAtMs }
-	const fetch: Commands = cached.isFresh ? [] : [FetchTrace({ key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false })]
-	return chain({ model: next, commands: fetch }, (loaded) => onLoaded(loaded, context))
-}
+const settleCachedStep = (context: PageContext, key: string, cached: Cached<Option.Option<TraceData>>) =>
+	makeStep((model: Model) => {
+		if (model.trace.key !== key) return makeNoopStep()
+		const fetch = cached.isFresh
+			? []
+			: [FetchTrace({ key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false })]
+		return Update.combineSteps([
+			makeStep((current: Model) => ({
+				model: {
+					...current,
+					trace: acceptCached(current.trace, key, cached, cached.isFresh),
+					traceUpdatedAtMs: cached.updatedAtMs,
+				},
+				commands: fetch,
+			})),
+			onLoadedStep(context),
+		])
+	})
 
 /** Spans and duration identify a result; a refetch that changes them rebuilds the tab like legacy's re-render. */
 const traceSignature = (trace: Option.Option<TraceData>): string =>
 	Option.match(trace, {
 		onNone: () => "none",
-		onSome: (t) => `${t.totalDurationMs}|${t.rootSpans.map((s) => s.spanId).join(",")}|${t.spans.map((s) => s.spanId).join(",")}`,
+		onSome: (t) =>
+			`${t.totalDurationMs}|${t.rootSpans.map((s) => s.spanId).join(",")}|${t.spans.map((s) => s.spanId).join(",")}`,
 	})
-const sameTrace = (a: Option.Option<TraceData>, b: Option.Option<TraceData>) => traceSignature(a) === traceSignature(b)
+const sameTrace = (a: Option.Option<TraceData>, b: Option.Option<TraceData>) =>
+	traceSignature(a) === traceSignature(b)
 
 /** The trace answered: a first load mounts the tab and panel; a refetch keeps them unless the trace changed. */
-const settleTrace = (model: Model, context: PageContext, key: string, result: Result.Result<Option.Option<TraceData>, LoadFailure>, fetchedAtMs: number): UpdateReturn => {
-	if (model.trace.key !== key) return { model }
-	const hadData = Option.isSome(AsyncData.getData(model.trace.data))
-	const next: Model = {
-		...model,
-		trace: accept(model.trace, key, result, Result.isSuccess(result) ? fetchedAtMs : null),
-		traceUpdatedAtMs: Result.isSuccess(result) ? fetchedAtMs : model.traceUpdatedAtMs,
-		isRefreshing: false,
-	}
-	const changed = Result.isSuccess(result) && !sameTrace(loadedTrace(model), loadedTrace(next))
-	return hadData && !changed ? { model: next } : onLoaded(next, context)
-}
+const settleTraceStep = (
+	context: PageContext,
+	key: string,
+	result: Result.Result<Option.Option<TraceData>, LoadFailure>,
+	fetchedAtMs: number,
+) =>
+	makeStep((model: Model) => {
+		if (model.trace.key !== key) return makeNoopStep()
+		const hadData = Option.isSome(AsyncData.getData(model.trace.data))
+		const next: Model = {
+			...model,
+			trace: accept(model.trace, key, result, Result.isSuccess(result) ? fetchedAtMs : null),
+			traceUpdatedAtMs: Result.isSuccess(result) ? fetchedAtMs : model.traceUpdatedAtMs,
+			isRefreshing: false,
+		}
+		const changed = Result.isSuccess(result) && !sameTrace(loadedTrace(model), loadedTrace(next))
+		const settled = makeFieldsStep(() => ({
+			trace: () => next.trace,
+			traceUpdatedAtMs: () => next.traceUpdatedAtMs,
+			isRefreshing: () => false,
+		}))
+		return hadData && !changed ? settled : Update.combineSteps([settled, onLoadedStep(context)])
+	})
 
-const panelStep = (model: Model, context: PageContext, message: Message): UpdateReturn => {
+/** A panel Message: the panel's own fields, then closing it or selecting another span. */
+const panelStep = (model: Model, context: PageContext, message: Message): PageResult => {
 	if (model.panel === null) return { model }
 	const next = updatePanel(model.panel, message)
-	const stepped: UpdateReturn = { model: { ...model, panel: next.panel }, commands: next.commands }
+	const stepped: Model = { ...model, panel: next.panel }
+	const commands = next.commands ?? []
 	const outcome = next.outcome
-	if (outcome === undefined || outcome._tag === "None") return stepped
-	if (outcome._tag === "Close") return chain(stepped, (m) => setParams(m, context, { spanId: null }))
-	return chain(stepped, (m) => selectSpan(m, context, outcome.spanId))
+	if (outcome === undefined || outcome._tag === "None") return { model: stepped, commands }
+	const asked =
+		outcome._tag === "Close"
+			? setParams(stepped, context, { spanId: null })
+			: selectSpan(stepped, context, outcome.spanId)
+	return { ...asked, commands }
 }
 
-export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		FoundCachedTrace: ({ key, cached }) => settleCached(model, context, key, cached),
-		SucceededFetchTrace: ({ key, trace, fetchedAtMs }) => settleTrace(model, context, key, Result.succeed(trace), fetchedAtMs),
-		FailedFetchTrace: ({ key, failure }) => settleTrace(model, context, key, Result.fail(failure), 0),
-		ClickedBack: () => back(model, context),
-		ClickedRefresh: () => refresh(model, context),
-		// Escape closes the span panel.
-		PressedEscape: () => (model.panel === null ? { model } : setParams(model, context, { spanId: null })),
-		MovedPointer: ({ x, y }) => ({ model: { ...model, pointer: { x, y } } }),
-		GotTabsMessage: ({ message: child }) => {
-			const next = Tabs.update(model.tabs, child)
-			const lifted: UpdateReturn = {
-				model: { ...model, tabs: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tab) => Message.GotTabsMessage({ message: tab })),
-			}
-			const view = TAB_VALUES.find((value) => value === next.model.selected)
-			return view === undefined || view === model.tabs.selected
-				? lifted
-				: chain(lifted, (m) => setParams({ ...m, tabs: model.tabs }, context, { view: view === "timeline" ? null : view }))
+/** The flow canvas's own update; a node click selects its span. */
+const flowStep = (model: Model, context: PageContext, child: TraceFlow.Message): PageResult => {
+	if (model.flow === null) return { model }
+	const stepped = TraceFlow.update(model.flow.graph)(model.flow.model, child)
+	// Handles stay measured at the unfitted zoom (exact positions): legacy's re-measure at the
+	// fitted zoom only adds sub-1e-3 px float residue, which made one edge label round differently.
+	const flowModel = {
+		...stepped,
+		canvas: { ...stepped.canvas, measureEpoch: model.flow.model.canvas.measureEpoch },
+	}
+	const next: Model = { ...model, flow: { ...model.flow, model: flowModel } }
+	const picked = Option.getOrUndefined(flowModel.selectedSpanId)
+	return child._tag === "ClickedSpanNode" && picked !== undefined
+		? selectSpan(next, context, picked)
+		: { model: next }
+}
+
+/** The page starts on the hash's tab; its tab strips and attributes panel start from their Bindings. */
+export const init = TraceDetailComposition.makeInit((context: PageContext, traceId: string) => {
+	const key = traceKey(traceId)
+	return {
+		childInitContext: { view: viewOf(context) },
+		model: {
+			_tag: "TraceDetailPage",
+			traceId,
+			trace: { ...idle(), key, data: AsyncData.Loading() },
+			traceUpdatedAtMs: 0,
+			isRefreshing: false,
+			colorBy: DEFAULT_COLOR_BY,
+			timeline: Option.none(),
+			waterfall: Option.none(),
+			flow: null,
+			panel: null,
+			panelLogSheet: Option.none(),
+			pointer: null,
 		},
-		GotTimelineMessage: ({ message: child }) => {
-			if (model.timeline === null) return { model }
-			const next = Timeline.update(model.timeline, child)
-			const lifted: UpdateReturn = {
-				model: { ...model, timeline: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotTimelineMessage({ message: inner })),
-			}
-			const out = next.outMessage
-			if (out === undefined) return lifted
-			if (out._tag === "SelectedSpan") return chain(lifted, (m) => selectSpan(m, context, out.spanId))
-			return chain(lifted, (m) => {
-				if (m.timeline === null) return { model: m }
-				const recolored = Timeline.setColorBy(m.timeline, out.colorBy)
-				return {
-					model: { ...m, colorBy: out.colorBy, timeline: recolored.model },
-					commands: Command.mapMessages(recolored.commands ?? [], (inner) => Message.GotTimelineMessage({ message: inner })),
-				}
-			})
-		},
-		GotWaterfallMessage: ({ message: child }) => {
-			if (model.waterfall === null) return { model }
-			const next = Waterfall.update(model.waterfall, child)
-			const lifted: UpdateReturn = {
-				model: { ...model, waterfall: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotWaterfallMessage({ message: inner })),
-			}
-			const out = next.outMessage
-			return out === undefined ? lifted : chain(lifted, (m) => selectSpan(m, context, out.spanId))
-		},
-		GotFlowMessage: ({ message: child }) => {
-			if (model.flow === null) return { model }
-			const stepped = TraceFlow.update(model.flow.graph)(model.flow.model, child)
-			// Handles stay measured at the unfitted zoom (exact positions): legacy's re-measure at the
-			// fitted zoom only adds sub-1e-3 px float residue, which made one edge label round differently.
-			const flowModel = { ...stepped, canvas: { ...stepped.canvas, measureEpoch: model.flow.model.canvas.measureEpoch } }
-			const next: Model = { ...model, flow: { ...model.flow, model: flowModel } }
-			const picked = Option.getOrUndefined(flowModel.selectedSpanId)
-			return child._tag === "ClickedSpanNode" && picked !== undefined ? selectSpan(next, context, picked) : { model: next }
-		},
-		SucceededFetchSpanDetail: () => panelStep(model, context, message),
-		FailedFetchSpanDetail: () => panelStep(model, context, message),
-		SucceededFetchSpanLogs: () => panelStep(model, context, message),
-		FoundCachedSpanDetail: () => panelStep(model, context, message),
-		FoundCachedSpanLogs: () => panelStep(model, context, message),
-		FailedFetchSpanLogs: () => panelStep(model, context, message),
-		GotSpanPanelMessage: () => panelStep(model, context, message),
-		GotPanelTabsMessage: () => panelStep(model, context, message),
-		ClickedSpanLog: () => panelStep(model, context, message),
-		GotLogSheetMessage: () => panelStep(model, context, message),
-		GotAttributesMessage: () => panelStep(model, context, message),
-		CompletedWriteClipboard: () => panelStep(model, context, message),
-		ElapsedCopyStatus: () => panelStep(model, context, message),
-		CompletedFocusSpanPanel: () => ({ model }),
-	})
+		commands: [FetchTrace({ key, traceId, apiBase: context.env.apiBase, readsCache: true })],
+	}
+})
+
+export const update = TraceDetailComposition.makeUpdate.withContext((context: PageContext) => ({
+	FoundCachedTrace: (model, { key, cached }) => settleCachedStep(context, key, cached)(model),
+	SucceededFetchTrace: (model, { key, trace, fetchedAtMs }) =>
+		settleTraceStep(context, key, Result.succeed(trace), fetchedAtMs)(model),
+	FailedFetchTrace: (model, { key, failure }) =>
+		settleTraceStep(context, key, Result.fail(failure), 0)(model),
+	ClickedBack: (model) => back(model, context),
+	ClickedRefresh: (model) => refresh(model, context),
+	InformedOfLocationChange: (model) => locationChangedStep(context)(model),
+	// Escape closes the span panel.
+	PressedEscape: (model) =>
+		model.panel === null ? { model } : setParams(model, context, { spanId: null }),
+	MovedPointer: (model, { x, y }) => ({ model: { ...model, pointer: { x, y } } }),
+	ChoseTab: (model, { value }) =>
+		isTraceView(value) && value !== model.tabs.selected
+			? setParams(model, context, { view: value === "timeline" ? null : value })
+			: { model },
+	ChoseSpan: (model, { spanId }) => selectSpan(model, context, spanId),
+	ReceivedFlowMessage: (model, { message }) => flowStep(model, context, message),
+	SucceededFetchSpanDetail: (model, message) => panelStep(model, context, message),
+	FailedFetchSpanDetail: (model, message) => panelStep(model, context, message),
+	SucceededFetchSpanLogs: (model, message) => panelStep(model, context, message),
+	FoundCachedSpanDetail: (model, message) => panelStep(model, context, message),
+	FoundCachedSpanLogs: (model, message) => panelStep(model, context, message),
+	FailedFetchSpanLogs: (model, message) => panelStep(model, context, message),
+	ClickedClose: (model, message) => panelStep(model, context, message),
+	ClickedParentSpan: (model, message) => panelStep(model, context, message),
+	ClickedCopy: (model, message) => panelStep(model, context, message),
+	SucceededCopy: (model, message) => panelStep(model, context, message),
+	FailedCopy: (model, message) => panelStep(model, context, message),
+	ElapsedCopyStatus: (model, message) => panelStep(model, context, message),
+	ToggledErrorExpanded: (model, message) => panelStep(model, context, message),
+	CompletedWriteClipboard: (model, message) => panelStep(model, context, message),
+	// The web panel's fetches, disclosures and filters are not the local panel's.
+	CompletedFetchDetail: (model) => ({ model }),
+	CompletedFetchLogs: (model) => ({ model }),
+	ToggledCollapsible: (model) => ({ model }),
+	ClickedAttributeFilter: (model) => ({ model }),
+	ClickedSpanLog: (model, { log }) =>
+		model.panel === null
+			? makeNoopStep()(model)
+			: Option.isNone(model.panelLogSheet)
+				? initAndSet(LogSheetBinding, model, { args: [log] })
+				: LogSheetBinding.requestShowLog({ log })(model),
+	CompletedFocusSpanPanel: (model) => ({ model }),
+}))

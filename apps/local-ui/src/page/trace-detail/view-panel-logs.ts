@@ -6,16 +6,17 @@ import { badge } from "@maple/web/ui/display"
 import { skeleton, skeletonList } from "@maple/web/ui/skeleton"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
-import * as LogSheetView from "../kit/log-sheet/view"
+import type * as LogSheet from "../kit/log-sheet/model"
+import { LogSheetBinding, type TraceDetailViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { PanelModel, SpanLog } from "./panel-model"
 
 // The span's logs, newest first.
 // A row click opens `LogDetailSheet` on that log.
 
-type H = HtmlBuilder<Message>
+type H = TraceDetailViewBuilder
 
 /** `SeverityBadge` from the text only (`severityLabel` with no number). */
 const severityBadge = (h: H, severityText: string): Html => {
@@ -26,7 +27,9 @@ const severityBadge = (h: H, severityText: string): Html => {
 		{
 			variant: "secondary",
 			className: cn("font-mono text-3xs uppercase", "shrink-0"),
-			attributes: [h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` })],
+			attributes: [
+				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
+			],
 		},
 		[label],
 	)
@@ -44,7 +47,10 @@ const logRow = (h: H, log: SpanLog, nowMs: number, timeFormat: TimeFormat): Html
 			h.div(
 				[h.Class("flex items-center gap-2 text-[10px] text-muted-foreground")],
 				[
-					h.span([h.Class("font-mono"), h.Title(formatUtcTitle(log.timestamp))], [formatTimestamp(timeFormat, log.timestamp, { nowMs })]),
+					h.span(
+						[h.Class("font-mono"), h.Title(formatUtcTitle(log.timestamp))],
+						[formatTimestamp(timeFormat, log.timestamp, { nowMs })],
+					),
 					severityBadge(h, log.severityText),
 				],
 			),
@@ -53,30 +59,46 @@ const logRow = (h: H, log: SpanLog, nowMs: number, timeFormat: TimeFormat): Html
 	)
 
 /** The rows, then the sheet beside them. */
-export const spanLogs = (h: H, panel: PanelModel, nowMs: number, timeFormat: TimeFormat): ReadonlyArray<Html> => {
+export const spanLogs = (
+	h: TraceDetailViewBuilder,
+	panel: PanelModel,
+	maybeLogSheet: Option.Option<LogSheet.Model>,
+	nowMs: number,
+	timeFormat: TimeFormat,
+): ReadonlyArray<Html> => {
 	if (isPending(panel.logs))
-		return [skeletonList(h, {
-			rows: 3,
-			gap: "2",
-			className: "p-2",
-			renderRow: () => h.div([h.Class("space-y-1")], [skeleton(h, "h-3 w-24"), skeleton(h, "h-4 w-full")]),
-		})]
+		return [
+			skeletonList(h, {
+				rows: 3,
+				gap: "2",
+				className: "p-2",
+				renderRow: () =>
+					h.div([h.Class("space-y-1")], [skeleton(h, "h-3 w-24"), skeleton(h, "h-4 w-full")]),
+			}),
+		]
 	if (Option.isSome(failureWithoutData(panel.logs)))
 		return [h.div([h.Class("p-4 text-center text-sm text-destructive")], ["Failed to load logs"])]
 	const logs = Option.getOrElse(AsyncData.getData(panel.logs.data), () => [])
 	if (logs.length === 0)
-		return [h.div([h.Class("p-4 text-center text-sm text-muted-foreground")], ["No logs found for this span"])]
-	const sheet = Option.match(panel.maybeLogSheet, {
+		return [
+			h.div(
+				[h.Class("p-4 text-center text-sm text-muted-foreground")],
+				["No logs found for this span"],
+			),
+		]
+	const sheet = Option.match(maybeLogSheet, {
 		onNone: () => [],
 		onSome: (model) => [
-			h.submodel({
-				slotId: "span-log-sheet",
-				model,
-				view: LogSheetView.view,
-				viewInputs: { timeFormat },
-				toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
-			}),
+			h.block(
+				LogSheetBinding.embedView({ slotId: "span-log-sheet", model, viewInputs: { timeFormat } }),
+			),
 		],
 	})
-	return [h.div([h.Class("divide-y")], logs.map((log) => logRow(h, log, nowMs, timeFormat))), ...sheet]
+	return [
+		h.div(
+			[h.Class("divide-y")],
+			logs.map((log) => logRow(h, log, nowMs, timeFormat)),
+		),
+		...sheet,
+	]
 }

@@ -1,5 +1,3 @@
-import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
-import * as Tabs from "@maple/web/ui/tabs"
 import { SpanNodeData } from "@maple/web/page/traces/detail/trace-data"
 import { CopyState } from "@maple/web/page/traces/detail/span-panel/model"
 import { Schema } from "effect"
@@ -7,7 +5,8 @@ import { SlotSchema } from "../../data/slot"
 import * as LogSheet from "../kit/log-sheet/model"
 
 // The span detail panel as Model data: the selected span, its lazily
-// loaded attribute maps and logs, the Details / Logs tabs and the copy and disclosure state.
+// loaded attribute maps and logs and the copy and disclosure state. Its tabs, attributes panel
+// and log sheet are child Blocks on the page Model (`panelTabs`, `panelAttributes`, `panelLogSheet`).
 
 /** The span's full attribute maps; null when the point lookup found no row. */
 export const SpanAttrs = Schema.NullOr(
@@ -29,14 +28,13 @@ export const PanelModel = Schema.Struct({
 	span: SpanNodeData,
 	detail: SlotSchema(SpanAttrs),
 	logs: SlotSchema(Schema.Array(SpanLog)),
-	tabs: Tabs.Model,
 	/** Copy status by target id (`span-name`, `duration`, `span-id`, ...). */
 	copies: Schema.Record(Schema.String, CopyState),
 	isErrorExpanded: Schema.Boolean,
-	attributes: AttributesPanel.Model,
-	/** `SpanLogs`' own `LogDetailSheet`, once a log row was clicked. */
-	maybeLogSheet: Schema.Option(LogSheet.Model),
 })
 export type PanelModel = typeof PanelModel.Type
 
 export const PANEL_TABS = ["details", "logs"] as const
+
+/** The DOM id prefix of the panel's attributes panel. */
+export const PANEL_ATTRIBUTES_ID = "span-attributes"

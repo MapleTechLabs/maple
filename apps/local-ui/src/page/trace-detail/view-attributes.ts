@@ -1,15 +1,19 @@
+import { AttributesPanelComposition } from "@maple/web/ui/attributes/attributes-panel"
 import { attributesSection } from "@maple/web/ui/attributes/attributes-view"
-import type { Message, Model } from "@maple/web/ui/attributes/attributes-panel"
 import { skeleton, skeletonList } from "@maple/web/ui/skeleton"
-import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The span panel's attribute blocks: `AttributesSection` / `ResourceAttributesSection`, grouped by
-// namespace. Each block is its own view so they stay direct children of the Details body.
+// namespace. Each block is an alternate view of the attributes panel Block, so they stay direct
+// children of the Details body.
 
-export type SectionInputs = Readonly<{ attributes: Readonly<Record<string, string>>; title: string; section: string }>
+export type SectionInputs = Readonly<{
+	attributes: Readonly<Record<string, string>>
+	title: string
+	section: string
+}>
 
-export const sectionView = Submodel.defineView<Model, Message, SectionInputs>((model, inputs, h) =>
+export const sectionView = AttributesPanelComposition.makeView.withInputs<SectionInputs>((model, inputs, h) =>
 	attributesSection(
 		h,
 		{ model, source: "log", canFilter: false, idPrefix: inputs.section, hasCommitShaValues: false },
