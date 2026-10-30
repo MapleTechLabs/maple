@@ -18,7 +18,11 @@ export const unknownIdentifierName = (message: string): string | undefined => {
 export const referencedTableNames = (sql: string): ReadonlyArray<string> => {
 	const masked = maskLiteralsAndComments(sql)
 	return listWarehouseTables()
-		.map((t) => ({ name: t.name, at: masked.search(new RegExp(`\\b${t.name}\\b`)) }))
+		.map((t) => {
+			// Masking blanks backticks too, so a quoted ``FROM `traces` `` is found in the raw text.
+			const at = masked.search(new RegExp(`\\b${t.name}\\b`))
+			return { name: t.name, at: at >= 0 ? at : sql.indexOf(`\`${t.name}\``) }
+		})
 		.filter((t) => t.at >= 0)
 		.sort((a, b) => a.at - b.at)
 		.map((t) => t.name)
