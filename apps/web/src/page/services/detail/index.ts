@@ -1,6 +1,7 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../code"
 
 /** `/services/$serviceName`: one instance per service; tab, environment and window changes are `routeChanged`. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["Service"], key: (route) => route.serviceName },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.ServiceDetail)

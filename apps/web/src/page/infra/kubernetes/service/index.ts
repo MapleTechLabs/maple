@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /**
  * `/infra/kubernetes/services` and `/infra/kubernetes/services/$serviceName`: the service lens. One
@@ -12,4 +13,4 @@ export const entry = definePage(
 	{ routes: ["InfraKubernetesServices", "InfraKubernetesService"], key: () => "lens" },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraKubernetesServiceLens)

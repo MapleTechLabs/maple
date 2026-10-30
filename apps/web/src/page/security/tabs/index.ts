@@ -1,6 +1,7 @@
 import { definePage } from "../../contract"
 import { Message } from "./model"
 import { Model } from "./model"
+import { pageCode } from "../../code"
 
 /**
  * `/security` and its tabs (Overview, Findings, Runs) as one instance per org: a tab change keeps
@@ -12,4 +13,4 @@ export const entry = definePage(
 	{ routes: ["Security", "SecurityFindings", "SecurityRuns"], key: () => "security" },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.Security)

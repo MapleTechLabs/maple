@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./model"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /** `/infra/cloudflare/$zoneName`: one zone's traffic, DNS and security; another zone is another instance. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["InfraCloudflareZone"], key: (route) => `InfraCloudflareZone:${route.zoneName}` },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraCloudflareZone)

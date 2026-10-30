@@ -4,3 +4,5 @@ import "./platform/oauth-return-boot"
 import { startClerkBoot } from "./platform/clerk-boot"
 
 startClerkBoot()
+// Not a static import: the page loaders carry every page's preload list, Clerk's start won't wait for it.
+void import("./page/code").then(({ startRoutePageCode }) => startRoutePageCode(location.pathname))

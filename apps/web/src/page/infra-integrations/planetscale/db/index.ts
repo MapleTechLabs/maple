@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./model"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /** `/infra/planetscale/$dbName`: one database's branches; a new database is a new instance. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["InfraPlanetscaleDatabase"], key: (route) => `InfraPlanetscaleDatabase:${route.dbName}` },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraPlanetscaleDatabase)

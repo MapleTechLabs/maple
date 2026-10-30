@@ -1,6 +1,7 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../code"
 
 /** `/dashboards/$dashboardId/widgets/$widgetId`: one instance per widget. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["DashboardWidget"], key: (route) => `${route.dashboardId}/${route.widgetId}` },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.DashboardWidget)

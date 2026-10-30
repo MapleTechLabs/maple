@@ -1,6 +1,7 @@
 import { definePage } from "../../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../../code"
 
 /** `/infra/containers/$containerName`: one instance per container name; a window change arrives as `routeChanged`. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["InfraContainer"], key: (route) => route.containerName },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.InfraContainer)

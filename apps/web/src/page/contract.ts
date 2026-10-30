@@ -370,7 +370,7 @@ export const definePage = <
 			Slot,
 			Wrapped,
 			keyOf,
-			load: () => load().then((module) => module.implementation),
+			loadModule: load,
 		}),
 	}
 }
@@ -395,7 +395,8 @@ export interface LazyPage<Id extends string, SlotSchema, WrappedSchema, Slot, Wr
 	readonly Wrapped: WrappedSchema
 	/** The instance key for `route`, or `None` when this page does not render it. */
 	readonly keyOf: (route: AppRoute) => Option.Option<string>
-	readonly load: () => Promise<PageImplementation<Slot, Wrapped>>
+	/** `implementation.ts`, through `pageCode` (`page/code.ts`): boot.ts may have started it already. */
+	readonly loadModule: () => Promise<{ readonly implementation: PageImplementation<Slot, Wrapped> }>
 }
 
 /** The page's code (`implementation.ts`): `implementPage(entry, { init, update, view, ... })`. */

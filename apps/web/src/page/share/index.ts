@@ -1,6 +1,7 @@
 import { definePage } from "../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../code"
 
 /**
  * `/share/$token`: a public page outside the shell. The root renders it bare and gives it a
@@ -12,4 +13,4 @@ export const entry = definePage(
 	{ routes: ["Share"], key: (route) => route.token },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.Share)

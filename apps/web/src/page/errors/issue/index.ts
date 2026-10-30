@@ -1,6 +1,7 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { pageCode } from "../../code"
 
 /** `/errors/issues/$issueId`: one instance per issue; tab and window changes arrive as `routeChanged`. */
 export const entry = definePage(
@@ -9,4 +10,4 @@ export const entry = definePage(
 	{ routes: ["ErrorIssue"], key: (route) => route.issueId },
 )
 
-export const page = entry.lazy(() => import("./implementation"))
+export const page = entry.lazy(pageCode.ErrorIssue)
