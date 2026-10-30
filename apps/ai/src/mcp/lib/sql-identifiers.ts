@@ -152,7 +152,7 @@ const tableQualifiers = (sql: string): ReadonlyMap<string, string> => {
 	return new Map(
 		[
 			...identifierText(sql).matchAll(
-				/(?:\bFROM\s+|\bJOIN\s+|,\s*)([A-Za-z_][\w.]*)(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?/gi,
+				/(?:\bFROM\s+|\bJOIN\s+|,\s*)([A-Za-z_][\w.]*)(?:\s+(?:AS\s+)?([A-Za-z_][\w.]*))?/gi,
 			),
 		].flatMap((m) => {
 			const table = m[1].split(".").at(-1) ?? m[1]
