@@ -24,6 +24,7 @@ import {
 	LoadNamespaces,
 	LoadPlanetscaleStatus,
 	LoadRailwayStatus,
+	LoadSources,
 	LoadSupabaseStatus,
 } from "./data"
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
@@ -44,6 +45,7 @@ import {
 	type Model,
 	NamespacesData,
 	shellProbe,
+	SourcesData,
 } from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
@@ -70,6 +72,7 @@ export const enter =
 			integrations: () => PENDING_INTEGRATIONS,
 			dashboards: () => DashboardsData.Idle(),
 			namespaces: () => NamespacesData.Idle(),
+			sources: () => SourcesData.Idle(),
 		})
 		const sidebar = model.isMobile ? { model: entered } : requestSidebarData(entered)
 		return {
@@ -120,6 +123,22 @@ const requestInfraSurfaces = (model: Model): UpdateReturn =>
 						],
 					},
 	})
+
+/** The org's sources, once; a refresh re-reads while the last answer stays up. */
+const requestSources = (model: Model, isRefresh: boolean): UpdateReturn =>
+	Option.match(
+		Option.all([
+			model.maybeOrgId,
+			(isRefresh ? AsyncData.revalidateOrLoad : AsyncData.loadIfMissing)(model.sources),
+		]),
+		{
+			onNone: () => ({ model }),
+			onSome: ([orgId, sources]) => ({
+				model: modifyFields(model, { sources: () => sources }),
+				commands: [LoadSources({ orgId, isRefresh })],
+			}),
+		},
+	)
 
 /**
  * `NamespaceScopeList` mounts with each menu open and probes a fresh 24 h window (cached while the
@@ -326,6 +345,7 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 		ClickedSidebarTrigger: () => toggleSidebar(model, false),
 		PressedSidebarShortcut: () => toggleSidebar(model, true),
 		RequestedInfraSurfaces: () => requestInfraSurfaces(model),
+		RequestedSources: ({ isRefresh }) => requestSources(model, isRefresh),
 		ChangedViewport: ({ isMobile }) => {
 			const changed = modifyFields(closeMenu(model), {
 				isMobile: () => isMobile,
@@ -406,6 +426,14 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 				modifyFields(current, {
 					infraPresence: () => InfraPresenceData.Failure({ error: "Failed" }),
 				}),
+			),
+		SucceededLoadSources: ({ orgId, sources }) =>
+			forOrg(model, orgId, (current) =>
+				modifyFields(current, { sources: () => SourcesData.Success({ data: sources }) }),
+			),
+		FailedLoadSources: ({ orgId }) =>
+			forOrg(model, orgId, (current) =>
+				modifyFields(current, { sources: () => SourcesData.Failure({ error: "Failed" }) }),
 			),
 		SucceededLoadIntegration: ({ orgId, integration, isConnected }) =>
 			surfacesAnswered(model, orgId, (current) =>

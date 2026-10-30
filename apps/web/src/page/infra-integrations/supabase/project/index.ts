@@ -3,6 +3,7 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { titleOf, view } from "./view"
+import { platformSource } from "../../../../shell/source-link"
 
 /** `/infra/supabase/$projectRef`: one project's charts; a new ref is a new instance. */
 export const page = definePage(
@@ -16,6 +17,7 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
+		source: () => platformSource("supabase"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
 			{ label: "Supabase", href: "/infra/supabase" },

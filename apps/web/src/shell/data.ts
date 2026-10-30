@@ -5,6 +5,7 @@ import { lastHourWindow, loadInfraPresence } from "../data/infra-surfaces"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { MapleApiV2Client } from "../platform/api-clients"
 import { loadServicesFacets } from "../data/services-facets-probe"
+import { loadSources, sourcesListKey } from "../page/sources/kit/data"
 import { Message } from "./message"
 
 /**
@@ -27,6 +28,17 @@ export const LoadInfraPresence = Command.define("LoadInfraPresence", {
 			const surfaces = yield* loadInfraPresence(orgId, lastHourWindow(yield* Clock.currentTimeMillis))
 			return Message.SucceededLoadInfraPresence({ orgId, surfaces })
 		}).pipe(failed(Message.FailedLoadInfraPresence({ orgId }))),
+})
+
+/** The org's sources for the top bar's source link; a refresh re-reads past the cache. */
+export const LoadSources = Command.define("LoadSources", {
+	args: { orgId: Schema.String, isRefresh: Schema.Boolean },
+	messages: [Message.SucceededLoadSources, Message.FailedLoadSources],
+	execute: ({ orgId, isRefresh }) =>
+		loadSources(sourcesListKey(orgId), isRefresh).pipe(
+			Effect.map((sources) => Message.SucceededLoadSources({ orgId, sources })),
+			failed(Message.FailedLoadSources({ orgId })),
+		),
 })
 
 // INTEGRATIONS

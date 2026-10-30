@@ -128,6 +128,8 @@ export interface HostDetailSummaryOutput {
 	readonly hostArch: string
 	readonly cloudProvider: string
 	readonly cloudRegion: string
+	/** The `src_` id of the source the host last reported through, `""` before sources stamped it. */
+	readonly sourceId: string
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
@@ -144,6 +146,7 @@ export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
 			hostArch: CH.any_($.ResourceAttributes.get("host.arch")),
 			cloudProvider: CH.any_($.ResourceAttributes.get("cloud.provider")),
 			cloudRegion: CH.any_($.ResourceAttributes.get("cloud.region")),
+			sourceId: CH.argMax($.ResourceAttributes.get("maple_source_id"), $.TimeUnix),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
 			cpuPct: hostCpuPctExpr($),
@@ -708,6 +711,7 @@ export interface PodDetailSummaryOutput {
 	readonly podUid: string
 	readonly computeType: string
 	readonly podStartTime: string
+	readonly sourceId: string
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
 	readonly cpuUsage: number
@@ -730,6 +734,7 @@ export function podDetailSummaryQuery(opts: PodDetailSummaryOpts) {
 			podUid: CH.any_($.ResourceAttributes.get("k8s.pod.uid")),
 			computeType: CH.any_($.ResourceAttributes.get("eks.amazonaws.com/compute-type")),
 			podStartTime: CH.any_($.ResourceAttributes.get("k8s.pod.start_time")),
+			sourceId: CH.argMax($.ResourceAttributes.get("maple_source_id"), $.TimeUnix),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
 			cpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu.usage")),
@@ -983,6 +988,7 @@ export interface NodeDetailSummaryOutput extends NodeCapacityOutput {
 	readonly nodeUid: string
 	readonly kubeletVersion: string
 	readonly containerRuntime: string
+	readonly sourceId: string
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
 }
@@ -997,6 +1003,7 @@ export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
 				containerRuntimeExpr($.ResourceAttributes),
 				containerRuntimeExpr($.ResourceAttributes).neq(""),
 			),
+			sourceId: CH.argMax($.ResourceAttributes.get("maple_source_id"), $.TimeUnix),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
 			...nodeCapacityColumns($),
@@ -1275,6 +1282,7 @@ export interface WorkloadDetailSummaryOutput {
 	readonly kind: string
 	readonly namespace: string
 	readonly podCount: number
+	readonly sourceId: string
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
 	readonly avgCpuLimitPct: number
@@ -1289,6 +1297,7 @@ export function workloadDetailSummaryQuery(opts: WorkloadDetailSummaryOpts) {
 			workloadName: $.ResourceAttributes.get(attrKey),
 			namespace: CH.any_($.ResourceAttributes.get("k8s.namespace.name")),
 			podCount: CH.uniq($.ResourceAttributes.get("k8s.pod.uid")),
+			sourceId: CH.argMax($.ResourceAttributes.get("maple_source_id"), $.TimeUnix),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
 			avgCpuLimitPct: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu_limit_utilization")),

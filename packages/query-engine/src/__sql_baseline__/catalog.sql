@@ -626,7 +626,7 @@ SELECT
         GROUP BY hostName) AS hosts
         FORMAT JSON
 
--- builder:containers:containerDetailSummaryQuery:default  [509c508b]
+-- builder:containers:containerDetailSummaryQuery:default  [21725b37]
 SELECT
           metrics_gauge.ResourceAttributes['container.name'] AS containerName,
           any(metrics_gauge.ResourceAttributes['host.name']) AS hostName,
@@ -635,6 +635,7 @@ SELECT
           any(metrics_gauge.ResourceAttributes['compose.project']) AS composeProject,
           any(metrics_gauge.ResourceAttributes['compose.service']) AS composeService,
           any(coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime'])) AS runtime,
+          argMax(metrics_gauge.ResourceAttributes['maple_source_id'], metrics_gauge.TimeUnix) AS sourceId,
           min(metrics_gauge.TimeUnix) AS firstSeen,
           max(metrics_gauge.TimeUnix) AS lastSeen,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct,
@@ -1635,13 +1636,14 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:infra:hostDetailSummaryQuery:default  [7efc71f2]
+-- builder:infra:hostDetailSummaryQuery:default  [2f74dd86]
 SELECT
           metrics_gauge.ResourceAttributes['host.name'] AS hostName,
           any(metrics_gauge.ResourceAttributes['os.type']) AS osType,
           any(metrics_gauge.ResourceAttributes['host.arch']) AS hostArch,
           any(metrics_gauge.ResourceAttributes['cloud.provider']) AS cloudProvider,
           any(metrics_gauge.ResourceAttributes['cloud.region']) AS cloudRegion,
+          argMax(metrics_gauge.ResourceAttributes['maple_source_id'], metrics_gauge.TimeUnix) AS sourceId,
           min(metrics_gauge.TimeUnix) AS firstSeen,
           max(metrics_gauge.TimeUnix) AS lastSeen,
           greatest(1 - ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.cpu.utilization' AND metrics_gauge.Attributes['state'] = 'idle')), 1), 0) AS cpuPct,
@@ -2039,12 +2041,13 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:infra:nodeDetailSummaryQuery:default  [33fb2081]
+-- builder:infra:nodeDetailSummaryQuery:default  [4048ad5b]
 SELECT
           metrics_gauge.ResourceAttributes['k8s.node.name'] AS nodeName,
           anyIf(metrics_gauge.ResourceAttributes['k8s.node.uid'], metrics_gauge.ResourceAttributes['k8s.node.uid'] != '') AS nodeUid,
           anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion,
           anyIf(coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']), coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']) != '') AS containerRuntime,
+          argMax(metrics_gauge.ResourceAttributes['maple_source_id'], metrics_gauge.TimeUnix) AS sourceId,
           min(metrics_gauge.TimeUnix) AS firstSeen,
           max(metrics_gauge.TimeUnix) AS lastSeen,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) AS cpuUsage,
@@ -2146,7 +2149,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:infra:podDetailSummaryQuery:default  [6d68eb74]
+-- builder:infra:podDetailSummaryQuery:default  [fb5d62d2]
 SELECT
           metrics_gauge.ResourceAttributes['k8s.pod.name'] AS podName,
           any(metrics_gauge.ResourceAttributes['k8s.namespace.name']) AS namespace,
@@ -2158,6 +2161,7 @@ SELECT
           any(metrics_gauge.ResourceAttributes['k8s.pod.uid']) AS podUid,
           any(metrics_gauge.ResourceAttributes['eks.amazonaws.com/compute-type']) AS computeType,
           any(metrics_gauge.ResourceAttributes['k8s.pod.start_time']) AS podStartTime,
+          argMax(metrics_gauge.ResourceAttributes['maple_source_id'], metrics_gauge.TimeUnix) AS sourceId,
           min(metrics_gauge.TimeUnix) AS firstSeen,
           max(metrics_gauge.TimeUnix) AS lastSeen,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.pod.cpu.usage'), 0), 0) AS cpuUsage,
@@ -2384,11 +2388,12 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:infra:workloadDetailSummaryQuery:default  [8de35936]
+-- builder:infra:workloadDetailSummaryQuery:default  [299f735a]
 SELECT
           metrics_gauge.ResourceAttributes['k8s.deployment.name'] AS workloadName,
           any(metrics_gauge.ResourceAttributes['k8s.namespace.name']) AS namespace,
           uniq(metrics_gauge.ResourceAttributes['k8s.pod.uid']) AS podCount,
+          argMax(metrics_gauge.ResourceAttributes['maple_source_id'], metrics_gauge.TimeUnix) AS sourceId,
           min(metrics_gauge.TimeUnix) AS firstSeen,
           max(metrics_gauge.TimeUnix) AS lastSeen,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.pod.cpu_limit_utilization'), 0), 0) AS avgCpuLimitPct,

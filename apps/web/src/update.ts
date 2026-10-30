@@ -50,7 +50,9 @@ import {
 	parkPages,
 	isBarePageRoute,
 	PageMessage,
+	pageHasSource,
 	pageIdentity,
+	pageSource,
 	preloadRoute,
 	type PageTransition,
 	updatePage,
@@ -64,6 +66,7 @@ import { completeRangeOf, isWithin, withSessionRange } from "./route/session-tim
 import * as Shell from "./shell"
 import * as OrgSwitcher from "./shell/clerk-org-switcher"
 import { presenceOf } from "./shell/view-nav"
+import { isResolved } from "./shell/source-link"
 import * as Toast from "./ui/toast"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
@@ -225,17 +228,35 @@ const shellRequestOf = (out: PageOutMessage): Option.Option<Shell.Message> =>
 			? Option.some(Shell.Message.RequestedInfraSurfaces())
 			: Option.none()
 
+/**
+ * Entering a page that links to its source reads the org's sources once; a source the last read
+ * does not know (just connected) re-reads them.
+ */
+const requestPageSources =
+	(previousIdentity: string): Step =>
+	(model) => {
+		const slot = model.page
+		if (slot === null || !pageHasSource(slot) || pageIdentity(slot) === previousIdentity) return { model }
+		const ref = pageSource(slot)
+		const isRefresh = Option.match(AsyncData.getData(model.shell.sources), {
+			onNone: () => false,
+			onSome: (sources) => ref !== null && !isResolved(ref, sources),
+		})
+		return foldShell(model, Shell.Message.RequestedSources({ isRefresh }))
+	}
+
 /** Writes the page slot, lifts its Commands and follows its navigation and shell requests. */
 const applyPage =
 	(transition: PageTransition): Step =>
 	(model) =>
-		Option.match(Option.flatMap(transition.outMessage, shellRequestOf), {
-			onNone: () => writePage(transition)(model),
-			onSome: (shellMessage) =>
-				Update.combine([writePage(transition), (next: Model) => foldShell(next, shellMessage)])(
-					model,
-				),
-		})
+		Update.combine([
+			Option.match(Option.flatMap(transition.outMessage, shellRequestOf), {
+				onNone: () => writePage(transition),
+				onSome: (shellMessage) =>
+					Update.combine([writePage(transition), (next: Model) => foldShell(next, shellMessage)]),
+			}),
+			requestPageSources(pageIdentity(model.page)),
+		])(model)
 
 const isPageMessage = Schema.is(PageMessage)
 

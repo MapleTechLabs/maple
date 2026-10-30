@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Resources } from "../platform/resources"
 import type { AppRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import type { PageSourceRef } from "../shell/source-link"
 import type {
 	PageContext,
 	PageHost,
@@ -350,6 +351,14 @@ export const settleInfraSurfaces = (current: PageSlot | null, context: PageConte
 
 export const pageBreadcrumbs = (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 	Option.match(pageById(slot._tag), { onNone: () => [], onSome: (page) => page.breadcrumbs(slot) })
+
+/** The source the page's data comes from, for the top bar's link. */
+export const pageSource = (slot: PageSlotBase): PageSourceRef | null =>
+	Option.match(pageById(slot._tag), { onNone: () => null, onSome: (page) => page.source(slot) })
+
+/** The page links to its source, so entering it reads the org's sources. */
+export const pageHasSource = (slot: PageSlotBase): boolean =>
+	Option.match(pageById(slot._tag), { onNone: () => false, onSome: (page) => page.hasSource })
 
 export const pageSubscriptions = Subscription.aggregate<PageHost, PageMessage, Resources>()(
 	...pages.map((page) => page.subscriptions),
