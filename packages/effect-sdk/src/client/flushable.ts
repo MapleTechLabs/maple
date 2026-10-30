@@ -360,7 +360,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		// louder error tracker.
 		const error: unknown =
 			event.error ?? (event.message && event.filename ? new Error(event.message) : undefined)
-		if (error === undefined || isBrowserNoise(error, event.filename)) return
+		if (error === undefined || isBrowserNoise(error, "window.onerror", event.filename)) return
 		captureException(error, {
 			name: "browser.uncaught_error",
 			attributes: {
@@ -376,7 +376,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
-		if (isBrowserNoise(event.reason)) return
+		if (isBrowserNoise(event.reason, "unhandledrejection")) return
 		captureException(event.reason, {
 			name: "browser.unhandled_rejection",
 			attributes: { "maple.exception.source": "unhandledrejection" },
