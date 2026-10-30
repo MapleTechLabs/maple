@@ -4,7 +4,7 @@ import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor } from "./dispatcher"
 import { listMcpTools } from "./tool-catalog"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -253,6 +253,25 @@ describe("MCP dispatcher", () => {
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("maple.mcp.tool")).toBe("inspect_trace")
 				expect(dispatchSpan.attributes.get("result.isError")).toBe(true)
+			}),
+		)
+
+		// A failure message can quote a whole SQL statement; the span keeps a bounded prefix.
+		it.effect("caps the failure message it puts on the span", () =>
+			Effect.gen(function* () {
+				const { spans, tracer } = makeRecordingTracer()
+				const message = `SQL rejected: ${"x".repeat(5_000)}`
+				yield* recordExpectedMcpFailure(
+					{ _tag: "@maple/mcp/errors/McpInvalidInputError", message },
+					"Invalid tool input",
+				).pipe(Effect.withSpan("probe"), Effect.withTracer(tracer))
+
+				const recorded = spans
+					.find((s) => s.name === "probe")
+					?.attributes.get("maple.mcp.error.message")
+				assert.isString(recorded)
+				expect(recorded.length).toBeLessThan(message.length)
+				expect(message.startsWith(recorded)).toBe(true)
 			}),
 		)
 
