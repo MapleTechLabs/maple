@@ -15,7 +15,7 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { dataTableEmpty } from "../../../infra/kit/data-table"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { pageHeroParts, searchToolbar } from "../../../infra/kit/page-parts"
-import { linkTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../infra/kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { integrationConnectCta } from "../../kit/integration-empty"
 import { AWS_ACCENT } from "../../../integrations/catalog"
@@ -60,7 +60,7 @@ const loading = (h: H): Html =>
 const nameLabel = (kind: AwsInfraKindId) => AWS_INFRA_KINDS[kind].identity[0]?.[0] ?? "Resource"
 
 const tabs = (h: H, model: Model, reads: ReadonlyArray<FleetRead>, active: AwsInfraKindId): Html =>
-	linkTabStrip(
+	viewTabStrip(
 		h,
 		"AWS resource kinds",
 		reads.map((read) => ({

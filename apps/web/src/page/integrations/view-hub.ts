@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { pageDescriptionStyles, pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
+import { pageDescriptionStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
@@ -7,6 +7,7 @@ import { errorState } from "../../ui/error-state"
 import { badge } from "../../ui/display"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
+import { pageTitle } from "../../ui/page-layout"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
@@ -220,7 +221,7 @@ export const hubTitle = (h: H): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-1")],
 		[
-			h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Integrations"]),
+			pageTitle(h, { className: "leading-8" }, ["Integrations"]),
 			h.p(
 				[h.Class(cn(pageDescriptionStyles, "text-sm"))],
 				[

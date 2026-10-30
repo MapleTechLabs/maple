@@ -3,10 +3,9 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { cn } from "@maple/ui/lib/utils"
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { LoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
+import { pageTitle } from "../../../ui/page-layout"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { BLANK_TEMPLATE_ID, computeReadiness } from "./derive"
@@ -76,7 +75,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					titleContent: h.div(
 						[h.Class("flex flex-col gap-1")],
 						[
-							h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Templates"]),
+							pageTitle(h, { className: "leading-8" }, ["Templates"]),
 							...(isLoaded && metrics !== null ? [summary(h, readyCount, listed.length)] : []),
 						],
 					),

@@ -1,9 +1,8 @@
-import { cn } from "@maple/ui/lib/utils"
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { IconName } from "../../../ui/icon"
+import { pageTitle } from "../../../ui/page-layout"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { Tab } from "../tabs/model"
@@ -55,7 +54,7 @@ const securityTitle = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("min-w-0 space-y-0.5")],
 		[
-			h.h1([h.Class(cn(pageTitleStyles, "leading-8 text-foreground"))], ["Security"]),
+			pageTitle(h, { className: "leading-8 text-foreground" }, ["Security"]),
 			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [DESCRIPTION]),
 		],
 	)

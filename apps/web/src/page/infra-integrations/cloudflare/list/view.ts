@@ -30,7 +30,7 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
-import { linkTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../infra/kit/view-tabs"
 import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import type { Status, ZoneRow } from "../data"
@@ -294,7 +294,7 @@ const header = (
 const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html | undefined => {
 	const views = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0)
 	if (views.length < 2) return undefined
-	return linkTabStrip(
+	return viewTabStrip(
 		h,
 		"Cloudflare views",
 		views.map((v) => ({

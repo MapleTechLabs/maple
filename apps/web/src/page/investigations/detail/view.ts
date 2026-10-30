@@ -26,7 +26,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { linkTabStrip } from "../../kit/underline-tabs"
 import { severityBadge } from "../../errors/kit/severity"
 import { investigationKindLabel, statusBadge } from "../kit"
 import { breadcrumbLabel, type Tab, tabOf, traceTips } from "./derive"
@@ -151,39 +151,22 @@ const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
 /** `InvestigationTabs`: links, so the open tab is in the URL; Evidence only when there is some. */
 const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 	const evidenceCount = investigation.report?.evidence.length ?? 0
-	return underlineTabStrip(
+	return linkTabStrip(
 		h,
-		{ label: "Investigation sections" },
-		TABS.filter((tab) => tab.value !== "evidence" || evidenceCount > 0).map((tab) => {
-			const isActive = tab.value === active
-			const href = hrefOf(
+		"Investigation sections",
+		TABS.filter((tab) => tab.value !== "evidence" || evidenceCount > 0).map((tab) => ({
+			key: tab.value,
+			href: hrefOf(
 				AppRoute.Investigation({
 					id: investigation.id,
 					search: tab.value === "overview" ? {} : { tab: tab.value },
 				}),
-			)
-			return h.keyed("a")(
-				tab.value,
-				[
-					h.Href(href),
-					h.Role("tab"),
-					h.AriaSelected(isActive),
-					...(isActive ? [h.AriaCurrent("page"), h.DataAttribute("status", "active")] : []),
-					h.Class(`${underlineTabClass(isActive)}${isActive ? " active" : ""}`),
-				],
-				[
-					tab.label,
-					...(tab.value === "evidence"
-						? [
-								h.span(
-									[h.Class("text-xs text-muted-foreground tabular-nums")],
-									[String(evidenceCount)],
-								),
-							]
-						: []),
-				],
-			)
-		}),
+			),
+			label: tab.label,
+			count: tab.value === "evidence" ? evidenceCount : undefined,
+			isCurrent: tab.value === active,
+			isRouteActive: tab.value === active,
+		})),
 	)
 }
 
@@ -299,7 +282,7 @@ const readyPage = (h: H, model: Model, investigation: V2Investigation, timeZone:
 					{
 						titleContent: titleContent(h, investigation),
 						actions: headerActions(h, model, investigation),
-						sticky: tabs(h, investigation, tab),
+						tabs: tabs(h, investigation, tab),
 						fill: true,
 					},
 					[

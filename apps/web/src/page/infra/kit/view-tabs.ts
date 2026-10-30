@@ -1,11 +1,9 @@
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../../kit/time-controls"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { linkTabStrip } from "../../kit/underline-tabs"
 
-// The link strip on `UnderlineTabStrip navigation` and the two section strips built on it:
-// `HostsViewTabs` and `KubernetesViewTabs`.
+// `HostsViewTabs` and `KubernetesViewTabs`, on the kit's `linkTabStrip`.
 
 /** `onClick` handles a plain click in place of the router; the href still serves new tabs. */
 export type TabLink<M = never> = Readonly<{
@@ -15,38 +13,24 @@ export type TabLink<M = never> = Readonly<{
 	onClick?: M | undefined
 }>
 
-/** A `<Link>` strip: TanStack marks the current one `active` with `data-status`. */
-export const linkTabStrip = <M>(
+/** Maps `TabLink`s onto the kit strip; the infra-integrations list pages still call it this way. */
+export const viewTabStrip = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
 	tabs: ReadonlyArray<TabLink<M>>,
 	activeId: string,
-	/** Off when the strip sits in page flow rather than a header's `tabs` slot. */
-	bleed = true,
 ): Html =>
-	underlineTabStrip(
+	linkTabStrip(
 		h,
-		{ label, navigation: true, bleed },
-		tabs.map((tab) => {
-			const isActive = tab.id === activeId
-			return h.a(
-				[
-					h.Key(tab.id),
-					h.Href(tab.href),
-					...(tab.onClick === undefined
-						? []
-						: [h.OnClick(tab.onClick, { defaultAction: "Prevent" })]),
-					...(isActive
-						? [
-								h.AriaCurrent("page"),
-								h.DataAttribute("status", "active"),
-								h.Class(cn(underlineTabClass(true), "active")),
-							]
-						: [h.Class(underlineTabClass(false))]),
-				],
-				[tab.title],
-			)
-		}),
+		label,
+		tabs.map((tab) => ({
+			key: tab.id,
+			href: tab.href,
+			label: tab.title,
+			onClick: tab.onClick,
+			isCurrent: tab.id === activeId,
+			isRouteActive: tab.id === activeId,
+		})),
 	)
 
 export type { TimeSearch }
@@ -62,7 +46,7 @@ export type HostsView = "hosts" | "containers"
 
 export const hostsViewTabs = <M>(h: HtmlBuilder<M>, view: HostsView, search: TimeSearch): Html => {
 	const window = pickTimeSearch(search)
-	return linkTabStrip(
+	return viewTabStrip(
 		h,
 		"Hosts views",
 		[
@@ -100,7 +84,7 @@ const kubernetesViews = (search: TimeSearch): ReadonlyArray<TabLink> => {
 
 /** `KubernetesViewTabs`. */
 export const kubernetesViewTabs = <M>(h: HtmlBuilder<M>, view: KubernetesView, search: TimeSearch): Html =>
-	linkTabStrip(h, "Kubernetes views", kubernetesViews(search), view)
+	viewTabStrip(h, "Kubernetes views", kubernetesViews(search), view)
 
 /** `KubernetesShell`'s breadcrumbs: the view crumb links back to its list once a trail follows. */
 export const kubernetesBreadcrumbs = (

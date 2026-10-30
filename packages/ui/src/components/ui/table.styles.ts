@@ -30,3 +30,10 @@ export const tableCellStyles =
 export const truncatedCellStyles = "w-full max-w-0"
 
 export const tableCaptionStyles = "in-data-[variant=card]:my-4 mt-4 text-muted-foreground text-sm"
+
+// A row's link stretched over the nearest positioned ancestor (the row); the ring shows on keyboard focus.
+export const tableRowLinkStyles =
+	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+
+// Lifts a control inside a linked row above the overlay so it keeps its own clicks.
+export const tableRowLinkLiftStyles = "relative z-10"

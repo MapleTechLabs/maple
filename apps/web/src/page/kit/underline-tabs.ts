@@ -42,11 +42,16 @@ export const underlineTabClass = (isActive: boolean): string =>
 			: "border-transparent text-muted-foreground hover:text-foreground",
 	)
 
-export type LinkTab = Readonly<{
+export type LinkTab<M = never> = Readonly<{
 	key: string
 	href: string
 	label: string
-	icon: IconName
+	icon?: IconName
+	/** A tally after the label; `error` tints it for counts that need attention. */
+	count?: number | undefined
+	countTone?: "muted" | "error"
+	/** Handles a plain click in place of the router; the href still serves new tabs. */
+	onClick?: M | undefined
 	/** The tab the page shows: underlined, its label and icon in the foreground colour. */
 	isCurrent: boolean
 	/** The link matches the URL (path and search): `aria-current` and the router's `active`. */
@@ -54,7 +59,7 @@ export type LinkTab = Readonly<{
 }>
 
 /** A page's tabs as links: each one a route, the current one underlined. */
-export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: ReadonlyArray<LinkTab>): Html =>
+export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: ReadonlyArray<LinkTab<M>>): Html =>
 	underlineTabStrip(
 		h,
 		{
@@ -62,7 +67,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 			label,
 			bleed: false,
 			divided: false,
-			className: "gap-0 overflow-visible border-b border-border",
+			className: "gap-0 border-b border-border",
 		},
 		tabs.map((tab) =>
 			h.a(
@@ -71,18 +76,39 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 					...(tab.isRouteActive ? [h.AriaCurrent("page")] : []),
 					h.Class(
 						cn(
-							cn(
-								underlineTabClass(tab.isCurrent),
-								"h-9 gap-[7px] px-3 first:pl-0.5",
-								tab.isCurrent ? "[&_svg]:text-foreground" : "[&_svg]:text-muted-foreground",
-							),
+							underlineTabClass(tab.isCurrent),
+							"h-9 gap-[7px] px-3 first:pl-0.5",
+							tab.isCurrent ? "[&_svg]:text-foreground" : "[&_svg]:text-muted-foreground",
 							tab.isRouteActive && "active",
 						),
 					),
 					...(tab.isRouteActive ? [h.DataAttribute("status", "active")] : []),
 					h.Href(tab.href),
+					...(tab.onClick === undefined
+						? []
+						: [h.OnClick(tab.onClick, { defaultAction: "Prevent" })]),
 				],
-				[icon(h, tab.icon, { size: 14 }), tab.label],
+				[
+					...(tab.icon === undefined ? [] : [icon(h, tab.icon, { size: 14 })]),
+					tab.label,
+					...(tab.count === undefined
+						? []
+						: [
+								h.span(
+									[
+										h.Class(
+											cn(
+												"font-mono text-xs tabular-nums",
+												tab.countTone === "error"
+													? "text-severity-error"
+													: "text-muted-foreground",
+											),
+										),
+									],
+									[String(tab.count)],
+								),
+							]),
+				],
 			),
 		),
 	)

@@ -1,6 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,6 +14,7 @@ import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
+import { pageTitle } from "../../../ui/page-layout"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageContext, PageViewInputs } from "../../contract"
 import { variablesOf } from "./plan"
@@ -51,30 +53,35 @@ const title = (h: H, model: Model, name: string): Html => {
 					),
 					h.Autofocus(true),
 					h.Class(
-						"font-display text-2xl font-semibold tracking-tight leading-[1.1] bg-transparent border-b border-foreground/20 outline-none focus:border-foreground/50 w-full",
+						cn(
+							pageTitleStyles,
+							"bg-transparent border-b border-foreground/20 outline-none focus:border-foreground/50 w-full",
+						),
 					),
 				]),
 			],
 		)
 	const isBlank = name.trim() === ""
-	return h.h1(
-		[
-			h.Role("button"),
-			h.Tabindex(0),
-			h.OnClick(Message.ClickedTitle()),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " " ? Option.some(Message.ClickedTitle()) : Option.none(),
+	const shown = isBlank ? "Untitled dashboard" : name
+	return pageTitle(
+		h,
+		{
+			title: shown,
+			className: cn(
+				!isReadOnly && "cursor-pointer hover:text-foreground/80",
+				isBlank && "text-muted-foreground",
 			),
-			h.AriaDisabled(isReadOnly),
-			h.Class(
-				cn(
-					"font-display text-2xl font-semibold tracking-tight truncate leading-[1.1]",
-					!isReadOnly && "cursor-pointer hover:text-foreground/80",
-					isBlank && "text-muted-foreground",
+			attributes: [
+				h.Role("button"),
+				h.Tabindex(0),
+				h.OnClick(Message.ClickedTitle()),
+				h.OnKeyDownPreventDefault((key) =>
+					key === "Enter" || key === " " ? Option.some(Message.ClickedTitle()) : Option.none(),
 				),
-			),
-		],
-		[isBlank ? "Untitled dashboard" : name],
+				h.AriaDisabled(isReadOnly),
+			],
+		},
+		[shown],
 	)
 }
 

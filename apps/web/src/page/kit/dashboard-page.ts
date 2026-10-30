@@ -2,21 +2,22 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	pageBodyStyles,
 	pageContentStyles,
-	pageDescriptionStyles,
 	pageFillStyles,
 	pageFilterSidebarStyles,
 	pageFilterSidebarWidthStyles,
-	pageHeaderActionsStyles,
-	pageHeaderStyles,
-	pageHeaderTextStyles,
 	pageRightSidebarStyles,
 	pageRightSidebarWidthStyles,
 	pageScrollAreaStyles,
 	pageStickyAreaScrolledStyles,
 	pageStickyAreaStyles,
-	pageTitleStyles,
 } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import {
+	pageDescription,
+	pageHeaderActions,
+	pageHeader as layoutHeader,
+	pageTitle,
+} from "../../ui/page-layout"
 
 // The dashboard page below the shell's top bar:
 // `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
@@ -84,29 +85,18 @@ export const pageContent = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>)
 		children,
 	)
 
-/** `PageLayout.Header` + `HeaderActions`. */
+/** `PageLayout.Header` + `HeaderActions` from a composed title block and actions. */
 export const pageHeader = <M>(
 	h: HtmlBuilder<M>,
 	titleContent: Html | undefined,
 	actions: Html | undefined,
 	className?: string,
 ): Html =>
-	h.div(
-		[h.DataAttribute("slot", "page-header"), h.Class(cn(pageHeaderStyles, className))],
-		[
-			h.div([h.Class(pageHeaderTextStyles)], titleContent === undefined ? [] : [titleContent]),
-			...(actions === undefined
-				? []
-				: [
-						h.div(
-							[
-								h.DataAttribute("slot", "page-header-actions"),
-								h.Class(pageHeaderActionsStyles),
-							],
-							[actions],
-						),
-					]),
-		],
+	layoutHeader(
+		h,
+		// An empty text block still holds the actions to the right.
+		{ titleContent: titleContent ?? h.div([], []), className },
+		actions === undefined ? [] : [pageHeaderActions(h, [actions])],
 	)
 
 /** `PageLayout.StickyArea`; the page reports the scrolled shadow. */
@@ -172,14 +162,14 @@ export const dashboardPage = <M>(
 	const heading =
 		options.title === undefined
 			? undefined
-			: h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], [options.title])
+			: pageTitle(h, { title: options.title, className: "leading-8" }, [options.title])
 	const titleContent =
 		options.titleContent ??
 		(heading === undefined || options.description === undefined
 			? heading
 			: h.div(
 					[h.Class("flex flex-col gap-1")],
-					[heading, h.p([h.Class(cn(pageDescriptionStyles, "text-sm"))], [options.description])],
+					[heading, pageDescription(h, [options.description], "text-sm")],
 				))
 	const hasHeader = titleContent !== undefined || options.actions !== undefined
 	const headerWidth = options.width === "settings" ? PAGE_WIDTH.settings : undefined

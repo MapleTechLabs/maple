@@ -1,5 +1,4 @@
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
-import { cn } from "@maple/ui/lib/utils"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -13,7 +12,7 @@ import * as MenuView from "../../../ui/menu-view"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { linkTabStrip } from "../../kit/underline-tabs"
 import { alertsHref, createHref } from "../shared/links"
 import { type AlertsTab, destinationsOf, overviewOf, resolveStatus, resolveTab } from "./derive"
 import { Message } from "./message"
@@ -45,9 +44,9 @@ const tabBar = (
 	active: AlertsTab,
 ): Html => {
 	const monitorCount = Option.map(AsyncData.getData(model.monitors.data), (monitors) => monitors.length)
-	return underlineTabStrip(
+	return linkTabStrip(
 		h,
-		{ label: "Alerts sections", navigation: true },
+		"Alerts sections",
 		ALERTS_TABS.map((tab) => {
 			const count =
 				tab.value === "uptime"
@@ -61,34 +60,15 @@ const tabBar = (
 										? data.rules.length
 										: undefined,
 						})
-			return h.a(
-				[
-					h.Key(tab.value),
-					h.Href(alertsHref({ ...model.search, tab: tab.value })),
-					...(tab.value === active ? [h.AriaCurrent("page")] : []),
-					h.Class(underlineTabClass(tab.value === active)),
-				],
-				[
-					tab.label,
-					...(count !== undefined && count > 0
-						? [
-								h.span(
-									[
-										h.Class(
-											cn(
-												"font-mono text-xs tabular-nums",
-												tab.value === "inbox"
-													? "text-severity-error"
-													: "text-muted-foreground",
-											),
-										),
-									],
-									[String(count)],
-								),
-							]
-						: []),
-				],
-			)
+			return {
+				key: tab.value,
+				href: alertsHref({ ...model.search, tab: tab.value }),
+				label: tab.label,
+				count: count !== undefined && count > 0 ? count : undefined,
+				countTone: tab.value === "inbox" ? "error" : "muted",
+				isCurrent: tab.value === active,
+				isRouteActive: tab.value === active,
+			}
 		}),
 	)
 }

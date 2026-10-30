@@ -7,6 +7,8 @@ import {
 	tableHeadStyles,
 	tableHeaderStickyStyles,
 	tableHeaderStyles,
+	tableRowLinkLiftStyles,
+	tableRowLinkStyles,
 	tableRowStyles,
 	tableStyles,
 } from "@maple/ui/styles/ui/table"
@@ -117,6 +119,31 @@ export const tableCell = <M>(
 			h.Attribute("class", cn(tableCellStyles, className)),
 			h.DataAttribute("slot", "table-cell"),
 			...attributes,
+		],
+		children,
+	)
+
+/** Lift for a control inside a `rowLink` row: it stays clickable above the overlay. */
+export const ROW_LINK_LIFT = tableRowLinkLiftStyles
+
+/** Row navigation: a real link stretched over its row (any positioned ancestor), never a row
+ *  onClick. Without children it is an empty overlay and `label` is its accessible name. */
+export const rowLink = <M>(
+	h: HtmlBuilder<M>,
+	options: {
+		readonly href: string
+		readonly label?: string
+		readonly className?: string
+		readonly attributes?: ReadonlyArray<Attribute<M>>
+	},
+	children: Children = [],
+): Html =>
+	h.a(
+		[
+			h.Href(options.href),
+			h.Attribute("class", cn(tableRowLinkStyles, options.className)),
+			...(options.label === undefined ? [] : [h.AriaLabel(options.label)]),
+			...(options.attributes ?? []),
 		],
 		children,
 	)

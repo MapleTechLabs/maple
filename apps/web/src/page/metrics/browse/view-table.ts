@@ -4,7 +4,16 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { listFooter } from "../../../ui/list-footer"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	ROW_LINK_LIFT,
+	rowLink,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
@@ -15,11 +24,6 @@ import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 
 type H = HtmlBuilder<Message>
-
-// A row link stretched over its row, and the lift for controls above it.
-const ROW_STRETCHED_LINK_CLASS =
-	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
-const ROW_LINK_LIFT = "relative z-10"
 
 const MD_CELL = "hidden md:table-cell"
 
@@ -64,11 +68,12 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				h.div(
 					[h.Class("flex min-w-0 flex-col gap-0.5")],
 					[
-						h.a(
-							[
-								h.Href(metricLink(model, metric.metricName, metric.metricType)),
-								h.Class(cn("block min-w-0", ROW_STRETCHED_LINK_CLASS)),
-							],
+						rowLink(
+							h,
+							{
+								href: metricLink(model, metric.metricName, metric.metricType),
+								className: "block min-w-0",
+							},
 							[
 								truncatedText(h, {
 									text: metric.metricName,

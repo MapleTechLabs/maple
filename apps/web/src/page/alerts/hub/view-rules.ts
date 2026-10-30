@@ -22,8 +22,9 @@ import * as Menu from "../../../ui/menu"
 import type { MenuEntry } from "../../../ui/menu-view"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { statusDot } from "../../../ui/status-dot"
+import { ROW_LINK_LIFT, rowLink } from "../../../ui/table"
 import { filteredEmpty } from "../../kit/signal-empty-state"
-import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS, ruleHref } from "../shared/links"
+import { ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
@@ -307,18 +308,16 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 			h.div(
 				[h.Class("min-w-0 space-y-0.5")],
 				[
-					h.a(
-						[
-							h.Class(
-								cn(
-									"block truncate text-sm font-medium",
-									!rule.enabled && "text-muted-foreground",
-									ROW_STRETCHED_LINK_CLASS,
-								),
+					rowLink(
+						h,
+						{
+							href: ruleHref(rule.id),
+							className: cn(
+								"block truncate text-sm font-medium",
+								!rule.enabled && "text-muted-foreground",
 							),
-							h.Href(ruleHref(rule.id)),
-							h.Title(rule.name),
-						],
+							attributes: [h.Title(rule.name)],
+						},
 						[rule.name],
 					),
 					h.p(

@@ -15,7 +15,7 @@ import { httpSpanLabel } from "../../../ui/http-span-label"
 import { truncatedText } from "../../../ui/truncated-text"
 import { servicePills, traceStatusBadge } from "../../../ui/trace-badges"
 import { button } from "../../../ui/button"
-import { tableCell } from "../../../ui/table"
+import { rowLink, tableCell } from "../../../ui/table"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
 
@@ -77,16 +77,11 @@ const rootSpanCell = (
 				[h.Class("flex flex-col min-w-0")],
 				[
 					// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
-					h.a(
-						[
-							h.AriaLabel(`Open trace ${row.traceId}`),
-							h.Attribute("class", "after:absolute after:inset-0 after:content-['']"),
-							h.DataAttribute("peek-index", String(index)),
-							h.Href(traceHref(search, row)),
-							h.Tabindex(-1),
-						],
-						[],
-					),
+					rowLink(h, {
+						href: traceHref(search, row),
+						label: `Open trace ${row.traceId}`,
+						attributes: [h.DataAttribute("peek-index", String(index)), h.Tabindex(-1)],
+					}),
 					httpSpanLabel(h, {
 						spanName: displayName(row),
 						spanAttributes: row.rootAttributes,

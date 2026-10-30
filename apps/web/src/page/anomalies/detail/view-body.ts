@@ -28,6 +28,7 @@ import { badge } from "../../../ui/display"
 import { card, cardPanel } from "../../../ui/card"
 import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
+import { pageTitle } from "../../../ui/page-layout"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
@@ -60,7 +61,10 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 	const tone = severityToneFor(incident)
 	const isStale = isStaleOpenIncident(incident, nowMs)
 	const dev = deviation(incident)
-	const accent = cn("font-mono font-medium", incident.status === "open" && !isStale ? tone.text : "text-foreground")
+	const accent = cn(
+		"font-mono font-medium",
+		incident.status === "open" && !isStale ? tone.text : "text-foreground",
+	)
 	const fmt = (value: number) => formatSignalValue(incident.signalType, value)
 	return h.div(
 		[h.Class("space-y-2")],
@@ -75,17 +79,17 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 							h.div(
 								[h.Class("flex flex-wrap items-baseline gap-3")],
 								[
-									h.h1(
-										[h.Class("font-display text-2xl font-semibold leading-[1.1] tracking-tight text-foreground")],
+									pageTitle(
+										h,
+										{
+											title: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
+											className:
+												"min-w-0 whitespace-normal break-words text-foreground",
+										},
 										[
-											h.span(
-												[h.Class("break-words")],
-												[
-													SIGNAL_LABEL[incident.signalType],
-													h.span([h.Class("text-muted-foreground/60")], [" · "]),
-													incident.serviceName,
-												],
-											),
+											SIGNAL_LABEL[incident.signalType],
+											h.span([h.Class("text-muted-foreground/60")], [" · "]),
+											incident.serviceName,
 										],
 									),
 								],
@@ -98,13 +102,23 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 									h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
 									" ",
 									"against a ",
-									h.span([h.Class("font-mono text-foreground")], [fmt(incident.baselineMedian)]),
+									h.span(
+										[h.Class("font-mono text-foreground")],
+										[fmt(incident.baselineMedian)],
+									),
 									" 7-day baseline:",
 									" ",
 									h.span([h.Class(accent)], [dev.label]),
-									dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : "",
+									dev.kind === "sigma"
+										? " above median"
+										: dev.kind === "percent"
+											? " vs baseline"
+											: "",
 									", threshold ",
-									h.span([h.Class("font-mono text-foreground")], [fmt(incident.thresholdValue)]),
+									h.span(
+										[h.Class("font-mono text-foreground")],
+										[fmt(incident.thresholdValue)],
+									),
 									".",
 									isStale
 										? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt, nowMs)}; this stale detector state does not represent current service health.`
@@ -119,21 +133,29 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 	)
 }
 
-const chartView = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: ChartSpec }>>((model, inputs, h) =>
-	plotFrame(h, {
-		chartId: "anomaly-signal",
-		spec: inputs.spec,
-		ariaLabel: "Observed signal",
-		className: "h-64 w-full",
-		tooltipBody: (portal) =>
-			Option.flatMap(model.tooltip, (tooltip) =>
-				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
-			),
-	}),
+const chartView = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: ChartSpec }>>(
+	(model, inputs, h) =>
+		plotFrame(h, {
+			chartId: "anomaly-signal",
+			spec: inputs.spec,
+			ariaLabel: "Observed signal",
+			className: "h-64 w-full",
+			tooltipBody: (portal) =>
+				Option.flatMap(model.tooltip, (tooltip) =>
+					tooltip._tag === "Bucket"
+						? Option.some(bucketTooltipBody(h, tooltip, portal))
+						: Option.none(),
+				),
+		}),
 )
 
 /** `AnomalySignalChart`: loading until the series, the theme and the chart runtime are all in. */
-export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html => {
+export const signalChart = (
+	h: H,
+	model: Model,
+	incident: AnomalyIncidentDocument,
+	timeZone: string,
+): Html => {
 	const colors = model.themeColors
 	const isReady = colors !== null && isChartRuntimeReady(model.chartRuntime)
 	return AsyncData.match(model.timeseries.data, {
@@ -150,7 +172,10 @@ export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocumen
 		if (series.buckets.length === 0)
 			return emptyMessage(
 				h,
-				{ dashed: true, className: "flex h-64 w-full items-center justify-center border-border/50 py-0 text-xs" },
+				{
+					dashed: true,
+					className: "flex h-64 w-full items-center justify-center border-border/50 py-0 text-xs",
+				},
 				["No signal data in window"],
 			)
 		const stroke = resolveColor(colors, SEVERITY_STROKE[incident.severity])
@@ -166,7 +191,10 @@ export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocumen
 					view: chartView,
 					viewInputs: {
 						spec: ChartSpec.AnomalySignal({
-							points: series.buckets.map((bucket) => ({ bucket: bucket.bucket, value: bucket.value })),
+							points: series.buckets.map((bucket) => ({
+								bucket: bucket.bucket,
+								value: bucket.value,
+							})),
 							signalType: series.signalType,
 							baselineMedian: series.baselineMedian,
 							thresholdValue: series.thresholdValue,
@@ -190,8 +218,18 @@ export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocumen
 					swatch: "dashed",
 					items: [
 						{ key: "observed", label: "Observed", color: stroke, swatch: "line" },
-						{ key: "baseline", label: "Baseline median", value: fmt(series.baselineMedian), color: "var(--muted-foreground)" },
-						{ key: "threshold", label: "Threshold", value: fmt(series.thresholdValue), color: "var(--severity-error)" },
+						{
+							key: "baseline",
+							label: "Baseline median",
+							value: fmt(series.baselineMedian),
+							color: "var(--muted-foreground)",
+						},
+						{
+							key: "threshold",
+							label: "Threshold",
+							value: fmt(series.thresholdValue),
+							color: "var(--severity-error)",
+						},
 					],
 				}),
 			],
@@ -212,27 +250,51 @@ const WORKFLOW_TONE = {
 	wontfix: TONE_SOFT.neutral,
 } as const
 
-const cardActions = (h: H, issueId: NonNullable<AnomalyIncidentDocument["errorIssueId"]>, isBusy: boolean): Html =>
+const cardActions = (
+	h: H,
+	issueId: NonNullable<AnomalyIncidentDocument["errorIssueId"]>,
+	isBusy: boolean,
+): Html =>
 	h.div(
 		[h.Class("flex shrink-0 items-center gap-1.5")],
 		[
-			linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.ErrorIssue({ issueId, search: {} })) }, [
-				"Open issue",
-				icon(h, "ArrowRightIcon"),
-			]),
+			linkButton(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					href: hrefOf(AppRoute.ErrorIssue({ issueId, search: {} })),
+				},
+				["Open issue", icon(h, "ArrowRightIcon")],
+			),
 			iconButton(
 				h,
-				{ label: "Link a different issue", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedLinkIssue())] },
+				{
+					label: "Link a different issue",
+					isDisabled: isBusy,
+					attributes: [h.OnClick(Message.ClickedLinkIssue())],
+				},
 				[icon(h, "LinkIcon")],
 			),
-			iconButton(h, { label: "Unlink issue", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedUnlink())] }, [
-				icon(h, "XmarkIcon"),
-			]),
+			iconButton(
+				h,
+				{
+					label: "Unlink issue",
+					isDisabled: isBusy,
+					attributes: [h.OnClick(Message.ClickedUnlink())],
+				},
+				[icon(h, "XmarkIcon")],
+			),
 		],
 	)
 
 /** `AnomalyLinkedIssueCard`. */
-export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDocument, isBusy: boolean): Html => {
+export const linkedIssueCard = (
+	h: H,
+	model: Model,
+	incident: AnomalyIncidentDocument,
+	isBusy: boolean,
+): Html => {
 	const issueId = incident.errorIssueId
 	if (issueId === null)
 		return h.div(
@@ -256,16 +318,25 @@ export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDoc
 								...(incident.fingerprintHash === null
 									? []
 									: [
-											inlineCode(h, { className: "inline-block px-1.5 py-0.5 text-2xs text-muted-foreground" }, [
-												"fingerprint ",
-												incident.fingerprintHash,
-											]),
+											inlineCode(
+												h,
+												{
+													className:
+														"inline-block px-1.5 py-0.5 text-2xs text-muted-foreground",
+												},
+												["fingerprint ", incident.fingerprintHash],
+											),
 										]),
 							],
 						),
 						button(
 							h,
-							{ size: "sm", variant: "outline", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedLinkIssue())] },
+							{
+								size: "sm",
+								variant: "outline",
+								isDisabled: isBusy,
+								attributes: [h.OnClick(Message.ClickedLinkIssue())],
+							},
 							[icon(h, "LinkIcon"), "Link issue"],
 						),
 					],
@@ -286,7 +357,12 @@ export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDoc
 			[
 				h.p(
 					[h.Class("text-muted-foreground")],
-					["Linked to issue", " ", h.code([h.Class("font-mono text-xs")], [shortIssueId(id)]), ". Couldn't load its details."],
+					[
+						"Linked to issue",
+						" ",
+						h.code([h.Class("font-mono text-xs")], [shortIssueId(id)]),
+						". Couldn't load its details.",
+					],
 				),
 				cardActions(h, id, isBusy),
 			],
@@ -304,12 +380,23 @@ export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDoc
 						h.div(
 							[h.Class("flex flex-wrap items-center gap-2")],
 							[
-								badge(h, { variant: "outline", className: WORKFLOW_TONE[issue.workflowState] }, [WORKFLOW_LABEL[issue.workflowState]]),
-								h.code([h.Class("font-mono text-xs tabular-nums text-muted-foreground")], [shortIssueId(issue.id)]),
-								badge(h, { variant: "meta", pill: true, size: "sm", className: META_CHIP_CLASS }, [
-									serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
-									h.span([h.Class("max-w-[140px] truncate")], [issue.serviceName]),
-								]),
+								badge(
+									h,
+									{ variant: "outline", className: WORKFLOW_TONE[issue.workflowState] },
+									[WORKFLOW_LABEL[issue.workflowState]],
+								),
+								h.code(
+									[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+									[shortIssueId(issue.id)],
+								),
+								badge(
+									h,
+									{ variant: "meta", pill: true, size: "sm", className: META_CHIP_CLASS },
+									[
+										serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
+										h.span([h.Class("max-w-[140px] truncate")], [issue.serviceName]),
+									],
+								),
 							],
 						),
 						h.p(
@@ -317,7 +404,12 @@ export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDoc
 							[
 								issue.exceptionType || "Unknown error",
 								...(issue.exceptionMessage
-									? [h.span([h.Class("ml-2 font-normal text-muted-foreground")], [issue.exceptionMessage])]
+									? [
+											h.span(
+												[h.Class("ml-2 font-normal text-muted-foreground")],
+												[issue.exceptionMessage],
+											),
+										]
 									: []),
 							],
 						),
@@ -326,7 +418,11 @@ export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDoc
 							[
 								h.span(
 									[h.Class("tabular-nums")],
-									[formatNumber(issue.occurrenceCount), " ", pluralize(issue.occurrenceCount, "event")],
+									[
+										formatNumber(issue.occurrenceCount),
+										" ",
+										pluralize(issue.occurrenceCount, "event"),
+									],
 								),
 								h.span(
 									[h.Class("flex items-center gap-1.5")],
