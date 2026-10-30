@@ -24,7 +24,8 @@ describe("randomnessValue", () => {
 		const threshold = Math.round((1 - 0.25) * 2 ** 56)
 		expect(randomnessValue(0.2)).toBeGreaterThanOrEqual(threshold)
 		expect(randomnessValue(0.3)).toBeLessThan(threshold)
-		expect(randomnessValue(0)).toBe(2 ** 56 - 1)
+		// The top of the range still fits the 14 hex digits `ot=rv` carries.
+		expect(randomnessValue(0).toString(16)).toMatch(/^f{13}[0-9a-f]$/)
 	})
 })
 

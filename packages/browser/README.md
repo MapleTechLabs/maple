@@ -28,8 +28,8 @@ MapleBrowser.init({
 
 That single call:
 
-- starts OTel browser tracing, auto-instrumenting `fetch`, exporting to Maple's
-  ingest (`POST /v1/traces`);
+- starts OTel browser tracing, auto-instrumenting `fetch` and `XMLHttpRequest`,
+  exporting to Maple's ingest (`POST /v1/traces`);
 - records the session with rrweb, chunking events (~5s / 100KB windows),
   gzipping them with the native `CompressionStream`, and uploading to
   `POST /v1/sessionReplays/blob`. rrweb ships in a lazy code-split chunk loaded
@@ -57,6 +57,11 @@ try {
 }
 ```
 
+`captureException` is safe before `init()`: calls are held (up to 30) and recorded when it runs.
+A thrown value that is not an `Error` (`throw "boom"`, `throw { code: 1 }`) is recorded with its
+fields as the message, and an uncaught one gets a single frame at the throw site rather than a
+stack from inside the SDK.
+
 Opt out of the global handlers with `tracing: { captureErrors: false }` — worth
 doing only when another tracker already owns them, or the same crash is recorded
 twice.
@@ -70,7 +75,10 @@ fingerprint to one contentless issue that buries the real ones. Add
 
 `fetch`/XHR responses with a 4xx or 5xx status are errors, typed by status, as the HTTP semantic
 conventions say for client spans. Narrow that with `errors: { captureHttpStatus: [[500, 599]] }`.
-A network failure is always an error.
+A request that never got a response is an error too, unless the connection went away while it was
+in flight: the page unloaded or was hidden, or the browser went offline (or was offline when it
+failed). Those stay `Unset` with `maple.connection_lost` set to `page_unload`, `page_hidden` or
+`offline`, since the browser cancelled them, not your API.
 
 ### Breadcrumbs
 
@@ -99,9 +107,10 @@ in production.
 
 ## Identifying users
 
-Pass `userId` to `init()` when you already know the signed-in user, or call
-`MapleBrowser.identify(user.id)` later. The id is attached to future session
-metadata rows and stamped as `user.id` on future browser-created spans.
+Pass `user` to `init()` when you already know the signed-in user
+(`user: { id: user.id, email: user.email }`), or call `MapleBrowser.identify(user.id)` later.
+The id is attached to future session metadata rows and stamped as `user.id` on future
+browser-created spans.
 
 ```ts
 MapleBrowser.identify(user.id)
@@ -196,12 +205,12 @@ MapleBrowser.endNavigation("/projects/:id") // the route is ready: its template
 - The first `startNavigation` opens a `pageload` span, joined to the server
   render's trace from a `Server-Timing: traceparent;desc="…"` entry or a
   `<meta name="traceparent">` tag; later calls open `navigate` spans, and end
-  one still open as `app.navigation.interrupted`.
+  one still open, marked `maple.navigation.interrupted`.
 - The document's `pageload` starts at navigation start, and gets child spans
   from the Navigation Timing entry once the page has loaded: `documentFetch`
   (with `dns`, `connect`, `request` and `response` under it), `domProcessing`
   and `loadEvent`.
-- `traced` returns `fn`'s result and rethrows its error unchanged. Only requests
+- `traced` takes a sync or async `fn`, returns its result and rethrows its error unchanged. Only requests
   started before `fn`'s first `await` nest under its span. An error it recorded
   isn't reported again by `captureException` or the global handlers.
 - All three are no-ops on the server, before `init()`, with tracing disabled or
@@ -220,6 +229,11 @@ instrumentTanStackRouter(router) // navigate /projects/$projectId
 ```
 
 Attach them after `MapleBrowser.init`: a navigation reported earlier uses up the page load.
+Attaching the same router twice (React StrictMode, HMR) keeps one instrumentation, and the
+unsubscribe they return ends a navigation still open as interrupted.
+
+`mapleReactErrorHandler(source, next)` replaces React's own console logging for that callback, so
+it hands the error on to `next` afterwards, `console.error` by default.
 
 ## Linking a marketing site to your app
 

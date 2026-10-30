@@ -1,6 +1,8 @@
 import { type Emit, safeEmit } from "../../capture/shared"
 import { activeTraceId, withStartedTraceId } from "../../events/trace-id"
+import { patchMethod } from "../../capture/patch"
 import type { NetworkBodyOptions } from "../../platform/transport"
+import { truncateText } from "../../platform/text"
 
 /** Only text is worth keeping; a body that is an image or a stream is not read. */
 const TEXT_CONTENT = /^(text\/|application\/(json|xml|x-www-form-urlencoded|[\w.+-]+\+(json|xml)))/i
@@ -24,86 +26,52 @@ const absoluteUrl = (url: string): string => {
 const matchesUrl = (url: string, patterns: ReadonlyArray<string | RegExp>): boolean =>
 	patterns.some((pattern) => {
 		if (typeof pattern === "string") return url.includes(pattern)
+		// Plain-JS config can hand us anything; a bad entry must not throw inside the host's fetch.
+		if (!(pattern instanceof RegExp)) return false
 		// A `g`/`y` regex is stateful: `test` advances `lastIndex`, so reset it first.
 		pattern.lastIndex = 0
 		return pattern.test(url)
 	})
 
-const cut = (text: string, maxLength: number): string =>
-	text.length > maxLength ? `${text.slice(0, maxLength)}…` : text
+/**
+ * JSON keys and form fields whose values are credentials whatever the app
+ * calls them: tokens, secrets, passwords, API keys, cookies, auth headers.
+ */
+const CREDENTIAL_KEY =
+	/token|secret|pass(word|wd|phrase|code)|(^|[-_])pwd([-_]|$)|authori[sz]ation|(^|[-_])auth([-_]|$)|api[-_]?key|cookie|credential|private[-_]?key|access[-_]?key|(^|[-_])(otp|cvv|cvc|ssn)([-_]|$)|card[-_]?number/i
+/** A JSON member: a string key and its string (possibly cut off) or bare value. */
+const JSON_MEMBER = /"((?:[^"\\]|\\.)*)"(\s*:\s*)("(?:[^"\\]|\\.)*"?|[^\s,}\]"{[]+)/g
+/** A form field: `key=value`, at the start or after `&`. */
+const FORM_FIELD = /(^|&)([^=&]*)=([^&]*)/g
+const REDACTED = "[REDACTED]"
 
 /**
- * Capture fetch + XHR requests as session events, tagged with the active trace
- * id so each request links to its backend trace. `ignoreUrl` skips Maple's own
- * ingest endpoints (otherwise capturing the session-events POST would loop).
- * `bodies`, when set, keeps text request/response bodies of the URLs it lists.
+ * Blank the values of credential-looking keys in a JSON or form body. Works on
+ * a prefix too: a body cut mid-value still loses the value.
  */
-export function installNetworkCapture(
-	emit: Emit,
-	ignoreUrl: (url: string) => boolean,
-	bodies?: NetworkBodyOptions,
-): () => void {
-	const wantsBody = (url: string): boolean =>
-		bodies !== undefined && matchesUrl(absoluteUrl(url), bodies.urls)
-	const bodyAttrs = (
-		request: string | undefined,
-		response: string | undefined,
-	): Record<string, string> => ({
-		...(request && bodies?.requestBodies !== false
-			? { "request.body": cut(request, bodies?.maxLength ?? 0) }
-			: undefined),
-		...(response && bodies ? { "response.body": cut(response, bodies.maxLength) } : undefined),
-	})
-	const origFetch = typeof window !== "undefined" ? window.fetch : undefined
+function redactCredentials(body: string): string {
+	return body
+		.replace(JSON_MEMBER, (member, key: string, colon: string) =>
+			CREDENTIAL_KEY.test(key) ? `"${key}"${colon}"${REDACTED}"` : member,
+		)
+		.replace(FORM_FIELD, (field, lead: string, key: string) =>
+			CREDENTIAL_KEY.test(safeDecode(key)) ? `${lead}${key}=${REDACTED}` : field,
+		)
+}
 
-	if (origFetch) {
-		window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-			const url = requestUrl(input)
-			const method = requestMethod(input, init)
-			const ambientTraceId = activeTraceId()
-			const start = performance.now()
-			let traceId = ambientTraceId
-			try {
-				// Synchronous up to here, so a fetch instrumentation wrapped inside
-				// this one starts its span within the slot.
-				const call = withStartedTraceId(() => origFetch(input, init))
-				traceId = call.traceId ?? ambientTraceId
-				const res = await call.result
-				if (!wantsBody(url)) {
-					record(url, method, res.status, start, traceId)
-					return res
-				}
-				// Read a clone in the background: the app gets its response untouched and unwaited.
-				const requestBody = typeof init?.body === "string" ? init.body : undefined
-				const done = performance.now()
-				const contentType = res.headers.get("content-type") ?? ""
-				void (
-					isReadableText(contentType)
-						? readPrefix(res.clone(), bodies?.maxLength ?? 0)
-						: Promise.resolve(undefined)
-				)
-					.catch(() => undefined)
-					.then((responseBody) =>
-						record(
-							url,
-							method,
-							res.status,
-							start,
-							traceId,
-							undefined,
-							bodyAttrs(requestBody, responseBody),
-							done,
-						),
-					)
-				return res
-			} catch (error) {
-				record(url, method, 0, start, traceId, String(error))
-				throw error
-			}
-		}
+function safeDecode(text: string): string {
+	try {
+		return decodeURIComponent(text.replace(/\+/g, " "))
+	} catch {
+		return text
 	}
+}
 
-	const record = (
+const cut = (text: string, maxLength: number): string => truncateText(redactCredentials(text), maxLength, "…")
+
+/** What a live network capture reports to; undefined once it is torn down. */
+interface NetworkHooks {
+	readonly record: (
 		url: string,
 		method: string,
 		status: number,
@@ -111,56 +79,148 @@ export function installNetworkCapture(
 		traceId: string | undefined,
 		error?: string,
 		extra?: Record<string, string>,
-		end = performance.now(),
-	): void => {
-		if (ignoreUrl(url)) return
-		const attrs = { ...extra, ...(error ? { error } : undefined) }
-		safeEmit(emit, {
-			type: "network",
-			net: { method, url, status, durationMs: Math.round(end - start) },
-			traceId,
-			...(Object.keys(attrs).length > 0 ? { attrs } : undefined),
-		})
-	}
+		end?: number,
+	) => void
+	readonly wantsBody: (url: string) => boolean
+	readonly bodyAttrs: (request: string | undefined, response: string | undefined) => Record<string, string>
+	readonly maxLength: number
+}
 
-	// XMLHttpRequest — patch open (to capture method/url) + send (to time + observe).
-	const XHR = typeof window !== "undefined" ? window.XMLHttpRequest : undefined
-	const origOpen = XHR?.prototype.open
-	const origSend = XHR?.prototype.send
-	if (XHR && origOpen && origSend) {
-		XHR.prototype.open = function (
-			this: XMLHttpRequest,
-			method: string,
-			url: string | URL,
-			...rest: unknown[]
-		) {
-			;(this as XhrMeta).__mapleMethod = String(method).toUpperCase()
-			;(this as XhrMeta).__mapleUrl = typeof url === "string" ? url : url.href
-			// Some XHR instrumentations start their span in `open`, not `send`.
-			const call = withStartedTraceId(() => origOpen.apply(this, [method, url, ...rest] as never))
-			;(this as XhrMeta).__mapleTraceId = call.traceId
-			return call.result
-		}
-		XHR.prototype.send = function (this: XMLHttpRequest, ...args: unknown[]) {
-			const meta = this as XhrMeta
-			const start = performance.now()
-			let traceId = meta.__mapleTraceId ?? activeTraceId()
-			const url = meta.__mapleUrl ?? ""
-			const requestBody = typeof args[0] === "string" ? args[0] : undefined
-			this.addEventListener("loadend", () => {
-				const extra = wantsBody(url) ? bodyAttrs(requestBody, xhrResponseText(this)) : undefined
-				record(url, meta.__mapleMethod ?? "GET", this.status, start, traceId, undefined, extra)
+/**
+ * Capture fetch + XHR requests as session events, tagged with the active trace
+ * id so each request links to its backend trace. `ignoreUrl` skips Maple's own
+ * ingest endpoints (otherwise capturing the session-events POST would loop).
+ * `bodies`, when set, keeps text request/response bodies of the URLs it lists,
+ * with credential-looking values blanked.
+ *
+ * Teardown leaves a wrapper something else installed on top of in place, inert
+ * (see `patchMethod`), so an app's own interceptor keeps working.
+ */
+export function installNetworkCapture(
+	emit: Emit,
+	ignoreUrl: (url: string) => boolean,
+	bodies?: NetworkBodyOptions,
+): () => void {
+	const hooks: NetworkHooks = {
+		wantsBody: (url) => bodies !== undefined && matchesUrl(absoluteUrl(url), bodies.urls),
+		bodyAttrs: (request, response) => ({
+			...(request && bodies?.requestBodies !== false
+				? { "request.body": cut(request, bodies?.maxLength ?? 0) }
+				: undefined),
+			...(response && bodies ? { "response.body": cut(response, bodies.maxLength) } : undefined),
+		}),
+		maxLength: bodies?.maxLength ?? 0,
+		record: (url, method, status, start, traceId, error, extra, end = performance.now()) => {
+			if (ignoreUrl(url)) return
+			const attrs = { ...extra, ...(error ? { error } : undefined) }
+			safeEmit(emit, {
+				type: "network",
+				net: { method, url, status, durationMs: Math.round(end - start) },
+				traceId,
+				...(Object.keys(attrs).length > 0 ? { attrs } : undefined),
 			})
-			const call = withStartedTraceId(() => origSend.apply(this, args as never))
-			traceId = call.traceId ?? traceId
-			return call.result
+		},
+	}
+	if (typeof window === "undefined") return () => {}
+	const uninstall: Array<() => void> = []
+	if (typeof window.fetch === "function") uninstall.push(patchMethod(window, "fetch", hooks, wrapFetch))
+	const XHR = window.XMLHttpRequest
+	if (XHR && typeof XHR.prototype.open === "function" && typeof XHR.prototype.send === "function") {
+		uninstall.push(patchMethod(XHR.prototype, "open", hooks, wrapXhrOpen))
+		uninstall.push(patchMethod(XHR.prototype, "send", hooks, wrapXhrSend))
+	}
+	return () => {
+		for (const off of uninstall) off()
+	}
+}
+
+function wrapFetch(original: typeof fetch, hooks: () => NetworkHooks | undefined): typeof fetch {
+	return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+		const live = hooks()
+		if (!live) return original(input, init)
+		const url = requestUrl(input)
+		const method = requestMethod(input, init)
+		const ambientTraceId = activeTraceId()
+		const start = performance.now()
+		let traceId = ambientTraceId
+		try {
+			// Synchronous up to here, so a fetch instrumentation wrapped inside
+			// this one starts its span within the slot.
+			const call = withStartedTraceId(() => original(input, init))
+			traceId = call.traceId ?? ambientTraceId
+			const res = await call.result
+			if (!live.wantsBody(url)) {
+				live.record(url, method, res.status, start, traceId)
+				return res
+			}
+			// Read a clone in the background: the app gets its response untouched and unwaited.
+			const requestBody = typeof init?.body === "string" ? init.body : undefined
+			const done = performance.now()
+			const contentType = res.headers.get("content-type") ?? ""
+			void (
+				isReadableText(contentType)
+					? readPrefix(res.clone(), live.maxLength)
+					: Promise.resolve(undefined)
+			)
+				.catch(() => undefined)
+				.then((responseBody) =>
+					live.record(
+						url,
+						method,
+						res.status,
+						start,
+						traceId,
+						undefined,
+						live.bodyAttrs(requestBody, responseBody),
+						done,
+					),
+				)
+			return res
+		} catch (error) {
+			live.record(url, method, 0, start, traceId, String(error))
+			throw error
 		}
 	}
+}
 
-	return () => {
-		if (origFetch) window.fetch = origFetch
-		if (XHR && origOpen) XHR.prototype.open = origOpen
-		if (XHR && origSend) XHR.prototype.send = origSend
+// XMLHttpRequest: `open` captures method and url, `send` times and observes.
+function wrapXhrOpen(
+	original: XMLHttpRequest["open"],
+	hooks: () => NetworkHooks | undefined,
+): XMLHttpRequest["open"] {
+	return function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+		const call = (): void => original.apply(this, [method, url, ...rest] as never)
+		if (!hooks()) return call()
+		const meta = xhrMeta(this)
+		meta.__mapleMethod = String(method).toUpperCase()
+		// `String`, as the native method coerces: `null` or an object with its own `toString` are valid.
+		meta.__mapleUrl = String(url)
+		// Some XHR instrumentations start their span in `open`, not `send`.
+		const started = withStartedTraceId(call)
+		meta.__mapleTraceId = started.traceId
+		return started.result
+	}
+}
+
+function wrapXhrSend(
+	original: XMLHttpRequest["send"],
+	hooks: () => NetworkHooks | undefined,
+): XMLHttpRequest["send"] {
+	return function (this: XMLHttpRequest, ...args: unknown[]) {
+		const live = hooks()
+		if (!live) return original.apply(this, args as never)
+		const meta = xhrMeta(this)
+		const start = performance.now()
+		let traceId = meta.__mapleTraceId ?? activeTraceId()
+		const url = meta.__mapleUrl ?? ""
+		const requestBody = typeof args[0] === "string" ? args[0] : undefined
+		this.addEventListener("loadend", () => {
+			const extra = live.wantsBody(url) ? live.bodyAttrs(requestBody, xhrResponseText(this)) : undefined
+			live.record(url, meta.__mapleMethod ?? "GET", this.status, start, traceId, undefined, extra)
+		})
+		const call = withStartedTraceId(() => original.apply(this, args as never))
+		traceId = call.traceId ?? traceId
+		return call.result
 	}
 }
 
@@ -220,6 +280,9 @@ interface XhrMeta extends XMLHttpRequest {
 	__mapleUrl?: string
 	__mapleTraceId?: string | undefined
 }
+
+/** The request with the fields capture keeps on it; all optional, so any request is one. */
+const xhrMeta = (xhr: XMLHttpRequest): XhrMeta => xhr
 
 function requestUrl(input: RequestInfo | URL): string {
 	if (typeof input === "string") return input

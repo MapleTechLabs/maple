@@ -43,6 +43,7 @@
 		"build": "tsdown",
 		"typecheck": "tsrs --noEmit",
 		"test": "vitest run",
+		"test:e2e": "tsdown && vitest run -c vitest.e2e.config.ts",
 		"size": "bun scripts/size.ts"
 	},
 	"dependencies": {
@@ -65,11 +66,13 @@
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",
+		"fast-check": "^4.10.2",
 		"playwright": "catalog:",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",
 		"tsdown": "^0.23.0",
 		"typescript": "catalog:tooling",
+		"vite": "catalog:",
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {

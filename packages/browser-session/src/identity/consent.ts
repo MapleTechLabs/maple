@@ -23,7 +23,12 @@ import {
 	resetPersistenceForTests,
 } from "../platform/persistence"
 import { addUrlSanitizer, resetUrlSanitizersForTests } from "../platform/url-privacy"
-import { configureVisitorCookie } from "./visitor"
+import {
+	configureVisitorCookie,
+	optOutOfVisitorId,
+	purgeVisitorId,
+	resetVisitorCacheForTests,
+} from "./visitor"
 
 export interface PrivacyOptions {
 	/** Capture nothing until `setConsent(true)`. Default false. */
@@ -70,6 +75,10 @@ interface ConsentState {
 	allowedSince: number
 	/** Last withdrawal on this page; the only copy in memory-only mode. */
 	revokedAt: number
+	/** Some SDK has called `configurePrivacy`, so a missing gate is deliberate. */
+	configured: boolean
+	/** `setConsent(false)` arrived before any gate existed, to be applied when one does. */
+	deniedBeforeGate: boolean
 	readonly listeners: Set<ConsentListener>
 }
 
@@ -89,10 +98,14 @@ function consentState(): ConsentState {
 	if (existing) {
 		// Created by an older SDK copy on the page, before the field existed.
 		existing.revokedAt ||= 0
+		existing.configured ||= false
+		existing.deniedBeforeGate ||= false
 		return existing
 	}
 	const fresh: ConsentState = {
 		allowedSince: 0,
+		configured: false,
+		deniedBeforeGate: false,
 		granted: false,
 		listeners: new Set(),
 		requireConsent: false,
@@ -125,6 +138,39 @@ export function consentRevokedAt(): number {
 	}
 }
 
+/**
+ * Withdraw consent for good: data kept from before now is never sent, and the
+ * persistent visitor id and visit claim are deleted from every store.
+ */
+function revoke(): void {
+	writeRevokedAt(Date.now())
+	purgeVisitorId()
+}
+
+/**
+ * How long a denial on a page that never granted waits before it purges.
+ * Consent tools commonly set a default "denied" and then replay the stored
+ * "granted" once loaded; purging at once would mint a new visitor every page.
+ */
+const DENIAL_SETTLE_MS = 10_000
+let pendingRevoke: ReturnType<typeof setTimeout> | undefined
+
+function cancelPendingRevoke(): void {
+	if (pendingRevoke !== undefined) clearTimeout(pendingRevoke)
+	pendingRevoke = undefined
+}
+
+/** A denial with no grant before it on this page: a withdrawal unless a grant follows soon. */
+function revokeUnlessGranted(): void {
+	if (pendingRevoke !== undefined) return
+	pendingRevoke = setTimeout(() => {
+		pendingRevoke = undefined
+		if (!consentState().granted) revoke()
+	}, DENIAL_SETTLE_MS)
+}
+
+let warnedAboutMissingGate = false
+
 function updateEffectiveConsent(previous: boolean): void {
 	const state = consentState()
 	const allowed = hasConsent()
@@ -150,9 +196,11 @@ function updateEffectiveConsent(previous: boolean): void {
  * denied→allowed transition would start capture on a user who never consented.
  * To genuinely relax a gate, reload without it.
  */
-export function configurePrivacy(options: PrivacyOptions | undefined): void {
+/** Returns the remover for its `sanitizeUrl`, so a shutdown leaves no closure behind. */
+export function configurePrivacy(options: PrivacyOptions | undefined): () => void {
 	const state = consentState()
 	const previous = hasConsent()
+	state.configured = true
 	state.requireConsent = state.requireConsent || (options?.requireConsent ?? false)
 	state.respectDoNotTrack = state.respectDoNotTrack || (options?.respectDoNotTrack ?? false)
 	configurePersistence(options?.persistence)
@@ -160,17 +208,45 @@ export function configurePrivacy(options: PrivacyOptions | undefined): void {
 		crossSubdomainCookie: options?.crossSubdomainCookie,
 		cookieDomain: options?.cookieDomain,
 	})
-	if (options?.sanitizeUrl) addUrlSanitizer(options.sanitizeUrl)
+	if (options?.persistVisitorId === false) optOutOfVisitorId()
+	const removeSanitizer = options?.sanitizeUrl ? addUrlSanitizer(options.sanitizeUrl) : () => {}
+	// A consent tool that replayed "denied" before init: now that a gate exists,
+	// that denial is a withdrawal.
+	if (state.requireConsent && state.deniedBeforeGate && !state.granted) revokeUnlessGranted()
+	state.deniedBeforeGate = false
 	updateEffectiveConsent(previous)
+	return removeSanitizer
 }
 
-/** Record the user's consent decision. No-op unless `requireConsent` is set. */
+/**
+ * Record the user's consent decision. No-op unless `requireConsent` is set.
+ *
+ * Under the gate, every `false` is a withdrawal, including one replayed on a
+ * fresh page load: the visitor id and data queued under an earlier grant must
+ * not survive it. That one purges after a short settle, so a default "denied"
+ * the consent tool replaces with "granted" does not reset the visitor.
+ */
 export function setConsent(nextGranted: boolean): void {
 	const previous = hasConsent()
 	const state = consentState()
-	// Only the user taking consent back is a revoke; a page starting without it is not.
-	if (state.granted && !nextGranted) writeRevokedAt(Date.now())
+	const wasGranted = state.granted
 	state.granted = nextGranted
+	if (nextGranted) {
+		state.deniedBeforeGate = false
+		cancelPendingRevoke()
+	} else if (state.requireConsent) {
+		if (wasGranted) {
+			cancelPendingRevoke()
+			revoke()
+		} else revokeUnlessGranted()
+	} else if (!state.configured) {
+		state.deniedBeforeGate = true
+	} else if (!warnedAboutMissingGate) {
+		warnedAboutMissingGate = true
+		console.warn(
+			"[maple] setConsent(false) has no effect without privacy.requireConsent; capture continues.",
+		)
+	}
 	updateEffectiveConsent(previous)
 }
 
@@ -215,13 +291,18 @@ export function mayPersistIdentifier(): boolean {
 
 /** Test seam. */
 export function resetConsentForTests(): void {
+	cancelPendingRevoke()
 	const state = consentState()
 	state.requireConsent = false
 	state.granted = false
 	state.respectDoNotTrack = false
 	state.allowedSince = 0
 	state.revokedAt = 0
+	state.configured = false
+	state.deniedBeforeGate = false
 	state.listeners.clear()
 	resetUrlSanitizersForTests()
 	resetPersistenceForTests()
+	// The visitor opt-out and cookie scope only tighten too, from `configurePrivacy`.
+	resetVisitorCacheForTests()
 }

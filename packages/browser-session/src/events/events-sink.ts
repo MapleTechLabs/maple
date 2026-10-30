@@ -3,6 +3,7 @@ import { formatCHDateTime } from "./meta-row"
 import type { IngestConfig } from "../platform/transport"
 import { postSessionEvents } from "../platform/transport"
 import { approximateSize } from "../platform/approximate-size"
+import { patchMethod } from "../capture/patch"
 import { markActivity, noteNavigation } from "../session/session"
 import { activeTraceId } from "./trace-id"
 import { getVisitorId } from "../identity/visitor"
@@ -52,7 +53,18 @@ export function onSessionEvent(listener: SessionEventListener): () => void {
 }
 
 const FLUSH_INTERVAL_MS = 5_000
-const FLUSH_BYTES = 64 * 1024
+/** Small enough that the batch a page leaves with usually fits the shared keepalive budget. */
+const FLUSH_BYTES = 32 * 1024
+/** Ceiling on buffered events while ingest asks to back off; the oldest go first. */
+const MAX_BUFFER_BYTES = 256 * 1024
+/** Pause after ingest asks for a retry (429, 5xx), doubling per answer in a row up to the cap. */
+const RETRY_BACKOFF_MS = 5_000
+const MAX_RETRY_BACKOFF_MS = 60_000
+/** Identical error rows kept per window: an error thrown every frame is one row, not sixty a second. */
+const MAX_REPEATED_ERRORS = 5
+const REPEATED_ERROR_WINDOW_MS = 60_000
+/** Event types a person causes. Only these keep a session from going idle. */
+const USER_EVENTS: ReadonlySet<SessionEvent["type"]> = new Set(["navigation", "click", "input", "custom"])
 /** Events across which an in-flight POST can fail although ingest stored it. */
 const PAGE_TRANSITIONS = ["beforeunload", "pagehide", "visibilitychange"]
 
@@ -133,6 +145,17 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 	// once more, unchanged, so this only holds what failed since the previous
 	// one. A sink that is stopped or unloaded before that flush drops them.
 	let retry: Array<Record<string, unknown>> = []
+	// Rows ingest answered 429 or 5xx for: certainly not stored, so unlike `retry`
+	// they may ride a keepalive flush and survive `pagehide`. Also sent once more.
+	let resend: Array<Record<string, unknown>> = []
+	/** The one non-keepalive POST in flight, and whether a flush was asked for meanwhile. */
+	let inFlight: Promise<void> | undefined
+	let flushAgain = false
+	let retryAt = 0
+	let retriesInARow = 0
+	/** Ingest refused this page's key or plan: nothing more is buffered. */
+	let refused = false
+	const repeatedErrors = new Map<string, { count: number; since: number }>()
 	let seq = 0
 	let pageViews = 0
 	let clickCount = 0
@@ -148,34 +171,92 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 	let pageTransitions = 0
 	const onPageTransition = (event: Event): void => {
 		pageTransitions++
+		// `resend` stays: ingest answered those, so they were certainly not stored.
 		if (event.type === "pagehide") retry = []
 	}
 	// `visibilitychange` is fired at the document and bubbles to the window.
 	const pageTarget = typeof globalThis.addEventListener === "function" ? globalThis : undefined
 	for (const type of PAGE_TRANSITIONS) pageTarget?.addEventListener(type, onPageTransition)
 
-	const flush = async (keepalive = false): Promise<void> => {
+	const send = async (keepalive: boolean): Promise<void> => {
+		// None while backing off; the page leaving overrides it.
+		if (!keepalive && Date.now() < retryAt) return
 		const fresh = buffer.map(({ ev, seq }) => toRow(config, sessionId, ev, seq))
-		// Queued rows never ride a keepalive flush: on the way out there is no
-		// telling a lost batch from one whose answer the page did not wait for.
-		const rows = keepalive ? fresh : [...retry, ...fresh]
+		// Rows that got no answer never ride a keepalive flush: on the way out there
+		// is no telling a lost batch from one whose answer the page did not wait for.
+		const rows = keepalive ? [...resend, ...fresh] : [...retry, ...resend, ...fresh]
 		if (rows.length === 0) return
 		if (!keepalive) retry = []
+		resend = []
 		buffer = []
 		bufferBytes = 0
 		const transitionsAtSend = pageTransitions
 		const outcome = await postSessionEvents(config, rows, keepalive)
-		if (outcome !== "failed" || keepalive || pageTransitions !== transitionsAtSend) return
+		if (outcome === "refused") {
+			refused = true
+			buffer = []
+			bufferBytes = 0
+			retry = []
+			return
+		}
+		if (outcome === "retry") {
+			retriesInARow++
+			retryAt = Date.now() + Math.min(MAX_RETRY_BACKOFF_MS, RETRY_BACKOFF_MS * 2 ** (retriesInARow - 1))
+		} else {
+			retriesInARow = 0
+		}
+		if (keepalive) return
 		// Only the rows on their first attempt: an unreachable endpoint must not
 		// turn into a POST every interval.
-		retry = [...fresh, ...retry]
+		if (outcome === "retry") resend = fresh
+		else if (outcome === "failed" && pageTransitions === transitionsAtSend) retry = [...fresh, ...retry]
+	}
+
+	// One POST at a time: an error loop filling the buffer every few hundred
+	// milliseconds queues one follow-up flush rather than a request per fill.
+	const flush = (keepalive = false): Promise<void> => {
+		if (keepalive) return send(true)
+		if (inFlight) {
+			flushAgain = true
+			return inFlight
+		}
+		const run = async (): Promise<void> => {
+			try {
+				do {
+					flushAgain = false
+					await send(false)
+				} while (flushAgain)
+			} finally {
+				inFlight = undefined
+			}
+		}
+		inFlight = run()
+		return inFlight
+	}
+
+	/** Whether `ev` repeats an error already sent `MAX_REPEATED_ERRORS` times this window. */
+	const isRepeatedError = (ev: SessionEvent): boolean => {
+		if (ev.type !== "error" && !(ev.type === "console" && ev.level === "error")) return false
+		const key = `${ev.type}|${ev.message ?? ""}|${(ev.errorStack ?? "").slice(0, 500)}`
+		const now = Date.now()
+		const seen = repeatedErrors.get(key)
+		if (!seen || now - seen.since > REPEATED_ERROR_WINDOW_MS) {
+			if (repeatedErrors.size >= 100) repeatedErrors.clear()
+			repeatedErrors.set(key, { count: 1, since: now })
+			return false
+		}
+		seen.count++
+		return seen.count > MAX_REPEATED_ERRORS
 	}
 
 	const emit = (ev: SessionEvent): void => {
-		// Activity is the rotation boundary. Resolve it before assigning the row
-		// an id; if the previous session expired, hand the event to a fresh sink
+		// Activity is the rotation boundary. Resolve it before assigning the row an
+		// id; if the previous session expired, hand the event to a fresh sink
 		// instead of reviving the old record and continuing its seq counter.
-		const session = markActivity()
+		// Console, network and errors are not activity: on an idle page they
+		// neither revive nor rotate its session, so a polling dashboard goes quiet.
+		const session = markActivity(USER_EVENTS.has(ev.type) ? "input" : "passive")
+		if (session === null) return
 		if (session && session.id !== sessionId) {
 			const nextSink = startEventSink(config, session.id)
 			// Starting the replacement sink emits its initial navigation. Replaying
@@ -191,8 +272,13 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 			noteNavigation(ev.url ?? (typeof location !== "undefined" ? location.href : ""))
 		} else if (ev.type === "click") clickCount++
 		else if (ev.type === "error" || (ev.type === "console" && ev.level === "error")) errorCount++
+		if (refused || isRepeatedError(ev)) return
 		buffer.push({ ev, seq: seq++ })
 		bufferBytes += approximateSize(ev)
+		while (bufferBytes > MAX_BUFFER_BYTES && buffer.length > 1) {
+			const dropped = buffer.shift()
+			if (dropped) bufferBytes -= approximateSize(dropped.ev)
+		}
 		if (bufferBytes >= FLUSH_BYTES) void flush()
 		for (const listener of listeners()) {
 			// A listener must never break capture.
@@ -254,29 +340,32 @@ function installNavigationObserver(onNavigate: (url: string) => void): () => voi
 
 	emitNav() // initial page view
 
-	const origPush = history.pushState
-	const origReplace = history.replaceState
+	// One wrapper per page (see `patchMethod`): a router or another SDK that
+	// wrapped history after us keeps working when this sink stops.
+	const hooks = { emitNav }
 	// Callers that grab `history.pushState` off the object and invoke it
 	// detached (or with something that isn't a History) would otherwise make the
 	// native method throw "Illegal invocation" from inside our wrapper, turning a
 	// working navigation into an unhandled rejection blamed on the SDK.
 	const receiver = (self: unknown): History => (self instanceof History ? self : history)
-	history.pushState = function (this: unknown, ...args) {
-		const result = origPush.apply(receiver(this), args as never)
-		emitNav()
-		return result
-	}
-	history.replaceState = function (this: unknown, ...args) {
-		const result = origReplace.apply(receiver(this), args as never)
-		emitNav()
-		return result
-	}
+	const wrapHistory = (
+		original: History["pushState"],
+		current: () => typeof hooks | undefined,
+	): History["pushState"] =>
+		function (this: unknown, ...args) {
+			const result = original.apply(receiver(this), args)
+			current()?.emitNav()
+			return result
+		}
+	const unpatch = [
+		patchMethod(history, "pushState", hooks, wrapHistory),
+		patchMethod(history, "replaceState", hooks, wrapHistory),
+	]
 	window.addEventListener("popstate", emitNav)
 	window.addEventListener("hashchange", emitNav)
 
 	return () => {
-		history.pushState = origPush
-		history.replaceState = origReplace
+		for (const off of unpatch) off()
 		window.removeEventListener("popstate", emitNav)
 		window.removeEventListener("hashchange", emitNav)
 	}
