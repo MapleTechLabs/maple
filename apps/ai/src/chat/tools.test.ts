@@ -468,6 +468,18 @@ describe("record_finding", () => {
 		assert.lengthOf(ledger.findings(), 1)
 	})
 
+	// A close-out is the pass's last call: refusing it would lose the review.
+	it("never refuses a close-out for length", async () => {
+		const { filed, submit } = setup([], true)
+		const result = await submit({
+			verdict: "issues",
+			summary: "Adds a retry to the order client.",
+			findings: [{ ...RETRY, body: Array.from({ length: 61 }, () => "w").join(" ") }],
+		})
+		assert.isTrue(Result.isSuccess(result))
+		assert.lengthOf(filed[0]!.report.findings, 1)
+	})
+
 	it("refuses a submission with an overlong finding once, then records it as given", async () => {
 		const { filed, submit } = setup()
 		const submission: PrReviewSubmission = {
