@@ -18,6 +18,8 @@ import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "../model"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { AppRoute, hrefOf } from "../../../../route"
+import { pickTimeSearch } from "../../../infra/kit/view-tabs"
 
 // `RailwayServicePage`.
 
@@ -139,6 +141,18 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 	})
 }
 
+/** The traced service named like this one, linked; nothing until the window's services load. */
+const tracedChip = (h: H, model: Model, service: RailwayServiceRow): Html => {
+	const traced = AsyncData.getOrElse(model.traced.data, () => null)
+	if (traced === null) return null
+	return traced.some((row) => row.serviceName === service.serviceName)
+		? h.a(
+				[h.Href(hrefOf(AppRoute.Service({ serviceName: service.serviceName, search: pickTimeSearch(model.search) })))],
+				[heroChip(h, ["traced as ", service.serviceName])],
+			)
+		: heroChip(h, "no traces matched")
+}
+
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
@@ -149,7 +163,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		meta:
 			service === null
 				? undefined
-				: [heroChip(h, service.projectName), heroChip(h, service.environmentName)],
+				: [
+						heroChip(h, service.projectName),
+						heroChip(h, service.environmentName),
+						tracedChip(h, model, service),
+					],
 	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],

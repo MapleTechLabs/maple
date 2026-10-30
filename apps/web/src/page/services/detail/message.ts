@@ -5,6 +5,7 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Select from "../../../ui/select"
+import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ServiceTab } from "./derive"
 import { ENDPOINT_FILTERS } from "./derive-api"
@@ -47,6 +48,7 @@ export const Message = defineMessageUnion({
 	/** `isAdmin` comes with the list: only admins are offered a new monitor. */
 	CompletedFetchUptimeMonitors: { ...result(Schema.Array(V2UptimeMonitor)), isAdmin: Schema.Boolean },
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
+	CompletedFetchRuntimes: result(Schema.Array(ServiceRuntime)),
 	CompletedFetchDependencies: result(DependencyBundle),
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
 	CompletedMountLinkedCursor: {},

@@ -5,7 +5,8 @@ import { ThemeColors } from "../../../../charts/theme-colors"
 import { LoadFailure } from "../../../../data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { BucketPoint, TracedService } from "../data"
+import { TracedService } from "../../kit/traced"
+import { BucketPoint } from "../data"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type

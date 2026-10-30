@@ -22,6 +22,7 @@ import type { ScopedRows } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sampled } from "./view-panel-kit"
+import { pickTimeSearch } from "../infra/kit/view-tabs"
 import { infrastructureTab } from "./view-service-infra"
 import * as ServiceMap from "../../service-map/map/service-map"
 
@@ -293,6 +294,8 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 		inputs.colorMode,
 	)
 	const workloads = inputs.rows.workloads.filter((workload) => workload.serviceName === inputs.serviceId)
+	const runtimes = inputs.rows.runtimes.filter((runtime) => runtime.serviceName === inputs.serviceId)
+	const infraCount = workloads.length + runtimes.length
 	return h.div(
 		[h.Class("flex flex-col h-full bg-background overflow-hidden")],
 		[
@@ -314,7 +317,7 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 							: [
 									icon(h, "CubeIcon", { size: 12 }),
 									label,
-									...(workloads.length > 0
+									...(infraCount > 0
 										? [
 												h.span(
 													[
@@ -322,7 +325,7 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 															"ml-1 text-4xs tabular-nums text-muted-foreground/70",
 														),
 													],
-													[String(workloads.length)],
+													[String(infraCount)],
 												),
 											]
 										: []),
@@ -330,7 +333,7 @@ export const servicePanel = (h: H, model: Model, inputs: ServicePanelInputs): Ht
 					panel: (value) =>
 						value === "service"
 							? serviceTab(h, model, inputs, overview)
-							: infrastructureTab(h, workloads),
+							: infrastructureTab(h, workloads, runtimes, pickTimeSearch(model.search)),
 				},
 			}),
 		],

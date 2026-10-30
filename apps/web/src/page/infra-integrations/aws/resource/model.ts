@@ -7,7 +7,8 @@ import { LoadFailure } from "../../../../data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { InfraAwsResourceSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { BucketPoint, KindId, TracedService } from "../data"
+import { TracedService } from "../../kit/traced"
+import { BucketPoint, KindId } from "../data"
 
 // `/infra/aws/$kind/$name`.
 

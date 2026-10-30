@@ -475,5 +475,6 @@ export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(
 			avgCpuLimitUtilization: row.avgCpuLimitUtilization,
 			avgMemoryLimitUtilization: row.avgMemoryLimitUtilization,
 		})),
+		runtimes: result.runtimes ?? [],
 	}
 })

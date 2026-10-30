@@ -9,7 +9,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_TOKENS, metricsGrid } from "./view-charts"
 import { deploysPanel, issuesPanel } from "./view-deploys"
-import { dependencyStrip, usagePanel, workloadsPanel } from "./view-footprint"
+import { dependencyStrip, runsOnPanel, usagePanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
 import { uptimePanel } from "./view-uptime"
 
@@ -59,7 +59,7 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 					deploysPanel(h, model, clock, isDetailLoading),
 					usagePanel(h, model, envFilterActive),
 					uptimePanel(h, model),
-					workloadsPanel(h, model, envFilterActive),
+					runsOnPanel(h, model, envFilterActive),
 				],
 			),
 			dependencyStrip(h, model),

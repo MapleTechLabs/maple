@@ -10,7 +10,7 @@ import {
 } from "@maple/web-data/warehouse/service-endpoints"
 import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
-import { getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
+import { getServiceRuntimes, getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
 import { getServiceDependenciesBundle } from "@maple/web-data/warehouse/service-map"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Predicate, Schema } from "effect"
@@ -180,6 +180,18 @@ export const FetchWorkloads = Command.define("FetchServiceWorkloads", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchWorkloads({ key, result })),
+		),
+})
+
+export const FetchRuntimes = Command.define("FetchServiceRuntimes", {
+	args: { key: Schema.String, input: WorkloadsInput },
+	messages: [Message.CompletedFetchRuntimes],
+	execute: ({ key, input }) =>
+		getServiceRuntimes({ data: input }).pipe(
+			Effect.map((response) => response.runtimes),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchRuntimes({ key, result })),
 		),
 })
 
