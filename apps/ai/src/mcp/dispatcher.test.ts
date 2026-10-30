@@ -266,10 +266,9 @@ describe("MCP dispatcher", () => {
 					"Invalid tool input",
 				).pipe(Effect.withSpan("probe"), Effect.withTracer(tracer))
 
-				const recorded = spans
-					.find((s) => s.name === "probe")
-					?.attributes.get("maple.mcp.error.message")
-				assert.isString(recorded)
+				const recorded = String(
+					spans.find((s) => s.name === "probe")?.attributes.get("maple.mcp.error.message"),
+				)
 				expect(recorded.length).toBeLessThan(message.length)
 				expect(message.startsWith(recorded)).toBe(true)
 			}),
