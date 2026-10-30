@@ -162,6 +162,20 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 		const state = params.get("state")
 		// Present only with OAuth-on-install enabled; proves the user owns the install.
 		const code = params.get("code") ?? undefined
+		if (!installationId && code && state && params.get("setup_action") !== "request") {
+			return github.discoverInstallations(code, state, initiator).pipe(
+				Effect.map(
+					(selection) =>
+						new OAuthCompleteResponse({
+							status: "success",
+							message:
+								"Choose the installed GitHub account to connect to this Maple organization.",
+							chat: null,
+							github: selection,
+						}),
+				),
+			)
+		}
 		if (installationId === null || installationId === "") {
 			return Effect.succeed(
 				failure(

@@ -1,4 +1,5 @@
 import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
+import { GithubInstallationSelection } from "@maple/domain/http"
 import { AsyncData, Subscription } from "foldkit"
 import { gcpConnectionState } from "../../components/integrations/gcp-connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
@@ -91,13 +92,13 @@ const grace = ({ provider, attempt }: ConnectAttempt) => {
 }
 
 /** `useOAuthPopupFlow`'s `connect`: open in the click, start, then send the popup to the provider. */
-const popupFlow = ({ provider, attempt }: ConnectAttempt) =>
+const popupFlow = ({ provider, attempt, githubMode }: ConnectAttempt) =>
 	Stream.unwrap(
 		Effect.gen(function* () {
 			const spec = PROVIDERS[provider]
 			const popup = yield* openPopup(spec.windowName, spec.windowFeatures, spec.label)
 			const returnTo = yield* currentReturnPath
-			const started = yield* Effect.result(startConnect(provider, returnTo))
+			const started = yield* Effect.result(startConnect(provider, returnTo, githubMode))
 			if (started._tag === "Failure") {
 				yield* Effect.sync(() => popup?.close())
 				return one(
@@ -237,14 +238,20 @@ const isCloudflareSettling = (model: Model): boolean => {
 	return phase !== null && phase.kind !== "live"
 }
 
-/** The popup (and its grace) is out, a branch change settles, or a repository is still syncing. */
+/** The popup is out, repository discovery is pending, or a repository is still syncing. */
 const isGithubPolling = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "github") return false
 	const status = githubStatusOf(model)
 	const syncing =
 		status?.connected === true &&
+		status.repositoryDiscovery?._tag !== "Failed" &&
 		status.repositories.some((repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling")
-	return model.connect.active !== null || model.githubCard.isForcePolling || syncing
+	return (
+		model.connect.active !== null ||
+		model.githubCard.isForcePolling ||
+		status?.repositoryDiscovery?._tag === "Pending" ||
+		syncing
+	)
 }
 
 /** The provider whose callback messages this page listens for (`useIntegrationMessage`). */
@@ -258,6 +265,7 @@ const CallbackData = Schema.Struct({
 	type: Schema.String,
 	status: Schema.optional(Schema.String),
 	message: Schema.optional(Schema.String),
+	github: Schema.optionalKey(GithubInstallationSelection),
 })
 const decodeCallback = Schema.decodeUnknownOption(CallbackData)
 
@@ -278,6 +286,7 @@ const callbackMessages = (provider: ConnectProvider) =>
 									provider,
 									status: data.status ?? "",
 									message: data.message ?? null,
+									github: data.github,
 								}),
 							)
 						: Stream.empty,

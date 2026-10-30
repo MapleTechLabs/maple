@@ -1,4 +1,5 @@
 import {
+	GithubInstallationSelection,
 	OAuthChatOutcome,
 	OAuthCompleteStatus,
 	type OAuthCompleteRequest,
@@ -32,6 +33,7 @@ export const OAuthReturnOutcome = Schema.Struct({
 	status: OAuthCompleteStatus,
 	message: Schema.String,
 	chat: Schema.NullOr(OAuthChatOutcome),
+	github: Schema.optionalKey(GithubInstallationSelection),
 	/** The tab that opened this popup got the outcome and reacts to it; this window closes on success. */
 	isHandedOff: Schema.Boolean,
 })
@@ -42,6 +44,7 @@ interface CallbackMessage {
 	readonly type: string
 	readonly status: string
 	readonly message: string
+	github?: GithubInstallationSelection
 }
 
 interface Opener {
@@ -53,16 +56,23 @@ const isOpener = (value: unknown): value is Opener =>
 	typeof value === "object" && value !== null && "postMessage" in value && "closed" in value
 
 /** Post the outcome to the opening tab, on this origin only. False when there is none to tell. */
-const handOff = (provider: ConnectProvider, status: string, message: string) =>
+const handOff = (
+	provider: ConnectProvider,
+	status: string,
+	message: string,
+	github?: GithubInstallationSelection,
+) =>
 	Effect.sync(() => {
 		const opener: unknown = window.opener
 		if (!isOpener(opener) || opener.closed) return false
-		opener.postMessage({ type: `maple:integration:${provider}`, status, message }, window.location.origin)
+		const payload: CallbackMessage = { type: `maple:integration:${provider}`, status, message }
+		if (github !== undefined) payload.github = github
+		opener.postMessage(payload, window.location.origin)
 		if (status === "success") setTimeout(() => window.close(), 600)
 		return true
 	})
 
-type CompletionResult = Pick<OAuthCompleteResponse, "status" | "message" | "chat">
+type CompletionResult = Pick<OAuthCompleteResponse, "status" | "message" | "chat" | "github">
 
 const UNREACHABLE: CompletionResult = {
 	status: "error",
@@ -75,7 +85,12 @@ export interface OAuthReturnDeps<R> {
 	readonly storage: ReturnStorage
 	readonly now: number
 	readonly complete: (request: OAuthCompleteRequest) => Effect.Effect<CompletionResult, never, R>
-	readonly handOff: (provider: ConnectProvider, status: string, message: string) => Effect.Effect<boolean>
+	readonly handOff: (
+		provider: ConnectProvider,
+		status: string,
+		message: string,
+		github?: GithubInstallationSelection,
+	) => Effect.Effect<boolean>
 }
 
 /** The return stashed at boot (`oauth-return-boot.ts`), finished once; `null` when there is none. */
@@ -87,8 +102,10 @@ export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
 		const response = yield* deps.complete(request)
 		const provider = PROVIDER_OF[request.flow]
 		const isHandedOff =
-			provider === null ? false : yield* deps.handOff(provider, response.status, response.message)
-		return {
+			provider === null
+				? false
+				: yield* deps.handOff(provider, response.status, response.message, response.github)
+		const outcome = {
 			provider,
 			connector: request.connector ?? null,
 			status: response.status,
@@ -96,6 +113,7 @@ export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
 			chat: response.chat,
 			isHandedOff,
 		} satisfies OAuthReturnOutcome
+		return response.github === undefined ? outcome : { ...outcome, github: response.github }
 	})
 
 export const completeOAuthReturn: Effect.Effect<OAuthReturnOutcome | null, never, MapleInternalApiClient> =

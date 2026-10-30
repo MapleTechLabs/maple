@@ -67,13 +67,16 @@ const integrationOf = (route: NewRoute): DataIntegration | null => {
 
 /** The integrations module's step, lifted: its Commands answer as `GotIntegrationsMessage`. */
 const liftIntegrations = (model: Model, step: PageReturn<IntegrationModel, IntegrationMessage>): Return => {
+	const stage =
+		model.integration === "github" && step.model.githubCard.selection !== null ? "connect" : model.stage
 	const lifted: Return = {
-		model: { ...model, integrations: step.model },
+		model: { ...model, integrations: step.model, stage },
 		commands: Command.mapMessages(step.commands ?? [], (message) =>
 			Message.GotIntegrationsMessage({ message }),
 		),
 	}
-	return step.outMessage === undefined ? lifted : { ...lifted, outMessage: step.outMessage }
+	const result = step.outMessage === undefined ? lifted : { ...lifted, outMessage: step.outMessage }
+	return stage !== model.stage ? scrolledToTop(result) : result
 }
 
 /** Both steps' Commands; the second's outMessage wins, else the first's (a connect toast). */

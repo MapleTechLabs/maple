@@ -24,10 +24,80 @@ import { repositoriesPanels, repoDialogs } from "./view-github-repos"
 
 // `GithubIntegrationCard`.
 
-const ACCOUNT_TYPE = new Map([
-	["organization", "Organization"],
-	["user", "Personal account"],
-])
+const ACCOUNT_TYPE = { organization: "Organization", user: "Personal account" } as const
+
+export const githubConnectExistingButton = (
+	h: H,
+	model: Model,
+	label = "Connect existing installation",
+): Html =>
+	button(
+		h,
+		{
+			variant: "outline",
+			className: "w-fit",
+			isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
+			attributes: [h.OnClick(Message.ClickedConnectExistingGithub())],
+		},
+		[label],
+	)
+
+export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html> => {
+	const selection = model.githubCard.selection
+	if (selection === null) return []
+	return [
+		h.p(
+			[h.Class("text-sm text-muted-foreground")],
+			["Choose the GitHub account to connect to this Maple organization."],
+		),
+		h.div(
+			[h.Class("flex flex-col gap-2")],
+			selection.installations.map((choice) =>
+				h.div(
+					[
+						h.Class(
+							"flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3",
+						),
+					],
+					[
+						h.div(
+							[h.Class("flex min-w-0 flex-col gap-1")],
+							[
+								h.span([h.Class("text-sm font-medium")], [choice.accountLogin]),
+								h.span(
+									[h.Class("text-xs text-muted-foreground")],
+									[
+										ACCOUNT_TYPE[choice.accountType],
+										" · ",
+										choice.repositorySelection === "selected"
+											? "Selected repositories"
+											: "All repositories",
+									],
+								),
+							],
+						),
+						button(
+							h,
+							{
+								isDisabled: model.githubCard.selectingInstallation !== null,
+								isLoading: model.githubCard.selectingInstallation === choice.id,
+								attributes: [
+									h.OnClick(
+										Message.ClickedSelectGithubInstallation({
+											installationId: choice.id,
+										}),
+									),
+								],
+							},
+							[`Connect ${choice.accountLogin}`],
+						),
+					],
+				),
+			),
+		),
+		githubConnectExistingButton(h, model, "Authorize again"),
+	]
+}
 
 const ciTracesRow = (h: H, model: Model): Html => {
 	const isChecked = ciTracesShown(model)
@@ -94,7 +164,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 							],
 						),
 						itemDescription(h, [
-							ACCOUNT_TYPE.get(status.accountType ?? "") ?? "GitHub App",
+							status.accountType === null ? "GitHub App" : ACCOUNT_TYPE[status.accountType],
 							" ",
 							"· ",
 							status.repositorySelection === "selected"
@@ -185,11 +255,20 @@ export const githubCard = (h: H, model: Model, timeZone: string): ReadonlyArray<
 }
 
 const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: string): Html =>
-	status.connected
-		? connectedView(h, model, status, timeZone)
-		: status.state === "disconnected" || status.state === "suspended"
-			? githubDeactivated(h, model, status)
-			: githubReconnect(h)
+	model.githubCard.selection !== null
+		? h.div([h.Class("flex flex-col gap-3")], githubInstallationPicker(h, model))
+		: !status.connected && status.repositoryDiscovery?._tag === "Pending"
+			? integrationNotice(h, { message: "Discovering repositories…" })
+			: !status.connected && status.repositoryDiscovery?._tag === "Failed"
+				? integrationNotice(h, {
+						message: status.repositoryDiscovery.message,
+						action: githubConnectExistingButton(h, model),
+					})
+				: status.connected
+					? connectedView(h, model, status, timeZone)
+					: status.state === "disconnected" || status.state === "suspended"
+						? githubDeactivated(h, model, status)
+						: githubReconnect(h)
 // TODO(clerk): `useIsOrgAdmin` gates the CI traces switch; self-hosted is the root admin.
 
 type H = HtmlBuilder<Message>
@@ -292,6 +371,16 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 							attributes: [h.OnClick(Message.ClickedConnect())],
 						},
 						[icon(h, "ArrowRotateClockwiseIcon"), "Reconnect GitHub"],
+					),
+					button(
+						h,
+						{
+							variant: "outline",
+							isDisabled:
+								model.connect.isStarting || model.githubCard.selectingInstallation !== null,
+							attributes: [h.OnClick(Message.ClickedConnectExistingGithub())],
+						},
+						["Connect existing installation"],
 					),
 					h.p(
 						[h.Class("text-xs text-muted-foreground")],

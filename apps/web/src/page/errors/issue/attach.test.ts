@@ -36,6 +36,7 @@ const status = Schema.decodeUnknownSync(GithubIntegrationStatus)({
 	accountType: "organization",
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
+	repositoryDiscovery: null,
 	repositories: [repository("acme-shop/shop", 1), repository("acme-shop/storefront", 2)],
 })
 
@@ -52,10 +53,18 @@ describe("attach dialog repository", () => {
 
 	test("picking a repository asks for its pull requests and clears the search", () => {
 		const model = { ...connected(), attachDraft: "#12" }
-		const opened = update(model, Message.GotRepositorySelectMessage({ message: Select.Message.ClickedTrigger({ selectedIndex: 0 }) }), context)
+		const opened = update(
+			model,
+			Message.GotRepositorySelectMessage({
+				message: Select.Message.ClickedTrigger({ selectedIndex: 0 }),
+			}),
+			context,
+		)
 		const picked = update(
 			opened.model,
-			Message.GotRepositorySelectMessage({ message: Select.Message.SelectedItem({ value: "acme-shop/storefront", index: 1 }) }),
+			Message.GotRepositorySelectMessage({
+				message: Select.Message.SelectedItem({ value: "acme-shop/storefront", index: 1 }),
+			}),
 			context,
 		)
 		expect(githubOf(picked.model).repository).toBe("acme-shop/storefront")
@@ -65,13 +74,25 @@ describe("attach dialog repository", () => {
 
 	test("closing the dialog drops the picked repository; reopening shows the suggested one", () => {
 		const opened = update(connected(), Message.ClickedAttach(), context).model
-		const shown = update(opened, Message.GotRepositorySelectMessage({ message: Select.Message.ClickedTrigger({ selectedIndex: 0 }) }), context)
+		const shown = update(
+			opened,
+			Message.GotRepositorySelectMessage({
+				message: Select.Message.ClickedTrigger({ selectedIndex: 0 }),
+			}),
+			context,
+		)
 		const picked = update(
 			shown.model,
-			Message.GotRepositorySelectMessage({ message: Select.Message.SelectedItem({ value: "acme-shop/storefront", index: 1 }) }),
+			Message.GotRepositorySelectMessage({
+				message: Select.Message.SelectedItem({ value: "acme-shop/storefront", index: 1 }),
+			}),
 			context,
 		).model
-		const closed = update(picked, Message.GotAttachDialogMessage({ message: Dialog.Message.ClickedClose() }), context)
+		const closed = update(
+			picked,
+			Message.GotAttachDialogMessage({ message: Dialog.Message.ClickedClose() }),
+			context,
+		)
 		expect(githubOf(closed.model).repository).toBe("acme-shop/shop")
 	})
 })

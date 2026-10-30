@@ -4,6 +4,7 @@ import {
 	CloudflareUsageResponse,
 	GcpResourcesResponse,
 	GithubIntegrationStatus,
+	GithubInstallationSelection,
 	HazelIntegrationStatus,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
@@ -102,6 +103,13 @@ export const Message = defineMessageUnion({
 	CompletedChatToast: {},
 	/** The header or card Connect button: a new popup attempt for the page's provider. */
 	ClickedConnect: {},
+	ClickedConnectExistingGithub: {},
+	ClickedSelectGithubInstallation: { installationId: Schema.String },
+	CompletedSelectGithubInstallation: {
+		state: Schema.String,
+		installationId: Schema.String,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	SucceededStartConnect: { attempt: Schema.Number },
 	FailedStartConnect: { attempt: Schema.Number, title: Schema.String, description: Schema.String },
 	/** The authorize URL arrived but the popup was gone and could not be reopened. */
@@ -374,6 +382,7 @@ export const Message = defineMessageUnion({
 		provider: ConnectProvider,
 		status: Schema.String,
 		message: Schema.NullOr(Schema.String),
+		github: Schema.optionalKey(GithubInstallationSelection),
 	},
 	/** The provider return this page was opened with, finished (`null`: there was none). */
 	CompletedOAuthReturn: { outcome: Schema.NullOr(OAuthReturnOutcome) },

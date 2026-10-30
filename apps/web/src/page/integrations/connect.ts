@@ -23,7 +23,11 @@ export const ConnectProvider = Schema.Literals([
 export type ConnectProvider = typeof ConnectProvider.Type
 
 /** One attempt: the popup is out while this is set; a new attempt restarts the flow. */
-export const ConnectAttempt = Schema.Struct({ provider: ConnectProvider, attempt: Schema.Number })
+export const ConnectAttempt = Schema.Struct({
+	provider: ConnectProvider,
+	attempt: Schema.Number,
+	githubMode: Schema.optionalKey(Schema.Literals(["install", "existing"])),
+})
 export type ConnectAttempt = typeof ConnectAttempt.Type
 
 export const ConnectModel = Schema.Struct({
@@ -117,7 +121,11 @@ export const currentReturnPath = Effect.sync(() =>
 )
 
 /** The provider's start mutation, answering the authorize URL. */
-export const startConnect = (provider: ConnectProvider, returnTo: IntegrationReturnPath) =>
+export const startConnect = (
+	provider: ConnectProvider,
+	returnTo: IntegrationReturnPath,
+	githubMode?: "install" | "existing",
+) =>
 	Effect.gen(function* () {
 		const internal = yield* MapleInternalApiClient
 		const v2 = yield* MapleApiV2Client
@@ -136,7 +144,7 @@ export const startConnect = (provider: ConnectProvider, returnTo: IntegrationRet
 				})
 			case "github":
 				return yield* internal.integrations.githubStart({
-					payload: new GithubStartConnectRequest({ returnTo }),
+					payload: new GithubStartConnectRequest({ returnTo, mode: githubMode }),
 				})
 			case "planetscale": {
 				const response = yield* v2.planetscaleIntegration.connect({

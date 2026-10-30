@@ -52,6 +52,7 @@ export const githubStatusOf = (repositories: ReadonlyArray<{ name: string; revie
 		accountType: "organization",
 		repositorySelection: "selected",
 		ciTracesEnabled: true,
+		repositoryDiscovery: null,
 		repositories: repositories.map((repo, index) => ({
 			id: `00000c01-0000-4000-8000-00000000000${index + 1}`,
 			fullName: `acme-shop/${repo.name}`,

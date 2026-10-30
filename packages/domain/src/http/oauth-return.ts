@@ -1,5 +1,6 @@
 import { Option, Schema } from "effect"
 import { ChatConnectorId } from "../primitives"
+import { VcsAccountType, VcsRepoSelection } from "./vcs"
 
 /**
  * An OAuth / app-install return, finished by the signed-in dashboard rather than the callback.
@@ -42,10 +43,28 @@ export const OAuthChatOutcome = Schema.Struct({
 	reason: Schema.NullOr(Schema.String),
 })
 
+export class GithubInstallationChoice extends Schema.Class<GithubInstallationChoice>(
+	"GithubInstallationChoice",
+)({
+	id: Schema.String,
+	accountLogin: Schema.String,
+	accountType: VcsAccountType,
+	repositorySelection: VcsRepoSelection,
+}) {}
+
+/** Only verified installation ids are held by this short-lived, single-use selection. */
+export class GithubInstallationSelection extends Schema.Class<GithubInstallationSelection>(
+	"GithubInstallationSelection",
+)({
+	state: Schema.String,
+	installations: Schema.Array(GithubInstallationChoice),
+}) {}
+
 export class OAuthCompleteResponse extends Schema.Class<OAuthCompleteResponse>("OAuthCompleteResponse")({
 	status: OAuthCompleteStatus,
 	message: Schema.String,
 	chat: Schema.NullOr(OAuthChatOutcome),
+	github: Schema.optionalKey(GithubInstallationSelection),
 }) {}
 
 /** The fragment key the API callback writes and the dashboard reads. */

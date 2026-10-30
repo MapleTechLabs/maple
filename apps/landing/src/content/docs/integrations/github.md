@@ -28,6 +28,14 @@ In Maple, open **Sources**, click **Connect source** and pick **GitHub**. Click 
 
 When the install completes, GitHub sends you back and Maple shows the account and repository scope. Maple discovers repositories and queues a backfill for each. Each row moves from **Queued** to **Syncing** to **Synced**.
 
+#### If the app is already installed
+
+Open **Sources**, choose **GitHub**, and click **Connect existing installation**. Authorize Maple on GitHub, then choose the GitHub account to connect to this Maple organization. You must own the personal account or be an owner of the GitHub organization. Maple keeps the installation's existing repository selection; you do not need to reinstall the app.
+
+An installation made directly on GitHub does not tell Maple which Maple organization should receive its data. This authorization and account selection completes that connection. If GitHub only opens the installation's **Configure** page while Maple waits for a return, close that window and use **Connect existing installation** instead.
+
+Maple shows **Discovering repositories** until the sync worker finishes listing them, including while GitHub asks it to wait before retrying. A completed discovery with no repositories shows that no repositories were granted. A failed discovery shows its error and lets you authorize again to retry.
+
 ### 2. Pick a tracked branch per repository
 
 Each repository tracks one branch. It starts as the repository's default branch, and Maple syncs commits only from that branch. Use the **Tracked branch** selector on a repository row to change it.

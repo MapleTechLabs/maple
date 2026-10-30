@@ -234,12 +234,12 @@ const requireCodeAndState = (params: URLSearchParams): string | null =>
 
 // `setup_action=request`: the org requires admin approval, so there is no installation yet.
 const requireInstallation = (params: URLSearchParams): string | null =>
-	!params.get("installation_id")
+	!params.get("installation_id") && (!params.get("code") || params.get("setup_action") === "request")
 		? params.get("setup_action") === "request"
 			? "Installation requested. An org admin must approve it on GitHub, then reconnect."
 			: "Missing installation_id in callback"
 		: !params.get("state")
-			? "Missing state in callback. GitHub did not return it. Restart the connection from the Maple dashboard."
+			? "The GitHub app is installed, but this return has no Maple connection request. Open the GitHub source in Maple and choose Connect existing installation."
 			: null
 
 const ROUTES: ReadonlyArray<CallbackRoute> = [
@@ -325,7 +325,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 					renderCallbackPage({
 						status: "error",
 						message,
-						returnTo: null,
+						returnTo: route.provider === "github" ? "/sources/new?integration=github" : null,
 						targetOrigin: dashboardTargetOrigin,
 						messageType: route.messageType,
 						label: route.label,
