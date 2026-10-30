@@ -1,6 +1,9 @@
 import { Schema } from "effect"
 import { maskLiteralsAndComments } from "@maple-dev/effect-orm/sql"
 
+/** Blanks literals and comments, keeping positions, so text searches only see SQL. */
+export { maskLiteralsAndComments }
+
 // The static half of raw-SQL validation: everything that can be decided from the
 // query text alone, without an org, a time window, or a granularity.
 //
