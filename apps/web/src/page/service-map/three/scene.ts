@@ -5,6 +5,7 @@ import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { type CameraCommand, cameraRig, type Size } from "./camera"
+import { HOP } from "./critters"
 import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
 import { quacker } from "./quack"
 import { type Layout, layoutOf, sceneryKey, sceneryOf, worldOf } from "./world"
@@ -184,6 +185,8 @@ export function startScene(
 	const state = {
 		size: measure(container),
 		pending: 0,
+		/** Draw every frame until this time (ms), whatever the demand count. */
+		awakeUntil: 0,
 		raf: 0,
 		last: performance.now(),
 		pressed: { x: 0, y: 0, offsetX: 0, offsetY: 0, hits: new Array<string>() },
@@ -212,7 +215,7 @@ export function startScene(
 	)
 	const loop = (now: number) => {
 		state.raf = requestAnimationFrame(loop)
-		if (!flowing() && state.pending === 0) return
+		if (!flowing() && state.pending === 0 && now > state.awakeUntil) return
 		if (!flowing()) state.pending = Math.max(0, state.pending - 1)
 		const delta = (now - state.last) / 1000
 		state.last = now
@@ -248,8 +251,8 @@ export function startScene(
 			if (duck !== null) {
 				duck()
 				quacks.quack()
-				// Enough demand frames to play the whole hop on a paused map.
-				state.pending = 60
+				// Keep drawing for the whole hop on a paused map, at any refresh rate.
+				state.awakeUntil = performance.now() + HOP * 1000 + 50
 				return
 			}
 			if (delta <= 2 && moved <= DRAG_TOLERANCE) onSelect(null)

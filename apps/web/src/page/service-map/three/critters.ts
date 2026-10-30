@@ -27,7 +27,7 @@ export function clock(scope: Scope, running: Running): { value: number } {
 }
 
 /** Seconds a clicked duck spends hopping. */
-const HOP = 0.45
+export const HOP = 0.45
 
 /** Mallards paddle a steady loop round the lake. A click makes one hop and quack: each group
  * carries `userData.quack`, which the scene's click handler calls. */
