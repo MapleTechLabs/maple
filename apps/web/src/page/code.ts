@@ -1,4 +1,4 @@
-// Imported by boot.ts: keep it free of imports, so the route's page code starts early.
+// In boot.ts's static graph, ahead of the app bundle: keep it free of imports.
 
 /** A page's chunk import, started at most once; a failed one can be started again. */
 const shared = <A>(load: () => Promise<A>): (() => Promise<A>) => {

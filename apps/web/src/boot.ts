@@ -2,7 +2,9 @@
 // downloading and evaluating. The OAuth return still leaves the URL before anything reads it.
 import "./platform/oauth-return-boot"
 import { startClerkBoot } from "./platform/clerk-boot"
+// Static on purpose: Chrome holds a dynamic import of a module the app's own graph also imports
+// until that whole graph has loaded, which would start the page code no earlier than `init`.
+import { startRoutePageCode } from "./page/code"
 
 startClerkBoot()
-// Not a static import: the page loaders carry every page's preload list, Clerk's start won't wait for it.
-void import("./page/code").then(({ startRoutePageCode }) => startRoutePageCode(location.pathname))
+startRoutePageCode(location.pathname)
