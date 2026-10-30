@@ -1221,13 +1221,22 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								}),
 						}),
 					)
-				if (outcome._tag === "failed") {
+				// Workers can't dial a loopback or private origin; Cloudflare answers that (and an
+				// unresolvable name) itself with a bare 530 "error code: 1016" instead of failing.
+				const unreachable =
+					outcome._tag === "response" &&
+					outcome.statusCode === 530 &&
+					outcome.body?.trim() === "error code: 1016"
+				if (outcome._tag === "failed" || unreachable) {
 					return {
 						ok: false,
 						statusCode: null,
 						durationMs: (yield* Clock.currentTimeMillis) - started,
 						failedAssertion: null,
-						error: outcome.error,
+						error:
+							outcome._tag === "failed"
+								? outcome.error
+								: `Couldn't reach ${new URL(config.url).hostname}: it doesn't resolve to a public address`,
 						headers: {},
 						bodyPrefix: null,
 						bodyTruncated: false,
