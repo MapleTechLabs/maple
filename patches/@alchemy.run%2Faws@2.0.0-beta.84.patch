@@ -83,3 +83,272 @@ diff --git a/src/Config/ConfigurationRecorder.ts b/src/Config/ConfigurationRecor
              } else if (!news.recording && status) {
                yield* config.stopConfigurationRecorder({
                  ConfigurationRecorderName: name,
+diff --git a/lib/ECS/Service.d.ts b/lib/ECS/Service.d.ts
+--- a/lib/ECS/Service.d.ts
++++ b/lib/ECS/Service.d.ts
+@@ -87,6 +87,13 @@ export interface ServiceLoadBalancerRule {
+      * `priority` to resolve it (the engine never probes for free slots).
+      */
+     priority?: number;
++    /**
++     * Protocol version of the target group this rule forwards to. `GRPC`
++     * needs an HTTPS listener; its health check defaults to the ALB's
++     * `/AWS.ALB/healthcheck` with gRPC code 12, and `successCodes` in a
++     * `health` override are gRPC codes.
++     */
++    protocolVersion?: "HTTP1" | "HTTP2" | "GRPC";
+ }
+ /** Object form of the {@link ServiceLoadBalancerConfig.domain} prop. */
+ export interface ServiceDomainConfig {
+@@ -180,6 +187,8 @@ export interface ServiceManagedIngress {
+     securityGroupId?: string;
+     /** Custom domain pointed at the owned load balancer (URL derivation prefers it). */
+     domain?: string;
++    /** Listener rules attaching the target groups. Only a dependency: ECS refuses a target group with no load balancer, so the service update must wait for them. */
++    ruleArns?: string[];
+     /** Target groups to wire into the ECS service definition. */
+     targets: {
+         /** ARN of the composed target group. */
+diff --git a/lib/ECS/Service.js b/lib/ECS/Service.js
+--- a/lib/ECS/Service.js
++++ b/lib/ECS/Service.js
+@@ -792,8 +792,8 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+     const byoTask = taskRefOf(props);
+     const defaultContainerPort = byoTask !== undefined ? byoTask.port : (props.port ?? 3000);
+     const tgSpecs = new Map();
+-    const ensureTgSpec = (forward, container) => {
+-        const key = `${forward ? `${forward.port}/${forward.protocol}` : "default"}|${container ?? ""}`;
++    const ensureTgSpec = (forward, container, protocolVersion) => {
++        const key = `${forward ? `${forward.port}/${forward.protocol}` : "default"}|${container ?? ""}${protocolVersion ? `|${protocolVersion}` : ""}`;
+         if (!tgSpecs.has(key)) {
+             tgSpecs.set(key, {
+                 key,
+@@ -801,6 +801,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+                     "TargetGroup",
+                     forward ? `${forward.port}-${forward.protocol}` : undefined,
+                     container,
++                    protocolVersion?.toLowerCase(),
+                 ]
+                     .filter((part) => part !== undefined)
+                     .join("-"),
+@@ -813,6 +814,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+                 container,
+                 forwardPort: forward?.port,
+                 forwardProtocol: forward?.protocol,
++                protocolVersion,
+             });
+         }
+         return key;
+@@ -845,7 +847,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+                 type: "forward",
+                 tgKey: ensureTgSpec(rule.forward !== undefined
+                     ? yield* parseListenSpec(id, rule.forward, "forward")
+-                    : undefined, rule.container),
++                    : undefined, rule.container, rule.protocolVersion),
+             };
+         normalized.push({
+             index,
+@@ -953,16 +955,20 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+         // A path/successCodes override on a network target group opts its
+         // health check into HTTP; otherwise NLB targets get TCP checks.
+         const wantsHttpCheck = health?.path !== undefined || health?.successCodes !== undefined;
++        const isGrpcTg = spec.protocolVersion === "GRPC";
+         targetGroups.set(spec.key, yield* TargetGroup(spec.logicalId, {
+             vpcId: network.vpcId,
+             port: spec.port,
+             protocol: spec.protocol,
+             targetType: usesAwsvpc(props) ? "ip" : "instance",
++            protocolVersion: spec.protocolVersion,
+             healthCheckPath: isNetworkTg
+                 ? wantsHttpCheck
+                     ? (health?.path ?? "/")
+                     : undefined
+-                : (health?.path ?? props.healthCheckPath ?? "/"),
++                : isGrpcTg
++                    ? (health?.path ?? "/AWS.ALB/healthcheck")
++                    : (health?.path ?? props.healthCheckPath ?? "/"),
+             healthCheckProtocol: isNetworkTg && wantsHttpCheck ? "HTTP" : undefined,
+             // Fast-converge defaults: targets go healthy in ~20s instead of
+             // the AWS default ~150s, and drain in 30s instead of 300s.
+@@ -970,7 +976,11 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+             healthCheckTimeout: health?.timeout,
+             healthyThresholdCount: health?.healthyThreshold ?? 2,
+             unhealthyThresholdCount: health?.unhealthyThreshold ?? 2,
+-            matcher: health?.successCodes !== undefined ? { HttpCode: health.successCodes } : undefined,
++            matcher: isGrpcTg
++                ? { GrpcCode: health?.successCodes ?? "12" }
++                : health?.successCodes !== undefined
++                    ? { HttpCode: health.successCodes }
++                    : undefined,
+             attributes: { "deregistration_delay.timeout_seconds": "30" },
+             tags: props.tags,
+         }));
+@@ -1079,6 +1089,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+     // ── listener rules ──────────────────────────────────────────────────
+     const chain = yield* Namespace.CurrentChain;
+     const namespacePrefix = [...chain].reverse().join("/");
++    const ruleArns = [];
+     for (const r of normalized) {
+         if (defaultsTaken.has(r)) {
+             continue;
+@@ -1093,13 +1104,14 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+                 ? r.listen
+                 : config.listener;
+         const priority = r.rule.priority ?? deriveRulePriority(`${namespacePrefix}/${ruleId}`);
+-        yield* ListenerRule(ruleId, {
++        const listenerRule = yield* ListenerRule(ruleId, {
+             listenerArn: ruleListener.listenerArn,
+             priority,
+             conditions,
+             actions: [actionToListenerAction(r.action)],
+             tags: props.tags,
+         });
++        ruleArns.push(listenerRule.ruleArn);
+     }
+     // ── primary listener (attrs + URL derivation) ───────────────────────
+     const primary = owned
+@@ -1130,6 +1142,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+         listenerProtocol: primary.protocol,
+         securityGroupId: managedSg?.groupId,
+         domain: domain?.name,
++        ...(ruleArns.length > 0 ? { ruleArns } : {}),
+         targets: [...tgSpecs.values()].map((spec) => ({
+             targetGroupArn: targetGroups.get(spec.key).targetGroupArn,
+             containerPort: spec.forwardPort,
+diff --git a/src/ECS/Service.ts b/src/ECS/Service.ts
+--- a/src/ECS/Service.ts
++++ b/src/ECS/Service.ts
+@@ -151,6 +151,13 @@ export interface ServiceLoadBalancerRule {
+    * `priority` to resolve it (the engine never probes for free slots).
+    */
+   priority?: number;
++  /**
++   * Protocol version of the target group this rule forwards to. `GRPC`
++   * needs an HTTPS listener; its health check defaults to the ALB's
++   * `/AWS.ALB/healthcheck` with gRPC code 12, and `successCodes` in a
++   * `health` override are gRPC codes.
++   */
++  protocolVersion?: "HTTP1" | "HTTP2" | "GRPC";
+ }
+ 
+ /** Object form of the {@link ServiceLoadBalancerConfig.domain} prop. */
+@@ -248,6 +255,8 @@ export interface ServiceManagedIngress {
+   securityGroupId?: string;
+   /** Custom domain pointed at the owned load balancer (URL derivation prefers it). */
+   domain?: string;
++  /** Listener rules attaching the target groups. Only a dependency: ECS refuses a target group with no load balancer, so the service update must wait for them. */
++  ruleArns?: string[];
+   /** Target groups to wire into the ECS service definition. */
+   targets: {
+     /** ARN of the composed target group. */
+@@ -1759,13 +1768,15 @@ const composeManagedIngress = (
+       container: string | undefined;
+       forwardPort: number | undefined;
+       forwardProtocol: ServiceListenerProtocol | undefined;
++      protocolVersion: ServiceLoadBalancerRule["protocolVersion"];
+     }
+     const tgSpecs = new Map<string, TgSpec>();
+     const ensureTgSpec = (
+       forward: ParsedListen | undefined,
+       container: string | undefined,
++      protocolVersion?: ServiceLoadBalancerRule["protocolVersion"],
+     ): string => {
+-      const key = `${forward ? `${forward.port}/${forward.protocol}` : "default"}|${container ?? ""}`;
++      const key = `${forward ? `${forward.port}/${forward.protocol}` : "default"}|${container ?? ""}${protocolVersion ? `|${protocolVersion}` : ""}`;
+       if (!tgSpecs.has(key)) {
+         tgSpecs.set(key, {
+           key,
+@@ -1773,6 +1784,7 @@ const composeManagedIngress = (
+             "TargetGroup",
+             forward ? `${forward.port}-${forward.protocol}` : undefined,
+             container,
++            protocolVersion?.toLowerCase(),
+           ]
+             .filter((part): part is string => part !== undefined)
+             .join("-"),
+@@ -1785,6 +1797,7 @@ const composeManagedIngress = (
+           container,
+           forwardPort: forward?.port,
+           forwardProtocol: forward?.protocol,
++          protocolVersion,
+         });
+       }
+       return key;
+@@ -1834,6 +1847,7 @@ const composeManagedIngress = (
+                   ? yield* parseListenSpec(id, rule.forward, "forward")
+                   : undefined,
+                 rule.container,
++                rule.protocolVersion,
+               ),
+             };
+       normalized.push({
+@@ -1960,6 +1974,7 @@ const composeManagedIngress = (
+       // A path/successCodes override on a network target group opts its
+       // health check into HTTP; otherwise NLB targets get TCP checks.
+       const wantsHttpCheck = health?.path !== undefined || health?.successCodes !== undefined;
++      const isGrpcTg = spec.protocolVersion === "GRPC";
+       targetGroups.set(
+         spec.key,
+         yield* TargetGroup(spec.logicalId, {
+@@ -1967,11 +1982,14 @@ const composeManagedIngress = (
+           port: spec.port as number,
+           protocol: spec.protocol,
+           targetType: usesAwsvpc(props) ? "ip" : "instance",
++          protocolVersion: spec.protocolVersion,
+           healthCheckPath: isNetworkTg
+             ? wantsHttpCheck
+               ? (health?.path ?? "/")
+               : undefined
+-            : (health?.path ?? props.healthCheckPath ?? "/"),
++            : isGrpcTg
++              ? (health?.path ?? "/AWS.ALB/healthcheck")
++              : (health?.path ?? props.healthCheckPath ?? "/"),
+           healthCheckProtocol: isNetworkTg && wantsHttpCheck ? "HTTP" : undefined,
+           // Fast-converge defaults: targets go healthy in ~20s instead of
+           // the AWS default ~150s, and drain in 30s instead of 300s.
+@@ -1979,8 +1997,11 @@ const composeManagedIngress = (
+           healthCheckTimeout: health?.timeout,
+           healthyThresholdCount: health?.healthyThreshold ?? 2,
+           unhealthyThresholdCount: health?.unhealthyThreshold ?? 2,
+-          matcher:
+-            health?.successCodes !== undefined ? { HttpCode: health.successCodes } : undefined,
++          matcher: isGrpcTg
++            ? { GrpcCode: health?.successCodes ?? "12" }
++            : health?.successCodes !== undefined
++              ? { HttpCode: health.successCodes }
++              : undefined,
+           attributes: { "deregistration_delay.timeout_seconds": "30" },
+           tags: props.tags,
+         }),
+@@ -2107,6 +2128,7 @@ const composeManagedIngress = (
+     // ── listener rules ──────────────────────────────────────────────────
+     const chain = yield* Namespace.CurrentChain;
+     const namespacePrefix = [...chain].reverse().join("/");
++    const ruleArns: string[] = [];
+     for (const r of normalized) {
+       if (defaultsTaken.has(r)) {
+         continue;
+@@ -2122,13 +2144,14 @@ const composeManagedIngress = (
+           ? r.listen
+           : config.listener!;
+       const priority = r.rule.priority ?? deriveRulePriority(`${namespacePrefix}/${ruleId}`);
+-      yield* ListenerRule(ruleId, {
++      const listenerRule = yield* ListenerRule(ruleId, {
+         listenerArn: ruleListener.listenerArn as any,
+         priority,
+         conditions,
+         actions: [actionToListenerAction(r.action)],
+         tags: props.tags,
+       });
++      ruleArns.push(listenerRule.ruleArn as unknown as string);
+     }
+ 
+     // ── primary listener (attrs + URL derivation) ───────────────────────
+@@ -2163,6 +2186,7 @@ const composeManagedIngress = (
+       listenerProtocol: primary.protocol as string,
+       securityGroupId: managedSg?.groupId as unknown as string | undefined,
+       domain: domain?.name,
++      ...(ruleArns.length > 0 ? { ruleArns } : {}),
+       targets: [...tgSpecs.values()].map((spec) => ({
+         targetGroupArn: targetGroups.get(spec.key)!.targetGroupArn as unknown as string,
+         containerPort: spec.forwardPort,

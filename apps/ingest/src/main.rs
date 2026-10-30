@@ -3204,13 +3204,17 @@ async fn main() {
         );
     }
 
-    if let Some(grpc_port) = config.otlp_grpc_port {
-        tokio::spawn(run_grpc_server(grpc_state, grpc_port));
-    }
+    let grpc_server = config
+        .otlp_grpc_port
+        .map(|grpc_port| tokio::spawn(run_grpc_server(grpc_state, grpc_port, request_timeout)));
 
     let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await;
+    // Its exports must land in the WAL before the drain below reads it.
+    if let Some(grpc_server) = grpc_server {
+        drop(grpc_server.await);
+    }
 
     // Intake has stopped (graceful shutdown drained in-flight requests), but
     // the WAL sits on ephemeral storage that dies with the task — export what
@@ -3299,9 +3303,15 @@ async fn shutdown_signal() {
     }
 }
 
-async fn run_grpc_server(state: Arc<AppState>, port: u16) {
+async fn run_grpc_server(state: Arc<AppState>, port: u16, request_timeout: Duration) {
     let addr = ([0, 0, 0, 0], port).into();
-    let server = tonic::transport::Server::builder().add_routes(grpc_router(state).into());
+    let mut builder = tonic::transport::Server::builder();
+    // A timed-out call ends `Cancelled`, which OTLP exporters retry. Zero disables it,
+    // as on the HTTP path.
+    if !request_timeout.is_zero() {
+        builder = builder.timeout(request_timeout);
+    }
+    let server = builder.add_routes(grpc_router(state).into());
 
     info!(port, "Maple OTLP gRPC server listening");
     if let Err(error) = server.serve_with_shutdown(addr, shutdown_signal()).await {
@@ -3310,20 +3320,38 @@ async fn run_grpc_server(state: Arc<AppState>, port: u16) {
 }
 
 /// The three OTLP services behind `grpc_admission`.
+///
+/// gzip is the OTel Collector's default exporter compression. Admission caps the
+/// body at the HTTP path's raw limit; tonic's message limit (frame and
+/// decompressed) is its decoded ceiling. tonic's own default is 4 MiB.
 fn grpc_router(state: Arc<AppState>) -> Router {
     use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
     use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
     use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
+    use tonic::codec::CompressionEncoding;
 
-    tonic::service::Routes::new(TraceServiceServer::new(GrpcTraceService {
-        state: Arc::clone(&state),
-    }))
-    .add_service(LogsServiceServer::new(GrpcLogsService {
-        state: Arc::clone(&state),
-    }))
-    .add_service(MetricsServiceServer::new(GrpcMetricsService {
-        state: Arc::clone(&state),
-    }))
+    let max_message_bytes = state.config.max_decoded_body_bytes;
+    tonic::service::Routes::new(
+        TraceServiceServer::new(GrpcTraceService {
+            state: Arc::clone(&state),
+        })
+        .accept_compressed(CompressionEncoding::Gzip)
+        .max_decoding_message_size(max_message_bytes),
+    )
+    .add_service(
+        LogsServiceServer::new(GrpcLogsService {
+            state: Arc::clone(&state),
+        })
+        .accept_compressed(CompressionEncoding::Gzip)
+        .max_decoding_message_size(max_message_bytes),
+    )
+    .add_service(
+        MetricsServiceServer::new(GrpcMetricsService {
+            state: Arc::clone(&state),
+        })
+        .accept_compressed(CompressionEncoding::Gzip)
+        .max_decoding_message_size(max_message_bytes),
+    )
     .into_axum_router()
     .layer(axum::middleware::from_fn_with_state(state, grpc_admission))
 }
@@ -3361,6 +3389,10 @@ async fn grpc_admission(
                     request
                         .headers_mut()
                         .remove(axum::http::header::CONTENT_LENGTH);
+                } else if let Err(status) =
+                    limit_grpc_body(&mut request, state.config.max_request_body_bytes)
+                {
+                    return status.into_http();
                 }
                 request.extensions_mut().insert(resolved);
                 request.extensions_mut().insert(admission);
@@ -3373,6 +3405,35 @@ async fn grpc_admission(
     .await;
     record_grpc_outcome(&span_handle, &response);
     response
+}
+
+/// The HTTP path's raw body cap. Past it the call ends `ResourceExhausted`, a client
+/// error OTLP exporters do not retry; tonic finds the `Status` in the body error.
+fn limit_grpc_body(request: &mut Request, max_bytes: usize) -> Result<(), tonic::Status> {
+    use http_body_util::BodyExt as _;
+
+    let too_large = move || {
+        tonic::Status::resource_exhausted(format!("Request body exceeds {max_bytes} bytes"))
+    };
+    let declared = request
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok());
+    if declared.is_some_and(|len| len > max_bytes) {
+        return Err(too_large());
+    }
+    let body = std::mem::take(request.body_mut());
+    *request.body_mut() = axum::body::Body::new(
+        http_body_util::Limited::new(body, max_bytes).map_err(move |error| {
+            if error.is::<http_body_util::LengthLimitError>() {
+                axum::BoxError::from(too_large())
+            } else {
+                error
+            }
+        }),
+    );
+    Ok(())
 }
 
 async fn admit_grpc_export(
@@ -13973,6 +14034,93 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    /// A gzip-compressed gRPC frame, as the OTel Collector sends by default.
+    fn gzip_grpc_frame(message: &[u8]) -> Vec<u8> {
+        use flate2::write::GzEncoder;
+        use std::io::Write as _;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(message).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let mut frame = vec![1u8];
+        frame.extend_from_slice(&u32::try_from(compressed.len()).unwrap().to_be_bytes());
+        frame.extend_from_slice(&compressed);
+        frame
+    }
+
+    #[tokio::test]
+    async fn grpc_export_takes_gzip_within_the_http_body_limits() {
+        use tonic::codegen::Service as _;
+
+        let queue_dir = unique_main_test_dir("grpc-gzip-limit");
+        let state = test_app_state(
+            Arc::new(FakeKeyStore::default()),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let (raw_limit, decoded_limit) = (
+            state.config.max_request_body_bytes,
+            state.config.max_decoded_body_bytes,
+        );
+        let mut router = grpc_router(Arc::new(state));
+        let message = |len: usize| test_log_request(&"x".repeat(len)).encode_to_vec();
+        let gzip_request = |message: &[u8]| {
+            let mut request = grpc_export_request("MAPLE_TEST", gzip_grpc_frame(message));
+            request
+                .headers_mut()
+                .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+            request
+        };
+
+        // Past tonic's 4 MiB default, inside the decoded ceiling, compressed under the raw one.
+        let accepted = router
+            .call(gzip_request(&message(5 * 1024 * 1024)))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&accepted),
+            None,
+            "a gzip export is accepted"
+        );
+
+        let inflated = router
+            .call(gzip_request(&message(decoded_limit)))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&inflated),
+            Some("8"),
+            "gzip that inflates past the decoded limit is RESOURCE_EXHAUSTED"
+        );
+
+        let oversized = grpc_frame(&message(2 * raw_limit));
+        let streamed = router
+            .call(grpc_export_request("MAPLE_TEST", oversized.clone()))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&streamed),
+            Some("8"),
+            "a body past the raw limit is RESOURCE_EXHAUSTED"
+        );
+        let declared = {
+            let mut request = grpc_export_request("MAPLE_TEST", oversized.clone());
+            request
+                .headers_mut()
+                .insert(axum::http::header::CONTENT_LENGTH, oversized.len().into());
+            router.call(request).await.unwrap()
+        };
+        assert_eq!(
+            grpc_header_status(&declared),
+            Some("8"),
+            "a declared length past the raw limit is refused before the body is read"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[tokio::test]
     async fn grpc_export_is_accepted_through_admission() {
         use tonic::codegen::Service as _;
@@ -14109,6 +14257,9 @@ mod tests {
             "org_wire_denied",
         )
         .await;
+        // Room for the 1 MiB exports below; the test config's raw limit is 1 MiB.
+        let mut state = state;
+        state.config.max_request_body_bytes = 4 * 1024 * 1024;
 
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -14157,6 +14308,17 @@ mod tests {
             .expect("an allowed export is forwarded")
             .expect("forward channel should stay open");
         assert!(forwarded.body_len > large.len());
+
+        // gzip is the OTel Collector's default exporter compression.
+        let mut gzip_client = client.send_compressed(tonic::codec::CompressionEncoding::Gzip);
+        gzip_client
+            .export(export("maple_sk_test_wire_allowed", &large))
+            .await
+            .expect("a gzip export succeeds");
+        tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("a gzip export is forwarded")
+            .expect("forward channel should stay open");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

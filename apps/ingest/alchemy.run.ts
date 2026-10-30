@@ -48,6 +48,10 @@ const COLLECTOR_DOCKERFILE = resolve(COLLECTOR_CONTEXT, "Dockerfile")
 
 /** Port the gateway binds (`apps/ingest/Dockerfile` EXPOSEs the same). */
 const INGEST_PORT = 3474
+/** The gateway's OTLP/gRPC server (`INGEST_OTLP_GRPC_PORT`), reached through the ALB. */
+const INGEST_GRPC_PORT = 4317
+/** OTLP/gRPC export paths: `/opentelemetry.proto.collector.<signal>.v1.<Signal>Service/Export`. */
+const OTLP_GRPC_PATH = "/opentelemetry.proto.collector.*"
 
 const GIB = 1024 * 1024 * 1024
 
@@ -222,6 +226,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 		// without one (PR previews) gets alchemy's default HTTP listener on 80, open to all.
 		// The group's `description` must not change: AWS treats it as immutable (a replace).
 		const listenerPort = domains.ingest ? 443 : 80
+		// ALB gRPC needs an HTTPS listener, so a stage without a domain serves OTLP/HTTP only.
+		const serveGrpc = domains.ingest !== undefined
 		const albSources = domains.ingest
 			? (yield* cloudflareIpv4Ranges).map((cidr) => ({
 					cidr,
@@ -261,6 +267,17 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 					referencedGroupId: albSecurityGroup.groupId,
 					description: "ALB to gateway",
 				},
+				...(serveGrpc
+					? [
+							{
+								ipProtocol: "tcp",
+								fromPort: INGEST_GRPC_PORT,
+								toPort: INGEST_GRPC_PORT,
+								referencedGroupId: albSecurityGroup.groupId,
+								description: "ALB to gateway OTLP/gRPC",
+							},
+						]
+					: []),
 			],
 		})
 
@@ -557,6 +574,14 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// The shutdown drain (`INGEST_SHUTDOWN_DRAIN_SECS`, default 90) must fit inside this.
 				stopTimeout: 120,
 				mountPoints: [{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR }],
+				// Replaces the mapping alchemy derives from `port`; host mode needs hostPort = containerPort.
+				...(serveGrpc && {
+					portMappings: [INGEST_PORT, INGEST_GRPC_PORT].map((port) => ({
+						containerPort: port,
+						hostPort: port,
+						protocol: "tcp",
+					})),
+				}),
 			},
 
 			desiredCount,
@@ -566,7 +591,20 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			subnets: network.publicSubnetIds,
 			securityGroups: [albSecurityGroup.groupId],
 
-			public: true,
+			// The conditionless rule is the listener's default action, the same ALB, listener
+			// and target group `true` composes. OTLP/gRPC paths go to a gRPC target group.
+			loadBalancer: serveGrpc
+				? {
+						rules: [
+							{},
+							{
+								path: OTLP_GRPC_PATH,
+								forward: `${INGEST_GRPC_PORT}/http`,
+								protocolVersion: "GRPC",
+							},
+						],
+					}
+				: true,
 			// `port` is the CONTAINER port; the listener defaults to 443 with a
 			// certificate. Do not set `listenerPort`: Cloudflare cannot proxy to 3474.
 			port: INGEST_PORT,
@@ -598,6 +636,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			// variable is silently dropped. The `satisfies` below turns that into a type error.
 			env: {
 				INGEST_PORT: String(INGEST_PORT),
+				...(serveGrpc && { INGEST_OTLP_GRPC_PORT: String(INGEST_GRPC_PORT) }),
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 				// Lets the unknown-key 401 name the other region's ingest URL.
 				...(stage.kind === "prd" && { MAPLE_REGION: region }),
