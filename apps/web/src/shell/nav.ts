@@ -105,6 +105,16 @@ const infrastructureItem: NavItem = {
 }
 // GROUPS
 
+const servicesItem: NavItem = {
+	title: "Services",
+	href: "/services",
+	icon: "ServerIcon",
+	subItems: [
+		{ title: "All services", href: "/services", icon: "UnorderedListIcon", paletteTitle: "Services" },
+		{ title: "Map", href: "/service-map", icon: "NetworkNodesIcon", paletteTitle: "Service Map" },
+	],
+}
+
 const exploreItem: NavItem = {
 	title: "Explore",
 	href: "/traces",
@@ -127,16 +137,10 @@ export const navGroups = (
 		id: "monitor",
 		label: "Monitor",
 		items: [
-			{
-				title: "Services",
-				href: "/services",
-				icon: "ServerIcon",
-				alsoActive: flags.releases ? [] : ["/releases"],
-			},
+			{ ...servicesItem, alsoActive: flags.releases ? [] : ["/releases"] },
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
-			{ title: "Service Map", href: "/service-map", icon: "NetworkNodesIcon" },
 			infrastructureItem,
 		],
 	},
