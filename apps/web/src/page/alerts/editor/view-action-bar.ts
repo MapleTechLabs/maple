@@ -1,3 +1,4 @@
+import { pluralize } from "@maple/ui/lib/format"
 import { diffRuleForms } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
 import { Struct } from "effect"
@@ -7,7 +8,9 @@ import { icon } from "../../../ui/icon"
 import * as Tooltip from "../../../ui/tooltip"
 import { stableSlice } from "../../kit/stable-slice"
 import { alertsHref } from "../shared/links"
-import { describeRuleCondition, validationIssues } from "./derive"
+import type { AlertQueryTiming } from "@maple/domain/http"
+import { describeRuleCondition, saveIssues } from "./derive"
+import { draftTimingOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -32,7 +35,10 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 		toParentMessage: (message: Tooltip.Message) => Message.GotIssuesTooltipMessage({ message }),
 		viewInputs: {
 			toContent: () => [
-				h.ul([h.Class("space-y-0.5 text-xs")], issues.map((issue) => h.li([h.Key(issue)], [`• ${issue}`]))),
+				h.ul(
+					[h.Class("space-y-0.5 text-xs")],
+					issues.map((issue) => h.li([h.Key(issue)], [`• ${issue}`])),
+				),
 			],
 			toView: ({ trigger, portal }) =>
 				h.span(
@@ -43,7 +49,8 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 							{
 								variant: "link",
 								size: "xs",
-								className: "text-muted-foreground underline decoration-dotted hover:text-foreground",
+								className:
+									"text-muted-foreground underline decoration-dotted hover:text-foreground active:text-foreground",
 								attributes: trigger(),
 							},
 							["details"],
@@ -68,16 +75,19 @@ const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>):
 		[h.Class(cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground"))],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" }),
-			h.span([h.Class("truncate")], ["Missing: ", h.span([h.Class("text-foreground")], [summary])]),
+			h.span(
+				[h.Class("truncate")],
+				["Fix before saving: ", h.span([h.Class("text-foreground")], [summary])],
+			),
 			...(hiddenCount > 0 ? [issuesDetails(h, model, issues)] : []),
 		],
 	)
 }
 
-const bar = (h: H, model: BarView, form: RuleForm): Html => {
+const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	// Unsaved field changes while editing, `null` on a new rule.
 	const changeCount = model.savedForm === null ? null : diffRuleForms(model.savedForm, form).length
-	const issues = validationIssues(form)
+	const issues = saveIssues(form, timing)
 	const isEditing = model.editingRuleId !== null
 	const summary = describeRuleCondition(form)
 	return h.div(
@@ -112,7 +122,10 @@ const bar = (h: H, model: BarView, form: RuleForm): Html => {
 							h.div(
 								[h.Class("flex min-w-0 flex-col gap-0.5")],
 								[
-									h.p([h.Class("truncate text-sm text-foreground"), h.Title(summary)], [summary]),
+									h.p(
+										[h.Class("truncate text-sm text-foreground"), h.Title(summary)],
+										[summary],
+									),
 									validationSummary(h, model, issues),
 								],
 							),
@@ -129,7 +142,7 @@ const bar = (h: H, model: BarView, form: RuleForm): Html => {
 											[
 												changeCount === 0
 													? "No changes"
-													: `${changeCount} unsaved ${changeCount === 1 ? "change" : "changes"}`,
+													: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
 											],
 										),
 									]),
@@ -157,4 +170,5 @@ const viewOf = stableSlice((model: Model) =>
 )
 
 /** `RuleActionBar`. */
-export const actionBar = (h: H, model: Model, form: RuleForm): Html => slot(bar, [h, viewOf(model), form])
+export const actionBar = (h: H, model: Model, form: RuleForm): Html =>
+	slot(bar, [h, viewOf(model), form, draftTimingOf(model, form)])

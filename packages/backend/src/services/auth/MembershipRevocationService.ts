@@ -5,6 +5,7 @@ import {
 	ApiKeys,
 	ChatIdentities,
 	CliDeviceAuthorizations,
+	DeviceCredentials,
 	DigestSubscriptions,
 	McpOAuthAuthorizations,
 	MobileDevices,
@@ -49,6 +50,7 @@ export class MembershipRevocationError extends Schema.TaggedError<MembershipRevo
 export interface MembershipRevocationSummary {
 	readonly apiKeysRevoked: number
 	readonly mcpFamiliesRevoked: number
+	readonly deviceCredentialsRevoked: number
 	readonly cliAuthorizationsDeleted: number
 	readonly mcpAuthorizationsDeleted: number
 	readonly emailDestinationsUpdated: number
@@ -60,6 +62,7 @@ export interface MembershipRevocationSummary {
 export interface MembershipDemotionSummary {
 	readonly apiKeysRevoked: number
 	readonly mcpFamiliesRevoked: number
+	readonly deviceCredentialsRevoked: number
 }
 
 export interface MembershipRevocationServiceApi {
@@ -245,6 +248,18 @@ const make = Effect.gen(function* () {
 							])
 							.returning("id"),
 					)
+					// Device-bound (DPoP) widget keys: every token issued for one re-reads it, so
+					// revoking the row ends the device's access on its next request.
+					const revokedDeviceCredentials = yield* db.run(
+						PG.update(DeviceCredentials)
+							.set({ revokedAt: now })
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+								$.revokedAt.isNull(),
+							])
+							.returning("id"),
+					)
 					const cliDeleted = yield* db.run(
 						PG.deleteFrom(CliDeviceAuthorizations)
 							.where(($) => [
@@ -295,6 +310,7 @@ const make = Effect.gen(function* () {
 					return {
 						apiKeysRevoked: revokedKeys.length,
 						mcpFamiliesRevoked,
+						deviceCredentialsRevoked: revokedDeviceCredentials.length,
 						cliAuthorizationsDeleted: cliDeleted.length,
 						mcpAuthorizationsDeleted: mcpAuthDeleted.length,
 						mobileDevicesDeleted: devicesDeleted.length,
@@ -311,6 +327,7 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({
 			"maple.membership.api_keys_revoked": summary.apiKeysRevoked,
 			"maple.membership.mcp_families_revoked": summary.mcpFamiliesRevoked,
+			"maple.membership.device_credentials_revoked": summary.deviceCredentialsRevoked,
 			"maple.membership.cli_authorizations_deleted": summary.cliAuthorizationsDeleted,
 			"maple.membership.mcp_authorizations_deleted": summary.mcpAuthorizationsDeleted,
 			"maple.membership.email_destinations_updated": summary.emailDestinationsUpdated,
@@ -344,13 +361,38 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
 		yield* invalidateMembership(userId)
 		if (isAdmin(roles)) {
-			return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 } satisfies MembershipDemotionSummary
+			return {
+				apiKeysRevoked: 0,
+				mcpFamiliesRevoked: 0,
+				deviceCredentialsRevoked: 0,
+			} satisfies MembershipDemotionSummary
 		}
 
 		const now = yield* Clock.currentTimeMillis
 		const summary = yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
+					// Device credentials pin roles in a column rather than key metadata.
+					const liveDevices = yield* db.run(
+						PG.from(DeviceCredentials)
+							.select("id", "roles")
+							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId), $.revokedAt.isNull()]),
+					)
+					const [firstDevice, ...restDevices] = liveDevices
+						.filter((row) => isAdmin(row.roles))
+						.map((row) => row.id)
+					const deviceCredentialsRevoked =
+						firstDevice === undefined
+							? 0
+							: (yield* db.run(
+									PG.update(DeviceCredentials)
+										.set({ revokedAt: now })
+										.where(($) => [
+											$.id.in_(firstDevice, ...restDevices),
+											$.revokedAt.isNull(),
+										])
+										.returning("id"),
+								)).length
 					const live = yield* db.run(
 						PG.from(ApiKeys)
 							.select("id", "metadataJson")
@@ -363,7 +405,8 @@ const make = Effect.gen(function* () {
 						})
 						.map((row) => row.id)
 					const [first, ...rest] = stale
-					if (first === undefined) return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 }
+					if (first === undefined)
+						return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked }
 
 					const revoked = yield* db.run(
 						PG.update(ApiKeys)
@@ -372,7 +415,7 @@ const make = Effect.gen(function* () {
 							.returning("id"),
 					)
 					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(db, stale, now)
-					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked }
+					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked, deviceCredentialsRevoked }
 				}),
 			),
 		)
@@ -380,6 +423,7 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({
 			"maple.membership.demoted_api_keys_revoked": summary.apiKeysRevoked,
 			"maple.membership.demoted_mcp_families_revoked": summary.mcpFamiliesRevoked,
+			"maple.membership.demoted_device_credentials_revoked": summary.deviceCredentialsRevoked,
 		})
 		return summary satisfies MembershipDemotionSummary
 	})
@@ -402,6 +446,6 @@ const make = Effect.gen(function* () {
 export class MembershipRevocationService extends Context.Service<
 	MembershipRevocationService,
 	MembershipRevocationServiceApi
->()("@maple/api/services/auth/MembershipRevocationService", { make }) {
+>()("@maple/backend/services/auth/MembershipRevocationService", { make }) {
 	static readonly layer = Layer.effect(this, this.make)
 }

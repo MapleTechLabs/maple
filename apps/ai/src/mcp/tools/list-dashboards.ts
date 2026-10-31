@@ -74,9 +74,10 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 						: [
 								doc.text(`Total: ${output.total} dashboard${output.total !== 1 ? "s" : ""}`),
 								doc.table(
-									["ID", "Name", "Widgets", "Updated"],
+									["ID", "REST id", "Name", "Widgets", "Updated"],
 									output.dashboards.map((d) => [
 										d.id,
+										d.publicId,
 										d.name,
 										String(d.widgetCount),
 										d.updatedAt.slice(0, 19),

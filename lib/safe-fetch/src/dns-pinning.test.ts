@@ -1,7 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/http"
-import { guardPinned, HostResolutionError, UrlValidationError, type ResolveHost } from "./index"
+import { Effect, Ref } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
+import {
+	DialServerName,
+	guardPinned,
+	HostResolutionError,
+	UrlValidationError,
+	type ResolveHost,
+} from "./index"
 
 interface Seen {
 	readonly url: string
@@ -154,5 +160,29 @@ describe("guardPinned", () => {
 			assert.instanceOf(failure.error, HostResolutionError)
 			assert.strictEqual(failure.seen.length, 0)
 		}),
+	)
+
+	it.effect(
+		"hands a non-fetch transport the TLS name of a pinned hop, and none for a literal address",
+		() =>
+			Effect.gen(function* () {
+				const dialled = yield* Ref.make<ReadonlyArray<readonly [string, string | null]>>([])
+				const transport = HttpClient.make((request, url, _signal, fiber) =>
+					Effect.as(
+						Ref.update(dialled, (all) => [
+							...all,
+							[url.hostname, fiber.getRef(DialServerName)] as const,
+						]),
+						HttpClientResponse.fromWeb(request, new Response("ok")),
+					),
+				)
+				const client = guardPinned(transport, resolverOf({ "api.example.com": ["93.184.216.34"] }))
+				yield* Effect.scoped(client.get("https://api.example.com/x"))
+				yield* Effect.scoped(client.get("https://93.184.216.35/x"))
+				assert.deepStrictEqual(yield* Ref.get(dialled), [
+					["93.184.216.34", "api.example.com"],
+					["93.184.216.35", null],
+				])
+			}),
 	)
 })

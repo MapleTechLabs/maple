@@ -45,6 +45,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/uptime",
+		title: "Uptime monitor",
+		description:
+			"An HTTP monitor's response time, phase breakdown and every-check charts over a fixture shaped like production checks.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/billing-orgs",
+		title: "Billing orgs",
+		description:
+			"The Billing tab for a member org, a billing org with members, and a standalone org linking to another (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp",
 		title: "Google Cloud log filter",
 		description:
@@ -101,6 +117,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/crash",
+		title: "Crash page",
+		description:
+			"A button that crashes a real Foldkit program, so the crash page renders the way it does when the app dies.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp-dashboard",
 		title: "Google Cloud dashboard",
 		description:
@@ -112,7 +136,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:
-			"Every dashboard widget renderer over its bundled sample data — the fastest way to eyeball a chart change without a backend.",
+			"Every dashboard widget renderer over its bundled sample data: the fastest way to eyeball a chart change without a backend.",
 		kind: "lab",
 		session: "none",
 	},
@@ -127,7 +151,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/timeline",
 		title: "Trace timeline",
 		description:
-			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
+			"The trace view tabs over a synthetic trace with a wide dynamic range: a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
 		kind: "lab",
 		session: "none",
 	},
@@ -167,7 +191,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/agent-sessions",
 		title: "Agent sessions list",
 		description:
-			"The `/agent-sessions` list over rows that break its lanes — a nameless session, an unidentified vendor, ms next to hours, a total with no buckets, no usage at all, both kinds of failure.",
+			"The `/agent-sessions` list over rows that break its lanes: a nameless session, an unidentified vendor, ms next to hours, a total with no buckets, no usage at all, both kinds of failure.",
 		kind: "lab",
 		session: "none",
 	},
@@ -188,14 +212,6 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
-		path: "/lab/chat",
-		title: "Chat transcript",
-		description:
-			"The chat transcript over a fixture thread: a merged tool run, prose carrying every inline reference card, an approval prompt, and two-character turns that expose the vertical rhythm.",
-		kind: "lab",
-		session: "none",
-	},
-	{
 		path: "/lab/logs",
 		title: "Logs stream",
 		description:
@@ -211,10 +227,50 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-api",
+		title: "Service API tab",
+		description:
+			"The service page's API tab over 12 hours of the ingest service: KPI strip, responses by status, the non-2xx breakdown, the endpoint table and its drawer (?endpoint=POST%20/v1/traces).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/service-runtimes",
+		title: "Service runtimes",
+		description:
+			"The service page's Overview tab for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/service-map-runtimes",
+		title: "Service map runtimes",
+		description:
+			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/aws",
+		title: "AWS infrastructure",
+		description:
+			"The AWS list over one account: four ECS services (two idle), two EC2 instances and two load balancers, none traced. Pick a tab with ?tab=ec2 or ?tab=loadBalancers.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/security",
+		title: "Security Center",
+		description:
+			"Every Security Center page over fixtures: overview, empty, not enabled, Add target and its errors, findings, runs, a live, incomplete, failed and cancelled run, a finding and its triage, and the admins-only states. Pick one with ?state=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
-			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+			"The `/errors` list over a fixture holding every row state at once: surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
 		kind: "lab",
 		session: "none",
 	},
@@ -324,14 +380,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/bench/agent-transcript",
 		title: "Agent transcript",
 		description:
-			"The session Transcript view over a synthetic session of `?turns=` turns (default 40) whose tool results run to hundreds of kilobytes — row mount cost and scroll perf, via window.__transcriptBench.",
+			"The session Transcript view over a synthetic session of `?turns=` turns (default 40) whose tool results run to hundreds of kilobytes: row mount cost and scroll perf, via window.__transcriptBench.",
 		kind: "bench",
 		session: "none",
 	},
 	{
 		path: "/lab/bench/logs",
 		title: "Logs table",
-		description: "The real LogsTableView over 2,000 synthetic rows × 12 chips — hover and scroll perf.",
+		description: "The real LogsTableView over 2,000 synthetic rows × 12 chips: hover and scroll perf.",
 		kind: "bench",
 		session: "none",
 	},
@@ -339,7 +395,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/bench/overview",
 		title: "Overview charts",
 		description:
-			"Service-detail chart bench pinned to cursor sync — the cross-browser gate's overview scenario.",
+			"Service-detail chart bench pinned to cursor sync: the cross-browser gate's overview scenario.",
 		kind: "bench",
 		session: "none",
 	},

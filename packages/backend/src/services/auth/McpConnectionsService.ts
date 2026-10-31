@@ -79,7 +79,7 @@ const toConnection = (
 	}))
 
 export class McpConnectionsService extends Context.Service<McpConnectionsService, McpConnectionsServiceApi>()(
-	"@maple/api/services/auth/McpConnectionsService",
+	"@maple/backend/services/auth/McpConnectionsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

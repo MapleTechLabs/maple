@@ -12,6 +12,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tabs from "../../../ui/tabs"
+import * as IngestRules from "./ingest-rules"
 import * as MappingDialog from "./mapping-dialog"
 import { IngestKeyKind, OverviewRow, RecommendationTab } from "./model"
 
@@ -24,8 +25,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchMappings: result(Schema.Array(V2AttributeMapping)),
 	ReadFramework: { framework: Schema.NullOr(Schema.String) },
 	TickedPoll: {},
-	ClickedSendTestEvent: {},
-	CompletedSendTestEvent: { isSent: Schema.Boolean },
 	GotEndpointCopyMessage: { message: CopyButton.Message },
 	ToggledKeyReveal: { kind: IngestKeyKind },
 	GotKeyCopyMessage: { kind: IngestKeyKind, message: CopyButton.Message },
@@ -49,6 +48,7 @@ export const Message = defineMessageUnion({
 		label: Schema.String,
 		result: Schema.Result(Schema.Void, LoadFailure),
 	},
+	GotIngestRulesMessage: { message: IngestRules.Message },
 	ClickedAddMapping: {},
 	ToggledMapping: { id: AttributeMappingPublicId },
 	CompletedToggleMapping: { id: AttributeMappingPublicId, result: Schema.Result(Schema.Void, LoadFailure) },
@@ -58,5 +58,6 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDelete: {},
 	CompletedDelete: { result: Schema.Result(Schema.Void, LoadFailure) },
 	ClickedRetryMappings: {},
+	ClickedRetryIngestKeys: {},
 })
 export type Message = typeof Message.Type

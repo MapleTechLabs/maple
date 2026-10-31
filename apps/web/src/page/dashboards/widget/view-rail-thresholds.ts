@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
@@ -33,7 +34,7 @@ export const thresholds = (h: H, state: EditorState): Html =>
 									h.Value(threshold.color.startsWith("#") ? threshold.color : "#ef4444"),
 									h.OnInput((color) => Message.ChangedThresholdColor({ index, color })),
 									h.Class(
-										"h-8 w-8 shrink-0 cursor-pointer rounded border bg-transparent p-0.5",
+										"h-8 w-8 shrink-0 cursor-pointer rounded-sm border bg-transparent p-0.5",
 									),
 									h.AriaLabel("Threshold color"),
 								]),
@@ -52,7 +53,7 @@ export const thresholds = (h: H, state: EditorState): Html =>
 										variant: "outline",
 										size: "icon",
 										label: "Remove threshold",
-										className: "text-muted-foreground hover:text-foreground",
+										className: "text-muted-foreground hover:text-foreground active:text-foreground",
 										attributes: [h.OnClick(Message.ClickedRemoveThreshold({ index }))],
 									},
 									[icon(h, "XmarkIcon")],
@@ -60,14 +61,12 @@ export const thresholds = (h: H, state: EditorState): Html =>
 							],
 						),
 					),
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.ClickedAddThreshold()),
-							h.Class(
-								"h-8 rounded-md border border-dashed text-xs text-muted-foreground transition-colors hover:text-foreground",
-							),
-						],
+					button(
+						h,
+						{
+							variant: "dashed",
+							attributes: [h.OnClick(Message.ClickedAddThreshold())],
+						},
 						["+ Add threshold"],
 					),
 				],

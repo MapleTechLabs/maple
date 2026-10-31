@@ -47,6 +47,8 @@ import type {
 	WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
+import { configResolvingWarehouse, makeOrgConfigProbe } from "@maple/backend/testing/org-config-probe"
 import { quarantineOrgWarehouse } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
@@ -214,6 +216,7 @@ const makeErrorsLayer = (
 		},
 	)
 	const errorsLive = Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(OrgClickHouseSettingsService.layer),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(warehouseLive),
@@ -244,7 +247,9 @@ const makeErrorsLayer = (
  *  backend and the notification dispatcher) supplied by the test. */
 const makeTickLayerOver = (
 	testDb: TestDb,
-	warehouse: WarehouseQueryServiceApi,
+	warehouse:
+		| WarehouseQueryServiceApi
+		| Layer.Layer<WarehouseQueryService, never, OrgClickHouseSettingsService>,
 	extras: {
 		readonly edgeBackend?: ReturnType<typeof makeMemoryBackend>
 		readonly dispatcher?: (typeof NotificationDispatcher)["Service"]
@@ -273,9 +278,12 @@ const makeTickLayerOver = (
 		extras.dispatcher ?? { dispatch: () => Effect.succeed({ delivered: 0, failed: 0 }) },
 	)
 	return Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(
+			"compiledQuery" in warehouse ? Layer.succeed(WarehouseQueryService, warehouse) : warehouse,
+		),
+		Layer.provide(OrgClickHouseSettingsService.layer),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
-		Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
 		Layer.provide(
 			Layer.succeed(EdgeCacheService, makeEdgeCacheService(extras.edgeBackend ?? makeMemoryBackend())),
 		),
@@ -3996,5 +4004,52 @@ describe("ErrorsService.transitionIssue lease renewal", () => {
 			assert.strictEqual(done.workflowState, "done")
 			assert.isNull(done.leaseExpiresAt)
 		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+})
+
+describe("ErrorsService.runTick org config priming", () => {
+	// Fresh org ids per run: the runtime-config memo is module-scoped.
+	const runId = Math.random().toString(36).slice(2, 10)
+	it.effect("resolves every scanned org's warehouse config in one batched read", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			// More orgs than the tick's per-org concurrency (4).
+			const orgs = Array.from({ length: 6 }, (_, i) => asOrgId(`org_errors_prime_${runId}_${i}`))
+			const probe = yield* makeOrgConfigProbe
+			const warehouse = configResolvingWarehouse((resolveConfig) => ({
+				query: () => Effect.die(new Error("unexpected warehouse query")),
+				rawSqlQuery: () => Effect.succeed([]),
+				// Discovery reports every org active, so the tick scans all of them.
+				crossOrgQuery: <T>(tenant: { readonly orgId: OrgId }, compiled: CompiledQuery<T>) =>
+					Effect.andThen(
+						resolveConfig(tenant.orgId),
+						Effect.orDie(compiledQueryOf(compiled).decodeRows(orgs.map((orgId) => ({ orgId })))),
+					),
+				compiledQuery: <T>(tenant: { readonly orgId: OrgId }, compiled: CompiledQuery<T>) =>
+					Effect.andThen(
+						resolveConfig(tenant.orgId),
+						Effect.orDie(compiledQueryOf(compiled).decodeRows([])),
+					),
+				compiledQueryFirst: () => Effect.die(new Error("unexpected warehouse query")),
+				ingest: () => Effect.void,
+				asExecutor: () => {
+					throw new Error("asExecutor is not supported by this test stub")
+				},
+			}))
+			const result = yield* Effect.gen(function* () {
+				yield* seedIngestKeys(orgs)
+				const errors = yield* ErrorsService
+				return yield* errors.runTick()
+			}).pipe(
+				Effect.provide(
+					makeTickLayerOver(createTestDb(createdDbs), warehouse, { edgeBackend: probe.backend }),
+				),
+			)
+
+			assert.strictEqual(result.orgsProcessed, orgs.length)
+			// Only the active-org discovery route resolves cold, before the org set is
+			// known. Without the prime, every scanned org does its own cold read.
+			assert.strictEqual(yield* probe.coldReads, 1)
+		}),
 	)
 })

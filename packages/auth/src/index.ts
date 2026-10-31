@@ -137,6 +137,10 @@ const unauthorized = (message: string) =>
 		message,
 	})
 
+/** A signed-in user with no organization to act in; v2 exposes this one case to clients. */
+const noActiveOrganization = () =>
+	new UnauthorizedError({ message: "Active organization is required", reason: "no_active_organization" })
+
 // NOTE: the decode helpers below deliberately discard the parse error and the
 // JWT helpers in `verifyHs256Jwt` do the same. Auth failures must NOT leak
 // validation hints (e.g. which schema field rejected the input) to unauthorized
@@ -349,7 +353,7 @@ type ClerkSessionAuth = {
 type ClerkRequestState = {
 	readonly isAuthenticated: boolean
 	readonly message: string | null
-	readonly toAuth: () => ClerkSessionAuth | null
+	readonly toAuth: (options?: { readonly treatPendingAsSignedOut?: boolean }) => ClerkSessionAuth | null
 }
 
 type ClerkAuthenticateRequest = (
@@ -638,6 +642,7 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
 	authenticateClerkRequest: ClerkAuthenticateRequest,
 	acceptsToken: string | string[],
+	acceptPendingSession = false,
 ) {
 	const requestState = yield* Effect.tryPromise({
 		try: () =>
@@ -655,7 +660,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized(requestState.message ?? "Invalid Clerk session token")
 	}
 
-	const auth = requestState.toAuth()
+	// Clerk reports a `pending` session (one with an unfinished task, such as choosing an
+	// organization) as signed out unless asked otherwise.
+	const auth = requestState.toAuth({ treatPendingAsSignedOut: !acceptPendingSession })
 	if (!auth) {
 		return yield* unauthorized("Invalid Clerk session token")
 	}
@@ -668,7 +675,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized("Missing user in Clerk session token")
 	}
 
-	return { ...auth, userId: auth.userId }
+	// Pending by Clerk's own rule: authenticated only because pending sessions were let through.
+	const pending = acceptPendingSession && requestState.toAuth()?.isAuthenticated !== true
+	return { ...auth, userId: auth.userId, pending }
 })
 
 /**
@@ -686,7 +695,15 @@ export const makeResolveClerkUser = (
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "clerk" || !authenticateClerkRequest) {
 			return yield* unauthorized("A Clerk session is required")
 		}
-		const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, "session_token")
+		// A user with no organization yet holds a pending session until they create one, so
+		// this is the one place a pending session is accepted.
+		const auth = yield* authenticateClerkUser(
+			headers,
+			env,
+			authenticateClerkRequest,
+			"session_token",
+			true,
+		)
 		return yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
 	})
 
@@ -716,7 +733,18 @@ export const makeResolveTenant = (
 				return yield* unauthorized("CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk")
 			}
 
-			const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, acceptsToken)
+			const auth = yield* authenticateClerkUser(
+				headers,
+				env,
+				authenticateClerkRequest,
+				acceptsToken,
+				true,
+			)
+			// A pending session (a user who has not chosen an organization yet) is only
+			// classified so clients can show an org picker, never served.
+			if (auth.pending) {
+				return yield* auth.orgId ? unauthorized("Invalid Clerk token") : noActiveOrganization()
+			}
 
 			const orgIdOverride = getOptionalString(env.MAPLE_ORG_ID_OVERRIDE)
 			const userId = yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
@@ -760,7 +788,7 @@ export const makeResolveTenant = (
 				// foreground has active.
 				const selected = yield* selectRequestedOrg(userId, headers, selectable)
 				if (Option.isNone(selected)) {
-					return yield* unauthorized("Active organization is required")
+					return yield* noActiveOrganization()
 				}
 				return {
 					orgId: selected.value.orgId,

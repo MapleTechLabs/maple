@@ -13,7 +13,7 @@ import {
 	SandboxExecResponse,
 	type SandboxExecResponse as SandboxExecResponseType,
 } from "@maple/domain/sandbox"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"
@@ -35,7 +35,7 @@ const encodeRequest = Schema.encodeUnknownSync(SandboxExecRequest)
 const decodeResponse = Schema.decodeUnknownEffect(SandboxExecResponse)
 
 export class SandboxClient extends Context.Service<SandboxClient, SandboxClientApi>()(
-	"@maple/api/sandbox/SandboxClient",
+	"@maple/backend/sandbox/SandboxClient",
 	{
 		make: Effect.gen(function* () {
 			const binding = Option.flatten(yield* Effect.serviceOption(SandboxFetcher))

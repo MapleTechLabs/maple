@@ -31,7 +31,7 @@ export const pinnedNamespaceNotice = <M>(h: HtmlBuilder<M>, namespace: string, o
 							variant: "link",
 							size: "xs",
 							className:
-								"h-auto p-0 text-2xs normal-case tracking-normal text-muted-foreground hover:text-foreground sm:text-2xs",
+								"h-auto p-0 text-2xs normal-case tracking-normal text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
 							attributes: onClear === undefined ? [] : [h.OnClick(onClear)],
 						},
 						["Clear"],

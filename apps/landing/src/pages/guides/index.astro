@@ -80,6 +80,13 @@ const investigationGuides = [
         description: "The five levels and when to use each, why info() prints nothing by default, and how to set the level with basicConfig, a --log-level flag or LOG_LEVEL.",
         read: "6 min",
     },
+    {
+        href: "/guides/incident-response",
+        label: "On-call",
+        title: "Incident response, step by step",
+        description: "An incident response process for small teams: an afternoon of preparation, the response steps for one or two engineers, and lightweight postmortems.",
+        read: "12 min",
+    },
 ];
 
 const fieldNotes = (await getCollection("blog") as BlogPost[])

@@ -1,4 +1,4 @@
-import { formatErrorRate } from "@maple/ui/lib/format"
+import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -23,7 +23,7 @@ export const maskChip = <M>(h: HtmlBuilder<M>, label: string, raw: string, class
 				inlineCodeClassName(
 					"chip",
 					cn(
-						"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-2xs leading-3.75 font-normal text-muted-foreground",
+						"mx-px inline-block rounded-xs px-1 py-0 align-baseline text-2xs leading-3.75 font-normal text-muted-foreground",
 						className,
 					),
 				),
@@ -67,25 +67,29 @@ const headingToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): ReadonlyArra
 const headingTokens = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>) =>
 	tokens.flatMap((token) => headingToken(h, token))
 
-const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-[-0.01em] text-foreground"
+const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-tight text-foreground"
 
 /** `ErrorTextHeading`: the message whole, its path on a line of its own in the error colour. */
 export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html => {
 	const pathIndex = tokens.findIndex((token) => token.kind === "path")
-	if (pathIndex < 0) return h.h2([h.Class(cn(HEADING, "line-clamp-3 break-words"))], headingTokens(h, tokens))
+	if (pathIndex < 0)
+		return h.h2([h.Class(cn(HEADING, "line-clamp-3 break-words"))], headingTokens(h, tokens))
 	const path = tokens[pathIndex]
 	const atIndex = tokens[pathIndex - 1]?.kind === "at" ? pathIndex - 1 : pathIndex
 	const tail = tokens.slice(pathIndex + 1)
 	return h.h2(
 		[h.Class("flex min-w-0 flex-col gap-0.5")],
 		[
-			h.span([h.Class(cn(HEADING, "line-clamp-2 break-words"))], headingTokens(h, tokens.slice(0, atIndex))),
+			h.span(
+				[h.Class(cn(HEADING, "line-clamp-2 break-words"))],
+				headingTokens(h, tokens.slice(0, atIndex)),
+			),
 			h.span(
 				[h.Class("flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-6.5")],
 				[
 					h.span([h.Class("text-muted-foreground")], ["at"]),
 					h.span(
-						[h.Class(cn("break-all font-semibold tracking-[-0.01em]", TONE_TEXT.crit))],
+						[h.Class(cn("break-all font-semibold tracking-tight", TONE_TEXT.crit))],
 						path?.kind === "path" ? pathParts(h, path.parts, "", HEADING_MASK) : [],
 					),
 				],
@@ -93,7 +97,11 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 			...(tail.length > 0
 				? [
 						h.span(
-							[h.Class("line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground/80")],
+							[
+								h.Class(
+									"line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground-soft",
+								),
+							],
 							headingTokens(h, tail),
 						),
 					]
@@ -105,15 +113,15 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
 	switch (token.kind) {
 		case "text":
-			return [h.span([h.Class("text-foreground/80")], [token.text])]
+			return [h.span([h.Class("text-foreground-soft")], [token.text])]
 		case "value":
 			return [h.span([h.Class("font-medium text-foreground")], [token.text])]
 		case "mask":
 			return [maskChip(h, token.label, token.raw)]
 		case "at":
-			return [h.span([h.Class("text-muted-foreground/60")], [" at "])]
+			return [h.span([h.Class("text-foreground-subtle")], [" at "])]
 		case "break":
-			return [h.span([h.Class("text-muted-foreground/60")], [" ⏎ "])]
+			return [h.span([h.Class("text-foreground-subtle")], [" ⏎ "])]
 		case "path":
 			return pathParts(h, token.parts, "font-medium text-foreground")
 	}
@@ -182,7 +190,7 @@ export const failureStatusLine = <M>(
 					scope === "tool"
 						? `No failures since ${dateTime(status.since)}`
 						: `None since ${shortDate(status.since)}`,
-					`· ${formatToolCount(status.callsSince)} call${status.callsSince === 1 ? "" : "s"} since`,
+					`· ${formatToolCount(status.callsSince)} ${pluralize(status.callsSince, "call")} since`,
 				]
 			: status.kind === "quiet"
 				? [
@@ -207,7 +215,7 @@ export const failureStatusLine = <M>(
 		[
 			statusDot(h, { tone: STATUS_TONE[status.kind] }),
 			h.span([h.Class("text-foreground")], [lead]),
-			...(detail === undefined ? [] : [h.span([h.Class("text-muted-foreground/70")], [detail])]),
+			...(detail === undefined ? [] : [h.span([h.Class("text-foreground-subtle")], [detail])]),
 		],
 	)
 }

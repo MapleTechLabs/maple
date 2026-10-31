@@ -23,7 +23,7 @@ export function getCacheInfo(attrs: Record<string, string>): CacheInfo | null {
 }
 
 export const cacheResultStyles = {
-	hit: "bg-primary/15 text-primary border-primary/30",
+	hit: "bg-primary-a2 text-primary border-primary-a3",
 	miss: "bg-chart-p50/15 text-chart-p50 border-chart-p50/30",
 }
 

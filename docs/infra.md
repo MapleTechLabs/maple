@@ -8,10 +8,11 @@ order not to break the code; incidents, measurements and retired designs live in
 ## The AI Worker (`maple-ai`)
 
 `apps/ai` hosts every agent surface: the MCP transport and its tools, and the `ChatSession`
-Durable Object, which also runs every investigation's autonomous pass. `apps/api` keeps the
-hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to it over a service
-binding, so the OAuth issuer and the RFC 8707 resource identifiers never move off api's
-origin.
+Durable Object, which runs every investigation (its autonomous pass and the follow-up
+conversation on its page), pull request review, and the Slack/Discord bot's threads.
+`apps/api` keeps the hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to it
+over a service binding, so the OAuth issuer and the RFC 8707 resource identifiers never move
+off api's origin.
 
 Two things a future change here needs to know:
 
@@ -23,6 +24,14 @@ Two things a future change here needs to know:
   workflow and orphans in-flight runs. `ClickHouseSchemaApplyWorkflow` stays on `api`.
 
 ## Layout
+
+Alchemy is pinned to `2.0.0-beta.84` across the workspace. Providers now come from
+`@alchemy.run/cloudflare`, `@alchemy.run/aws`, `@alchemy.run/neon` and
+`@alchemy.run/planetscale`; core APIs still come from `alchemy`. Direct Distilled
+dependencies use rc.17 to share credential services with those providers.
+The split Cloudflare and AWS patches retain Maple's unchanged observability-destination
+resume path and CloudTrail/Config propagation retries. Check both Bun source imports and
+Node compiled imports when rebasing these patches: declaration checks do not parse source.
 
 - `alchemy.run.ts`: the root stack. Provides `MapleStack` (stage, region, domains, public
   URLs, the `bun dev` blocks, the prd database branch) once, yields one module per app, and
@@ -383,9 +392,9 @@ What each kind of Worker keeps beside the module:
   without a runtime.
 - **The application database** (`api`, `ai`, `alerting`, `chat-bot`): on dev stages and the
   US prd, `yield* MapleDb(consumer)` in the init binds `MAPLE_DB`:
-  `Hyperdrive.Connect(ManagedMapleDb)` on dev stages, `host.bind` of the dashboard-managed
-  config by id on the US prd (alchemy has no `env` form for a Hyperdrive it did not create;
-  its own `ConnectBinding` attaches the same raw metadata). On the EU prd the props bind the
+  `Hyperdrive.Connect(ManagedMapleDb)` on dev stages, `Hyperdrive.Connect` of a
+  `Hyperdrive.lookup` of the dashboard-managed config by id on the US prd (a lookup has no
+  state row, so destroy and nuke never touch it). On the EU prd the props bind the
   declared config through `mapleDbEnv`, and so do previews (one shared config on their Neon
   branch). The api's Workflow yields it
   too, from its outer phase. The root yields `ManagedMapleDb` first on dev stages so its
@@ -488,9 +497,10 @@ list of yields. What it composes lives beside it:
 ## AWS: ingest, collector and Electric
 
 The Rust OTLP gateway (`apps/ingest`) runs on an ECS EC2 fleet of Graviton c7gd instances,
-one task per host in host networking, with the WAL on the local NVMe instance store. That is
+one task per host in host networking, with the WAL on the local NVMe instance store. PR
+previews run one t4g.small instead, with a 4 GiB WAL on the root volume (`WAL_STORAGE`). That is
 the only ingest path. The OTel collector and Electric (`apps/electric`) run as ECS Fargate
-services. The Prometheus scraper (`apps/scraper`, US prd only) is a Fargate singleton in the
+services. The Prometheus and uptime scraper (`apps/scraper`, one per prd instance) is a Fargate singleton in the
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
 writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stops answering.
 
@@ -527,6 +537,13 @@ in their env (`MAPLE_DB_BRANCH`, via `mapleDbEnv`) to upload after it. The inges
 and Electric's Postgres credentials are `Planetscale.PostgresRole`s on the same branch. See
 `docs/persistence.md` for both.
 
+Runtime roles (ingest gateway, the EU Hyperdrive roles) inherit `DB_ACCESS_ROLES.readWrite`
+(`@maple/db/roles`: `pg_read_all_data` + `pg_write_all_data`): DML on every table, current and
+future, and no DDL, TRUNCATE or ownership. Only migrations, which alchemy runs on a temporary
+`postgres` role, change the schema. Electric stays on `postgres` because PlanetScale grants
+REPLICATION only with it. The US prd Hyperdrive configs are dashboard-managed, so their
+credentials are outside the deploy.
+
 ## Hyperdrive: why api and alerting have separate configs
 
 `alerting` issues the large majority of Postgres queries, and sharing one config meant
@@ -542,10 +559,10 @@ the database rather than at the pool.
 `stg`. A new shared stage needs its own PlanetScale branch and per-consumer configs before
 it gets a `MAPLE_DB` binding at all.
 
-Binding a dashboard-managed config by id attaches raw `{ type: "hyperdrive", name, id }`
-metadata from the Worker's init (`host.bind` inside `MapleDb`,
-`packages/infra/src/cloudflare/maple-db.ts`); no cloud resource is created and the origin
-credentials stay in the dashboard.
+Binding a dashboard-managed config by id is a `Hyperdrive.lookup` read at plan time from the
+Worker's init (`MapleDb`, `packages/infra/src/cloudflare/maple-db.ts`); no cloud resource is
+created and the origin credentials stay in the dashboard. A config id that no longer exists
+fails the plan.
 
 ## Cost decisions
 
@@ -570,6 +587,11 @@ architecture.
   one c7gd.medium (autoscaling 1-3) and the collector at the non-prd size; Electric keeps
   the prd size. Managed scaling adds a host to roll a deploy. To scale it, raise the EU
   values there, or point `prd-eu` at `US_PRD`.
+- **Ingest stamps its own revision.** Every ingest rollout launches fresh hosts, so its
+  `COMMIT_SHA` is `INGEST_COMMIT_SHA` (the last commit touching `apps/ingest`, resolved in
+  `deploy-prd-instance.yml`), not the deployed commit. A merge that leaves `apps/ingest` alone
+  keeps the task definition and the fleet. That is also why ingest is not in
+  `PRD_LOCKSTEP_REVISION_SERVICES`.
 - **Graviton (ARM64).** The gateway, collector and Electric run `cpuArchitecture: "ARM64"`
   (`runtimePlatform`), cheaper than x86_64. `build-ingest-binary.yml` compiles natively on
   an arm64 runner.

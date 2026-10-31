@@ -1,17 +1,15 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { isReleaseHealth } from "../../../components/releases/release-model"
-import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Overlays from "../overlays"
 import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import { commitDetailsKey } from "../../kit/commit-card"
 import type { TimeWindow } from "../../../data/time-range"
-import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -28,7 +26,6 @@ import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveReleasesWindow({
@@ -49,28 +46,10 @@ const inputOf = (model: Model, window: TimeWindow, context: PageContext): Releas
 })
 
 /** One slot's request; nothing when the slot already holds the key (`Load`). */
-const slotStep = <A>(
-	model: Model,
-	slot: Keyed.Keyed<A, LoadFailure>,
-	write: (next: Keyed.Keyed<A, LoadFailure>) => Partial<Model>,
-	key: string,
-	mode: RequestMode,
-	command: Commands[number],
-): Return =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ model }),
-		onSome: (next) => ({ model: { ...model, ...write(next) }, commands: [command] }),
-	})
-
-const chain = (first: Return, next: (model: Model) => Return): Return => {
-	const second = next(first.model)
-	return { model: second.model, commands: [...(first.commands ?? []), ...(second.commands ?? [])] }
-}
-
 const requestReleases = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const input = inputOf(model, window, context)
 	const key = requestKey(context.orgId, "getReleases", { data: input })
-	return slotStep({ ...model, window }, model.releases, (releases) => ({ releases }), key, mode, FetchReleases({ key, input, refresh: mode === "Refresh" }))
+	return slotStep({ ...model, window }, model.releases, (releases) => ({ releases }), key, mode, () => FetchReleases({ key, input, refresh: mode === "Refresh" }))
 }
 
 /**
@@ -87,21 +66,21 @@ const followTable = (model: Model, context: PageContext, mode: RequestMode): Ret
 	const issuesKey = requestKey(context.orgId, "errorIssues.list", { introduced_after: introducedAfter, limit: 100 })
 	const rangesKey = rangesKeyOf(groups)
 	const shasKey = shasKeyOf(groups)
-	return [
-		(next: Model) =>
-			slotStep(next, next.issues, (issues) => ({ issues }), issuesKey, mode, FetchReleaseIssues({ key: issuesKey, introducedAfter })),
+	return chainAll<Model, Message>(model, [
+		(next: Model): Return =>
+			slotStep(next, next.issues, (issues) => ({ issues }), issuesKey, mode, () => FetchReleaseIssues({ key: issuesKey, introducedAfter })),
 		(next: Model): Return => {
 			if (rangesKey === "") return { model: next }
 			const key = requestKey(context.orgId, "vcsCommitRanges", { ranges: rangesKey, limit: 0 })
-			return slotStep(next, next.ranges, (ranges) => ({ ranges }), key, mode, FetchReleaseRanges({ key, ranges: rangesKey, limit: 0 }))
+			return slotStep(next, next.ranges, (ranges) => ({ ranges }), key, mode, () => FetchReleaseRanges({ key, ranges: rangesKey, limit: 0 }))
 		},
 		(next: Model): Return => {
 			if (shasKey === "") return { model: next }
 			const key = commitDetailsKey(context.orgId, shasKey)
 			const command = FetchReleaseCommits({ key, shas: shasKey, refresh: mode === "Refresh" })
-			return slotStep(next, next.commits, (commits) => ({ commits }), key, mode, command)
+			return slotStep(next, next.commits, (commits) => ({ commits }), key, mode, () => command)
 		},
-	].reduce<Return>((step, run) => chain(step, run), { model })
+	])
 }
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {

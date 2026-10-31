@@ -1,4 +1,5 @@
-import { formatCores, shareOfLimit } from "../../../../components/infra/railway/format"
+import { formatCores } from "../../../../components/infra/format"
+import { shareOfLimit } from "../../../../components/infra/railway/format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -12,12 +13,14 @@ import { timeControls } from "../../../kit/time-controls"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { type MetricChart, metricChartCards, metricChartsLoading } from "../../kit/metric-charts"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "../model"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { AppRoute, hrefOf } from "../../../../route"
+import { pickTimeSearch } from "../../../infra/kit/view-tabs"
 
 // `RailwayServicePage`.
 
@@ -86,11 +89,11 @@ const stats = (h: H, service: RailwayServiceRow): Html => {
 		statRailItem(h, {
 			compact: true,
 			eyebrow: "Avg CPU",
-			value: formatCores(service.cpuAvg),
+			value: `${formatCores(service.cpuAvg)} vCPU`,
 			subline:
 				cpuShare === null
 					? undefined
-					: `${formatPercent(cpuShare / 100)} of ${formatCores(service.cpuLimit)}`,
+					: `${formatPercent(cpuShare / 100)} of ${formatCores(service.cpuLimit)} vCPU`,
 		}),
 		statRailItem(h, {
 			compact: true,
@@ -126,7 +129,7 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
 		errorState(h, {
 			failure,
-			title: "Failed to load service metrics",
+			title: "Couldn't load service metrics",
 			onRetry: Message.ClickedRetryTimeseries(),
 		})
 	return AsyncData.match(model.timeseries.data, {
@@ -139,17 +142,51 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 	})
 }
 
+/** The traced service named like this one, linked; nothing until the window's services load. */
+const tracedChip = (h: H, model: Model, service: RailwayServiceRow): Html => {
+	const traced = AsyncData.getOrElse(model.traced.data, () => null)
+	if (traced === null) return null
+	return traced.some((row) => row.serviceName === service.serviceName)
+		? h.a(
+				[
+					h.Href(
+						hrefOf(
+							AppRoute.Service({
+								serviceName: service.serviceName,
+								search: pickTimeSearch(model.search),
+							}),
+						),
+					),
+				],
+				[heroChip(h, ["traced as ", service.serviceName])],
+			)
+		: heroChip(h, "no traces matched")
+}
+
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const service = serviceOf(model)
+	const hero = pageHeroParts(h, {
+		title: titleOf(model),
+		description: "Resource usage for this Railway service, summed across its replicas.",
+		meta:
+			service === null
+				? undefined
+				: [
+						heroChip(h, service.projectName),
+						heroChip(h, service.environmentName),
+						tracedChip(h, model, service),
+					],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
+					gap: "lg",
+					titleContent: hero.title,
 					actions: timeControls(h, {
 						search: model.search,
 						defaultPreset: DEFAULT_PRESET,
@@ -174,14 +211,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 				},
 				[
-					pageHero(h, {
-						title: titleOf(model),
-						description: "Resource usage for this Railway service, summed across its replicas.",
-						meta:
-							service === null
-								? undefined
-								: [heroChip(h, service.projectName), heroChip(h, service.environmentName)],
-					}),
+					hero.body,
 					...(service === null ? [] : [stats(h, service)]),
 					chartsView(h, model, inputs.context.timeZone),
 				],

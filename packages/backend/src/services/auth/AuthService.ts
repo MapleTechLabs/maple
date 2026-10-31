@@ -64,7 +64,7 @@ export interface AuthServiceApi {
 }
 
 export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
-	"@maple/api/services/AuthService",
+	"@maple/backend/services/AuthService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

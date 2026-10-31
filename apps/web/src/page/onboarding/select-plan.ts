@@ -57,20 +57,32 @@ const heading = (h: H, isReactivating: boolean): Html =>
 								pill: true,
 								size: "lg",
 								className:
-									"mb-6 gap-2 border-primary/20 bg-primary/5 px-3 text-2xs tracking-wider text-primary uppercase sm:text-2xs",
+									"mb-6 gap-2 border-primary-a3 bg-primary-a1 px-3 text-2xs tracking-wider text-primary uppercase sm:text-2xs",
 							},
-							[icon(h, "RocketIcon", { size: 14, className: "size-3.5" }), String(TRIAL_DURATION_DAYS), "-day free trial"],
+							[
+								icon(h, "RocketIcon", { size: 14, className: "size-3.5" }),
+								String(TRIAL_DURATION_DAYS),
+								"-day free trial",
+							],
 						),
 					]),
 			h.h1(
-				[h.Class("text-3xl md:text-4xl font-semibold tracking-tight text-foreground [text-wrap:balance]")],
+				[
+					h.Class(
+						"text-3xl md:text-4xl font-semibold tracking-tight text-foreground [text-wrap:balance]",
+					),
+				],
 				[isReactivating ? "Pick up where you left off" : "Start your free trial"],
 			),
 			h.p(
-				[h.Class("text-muted-foreground mt-4 text-sm md:text-base leading-relaxed max-w-lg mx-auto [text-wrap:balance]")],
+				[
+					h.Class(
+						"font-display text-muted-foreground mt-4 text-sm md:text-base leading-relaxed max-w-lg mx-auto [text-wrap:balance]",
+					),
+				],
 				[
 					isReactivating
-						? "Your data is still here. Choose a plan to start ingesting again — cancel anytime."
+						? "Your data is still here. Choose a plan to start ingesting again. Cancel anytime."
 						: `Try Maple free for ${TRIAL_DURATION_DAYS} days. You won't be charged until the trial ends. Cancel anytime.`,
 				],
 			),
@@ -79,15 +91,41 @@ const heading = (h: H, isReactivating: boolean): Html =>
 
 export const view = (h: H, model: Model, customer: BillingCustomer | undefined): Html =>
 	h.main(
-		[h.Class("relative min-h-screen overflow-hidden bg-background flex flex-col items-center justify-center py-12")],
+		[
+			h.Class(
+				"relative min-h-screen overflow-hidden bg-background flex flex-col items-center justify-center py-12",
+			),
+		],
 		[
 			h.div(
-				[h.Class("pointer-events-none absolute inset-0 flex items-center justify-center [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black)]")],
-				[h.div([h.Class("absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]")], [])],
+				[
+					h.Class(
+						"pointer-events-none absolute inset-0 flex items-center justify-center [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black)]",
+					),
+				],
+				[
+					h.div(
+						[
+							h.Class(
+								"absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]",
+							),
+						],
+						[],
+					),
+				],
 			),
 			h.div(
 				[h.Class("pointer-events-none absolute inset-0")],
-				[h.div([h.Class("absolute top-[20%] left-[50%] -translate-x-1/2 -translate-y-1/2 size-[40rem] rounded-full bg-primary/5 blur-[100px]")], [])],
+				[
+					h.div(
+						[
+							h.Class(
+								"absolute top-[20%] left-[50%] -translate-x-1/2 -translate-y-1/2 size-[40rem] rounded-full bg-primary-a1 blur-[100px]",
+							),
+						],
+						[],
+					),
+				],
 			),
 			h.section(
 				[h.Class("relative mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 md:px-8 z-10")],

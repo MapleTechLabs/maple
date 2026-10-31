@@ -5,7 +5,6 @@ import { toLoadFailure } from "../../data/load-failure"
 import { currentWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { QuickStartState, readQuickStartState, writeQuickStartState } from "../onboarding/quick-start-state"
-import { sendIngestTestEvent } from "../settings/ingestion/command"
 import { Message } from "./setup-checklist"
 
 /** `quickStartAtomFamily(orgId)`: the stored progress, read once on entry. */
@@ -62,11 +61,4 @@ export const ResolveSetupPollWindow = Command.define("ResolveSetupChecklistPollW
 		Effect.map(currentWindow({ preset: "1h", snap: false, timeZone }), (window) =>
 			Message.ResolvedPollWindow({ window }),
 		),
-})
-
-export const SendSetupTestEvent = Command.define("SendSetupChecklistTestEvent", {
-	args: { publicKey: Schema.String },
-	messages: [Message.CompletedSendTestEvent],
-	execute: ({ publicKey }) =>
-		Effect.map(sendIngestTestEvent(publicKey), (isSent) => Message.CompletedSendTestEvent({ isSent })),
 })

@@ -1,5 +1,5 @@
 import { buildDiscordEmbeds, buildDiscordEmbedsFromTemplate } from "../../AlertDeliveryDispatch"
-import { formatEventTypeLabel } from "../../alert-formatting"
+import { formatAlertHeadline, formatEventTypeLabel } from "../../alert-formatting"
 import type { HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
 
 type Config = SecretConfigOf<"discord">
@@ -10,10 +10,10 @@ export const discordTransport: HttpTransport<Config> = {
 	peerService: "discord",
 	providerLabel: "Discord",
 	render: (input: RenderInput<Config>) => {
-		const { context, templated, linkUrl, chatUrl } = input
+		const { context, templated, linkUrl } = input
 		const embeds = templated
-			? buildDiscordEmbedsFromTemplate(templated.title, templated.body, context, linkUrl, chatUrl)
-			: buildDiscordEmbeds(context, linkUrl, chatUrl)
+			? buildDiscordEmbedsFromTemplate(templated.title, templated.body, context, linkUrl)
+			: buildDiscordEmbeds(context, linkUrl)
 		return {
 			url: input.config.webhookUrl,
 			headers: { "content-type": "application/json" },
@@ -24,7 +24,10 @@ export const discordTransport: HttpTransport<Config> = {
 			body: JSON.stringify({
 				username: "Maple Alerts",
 				content:
-					templated?.title ?? `**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`,
+					templated?.title ??
+					(context.signalType === "uptime"
+						? `**${formatAlertHeadline(context)}**`
+						: `**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`),
 				embeds,
 			}),
 		}

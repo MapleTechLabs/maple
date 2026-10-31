@@ -23,6 +23,8 @@ export const DestinationForm = Schema.Struct({
 	chatConnector: Schema.String,
 	chatChannelId: Schema.String,
 	chatChannelName: Schema.String,
+	linearTeamId: Schema.String,
+	linearTeamName: Schema.String,
 })
 export type DestinationForm = typeof DestinationForm.Type
 

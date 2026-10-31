@@ -1,6 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { AppRoute, hrefOf } from "../../../route"
 import {
 	type IntegrationBrand,
+	integrationConnectCta,
 	integrationEmpty,
 	integrationEmptyCard,
 	integrationEmptyFeatures,
@@ -8,13 +10,11 @@ import {
 	integrationEmptyMedia,
 } from "../kit/integration-empty"
 
-// The Supabase on-ramp both the integration card and /infra/supabase show while nothing is connected.
+// The Supabase on-ramp /infra/supabase shows while nothing is connected.
 
 export const SUPABASE_ACCENT = "#3FCF8E"
 export const SUPABASE_BRAND: IntegrationBrand = { icon: "SupabaseIcon", accent: SUPABASE_ACCENT }
 
-export const SUPABASE_CONNECT_HINT =
-	"Connect an organization, then pick the projects to collect metrics from."
 export const SUPABASE_NOT_CONFIGURED = "Supabase isn't configured on this deployment."
 
 const FEATURES = [
@@ -35,13 +35,20 @@ const FEATURES = [
 	},
 ] as const
 
-/** The feature row and the connect card; `action` is the card's button. */
-export const supabaseOnRamp = <M>(h: HtmlBuilder<M>, hint: string, action: Html | null): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, FEATURES),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, SUPABASE_BRAND),
-			integrationEmptyHint(h, [hint]),
-			...(action === null ? [] : [action]),
-		]),
-	])
+/** The feature row and one way into the connect flow; a deployment without the OAuth app says so. */
+export const supabaseConnectCta = <M>(h: HtmlBuilder<M>, isConfigured: boolean): Html =>
+	isConfigured
+		? integrationConnectCta(h, {
+				brand: SUPABASE_BRAND,
+				features: FEATURES,
+				hint: "Connect an organization, then pick the projects to collect metrics and logs from.",
+				label: "Connect Supabase",
+				href: hrefOf(AppRoute.SourcesNew({ search: { integration: "supabase" } })),
+			})
+		: integrationEmpty(h, [
+				integrationEmptyFeatures(h, FEATURES),
+				integrationEmptyCard(h, [
+					integrationEmptyMedia(h, SUPABASE_BRAND),
+					integrationEmptyHint(h, [SUPABASE_NOT_CONFIGURED]),
+				]),
+			])

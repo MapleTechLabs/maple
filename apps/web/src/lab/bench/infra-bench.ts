@@ -3,13 +3,14 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../charts/chart"
 import { INFRA_CHART_TOKENS } from "../../charts/infra-metric-series"
-import { metricView } from "../../charts/infra-metric-chart"
+import { metricView, titledHeader } from "../../charts/infra-metric-chart"
 import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "../../charts/linked-cursor"
 import { ResolveThemeColors } from "../../charts/theme-colors"
 import { hostSeriesSummary } from "../../page/infra/hosts/detail/view-panels"
 import { k8sChart } from "../../page/infra/kit/k8s-chart"
 import type { SeriesSlot } from "../../page/infra/kit/series"
 import { chartLoading } from "../../ui/chart-state"
+import { panel } from "../../ui/panel"
 import { isReady, Message, type Model, toChart } from "./chart-bench"
 
 // `/lab/bench/infra`: the host and k8s detail
@@ -31,7 +32,8 @@ const makeRows = (seriesNames: ReadonlyArray<string>, scale: number, offset: num
 		}))
 	}).flat()
 
-const HOST_CPU_ROWS = makeRows(["user", "system", "iowait"], 1, 0)
+// Scaled so the three CPU states sum under 100%, as real shares do.
+const HOST_CPU_ROWS = makeRows(["user", "system", "iowait"], 0.7, 0)
 const HOST_LOAD_ROWS = makeRows(["value"], 8, 1.1)
 const slotOf = (rows: ReturnType<typeof makeRows>, unit: string): SeriesSlot => ({
 	key: null,
@@ -43,28 +45,31 @@ const POD_LIMIT = slotOf(makeRows(["value"], 1, 3.3), "percent")
 type H = HtmlBuilder<Message>
 
 /** `HostMetricChartView`: CPU stacks with the 80% rule, load is a line. */
-const hostChart = (h: H, model: Model, metric: "cpu" | "load15", label: string): Html => {
+const hostChart = (h: H, model: Model, metric: "cpu" | "load15", label: string, title: string): Html => {
 	const theme = model.themeColors
 	if (theme === null || !isReady(model)) return chartLoading(h, { variant: "area" })
 	const isStacked = metric === "cpu"
-	return h.submodel({
-		slotId: `host-chart-${metric}`,
-		model: model.charts[`host-${metric}`] ?? Chart.init(),
-		view: metricView,
-		toParentMessage: toChart(`host-${metric}`),
-		viewInputs: {
-			chartId: `host-${metric}`,
-			rows: metric === "cpu" ? HOST_CPU_ROWS : HOST_LOAD_ROWS,
-			unit: metric === "cpu" ? "percent" : "load",
-			seriesLabel: label,
-			stacked: isStacked,
-			showThreshold: isStacked,
-			linkedChartId: `host-${metric}`,
-			header: hostSeriesSummary,
-			theme,
-			timeZone: model.timeZone,
-		},
-	})
+	// The same card surface as the k8s charts beside it.
+	return panel(h, { className: "p-4" }, [
+		h.submodel({
+			slotId: `host-chart-${metric}`,
+			model: model.charts[`host-${metric}`] ?? Chart.init(),
+			view: metricView,
+			toParentMessage: toChart(`host-${metric}`),
+			viewInputs: {
+				chartId: `host-${metric}`,
+				rows: metric === "cpu" ? HOST_CPU_ROWS : HOST_LOAD_ROWS,
+				unit: metric === "cpu" ? "percent" : "load",
+				seriesLabel: label,
+				stacked: isStacked,
+				showThreshold: isStacked,
+				linkedChartId: `host-${metric}`,
+				header: titledHeader(title, hostSeriesSummary),
+				theme,
+				timeZone: model.timeZone,
+			},
+		}),
+	])
 }
 
 const podChart = (
@@ -73,6 +78,7 @@ const podChart = (
 	chartId: string,
 	slot: SeriesSlot,
 	label: string,
+	title: string,
 	isStacked: boolean,
 ): Html =>
 	k8sChart(h, {
@@ -81,6 +87,7 @@ const podChart = (
 		toChart: toChart(chartId),
 		chartId,
 		seriesLabel: label,
+		title,
 		stacked: isStacked,
 		showThreshold: !isStacked,
 		linkedChartId: chartId,
@@ -104,10 +111,10 @@ export const view = (model: Model, h: H): Html =>
 					h.OnMount(MountLinkedCursor()),
 				],
 				[
-					hostChart(h, model, "cpu", "CPU"),
-					hostChart(h, model, "load15", "Load (15m)"),
-					podChart(h, model, "pod-cpu_usage", POD_CPU, "CPU usage", true),
-					podChart(h, model, "pod-cpu_limit", POD_LIMIT, "CPU / limit", false),
+					hostChart(h, model, "cpu", "CPU", "CPU"),
+					hostChart(h, model, "load15", "Load (15m)", "Load"),
+					podChart(h, model, "pod-cpu_usage", POD_CPU, "CPU usage", "CPU by container", true),
+					podChart(h, model, "pod-cpu_limit", POD_LIMIT, "CPU / limit", "CPU vs limit", false),
 				],
 			),
 		],

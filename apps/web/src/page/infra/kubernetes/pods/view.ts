@@ -74,10 +74,34 @@ const summaryBand = (h: H, model: Model): Html =>
 					{ key: "saturated", count: counts.saturatedPods, className: TONE_FILL.crit },
 				],
 				cells: [
-					{ scope: "saturated", label: "Saturated", hint: "≥90%", value: counts.saturatedPods, tone: "crit" },
-					{ scope: "elevated", label: "Elevated", hint: "≥60%", value: counts.elevatedPods, tone: "warn" },
-					{ scope: "unbounded", label: "No limits set", hint: "unbounded", value: counts.unboundedPods, tone: "warn" },
-					{ scope: "ended", label: "Ended", hint: "not running", value: counts.endedPods, tone: "neutral" },
+					{
+						scope: "saturated",
+						label: "Saturated",
+						hint: "≥90%",
+						value: counts.saturatedPods,
+						tone: "crit",
+					},
+					{
+						scope: "elevated",
+						label: "Elevated",
+						hint: "≥60%",
+						value: counts.elevatedPods,
+						tone: "warn",
+					},
+					{
+						scope: "unbounded",
+						label: "No limits set",
+						hint: "unbounded",
+						value: counts.unboundedPods,
+						tone: "warn",
+					},
+					{
+						scope: "ended",
+						label: "Ended",
+						hint: "not running",
+						value: counts.endedPods,
+						tone: "neutral",
+					},
 				],
 				activeScope: model.search.scope,
 				onScopeChange: (scope) => Message.ChangedScope({ scope }),
@@ -98,9 +122,11 @@ const nothingRunning = (h: H, endedPods: number): Html =>
 					`Every pod that reported in this window has since ended. Open the Ended scope to see the ${formatNumber(endedPods)} that ran.`,
 				]),
 			]),
-			button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedShowEnded())] }, [
-				"Show ended pods",
-			]),
+			button(
+				h,
+				{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedShowEnded())] },
+				["Show ended pods"],
+			),
 		],
 		"py-16",
 	)
@@ -110,8 +136,11 @@ const listArea = (h: H, model: Model, page: PodsPage, inputs: PageViewInputs): H
 	const searchText = model.search.q ?? ""
 	const scope = model.search.scope
 	const offset = pageIndexOf(model) * PAGE_SIZE
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	const hasAnyNarrowing = hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
+	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+		(values) => (values?.length ?? 0) > 0,
+	)
+	const hasAnyNarrowing =
+		hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
 	const endedPods = AsyncData.getOrElse(model.summary.data, () => null)?.endedPods ?? 0
 	const pods = page.data
 	if (pods.length === 0 && !hasAnyNarrowing && endedPods === 0)
@@ -146,7 +175,9 @@ const listArea = (h: H, model: Model, page: PodsPage, inputs: PageViewInputs): H
 				onClear: Message.ChangedQuery({ value: "" }),
 				placeholder: "Search all pods…",
 				trailing:
-					offset > 0 ? pageRangeLabel(offset, pods.length, page.totalCount, "pods") : countLabel(pods.length, page.totalCount, "pod"),
+					offset > 0
+						? pageRangeLabel(offset, pods.length, page.totalCount, "pods")
+						: countLabel(pods.length, page.totalCount, "pod"),
 			}),
 			activeFilterChips(h, {
 				className: "mb-0",
@@ -198,7 +229,8 @@ const listArea = (h: H, model: Model, page: PodsPage, inputs: PageViewInputs): H
 const podsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.pods.data, {
 		onEmpty: () => podTableLoading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods", onRetry: Message.ClickedRetryPods() }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load pods", onRetry: Message.ClickedRetryPods() }),
 		onData: (page) => listArea(h, model, page, inputs),
 	})
 
@@ -211,7 +243,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					title: "Kubernetes",
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+						AsyncData.isFailure(model.pods.data),
+					),
 					tabs: kubernetesViewTabs(h, "pods", model.search),
 					filters: filtersRail(h, model),
 				},

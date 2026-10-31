@@ -1,17 +1,26 @@
 import { Layer } from "effect"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { McpToolExecutor } from "../mcp/dispatcher"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { PrReviewConversationService } from "@maple/backend/services/pr-review/PrReviewConversationService"
 
-export const McpServicesLive = McpToolExecutor.layer.pipe(
-	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
-)
+/** The tool executor over the given org rollout flags; tests pass a fixed answer. */
+export const mcpServicesWithFeatureFlags = (
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService, never, Env>,
+) =>
+	McpToolExecutor.layer.pipe(
+		Layer.provide(featureFlags),
+		Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
+	)
+
+export const McpServicesLive = mcpServicesWithFeatureFlags(OrganizationFeatureFlagsService.layer)
 
 /**
  * What applying a proposal somebody approved from a chat platform needs, and nothing else.
@@ -43,4 +52,6 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	PrReviewConversationService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	// The org's own OpenRouter key, when it holds the add-on; the add-on check reads the cached customer.
 	OrgOpenRouterKeyService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	// Which org pays for the turn: a member org's AI credits are its billing org's.
+	BillingCustomerResolver.layer.pipe(Layer.provide(EdgeCacheServiceLive)),
 )

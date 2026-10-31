@@ -26,7 +26,7 @@ setup snippets and connect flows hand out the preview's gateway.
 
 For UI work that does not need ingest, label the PR `preview:web` instead. It deploys the
 Workers (web, api, ai, alerting, chat-bot, electric-sync) on the same Neon and Tinybird
-branches, seeded and smoke-tested the same way, but on AWS only the AWS integration's IAM user: no ingest gateway, no
+branches, seeded and smoke-tested the same way, but creates nothing on AWS: no ingest gateway, no
 Electric (live sync stays off), no landing or local-ui. It holds no VPC, so it does not count
 against `MAX_LIVE_PREVIEWS`, and deploys faster. Its only data is the seed: setup snippets
 point at the shared ingest, which cannot see the preview's ingest keys, so connect flows and
@@ -56,7 +56,7 @@ goes in the PR comment; rotate it in Infisical if it leaks.
 
 `scripts/preview-seed-smoke.ts` calls the preview sign-in endpoint (which provisions the
 reviewer and its org), seeds demo telemetry into the reviewer's org through the preview's API,
-and fails the job if a Postgres- or warehouse-backed route returns a 5xx. Without
+and fails the job if a Postgres- or warehouse-backed route returns anything but a 2xx. Without
 `PREVIEW_SIGNIN_KEY` it seeds the dev test user instead. The PR comment reports the outcome.
 
 ## Limits and cost

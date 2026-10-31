@@ -519,6 +519,7 @@ describe("slack transport", () => {
 			{ status: 200, body: '{"ok":false,"error":"token_revoked"}' },
 			{ status: 200, body: '{"ok":false,"error":"not_in_channel"}' },
 			{ status: 200, body: '{"ok":false,"error":"invalid_blocks"}' },
+			{ status: 200, body: '{"ok":false,"error":"invalid_attachments"}' },
 			{ status: 200, body: '{"ok":false,"error":"fatal_error"}' },
 		])
 		return Effect.gen(function* () {
@@ -526,6 +527,8 @@ describe("slack transport", () => {
 			const post = () => Effect.flip(transport.post(target, [{ kind: "prose", markdown: "x" }]))
 			expect(yield* post()).toMatchObject({ reason: "auth" })
 			expect(yield* post()).toMatchObject({ reason: "not_found" })
+			expect(yield* post()).toMatchObject({ reason: "rejected" })
+			// An alert card's image Slack could not fetch: the same message is refused every time.
 			expect(yield* post()).toMatchObject({ reason: "rejected" })
 			// Nothing the caller can act on: no reason, so it is retried like an outage.
 			expect("reason" in (yield* post())).toBe(false)

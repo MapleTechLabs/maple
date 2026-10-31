@@ -22,6 +22,7 @@ const healthyConfig: ConfigAuditInputs = {
 			enabled: true,
 			destinationIds: ["dest-1"],
 			windowMinutes: 5,
+			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
 			createdAt: NOW - 10 * 24 * HOUR,
 		},
@@ -229,6 +230,8 @@ describe("runSetupAudit — baseline", () => {
 					sourceContext: "span",
 					sourceKey: `gone.key.${i}`,
 					targetKey: "http.request.method",
+					operation: "copy",
+					updatedAt: NOW - 10 * 24 * HOUR,
 				})),
 			}
 			const telemetry: WarehouseAuditInputs = {
@@ -413,6 +416,7 @@ describe("CFG-ALERT-02 — alert rules exist", () => {
 						enabled: false,
 						destinationIds: [],
 						windowMinutes: 5,
+						evaluationIntervalMinutes: 1,
 						lastScheduledAt: null,
 						createdAt: NOW - 10 * 24 * HOUR,
 					},
@@ -469,6 +473,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 			enabled: true,
 			destinationIds: [],
 			windowMinutes: 5,
+			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
 			createdAt: NOW - 10 * 24 * HOUR,
 		}))
@@ -571,6 +576,38 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 			inputs({ alertRules: [{ ...healthyConfig.alertRules[0]!, lastScheduledAt: NOW - 10 * 60_000 }] }),
 		)
 		expect(check(report, "CFG-ALERT-05").status).toBe("pass")
+	})
+
+	const hourlyRule = (lastScheduledAt: number) => ({
+		...healthyConfig.alertRules[0]!,
+		windowMinutes: 60,
+		evaluationIntervalMinutes: 60,
+		lastScheduledAt,
+	})
+
+	it("passes an hourly rule claimed 47 minutes ago", () => {
+		const report = runSetupAudit(inputs({ alertRules: [hourlyRule(NOW - 47 * 60_000)] }))
+		expect(check(report, "CFG-ALERT-05").status).toBe("pass")
+	})
+
+	it("flags an hourly rule that missed two intervals", () => {
+		const report = runSetupAudit(inputs({ alertRules: [hourlyRule(NOW - 3 * HOUR)] }))
+		expect(check(report, "CFG-ALERT-05").affected[0]?.note).toBe("last evaluated 3 hours ago")
+	})
+
+	it("flags a 5-minute rule claimed 45 minutes ago", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertRules: [
+					{
+						...healthyConfig.alertRules[0]!,
+						evaluationIntervalMinutes: 5,
+						lastScheduledAt: NOW - 45 * 60_000,
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-05").affected[0]?.note).toBe("last evaluated 45 minutes ago")
 	})
 })
 
@@ -685,7 +722,10 @@ describe("CFG-MAP-01 / CFG-MAP-02 — mapping liveness", () => {
 		sourceContext: "span",
 		sourceKey: "http.status_code",
 		targetKey: "http.response.status_code",
+		operation: "copy",
+		updatedAt: NOW - 10 * 24 * HOUR,
 	}
+	const move = { ...mapping, operation: "move" }
 
 	it("flags a mapping whose source key no longer arrives", () => {
 		const report = runSetupAudit(inputs({ attributeMappings: [mapping] }))
@@ -716,13 +756,44 @@ describe("CFG-MAP-01 / CFG-MAP-02 — mapping liveness", () => {
 		expect(check(report, "CFG-MAP-01").status).toBe("pass")
 	})
 
-	it("flags a mapping whose target key already arrives natively", () => {
-		const report = runSetupAudit(
+	it("passes a working copy or move mapping, whose target the mapping itself writes", () => {
+		const copyReport = runSetupAudit(
 			inputsWith(
 				warehouse({
 					attributeKeys: [spanKey("http.status_code", 9), spanKey("http.response.status_code", 9)],
 				}),
 				{ attributeMappings: [mapping] },
+			),
+		)
+		expect(check(copyReport, "CFG-MAP-02").status).toBe("pass")
+		const moveReport = runSetupAudit(
+			inputsWith(warehouse({ attributeKeys: [spanKey("http.response.status_code", 9)] }), {
+				attributeMappings: [move],
+			}),
+		)
+		expect(check(moveReport, "CFG-MAP-01").status).toBe("pass")
+		expect(check(moveReport, "CFG-MAP-02").status).toBe("pass")
+	})
+
+	it("does not flag a move changed inside the lookback, while older spans keep the source", () => {
+		const report = runSetupAudit(
+			inputsWith(
+				warehouse({
+					attributeKeys: [spanKey("http.status_code", 9), spanKey("http.response.status_code", 9)],
+				}),
+				{ attributeMappings: [{ ...move, updatedAt: NOW - HOUR }] },
+			),
+		)
+		expect(check(report, "CFG-MAP-02").status).toBe("pass")
+	})
+
+	it("flags a move mapping whose source survives because the target already arrives", () => {
+		const report = runSetupAudit(
+			inputsWith(
+				warehouse({
+					attributeKeys: [spanKey("http.status_code", 9), spanKey("http.response.status_code", 9)],
+				}),
+				{ attributeMappings: [move] },
 			),
 		)
 		const result = check(report, "CFG-MAP-02")

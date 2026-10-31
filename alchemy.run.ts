@@ -3,23 +3,24 @@
 import { appendFileSync } from "node:fs"
 import path from "node:path"
 import * as Alchemy from "alchemy"
-import * as AWS from "alchemy/AWS"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as AWS from "@alchemy.run/aws"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Command from "alchemy/Command"
-import * as Neon from "alchemy/Neon"
+import * as Neon from "@alchemy.run/neon"
 import * as Output from "alchemy/Output"
-import * as Planetscale from "alchemy/Planetscale"
+import * as Planetscale from "@alchemy.run/planetscale"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import { ConfigError } from "effect/Config"
 import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
-import { AwsRegionMismatchError, createMapleAwsPrincipal, resolveAwsRegion } from "@maple/infra/aws"
+import { AwsRegionMismatchError, createMapleAwsOidcKey, resolveAwsRegion } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
+	createMapleDeviceTokenKey,
 	formatMapleDeployment,
 	formatMapleStage,
 	ManagedMapleDb,
@@ -36,6 +37,7 @@ import {
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
+import { DB_ACCESS_ROLES } from "@maple/db/roles"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
@@ -48,6 +50,7 @@ import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
+import StatusWorker from "./apps/status/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
@@ -98,6 +101,7 @@ const devEnv = devApps
 			MAPLE_APP_BASE_URL: Portless.routeUrl("web"),
 			MAPLE_ELECTRIC_SYNC_URL: Portless.routeUrl("electric-sync"),
 			MAPLE_INGEST_URL: Portless.routeUrl("ingest"),
+			MAPLE_STATUS_PAGE_BASE_URL: Portless.routeUrl("status"),
 		}
 	: undefined
 
@@ -151,13 +155,15 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 			name: "main",
 			migrations: "packages/db/drizzle",
 		}).pipe(RemovalPolicy.retain())
-		// The ingest gateway's role. Changing it is a create-first replace (its id is in the task env).
+		// Runtime logins read and write rows but own nothing; migrations run as the branch owner.
+		// Changing roles is a create-first replace (the ingest role's id is in the task env).
 		const ingestRole = yield* Planetscale.PostgresRole("ingest-gateway", {
 			database,
 			branch: schema,
-			inheritedRoles: ["postgres"],
+			inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
 		})
 		// Id must not be `"electric"` (the ECS service's id): alchemy keys state by id alone.
+		// Stays on `postgres`: PlanetScale grants REPLICATION only alongside it.
 		const electricRole = profile.deploys.electric
 			? yield* Planetscale.PostgresRole("electric-db-role", {
 					database,
@@ -179,7 +185,7 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 				const role = yield* Planetscale.PostgresRole(`db-${consumer}-role`, {
 					database,
 					branch: schema,
-					inheritedRoles: ["postgres"],
+					inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
 				})
 				return yield* Cloudflare.Hyperdrive.Connection(`db-${consumer}`, {
 					name: resolveWorkerName(`db-${consumer}`, stage, region),
@@ -218,7 +224,7 @@ const MapleStackLive = Layer.effect(
 		const allDomains = resolveMapleDomains(deployment)
 		// Without ingest and Electric their hostnames would resolve nowhere.
 		const domains = webOnlyPreview
-			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync }
+			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync, status: allDomains.status }
 			: allDomains
 		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
 		const context: MapleStackContext = {
@@ -235,13 +241,15 @@ const MapleStackLive = Layer.effect(
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
+				status:
+					devEnv?.MAPLE_STATUS_PAGE_BASE_URL ??
+					(yield* resolveUrl(domains.status, "MAPLE_STATUS_PAGE_BASE_URL")),
 			},
 			workerDev,
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
-			awsPrincipal: profile.deploys.awsIntegrationPrincipal
-				? yield* createMapleAwsPrincipal(deployment)
-				: undefined,
+			awsOidc: yield* createMapleAwsOidcKey(),
+			deviceToken: yield* createMapleDeviceTokenKey(),
 		}
 		return context
 	}),
@@ -360,6 +368,10 @@ export default Alchemy.Stack(
 
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
+
+		// Public status pages, served from edge storage alone so they outlive a Maple outage.
+		const statusWorker = yield* StatusWorker
+		yield* serveWorker("status", statusWorker)
 
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
 		const web = yield* Effect.provideService(Web, ApiWorker, api)

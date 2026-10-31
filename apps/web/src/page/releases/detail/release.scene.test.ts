@@ -173,7 +173,7 @@ describe("release detail", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			THEME,
-			expectView(text("Failed to load release")).toExist(),
+			expectView(text("Couldn't load release")).toExist(),
 		)
 		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toEqual(["FetchReleaseDetail"])
 	})

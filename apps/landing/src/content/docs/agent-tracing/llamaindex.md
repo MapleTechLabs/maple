@@ -16,17 +16,19 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for LlamaIndex in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-llamaindex -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-llamaindex -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the instrumentor
 
 ```bash
-pip install "llama-index-core>=0.14.25" "openinference-instrumentation-llama-index>=4.5.2" \
+pip install "llama-index-core>=0.14.25" \
+  "openinference-instrumentation-llama-index>=4.5.2" \
   "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
@@ -160,7 +162,7 @@ With `OpenAILike` or `OpenRouter`, also pass `is_function_calling_model=True`, o
 
 Long-running servers need nothing. In serverless handlers, notebooks and task workers, import `provider` from `tracing` and call `provider.force_flush()` in a `finally` after each run.
 
-## Check that it works
+## Verify
 
 Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session labeled **LlamaIndex**, with one turn per `agent.run()`, a transcript, one model call per request with tokens, and `FunctionTool.acall` tool calls.
 
@@ -174,7 +176,7 @@ Cost shows as **unpriced** and streamed model calls last about 1 ms. Both are ex
 - **No tokens on streamed calls.** Add `stream_options={"include_usage": True}` through `additional_kwargs`.
 - **No lanes or agent names.** Wrap each agent's `run()` in `instrument_tags({"gen_ai.agent.name": agent.name})`.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
 - [OpenRouter](/docs/agent-tracing/openrouter): cost per call if your models go through OpenRouter.

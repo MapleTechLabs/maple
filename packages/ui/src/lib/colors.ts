@@ -81,18 +81,19 @@ export function getServiceHueFromName(serviceName: string): number {
  * Lightness/chroma tiers layered on top of the 16 hues. A second hash
  * dimension picks the tier, tripling the palette to 48 slots so services
  * that land on neighboring hues (teal/cyan, blue/violet, …) still separate
- * by depth. All tiers stay mid-lightness so they read on both themes.
+ * by depth. All tiers stay mid-lightness so they read on both themes: below ~0.55 a hue
+ * turns muddy on the dark canvas, and chroma under ~0.13 reads washed out.
  */
 const SERVICE_COLOR_TIERS = [
-	{ l: 0.47, c: 0.17 },
-	{ l: 0.57, c: 0.15 },
-	{ l: 0.67, c: 0.12 },
+	{ l: 0.57, c: 0.17 },
+	{ l: 0.64, c: 0.16 },
+	{ l: 0.7, c: 0.14 },
 ]
 
-function getServiceColorTier(serviceName: string): { l: number; c: number } {
-	const hash = hashString(serviceName)
-	return SERVICE_COLOR_TIERS[Math.floor(hash / SERVICE_HUES.length) % SERVICE_COLOR_TIERS.length]
-}
+/** Yellow through lime go olive at mid lightness, so they sit lighter; capped so service
+ * names drawn in these colours still read on a white background. */
+const tierLightness = (l: number, hue: number): number =>
+	hue >= 70 && hue <= 140 ? Math.min(l + 0.08, 0.74) : l
 
 /**
  * The identity palette flattened to a single index space: `tier * 16 + hue`.
@@ -114,7 +115,7 @@ export function getIdentityColorBySlot(slot: number): string {
 	const index = ((Math.floor(slot) % IDENTITY_SLOT_COUNT) + IDENTITY_SLOT_COUNT) % IDENTITY_SLOT_COUNT
 	const tier = SERVICE_COLOR_TIERS[Math.floor(index / SERVICE_HUES.length)]
 	const hue = SERVICE_HUES[index % SERVICE_HUES.length]
-	return `oklch(${tier.l} ${tier.c} ${hue})`
+	return `oklch(${tierLightness(tier.l, hue).toFixed(2)} ${tier.c} ${hue})`
 }
 
 /**
@@ -156,14 +157,6 @@ export function getSpanColorStyle(
 		backgroundColor: bgColor,
 		color: textColor,
 	}
-}
-
-/**
- * Get a border accent color for a service (slightly darker/more saturated than background)
- */
-export function getServiceBorderColor(serviceName: string): string {
-	const tier = getServiceColorTier(serviceName)
-	return `oklch(${tier.l - 0.08} ${tier.c + 0.02} ${getServiceHueFromName(serviceName)})`
 }
 
 /**
@@ -220,37 +213,40 @@ export function calculateSelfTime(
 }
 
 /** Last-resort colour for a token that is neither on the document nor in {@link TOKEN_FALLBACK}. */
-export const DEFAULT_TOKEN_FALLBACK = "#6366f1"
+export const DEFAULT_TOKEN_FALLBACK = "#e8872a"
 
 /**
  * The one hex fallback per design token, used where a token cannot be read off
- * the document (SSR, tests, a canvas painted before styles load). Callers name
+ * the document (SSR, tests, a canvas painted before styles load), from the dark theme. Callers name
  * the token only; nothing else should carry its own `["--token", "#hex"]` pair.
  */
 export const TOKEN_FALLBACK: Readonly<Record<string, string>> = {
-	"--background": "#0c0a09",
-	"--foreground": "#fafafa",
-	"--border": "#3f3f46",
-	"--muted-foreground": "#a1a1aa",
-	"--primary": "#6366f1",
-	"--destructive": "#ef4444",
-	"--chart-1": "#6366f1",
-	"--chart-2": "#22d3ee",
-	"--chart-3": "#f59e0b",
-	"--chart-4": "#fbbf24",
-	"--chart-5": "#f472b6",
-	"--chart-p99": "#e0484a",
-	"--chart-p95": "#e0a23a",
-	"--chart-p50": "#4f8ef7",
-	"--chart-error": "#e5484d",
-	"--chart-throughput": "#8b7cf6",
-	"--chart-apdex": "#3fb27f",
-	"--severity-trace": "#71717a",
-	"--severity-debug": "#3b82f6",
-	"--severity-info": "#10b981",
-	"--severity-warn": "#f59e0b",
-	"--severity-error": "#ef4444",
-	"--severity-fatal": "#b91c1c",
+	"--background": "#1a1714",
+	"--foreground": "#e8e0d6",
+	"--border": "#2a2520",
+	"--muted-foreground": "#9b9084",
+	"--primary": "#e8872a",
+	"--destructive": "#e85d4b",
+	"--chart-1": "#e8872a",
+	"--chart-2": "#4a9eff",
+	"--chart-3": "#49a866",
+	"--chart-4": "#00aa9a",
+	"--chart-5": "#b589d6",
+	"--chart-p99": "#e85d4b",
+	"--chart-p95": "#e8872a",
+	"--chart-p50": "#4a9eff",
+	"--chart-error": "#ef2e43",
+	"--chart-throughput": "#9281e1",
+	"--chart-apdex": "#49a866",
+	"--severity-trace": "#8a7f72",
+	"--severity-debug": "#4a9eff",
+	"--severity-info": "#49a866",
+	"--severity-warn": "#ebb432",
+	"--severity-error": "#e85d4b",
+	"--severity-fatal": "#c43d2e",
+	"--info": "#4a9eff",
+	"--success": "#49a866",
+	"--warning": "#ebb432",
 } satisfies Record<string, string>
 
 /**

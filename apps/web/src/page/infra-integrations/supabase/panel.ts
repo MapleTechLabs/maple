@@ -29,7 +29,7 @@ export const sectionPanel = <M>(
 						panelTitle(h, [options.title]),
 						...(options.description === undefined
 							? []
-							: [h.p([h.Class("text-2xs text-muted-foreground/70")], [options.description])]),
+							: [h.p([h.Class("text-2xs text-foreground-subtle")], [options.description])]),
 					],
 				),
 			],
@@ -39,7 +39,7 @@ export const sectionPanel = <M>(
 
 export const panelLink = <M>(h: HtmlBuilder<M>, href: string, label: string): Html =>
 	h.a(
-		[h.Href(href), h.Class("text-2xs text-muted-foreground transition-colors hover:text-foreground")],
+		[h.Href(href), h.Class("text-2xs text-muted-foreground hover:text-foreground active:text-foreground")],
 		[`${label} →`],
 	)
 

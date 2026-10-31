@@ -5,9 +5,9 @@ import {
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
 } from "../../../components/replays/session-tags"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
 import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import {
@@ -17,12 +17,13 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
+	filterSidebarDivider,
+	filterSidebarGroupLabel,
 } from "../../../ui/filters/filter-sidebar"
 import { type RangePreset, rangeFilterSection } from "../../../ui/filters/range-filter-section"
 import { percentilePresets, toLogBuckets } from "../../../ui/filters/range-distribution"
 import type { IconName } from "../../../ui/icon"
 import { searchInput } from "../../../ui/search-input"
-import { separator } from "../../../ui/display"
 import { statusDot } from "../../../ui/status-dot"
 import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
 import { hasSidebarFilters, selectedTags } from "./derive"
@@ -201,8 +202,8 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 			}),
 			singleSection(h, model, "Country", "country", lists.countries),
 			lists.groups.length > 0 ? singleSection(h, model, "Group", "group", lists.groups) : null,
-			separator(h, "horizontal", "my-2"),
-			eyebrow(h, { as: "h4", variant: "label", className: "py-1" }, ["Identity"]),
+			filterSidebarDivider(h),
+			filterSidebarGroupLabel(h, "Identity"),
 			textFilter(h, {
 				id: "replays-user-search",
 				key: `user:${search.user ?? ""}`,
@@ -230,6 +231,12 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 export const filtersRail = (h: HtmlBuilder<Message>, model: Model): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 5),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(
+				h,
+				failure,
+				Message.ClickedRetryList(),
+				Option.getOrUndefined(AsyncData.getError(model.firstPage.data)),
+			),
 		onData: (facets) => loadedRail(h, model, facets),
 	})

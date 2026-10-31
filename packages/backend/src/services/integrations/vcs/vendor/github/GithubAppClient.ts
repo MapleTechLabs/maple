@@ -1,5 +1,17 @@
 import { GitCommitSha, VcsRepositoryBlockedError, VcsRepoUnavailableError } from "@maple/domain/http"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schedule, Schema, Stream } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schedule,
+	Schema,
+	Stream,
+} from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
@@ -438,6 +450,7 @@ const GithubApiCheckRunSchema = Schema.Struct({
 const GithubApiOwnCheckRunList = Schema.Struct({ check_runs: Schema.Array(GithubApiCheckRunSchema) })
 const GithubApiIssueCommentSchema = Schema.Struct({
 	id: Schema.Number,
+	node_id: Schema.optionalKey(Schema.String),
 	html_url: Schema.String,
 	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	performed_via_github_app: Schema.optionalKey(Schema.NullOr(Schema.Struct({ id: Schema.Number }))),
@@ -513,6 +526,7 @@ const GithubContentFileSchema = Schema.Struct({
 })
 type GithubContentFile = Schema.Schema.Type<typeof GithubContentFileSchema>
 
+const decodeRepositorySize = Schema.decodeUnknownEffect(Schema.Struct({ size: Schema.Number }))
 const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)
 const decodeUserInstallations = Schema.decodeUnknownEffect(GithubUserInstallationsResponse)
 const decodeAuthenticatedUser = Schema.decodeUnknownEffect(GithubAuthenticatedUser)
@@ -570,6 +584,31 @@ const RESOLVE_THREAD_MUTATION = `mutation($threadId: ID!) {
   resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
 }`
 
+const COMMENT_STATES_QUERY = `query($ids: [ID!]!) {
+  nodes(ids: $ids) { ... on IssueComment { id isMinimized } }
+}`
+const MINIMIZE_COMMENT_MUTATION = `mutation($id: ID!) {
+  minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) { minimizedComment { isMinimized } }
+}`
+const GithubCommentStatesResponse = Schema.Struct({
+	data: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Struct({
+				nodes: Schema.Array(
+					Schema.NullOr(
+						Schema.Struct({
+							id: Schema.optionalKey(Schema.String),
+							isMinimized: Schema.optionalKey(Schema.Boolean),
+						}),
+					),
+				),
+			}),
+		),
+	),
+	errors: GithubGraphqlErrors,
+})
+const decodeCommentStates = Schema.decodeUnknownEffect(GithubCommentStatesResponse)
+
 /** GitHub.com serves GraphQL at `/graphql`; Enterprise at `/api/graphql` beside `/api/v3`. */
 const graphqlUrl = (apiBaseUrl: string) =>
 	apiBaseUrl.endsWith("/api/v3") ? `${apiBaseUrl.slice(0, -"/v3".length)}/graphql` : `${apiBaseUrl}/graphql`
@@ -615,7 +654,7 @@ interface ResolvedAppConfig {
 }
 
 export class GithubAppClient extends Context.Service<GithubAppClient>()(
-	"@maple/api/services/vcs/vendor/github/GithubAppClient",
+	"@maple/backend/services/vcs/vendor/github/GithubAppClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
@@ -1082,6 +1121,25 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			/** The repository's size as GitHub reports it (`size`, in KiB): the packed history, before any clone. */
+			const getRepositorySizeKib = Effect.fn("GithubAppClient.getRepositorySizeKib")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(config, token, repoBase(config, owner, repo))
+				if (!isOk(response)) return yield* failure(response, "Get repository", "repository")
+				const json = yield* parseJson(response, "Get repository")
+				return yield* decodeRepositorySize(json).pipe(
+					Effect.map((body) => body.size),
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected repository payload", cause }),
+					),
+				)
+			})
+
 			/**
 			 * A clone credential for one repository: the plain remote, plus a token
 			 * minted for that repository alone.
@@ -1149,11 +1207,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				owner: string,
 				repo: string,
 				limit: number,
+				head?: string,
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const params = new URLSearchParams({
-					state: "all",
+					...(head === undefined ? { state: "all" } : { state: "open", head }),
 					sort: "updated",
 					direction: "desc",
 					per_page: String(Math.min(limit, PER_PAGE)),
@@ -1392,6 +1451,106 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 				if (decoded.errors && decoded.errors.length > 0)
 					return yield* graphqlFailure("Resolve review thread", decoded.errors)
+			})
+
+			/**
+			 * Hide this App's earlier comments that start with `prefix` as outdated, all but the one
+			 * carrying `keep`. Already hidden ones are skipped, so a push costs one call per newly
+			 * outdated comment. Answers how many it hid.
+			 */
+			const minimizeEarlierComments = Effect.fn("GithubAppClient.minimizeEarlierComments")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+				prefix: string,
+				keep: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+				const earlier = yield* Stream.paginate(1, (page: number) =>
+					Effect.gen(function* () {
+						const response = yield* authedGet(
+							config,
+							token,
+							`${base}/issues/${number}/comments?per_page=${PER_PAGE}&page=${page}`,
+						)
+						if (!isOk(response))
+							return yield* failure(response, "List pull request comments", "repository")
+						const comments = yield* decodeIssueCommentList(
+							yield* parseJson(response, "List pull request comments"),
+						).pipe(
+							Effect.mapError(
+								(cause) =>
+									new GithubAppError({ message: "Unexpected comments payload", cause }),
+							),
+						)
+						const more = comments.length >= PER_PAGE && page < MAX_COMMENT_PAGES
+						return [comments, more ? Option.some(page + 1) : Option.none<number>()] as const
+					}),
+				).pipe(
+					Stream.filter(
+						(comment) =>
+							String(comment.performed_via_github_app?.id ?? "") === config.appId &&
+							(comment.body ?? "").startsWith(prefix) &&
+							!(comment.body ?? "").includes(keep),
+					),
+					Stream.runCollect,
+				)
+				const ids = earlier.flatMap((comment) =>
+					comment.node_id === undefined ? [] : [comment.node_id],
+				)
+				if (ids.length === 0) return 0
+				// `nodes(ids:)` takes at most 100 ids a query.
+				const shown = yield* Effect.forEach(Arr.chunksOf(ids, 100), (chunk) =>
+					Effect.gen(function* () {
+						const states = yield* decodeCommentStates(
+							yield* graphql(
+								externalInstallationId,
+								COMMENT_STATES_QUERY,
+								{ ids: chunk },
+								"Read comment states",
+							),
+						).pipe(
+							Effect.mapError(
+								(cause) =>
+									new GithubAppError({
+										message: "Unexpected comment states payload",
+										cause,
+									}),
+							),
+						)
+						if (states.errors && states.errors.length > 0)
+							return yield* graphqlFailure("Read comment states", states.errors)
+						return (states.data?.nodes ?? []).flatMap((node) =>
+							node?.id !== undefined && node.isMinimized === false ? [node.id] : [],
+						)
+					}),
+				).pipe(Effect.map((pages) => pages.flat()))
+				yield* Effect.forEach(
+					shown,
+					(id) =>
+						Effect.gen(function* () {
+							const decoded = yield* decodeMutation(
+								yield* graphql(
+									externalInstallationId,
+									MINIMIZE_COMMENT_MUTATION,
+									{ id },
+									"Minimize comment",
+								),
+							).pipe(
+								Effect.mapError(
+									(cause) =>
+										new GithubAppError({ message: "Unexpected mutation payload", cause }),
+								),
+							)
+							if (decoded.errors && decoded.errors.length > 0)
+								return yield* graphqlFailure("Minimize comment", decoded.errors)
+						}),
+					{ discard: true },
+				)
+				return shown.length
 			})
 
 			/** The inline comments one review created, for their ids. */
@@ -2227,12 +2386,14 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listBranches,
 				listCommits,
 				getCommit,
+				getRepositorySizeKib,
 				listPullRequests,
 				getPullRequest,
 				listPullRequestFiles,
 				getPullRequestContext,
 				listReviewThreads,
 				resolveReviewThread,
+				minimizeEarlierComments,
 				listReviewComments,
 				replyToReviewComment,
 				compareCommits,

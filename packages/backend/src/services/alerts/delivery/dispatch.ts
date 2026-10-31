@@ -14,7 +14,9 @@ import { renderTitleBody } from "../AlertDeliveryDispatch"
 import { discordTransport } from "./transports/discord"
 import { chatTransport } from "./transports/chat"
 import { emailTransport } from "./transports/email"
+import { googleChatTransport } from "./transports/google-chat"
 import { hazelTransport } from "./transports/hazel"
+import { linearTransport } from "./transports/linear"
 import { pagerDutyTransport } from "./transports/pagerduty"
 import { telegramTransport } from "./transports/telegram"
 import { webhookTransport } from "./transports/webhook"
@@ -49,8 +51,10 @@ export const dispatchDelivery = (
 			"hazel-oauth": (config) => runHttpTransport(hazelTransport, input(config), runtime),
 			discord: (config) => runHttpTransport(discordTransport, input(config), runtime),
 			telegram: (config) => runHttpTransport(telegramTransport, input(config), runtime),
+			"google-chat": (config) => runHttpTransport(googleChatTransport, input(config), runtime),
 			email: (config) => runEffectTransport(emailTransport, input(config), deps),
 			chat: (config) => runEffectTransport(chatTransport, input(config), deps),
+			linear: (config) => runEffectTransport(linearTransport, input(config), deps),
 		}),
 	)
 }

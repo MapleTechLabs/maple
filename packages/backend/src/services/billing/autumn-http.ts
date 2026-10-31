@@ -2,7 +2,7 @@
 import { Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
-import type { BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
+import type { BillingCustomerId, BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { AUTUMN_API_VERSION } from "./autumn-api"
 
@@ -63,6 +63,12 @@ export type CustomerExpand =
 	| "flags.feature"
 	| "billing_controls.auto_topups.purchase_limit"
 
+export interface AutumnPlanCancel {
+	readonly planId: string
+	/** A running plan ends with the period it paid for; a scheduled one never starts. */
+	readonly action: "cancel_end_of_cycle" | "cancel_immediately"
+}
+
 type AutumnRoute =
 	| "getOrCreateCustomer"
 	| "aggregateEvents"
@@ -71,6 +77,7 @@ type AutumnRoute =
 	| "openCustomerPortal"
 	| "listPlans"
 	| "updateSubscription"
+	| "updateSubscriptions"
 	| "updateCustomer"
 
 const ROUTE_PATHS: Record<AutumnRoute, string> = {
@@ -81,6 +88,7 @@ const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	openCustomerPortal: "/v1/billing.open_customer_portal",
 	listPlans: "/v1/plans.list",
 	updateSubscription: "/v1/billing.update",
+	updateSubscriptions: "/v1/billing.multi_update",
 	updateCustomer: "/v1/customers.update",
 } satisfies Record<AutumnRoute, string>
 
@@ -282,7 +290,7 @@ export interface AutumnBillingControlsUpdate {
 
 export interface AutumnClientApi {
 	readonly getOrCreateCustomer: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: {
 			readonly expand: ReadonlyArray<CustomerExpand>
 			readonly customerData?: AutumnCustomerData | undefined
@@ -301,7 +309,7 @@ export interface AutumnClientApi {
 	 * sums most of the PREVIOUS cycle too and overstated every usage card 3-4x.
 	 */
 	readonly aggregateEvents: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: {
 			readonly featureId: ReadonlyArray<string> | string
 			/** Epoch ms, `start < end`. */
@@ -309,22 +317,30 @@ export interface AutumnClientApi {
 		},
 	) => AutumnCall
 	readonly attach: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: { readonly planId: string; readonly successUrl?: string | undefined },
 	) => AutumnCall
-	readonly previewAttach: (customerId: string, options: { readonly planId: string }) => AutumnCall
+	readonly previewAttach: (
+		customerId: BillingCustomerId,
+		options: { readonly planId: string },
+	) => AutumnCall
 	readonly openCustomerPortal: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: { readonly returnUrl?: string | undefined },
 	) => AutumnCall
-	readonly listPlans: (customerId: string | undefined) => AutumnCall
+	readonly listPlans: (customerId: BillingCustomerId | undefined) => AutumnCall
 	/**
 	 * Apply a config-defined reward as a discount on the customer's existing
 	 * subscription to `planId`. The onboarding checklist is the only caller.
 	 */
 	readonly applyReward: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: { readonly planId: string; readonly rewardId: string },
+	) => AutumnCall
+	/** Cancels several of the customer's plans in one request: all of them, or none. */
+	readonly cancelPlans: (
+		customerId: BillingCustomerId,
+		cancels: ReadonlyArray<AutumnPlanCancel>,
 	) => AutumnCall
 	/**
 	 * Customer billing controls live on the canonical REST surface — `autumnHandler`
@@ -333,11 +349,11 @@ export interface AutumnClientApi {
 	 * version the SDK defaulted to.
 	 */
 	readonly updateCustomerBillingControls: (
-		orgId: string,
+		customerId: BillingCustomerId,
 		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
 	/** Overwrites the customer's display name. */
-	readonly updateCustomerName: (customerId: string, name: string) => AutumnCall
+	readonly updateCustomerName: (customerId: BillingCustomerId, name: string) => AutumnCall
 }
 
 const customerDataFields = (data: AutumnCustomerData | undefined): Record<string, unknown> =>
@@ -360,7 +376,7 @@ const callUpdateBillingControls = (
 	client: HttpClient.HttpClient,
 	secretKey: string | undefined,
 	apiUrl: string,
-	orgId: string,
+	customerId: BillingCustomerId,
 	controls: AutumnBillingControlsUpdate,
 ): Effect.Effect<AutumnResult, AutumnTransportFailure> =>
 	secretKey === undefined
@@ -377,7 +393,7 @@ const callUpdateBillingControls = (
 						},
 					}),
 					{
-						customer_id: orgId,
+						customer_id: customerId,
 						billing_controls: {
 							...(controls.spendLimits !== undefined
 								? {
@@ -431,7 +447,7 @@ const callUpdateBillingControls = (
  * here, the check stays per call.
  */
 export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>()(
-	"@maple/api/services/billing/AutumnClient",
+	"@maple/backend/services/billing/AutumnClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
@@ -508,8 +524,17 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 						discounts: [{ reward_id: rewardId }],
 					}),
 
-				updateCustomerBillingControls: (orgId, controls) =>
-					callUpdateBillingControls(httpClient, secretKey, apiUrl, orgId, controls),
+				cancelPlans: (customerId, cancels) =>
+					call("updateSubscriptions", {
+						customer_id: customerId,
+						updates: cancels.map((cancel) => ({
+							plan_id: cancel.planId,
+							cancel_action: cancel.action,
+						})),
+					}),
+
+				updateCustomerBillingControls: (customerId, controls) =>
+					callUpdateBillingControls(httpClient, secretKey, apiUrl, customerId, controls),
 
 				updateCustomerName: (customerId, name) =>
 					call("updateCustomer", { customer_id: customerId, name }),

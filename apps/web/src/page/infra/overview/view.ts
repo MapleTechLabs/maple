@@ -10,14 +10,14 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import * as Frame from "../kit/frame"
 import * as InstallModal from "../kit/install-modal"
 import * as InstallModalView from "../kit/install-modal-view"
-import { pageHero } from "../kit/page-parts"
+import { pageHeroParts } from "../kit/page-parts"
 import { pickTimeSearch } from "../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, SOURCE_IDS, type SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import { presentSources, sourceState, surfacesOf } from "./state"
 import { DEFAULT_PRESET } from "./update"
-import { needsAttention } from "./view-findings"
+import { needsAttention, sharedFailure } from "./view-findings"
 import { sourcesTable } from "./view-sources"
 
 // `InfraOverviewPage`.
@@ -49,7 +49,9 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 							[
 								"Not reporting yet:",
 								" ",
-								...missing.flatMap((id, index) => missingMark(h, id, index === missing.length - 1)),
+								...missing.flatMap((id, index) =>
+									missingMark(h, id, index === missing.length - 1),
+								),
 							],
 						),
 					],
@@ -73,29 +75,48 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const sources = presentSources(surfacesOf(model, inputs.context))
-	const missing = SOURCE_IDS.filter((id) => !sources.includes(id))
-	const states = sources.map((id) => ({ id, state: sourceState(model, id) }))
+	const missing = sources === null ? [] : SOURCE_IDS.filter((id) => !sources.includes(id))
+	const states = sources === null ? null : sources.map((id) => ({ id, state: sourceState(model, id) }))
 	const time = pickTimeSearch(model.search)
+	// "Needs attention" states a failure every source shares once, so the rows need not repeat it.
+	const isFailureExplained = states !== null && sharedFailure(states) !== undefined
+	// "connected", not "reporting": presence says a source exists, not that its read just succeeded.
+	const hero = pageHeroParts(h, {
+		title: "Infrastructure",
+		description:
+			sources === null
+				? "Checking which sources report. What needs a look comes first."
+				: sources.length > 0
+					? isFailureExplained
+						? `${countLabel(sources.length, "source")} configured. Status unavailable right now.`
+						: `${countLabel(sources.length, "source")} connected. What needs a look comes first.`
+					: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
+	})
 	return h.div(
 		[h.Class("contents")],
 		[
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					titleContent: hero.title,
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 				},
 				[
 					h.div(
 						[h.Class("space-y-10")],
 						[
-							pageHero(h, {
-								title: "Infrastructure",
-								description:
-									sources.length > 0
-										? `${countLabel(sources.length, "source")} reporting. What needs a look comes first.`
-										: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
-							}),
-							...(sources.length > 0 ? [needsAttention(h, states, time), sourcesTable(h, states, time)] : []),
+							hero.body,
+							...(sources === null || sources.length > 0
+								? [
+										needsAttention(h, states, time, Message.ClickedRetry()),
+										sourcesTable(h, states, time, isFailureExplained),
+									]
+								: []),
 							...(missing.length > 0 ? [addSource(h, missing)] : []),
 						],
 					),

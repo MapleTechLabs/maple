@@ -7,7 +7,7 @@ import {
 	pageLayoutStyles,
 	pageTitleStyles,
 } from "@maple/ui/styles/ui/page-layout"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // Port of the header half of packages/ui/src/components/ui/page-layout.tsx (Root, Header, Title,
 // Description, HeaderActions). The sticky area, sidebars and sheets belong to the app shell port.
@@ -20,7 +20,12 @@ export const pageLayoutRoot = <M>(h: HtmlBuilder<M>, children: Children, classNa
 /** `PageLayout.Title`: the one canonical page `<h1>`; `title` is the native tooltip when it truncates. */
 export const pageTitle = <M>(
 	h: HtmlBuilder<M>,
-	options: { readonly title?: string; readonly className?: string },
+	options: {
+		readonly title?: string
+		readonly className?: string
+		/** Behaviour on the heading itself (an inline-editable title's click to rename). */
+		readonly attributes?: ReadonlyArray<Attribute<M>>
+	},
 	children: Children,
 ): Html =>
 	h.h1(
@@ -28,6 +33,7 @@ export const pageTitle = <M>(
 			h.DataAttribute("slot", "page-title"),
 			h.Class(cn(pageTitleStyles, options.className)),
 			...(options.title === undefined ? [] : [h.Title(options.title)]),
+			...(options.attributes ?? []),
 		],
 		children,
 	)

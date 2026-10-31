@@ -152,8 +152,7 @@ export const issuesOf = (model: Model): ReadonlyArray<ErrorIssueDocument> =>
 		viewOf(model.search),
 	)
 
-/** Issues joined with the warehouse volume, the spark series and live investigations, sorted. */
-export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> =>
+const buildSignals = (model: Model): ReadonlyArray<ErrorSignal> =>
 	sortSignals(
 		buildErrorSignals({
 			issues: issuesOf(model),
@@ -163,6 +162,24 @@ export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> =>
 		}),
 		sortOf(model.search),
 	)
+
+// The last join and the model fields it read. A hover or a menu changes none of them, so the list
+// keeps the same signal objects and its memoized rows stay cached.
+const lastSignals: Array<{
+	readonly inputs: ReadonlyArray<unknown>
+	readonly signals: ReadonlyArray<ErrorSignal>
+}> = []
+
+/** Issues joined with the warehouse volume, the spark series and live investigations, sorted. */
+export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> => {
+	const inputs = [model.pages, model.volume.data, model.spark.data, model.investigations.data, model.search]
+	const previous = lastSignals[0]
+	if (previous !== undefined && previous.inputs.every((input, index) => input === inputs[index]))
+		return previous.signals
+	const signals = buildSignals(model)
+	lastSignals[0] = { inputs, signals }
+	return signals
+}
 
 export type ListStatus = "loading" | "failed" | "ready"
 

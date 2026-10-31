@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { docsUrl } from "../../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../../route"
+import { statusDot } from "../../../../ui/status-dot"
 import { columnHead, dataTable } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import { ERROR_RATE_LIMIT } from "../health"
@@ -42,12 +43,12 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 	h.div(
 		[
 			h.Key(caller.serviceName),
-			h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2.5 last:border-0"),
+			h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 last:border-0"),
 		],
 		[
 			h.a(
 				[
-					h.Class("flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary"),
+					h.Class("flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary active:text-primary"),
 					h.Href(
 						hrefOf(
 							AppRoute.Service({
@@ -62,7 +63,7 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 					),
 				],
 				[
-					h.span([h.Class("size-1.5 shrink-0 rounded-full bg-chart-1")]),
+					statusDot(h, { tone: "custom", className: "bg-chart-1" }),
 					h.span(
 						[h.Class("truncate font-mono"), h.Title(caller.serviceName)],
 						[caller.serviceName],
@@ -108,7 +109,7 @@ const noCallers = (h: H): Html =>
 				h.Href(docsUrl("instrumentation")),
 				h.Target("_blank"),
 				h.Rel("noopener noreferrer"),
-				h.Class("underline underline-offset-2 hover:text-foreground"),
+				h.Class("underline underline-offset-2 hover:text-foreground active:text-foreground"),
 			],
 			["Instrument a service"],
 		),
@@ -125,7 +126,7 @@ export const callersPanel = (h: H, model: Model, spark: SparkWindow | null): Htm
 		[
 			keyedBody(h, model.callers, {
 				rows: 3,
-				failureTitle: "Failed to load the calling services",
+				failureTitle: "Couldn't load the calling services",
 				onRetry: Message.ClickedRetry({ section: "callers" }),
 				render: (response) =>
 					response.callers.length === 0

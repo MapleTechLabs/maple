@@ -219,7 +219,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							model: { ...model, isLoadingMore: false },
 							outMessage: PageOutMessage.RequestedToast({
 								type: "error",
-								title: "More anomalies could not be loaded",
+								title: "Couldn't load more anomalies",
 								description: "",
 							}),
 						}),

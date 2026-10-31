@@ -19,6 +19,7 @@ import {
 	LocalStoreDirtyError,
 	ServerOptionError,
 } from "../src/commands/server-errors"
+import { ProjectorModuleError } from "../src/server/eventing/projector-modules"
 import { ServerBindError } from "../src/server/serve"
 import { ChdbError, describeChdbOpenFailure } from "../src/server/chdb"
 
@@ -128,6 +129,16 @@ describe("guardStartFailures", () => {
 		expect(Exit.isFailure(await run(dirty))).toBe(true)
 		expect(Exit.isSuccess(await run(dirty))).toBe(true)
 		expect(process.exitCode).toBe(EXIT_START_REFUSED)
+	})
+
+	it("refuses a broken projector module with exit 78, so supervisors stop retrying", async () => {
+		const broken = new ProjectorModuleError({
+			path: "/modules/projectors.mjs",
+			message: "projector module /modules/projectors.mjs: import failed",
+		})
+		expect(Exit.isFailure(await run(broken))).toBe(true)
+		expect(process.exitCode).toBe(EXIT_START_REFUSED)
+		expect(Exit.isSuccess(await run(broken))).toBe(true)
 	})
 
 	it("dedupes a taken port but exits 1, not 78, so supervisors retry", async () => {

@@ -172,7 +172,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																	size: "icon-2xs",
 																	label: "Clear bucket filter",
 																	hasTooltip: false,
-																	className: "text-muted-foreground hover:text-foreground",
+																	className: "text-muted-foreground hover:text-foreground active:text-foreground",
 																	attributes: [h.OnClick(Message.ClickedClearBucket())],
 																},
 																[icon(h, "XmarkIcon")],
@@ -208,12 +208,12 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					table(h, {}, [
 						tableHeader(h, [
 							tableRow(h, [
-								tableHead(h, ["Time"], "w-[170px]"),
-								tableHead(h, ["Status"], "w-[110px]"),
+								tableHead(h, ["Time"], "w-44"),
+								tableHead(h, ["Status"], "w-28"),
 								tableHead(h, ["Value / threshold"]),
-								tableHead(h, ["Samples"], "w-[90px]"),
-								...(isGrouped ? [tableHead(h, ["Group"], "w-[160px]")] : []),
-								tableHead(h, ["Incident"], "w-[140px]"),
+								tableHead(h, ["Samples"], "w-24"),
+								...(isGrouped ? [tableHead(h, ["Group"], "w-40")] : []),
+								tableHead(h, ["Incident"], "w-36"),
 							]),
 						]),
 						tableBody(
@@ -231,14 +231,14 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																h.Attribute("colspan", isGrouped ? "6" : "5"),
 																h.Attribute(
 																	"class",
-																	cn(tableCellStyles, "bg-muted/40 py-1.5 text-2xs text-muted-foreground"),
+																	cn(tableCellStyles, "bg-surface-sunken py-1.5 text-2xs text-muted-foreground"),
 																),
 																h.DataAttribute("slot", "table-cell"),
 															],
 															[countLabel(skipped, "evaluation"), " hidden by the status filter"],
 														),
 													],
-													"hover:bg-transparent",
+													"hover:bg-transparent active:bg-transparent",
 												),
 											]
 										: []),
@@ -321,7 +321,7 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 										[formatSignalValue(rule.signalType, check.observedValue)],
 									),
 									h.span(
-										[h.Class("font-mono text-xs text-muted-foreground/60 tabular-nums")],
+										[h.Class("font-mono text-xs text-foreground-subtle tabular-nums")],
 										["/", " ", formatSignalValue(rule.signalType, check.threshold)],
 									),
 									...checkDelta(h, rule, check.observedValue, check.threshold, check.status === "breached"),

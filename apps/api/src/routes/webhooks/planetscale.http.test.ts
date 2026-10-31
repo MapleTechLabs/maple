@@ -2,14 +2,19 @@ import { IntegrationsValidationError, OrgId } from "@maple/domain/http"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { PlanetscaleConnections } from "@maple/db/tables"
+import { PlanetscaleConnections, PlanetscaleDatabases } from "@maple/db/tables"
 import { SourceId } from "@maple/domain/primitives"
 import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, insertTestSource, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	insertTestSource,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import {
 	MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES,
 	PlanetScaleWebhookQueue,
@@ -17,6 +22,7 @@ import {
 	type PlanetScaleWebhookJob,
 } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleWebhookService } from "@maple/backend/services/integrations/PlanetScaleWebhookService"
 import { PlanetScaleWebhookRouter } from "./planetscale.http"
 
 const trackedDbs: TestDb[] = []
@@ -27,7 +33,7 @@ const ENCRYPTION_KEY = Buffer.alloc(32, 5)
 const SECRET = "planetscale-webhook-secret"
 const CONNECTION_ID = "ps-connection-1"
 const WEBHOOK_PATH = `/api/integrations/planetscale/webhook/${CONNECTION_ID}`
-const BODY = JSON.stringify({ event: "webhook.test", organization: "acme" })
+const BODY = JSON.stringify({ event: "webhook.test", organization: "acme", database: "shop" })
 
 const makeConfig = () =>
 	ConfigProvider.layer(
@@ -49,7 +55,7 @@ const makeRouterLayer = (
 		Effect.void,
 ) =>
 	PlanetScaleWebhookRouter.pipe(
-		Layer.provide(PlanetScaleConnectionService.layer),
+		Layer.provide(Layer.mergeAll(PlanetScaleConnectionService.layer, PlanetScaleWebhookService.layer)),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(testDb.layer),
 		Layer.provide(Layer.succeed(PlanetScaleWebhookQueue, { send: (prepared) => send(prepared.body) })),
@@ -59,37 +65,57 @@ const makeRouterLayer = (
 
 const asSourceId = Schema.decodeUnknownSync(SourceId)
 
+/** The connection, and the `shop` database carrying the secret of the webhook Maple registered on it. */
+const seedConnection = (testDb: TestDb) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const encrypted = yield* encryptAes256Gcm(
+			SECRET,
+			ENCRYPTION_KEY,
+			(message) => new IntegrationsValidationError({ message }),
+		).pipe(Effect.orDie)
+		const now = Date.parse("2026-07-11T00:00:00.000Z")
+		const sourceId = yield* Effect.promise(() =>
+			insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
+		)
+		yield* database.execute((db) =>
+			db.run(
+				PG.insertInto(PlanetscaleConnections).values({
+					id: CONNECTION_ID,
+					orgId: OrgId.make("org_1"),
+					sourceId,
+					psOrganization: "acme",
+					connectedByUserId: "user_1",
+					createdAt: now,
+					updatedAt: now,
+				}),
+			),
+		)
+		yield* database.execute((db) =>
+			db.run(
+				PG.insertInto(PlanetscaleDatabases).values({
+					id: "psdb-row-1",
+					orgId: OrgId.make("org_1"),
+					databaseId: "db_1",
+					name: "shop",
+					webhookId: "wh_1",
+					webhookSecretCiphertext: encrypted.ciphertext,
+					webhookSecretIv: encrypted.iv,
+					webhookSecretTag: encrypted.tag,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			),
+		)
+	}).pipe(Effect.orDie)
+
 describe("PlanetScaleWebhookRouter", () => {
-	it.effect("enforces connection-scoped signatures and accepts a verified test delivery", () => {
+	it.effect("verifies each delivery with its database's webhook secret", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const database = yield* Database
 			const handlerContext = Context.make(Database, database)
-			const encrypted = yield* encryptAes256Gcm(
-				SECRET,
-				ENCRYPTION_KEY,
-				(message) => new IntegrationsValidationError({ message }),
-			).pipe(Effect.orDie)
-			const now = Date.parse("2026-07-11T00:00:00.000Z")
-			const sourceId = yield* Effect.promise(() =>
-				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
-			)
-			yield* database.execute((db) =>
-				db.run(
-					PG.insertInto(PlanetscaleConnections).values({
-						id: CONNECTION_ID,
-						orgId: OrgId.make("org_1"),
-						sourceId,
-						psOrganization: "acme",
-						connectedByUserId: "user_1",
-						webhookSecretCiphertext: encrypted.ciphertext,
-						webhookSecretIv: encrypted.iv,
-						webhookSecretTag: encrypted.tag,
-						createdAt: now,
-						updatedAt: now,
-					}),
-				),
-			)
+			yield* seedConnection(testDb)
 
 			const { handler, dispose } = HttpRouter.toWebHandler(makeRouterLayer(testDb), {
 				disableLogger: true,
@@ -119,6 +145,28 @@ describe("PlanetScaleWebhookRouter", () => {
 				)
 				assert.strictEqual(rejected.status, 401)
 
+				// A database Maple registered no webhook on has no secret a signature could match.
+				const otherDatabase = JSON.stringify({
+					event: "webhook.test",
+					organization: "acme",
+					database: "other",
+				})
+				const unregistered = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
+							method: "POST",
+							headers: {
+								"x-planetscale-signature": createHmac("sha256", SECRET)
+									.update(otherDatabase, "utf8")
+									.digest("hex"),
+							},
+							body: otherDatabase,
+						}),
+						handlerContext,
+					),
+				)
+				assert.strictEqual(unregistered.status, 401)
+
 				const signature = createHmac("sha256", SECRET).update(BODY, "utf8").digest("hex")
 				const accepted = yield* Effect.promise(() =>
 					handler(
@@ -141,31 +189,7 @@ describe("PlanetScaleWebhookRouter", () => {
 		const jobs: PlanetScaleWebhookJob[] = []
 		return Effect.gen(function* () {
 			const database = yield* Database
-			const encrypted = yield* encryptAes256Gcm(
-				SECRET,
-				ENCRYPTION_KEY,
-				(message) => new IntegrationsValidationError({ message }),
-			).pipe(Effect.orDie)
-			const now = Date.parse("2026-07-11T00:00:00.000Z")
-			const sourceId = yield* Effect.promise(() =>
-				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
-			)
-			yield* database.execute((db) =>
-				db.run(
-					PG.insertInto(PlanetscaleConnections).values({
-						id: CONNECTION_ID,
-						orgId: OrgId.make("org_1"),
-						sourceId,
-						psOrganization: "acme",
-						connectedByUserId: "user_1",
-						webhookSecretCiphertext: encrypted.ciphertext,
-						webhookSecretIv: encrypted.iv,
-						webhookSecretTag: encrypted.tag,
-						createdAt: now,
-						updatedAt: now,
-					}),
-				),
-			)
+			yield* seedConnection(testDb)
 			const issueBody = JSON.stringify({
 				timestamp: 1_698_252_879,
 				event: "branch.out_of_memory",
@@ -271,31 +295,7 @@ describe("PlanetScaleWebhookRouter", () => {
 		const jobs: PlanetScaleWebhookJob[] = []
 		return Effect.gen(function* () {
 			const database = yield* Database
-			const encrypted = yield* encryptAes256Gcm(
-				SECRET,
-				ENCRYPTION_KEY,
-				(message) => new IntegrationsValidationError({ message }),
-			).pipe(Effect.orDie)
-			const now = Date.parse("2026-07-11T00:00:00.000Z")
-			const sourceId = yield* Effect.promise(() =>
-				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
-			)
-			yield* database.execute((db) =>
-				db.run(
-					PG.insertInto(PlanetscaleConnections).values({
-						id: CONNECTION_ID,
-						orgId: OrgId.make("org_1"),
-						sourceId,
-						psOrganization: "acme",
-						connectedByUserId: "user_1",
-						webhookSecretCiphertext: encrypted.ciphertext,
-						webhookSecretIv: encrypted.iv,
-						webhookSecretTag: encrypted.tag,
-						createdAt: now,
-						updatedAt: now,
-					}),
-				),
-			)
+			yield* seedConnection(testDb)
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(testDb, (job) => Effect.sync(() => jobs.push(job))),
 				{ disableLogger: true },
@@ -359,31 +359,7 @@ describe("PlanetScaleWebhookRouter", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const database = yield* Database
-			const encrypted = yield* encryptAes256Gcm(
-				SECRET,
-				ENCRYPTION_KEY,
-				(message) => new IntegrationsValidationError({ message }),
-			).pipe(Effect.orDie)
-			const now = Date.parse("2026-07-11T00:00:00.000Z")
-			const sourceId = yield* Effect.promise(() =>
-				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
-			)
-			yield* database.execute((db) =>
-				db.run(
-					PG.insertInto(PlanetscaleConnections).values({
-						id: CONNECTION_ID,
-						orgId: OrgId.make("org_1"),
-						sourceId,
-						psOrganization: "acme",
-						connectedByUserId: "user_1",
-						webhookSecretCiphertext: encrypted.ciphertext,
-						webhookSecretIv: encrypted.iv,
-						webhookSecretTag: encrypted.tag,
-						createdAt: now,
-						updatedAt: now,
-					}),
-				),
-			)
+			yield* seedConnection(testDb)
 			const issueBody = JSON.stringify({
 				timestamp: 1_698_252_879,
 				event: "branch.anomaly",

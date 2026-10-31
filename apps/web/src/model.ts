@@ -12,7 +12,6 @@ import * as Toast from "./ui/toast"
 import { AppRoute } from "./route"
 import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
-import * as ChatSheet from "./page/chat/sheet"
 
 /** The session: unknown until resolved (boot splash), then settled. */
 export const Session = defineTaggedUnion({
@@ -44,8 +43,6 @@ export const Model = Schema.Struct({
 	toastActions: Schema.Record(Schema.String, PageMessage),
 	/** A toast's root-level action, by toast id (Reconnect). */
 	toastRootActions: Schema.Record(Schema.String, RootToastAction),
-	/** `GlobalChatSheet`: the app-wide chat slide-over, above whichever page is open. */
-	chatSheet: ChatSheet.Model,
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
 	/** Page instances built so far; the next build is stamped `pageInstances + 1`. */
@@ -64,7 +61,12 @@ export const Model = Schema.Struct({
 	preload: Preload.Model,
 	/** The window this tab remembers for the org (`route/session-time-range.ts`); `nowMs` is when read. */
 	sessionTimeRange: Schema.NullOr(
-		Schema.Struct({ orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number, isLoaded: Schema.Boolean }),
+		Schema.Struct({
+			orgId: Schema.String,
+			value: SessionTimeRange,
+			nowMs: Schema.Number,
+			isLoaded: Schema.Boolean,
+		}),
 	),
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */
 	timeZone: Schema.String,

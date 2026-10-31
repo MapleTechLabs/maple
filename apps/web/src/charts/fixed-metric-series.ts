@@ -114,24 +114,28 @@ export const throughputPlot = (model: FixedMetricModel, perSecond: boolean): Thr
 	}
 }
 
-/** The throughput chart's legend series (the traced line is a reference, not a key). */
+/** The throughput chart's legend series: every line it draws, the traced reference included. */
 export const throughputLegend = (
 	plot: ThroughputPlot,
 	colors: Readonly<{ throughput: string; error: string }>,
 ): ReadonlyArray<FixedMetricSeries> => {
 	const { rateLabel } = plot
-	const throughputLabel = `${plot.hasSampling ? "~" : ""}Throughput${rateLabel ? ` (${rateLabel})` : ""}`
+	const suffix = rateLabel ? ` (${rateLabel})` : ""
+	const throughputLabel = `${plot.hasSampling ? "Estimated throughput" : "Throughput"}${suffix}`
 	return [
 		{ key: THROUGHPUT_KEY, label: throughputLabel, color: colors.throughput },
 		...(plot.hasErrors
 			? [
 					{
 						key: ERROR_KEY,
-						label: rateLabel ? `Errors (${rateLabel})` : "Errors",
+						label: `Errors${suffix}`,
 						color: colors.error,
 						dashed: true,
 					},
 				]
+			: []),
+		...(plot.hasTraced
+			? [{ key: TRACED_KEY, label: `Traced${suffix}`, color: colors.throughput, dashed: true }]
 			: []),
 	]
 }

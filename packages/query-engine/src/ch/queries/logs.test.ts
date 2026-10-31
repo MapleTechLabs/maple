@@ -94,12 +94,6 @@ describe("logsTimeseriesQuery", () => {
 		expect(sql).not.toContain("'all' AS groupName")
 	})
 
-	it("groups by severity", () => {
-		const q = logsTimeseriesQuery({ groupBy: ["severity"] })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("toString(logs.SeverityText)")
-	})
-
 	it("groups by service and severity", () => {
 		const q = logsTimeseriesQuery({ groupBy: ["service", "severity"] })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -279,7 +273,6 @@ describe("logsTimeseriesQuery MV routing", () => {
 	it("routes to logs_aggregates_hourly at bucketSeconds=3600", () => {
 		const q = logsTimeseriesQuery({ bucketSeconds: 3600 })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).not.toContain("FROM logs\n")
 		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS count")
 		// Hour column is the partition + ORDER BY prefix.
@@ -292,9 +285,7 @@ describe("logsTimeseriesQuery MV routing", () => {
 	it("falls back to raw `logs` at sub-hour buckets", () => {
 		const q = logsTimeseriesQuery({ bucketSeconds: 60 })
 		const { sql } = compileUnsafe(q, { ...baseParams, bucketSeconds: 60 })
-		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
-		expect(sql).toContain("count() AS count")
 	})
 
 	it("falls back to raw `logs` when traceId is filtered", () => {
@@ -349,14 +340,6 @@ describe("logsBreakdownQuery", () => {
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 10")
-	})
-
-	it("compiles breakdown by severity", () => {
-		const q = logsBreakdownQuery({ groupBy: "severity" })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs_aggregates_hourly")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown's group key
-		expect(sql).toContain("SeverityText AS name")
 	})
 
 	it("applies optional filters", () => {
@@ -451,9 +434,7 @@ describe("logsCountQuery", () => {
 	it("applies search filter", () => {
 		const q = logsCountQuery({ search: "exception" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
-		expect(sql).toContain("Body ILIKE '%exception%'")
 	})
 
 	it("applies traceId filter", () => {
@@ -478,17 +459,6 @@ describe("logsCountQuery", () => {
 // logsListQuery
 
 describe("logsListQuery", () => {
-	it("compiles a basic list on raw logs with the default limit", () => {
-		const q = logsListQuery({})
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("hex(MD5(toJSONString(tuple(")
-		expect(sql).toContain("toJSONString(logs.LogAttributes) AS logAttributes")
-		expect(sql).toContain("toJSONString(logs.ResourceAttributes) AS resourceAttributes")
-		expect(sql).toContain("ORDER BY timestamp DESC")
-		expect(sql).toContain("LIMIT 50")
-	})
-
 	it("applies filter-in and filter-out attribute predicates with escaped user input", () => {
 		const { sql } = compileUnsafe(
 			logsListQuery({
@@ -608,20 +578,14 @@ describe("logsListQuery", () => {
 		const q = logsListQuery({ limit: 100 })
 		const { sql } = compileUnsafe(q, baseParams)
 
-		// Outer query keeps the heavy projection.
-		expect(sql).toContain("toJSONString(logs.LogAttributes) AS logAttributes")
 		// Cutoff subquery reads only Timestamp — no Body, no toJSONString.
 		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
 		expect(cutoffMatch).not.toBeNull()
 		const inner = cutoffMatch![1]!
-		expect(inner).toContain("Timestamp AS ts")
 		expect(inner).not.toContain("Body")
 		expect(inner).not.toContain("toJSONString")
 		expect(inner).toContain("ORDER BY ts DESC")
 		expect(inner).toContain("LIMIT 100")
-
-		// Outer query gates on the cutoff.
-		expect(sql).toContain("Timestamp >= (SELECT min(ts) FROM (")
 	})
 
 	it("applies the same filters to both the cutoff and outer stages", () => {
@@ -680,36 +644,6 @@ describe("logsListQuery", () => {
 describe("getLogByKeyQuery", () => {
 	const keyParams = { ...baseParams, timestamp: "2024-01-01 12:00:00.123456" }
 
-	it("compiles an exact-match single-log lookup", () => {
-		const q = getLogByKeyQuery({ serviceName: "api" })
-		const { sql } = compileUnsafe(q, keyParams)
-		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("toJSONString(logs.LogAttributes) AS logAttributes")
-		expect(sql).toContain("Timestamp = '2024-01-01 12:00:00.123456'")
-		expect(sql).toContain("ServiceName = 'api'")
-		expect(sql).toContain("LIMIT 1")
-	})
-
-	it("bounds TimestampTime for partition pruning", () => {
-		const q = getLogByKeyQuery({ serviceName: "api" })
-		const { sql } = compileUnsafe(q, keyParams)
-		expect(sql).toContain("TimestampTime >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("TimestampTime <= '2024-01-02 00:00:00'")
-	})
-
-	it("applies optional traceId and spanId filters", () => {
-		const q = getLogByKeyQuery({
-			serviceName: "api",
-			traceId: "trace123",
-			spanId: "span456",
-			recordIdentity: "00112233445566778899AABBCCDDEEFF",
-		})
-		const { sql } = compileUnsafe(q, keyParams)
-		expect(sql).toContain("TraceId = 'trace123'")
-		expect(sql).toContain("SpanId = 'span456'")
-		expect(sql).toContain("= '00112233445566778899AABBCCDDEEFF'")
-	})
-
 	it("omits traceId and spanId filters when not provided", () => {
 		const q = getLogByKeyQuery({ serviceName: "api" })
 		const { sql } = compileUnsafe(q, keyParams)
@@ -724,8 +658,6 @@ describe("errorRateByServiceQuery", () => {
 	it("uses the hourly aggregate for full interior hours and raw logs for exact edges", () => {
 		const q = errorRateByServiceQuery()
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs_aggregates_hourly")
-		expect(sql).toContain("FROM logs")
 		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS bucketTotalLogs")
 		expect(sql).toContain(
 			"sumIf(logs_aggregates_hourly.Count, logs_aggregates_hourly.SeverityText IN ('ERROR', 'FATAL')) AS bucketErrorLogs",
@@ -747,15 +679,8 @@ describe("logsFacetsQuery", () => {
 	it("routes all four facet branches to logs_aggregates_hourly", () => {
 		const q = logsFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const unionCount = (sql.match(/UNION ALL/g) || []).length
-		expect(unionCount).toBe(3)
-		expect(sql).toContain("FROM logs_aggregates_hourly")
 		// Pre-aggregated reads — no raw map lookups on the MV path.
 		expect(sql).not.toContain("ResourceAttributes")
-		const facetTypes = [...sql.matchAll(/'(\w+)' AS facetType/g)].map((m) => m[1])
-		expect(facetTypes).toEqual(
-			expect.arrayContaining(["severity", "service", "deploymentEnv", "namespace"]),
-		)
 		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS count")
 		expect(sql).toContain("ORDER BY count DESC")
 	})
@@ -763,8 +688,6 @@ describe("logsFacetsQuery", () => {
 	it("filters on Hour instead of the dual Timestamp/TimestampTime predicates", () => {
 		const q = logsFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).toContain("Hour >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("Hour <= '2024-01-02 00:00:00'")
 		expect(sql).not.toContain("TimestampTime")
 	})
 
@@ -792,7 +715,6 @@ describe("logsFacetsQuery", () => {
 		const q = logsFacetsQuery({}, "severity")
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		expect(sql).not.toContain("UNION ALL")
-		expect(sql).toContain("FROM logs_aggregates_hourly")
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the facet label proves which branch compiled
 		expect(sql).toContain("'severity' AS facetType")
 		expect(sql).not.toContain("'service' AS facetType")

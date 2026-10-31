@@ -37,7 +37,7 @@ export const BAR_FILL: Record<SeverityLevel, string> = {
 
 /** Dimmer value-text tone used inside compact bar widgets. */
 export const BAR_VALUE_TONE: Record<SeverityLevel, string> = {
-	ok: "text-foreground/75",
+	ok: "text-foreground-soft",
 	warn: TONE_TEXT.warn,
 	crit: TONE_TEXT.crit,
 } satisfies Record<SeverityLevel, string>
@@ -45,8 +45,8 @@ export const BAR_VALUE_TONE: Record<SeverityLevel, string> = {
 /** Status dot fill. */
 export const STATUS_DOT: Record<HostStatus, string> = {
 	active: TONE_FILL.ok,
-	idle: "bg-muted-foreground/60",
-	ended: "bg-muted-foreground/40",
+	idle: "bg-foreground-subtle",
+	ended: "bg-foreground-faint",
 } satisfies Record<HostStatus, string>
 
 /** Status dot ring. */

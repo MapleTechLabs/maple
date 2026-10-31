@@ -9,6 +9,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
@@ -20,6 +21,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 const LABELS = {
 	cloudflare: "Cloudflare",
 	hazel: "Hazel",
+	linear: "Linear",
 	github: "GitHub",
 	planetscale: "PlanetScale",
 	supabase: "Supabase",
@@ -76,6 +78,7 @@ const failure = (message: string) => new OAuthCompleteResponse({ status: "error"
  */
 export const makeOAuthCompleter = Effect.gen(function* () {
 	const hazel = yield* HazelOAuthService
+	const linear = yield* LinearOAuthService
 	const github = yield* GithubConnectService
 	const cloudflare = yield* CloudflareOAuthService
 	const cloudflareAnalytics = yield* CloudflareAnalyticsService
@@ -239,6 +242,10 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 				case "hazel":
 					return withCode(params, (code, state) =>
 						hazel.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),
+					)
+				case "linear":
+					return withCode(params, (code, state) =>
+						linear.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),
 					)
 				case "planetscale":
 					return withCode(params, (code, state) => completePlanetScale(code, state, initiator))

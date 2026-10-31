@@ -1,4 +1,4 @@
 export * from "./pg-url.ts"
 export * from "./stage.ts"
 export * from "./secrets.ts"
-export * from "./integration-principal.ts"
+export * from "./oidc-signing-key.ts"

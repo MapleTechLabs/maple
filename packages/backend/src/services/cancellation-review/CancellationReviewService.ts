@@ -10,6 +10,7 @@
  * It runs inside the Autumn webhook's request. A failure answers 503 and Svix
  * redelivers, which is the only retry there is.
  */
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import {
@@ -22,7 +23,7 @@ import {
 	VcsInstallations,
 } from "@maple/db/tables"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
-import { CancellationSnapshot, type OrgId } from "@maple/domain/http"
+import { BillingCustomerId, CancellationSnapshot, type OrgId } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -359,7 +360,10 @@ export class CancellationReviewService extends Context.Service<
 								? optional(
 										"otherOrgBilling",
 										autumn
-											.getOrCreateCustomer(org.orgId, { expand: [] })
+											// Each org's own customer: the report is about the orgs themselves.
+											.getOrCreateCustomer(BillingCustomerId.make(org.orgId), {
+												expand: [],
+											})
 											.pipe(Effect.flatMap(ensureOk)),
 									)
 								: Effect.succeed(null)
@@ -484,7 +488,7 @@ export class CancellationReviewService extends Context.Service<
 
 				// The one required read: it says whether this plan is the org's plan at all.
 				const response = yield* autumn
-					.getOrCreateCustomer(orgId, { expand: ["invoices"] })
+					.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: ["invoices"] })
 					.pipe(
 						Effect.flatMap(ensureOk),
 						Effect.mapError(failedAt("billing", "Could not read the Autumn customer")),

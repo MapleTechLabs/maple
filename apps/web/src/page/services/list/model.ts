@@ -1,3 +1,4 @@
+import { AlertSignalType } from "@maple/domain/http"
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -70,6 +71,8 @@ export const IncidentCause = Schema.Struct({
 	status: Schema.String,
 	groupKey: Schema.NullOr(Schema.String),
 	severity: Schema.Literals(["warning", "critical"]),
+	/** `uptime` incidents read as a failing check rather than a generic alert. */
+	signalType: AlertSignalType,
 })
 export type IncidentCause = typeof IncidentCause.Type
 

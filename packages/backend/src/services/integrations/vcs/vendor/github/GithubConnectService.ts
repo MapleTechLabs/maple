@@ -193,6 +193,22 @@ const fromGithubError = (error: GithubAppError) =>
 				...(!(error.status === undefined) ? { status: error.status } : undefined),
 			})
 
+/**
+ * Refuses a connect. The callback still answers 200 with this copy, so the refusal is also flagged
+ * with `maple.vcs.connect.refused` and a span event that an alert can count by `vcs.connect.outcome`.
+ */
+const refuseConnect = (orgId: OrgId, outcome: string, reason: string, message: string) =>
+	Effect.gen(function* () {
+		const attributes = { "vcs.connect.outcome": outcome, "vcs.connect.reason": reason }
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.vcs.connect.refused": true, ...attributes })
+		const at = yield* Clock.currentTimeNanos
+		yield* Effect.currentSpan.pipe(
+			Effect.map((span) => span.event("maple.vcs.connect.refused", at, attributes)),
+			Effect.ignore,
+		)
+		return yield* new IntegrationsValidationError({ message })
+	})
+
 /** Trims and de-duplicates a review config, dropping empty fields so a later default reaches it. */
 const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig")(function* (
 	config: PrReviewRepositoryConfig,
@@ -209,6 +225,9 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 			? undefined
 			: { minInlineSeverity: config.minInlineSeverity }),
 		...(config.reviewDrafts === undefined ? undefined : { reviewDrafts: config.reviewDrafts }),
+		...(config.reviewExternalContributors === undefined
+			? undefined
+			: { reviewExternalContributors: config.reviewExternalContributors }),
 		...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
 		...(config.automaticReviewLimit === undefined
 			? undefined
@@ -222,7 +241,7 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 })
 
 export class GithubConnectService extends Context.Service<GithubConnectService, GithubConnectServiceApi>()(
-	"@maple/api/services/vcs/vendor/github/GithubConnectService",
+	"@maple/backend/services/vcs/vendor/github/GithubConnectService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
@@ -302,15 +321,12 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					Option.isSome(existingInstallation) &&
 					existingInstallation.value.orgId !== stateRow.orgId
 				) {
-					yield* Effect.annotateCurrentSpan({
-						orgId: stateRow.orgId,
-						"vcs.connect.outcome": "installation_cross_org_rejected",
-						"vcs.connect.reason": "installation_id already belongs to a different org",
-					})
-					return yield* new IntegrationsValidationError({
-						message:
-							"This GitHub installation is already connected to another Maple organization.",
-					})
+					return yield* refuseConnect(
+						stateRow.orgId,
+						"installation_cross_org_rejected",
+						"installation_id already belongs to a different org",
+						"This GitHub installation is already connected to another Maple organization.",
+					)
 				}
 
 				// Connecting a brand-new installation? Require the OAuth `code` and check
@@ -347,30 +363,22 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 							Effect.mapError(fromGithubError),
 						)
 					if (!accessibleInstallationIds.has(installationId)) {
-						yield* Effect.annotateCurrentSpan({
-							orgId: stateRow.orgId,
-							"vcs.connect.outcome": "installation_not_administrable",
-							"vcs.connect.reason":
-								"authenticated user cannot administer the supplied installation_id",
-						})
-						return yield* new IntegrationsValidationError({
-							message:
-								"You are not authorized to connect this GitHub installation — restart the connect flow.",
-						})
+						return yield* refuseConnect(
+							stateRow.orgId,
+							"installation_not_administrable",
+							"authenticated user cannot administer the supplied installation_id",
+							"You are not authorized to connect this GitHub installation. Restart the connect flow.",
+						)
 					}
 				} else if (!isSameOrgReconnect) {
 					// New installation, no `code` to prove ownership — refuse. (Needs the
 					// App's OAuth-on-install setting enabled; see docs/github-app-setup.md.)
-					yield* Effect.annotateCurrentSpan({
-						orgId: stateRow.orgId,
-						"vcs.connect.outcome": "oauth_code_required",
-						"vcs.connect.reason":
-							"new installation binding requires an OAuth code to prove ownership",
-					})
-					return yield* new IntegrationsValidationError({
-						message:
-							"Could not verify you own this GitHub installation. Restart the connect flow from Maple, and ensure the GitHub App has user authorization during installation enabled.",
-					})
+					return yield* refuseConnect(
+						stateRow.orgId,
+						"oauth_code_required",
+						"new installation binding requires an OAuth code to prove ownership",
+						"Could not verify you own this GitHub installation. Restart the connect flow from Maple, and ensure the GitHub App has user authorization during installation enabled.",
+					)
 				}
 
 				const detail = yield* githubApp.getInstallation(installationId).pipe(
@@ -413,16 +421,22 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						),
 						Effect.mapError(fromGithubError),
 					)
-					if (adminCheck !== "admin") {
-						yield* Effect.annotateCurrentSpan({
-							orgId: stateRow.orgId,
-							"vcs.connect.outcome": "installation_not_administrable",
-							"vcs.connect.reason": `user is not an admin of the installation account (${adminCheck})`,
-						})
-						return yield* new IntegrationsValidationError({
-							message:
-								"Only an admin of this GitHub account can connect its installation. Ask an admin to connect it.",
-						})
+					// A 403 on the role read is not a "no": GitHub withheld the org role from the App.
+					if (adminCheck === "unverifiable") {
+						return yield* refuseConnect(
+							stateRow.orgId,
+							"installation_admin_unverifiable",
+							"GitHub refused to share the user's role on the installation account (403)",
+							`Maple could not confirm you are an owner of ${account.login}: GitHub did not share organization roles with the Maple app. An owner of ${account.login} can approve the app's pending permission request (organization Settings > GitHub Apps > Review request), then retry. Or ask an owner to connect it.`,
+						)
+					}
+					if (adminCheck === "not-admin") {
+						return yield* refuseConnect(
+							stateRow.orgId,
+							"installation_not_administrable",
+							"user is not an admin of the installation account (not-admin)",
+							"Only an admin of this GitHub account can connect its installation. Ask an admin to connect it.",
+						)
 					}
 				}
 				const accountType: VcsAccountType = account.type === "Organization" ? "organization" : "user"

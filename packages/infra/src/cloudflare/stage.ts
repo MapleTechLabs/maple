@@ -48,6 +48,8 @@ export interface MapleDomains {
 	 * every workspace re-approves on change. prd only.
 	 */
 	chat?: string
+	/** The status Worker serving customer pages at `/s/<slug>`. Previews only: prd has no domain yet. */
+	status?: string
 }
 
 /**
@@ -214,6 +216,7 @@ export function resolveMapleDomains({ stage, region }: MapleDeployment): MapleDo
 				sync: `sync-pr-${stage.prNumber}.maple.dev`,
 				electric: `electric-pr-${stage.prNumber}.maple.dev`,
 				landing: `landing-pr-${stage.prNumber}.maple.dev`,
+				status: `status-pr-${stage.prNumber}.maple.dev`,
 			}
 		case "dev":
 			return {}

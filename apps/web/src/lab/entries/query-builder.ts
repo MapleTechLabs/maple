@@ -17,5 +17,5 @@ export const lab = defineShellLab("Query builder", {
 	update,
 	view,
 	currentPath: "/lab/query-builder",
-	breadcrumbs: [{ label: "Overview", href: "/" }, { label: "Query Builder Lab" }],
+	breadcrumbs: [{ label: "Lab" }, { label: "Query builder" }],
 })

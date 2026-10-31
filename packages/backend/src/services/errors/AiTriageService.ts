@@ -39,7 +39,7 @@ export interface AiTriageServiceApi {
 }
 
 export class AiTriageService extends Context.Service<AiTriageService, AiTriageServiceApi>()(
-	"@maple/api/services/AiTriageService",
+	"@maple/backend/services/AiTriageService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

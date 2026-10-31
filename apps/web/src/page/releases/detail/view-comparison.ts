@@ -139,7 +139,7 @@ const comparisonTable = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, bas
 							cn("pr-4 text-right font-mono tabular-nums", changeTone(row)),
 						),
 					],
-					"border-border/60",
+					"border-border-subtle",
 					[h.Key(row.label)],
 				),
 			),
@@ -158,7 +158,7 @@ export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceIm
 		baseline.spanCount >= MIN_COMPARE_SPANS
 	const action =
 		baseline === undefined
-			? h.span([h.Class("text-2xs text-muted-foreground/70")], ["no previous version"])
+			? h.span([h.Class("text-2xs text-foreground-subtle")], ["no previous version"])
 			: commitTrigger(h, overlays, "release-replaced", baseline.commitSha, "font-mono text-2xs text-muted-foreground", [
 					"replaced ",
 					shortReleaseLabel(baseline.commitSha),
@@ -170,7 +170,7 @@ export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceIm
 		...(baseline !== undefined && !isComparable
 			? [
 					h.div(
-						[h.Class("border-t px-4 py-2 text-2xs text-muted-foreground/70")],
+						[h.Class("border-t px-4 py-2 text-2xs text-foreground-subtle")],
 						[`Changes are withheld below ${MIN_COMPARE_SPANS} requests on either side.`],
 					),
 				]
@@ -200,7 +200,7 @@ export const releaseVersionsRail = <M>(h: HtmlBuilder<M>, input: RailInput<M>): 
 		{
 			title: "Versions in window",
 			action: h.span(
-				[h.Class("text-2xs text-muted-foreground/70")],
+				[h.Class("text-2xs text-foreground-subtle")],
 				[countLabel(sorted.length, "version")],
 			),
 		},
@@ -227,8 +227,8 @@ const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput<M>, version: Release
 			),
 			h.Class(
 				cn(
-					"flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-					version.commitSha === input.currentSha && "bg-muted/60",
+					"flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					version.commitSha === input.currentSha && "bg-surface-strong",
 				),
 			),
 		],
@@ -257,7 +257,7 @@ const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput<M>, version: Release
 				timeZone: input.timeZone,
 				variant: "orDate",
 				tooltip: "title",
-				className: "w-16 shrink-0 text-right font-mono tabular-nums text-muted-foreground/70",
+				className: "w-16 shrink-0 text-right font-mono tabular-nums text-foreground-subtle",
 			}),
 		],
 	)

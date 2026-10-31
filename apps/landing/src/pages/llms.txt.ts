@@ -79,6 +79,13 @@ export const GET: APIRoute = ({ site }) => {
 		...features.map((feature) => `- [${feature.navLabel()}](${url(`/features/${feature.slug}.md`)})`),
 		"",
 
+		"## Integrations",
+		"",
+		`Every language, agent framework, cloud, database and alert destination Maple works with, each linked to its setup guide.`,
+		"",
+		...both("Integrations", "/integrations"),
+		"",
+
 		"## Use cases",
 		"",
 		`Worked debugging stories, step by step. ${CONVENTION("use-case")}`,
@@ -111,6 +118,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
 		`- [Dynatrace pricing, explained](${url("/guides/dynatrace-pricing")})`,
 		`- [Python logging levels and how to set them](${url("/guides/python-logging-levels")})`,
+		`- [Incident response, step by step](${url("/guides/incident-response")})`,
 		"",
 
 		"## Maple API",

@@ -19,16 +19,23 @@ enum ServiceColor {
 	]
 
 	private static let tiers: [(l: Double, c: Double)] = [
-		(0.47, 0.17),
-		(0.57, 0.15),
-		(0.67, 0.12),
+		(0.57, 0.17),
+		(0.64, 0.16),
+		(0.70, 0.14),
 	]
+
+	/// `tierLightness`: yellow through lime sit lighter, capped at 0.74, then
+	/// rounded to two decimals like the web's `toFixed(2)`.
+	private static func lightness(_ l: Double, hue: Double) -> Double {
+		let lifted = (70...140).contains(hue) ? min(l + 0.08, 0.74) : l
+		return (lifted * 100).rounded() / 100
+	}
 
 	static func color(for serviceName: String) -> Color {
 		let hash = hashString(serviceName)
 		let hue = hues[hash % hues.count]
 		let tier = tiers[(hash / hues.count) % tiers.count]
-		return Token.OKLCH(tier.l, tier.c, hue).color
+		return Token.OKLCH(lightness(tier.l, hue: hue), tier.c, hue).color
 	}
 
 	/// `hash = charCode + ((hash << 5) - hash)`, evaluated as int32 the way

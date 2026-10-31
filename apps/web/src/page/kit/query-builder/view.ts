@@ -67,7 +67,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 				size: "icon-xs",
 				label: isCollapsed ? "Expand query" : "Collapse query",
 				hasTooltip: false,
-				className: "text-muted-foreground hover:text-foreground",
+				className: "text-muted-foreground hover:text-foreground active:text-foreground",
 				attributes: [h.OnClick(Message.ToggledCollapsed({ queryId: query.id }))],
 			},
 			[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -118,7 +118,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 			className: "w-36 border-none bg-transparent shadow-none px-1",
 			ariaLabel: "Query source",
 			toView: (parts) =>
-				h.div([h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")], [...leading, ...parts, ...trailing]),
+				h.div([h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")], [...leading, ...parts, ...trailing]),
 		},
 	)
 }
@@ -152,12 +152,12 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 					`spans:${query.id}`,
 					query.whereClause.includes("root_only = true") ? "root" : "all",
 					SPAN_OPTIONS,
-					{ size: "sm", className: "w-[120px] shrink-0", toView: whereRow },
+					{ size: "sm", className: "w-32 shrink-0", toView: whereRow },
 				)
 			: whereRow([]),
 		panelSelect(h, model, `aggregation:${query.id}`, query.aggregation, aggregationOptions(query), {
 			size: "sm",
-			className: "w-[160px]",
+			className: "w-40",
 			toView: (parts) =>
 				h.div(
 					[h.Class("flex items-center gap-2 flex-wrap")],

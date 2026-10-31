@@ -845,6 +845,13 @@ const infraFixtures: ReadonlyArray<BuilderFixture> = [
 		sampleValues: { workloadKind: "deployment" },
 	},
 	{
+		// registry `serviceRuntimes`.
+		module: "service-infra",
+		name: "serviceRuntimesSQL",
+		label: "default",
+		compile: () => runCompile(CH.serviceRuntimesSQL({ services: ["api", "checkout"] }, window)),
+	},
+	{
 		// backend ServiceMapRollupService, the hourly resolutions rollup.
 		module: "service-map-rollup",
 		name: "serviceMapResolutionsRollupSQL",
@@ -988,6 +995,13 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
+		// runtime span estimate before a raw traces breakdown.
+		module: "services",
+		name: "traceSpanVolumeByServiceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.traceSpanVolumeByServiceQuery(), window),
+	},
+	{
 		// backend TelemetryReadService, v2 trace search.
 		module: "traces",
 		name: "traceSummariesQuery",
@@ -1000,6 +1014,29 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 					httpMethod: "GET",
 					deploymentEnv: "production",
 					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		// v2 trace search as the iOS Traces tab sends it: root scope, no filters.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope",
+		compile: () => CH.compileUnsafe(CH.traceSummariesQuery({ spanScope: "root", limit: 51 }), window),
+	},
+	{
+		// v2 trace search, root scope with a filter trace_list_mv cannot express.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope-raw",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSummariesQuery({
+					spanScope: "root",
+					httpRoute: "/users/:id",
+					hasError: true,
+					limit: 51,
 				}),
 				window,
 			),
@@ -1546,6 +1583,125 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
+	// Service API tab — routes/internal/query-engine.http.ts. Totals and timeseries
+	// run the operations splice with migration 0048's HTTP measures; the raw tier
+	// is the per-org fallback when the rollups or those columns are absent.
+	{
+		module: "service-api",
+		name: "serviceEndpointsWithHttpQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceEndpointsWithHttpQuery({ serviceName: "api", limit: 50 }), window, {
+				rowSchema: CH.serviceEndpointsWithHttpRowSchema,
+			}),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTotalsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTotalsQuery({ serviceName: "api", environments: ["production"] }),
+				window,
+				{
+					rowSchema: CH.serviceApiTotalsRowSchema,
+				},
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTotalsQuery",
+		label: "rawTier",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceApiTotalsQuery({ serviceName: "api", tiers: "raw" }), window, {
+				rowSchema: CH.serviceApiTotalsRowSchema,
+			}),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "mergedSubHour",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({ serviceName: "api", bucketSeconds: 300 }),
+				{ ...window, bucketSeconds: 300 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "perEndpointHourly",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({
+					serviceName: "api",
+					bucketSeconds: 3600,
+					spanNames: ["GET /v2/services", "POST /v2/alerts"],
+				}),
+				{ ...window, bucketSeconds: 3600 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "rawTier",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({ serviceName: "api", bucketSeconds: 300, tiers: "raw" }),
+				{ ...window, bucketSeconds: 300 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	// Endpoint detail — one hour-grain tier off service_endpoint_details_hourly.
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointStatusBreakdownQuery",
+		label: "allEndpoints",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceEndpointStatusBreakdownQuery({ serviceName: "api" }), window, {
+				rowSchema: CH.serviceEndpointStatusBreakdownRowSchema,
+			}),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointStatusBreakdownQuery",
+		label: "oneEndpoint",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointStatusBreakdownQuery({
+					serviceName: "api",
+					environments: ["production"],
+					spanName: "GET /v2/services",
+				}),
+				window,
+				{ rowSchema: CH.serviceEndpointStatusBreakdownRowSchema },
+			),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointDistributionQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointDistributionQuery({ serviceName: "api", spanName: "GET /v2/services" }),
+				window,
+				{ rowSchema: CH.serviceEndpointDistributionRowSchema },
+			),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointSlowestQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointSlowestQuery({ serviceName: "api", spanName: "GET /v2/services" }),
+				window,
+				{ rowSchema: CH.serviceEndpointSlowestRowSchema },
+			),
+	},
+
 	// Releases page — routes/internal/query-engine.http.ts `releasesList` and
 	// `releaseDetail`. Same splice as the services list, grouped one level
 	// finer (per commit), plus the error-events bridge keyed on the version.
@@ -1793,6 +1949,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(CH.sourceUsageHourlyQuery(), {
 				...window,
 				sourceId: "src_aXunrkWtzvXSkw9Z2smcft",
+			}),
+	},
+
+	// AwsConnectionService.ingest: what one connection's metric stream stored.
+	{
+		module: "aws-ingest",
+		name: "awsIngestQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.awsIngestQuery(), {
+				...window,
+				connectionId: "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
 			}),
 	},
 

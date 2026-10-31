@@ -31,7 +31,7 @@ const emptyAxes = <M>(h: HtmlBuilder<M>): Html =>
 			"aria-hidden": "true",
 			viewBox: "0 0 100 100",
 			preserveAspectRatio: "none",
-			class: "pointer-events-none absolute inset-0 h-full w-full [mask-image:radial-gradient(ellipse_at_center,transparent_25%,black_75%)]",
+			class: "text-current pointer-events-none absolute inset-0 h-full w-full [mask-image:radial-gradient(ellipse_at_center,transparent_25%,black_75%)]",
 		}),
 		[
 			...[20, 44, 68].map((y) =>
@@ -81,10 +81,10 @@ export const chartEmpty = <M>(
 			h.div(
 				[h.Class("relative flex flex-col items-center gap-1")],
 				[
-					h.span([h.Class("text-foreground/70")], children),
+					h.span([h.Class("text-foreground-soft")], children),
 					...(options.hint === undefined
 						? []
-						: [h.span([h.Class("text-3xs text-muted-foreground/80")], [options.hint])]),
+						: [h.span([h.Class("text-3xs text-foreground-subtle")], [options.hint])]),
 				],
 			),
 		],
@@ -102,7 +102,7 @@ export const chartError = <M>(
 			height: options.height,
 			className: cn(
 				MESSAGE_BASE,
-				"border bg-severity-error/5",
+				"border bg-severity-error-a1",
 				TONE_BORDER.crit,
 				TONE_TEXT.crit,
 				options.className,

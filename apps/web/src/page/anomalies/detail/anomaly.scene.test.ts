@@ -87,7 +87,7 @@ describe("anomaly detail", () => {
 			).model
 		const notFound = new AnomalyIncidentNotFoundError({ message: "Anomaly incident not found", incidentId: ID })
 		scene({ update: pageUpdate, view }, given(fail(notFound)), themed(), expectView(text("Anomaly not found")).toExist())
-		scene({ update: pageUpdate, view }, given(fail(new Error("down"))), themed(), expectView(text("Failed to load anomaly")).toExist())
+		scene({ update: pageUpdate, view }, given(fail(new Error("down"))), themed(), expectView(text("Couldn't load anomaly")).toExist())
 	})
 
 	test("resolving sends one request, then toasts and re-reads the incident", () => {

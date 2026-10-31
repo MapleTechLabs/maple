@@ -5,7 +5,6 @@ import SwiftUI
 /// everything below it is the shortest path to "why".
 struct HomeView: View {
 	@Environment(SessionController.self) private var session
-	@Environment(AppNavigation.self) private var navigation
 	@Environment(EnvironmentController.self) private var environments
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var model: HomeModel?
@@ -23,35 +22,18 @@ struct HomeView: View {
 					loader: model?.loader,
 					emptyTitle: "Nothing yet",
 					emptyMessage: "No services have reported telemetry.",
+					header: {
+						TabRootHeader(title: "Overview", status: status)
+							.overlay(alignment: .topTrailing) { notificationsButton }
+					},
 					skeleton: { HomeSkeleton() }
 				) { snapshot in
 					HomeContent(snapshot: snapshot)
 				}
 			}
-			// No title: `StatusHeadline` *is* this screen's headline, and a large
-			// title above it stacked two competing headlines in the same face.
-			// Home is a status board whose content leads — the bar carries only
-			// the organization and the bell. Services and Alerts are lists and do
-			// take large titles.
-			.navigationBarTitleDisplayMode(.inline)
-			.toolbar {
-				ToolbarItem(placement: .topBarLeading) {
-					OrganizationSwitcherButton()
-				}
-				ToolbarItem(placement: .topBarLeading) {
-					EnvironmentPickerView()
-				}
-				ToolbarItem(placement: .topBarTrailing) {
-					Button {
-						showsNotificationSettings = true
-					} label: {
-						Image(systemName: PushRegistrar.shared.authorization == .authorized ? "bell.badge" : "bell")
-							.font(.system(size: 14, weight: .medium))
-							.foregroundStyle(Token.foreground)
-					}
-					.accessibilityLabel("Notification settings")
-				}
-			}
+			// Hidden on the root; it names the back button on pushed screens.
+			.navigationTitle("Overview")
+			.tabRootChrome()
 			.sheet(isPresented: $showsNotificationSettings) {
 				NotificationSettingsView().environment(session)
 			}
@@ -63,13 +45,15 @@ struct HomeView: View {
 			// dropped rather than left on screen until the new one arrives, and
 			// any refresh still running against the old scope has nowhere to
 			// write.
-			let model = model?.scope == scope
-				? model!
-				: HomeModel(
-					api: session.api.scoped(toEnvironment: scope.environment),
-					session: session,
-					scope: scope
-				)
+			let model =
+				if let model, model.scope == scope { model }
+				else {
+					HomeModel(
+						api: session.api.scoped(toEnvironment: scope.environment),
+						session: session,
+						scope: scope
+					)
+				}
 			self.model = model
 			await model.start()
 			// Home is a status board: keep it current while it's on screen.
@@ -92,20 +76,54 @@ struct HomeView: View {
 	}
 }
 
+extension HomeView {
+	/// The header's status line, once there is a board to describe.
+	private var status: TabRootStatus? {
+		guard let snapshot = model?.state.value else { return nil }
+		let line = snapshot.statusLine
+		let dot: Color? =
+			switch snapshot.status {
+			case .noData: nil
+			case .healthy: Token.success
+			case .degraded: Token.severityWarn
+			case .critical: Token.destructive
+			}
+		return TabRootStatus(dot: dot, lead: line.lead, detail: line.detail)
+	}
+
+	/// Trailing on the title row: the header's pill row is 52pt and the title
+	/// sits 8pt under it, so the bell centres on the 34pt title line.
+	private var notificationsButton: some View {
+		Button {
+			showsNotificationSettings = true
+		} label: {
+			PixelIcon.bell.image
+				.resizable()
+				.frame(width: 18, height: 18)
+				.foregroundStyle(Token.foreground)
+				.frame(width: 44, height: 44)
+				.contentShape(.rect)
+		}
+		.accessibilityLabel("Notification settings")
+		.padding(.top, 52 + 8 - 5)
+		.padding(.trailing, 6)
+	}
+}
+
 private struct HomeContent: View {
 	let snapshot: HomeSnapshot
 	@Environment(AppNavigation.self) private var navigation
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 28) {
-			StatusHeadline(snapshot: snapshot)
-				.padding(.horizontal, 16)
-
 			OverviewStats(snapshot: snapshot)
-				.padding(.horizontal, 16)
 
 			if !snapshot.incidents.isEmpty {
-				HomeSection(title: "Open alerts", count: snapshot.incidents.count) {
+				TitledSection(
+					SectionHeader(title: "Open alerts", count: "\(snapshot.incidents.count)", link: "Triage") {
+						navigation.open(.incidents)
+					}
+				) {
 					VStack(spacing: 8) {
 						ForEach(snapshot.incidents) { card in
 							NavigationLink(value: Route.incident(id: card.id)) {
@@ -114,22 +132,29 @@ private struct HomeContent: View {
 							.buttonStyle(.plain)
 						}
 					}
-					.padding(.horizontal, 16)
 				}
 			}
 
-			HomeSection(
-				title: "Needs attention",
-				count: snapshot.attention.isEmpty ? nil : snapshot.attention.count
+			TitledSection(
+				SectionHeader(
+					title: "Needs attention",
+					count: snapshot.attention.isEmpty ? nil : "\(snapshot.attention.count)",
+					link: "All services"
+				) {
+					navigation.servicesPath = []
+					navigation.tab = .services
+				}
 			) {
 				if snapshot.attention.isEmpty {
-					QuietRow(
-						text: snapshot.services.isEmpty
+					Text(
+						snapshot.services.isEmpty
 							? "No services reported in the last hour."
 							: "All \(snapshot.services.count) services within thresholds."
 					)
+					.font(Typo.small)
+					.foregroundStyle(Token.mutedForeground)
 				} else {
-					TableCard(columns: ["Service", "Err", "p95"]) {
+					TableCard(columns: ["Service", "Errors", "P95"]) {
 						ForEach(snapshot.attention.prefix(6), id: \.name) { service in
 							NavigationLink(value: Route.service(name: service.name, window: .lastHour)) {
 								AttentionRow(service: service)
@@ -137,206 +162,102 @@ private struct HomeContent: View {
 							.buttonStyle(RowButtonStyle())
 						}
 					}
-					.padding(.horizontal, 16)
 				}
 			}
-
-			HomeSection(title: "Last 24 hours", count: nil) {
-				VStack(spacing: 0) {
-					CountRow(
-						count: snapshot.newIssues,
-						singular: "new error issue",
-						plural: "new error issues",
-						detail: (snapshot.activeIssues ?? 0) > 0 ? "\(snapshot.activeIssues ?? 0) still active" : nil,
-						tint: (snapshot.newIssues ?? 0) > 0 ? Token.foreground : Token.mutedForeground
-					) { navigation.open(.errors) }
-					Hairline()
-					CountRow(
-						count: snapshot.openAnomalies,
-						singular: "anomaly open",
-						plural: "anomalies open",
-						detail: nil,
-						tint: (snapshot.openAnomalies ?? 0) > 0 ? Token.foreground : Token.mutedForeground
-					) { navigation.open(.anomalies) }
-					Hairline()
-				}
-			}
-
-			Text("Updated \(snapshot.loadedAt.formatted(date: .omitted, time: .shortened))")
-				.font(Typo.tiny)
-				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground.opacity(0.6))
-				.padding(.horizontal, 16)
 		}
-		.padding(.top, 8)
+		.padding(.horizontal, 16)
+		.padding(.top, 20)
 		.padding(.bottom, 24)
 	}
 }
 
-/// The one place the display face carries a sentence, and the one place the
-/// screen's colour is allowed to be loud.
-private struct StatusHeadline: View {
-	let snapshot: HomeSnapshot
-
-	private var tint: Color {
-		switch snapshot.status {
-		case .noData: Token.mutedForeground
-		case .healthy: Token.success
-		case .degraded: Token.severityWarn
-		case .critical: Token.destructive
-		}
-	}
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			HStack(alignment: .firstTextBaseline, spacing: 10) {
-				Circle()
-					.fill(tint)
-					.frame(width: 8, height: 8)
-					.offset(y: -2)
-				Text(snapshot.headline)
-					.font(Typo.pageTitle)
-					.foregroundStyle(Token.foreground)
-					.fixedSize(horizontal: false, vertical: true)
-			}
-			Text(snapshot.subheadline)
-				.font(Typo.small)
-				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground)
-				.padding(.leading, 18)
-		}
-		.padding(.top, 12)
-		.accessibilityElement(children: .combine)
-	}
-}
-
-private struct HomeSection<Content: View>: View {
-	let title: String
-	let count: Int?
-	@ViewBuilder let content: Content
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			HStack(spacing: 6) {
-				SectionLabel(title)
-				if let count {
-					Text("\(count)")
-						.font(Typo.microMedium)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground.opacity(0.7))
-				}
-			}
-			.padding(.horizontal, 16)
-			content
-		}
-	}
-}
-
-/// An open incident: severity lane, rule name and age, the services it covers,
-/// then the breach in the signal's own unit beside the last hour of what the
-/// rule saw.
+/// An open incident: severity rail, rule name and age, the services it covers
+/// with a severity badge, then the breach beside what the rule saw against its
+/// threshold.
 struct IncidentCardView: View {
 	let card: IncidentCard
 
 	private var incident: AlertIncident { card.incident }
 
 	var body: some View {
-		HStack(alignment: .top, spacing: 0) {
-			Rectangle()
-				.fill(incident.severity.tint)
-				.frame(width: 2)
+		VStack(alignment: .leading, spacing: 10) {
+			HStack(alignment: .firstTextBaseline, spacing: 8) {
+				Text(incident.ruleName)
+					.font(Typo.bodyMedium)
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+				Spacer(minLength: 4)
+				Text(Format.duration(from: incident.firstTriggeredAt))
+					.font(Typo.tiny)
+					.tabularNumbers()
+					.foregroundStyle(Token.mutedForeground)
+			}
 
-			VStack(alignment: .leading, spacing: 8) {
-				HStack(alignment: .firstTextBaseline, spacing: 8) {
-					Text(incident.ruleName)
-						.font(Typo.bodyMedium)
-						.foregroundStyle(Token.foreground)
-						.lineLimit(1)
-					Spacer(minLength: 4)
-					Text(Format.duration(from: incident.firstTriggeredAt))
-						.font(Typo.tiny)
-						.tabularNumbers()
+			HStack(spacing: 6) {
+				if let first = card.serviceNames.first {
+					ServiceDot(serviceName: first)
+				}
+				Text(serviceLabel)
+					.font(Typo.tiny)
+					.foregroundStyle(Token.mutedForeground)
+					.lineLimit(1)
+				MapleBadge(text: incident.severity.label, tint: incident.severity.tint, outlined: true)
+					.padding(.leading, 2)
+			}
+
+			HStack(alignment: .bottom, spacing: 12) {
+				VStack(alignment: .leading, spacing: 4) {
+					Text(card.display.label)
+						.font(Typo.micro)
 						.foregroundStyle(Token.mutedForeground)
-				}
-
-				HStack(spacing: 6) {
-					if let first = card.serviceNames.first {
-						ServiceDot(serviceName: first, size: 6)
-						Text(serviceLabel)
-							.font(Typo.tiny)
-							.foregroundStyle(Token.mutedForeground)
-							.lineLimit(1)
-					} else {
-						Text("All services")
-							.font(Typo.tiny)
-							.foregroundStyle(Token.mutedForeground)
-					}
-					if let group = incident.groupKey, group != "__total__" {
-						Text("· \(group)")
-							.font(Typo.tiny)
-							.foregroundStyle(Token.mutedForeground)
-							.lineLimit(1)
-					}
-				}
-
-				HStack(alignment: .bottom, spacing: 12) {
-					VStack(alignment: .leading, spacing: 2) {
-						Text(card.display.label)
-							.font(Typo.micro)
-							.foregroundStyle(Token.mutedForeground.opacity(0.7))
-						Text(
-							Format.breach(
-								observed: incident.lastObservedValue,
-								comparator: incident.comparator,
-								threshold: incident.threshold,
-								upper: incident.thresholdUpper,
-								unit: card.display.unit
-							)
-						)
+					Text(incident.breach(unit: card.display.unit))
 						.font(Typo.smallSemibold)
 						.tabularNumbers()
 						.foregroundStyle(incident.severity.tint)
-					}
-					Spacer(minLength: 0)
-					Sparkline(values: card.observations, tint: incident.severity.tint, reference: incident.threshold)
-						.frame(width: 96, height: 28)
 				}
+				Spacer(minLength: 0)
+				Sparkline(
+					values: card.observations,
+					tint: incident.severity.tint,
+					reference: incident.threshold,
+					fills: false,
+					anchorsToZero: false
+				)
+				.frame(width: 96, height: 28)
 			}
-			.padding(.leading, 12)
-			.padding(.trailing, 12)
-			.padding(.vertical, 12)
 		}
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.padding(.leading, 16)
+		.padding(.trailing, 14)
+		.padding(.vertical, 14)
+		.severityRail(incident.severity.tint)
+		.hairlineCard()
 		.contentShape(.rect)
 	}
 
+	/// The covered services, then the group the incident fired for.
 	private var serviceLabel: String {
 		let names = card.serviceNames
-		if names.count <= 2 { return names.joined(separator: ", ") }
-		return "\(names[0]), \(names[1]) +\(names.count - 2)"
+		var label =
+			if names.isEmpty { "All services" }
+			else if names.count <= 2 { names.joined(separator: ", ") }
+			else { "\(names[0]), \(names[1]) +\(names.count - 2)" }
+		if let group = incident.groupKey, group != "__total__" { label += " · \(group)" }
+		return label
 	}
 }
 
 private struct AttentionRow: View {
-	let service: Service
-
-	private var health: ServiceHealth {
-		ServiceHealth(service: service)
-	}
+	let service: ServiceSummary
 
 	var body: some View {
 		TableRow {
 			HStack(spacing: 8) {
 				ServiceDot(serviceName: service.name)
 				Text(service.name)
-					.font(Typo.bodyMedium)
+					.font(Typo.body)
 					.foregroundStyle(Token.foreground)
 					.lineLimit(1)
-				HealthDot(health: health)
+				HealthDot(health: service.health)
 			}
 		} trailing: {
 			TableCell(text: Format.errorRate(service.errorRate), tint: Tone.errorRate(service.errorRate))
@@ -349,91 +270,61 @@ private struct AttentionRow: View {
 }
 
 /// The web overview's lead row: four tiles, each with its change against the
-/// hour before, so "is it getting worse" reads before any list.
+/// previous equally long window, so "is it getting worse" reads before any list.
 private struct OverviewStats: View {
 	let snapshot: HomeSnapshot
+	@Environment(AppNavigation.self) private var navigation
 
 	var body: some View {
 		StatGrid(columns: 2) {
 			StatTile(
-				label: "Throughput",
-				value: Format.throughput(snapshot.totalThroughput),
+				label: "Requests",
+				value: Format.count(snapshot.totalRequests),
 				delta: StatDelta(
-					current: snapshot.totalThroughput,
-					previous: snapshot.previousThroughput,
+					current: snapshot.totalRequests,
+					previous: snapshot.previousRequests,
 					higherIsBetter: true
 				)
 			)
 			StatTile(
 				label: "Error rate",
-				value: Format.errorRate(snapshot.errorRate),
-				tint: Tone.errorRate(snapshot.errorRate),
-				delta: StatDelta(
-					current: snapshot.errorRate,
-					previous: snapshot.previousErrorRate,
-					higherIsBetter: false
-				)
+				value: snapshot.services.isEmpty ? "–" : Format.errorRate(snapshot.errorRate),
+				delta: snapshot.services.isEmpty
+					? nil
+					: StatDelta(
+						current: snapshot.errorRate,
+						previous: snapshot.previousErrorRate,
+						higherIsBetter: false,
+						style: .points
+					)
 			)
 			StatTile(
 				label: "Slowest p95",
-				value: Format.latency(snapshot.worstP95),
-				delta: StatDelta(current: snapshot.worstP95, previous: snapshot.previousWorstP95, higherIsBetter: false)
-			)
-			StatTile(
-				label: "Open alerts",
-				value: "\(snapshot.incidents.count)",
-				tint: snapshot.criticalIncidents.isEmpty ? Token.foreground : Token.destructive
-			)
-		}
-	}
-}
-
-private struct CountRow: View {
-	/// `nil` while the second pass is still loading — drawn as an em dash,
-	/// because "0" would be a claim the data hasn't made yet.
-	let count: Int?
-	let singular: String
-	let plural: String
-	let detail: String?
-	let tint: Color
-	let action: () -> Void
-
-	var body: some View {
-		Button(action: action) {
-			HStack(alignment: .firstTextBaseline, spacing: 8) {
-				Text(count.map(String.init) ?? "—")
-					.font(Typo.statValue)
-					.tabularNumbers()
-					.foregroundStyle(count == nil ? Token.mutedForeground.opacity(0.5) : tint)
-					.frame(minWidth: 36, alignment: .leading)
-				Text(count == 1 ? singular : plural)
-					.font(Typo.body)
-					.foregroundStyle(Token.foreground)
-				if let detail {
-					Text("· \(detail)")
-						.font(Typo.small)
-						.foregroundStyle(Token.mutedForeground)
+				value: snapshot.slowestP95.map(Format.latency) ?? "–",
+				delta: snapshot.slowestP95.flatMap { current in
+					StatDelta(
+						current: current,
+						previous: snapshot.previousSlowestP95,
+						higherIsBetter: false,
+						style: .milliseconds
+					)
 				}
-				Spacer(minLength: 0)
-				Image(systemName: "chevron.right")
-					.font(.system(size: 11, weight: .semibold))
-					.foregroundStyle(Token.mutedForeground.opacity(0.5))
+			)
+			Button {
+				navigation.open(.errors)
+			} label: {
+				StatTile(label: "Open issues", value: snapshot.openIssues.map(String.init) ?? "–", note: newIssuesNote)
 			}
-			.padding(.horizontal, 16)
-			.frame(minHeight: 52)
-			.contentShape(.rect)
+			.buttonStyle(.plain)
+			.accessibilityHint("Opens error issues")
 		}
-		.buttonStyle(RowButtonStyle())
 	}
-}
 
-private struct QuietRow: View {
-	let text: String
-
-	var body: some View {
-		Text(text)
-			.font(Typo.small)
-			.foregroundStyle(Token.mutedForeground)
-			.padding(.horizontal, 16)
+	/// `2 new today` in the warn tint; nothing while the count is loading.
+	private var newIssuesNote: (text: String, tint: Color)? {
+		guard let newIssues = snapshot.newIssues else { return nil }
+		return newIssues > 0
+			? ("\(newIssues) new today", Token.severityWarn)
+			: ("None new today", Token.mutedForeground)
 	}
 }

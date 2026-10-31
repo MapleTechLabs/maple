@@ -10,7 +10,7 @@ import Observation
 /// The organization matters more here than in a typical Clerk app: the Maple v2
 /// API has **no org header**. It reads the organization from the session
 /// token's active-organization claim and rejects a token without one
-/// (`"Active organization is required"`, `packages/auth/src/index.ts`). So the
+/// (`@maple/http/v2/NoActiveOrganizationError`, see `requiresOrganization`). So the
 /// app cannot make a single useful request until an organization is active.
 @MainActor
 @Observable
@@ -77,6 +77,17 @@ final class SessionController {
 		SessionController(fixtureAPI: api, tokens: tokens)
 	}
 
+	/// Keep the session token minted while the app is in front, the way Clerk's
+	/// web SDK polls, so a screen load does not wait on a Clerk round-trip
+	/// (about 0.9 s on a phone) before its first request.
+	func keepTokenWarm() async {
+		guard case .ready = phase, !isFixture else { return }
+		while !Task.isCancelled {
+			await tokens.warm()
+			try? await Task.sleep(for: .seconds(20))
+		}
+	}
+
 	var activeOrganizationId: String? {
 		Clerk.shared.session?.lastActiveOrganizationId
 	}
@@ -126,7 +137,8 @@ final class SessionController {
 	/// `setActive` settles. Reading the two together is what let the widgets
 	/// record one organization's id under another's name.
 	var activeOrganizationName: String? {
-		currentOrganizationId.flatMap(name(of:))
+		if isFixture { return FixtureSession.organizationName }
+		return currentOrganizationId.flatMap(name(of:))
 	}
 
 	/// The display name for an organization the user belongs to, for the line

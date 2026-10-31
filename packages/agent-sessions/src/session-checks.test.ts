@@ -69,7 +69,7 @@ describe("buildSessionChecks", () => {
 		expect(report.counts.warning).toBe(0)
 		expect(report.headline).toBe(`cleanly — ${report.counts.passed} checks passed across 2 turns`)
 		expect(report.checks.find((check) => check.id === "completion")).toBeUndefined()
-		expect(byId(report, "context-window").headline).toBe("The prompt peaked at 1.0K tokens")
+		expect(byId(report, "context-window").headline).toBe("The prompt peaked at 1K tokens")
 		expect(byId(report, "tool-timeouts").headline).toBe(
 			"No tool call timed out; the slowest was `read_file` at 2s",
 		)
@@ -118,7 +118,7 @@ describe("buildSessionChecks", () => {
 		const context = byId(report, "context-window")
 		expect(context.status).toBe("failed")
 		expect(context.headline).toBe(
-			"The prompt outgrew the model's context window on turn 2 (final); the prompt grew 1.0K → 214.8K tokens over the session",
+			"The prompt outgrew the model's context window on turn 2 (final); the prompt grew 1K → 214.8K tokens over the session",
 		)
 		expect(context.action).toMatch(/^Compact or summarise/)
 		expect(context.fixArea).toBe("prompt")

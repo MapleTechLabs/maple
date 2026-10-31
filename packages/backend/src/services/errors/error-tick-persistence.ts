@@ -98,7 +98,7 @@ export interface PersistErrorTickWindowResult {
  * the threshold is that a genuinely rare error is delayed until it recurs, and
  * anything that only ever happens once is not worth a triage row.
  */
-const PROMOTION_MIN_OCCURRENCES = 3
+export const PROMOTION_MIN_OCCURRENCES = 3
 
 /**
  * How long after an issue is resolved before an occurrence counts as a

@@ -1,14 +1,12 @@
 import { AttributeMappingPublicId, RecommendationPublicId } from "@maple/domain/http/v2"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
-import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Clock, Effect, Option, Random, type Result, Schema } from "effect"
-import { HttpClientRequest } from "effect/http"
+import { Clock, Effect, Option, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
-import { MapleApiV2Client, MapleSyncHttpClient } from "../../../platform/api-clients"
+import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 import { IngestKeyKind } from "./model"
 
@@ -122,69 +120,6 @@ export const SaveFramework = Command.define("SaveQuickStartFramework", {
 })
 
 // WRITES
-
-/** `sendTestEventEffect`: one synthetic span with the public key; `true` when ingest accepted it. */
-export const sendIngestTestEvent = (publicKey: string) =>
-	Effect.gen(function* () {
-		const now = yield* Clock.currentTimeMillis
-		const hex = (bytes: number) =>
-			Effect.map(
-				Effect.forEach(Array.from({ length: bytes }), () => Random.nextIntBetween(0, 256)),
-				(values) => values.map((value) => value.toString(16).padStart(2, "0")).join(""),
-			)
-		const traceId = yield* hex(16)
-		const spanId = yield* hex(8)
-		const payload = testEventPayload(now, traceId, spanId)
-		const client = yield* MapleSyncHttpClient
-		const request = yield* HttpClientRequest.bodyJson(
-			HttpClientRequest.post(`${ingestUrl}/v1/traces`, { headers: { Authorization: `Bearer ${publicKey}` } }),
-			payload,
-		)
-		const response = yield* client.execute(request)
-		return response.status >= 200 && response.status < 300
-	}).pipe(Effect.orElseSucceed(() => false))
-
-export const SendTestEvent = Command.define("SendIngestTestEvent", {
-	args: { publicKey: Schema.String },
-	messages: [Message.CompletedSendTestEvent],
-	execute: ({ publicKey }) =>
-		Effect.map(sendIngestTestEvent(publicKey), (isSent) => Message.CompletedSendTestEvent({ isSent })),
-})
-
-/** `sendTestEventEffect`'s single synthetic span. */
-const testEventPayload = (now: number, traceId: string, spanId: string) => ({
-	resourceSpans: [
-		{
-			resource: {
-				attributes: [
-					{ key: "service.name", value: { stringValue: "maple-onboarding-test" } },
-					{ key: "deployment.environment", value: { stringValue: "development" } },
-				],
-			},
-			scopeSpans: [
-				{
-					scope: { name: "maple-onboarding" },
-					spans: [
-						{
-							traceId,
-							spanId,
-							name: "GET /maple/test-event",
-							kind: 2,
-							startTimeUnixNano: `${now - 87}000000`,
-							endTimeUnixNano: `${now}000000`,
-							attributes: [
-								{ key: "http.request.method", value: { stringValue: "GET" } },
-								{ key: "http.route", value: { stringValue: "/maple/test-event" } },
-								{ key: "http.response.status_code", value: { intValue: 200 } },
-							],
-							status: { code: 1 },
-						},
-					],
-				},
-			],
-		},
-	],
-})
 
 export const ApplyRecommendation = Command.define("ApplyRecommendation", {
 	args: { id: RecommendationPublicId, sourceKey: Schema.String, canonicalKey: Schema.String },

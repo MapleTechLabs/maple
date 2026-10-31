@@ -1,8 +1,8 @@
 import { Effect } from "effect"
 import { apiProxyPath } from "./api-proxy"
 import { forwardToApi } from "./api-proxy-forward"
-import { ogIdFromPath, shareTokenFromPath } from "./og/share-links"
-import { chartRequestFromPath, renderChartImage } from "./og/chart-image"
+import { OG_IMAGE_PREFIX, ogIdFromPath, shareTokenFromPath } from "./og/share-links"
+import { CHART_KINDS, chartRequestFromPath, renderChartImage } from "./og/chart-image"
 import { fetchShareOgMeta, renderShareOgImage, shareOgMetaRewriter } from "./og/share-preview"
 import { apiTarget, type ApiTarget, type WebWorkerEnv } from "./worker-env"
 
@@ -84,6 +84,11 @@ const applyShareOgMeta = async (
 	return meta === undefined ? response : shareOgMetaRewriter(meta, url.origin).transform(response)
 }
 
+const IMAGE_PREFIXES = [OG_IMAGE_PREFIX, ...CHART_KINDS.map((kind) => kind.pathPrefix)]
+
+const isImagePath = (pathname: string): boolean =>
+	pathname.endsWith(".png") && IMAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+
 /** One request against the built SPA: OG images, the share preview, security headers, the shell fallback. */
 export const handleRequest = async (
 	request: Request,
@@ -109,15 +114,18 @@ export const handleRequest = async (
 			: renderShareOgImage(api, ogId, env.ASSETS)
 	}
 
-	// Also ahead of the assets lookup, and for the same reason: `/alerts/…` and
-	// `/chat/…` are real SPA routes, so the shell would answer these paths with
-	// HTML in an `<img>` slot rather than a 404 anyone could diagnose.
+	// Also ahead of the assets lookup, and for the same reason: the SPA shell
+	// answers `/alerts/…` and `/chat/chart/…` with HTML, which in an `<img>` slot is no
+	// 404 anyone could diagnose.
 	const chart = chartRequestFromPath(url.pathname)
 	if (chart !== undefined) {
 		return api === undefined
 			? new Response(null, { status: 404 })
 			: renderChartImage(api, chart, env.ASSETS)
 	}
+
+	// An image path whose id did not parse (a lone `%`, a nested segment) is still an image path.
+	if (isImagePath(url.pathname)) return new Response(null, { status: 404 })
 
 	const assetResponse = await env.ASSETS.fetch(request)
 	if (assetResponse.status !== 404) {

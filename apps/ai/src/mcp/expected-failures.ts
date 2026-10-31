@@ -37,6 +37,8 @@ const expectedStatusByTag = new Map<string, number>(Object.entries(MCP_EXPECTED_
 /** Spread into `anticipatedErrorIdentifiers` next to `ANTICIPATED_ERROR_IDENTIFIERS`. */
 export const MCP_ANTICIPATED_ERROR_IDENTIFIERS: ReadonlyArray<string> = [...expectedStatusByTag.keys()]
 
+const MAX_SPAN_MESSAGE_CHARS = 500
+
 /**
  * Record an expected MCP 4xx on the current span and log it at Warn.
  *
@@ -54,6 +56,8 @@ export const recordExpectedMcpFailure = (
 	return Effect.annotateCurrentSpan({
 		"error.type": error._tag,
 		"http.response.status_code": status,
+		// On the span too, so a tool's failure reasons are one query rather than a join to logs.
+		"maple.mcp.error.message": error.message.slice(0, MAX_SPAN_MESSAGE_CHARS),
 	}).pipe(
 		Effect.andThen(
 			Effect.logWarning(logMessage).pipe(

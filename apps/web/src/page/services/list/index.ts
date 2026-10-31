@@ -19,6 +19,6 @@ export const page = definePage(
 		contextChanged,
 		view,
 		subscriptions,
-		breadcrumbs: () => [{ label: "Services" }],
+		breadcrumbs: () => [{ label: "Services", isPageHeading: true }],
 	},
 )

@@ -41,7 +41,7 @@ export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: Time
 				eyebrow(h, {}, ["Live now"]),
 				behind > 0
 					? h.span([h.Class("text-2xs text-severity-warn")], [`${countLabel(behind, "service")} not on the latest release`])
-					: h.span([h.Class("text-2xs text-muted-foreground/70")], ["Every service is on its latest release"]),
+					: h.span([h.Class("text-2xs text-foreground-subtle")], ["Every service is on its latest release"]),
 			],
 		),
 		h.div(
@@ -53,7 +53,7 @@ export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: Time
 						{
 							variant: "outline",
 							size: "xs",
-							className: cn("font-normal", version.behind > 0 && "border-severity-warn/40 bg-severity-warn/5"),
+							className: cn("font-normal", version.behind > 0 && "border-severity-warn-a4 bg-severity-warn-a1"),
 							href: releaseHref(version.commitSha, { ...timeSearch, environments, service: version.serviceName }),
 							attributes: [
 								h.Key(version.serviceName),
@@ -79,7 +79,7 @@ export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: Time
 						],
 					),
 				),
-				...(hidden > 0 ? [h.span([h.Class("self-center px-1 text-2xs text-muted-foreground/70")], [`+${hidden}`])] : []),
+				...(hidden > 0 ? [h.span([h.Class("self-center px-1 text-2xs text-foreground-subtle")], [`+${hidden}`])] : []),
 			],
 		),
 	])
@@ -207,7 +207,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 							),
 							h.div(
 								[
-									h.Class("relative h-full border-b border-dashed border-border/60"),
+									h.Class("relative h-full border-b border-dashed border-border-subtle"),
 									...(laneIndex === 0 ? [h.OnMount(MeasureReleasesTrack())] : []),
 								],
 								lane.markers.flatMap((marker) => {
@@ -264,7 +264,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 				...(hidden > 0
 					? [
 							h.div(
-								[h.Class(`grid ${twoColumns} gap-3 py-1 text-3xs text-muted-foreground/70`)],
+								[h.Class(`grid ${twoColumns} gap-3 py-1 text-3xs text-foreground-subtle`)],
 								[h.span([], [`+${hidden} more ${pluralize(hidden, "service")}`])],
 							),
 						]
@@ -275,7 +275,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 						h.span([]),
 						h.div(
 							[
-								h.Class("flex justify-between font-mono text-3xs tabular-nums text-muted-foreground/70"),
+								h.Class("flex justify-between font-mono text-3xs tabular-nums text-foreground-subtle"),
 								h.Style({ "padding-left": `${TRACK_INSET_PX}px`, "padding-right": `${TRACK_INSET_PX}px` }),
 							],
 							axisLabels(startMs, endMs, input.timeZone).map((label) => h.span([], [label])),

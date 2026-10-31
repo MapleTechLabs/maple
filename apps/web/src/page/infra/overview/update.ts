@@ -27,21 +27,31 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 	timeZone: context.timeZone,
 })
 
-/** The sources presence shows (every one until it is known, `presentSources(null)`); each mounts its read. */
-const requestSources = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+/** The sources the org has, once that is known; each mounts its read. `onlyNew` skips any already asked for. */
+const requestSources = (
+	model: Model,
+	context: PageContext,
+	mode: Frame.RequestMode,
+	onlyNew = false,
+): Return => {
 	const window = model.frame.window
-	if (window === null) return { model }
+	const known = presentSources(surfacesOf(model, context))
+	if (window === null || known === null) return { model }
+	const sources = onlyNew ? known.filter((source) => model.sources[source].key === null) : known
 	const input = { startTime: window.startTime, endTime: window.endTime }
 	const requested = seriesSteps<SourceReading, LoadFailure, Message>(
 		model.sources,
-		presentSources(surfacesOf(model, context)).map((source) => ({
+		sources.map((source) => ({
 			id: source,
 			key: requestKey(context.orgId, `infraOverview.${source}`, { data: input }),
 			fetch: (key: string) => FetchSource({ source, key, window }),
 		})),
 		mode,
 	)
-	return { model: { ...model, sources: { ...model.sources, ...requested.slots } }, commands: requested.commands }
+	return {
+		model: { ...model, sources: { ...model.sources, ...requested.slots } },
+		commands: requested.commands,
+	}
 }
 
 /** The window's presence probe (a new window keeps the last answer meanwhile), then its sources. */
@@ -80,6 +90,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			supabase: Keyed.idle(),
 			planetscale: Keyed.idle(),
 			gcp: Keyed.idle(),
+			aws: Keyed.idle(),
 		},
 		install,
 	}
@@ -87,7 +98,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const loaded = liftInstall(model, InstallModal.load(install))
 	return {
 		model: loaded.model,
-		commands: [resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"), ...(loaded.commands ?? [])],
+		commands: [
+			resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"),
+			...(loaded.commands ?? []),
+		],
 		// The sidebar's statuses (and its last-hour probe, below `md` too); the page probes its own window.
 		outMessage: PageOutMessage.RequestedInfraSurfaces(),
 	}
@@ -95,13 +109,24 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Infra({ search }))
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	requestAll(model, context, "Load")
+
+/** The statuses landed after the probe: read the sources that just became known, nothing else. */
+export const infraSurfacesSettled = (model: Model, context: PageContext): Return =>
+	requestSources(model, context, "Load", true)
 
 const navigate = (model: Model, search: Search): Return => ({
 	model,
@@ -111,14 +136,24 @@ const navigate = (model: Model, search: Search): Return => ({
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchPresence: ({ key, result }) =>
-			requestSources({ ...model, presence: Keyed.accept(model.presence, key, result) }, context, "Load"),
+			requestSources(
+				{ ...model, presence: Keyed.accept(model.presence, key, result) },
+				context,
+				"Load",
+			),
 		CompletedFetchSource: ({ source, key, result }) => ({
-			model: { ...model, sources: { ...model.sources, [source]: Keyed.accept(model.sources[source], key, result) } },
+			model: {
+				...model,
+				sources: { ...model.sources, [source]: Keyed.accept(model.sources[source], key, result) },
+			},
 		}),
+		// The same window again: a failed read keeps its error on screen until the retry answers.
+		ClickedRetry: () => requestAll(model, context, "Refresh"),
 		GotFrameMessage: ({ message: inner }) =>
 			liftFrame(model, inner, scopeOf(model, context), toFrame, {
 				onResolved: (next, mode) => requestAll(next, context, mode),
 				onTimeSearch: (next, search) => navigate(next, { ...next.search, ...search }),
 			}),
-		GotInstallMessage: ({ message: inner }) => liftInstall(model, InstallModal.update(model.install, inner)),
+		GotInstallMessage: ({ message: inner }) =>
+			liftInstall(model, InstallModal.update(model.install, inner)),
 	})

@@ -1,5 +1,6 @@
 import { HttpServerRequest } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import {
 	CloudflareDisconnectResponse,
 	CloudflareHyperdrivesResponse,
@@ -27,6 +28,10 @@ import {
 	HazelStartConnectResponse,
 	IntegrationsForbiddenError,
 	IntegrationsUpstreamError,
+	LinearDisconnectResponse,
+	LinearIntegrationStatus,
+	LinearStartConnectResponse,
+	LinearTeamsListResponse,
 	IntegrationsValidationError,
 	MapleInternalApi,
 	RailwayDisconnectResponse,
@@ -70,11 +75,13 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { requireAdmin as requireAdminRole } from "@maple/backend/services/auth/auth"
 import {
 	CLOUDFLARE_CALLBACK_PATH,
 	GITHUB_CALLBACK_PATH,
 	HAZEL_CALLBACK_PATH,
+	LINEAR_CALLBACK_PATH,
 } from "@/routes/integrations-callback.http"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
 import { makeOAuthCompleter } from "@/routes/oauth-complete"
@@ -99,6 +106,7 @@ const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
 		const hazel = yield* HazelOAuthService
+		const linear = yield* LinearOAuthService
 		const github = yield* GithubConnectService
 		const vcsCommits = yield* VcsCommitService
 		const vcsSource = yield* VcsSourceService
@@ -204,6 +212,51 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requireAdmin(tenant.roles)
 						const result = yield* hazel.disconnect(tenant.orgId)
 						return new HazelDisconnectResponse(result)
+					}),
+				)
+				.handle("linearStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* linear.getStatus(tenant.orgId)
+						return status.connected
+							? new LinearIntegrationStatus({
+									connected: true,
+									workspaceName: status.workspaceName,
+									connectedByUserId: status.connectedByUserId,
+									revoked: status.revoked,
+								})
+							: new LinearIntegrationStatus({
+									connected: false,
+									workspaceName: null,
+									connectedByUserId: null,
+									revoked: false,
+								})
+					}),
+				)
+				.handle("linearStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const callbackUrl = yield* trustedCallbackUrl(LINEAR_CALLBACK_PATH)
+						const result = yield* linear.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl,
+							returnTo: payload.returnTo,
+						})
+						return new LinearStartConnectResponse(result)
+					}),
+				)
+				.handle("linearTeams", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const teams = yield* linear.listTeams(tenant.orgId)
+						return new LinearTeamsListResponse({ teams })
+					}),
+				)
+				.handle("linearDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return new LinearDisconnectResponse(yield* linear.disconnect(tenant.orgId))
 					}),
 				)
 				.handle("cloudflareStatus", () =>
@@ -416,6 +469,23 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							returnTo: payload.returnTo,
 						})
 						return new CloudflareStartConnectResponse(result)
+					}),
+				)
+				.handle("cloudflareZoneSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						yield* cloudflareAnalytics.setZoneSettings(tenant.orgId, tenant.userId, payload)
+						yield* recordHttpAudit("cloudflare_integration.zones_updated", {
+							metadata: {
+								accountId: payload.accountId,
+								watchNewZones: payload.watchNewZones,
+								pausedZoneIds: payload.zones
+									.filter((zone) => !zone.watched)
+									.map((zone) => zone.zoneId),
+							},
+						})
+						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
 					}),
 				)
 				.handle("cloudflareDisconnect", () =>

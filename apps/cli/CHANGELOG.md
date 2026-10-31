@@ -1,5 +1,42 @@
 # @maple/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- 1da4ff9: Load explicitly configured external projector modules in Maple Local with a versioned registration contract and repeatable `--projector-module` paths, including background starts.
+
+### Patch Changes
+
+- Updated dependencies [bf01691]
+- Updated dependencies [1da4ff9]
+    - @maple-dev/effect-sdk@0.12.1
+    - @maple/eventing-core@0.1.0
+
+## 0.2.0
+
+### Minor Changes
+
+- 830b398: `maple start --in-memory` runs Maple Local with a throwaway store that lasts one run, for CI jobs, tests and quick sessions. It never touches `~/.maple/data`. On Linux the store lives on `/dev/shm` when at least 1 GiB is free there, otherwise in the OS temp dir, and it is deleted when the server stops. The flag can't be combined with `--background`, `--data-dir`, `--reset`, `--checkpoint-interval`, `--on-dirty-store` or `--minimum-raw-telemetry-retention-days`. Stop it with Ctrl-C. The container image accepts `start --in-memory` too; run it with `--shm-size=1g` or more to keep the store in RAM.
+
+## 0.1.0
+
+### Minor Changes
+
+- b17c821: `maple start` can require credentials when it is reachable beyond loopback. Set `MAPLE_LOCAL_INGEST_KEY` to require a key on OTLP ingest (`Authorization: Bearer` or `x-maple-ingest-key`), and `MAPLE_LOCAL_ACCESS_TOKEN` to require sign-in for the dashboard and query API. The bundled dashboard shows a sign-in page, scripts send the token as a Bearer token, and CLI commands send it when the variable is set. Without them, a non-loopback start still runs and the banner warns that it is open.
+- 807c8c1: Maple Local ships as a container image, `ghcr.io/mapletechlabs/maple`, for running it on a server or a container platform. It requires `MAPLE_LOCAL_INGEST_KEY` and `MAPLE_LOCAL_ACCESS_TOKEN`, keeps everything on a `/data` volume, runs unprivileged, listens on `$PORT` when the platform sets one, and recovers from an unclean stop on its own. See the Self-hosting docs.
+
+## 0.0.30
+
+### Patch Changes
+
+- Updated dependencies [af2b366]
+- Updated dependencies [75a59ca]
+- Updated dependencies [f34141f]
+- Updated dependencies [c463f5c]
+- Updated dependencies [7216bb9]
+    - @maple-dev/effect-sdk@0.12.0
+
 ## 0.0.29
 
 ### Patch Changes

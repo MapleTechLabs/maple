@@ -8,7 +8,7 @@ import {
 } from "@maple/ui/styles/ui/toggle-group"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
-import { togglePrimitive } from "./toggle"
+import { segmentItemHeight, togglePrimitive } from "./toggle"
 
 export type MultiSegmentedOption<T extends string> = Readonly<{
 	value: T
@@ -37,7 +37,14 @@ export const multiSegmentedSelect = <T extends string, M>(
 	return h.div(
 		[
 			...(config.ariaLabel === undefined ? [] : [h.AriaLabel(config.ariaLabel)]),
-			h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupStandaloneStyles, config.className)),
+			h.Class(
+				cn(
+					toggleGroupStyles,
+					toggleGroupHorizontalStyles,
+					toggleGroupStandaloneStyles,
+					config.className,
+				),
+			),
 			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
 			h.DataAttribute("multiple", ""),
 			h.DataAttribute("orientation", "horizontal"),
@@ -62,7 +69,7 @@ export const multiSegmentedSelect = <T extends string, M>(
 							className: cn(
 								"transition-colors",
 								isSelected &&
-									"border-primary/70 data-pressed:border-primary/70 data-pressed:bg-primary/10 data-pressed:text-foreground hover:bg-primary/15 dark:hover:bg-primary/15",
+									"border-primary/70 data-pressed:border-primary/70 data-pressed:bg-primary-a2 data-pressed:text-foreground hover:bg-primary-a2 active:bg-primary-a2 dark:hover:bg-primary-a2 dark:active:bg-primary-a2",
 							),
 						}),
 					),
@@ -82,7 +89,9 @@ export const multiSegmentedSelect = <T extends string, M>(
 									[h.Class("flex size-3.5 shrink-0 items-center justify-center")],
 									[
 										isSelected
-											? icon(h, "CheckIcon", { className: "size-3.5 text-primary opacity-100" })
+											? icon(h, "CheckIcon", {
+													className: "size-3.5 text-primary opacity-100",
+												})
 											: (option.icon ?? h.empty),
 									],
 								),
@@ -118,7 +127,7 @@ export type SegmentedSelectConfig<T extends string, M> = Readonly<{
 	className?: string
 }>
 
-const XS_ITEM = "h-6 text-2xs sm:h-6 sm:text-2xs"
+const XS_ITEM = "text-2xs sm:text-2xs"
 
 export const segmentedSelect = <T extends string, M>(
 	h: HtmlBuilder<M>,
@@ -151,14 +160,17 @@ export const segmentedSelect = <T extends string, M>(
 							size: groupSize,
 							variant: "segment",
 							className: cn(
-								"relative",
+								// `isolate` keeps the -z-10 pill above the track's tint instead of behind it.
+								"relative isolate",
+								segmentItemHeight[size],
 								size === "xs" && XS_ITEM,
 								"data-pressed:border-transparent data-pressed:bg-transparent data-pressed:shadow-none dark:data-pressed:bg-transparent",
 							),
 						}),
 					),
 					slot: "toggle",
-					tabIndex: isSelected ? 0 : -1,
+					// Stateless, so no arrow-key roving: every enabled option is its own tab stop.
+					tabIndex: (option.isDisabled ?? false) ? -1 : 0,
 					attributes: [
 						h.AriaDisabled(option.isDisabled ?? false),
 						h.AriaLabel(option.ariaLabel ?? option.label),
@@ -173,7 +185,7 @@ export const segmentedSelect = <T extends string, M>(
 									[
 										h.AriaHidden(true),
 										h.Class(
-											"-z-10 absolute inset-0 rounded-md bg-background shadow-sm ring-1 ring-border/70 dark:bg-input dark:ring-white/10",
+											"-z-10 absolute inset-0 rounded-md bg-background shadow-raised ring-1 ring-border-subtle dark:bg-input dark:ring-white/10",
 										),
 										h.Style({ opacity: "1" }),
 									],

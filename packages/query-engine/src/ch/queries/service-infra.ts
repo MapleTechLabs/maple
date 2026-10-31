@@ -34,6 +34,13 @@ import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } fro
 import { CHNumber } from "../schema"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
+import {
+	SERVICE_RUNTIME_MARKERS,
+	runtimeMetricServiceNames,
+	serviceRuntimeKindOfMarker,
+	type ServiceRuntimeKindId,
+	tracedServiceOfRuntime,
+} from "@maple/domain/service-runtimes"
 
 export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
@@ -223,4 +230,127 @@ export function serviceWorkloadsSQL(
 		},
 		{ rowSchema: ServiceWorkloadsOutputSchema },
 	)
+}
+
+// Service ↔ platform runtime: a resource's marker gauge under the service's names, one row per
+// resource with the keys its infra page reads. `metrics_gauge` sorts by (OrgId, ServiceName,
+// MetricName), so this reads only these services' marker series.
+
+export interface ServiceRuntimesOpts {
+	services: ReadonlyArray<string>
+}
+
+export interface ServiceRuntimesOutput {
+	/** The series' `service.name`; `tracedServiceOfRuntime` maps it to the traced service. */
+	readonly metricServiceName: string
+	readonly metricName: string
+	/** GCP project, AWS account or Cloudflare account. */
+	readonly account: string
+	readonly region: string
+	/** ECS cluster. */
+	readonly cluster: string
+	readonly railwayServiceId: string
+	readonly railwayEnvironmentId: string
+	readonly railwayEnvironmentName: string
+}
+
+const ServiceRuntimesOutputSchema: CompiledQueryRowSchema<ServiceRuntimesOutput> = Schema.Struct({
+	metricServiceName: Schema.String,
+	metricName: Schema.String,
+	account: Schema.String,
+	region: Schema.String,
+	cluster: Schema.String,
+	railwayServiceId: Schema.String,
+	railwayEnvironmentId: Schema.String,
+	railwayEnvironmentName: Schema.String,
+})
+
+export function serviceRuntimesSQL(
+	opts: ServiceRuntimesOpts,
+	params: { orgId: OrgId; startTime: string; endTime: string },
+): Effect.Effect<CompiledQuery<ServiceRuntimesOutput>, QueryBuilderError> {
+	const query = from(MetricsGauge)
+		.select(($) => ({
+			metricServiceName: $.ServiceName,
+			metricName: $.MetricName,
+			account: CH.if_(
+				$.ResourceAttributes.get("cloud.account.id").neq(""),
+				$.ResourceAttributes.get("cloud.account.id"),
+				$.ResourceAttributes.get("cloudflare.account.id"),
+			),
+			region: $.ResourceAttributes.get("cloud.region"),
+			cluster: $.Attributes.get("aws.dimension.cluster_name"),
+			railwayServiceId: $.ResourceAttributes.get("railway.service.id"),
+			railwayEnvironmentId: $.ResourceAttributes.get("railway.environment.id"),
+			railwayEnvironmentName: CH.max_($.ResourceAttributes.get("railway.environment.name")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			CH.inList($.ServiceName, opts.services.flatMap(runtimeMetricServiceNames)),
+			CH.inList($.MetricName, SERVICE_RUNTIME_MARKERS),
+		])
+		.groupBy(
+			"metricServiceName",
+			"metricName",
+			"account",
+			"region",
+			"cluster",
+			"railwayServiceId",
+			"railwayEnvironmentId",
+		)
+		.orderBy(["metricServiceName", "asc"], ["metricName", "asc"])
+		// Rows are resources, a few per service; the cap is a backstop, not a page size.
+		.limit(10_000)
+		.format("JSON")
+
+	return compile(
+		query,
+		{ orgId: params.orgId, startTime: params.startTime, endTime: params.endTime },
+		{ rowSchema: ServiceRuntimesOutputSchema },
+	)
+}
+
+export interface ServiceRuntimeResource {
+	readonly serviceName: string
+	readonly kind: ServiceRuntimeKindId
+	readonly account: string
+	readonly region: string
+	readonly cluster: string
+	readonly railwayServiceId: string
+	readonly railwayEnvironmentId: string
+	readonly railwayEnvironmentName: string
+}
+
+/**
+ * One resource per row of a requested service. A Railway service is one resource per environment,
+ * whatever its regions; a `cloudflare-worker/x` series only ever answers for `x`.
+ */
+export const serviceRuntimeResources = (
+	rows: ReadonlyArray<ServiceRuntimesOutput>,
+	requested: ReadonlyArray<string>,
+): ReadonlyArray<ServiceRuntimeResource> => {
+	const isRequested = new Set(requested)
+	const resources = rows.flatMap((row) => {
+		const kind = serviceRuntimeKindOfMarker(row.metricName)
+		const serviceName = tracedServiceOfRuntime(row.metricServiceName)
+		if (kind === null || !isRequested.has(serviceName)) return []
+		const key =
+			kind === "railway"
+				? ["railway", serviceName, row.railwayServiceId, row.railwayEnvironmentId].join("|")
+				: [kind, row.metricServiceName, row.account, row.region, row.cluster].join("|")
+		const resource: ServiceRuntimeResource = {
+			serviceName,
+			kind,
+			account: row.account,
+			region: row.region,
+			cluster: row.cluster,
+			railwayServiceId: row.railwayServiceId,
+			railwayEnvironmentId: row.railwayEnvironmentId,
+			railwayEnvironmentName: row.railwayEnvironmentName,
+		}
+		return [[key, resource] as const]
+	})
+	return Array.from(new Map(resources).values())
 }

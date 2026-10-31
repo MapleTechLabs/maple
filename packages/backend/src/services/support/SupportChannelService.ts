@@ -198,14 +198,14 @@ const make = Effect.gen(function* () {
 	const findUnrecordedChannel = Effect.fn("SupportChannelService.findUnrecordedChannel")(function* (
 		name: string,
 	) {
-		// Only channels the bot created: it can be a member of any private channel in the
-		// workspace, and a name alone would let an org name steer an invite into one of those.
+		// Only channels the bot created: it can be a member of other channels in the workspace,
+		// and a name alone would let an org name steer an invite into one of those.
 		const botUserId = (yield* slack.call("auth.test", {})).user_id
 		if (botUserId === undefined) return Option.none<SlackChannelRef>()
 		// Pages stop at the first page holding a match; the stream is read lazily.
 		const match = yield* Stream.paginate({ page: 0, cursor: "" }, ({ page, cursor }) => {
 			const args: UsersConversationsArgs = {
-				types: "private_channel",
+				types: "public_channel",
 				exclude_archived: true,
 				limit: 200,
 				...(cursor !== "" ? { cursor } : undefined),
@@ -250,7 +250,7 @@ const make = Effect.gen(function* () {
 			Arr.makeBy(MAX_NAME_ATTEMPTS, (attempt) => attempt),
 			(attempt) => {
 				const name = supportChannelName(orgName, orgId, attempt)
-				return slack.call("conversations.create", { name, is_private: true }).pipe(
+				return slack.call("conversations.create", { name, is_private: false }).pipe(
 					Effect.map(Option.some),
 					Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
 						refused.error === "name_taken"

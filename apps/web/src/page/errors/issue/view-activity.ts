@@ -47,7 +47,7 @@ const rail = (h: H, marker: Html): Html =>
 	h.span(
 		[h.Class("relative flex h-full justify-center")],
 		[
-			h.span([h.AriaHidden(true), h.Class("h-full w-px bg-border/60 group-last/row:h-5")]),
+			h.span([h.AriaHidden(true), h.Class("h-full w-px bg-border-subtle group-last/row:h-5")]),
 			h.span([h.Class("absolute top-2.5 flex justify-center")], [marker]),
 		],
 	)
@@ -202,8 +202,8 @@ const messageRow = (
 						[
 							h.Class(
 								cn(
-									"mt-1.5 max-w-prose overflow-x-auto rounded-xl border px-3 py-2 text-sm",
-									isAgent ? AGENT_ACCENT.surface : "border-border/70 bg-muted/40",
+									"mt-1.5 max-w-prose overflow-x-auto rounded-md border px-3 py-2 text-sm",
+									isAgent ? AGENT_ACCENT.surface : "border-border-subtle bg-surface-sunken",
 								),
 							),
 						],

@@ -16,12 +16,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for LiteLLM in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-litellm -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-litellm -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Trace in your app or at the proxy
 
@@ -30,7 +31,8 @@ If your code calls `litellm.acompletion()`, follow the next sections. If your ap
 ## Install LiteLLM and the exporter
 
 ```bash
-pip install "litellm==1.103.0" "opentelemetry-sdk==1.43.0" "opentelemetry-exporter-otlp-proto-http==1.43.0"
+pip install "litellm==1.103.0" "opentelemetry-sdk==1.43.0" \
+  "opentelemetry-exporter-otlp-proto-http==1.43.0"
 ```
 
 Keep OpenTelemetry at 1.43. Version 1.44 and later break LiteLLM 1.103's logger.
@@ -185,13 +187,13 @@ To trace at a proxy you run, enable the logger in its `config.yaml`:
 
 ```yaml
 model_list:
-  - model_name: gpt-4o-mini
-    litellm_params:
-      model: openrouter/openai/gpt-4o-mini
-      api_key: os.environ/OPENROUTER_API_KEY
+    - model_name: gpt-4o-mini
+      litellm_params:
+          model: openrouter/openai/gpt-4o-mini
+          api_key: os.environ/OPENROUTER_API_KEY
 
 litellm_settings:
-  callbacks: ["otel"]
+    callbacks: ["otel"]
 ```
 
 Set these in the proxy's environment:
@@ -267,7 +269,7 @@ provider.shutdown()
 
 A long-running server needs this only in its shutdown hook.
 
-## Check that it works
+## Verify
 
 Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session with the id you passed and framework **LiteLLM**, one turn per message, and a transcript with the prompts, replies and tool calls.
 
@@ -279,7 +281,7 @@ Run a conversation with two messages and a tool call, then open **Agent Sessions
 - **Every model call appears twice.** Two loggers, or the proxy and an in-app OpenAI instrumentor both trace the call. Keep one.
 - **The last call of a script is missing.** Await `flush_tracing()` before the event loop ends.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [LiteLLM: OpenTelemetry v2](https://docs.litellm.ai/docs/observability/opentelemetry_v2)

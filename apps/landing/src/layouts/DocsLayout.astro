@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import FontPreloads from "../components/FontPreloads.astro";
 import DocsSidebar from "../components/docs/DocsSidebar.astro";
 import TableOfContents from "../components/TableOfContents.astro";
 import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
@@ -22,15 +23,21 @@ interface Props {
     editHref?: string;
     /** Widen the column and drop the table-of-contents rail (index pages). */
     wide?: boolean;
+    /** Keep the page out of search indexes (the docs 404). */
+    noindex?: boolean;
 }
 
-const { title, description, headings, currentSlug, image = "/og-docs.png", mdHref, editHref, wide = false } = Astro.props;
+const { title, description, headings, currentSlug, image = "/og-docs.png", mdHref, editHref, wide = false, noindex = false } = Astro.props;
 const stars = await getGitHubStars();
 
-const pageTitle = currentSlug ? `${title} · Maple Docs` : "Maple Docs";
+const pageTitle = currentSlug || noindex ? `${title} · Maple Docs` : "Maple Docs";
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
 const absoluteImage = image.startsWith("http") ? image : new URL(image, Astro.site).toString();
 const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
+// A reference page with dozens of subsections (the CLI) outlines its H2s only.
+const tocDepth = headings.filter((h) => h.depth >= 2 && h.depth <= 3).length > 28 ? 2 : 3;
+// Backticks are markup in the lede; meta tags get the plain text.
+const metaDescription = description.replaceAll("`", "");
 ---
 
 <!doctype html>
@@ -40,9 +47,10 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <link rel="icon" href="/favicon.ico" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="description" content={description} />
+        <FontPreloads />
+        <meta name="description" content={metaDescription} />
         <meta name="theme-color" content="#171410" />
-        <meta name="robots" content="index,follow" />
+        <meta name="robots" content={noindex ? "noindex" : "index,follow"} />
         <link rel="canonical" href={canonicalUrl} />
         {mdHref && (
             <link rel="alternate" type="text/markdown" href={new URL(mdHref, Astro.site).toString()} />
@@ -51,13 +59,13 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
         <meta property="og:site_name" content="Maple" />
         <meta property="og:locale" content="en_US" />
         <meta property="og:title" content={pageTitle} />
-        <meta property="og:description" content={description} />
+        <meta property="og:description" content={metaDescription} />
         <meta property="og:image" content={absoluteImage} />
         <meta property="og:url" content={canonicalUrl} />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:site" content="@Mapledotdev" />
         <meta name="twitter:title" content={pageTitle} />
-        <meta name="twitter:description" content={description} />
+        <meta name="twitter:description" content={metaDescription} />
         <meta name="twitter:image" content={absoluteImage} />
         <meta name="generator" content={Astro.generator} />
         <title>{pageTitle}</title>
@@ -106,24 +114,7 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
 
             <main id="docs-main" class:list={["min-w-0 flex-1 lg:ml-64", hasToc && "xl:mr-60"]} tabindex="-1">
                 <div class:list={["mx-auto px-5 py-10 sm:px-8 md:py-12", wide ? "max-w-5xl" : "max-w-3xl"]}>
-                    {/* Below the rails the tree and the outline fold into disclosures; one
-                        stack so they share a gap instead of two full margins. */}
-                    <div class:list={["mb-8 flex flex-col gap-2.5", hasToc ? "xl:hidden" : "lg:hidden"]}>
-                        <DocsMobileNav currentSlug={currentSlug} />
-                        {hasToc && (
-                            <details class="rounded-lg border border-border xl:hidden">
-                                <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-[13px] text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
-                                    <span>On this page</span>
-                                    <svg class="h-3 w-3 shrink-0 transition-transform details-open:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
-                                        <path d="M3 5l3 3 3-3" />
-                                    </svg>
-                                </summary>
-                                <div class="max-h-[60vh] overflow-y-auto border-t border-border px-4 pt-4 pb-4">
-                                    <TableOfContents headings={headings} spy={false} showLabel={false} />
-                                </div>
-                            </details>
-                        )}
-                    </div>
+                    <DocsMobileNav currentSlug={currentSlug} headings={headings} hasToc={hasToc} tocDepth={tocDepth} />
                     <slot />
                     {currentSlug && (
                         <footer class="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-5 text-[12.5px] text-fg-muted">
@@ -153,8 +144,8 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
             </main>
 
             {hasToc && (
-                <aside class="fixed top-24 right-0 bottom-0 hidden w-60 shrink-0 overflow-y-auto py-7 pr-6 pl-4 xl:block">
-                    <TableOfContents headings={headings} />
+                <aside data-toc-rail class="fixed top-24 right-0 bottom-0 hidden w-60 shrink-0 overflow-y-auto overscroll-contain py-7 pr-6 pl-4 xl:block">
+                    <TableOfContents headings={headings} collapse={tocDepth === 2} />
                 </aside>
             )}
         </div>
@@ -198,22 +189,55 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
                 }
             }
 
-            // Sidebar: the active row is often below the fold on long trees. Scroll
-            // just far enough to show it.
+            // Sidebar: the active row is often below the fold on long trees. When it
+            // is not comfortably in view, bring it to the middle, snapped to the top
+            // of a group so the first visible row is never cut in half.
             const sidebar = document.querySelector<HTMLElement>("aside nav[aria-label='Documentation']");
             const active = sidebar?.querySelector<HTMLElement>("a[aria-current='page']");
             const rail = sidebar?.closest<HTMLElement>("aside");
-            if (active && rail) {
-                const bottom = active.offsetTop + active.offsetHeight + 32;
-                if (bottom > rail.clientHeight) rail.scrollTop = bottom - rail.clientHeight;
+            if (sidebar && active && rail) {
+                const at = (el: HTMLElement) => el.getBoundingClientRect().top - rail.getBoundingClientRect().top + rail.scrollTop;
+                const top = at(active);
+                const view = top - rail.scrollTop;
+                if (view < 48 || view + active.offsetHeight > rail.clientHeight - 48) {
+                    const centred = top - (rail.clientHeight - active.offsetHeight) / 2;
+                    const groupTops = [...sidebar.querySelectorAll<HTMLElement>(":scope > section")].map((s) => at(s) - 20);
+                    const snapped = groupTops.filter((g) => g <= centred && top + active.offsetHeight - g < rail.clientHeight - 24).pop();
+                    rail.scrollTop = snapped ?? centred;
+                }
             }
 
-            // Section strip scrolls horizontally on phones; keep the active one visible.
+            // Outline rail: on long pages it scrolls on its own; keep the entry the
+            // scroll spy marks inside it.
+            const tocRail = document.querySelector<HTMLElement>("aside[data-toc-rail]");
+            if (tocRail) {
+                const follow = () => {
+                    const current = tocRail.querySelector<HTMLElement>("a[aria-current='true']");
+                    if (!current) return;
+                    const top = current.getBoundingClientRect().top - tocRail.getBoundingClientRect().top;
+                    if (top < 24 || top + current.offsetHeight > tocRail.clientHeight - 24) {
+                        tocRail.scrollTop += top - (tocRail.clientHeight - current.offsetHeight) / 2;
+                    }
+                };
+                new MutationObserver(follow).observe(tocRail, { subtree: true, attributeFilter: ["aria-current"] });
+            }
+
+            // Section strip scrolls sideways on phones: centre the active tab, and
+            // fade whichever edge still has tabs beyond it.
             const strip = document.querySelector<HTMLElement>(".docs-section-nav");
             const section = strip?.querySelector<HTMLElement>("a[aria-current='page']");
-            if (strip && section) {
-                const overflow = section.offsetLeft + section.offsetWidth - strip.clientWidth;
-                if (overflow > 0) strip.scrollLeft = overflow + 16;
+            if (strip) {
+                if (section) {
+                    strip.scrollLeft = section.offsetLeft - (strip.clientWidth - section.offsetWidth) / 2;
+                }
+                const edges = () => {
+                    const max = strip.scrollWidth - strip.clientWidth;
+                    strip.toggleAttribute("data-more-start", strip.scrollLeft > 2);
+                    strip.toggleAttribute("data-more-end", strip.scrollLeft < max - 2);
+                };
+                edges();
+                strip.addEventListener("scroll", edges, { passive: true });
+                window.addEventListener("resize", edges, { passive: true });
             }
         </script>
     </body>

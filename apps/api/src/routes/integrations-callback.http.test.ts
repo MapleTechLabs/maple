@@ -60,6 +60,9 @@ describe("provider callbacks", () => {
 		// Straight to the page that finishes it, not one the dashboard redirects away from.
 		const location = new URL(response.headers.get("location") ?? "")
 		expect(location.origin + location.pathname).toBe("https://app.example.com/sources/new")
+		// The location carries the provider's code: never cached, never sent on as a Referer.
+		expect(response.headers.get("cache-control")).toBe("no-store")
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer")
 		expect(location.searchParams.get("integration")).toBe("cloudflare")
 		const handed = Option.getOrThrow(decodeOAuthReturnHash(location.hash))
 		expect(handed.flow).toBe("cloudflare")
@@ -109,6 +112,8 @@ describe("provider callbacks", () => {
 		expect(response.status).toBe(302)
 		const location = new URL(response.headers.get("location") ?? "")
 		expect(location.searchParams.get("integration")).toBe("chat-slack")
+		expect(response.headers.get("cache-control")).toBe("no-store")
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer")
 		const handed = Option.getOrThrow(decodeOAuthReturnHash(location.hash))
 		expect(handed.flow).toBe("chat_identity")
 		expect(handed.connector).toBe("slack")

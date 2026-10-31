@@ -1,10 +1,11 @@
-import { classifyZone, type ZoneHealth } from "../../../../components/infra/cloudflare/list-model"
+import { classifyZone, ZONE_HEALTH_TONE } from "../../../../components/infra/cloudflare/list-model"
 import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 	filtersFromSearch,
 } from "../../../../components/infra/cloudflare/filters"
 import { zoneSignalTotals } from "../../../../components/infra/cloudflare/zone-signals"
+import type { Tone } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
 import type { TimeWindow } from "../../../../data/time-range"
@@ -169,17 +170,10 @@ export const zoneAccountOf = (model: Model): ZoneAccount | null => {
 	}
 }
 
-const ZONE_HEALTH_DOT = {
-	serving5xx: "bg-severity-error",
-	mostly4xx: "bg-severity-warn",
-	ok: "bg-severity-info",
-	lowVolume: "bg-muted-foreground",
-} as const satisfies Record<ZoneHealth, string>
-
-/** `zoneSeverityClass`: the header dot. */
-export const severityOf = (model: Model): string | null => {
+/** The header dot's tone. */
+export const severityOf = (model: Model): Tone | null => {
 	const detail = dataOf(model.detail.data)
 	if (detail === null) return null
 	const totals = zoneSignalTotals(detail.statusBuckets, detail.cacheBuckets)
-	return ZONE_HEALTH_DOT[classifyZone(totals.requests, totals.serverErrorRate, totals.clientErrorRate)]
+	return ZONE_HEALTH_TONE[classifyZone(totals.requests, totals.serverErrorRate, totals.clientErrorRate)]
 }

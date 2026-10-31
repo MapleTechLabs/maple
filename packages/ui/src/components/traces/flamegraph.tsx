@@ -146,9 +146,7 @@ export function Flamegraph({
 	const handleReset = () => setFocusedSpan(null)
 
 	if (rootSpans.length === 0) {
-		return (
-			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
-		)
+		return <EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
 	}
 
 	const ROW_HEIGHT = 32
@@ -157,14 +155,14 @@ export function Flamegraph({
 
 	return (
 		<div className="border">
-			<div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+			<div className="flex items-center justify-between border-b bg-surface-sunken px-3 py-2">
 				<div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
 					<span>Flamegraph</span>
 					{focusedSpan && (
 						<>
-							<span className="text-foreground/40">/</span>
+							<span className="text-foreground-subtle">/</span>
 							<span className="font-mono text-foreground">{focusedSpan.spanName}</span>
-							<span className="text-foreground/40">
+							<span className="text-foreground-subtle">
 								({formatDuration(focusedSpan.durationMs)})
 							</span>
 						</>
@@ -228,7 +226,7 @@ export function Flamegraph({
 								<TooltipTrigger
 									className={cn(
 										"absolute flex items-center overflow-hidden px-2 text-left font-mono text-2xs font-medium cursor-pointer transition-[filter,box-shadow] duration-100",
-										"hover:brightness-125 hover:z-10",
+										"hover:brightness-125 active:brightness-125 hover:z-10 active:z-10",
 										bar.span.statusCode === "Error" && "bg-severity-error text-white",
 										hoveredSpan?.spanId === bar.span.spanId && "brightness-125 z-10",
 										focusedSpan?.spanId === bar.span.spanId &&
@@ -275,19 +273,13 @@ export function Flamegraph({
 				</div>
 			</div>
 
-			<div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-2xs text-muted-foreground">
-				<div className="flex items-center gap-3 text-foreground/30">
+			<div className="flex items-center justify-between border-t bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground">
+				<div className="flex items-center gap-3 text-foreground-faint">
 					<span>
-						<Kbd className="h-4 font-mono text-3xs">
-							Click
-						</Kbd>{" "}
-						select
+						<Kbd className="h-4 font-mono text-3xs">Click</Kbd> select
 					</span>
 					<span>
-						<Kbd className="h-4 font-mono text-3xs">
-							Shift+Click
-						</Kbd>{" "}
-						zoom
+						<Kbd className="h-4 font-mono text-3xs">Shift+Click</Kbd> zoom
 					</span>
 				</div>
 				<div className="flex items-center gap-3">
@@ -300,7 +292,7 @@ export function Flamegraph({
 					<div className="flex items-center gap-1.5">
 						<span
 							aria-hidden
-							className="size-2.5 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]"
+							className="size-2.5 shrink-0 rounded-dot bg-severity-error [corner-shape:squircle]"
 						/>
 						<span className="font-medium">Error</span>
 					</div>

@@ -27,6 +27,7 @@ import * as Chart from "../../../charts/chart"
 import { MountChart } from "../../../charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import * as Menu from "../../../ui/menu"
+import * as RadioGroup from "../../../ui/radio-group"
 import * as Tooltip from "../../../ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
@@ -157,6 +158,182 @@ describe("alert rule editor", () => {
 		)
 	})
 
+	test("the check interval picker sets how often the rule runs, and refuses one longer than the window", () => {
+		const hint = (every: string) => text(`Each check looks at this much data, checked every ${every}.`)
+		const pick = (value: string) =>
+			Message.GotRadioMessage({ group: "interval", message: RadioGroup.Message.SelectedRadio({ value }) })
+		const draft = run(withLists(entered({ template: "slow_p95" })), [
+			Message.ChangedField({ field: "windowMinutes", value: "15" }),
+		])
+		const every10 = run(draft, [pick("10")])
+		const every30 = run(every10, [pick("30")])
+		scene(
+			{ update: pageUpdate, view },
+			given(draft),
+			themeResolved(),
+			expectView(role("radio", { name: /^Auto · 3 min/ })).toHaveAttr("aria-checked", "true"),
+			// The preview pins the interval, so picking one never re-queries.
+			click(role("radio", { name: /^10 min/ })),
+			expectView(hint("10 min")).toExist(),
+			expectView(role("radio", { name: /^10 min/ })).toHaveAttr("aria-checked", "true"),
+			click(role("radio", { name: /^30 min/ })),
+			expectView(text("Longer than the window, so data between checks would go unread.")).toExist(),
+		)
+		expect(every10.preview.key).toBe(draft.preview.key)
+		expect(every30.form?.evaluationIntervalMinutes).toBe("30")
+		expect(names(pageUpdate(every30, Message.ClickedSave()).commands)).toEqual([])
+	})
+
+	test("a raw SQL query too slow for its interval says so, blocks save, and switches in one click", () => {
+		const timing = (elapsedMs: number) =>
+			Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+				bucketSeconds: 300,
+				windowMinutes: 5,
+				threshold: 5,
+				thresholdUpper: null,
+				thresholds: [{ severity: "warning", value: 5, upper: null, recoveryValue: null, destinationIds: [] }],
+				comparator: "gt",
+				truncatedToStart: null,
+				series: [],
+				wouldFire: [],
+				queryTiming: {
+					elapsedMs,
+					failure: null,
+					probeLimitMs: 25_000,
+					intervalMinutes: 1,
+					limitMs: 5_000,
+					fitsIntervalMinutes: elapsedMs <= 4_000 ? [1, 5, 10, 15, 30, 60] : [5, 10, 15, 30, 60],
+				},
+			})
+		const answer = (model: Model, elapsedMs: number) =>
+			Message.CompletedFetchPreview({
+				key: model.preview.key ?? "",
+				isSaved: false,
+				result: Result.succeed(timing(elapsedMs)),
+			})
+		const sql = run(withLists(entered({ template: "slow_p95" })), [
+			Message.ClickedSignalKind({ kind: "raw_query" }),
+		])
+		const slow = run(sql, [answer(sql, 7_800)])
+		expect(names(pageUpdate(slow, Message.ClickedSave()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(slow),
+			themeResolved(),
+			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
+			expectView(text(/^Line 4: Filter traces on a service/)).toExist(),
+			expectView(text("Over or too close to the 5 s this interval allows. Checking less often allows a slower query.")).toExist(),
+			click(role("button", { name: "Check every 5 min" })),
+			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
+			expectView(text("Fits checks every 5 min.")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(run(sql, [answer(sql, 900)])),
+			themeResolved(),
+			expectView(text("Fits checks every minute.")).toExist(),
+			// A fast query keeps its cheaper-filter suggestions to itself.
+			expectView(text(/^Line 4:/)).not.toExist(),
+		)
+		const heavy = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...Schema.encodeSync(AlertRulePreviewResponse)(timing(7_800)),
+			seriesFailure: "query_too_slow",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedLoadChartRuntime(),
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(heavy) }),
+				]),
+			),
+			themeResolved(),
+			// Too heavy to chart, yet the one-check timing still says which interval fits.
+			expectView(text(/ran past 25 s charting this range/)).toExist(),
+			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
+		)
+		const timed = Schema.encodeSync(AlertRulePreviewResponse)(timing(0))
+		const outOfMemory = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: null, failure: "query_too_much_memory", fitsIntervalMinutes: [] },
+		})
+		// 22 s fits no interval at all, so a wider window would not help.
+		const tooSlowForAny = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: 22_000, fitsIntervalMinutes: [] },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(tooSlowForAny) }),
+				]),
+			),
+			themeResolved(),
+			expectView(text("Too slow for any interval this window allows. Narrow the query.")).toExist(),
+			expectView(text("It needs longer than the longest limit any interval allows, so checking less often will not help.")).toExist(),
+		)
+		const timedOut = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: null, failure: "query_too_slow", fitsIntervalMinutes: [] },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(timedOut) }),
+				]),
+			),
+			themeResolved(),
+			expectView(text(/too slow for any interval/)).toExist(),
+			expectView(text("It needs longer than the longest limit any interval allows, so checking less often will not help.")).toExist(),
+		)
+		// 18 s fits 10-minute checks, which a 5-minute window cannot pick.
+		const widenable = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: 18_000, fitsIntervalMinutes: [] },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(widenable) }),
+				]),
+			),
+			themeResolved(),
+			expectView(text("Too slow for any interval this window allows. Widen the window or narrow the query.")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(outOfMemory) }),
+				]),
+			),
+			themeResolved(),
+			// Out of memory is no verdict on time: no interval reads as too slow.
+			expectView(text("It ran out of memory with the most any interval allows, so checking less often will not help.")).toExist(),
+			expectView(role("radio", { name: /too slow/ })).not.toExist(),
+		)
+	})
+
+	test("editing a slowed-down rule says saving resets it, and keeps it in one click", () => {
+		const slowed = run(entered({ ruleId: ruleId(2) }), [
+			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { slowed_interval_minutes: 5 })] }),
+		])
+		const notice = text("Checked every 5 min because its query kept hitting its limit. Saving resets this unless you keep it.")
+		scene(
+			{ update: pageUpdate, view },
+			given(slowed),
+			themeResolved(),
+			expectView(notice).toExist(),
+			click(role("button", { name: "Keep 5 min" })),
+			expectView(notice).not.toExist(),
+			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
+		)
+	})
+
 	test("a new rule starts on the destination the org's rules use", () => {
 		const ready = withLists(entered({ template: "slow_p95" }))
 		expect(ready.form?.destinationIds).toEqual([destinationRow().id])
@@ -235,7 +412,7 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Failed to load alert rules")).toExist(),
+			expectView(text("Couldn't load alert rules")).toExist(),
 			click(role("button", { name: "Try again" })),
 			Command.expectHas(ReloadPage()),
 			Command.resolve(ReloadPage, Message.ReloadedPage()),
@@ -261,7 +438,7 @@ describe("alert rule editor", () => {
 			Message.FailedLoadDashboards({ orgId: ORG }),
 		).model
 		expect(failed.notices).toEqual([
-			{ severity: "warning", message: "Dashboards could not be loaded. Starting from a blank alert." },
+			{ severity: "warning", message: "Couldn't load dashboards. Starting from a blank alert." },
 		])
 	})
 

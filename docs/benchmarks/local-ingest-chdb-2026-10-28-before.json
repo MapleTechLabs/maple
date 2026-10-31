@@ -1,0 +1,677 @@
+{
+	"bench": "local-ingest-chdb",
+	"environment": {
+		"date": "2026-10-28T16:28:53.257Z",
+		"git": "f9ee36cb8",
+		"bun": "1.4.3",
+		"platform": "darwin 25.6.0",
+		"cpu": "Apple M5 Max",
+		"cores": 18,
+		"memoryGb": 128,
+		"loadavgAtStart": [
+			6.46,
+			8.91,
+			8.6
+		]
+	},
+	"options": {
+		"signals": [
+			"traces",
+			"logs",
+			"metrics"
+		],
+		"sizes": [
+			1,
+			50
+		],
+		"iterations": 10,
+		"viewsSignal": "traces",
+		"viewsSize": 1,
+		"settingVariants": [
+			"parallel_view_processing=1",
+			"optimize_on_insert=0"
+		],
+		"skip": []
+	},
+	"openMs": 253,
+	"stages": [
+		{
+			"signal": "traces",
+			"records": 1,
+			"statements": 1,
+			"parseMs": {
+				"n": 10,
+				"p50": 0.01,
+				"p95": 0.01,
+				"max": 0.01,
+				"mean": 0.01
+			},
+			"encodeMs": {
+				"n": 10,
+				"p50": 0.04,
+				"p95": 0.07,
+				"max": 0.07,
+				"mean": 0.04
+			},
+			"buildSqlMs": {
+				"n": 10,
+				"p50": 0.01,
+				"p95": 0.01,
+				"max": 0.01,
+				"mean": 0.01
+			},
+			"execMs": {
+				"n": 10,
+				"p50": 94.79,
+				"p95": 103.28,
+				"max": 103.28,
+				"mean": 95.7
+			}
+		},
+		{
+			"signal": "traces",
+			"records": 50,
+			"statements": 1,
+			"parseMs": {
+				"n": 10,
+				"p50": 0.04,
+				"p95": 0.04,
+				"max": 0.04,
+				"mean": 0.04
+			},
+			"encodeMs": {
+				"n": 10,
+				"p50": 0.12,
+				"p95": 0.15,
+				"max": 0.15,
+				"mean": 0.12
+			},
+			"buildSqlMs": {
+				"n": 10,
+				"p50": 0.03,
+				"p95": 0.03,
+				"max": 0.03,
+				"mean": 0.03
+			},
+			"execMs": {
+				"n": 10,
+				"p50": 120.46,
+				"p95": 140.17,
+				"max": 140.17,
+				"mean": 123.9
+			}
+		},
+		{
+			"signal": "logs",
+			"records": 1,
+			"statements": 1,
+			"parseMs": {
+				"n": 10,
+				"p50": 0.01,
+				"p95": 0.01,
+				"max": 0.01,
+				"mean": 0.01
+			},
+			"encodeMs": {
+				"n": 10,
+				"p50": 0.03,
+				"p95": 0.04,
+				"max": 0.04,
+				"mean": 0.03
+			},
+			"buildSqlMs": {
+				"n": 10,
+				"p50": 0.01,
+				"p95": 0.02,
+				"max": 0.02,
+				"mean": 0.01
+			},
+			"execMs": {
+				"n": 10,
+				"p50": 15.92,
+				"p95": 27.09,
+				"max": 27.09,
+				"mean": 17.53
+			}
+		},
+		{
+			"signal": "logs",
+			"records": 50,
+			"statements": 1,
+			"parseMs": {
+				"n": 10,
+				"p50": 0.04,
+				"p95": 0.04,
+				"max": 0.04,
+				"mean": 0.04
+			},
+			"encodeMs": {
+				"n": 10,
+				"p50": 0.07,
+				"p95": 0.09,
+				"max": 0.09,
+				"mean": 0.07
+			},
+			"buildSqlMs": {
+				"n": 10,
+				"p50": 0.02,
+				"p95": 0.02,
+				"max": 0.02,
+				"mean": 0.02
+			},
+			"execMs": {
+				"n": 10,
+				"p50": 14.85,
+				"p95": 17.02,
+				"max": 17.02,
+				"mean": 14.92
+			}
+		},
+		{
+			"signal": "metrics",
+			"records": 1,
+			"statements": 1,
+			"parseMs": {
+				"n": 10,
+				"p50": 0.01,
+				"p95": 0.01,
+				"max": 0.01,
+				"mean": 0.01
+			},
+			"encodeMs": {
+				"n": 10,
+				"p50": 0.02,
+				"p95": 0.04,
+				"max": 0.04,
+				"mean": 0.03
+			},
+			"buildSqlMs": {
+				"n": 10,
+				"p50": 0.01,
+				"p95": 0.01,
+				"max": 0.01,
+				"mean": 0.01
+			},
+			"execMs": {
+				"n": 10,
+				"p50": 7.88,
+				"p95": 9.28,
+				"max": 9.28,
+				"mean": 7.95
+			}
+		},
+		{
+			"signal": "metrics",
+			"records": 50,
+			"statements": 3,
+			"parseMs": {
+				"n": 10,
+				"p50": 0.02,
+				"p95": 0.02,
+				"max": 0.02,
+				"mean": 0.02
+			},
+			"encodeMs": {
+				"n": 10,
+				"p50": 0.13,
+				"p95": 0.18,
+				"max": 0.18,
+				"mean": 0.13
+			},
+			"buildSqlMs": {
+				"n": 10,
+				"p50": 0.02,
+				"p95": 0.03,
+				"max": 0.03,
+				"mean": 0.02
+			},
+			"execMs": {
+				"n": 10,
+				"p50": 29.9,
+				"p95": 36.09,
+				"max": 36.09,
+				"mean": 30.14
+			}
+		}
+	],
+	"settings": [
+		{
+			"setting": "default",
+			"signal": "traces",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 105.45,
+				"p95": 123.11,
+				"max": 123.11,
+				"mean": 106.23
+			}
+		},
+		{
+			"setting": "default",
+			"signal": "logs",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 13.56,
+				"p95": 16.33,
+				"max": 16.33,
+				"mean": 14.22
+			}
+		},
+		{
+			"setting": "default",
+			"signal": "metrics",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 8.04,
+				"p95": 8.79,
+				"max": 8.79,
+				"mean": 8.14
+			}
+		},
+		{
+			"setting": "parallel_view_processing=1",
+			"signal": "traces",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 31.87,
+				"p95": 33.27,
+				"max": 33.27,
+				"mean": 31.54
+			}
+		},
+		{
+			"setting": "parallel_view_processing=1",
+			"signal": "logs",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 8.78,
+				"p95": 9.75,
+				"max": 9.75,
+				"mean": 8.7
+			}
+		},
+		{
+			"setting": "parallel_view_processing=1",
+			"signal": "metrics",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 5.28,
+				"p95": 5.75,
+				"max": 5.75,
+				"mean": 5.29
+			}
+		},
+		{
+			"setting": "optimize_on_insert=0",
+			"signal": "traces",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 98.75,
+				"p95": 106.93,
+				"max": 106.93,
+				"mean": 99.9
+			}
+		},
+		{
+			"setting": "optimize_on_insert=0",
+			"signal": "logs",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 15.08,
+				"p95": 16.4,
+				"max": 16.4,
+				"mean": 14.95
+			}
+		},
+		{
+			"setting": "optimize_on_insert=0",
+			"signal": "metrics",
+			"records": 1,
+			"execMs": {
+				"n": 10,
+				"p50": 7.7,
+				"p95": 21.76,
+				"max": 21.76,
+				"mean": 10.13
+			}
+		}
+	],
+	"views": {
+		"source": "traces",
+		"records": 1,
+		"count": 28,
+		"withAllMs": {
+			"n": 10,
+			"p50": 100.48,
+			"p95": 109.04,
+			"max": 109.04,
+			"mean": 100.52
+		},
+		"withNoneMs": {
+			"n": 10,
+			"p50": 5.93,
+			"p95": 6.88,
+			"max": 6.88,
+			"mean": 5.91
+		},
+		"sumMarginal": 92.84,
+		"perView": [
+			{
+				"view": "error_events_by_time_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 19.25,
+					"p95": 20.14,
+					"max": 20.14,
+					"mean": 18.79
+				},
+				"marginalMs": 13.32
+			},
+			{
+				"view": "error_events_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 17.27,
+					"p95": 18.79,
+					"max": 18.79,
+					"mean": 17.31
+				},
+				"marginalMs": 11.34
+			},
+			{
+				"view": "service_external_edges_hourly_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 12.99,
+					"p95": 46.2,
+					"max": 46.2,
+					"mean": 18.75
+				},
+				"marginalMs": 7.06
+			},
+			{
+				"view": "trace_list_mv_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 12.54,
+					"p95": 14.08,
+					"max": 14.08,
+					"mean": 12.41
+				},
+				"marginalMs": 6.61
+			},
+			{
+				"view": "service_operations_minutely_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 12.18,
+					"p95": 12.74,
+					"max": 12.74,
+					"mean": 12.23
+				},
+				"marginalMs": 6.25
+			},
+			{
+				"view": "service_map_db_query_shapes_hourly_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 11.04,
+					"p95": 11.31,
+					"max": 11.31,
+					"mean": 11.06
+				},
+				"marginalMs": 5.11
+			},
+			{
+				"view": "service_endpoint_details_hourly_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 10.77,
+					"p95": 20.17,
+					"max": 20.17,
+					"mean": 11.57
+				},
+				"marginalMs": 4.84
+			},
+			{
+				"view": "trace_span_attribute_keys_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 9.51,
+					"p95": 11.89,
+					"max": 11.89,
+					"mean": 9.75
+				},
+				"marginalMs": 3.58
+			},
+			{
+				"view": "trace_resource_attribute_values_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 9.2,
+					"p95": 12.56,
+					"max": 12.56,
+					"mean": 9.64
+				},
+				"marginalMs": 3.27
+			},
+			{
+				"view": "service_overview_minutely_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 8.78,
+					"p95": 12.7,
+					"max": 12.7,
+					"mean": 9.12
+				},
+				"marginalMs": 2.85
+			},
+			{
+				"view": "trace_resource_attribute_keys_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 8.5,
+					"p95": 17.4,
+					"max": 17.4,
+					"mean": 9.4
+				},
+				"marginalMs": 2.57
+			},
+			{
+				"view": "service_overview_hourly_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 8.48,
+					"p95": 9.7,
+					"max": 9.7,
+					"mean": 8.72
+				},
+				"marginalMs": 2.55
+			},
+			{
+				"view": "service_map_db_edges_hourly_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 8.44,
+					"p95": 20.68,
+					"max": 20.68,
+					"mean": 9.37
+				},
+				"marginalMs": 2.51
+			},
+			{
+				"view": "traces_aggregates_hourly_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 8.24,
+					"p95": 10.25,
+					"max": 10.25,
+					"mean": 8.54
+				},
+				"marginalMs": 2.31
+			},
+			{
+				"view": "ai_crawler_requests_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 8.21,
+					"p95": 9.83,
+					"max": 9.83,
+					"mean": 8.24
+				},
+				"marginalMs": 2.28
+			},
+			{
+				"view": "ai_trace_index_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 8.06,
+					"p95": 12.9,
+					"max": 12.9,
+					"mean": 8.64
+				},
+				"marginalMs": 2.13
+			},
+			{
+				"view": "trace_span_attribute_values_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 7.93,
+					"p95": 8.35,
+					"max": 8.35,
+					"mean": 7.91
+				},
+				"marginalMs": 2
+			},
+			{
+				"view": "service_platforms_hourly_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 7.77,
+					"p95": 8.95,
+					"max": 8.95,
+					"mean": 7.9
+				},
+				"marginalMs": 1.84
+			},
+			{
+				"view": "service_map_children_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 7.74,
+					"p95": 12.71,
+					"max": 12.71,
+					"mean": 7.96
+				},
+				"marginalMs": 1.81
+			},
+			{
+				"view": "service_usage_traces_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 7.7,
+					"p95": 8.01,
+					"max": 8.01,
+					"mean": 7.53
+				},
+				"marginalMs": 1.77
+			},
+			{
+				"view": "service_overview_spans_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 7.6,
+					"p95": 22.17,
+					"max": 22.17,
+					"mean": 9
+				},
+				"marginalMs": 1.67
+			},
+			{
+				"view": "service_map_db_edges_minutely_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 7.58,
+					"p95": 8.33,
+					"max": 8.33,
+					"mean": 7.62
+				},
+				"marginalMs": 1.65
+			},
+			{
+				"view": "service_map_spans_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 6.95,
+					"p95": 7.32,
+					"max": 7.32,
+					"mean": 6.99
+				},
+				"marginalMs": 1.02
+			},
+			{
+				"view": "trace_index_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 6.76,
+					"p95": 7.36,
+					"max": 7.36,
+					"mean": 6.77
+				},
+				"marginalMs": 0.83
+			},
+			{
+				"view": "ci_runs_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 6.56,
+					"p95": 7.32,
+					"max": 7.32,
+					"mean": 6.57
+				},
+				"marginalMs": 0.63
+			},
+			{
+				"view": "ci_jobs_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 6.43,
+					"p95": 7.06,
+					"max": 7.06,
+					"mean": 6.58
+				},
+				"marginalMs": 0.5
+			},
+			{
+				"view": "product_events_traces_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 6.34,
+					"p95": 6.47,
+					"max": 6.47,
+					"mean": 6.32
+				},
+				"marginalMs": 0.41
+			},
+			{
+				"view": "source_usage_traces_mv",
+				"aloneMs": {
+					"n": 10,
+					"p50": 6.06,
+					"p95": 6.51,
+					"max": 6.51,
+					"mean": 5.98
+				},
+				"marginalMs": 0.13
+			}
+		]
+	}
+}

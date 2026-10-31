@@ -1,11 +1,4 @@
-import {
-	countLabel,
-	EMPTY_VALUE,
-	formatBytes,
-	formatNumber,
-	formatPercent,
-	formatRate,
-} from "@maple/ui/lib/format"
+import { countLabel, formatBytes, formatNumber, formatPercent, formatRate } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../../data/load-failure"
@@ -13,13 +6,14 @@ import { alert, alertAction, alertDescription, alertTitle } from "../../../../ui
 import { linkButton } from "../../../../ui/button"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
+import { skeleton } from "../../../../ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { listToolbar, toolbarCount, toolbarStat } from "../../../kit/list-toolbar"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
-import { SUPABASE_CONNECT_HINT, SUPABASE_NOT_CONFIGURED, supabaseOnRamp } from "../connect"
+import { supabaseConnectCta } from "../connect"
 import { ERROR_RATE_LIMIT } from "../health"
 import type { SupabaseProjectRow, SupabaseStatus } from "../model"
 import { MANAGE_HREF } from "../panel"
@@ -34,52 +28,50 @@ import { supabaseTable, supabaseTableLoading } from "./view-table"
 
 type H = HtmlBuilder<Message>
 
-const connectLink = (h: H, label: string): Html =>
-	linkButton(h, { href: MANAGE_HREF }, [icon(h, "SupabaseIcon"), label])
-
 const loading = (h: H): Html =>
-	h.div([h.Class("space-y-4")], [statRailLoading(h, 4, 4), supabaseTableLoading(h)])
+	h.div(
+		[h.Class("space-y-4")],
+		[listToolbar(h, { trailing: [skeleton(h, "h-4 w-96")] }), supabaseTableLoading(h)],
+	)
 
 const LOGS_OFF = "Turn on logs for a project to count it"
 
-const tiles = (h: H, views: ReadonlyArray<ProjectView>): Html => {
+/** The fleet's figures as toolbar readouts, the first unhealthy reason beside the health count. */
+const summaryToolbar = (h: H, views: ReadonlyArray<ProjectView>): Html => {
 	const summary = fleetSummary(views)
 	const more = summary.unhealthyCount > 1 ? ` and ${summary.unhealthyCount - 1} more` : ""
-	return statRail(h, { columns: 4 }, [
-		statRailItem(h, {
-			compact: true,
-			eyebrow: "Projects",
-			value: `${summary.healthy} of ${summary.total} healthy`,
-			tone: summary.unhealthyCount > 0 ? "warn" : undefined,
-			subline:
-				summary.firstReason !== null
-					? `${summary.firstReason}${more}`
-					: summary.unknown > 0
-						? `${countLabel(summary.unknown, "project")} without metrics`
-						: "Every project is healthy",
-		}),
-		statRailItem(h, {
-			compact: true,
-			eyebrow: "API requests",
-			value: summary.hasLogs ? formatNumber(summary.requests) : EMPTY_VALUE,
-			subline: summary.hasLogs
-				? `5xx ${formatPercent(summary.errorRate5xx)} · ${formatRate(summary.requestsPerMinute)} req/min`
-				: LOGS_OFF,
-			tone: summary.errorRate5xx >= ERROR_RATE_LIMIT ? "crit" : undefined,
-		}),
-		statRailItem(h, {
-			compact: true,
-			eyebrow: "Errors and warnings",
-			value: summary.hasLogs ? formatNumber(summary.issues) : EMPTY_VALUE,
-			subline: summary.hasLogs ? `across ${countLabel(summary.issueProjects, "project")}` : LOGS_OFF,
-		}),
-		statRailItem(h, {
-			compact: true,
-			eyebrow: "Storage",
-			value: formatBytes(summary.dbSize),
-			subline: `across ${countLabel(summary.databases, "database")}`,
-		}),
-	])
+	return listToolbar(h, {
+		trailing: [
+			toolbarStat(h, {
+				value: `${summary.healthy} of ${summary.total}`,
+				label: "healthy",
+				dot: summary.unhealthyCount > 0 ? "warn" : "ok",
+			}),
+			...(summary.firstReason === null ? [] : [toolbarCount(h, [`${summary.firstReason}${more}`])]),
+			...(summary.firstReason === null && summary.unknown > 0
+				? [toolbarStat(h, { value: String(summary.unknown), label: "without metrics" })]
+				: []),
+			...(summary.hasLogs
+				? [
+						toolbarStat(h, { value: formatNumber(summary.requests), label: "API requests" }),
+						toolbarStat(h, {
+							value: formatPercent(summary.errorRate5xx),
+							label: "5xx",
+							dot: summary.errorRate5xx >= ERROR_RATE_LIMIT ? "crit" : undefined,
+						}),
+						toolbarStat(h, { value: formatRate(summary.requestsPerMinute), label: "req/min" }),
+						toolbarStat(h, {
+							value: formatNumber(summary.issues),
+							label: `errors and warnings across ${countLabel(summary.issueProjects, "project")}`,
+						}),
+					]
+				: [toolbarCount(h, [LOGS_OFF])]),
+			toolbarStat(h, {
+				value: formatBytes(summary.dbSize),
+				label: `stored across ${countLabel(summary.databases, "database")}`,
+			}),
+		],
+	})
 }
 
 const revokedNotice = (h: H): Html =>
@@ -115,7 +107,7 @@ const overview = (
 		[h.Class("space-y-4")],
 		[
 			...(status.revoked ? [revokedNotice(h)] : []),
-			tiles(h, views),
+			summaryToolbar(h, views),
 			supabaseTable(h, views, isWaiting),
 			h.div(
 				[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
@@ -131,7 +123,7 @@ const overview = (
 const projectsError = (h: H, failure: LoadFailure): Html =>
 	errorState(h, {
 		failure,
-		title: "Failed to load Supabase metrics",
+		title: "Couldn't load Supabase metrics",
 		onRetry: Message.ClickedRetryProjects(),
 	})
 
@@ -147,10 +139,7 @@ const projectsView = (h: H, model: Model, status: SupabaseStatus): Html =>
 
 /** Not connected is the on-ramp: no placeholder data, ever. */
 const byStatus = (h: H, model: Model, status: SupabaseStatus): Html => {
-	if (status.connected) return projectsView(h, model, status)
-	return status.configured
-		? supabaseOnRamp(h, SUPABASE_CONNECT_HINT, connectLink(h, "Connect Supabase"))
-		: supabaseOnRamp(h, SUPABASE_NOT_CONFIGURED, null)
+	return status.connected ? projectsView(h, model, status) : supabaseConnectCta(h, status.configured)
 }
 
 const statusView = (h: H, model: Model): Html =>
@@ -160,7 +149,7 @@ const statusView = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Supabase integration",
+				title: "Couldn't load the Supabase integration",
 				onRetry: Message.ClickedRetryStatus(),
 			}),
 		onStale: ({ data }) => byStatus(h, model, data),
@@ -185,27 +174,25 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	dashboardPage(
 		h,
 		{
-			scrollClassName: "gap-6",
-			actions: pageTime(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_PRESET,
-				window: model.window,
-				picker: model.timePicker,
-				toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-			}),
-		},
-		[
-			pageHero(h, {
-				title: "Supabase",
-				description: description(model),
-				actions: [
+			gap: "lg",
+			titleContent: pageHeroParts(h, { title: "Supabase", description: description(model) }).title,
+			actions: h.div(
+				[h.Class("flex flex-wrap items-center gap-2")],
+				[
 					linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage projects"]),
+					pageTime(h, {
+						search: model.search,
+						defaultPreset: DEFAULT_PRESET,
+						window: model.window,
+						picker: model.timePicker,
+						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+						onReset: Message.ClickedResetTimeRange(),
+						onReload: Message.ClickedReload(),
+						isReloading: model.isReloading,
+					}),
 				],
-			}),
-			statusView(h, model),
-		],
+			),
+		},
+		[statusView(h, model)],
 	),
 )

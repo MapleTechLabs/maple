@@ -24,18 +24,20 @@ import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
-import { segmentedSelect } from "../../../../ui/segmented-select"
-import { skeleton } from "../../../../ui/skeleton"
 import { switchControl } from "../../../../ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
-import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
+import { heroFieldChip } from "../../../infra/kit/hero-chip"
+import { viewTabStrip } from "../../../infra/kit/view-tabs"
+import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import type { Status, ZoneRow } from "../data"
-import { ingestBanner, ingestEmpty, notConnected } from "../ingest"
+import { ingestBanner, ingestEmpty, needsPermissions } from "../ingest"
+import { integrationConnectCta } from "../../kit/integration-empty"
+import { CLOUDFLARE_ACCENT } from "../../../integrations/catalog"
+import { AppRoute, hrefOf } from "../../../../route"
 import {
 	accountCounts,
 	accountShares,
@@ -47,9 +49,10 @@ import {
 	type ListScope,
 	listScopeOf,
 	phaseOf,
+	statusOf,
 } from "./derive"
 import { Message, type Model } from "./model"
-import { DEFAULT_PRESET } from "./update"
+import { DEFAULT_PRESET, viewHref } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
 
@@ -78,7 +81,7 @@ const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | 
 	return fleetBand<ZoneScope, Message>(h, {
 		total: zones.length,
 		noun: "zone",
-		caption: "each zone by its worst signal over the window",
+		caption: "worst signal per zone",
 		segments: [
 			{
 				key: "healthy",
@@ -93,21 +96,21 @@ const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | 
 			{
 				scope: "serving5xx",
 				label: "Serving 5xx",
-				hint: "≥1% of requests",
+				hint: "1% or more of requests",
 				value: serving5xx,
 				tone: "crit",
 			},
 			{
 				scope: "mostly4xx",
 				label: "Mostly 4xx",
-				hint: "≥50% of requests",
+				hint: "half or more of requests",
 				value: mostly4xx,
 				tone: "warn",
 			},
 			{
 				scope: "lowVolume",
 				label: "Low volume",
-				hint: `<${MIN_RATED_REQUESTS} requests, not rated`,
+				hint: `under ${MIN_RATED_REQUESTS} requests, not rated`,
 				value: lowVolume,
 				tone: "neutral",
 			},
@@ -135,21 +138,21 @@ const workerBand = (h: H, rows: ReadonlyArray<WorkerListRow>, activeScope: Worke
 			{
 				scope: "erroring",
 				label: "Erroring",
-				hint: "≥1% of invocations or DO calls",
+				hint: "1% or more of invocations or DO calls",
 				value: erroring,
 				tone: "crit",
 			},
 			{
 				scope: "slow",
 				label: "Slow",
-				hint: "duration p99 ≥1s",
+				hint: "p99 duration of 1s or more",
 				value: count(rows, (r) => workerInScope(r, "slow")),
 				tone: "warn",
 			},
 			{
 				scope: "cpuHeavy",
 				label: "CPU heavy",
-				hint: `cpu p99 ≥${CPU_HEAVY_P99_MS}ms`,
+				hint: `CPU p99 of ${CPU_HEAVY_P99_MS}ms or more`,
 				value: count(rows, (r) => workerInScope(r, "cpuHeavy")),
 				tone: "neutral",
 			},
@@ -187,7 +190,7 @@ const zonesView = (
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: `Filter ${zones.length} zones`,
+			placeholder: "Filter zones",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -230,10 +233,13 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: `Filter ${rows.length} Workers`,
+			placeholder: "Filter Workers",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
-			trailing: `${filtered.length} of ${rows.length} · problems first`,
+			trailing:
+				filtered.length === rows.length
+					? `${rows.length} Workers · problems first`
+					: `${filtered.length} of ${rows.length} · problems first`,
 			children:
 				previews > 0
 					? [
@@ -263,32 +269,42 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 	])
 }
 
-const header = (h: H, model: Model, singleAccountName: string | null, scope: ListScope): Html => {
-	const options = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0).map((v) => ({
-		value: v,
-		label: scope.counts[v] === null ? VIEW_LABEL[v] : `${VIEW_LABEL[v]} ${scope.counts[v]}`,
-	}))
+const TITLE = "Cloudflare"
+const DESCRIPTION = "Traffic, errors and cache for your zones and Workers."
+
+/** The title row's badge; the account switch appears once there is data to scope. */
+type HeaderParts = Readonly<{ trailing?: Html; actions: ReadonlyArray<Html> }>
+
+const header = (
+	h: H,
+	model: Model,
+	singleAccountName: string | null,
+	scope: ListScope | null,
+): HeaderParts => {
+	if (scope === null) return { actions: [] }
 	const account = scope.multiAccount
 		? accountMenu(h, model.accountMenu, scope.accounts, scope.accountId)
 		: singleAccountName
-			? heroChip(h, ["account ", singleAccountName])
+			? heroFieldChip(h, { label: "account", value: singleAccountName })
 			: undefined
-	return pageHero(h, {
-		title: "Cloudflare",
-		trailing: account,
-		actions:
-			options.length > 1
-				? [
-						segmentedSelect(h, {
-							size: "xs",
-							ariaLabel: "Cloudflare view",
-							options,
-							value: scope.view,
-							onChange: (view) => Message.ClickedView({ view }),
-						}),
-					]
-				: [],
-	})
+	return { trailing: account, actions: [] }
+}
+
+/** The view tabs for the header's `tabs` slot, each with its count; empty views stay hidden. */
+const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html | undefined => {
+	const views = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0)
+	if (views.length < 2) return undefined
+	return viewTabStrip(
+		h,
+		"Cloudflare views",
+		views.map((v) => ({
+			id: v,
+			title: scope.counts[v] === null ? VIEW_LABEL[v] : `${VIEW_LABEL[v]} ${scope.counts[v]}`,
+			href: viewHref(model.search, v),
+			onClick: inPlace ? Message.ClickedView({ view: v }) : undefined,
+		})),
+		scope.view,
+	)
 }
 
 /** `CloudflareListPage`'s props: what the route reads, or the lab's fixtures. */
@@ -297,6 +313,8 @@ export type ListFrame = Readonly<{
 	accounts: ReadonlyArray<CloudflareAccount>
 	singleAccountName: string | null
 	banner: Html | null
+	/** The lab has no router: its view tabs switch on a plain click instead of following the link. */
+	inPlaceViews?: boolean
 }>
 
 const listPage = (h: H, model: Model, status: Status, data: ListData, spark: SparkContext): Html => {
@@ -311,11 +329,18 @@ const listPage = (h: H, model: Model, status: Status, data: ListData, spark: Spa
 			banner: phase === null ? null : ingestBanner(h, phase),
 		},
 		spark,
+		false,
 	)
 }
 
-/** `CloudflareListPage`: header, banner, accounts strip and the current view. */
-export const listBody = (h: H, model: Model, frame: ListFrame, spark: SparkContext): Html => {
+/** `CloudflareListPage`: header, banner, accounts strip and the current view. The route draws the header in its title row. */
+export const listBody = (
+	h: H,
+	model: Model,
+	frame: ListFrame,
+	spark: SparkContext,
+	withHeader = true,
+): Html => {
 	const { data, banner } = frame
 	const scope = listScopeOf(model, data, frame.accounts)
 	const healthLine = scope.scopedAccount === undefined ? null : accountHealthLine(h, scope.scopedAccount)
@@ -333,24 +358,29 @@ export const listBody = (h: H, model: Model, frame: ListFrame, spark: SparkConte
 						sort: model.queueSort,
 						isWaiting: isWaiting(model.platform.data),
 					})
+	const content = [
+		...(banner === null ? [] : [banner]),
+		...(scope.showAccountColumn
+			? [
+					accountsStrip(
+						h,
+						scope.accounts,
+						accountShares(scope.view, data, scope.zoneAccount),
+						accountCounts(scope.accounts, data, scope.zoneAccount),
+					),
+				]
+			: healthLine === null
+				? []
+				: [healthLine]),
+		body,
+	]
 	return h.div(
 		[h.Class("space-y-6")],
 		[
-			header(h, model, frame.singleAccountName, scope),
-			...(banner === null ? [] : [banner]),
-			...(scope.showAccountColumn
-				? [
-						accountsStrip(
-							h,
-							scope.accounts,
-							accountShares(scope.view, data, scope.zoneAccount),
-							accountCounts(scope.accounts, data, scope.zoneAccount),
-						),
-					]
-				: healthLine === null
-					? []
-					: [healthLine]),
-			body,
+			...(withHeader
+				? [pageHero(h, { title: TITLE, ...header(h, model, frame.singleAccountName, scope) })]
+				: []),
+			...content,
 		],
 	)
 }
@@ -383,44 +413,88 @@ const dataView = (h: H, model: Model, status: Status, spark: SparkContext): Html
 	return listPage(h, model, status, data, spark)
 }
 
+const FEATURES = [
+	{
+		label: "Zone analytics",
+		title: "Requests and cache per zone",
+		description: "Traffic, cache hit rate and errors for every zone.",
+	},
+	{
+		label: "Workers",
+		title: "Scripts on the service map",
+		description: "Every Worker appears as a node with request volume and errors next to your traces.",
+	},
+	{
+		label: "DNS and security",
+		title: "Firewall events with context",
+		description: "DNS queries and WAF activity land alongside your traces and logs.",
+	},
+]
+
+/** Nothing connected: what this page will show, and the way to the connect flow. */
+const cloudflareConnectCta = (h: H): Html =>
+	integrationConnectCta(h, {
+		brand: { icon: "CloudflareBrandIcon", backerIcon: "CloudflareMonoIcon", accent: CLOUDFLARE_ACCENT },
+		features: FEATURES,
+		hint: "Read-only. Your zones and Workers appear here within about 15 minutes of connecting.",
+		label: "Connect Cloudflare",
+		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "cloudflare" } })),
+	})
+
 const connectedView = (h: H, model: Model, status: Status, spark: SparkContext): Html => {
-	if (!status.connected) return notConnected(h, "not-connected")
-	if (!status.analyticsCapable) return notConnected(h, "needs-permissions")
+	if (!status.connected) return cloudflareConnectCta(h)
+	if (!status.analyticsCapable) return needsPermissions(h)
 	return dataView(h, model, status, spark)
 }
 
 const statusView = (h: H, model: Model, spark: SparkContext): Html =>
 	AsyncData.match(model.status.data, {
-		onIdle: () => h.div([h.Class("space-y-4")], [skeleton(h, "h-8 w-48"), bandLoading(h)]),
-		onLoading: () => h.div([h.Class("space-y-4")], [skeleton(h, "h-8 w-48"), bandLoading(h)]),
+		onIdle: () => bandLoading(h),
+		onLoading: () => bandLoading(h),
 		onFailure: (failure) => errorState(h, { failure }),
 		onStale: ({ error }) => errorState(h, { failure: error }),
 		onSuccess: (status) => connectedView(h, model, status, spark),
 		onRefreshing: (status) => connectedView(h, model, status, spark),
 	})
 
+/** The title row the route and the lab share: title, account chip and description, time controls, view tabs. */
+export const titleRow = (
+	h: H,
+	model: Model,
+	singleAccountName: string | null,
+	scope: ListScope | null,
+	inPlaceViews = false,
+): Readonly<{ titleContent: Html; actions: Html; tabs: Html | undefined }> => {
+	const hero = header(h, model, singleAccountName, scope)
+	const timeControls = pageTime(h, {
+		search: model.search,
+		defaultPreset: DEFAULT_PRESET,
+		window: model.window,
+		picker: model.timePicker,
+		toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+		onReset: Message.ClickedResetTimeRange(),
+		onReload: Message.ClickedReload(),
+		isReloading: model.isReloading,
+	})
+	return {
+		titleContent: pageHeroParts(h, {
+			title: TITLE,
+			trailing: hero.trailing,
+			description: DESCRIPTION,
+		}).title,
+		actions: headerActions(h, hero.actions, timeControls),
+		tabs: scope === null ? undefined : viewTabs(h, model, scope, inPlaceViews),
+	}
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const spark = { theme: model.themeColors, isChartReady: model.chartRuntime._tag === "Ready" }
+	const status = statusOf(model)
+	const data = listDataOf(model)
+	const hasData = status !== null && status.connected && status.analyticsCapable && !isNoTraffic(data)
+	const row = titleRow(h, model, status?.accountName ?? null, hasData ? listScopeOf(model, data) : null)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
-		[
-			dashboardPage(
-				h,
-				{
-					scrollClassName: "gap-6",
-					actions: pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
-				},
-				[statusView(h, model, spark)],
-			),
-		],
+		[dashboardPage(h, { gap: "lg", ...row }, [statusView(h, model, spark)])],
 	)
 })

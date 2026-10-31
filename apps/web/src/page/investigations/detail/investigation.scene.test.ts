@@ -98,7 +98,7 @@ describe("investigation detail", () => {
 
 	test("a lost live connection offers a retry", () => {
 		const failed = pageUpdate(entered(), Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } })).model
-		scene({ update: pageUpdate, view }, given(failed), expectView(text("This investigation could not be loaded")).toExist())
+		scene({ update: pageUpdate, view }, given(failed), expectView(text("Couldn't load this investigation")).toExist())
 	})
 
 	test("Try again resubscribes the live shape, and the dropped stream's answer is ignored", () => {

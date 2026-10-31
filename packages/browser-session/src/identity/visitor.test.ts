@@ -8,6 +8,9 @@ import {
 	setVisitorTracking,
 } from "./visitor"
 
+const SHARED_ID = "5f0c7d0e-2b1a-4c3d-8e9f-0a1b2c3d4e5f"
+const ORIGIN_LOCAL_ID = "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d"
+
 /** Minimal localStorage stand-in; `throwOnWrite` models Safari private mode. */
 function installStorage(options: { throwOnWrite?: boolean } = {}): Map<string, string> {
 	const store = new Map<string, string>()
@@ -102,10 +105,10 @@ describe("visitor id", () => {
 	it("expires an id older than 400 days", () => {
 		const store = installStorage()
 		const stale = Date.now() - 401 * 24 * 60 * 60_000
-		store.set("maple.visitor", JSON.stringify({ id: "old-visitor", mintedAt: stale }))
+		store.set("maple.visitor", JSON.stringify({ id: ORIGIN_LOCAL_ID, mintedAt: stale }))
 
 		// Matches the ~13-month ceiling browsers settled on for first-party ids.
-		expect(getVisitorId()).not.toBe("old-visitor")
+		expect(getVisitorId()).not.toBe(ORIGIN_LOCAL_ID)
 		expect(claimNewVisitor()).toBe(true)
 	})
 
@@ -221,15 +224,15 @@ describe("visitor cookie", () => {
 		const mintedAt = Date.now()
 		// The app minted its own id before the cookie existed; the marketing site's
 		// cookie is the identity that links the two surfaces, so it wins.
-		store.set("maple.visitor", JSON.stringify({ id: "origin-local", mintedAt }))
+		store.set("maple.visitor", JSON.stringify({ id: ORIGIN_LOCAL_ID, mintedAt }))
 		jar.set("maple_visitor", {
-			value: encodeURIComponent(JSON.stringify({ id: "shared", mintedAt })),
+			value: encodeURIComponent(JSON.stringify({ id: SHARED_ID, mintedAt })),
 			domain: "example.com",
 		})
 
-		expect(getVisitorId()).toBe("shared")
+		expect(getVisitorId()).toBe(SHARED_ID)
 		expect(claimNewVisitor()).toBe(false)
-		expect(JSON.parse(store.get("maple.visitor") as string).id).toBe("shared")
+		expect(JSON.parse(store.get("maple.visitor") as string).id).toBe(SHARED_ID)
 	})
 
 	it("survives localStorage being blocked", () => {
