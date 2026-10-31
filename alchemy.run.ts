@@ -50,6 +50,7 @@ import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
+import StatusWorker from "./apps/status/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
@@ -100,6 +101,7 @@ const devEnv = devApps
 			MAPLE_APP_BASE_URL: Portless.routeUrl("web"),
 			MAPLE_ELECTRIC_SYNC_URL: Portless.routeUrl("electric-sync"),
 			MAPLE_INGEST_URL: Portless.routeUrl("ingest"),
+			MAPLE_STATUS_PAGE_BASE_URL: Portless.routeUrl("status"),
 		}
 	: undefined
 
@@ -222,7 +224,7 @@ const MapleStackLive = Layer.effect(
 		const allDomains = resolveMapleDomains(deployment)
 		// Without ingest and Electric their hostnames would resolve nowhere.
 		const domains = webOnlyPreview
-			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync }
+			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync, status: allDomains.status }
 			: allDomains
 		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
 		const context: MapleStackContext = {
@@ -239,6 +241,9 @@ const MapleStackLive = Layer.effect(
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
+				status:
+					devEnv?.MAPLE_STATUS_PAGE_BASE_URL ??
+					(yield* resolveUrl(domains.status, "MAPLE_STATUS_PAGE_BASE_URL")),
 			},
 			workerDev,
 			devEnv,
@@ -363,6 +368,10 @@ export default Alchemy.Stack(
 
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
+
+		// Public status pages, served from edge storage alone so they outlive a Maple outage.
+		const statusWorker = yield* StatusWorker
+		yield* serveWorker("status", statusWorker)
 
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
 		const web = yield* Effect.provideService(Web, ApiWorker, api)

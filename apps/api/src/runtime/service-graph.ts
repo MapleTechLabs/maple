@@ -56,6 +56,9 @@ import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuth
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
@@ -77,6 +80,7 @@ import { SourceRemovalService } from "@maple/backend/services/integrations/Sourc
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
@@ -129,6 +133,13 @@ export const HttpServicesLive = Layer.mergeAll(
 	CancellationReviewService.layer,
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
+	StatusPagesService.layer,
+	// The `statusPages` rollout gate on the status page routes.
+	OrganizationFeatureFlagsService.layer,
+	// Read-only: previews of unsaved pages.
+	StatusPageSnapshotBuilder.layer,
+	// Needs the `StatusPageStore` port, which only the deployed Worker binds.
+	StatusPagePublisher.layer,
 	PlanetScaleConnectionService.layer,
 	PlanetScaleService.layer,
 	PlanetScaleWebhookService.layer,

@@ -78,7 +78,15 @@ import {
 } from "./security-audit"
 import { SupabaseConnections, SupabaseProjectInsights, SupabaseProjects } from "./supabase"
 import { OrgSupportChannels } from "./support-channels"
-import { UptimeMonitorStates, UptimeMonitors } from "./uptime"
+import {
+	StatusPageComponents,
+	StatusPageIncidentComponents,
+	StatusPageCleanups,
+	StatusPageIncidentUpdates,
+	StatusPageIncidents,
+	StatusPages,
+} from "./status-pages"
+import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -136,6 +144,7 @@ export * from "./railway"
 export * from "./scrape-targets"
 export * from "./security-audit"
 export * from "./sources"
+export * from "./status-pages"
 export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
@@ -230,6 +239,13 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgSupportChannels,
 	UptimeMonitors,
 	UptimeMonitorStates,
+	UptimeMonitorDaily,
+	StatusPages,
+	StatusPageComponents,
+	StatusPageIncidents,
+	StatusPageIncidentUpdates,
+	StatusPageIncidentComponents,
+	StatusPageCleanups,
 	VcsInstallations,
 	VcsRepositories,
 	VcsCommits,

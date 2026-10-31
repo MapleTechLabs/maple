@@ -162,6 +162,10 @@ import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertR
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import {
+	openForAlertIncident,
+	resolveForAlertIncident,
+} from "@maple/backend/services/status-pages/auto-incidents"
+import {
 	decodeStoredAlertRuleMetadata,
 	storedRuleCondition,
 	isGroupedPlan,
@@ -597,6 +601,9 @@ export interface AlertsServiceApi
 	>
 }
 
+/** Longest an uptime incident's status-page write may delay the alert tick. */
+const STATUS_PAGE_SYNC_TIMEOUT = "3 seconds"
+
 export class AlertsService extends Context.Service<AlertsService, AlertsServiceApi>()(
 	"@maple/backend/services/AlertsService",
 	{
@@ -652,6 +659,33 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			} = rulePersistence
 
 			const dbExecute = makeDbExecute(database, "AlertsService", makePersistenceError)
+
+			// Status pages showing an uptime rule's monitor follow its incidents. Runs after the
+			// alert write commits, bounded so a slow page write cannot hold the notification behind
+			// it; a failure or timeout is logged (the repair sweep catches up) and never blocks alerting.
+			const syncStatusPages = <E>(
+				signalType: string,
+				context: { readonly orgId: OrgId; readonly alertIncidentId: string },
+				write: (db: MapleDb) => Effect.Effect<unknown, E>,
+			) =>
+				signalType !== "uptime"
+					? Effect.void
+					: database
+							.execute((db) => db.transaction(write(db)))
+							.pipe(
+								Effect.timeout(STATUS_PAGE_SYNC_TIMEOUT),
+								Effect.asVoid,
+								// A defect too: a status page sync must never abort the alert tick.
+								Effect.catchCause((cause) =>
+									Effect.logWarning("Status page auto incident sync failed").pipe(
+										Effect.annotateLogs({
+											orgId: context.orgId,
+											"maple.alert.incident_id": context.alertIncidentId,
+											"error.message": summarizeCause(cause),
+										}),
+									),
+								),
+							)
 
 			/**
 			 * Run `write` only while `claim` still owns the rule. The claim row is
@@ -3126,6 +3160,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								severity: lifecycle.severity,
 							}
 						}
+						yield* syncStatusPages(
+							normalized.signalType,
+							{ orgId: row.orgId, alertIncidentId: incidentId },
+							(db) =>
+								openForAlertIncident(db, {
+									orgId: row.orgId,
+									ruleId: row.id,
+									alertIncidentId: incidentId,
+									at: timestamp,
+								}),
+						)
 						if (lifecycle.notificationSuppression === "flapping") {
 							yield* Effect.logInfo("Skipping trigger notification for flapping incident").pipe(
 								Effect.annotateLogs({
@@ -3291,6 +3336,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								severity: lifecycle.severity,
 							}
 						}
+						yield* syncStatusPages(
+							normalized.signalType,
+							{ orgId: row.orgId, alertIncidentId: openIncident.id },
+							(db) =>
+								resolveForAlertIncident(db, {
+									orgId: row.orgId,
+									alertIncidentId: openIncident.id,
+									at: timestamp,
+								}),
+						)
 						if (openIncident.holdReason !== null) {
 							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 						}
@@ -3577,6 +3632,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							),
 						)
 						if (resolved.length === 0) return false
+						yield* syncStatusPages(
+							normalized.signalType,
+							{ orgId, alertIncidentId: incident.id },
+							(db) =>
+								resolveForAlertIncident(db, {
+									orgId,
+									alertIncidentId: incident.id,
+									at: timestamp,
+								}),
+						)
 						if (incident.holdReason !== null) {
 							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 						}
@@ -3750,6 +3815,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								),
 							)
 							if (resolved.length === 0) return false
+							yield* syncStatusPages(
+								normalized.signalType,
+								{ orgId, alertIncidentId: incident.id },
+								(db) =>
+									resolveForAlertIncident(db, {
+										orgId,
+										alertIncidentId: incident.id,
+										at: timestamp,
+									}),
+							)
 							if (incident.holdReason !== null) {
 								yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 							}

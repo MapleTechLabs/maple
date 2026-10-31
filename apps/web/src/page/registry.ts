@@ -87,6 +87,9 @@ import * as Share from "./share"
 import * as SourcesList from "./sources/list"
 import * as SourcesNew from "./sources/new"
 import * as SourceDetail from "./sources/detail"
+import * as StatusPageBuilder from "./status-pages/builder"
+import * as StatusPageEditor from "./status-pages/editor"
+import * as StatusPagesList from "./status-pages/list"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
@@ -111,6 +114,9 @@ export const pages = [
 	AlertRule.page,
 	AlertsUptimeMonitor.page,
 	AlertsUptimeNew.page,
+	StatusPagesList.page,
+	StatusPageBuilder.page,
+	StatusPageEditor.page,
 	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,

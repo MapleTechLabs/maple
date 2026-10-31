@@ -2,15 +2,16 @@ import { cacheResultStyles, getCacheInfo } from "@maple/ui/lib/cache"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getHttpInfo, HTTP_METHOD_COLORS, httpStatusTone } from "@maple/ui/lib/http"
-import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
+import { getSpanKindLabel } from "@maple/ui/lib/span-kind"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { severityTone, TONE_COLOR, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../../ui/display"
 import { icon } from "../../../../ui/icon"
 import { iconButton } from "../../../../ui/icon-button"
+import { traceStatusBadge } from "../../../../ui/trace-badges"
 import { truncatedId } from "../../../../ui/truncated-id"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { serviceDot } from "../../../../ui/values"
@@ -51,7 +52,7 @@ const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean):
 		h.div(
 			[
 				h.AriaHidden(true),
-				h.Class("relative -my-1.5 shrink-0 self-stretch"),
+				h.Class("relative shrink-0 self-stretch"),
 				h.Style({ width: `${shown * COLUMN_PX}px`, "margin-right": shown === 0 ? "-8px" : "0px" }),
 			],
 			[
@@ -107,8 +108,9 @@ const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean):
 	]
 }
 
+// The status column carries Ok; the tree only flags errors.
 const statusFill = (statusCode: string): string =>
-	statusCode === "Error" ? TONE_FILL.crit : statusCode === "Ok" ? TONE_FILL.ok : TONE_FILL.neutral
+	statusCode === "Error" ? TONE_FILL.crit : TONE_FILL.neutral
 
 /** A parent's chevron, or a leaf's status square where the elbow lands. */
 const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean): Html =>
@@ -126,7 +128,7 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				[icon(h, isExpanded ? "ChevronDownIcon" : "ChevronRightIcon")],
 			)
 		: h.div(
-				[h.Class("flex h-7 w-6 shrink-0 items-center justify-center")],
+				[h.Class("flex size-6 shrink-0 items-center justify-center")],
 				[
 					h.span(
 						[
@@ -155,8 +157,9 @@ const pixelBar = (
 				[
 					h.Attribute(
 						"class",
-						`w-[5px] h-2.5 rounded-2xs shrink-0 ${isActive ? color : "bg-muted"}`,
+						`w-[5px] h-2.5 rounded-2xs shrink-0 ${isActive ? "" : "bg-muted"}`,
 					),
+					...(isActive ? [h.Style({ "background-color": color })] : []),
 				],
 				[],
 			)
@@ -170,14 +173,14 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-stretch px-2 bg-surface-sunken",
+					"@container/row group flex h-7 items-stretch px-2 bg-surface-sunken",
 					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
 		],
 		[
 			h.div(
-				[h.Class("flex items-center gap-2 flex-1 min-w-0 overflow-hidden py-1.5")],
+				[h.Class("flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
@@ -201,7 +204,7 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 				],
 			),
 			h.div(
-				[h.Class("flex items-center gap-2 shrink-0 ml-2 py-1.5")],
+				[h.Class("flex items-center gap-2 shrink-0 ml-2")],
 				[
 					h.div([h.Class("hidden w-48 @min-[560px]/row:block")], []),
 					truncatedId(h, {
@@ -346,49 +349,31 @@ const locationLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Htm
 	]
 }
 
-/** The status cell: cache result, else the HTTP code, else the span status. */
+const STATUS_CELL = "w-14 justify-center"
+
+/** The status cell: cache result, else the HTTP code, else the span status; soft badges as in the traces list. */
 const statusCell = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpInfo | null): Html => {
 	const cacheInfo = getCacheInfo({ ...span.spanAttributes })
 	if (cacheInfo?.result === "hit" || cacheInfo?.result === "miss") {
 		return badge(
 			h,
-			{
-				variant: "outline",
-				className: cn(
-					"text-3xs w-14 justify-center font-medium",
-					cacheResultStyles[cacheInfo.result],
-				),
-			},
+			{ variant: "outline", className: cn(STATUS_CELL, cacheResultStyles[cacheInfo.result]) },
 			[cacheInfo.result === "hit" ? "HIT" : "MISS"],
 		)
 	}
 	const code = httpInfo?.statusCode ?? null
 	if (code !== null && code !== 0) {
-		const tone = httpStatusTone(code)
-		return h.span(
-			[
-				h.Class(
-					cn(
-						"w-14 text-center font-mono text-xs font-medium",
-						tone !== "neutral"
-							? TONE_TEXT[tone]
-							: code >= 300
-								? "text-chart-p50"
-								: "text-severity-info",
-					),
-				),
-			],
-			[String(code)],
-		)
+		return traceStatusBadge(h, {
+			hasError: span.statusCode === "Error",
+			httpStatusCode: code,
+			className: STATUS_CELL,
+		})
 	}
 	return badge(
 		h,
 		{
-			variant: "outline",
-			className: cn(
-				"text-3xs w-14 justify-center font-medium",
-				getSpanStatusBadgeClass(span.statusCode),
-			),
+			variant: "secondary",
+			className: cn(STATUS_CELL, TONE_SOFT[severityTone(span.statusCode)]),
 		},
 		[span.statusCode === "" ? "Unset" : span.statusCode],
 	)
@@ -405,18 +390,17 @@ const rightSection = (
 		ctx.totalDurationMs > 0 ? ((spanStartMs(span) - traceStartMs) / ctx.totalDurationMs) * 100 : 0
 	const widthPercent = ctx.totalDurationMs > 0 ? (span.durationMs / ctx.totalDurationMs) * 100 : 0
 	const httpTone = httpStatusTone(httpInfo?.statusCode)
+	// Errors and HTTP warnings keep their tone; everything else takes the service colour, as on the Timeline tab.
 	const barColor =
-		httpTone === "crit"
-			? TONE_FILL.crit
+		httpTone === "crit" || span.statusCode === "Error"
+			? TONE_COLOR.crit
 			: httpTone === "warn"
-				? TONE_FILL.warn
-				: span.statusCode === "Error"
-					? TONE_FILL.crit
-					: "bg-primary"
+				? TONE_COLOR.warn
+				: getServiceColor(span.serviceName)
 	const platform = rowPlatform({ ...span.spanAttributes })
 	const outcome = Option.fromNullishOr(platform?.outcome).pipe(Option.filter((o) => o.bad))
 	return h.div(
-		[h.Class("flex items-center gap-2 shrink-0 ml-2 py-1.5")],
+		[h.Class("flex items-center gap-2 shrink-0 ml-2")],
 		[
 			pixelBar(h, leftPercent, Math.max(widthPercent, 1), barColor),
 			h.span(
@@ -461,7 +445,7 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-stretch hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"@container/row group flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					span.statusCode === "Error" && "bg-severity-error-a1",
 					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
@@ -473,7 +457,7 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		],
 		[
 			h.div(
-				[h.Class("@container flex items-center gap-2 flex-1 min-w-0 overflow-hidden py-1.5")],
+				[h.Class("@container flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),

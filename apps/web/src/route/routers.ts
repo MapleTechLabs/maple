@@ -96,6 +96,21 @@ const routers = {
 		slash(segment("ruleId")),
 		Route.mapTo(AppRoute.IngestRule),
 	),
+	// Retired: `routeRedirect` sends it to `/status-pages/$pageId`.
+	AlertsStatusPage: pipe(
+		path("alerts", "status-pages"),
+		slash(segment("pageId")),
+		search(Search.AlertsStatusPageSearch),
+		Route.mapTo(AppRoute.AlertsStatusPage),
+	),
+	StatusPages: pipe(path("status-pages"), Route.mapTo(AppRoute.StatusPages)),
+	StatusPageNew: pipe(path("status-pages", "new"), Route.mapTo(AppRoute.StatusPageNew)),
+	StatusPage: pipe(
+		path("status-pages"),
+		slash(segment("pageId")),
+		search(Search.StatusPageSearch),
+		Route.mapTo(AppRoute.StatusPage),
+	),
 	Anomaly: pipe(
 		path("anomalies"),
 		slash(schemaSegment("incidentId", AnomalyIncidentId)),
@@ -410,6 +425,9 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.AlertsUptimeMonitor,
 		routers.IngestRuleNew,
 		routers.IngestRule,
+		routers.AlertsStatusPage,
+		routers.StatusPageNew,
+		routers.StatusPage,
 		routers.DashboardsTemplates,
 		routers.SourcesNew,
 		routers.InfraDiscover,

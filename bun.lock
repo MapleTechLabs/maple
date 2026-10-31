@@ -295,6 +295,23 @@
         "vitest": "catalog:",
       },
     },
+    "apps/status": {
+      "name": "@maple/status",
+      "dependencies": {
+        "@alchemy.run/cloudflare": "catalog:alchemy",
+        "@maple/domain": "workspace:*",
+        "@maple/infra": "workspace:*",
+        "@maple/status-page": "workspace:*",
+        "alchemy": "catalog:alchemy",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "apps/web": {
       "name": "@maple/web",
       "dependencies": {
@@ -316,6 +333,7 @@
         "@maple/ingest-rules": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
+        "@maple/status-page": "workspace:*",
         "@maple/ui": "workspace:*",
         "@maple/web-data": "workspace:*",
         "@maple/widgets": "workspace:*",
@@ -882,6 +900,18 @@
       "name": "@maple/security-audit",
       "version": "0.0.0",
       "dependencies": {
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/status-page": {
+      "name": "@maple/status-page",
+      "dependencies": {
+        "@maple/domain": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -1585,6 +1615,10 @@
     "@maple/security-audit": ["@maple/security-audit@workspace:packages/security-audit"],
 
     "@maple/semconv": ["@maple/semconv@workspace:lib/semconv"],
+
+    "@maple/status": ["@maple/status@workspace:apps/status"],
+
+    "@maple/status-page": ["@maple/status-page@workspace:packages/status-page"],
 
     "@maple/ui": ["@maple/ui@workspace:packages/ui"],
 

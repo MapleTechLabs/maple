@@ -95,6 +95,7 @@ const READ_ONLY_POST_PATHS = new Set([
 	"/v2/session_replays/search",
 	"/v2/session_replays/for_trace",
 	"/v2/alerts/rules/preview",
+	"/v2/status_pages/preview",
 	"/v2/services/health",
 	"/v2/traces/search",
 	"/v2/traces/timeseries",

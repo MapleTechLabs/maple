@@ -3,6 +3,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
+import { queueOrgPageRemovals } from "@maple/backend/services/status-pages/outbox"
 import {
 	ChooseOrganizationRegionResponse,
 	CreateOrganizationResponse,
@@ -73,6 +74,12 @@ import {
 	ScrapeTargets,
 	Sources,
 	SupabaseConnections,
+	StatusPageComponents,
+	StatusPageIncidentComponents,
+	StatusPageIncidentUpdates,
+	StatusPageIncidents,
+	StatusPages,
+	UptimeMonitorDaily,
 	UptimeMonitorStates,
 	UptimeMonitors,
 	SupabaseProjectInsights,
@@ -145,8 +152,16 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	Sources,
 	OrgClickHouseSettings,
 	ScrapeTargets,
+	// Status pages first: their components point at monitors. The edge copy of a page outlives
+	// these rows until the publisher's sweep removes pages it no longer finds.
+	StatusPageIncidentComponents,
+	StatusPageIncidentUpdates,
+	StatusPageIncidents,
+	StatusPageComponents,
+	StatusPages,
 	// A surviving monitor keeps Maple probing the org's endpoints, and its heartbeat token
 	// keeps accepting pings. The state rows also go with the monitor by foreign key.
+	UptimeMonitorDaily,
 	UptimeMonitorStates,
 	UptimeMonitors,
 	OAuthConnections,
@@ -278,6 +293,8 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"PlanetscaleEvents",
 	"PlanetscalePollState",
 	"ScrapeTargetChecks",
+	// Edge cleanups queued by the delete itself; the publisher removes each row once done.
+	"StatusPageCleanups",
 	"VcsRepositoryBranches",
 ] as const
 
@@ -357,6 +374,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (
 				orgId: OrgId,
 			) {
+				// Public pages live on at the edge until the publisher drains these.
+				yield* dbExecute((db) => queueOrgPageRemovals(db, orgId))
 				yield* Effect.forEach(
 					ORG_SCOPED_TABLES,
 					(table) =>

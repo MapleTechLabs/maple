@@ -72,6 +72,9 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
+import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "./status-pages.http"
+import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { HttpV2SessionReplaysLive } from "./session-replays.http"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
@@ -160,6 +163,7 @@ const v2GroupLayersExceptOnboardingChecklist = (
 	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
 	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
 	uptimeMonitors: Layer.Layer<UptimeMonitorsService> = UptimeMonitorsServiceStubLayer,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 ) =>
 	Layer.mergeAll(
 		HttpV2ApiKeysLive,
@@ -183,6 +187,12 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AuditLogLive.pipe(Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer))),
 		HttpV2ScrapeTargetsLive,
 		HttpV2UptimeMonitorsLive.pipe(Layer.provide(uptimeMonitors)),
+		// Real service: it needs only the Database every harness already provides.
+		Layer.mergeAll(HttpV2StatusPagesLive, HttpV2StatusPageIncidentsLive).pipe(
+			Layer.provide(
+				Layer.mergeAll(StatusPagesService.layer, StatusPageSnapshotBuilder.layer, featureFlags),
+			),
+		),
 		HttpV2InstrumentationRecommendationsLive,
 		HttpV2InstrumentationAuditLive,
 		HttpV2TelemetrySignalsLive,
@@ -298,9 +308,10 @@ export const allV2GroupLayersWithChat = (
 	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
 	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
 	uptimeMonitors: Layer.Layer<UptimeMonitorsService> = UptimeMonitorsServiceStubLayer,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 ) =>
 	Layer.mergeAll(
-		v2GroupLayersExceptOnboardingChecklist(chatWorkspace, auditLog, uptimeMonitors),
+		v2GroupLayersExceptOnboardingChecklist(chatWorkspace, auditLog, uptimeMonitors, featureFlags),
 		HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
 	).pipe(
 		// Mutation handlers across the groups record audit entries; the real service
@@ -317,6 +328,18 @@ export const allV2GroupLayersWithUptime = (uptimeMonitors: Layer.Layer<UptimeMon
 /** Every v2 group, recording audit entries into the given log so a test can read them. */
 export const allV2GroupLayersWithAudit = (auditLog: Layer.Layer<AuditLogService>) =>
 	allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer, auditLog)
+
+/** Every v2 group, with the org rollout flags the status page groups read, and optionally a readable audit log. */
+export const allV2GroupLayersWithFeatureFlags = (
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService>,
+	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
+) =>
+	allV2GroupLayersWithChat(
+		ChatWorkspaceServiceStubLayer,
+		auditLog,
+		UptimeMonitorsServiceStubLayer,
+		featureFlags,
+	)
 
 export const ApiV2RateLimiterAllowAllLayer = Layer.succeed(ApiV2RateLimiter, {
 	check: () => Effect.succeed("allowed" as const),
