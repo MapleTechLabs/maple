@@ -30,7 +30,7 @@ export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
 			h.Target("_blank"),
 			h.Rel("noopener"),
 			h.Class(
-				"font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+				"font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline active:text-foreground active:underline",
 			),
 		],
 		[url],

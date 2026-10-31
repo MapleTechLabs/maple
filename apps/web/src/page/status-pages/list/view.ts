@@ -77,7 +77,7 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
 	return h.li(
-		[h.Key(page.id), h.Class("relative py-3 pr-4 pl-4 hover:bg-muted/25")],
+		[h.Key(page.id), h.Class("relative py-3 pr-4 pl-4 hover:bg-muted/25 active:bg-muted/25")],
 		[
 			h.div(
 				[h.Class(ROW_GRID)],

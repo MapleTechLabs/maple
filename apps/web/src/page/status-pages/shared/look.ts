@@ -45,7 +45,7 @@ const presetCard = <M>(
 				h.span(
 					[h.Class("flex gap-0.5")],
 					[scheme.ok, scheme.ok, scheme.degraded, scheme.ok].map((color) =>
-						h.span([h.Class("h-2 w-1.5 rounded-[1px]"), h.Style({ backgroundColor: color })], []),
+						h.span([h.Class("h-2 w-1.5 rounded-2xs"), h.Style({ backgroundColor: color })], []),
 					),
 				),
 			],
@@ -60,7 +60,7 @@ const presetCard = <M>(
 			h.Class(
 				cn(
 					"flex flex-col gap-1.5 rounded-lg border p-1.5 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-					isSelected ? "border-primary/70 bg-primary/5" : "hover:bg-muted/50",
+					isSelected ? "border-primary/70 bg-primary-a1" : "hover:bg-muted/50 active:bg-muted/50",
 				),
 			),
 		],
