@@ -1,14 +1,16 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
+import { fromString as urlFromString } from "foldkit/url"
 import type { PageContext, PageReturn } from "../../page/contract"
 import { Message as PageMessage } from "../../page/services/detail/message"
 import { Model as PageModel } from "../../page/services/detail/model"
 import * as DetailUpdate from "../../page/services/detail/update"
 import { view as pageView } from "../../page/services/detail/view"
 import type { Resources } from "../../platform/resources"
+import { urlToAppRoute } from "../../route"
 import {
 	RUNTIMES_COMMITS,
 	RUNTIMES_DEPENDENCIES,
@@ -24,8 +26,8 @@ import {
 } from "../service-runtimes-fixture"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/service-runtimes`: the service page's Overview tab for `fleet-api` (Google Cloud Run, no
-// Kubernetes) over one hour, in the real shell. Every read is answered from the fixture.
+// `/lab/service-runtimes[?tab=operations|dependencies]`: the service page for `fleet-api` (Google
+// Cloud Run, no Kubernetes) over one hour, in the real shell. Every read is answered from the fixture.
 
 const CONTEXT: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab_service_runtimes"),
@@ -33,7 +35,7 @@ const CONTEXT: PageContext = {
 	timeZone: "UTC",
 }
 
-const Flags = Schema.Struct({})
+const Flags = Schema.Struct({ tab: Schema.NullOr(Schema.String) })
 type Flags = typeof Flags.Type
 
 const Model = Schema.Struct({ page: PageModel })
@@ -144,9 +146,19 @@ const step = (result: PageReturn<PageModel, PageMessage>): Return => {
 	}
 }
 
-const init = (_flags: Flags): Return => {
+/** The page's URL writes (a tab switch), applied to its own search the way a route change would. */
+const follow = (model: PageModel, url: string): PageReturn<PageModel, PageMessage> =>
+	Option.match(urlFromString(new URL(url, "http://localhost").href), {
+		onNone: () => ({ model }),
+		onSome: (parsed) => {
+			const route = urlToAppRoute(parsed)
+			return route._tag === "Service" ? DetailUpdate.routeChanged(model, route, CONTEXT) : { model }
+		},
+	})
+
+const init = (flags: Flags): Return => {
 	const started = DetailUpdate.init(
-		{ serviceName: RUNTIMES_SERVICE, search: { timePreset: "1h" } },
+		{ serviceName: RUNTIMES_SERVICE, search: { timePreset: "1h", tab: flags.tab ?? undefined } },
 		CONTEXT,
 	)
 	const clocked = DetailUpdate.update(
@@ -157,10 +169,16 @@ const init = (_flags: Flags): Return => {
 	return step({ ...clocked, commands: [...(started.commands ?? []), ...(clocked.commands ?? [])] })
 }
 
-/** Navigation out of the page (a tab, a row) is dropped: the lab stays on its one view. */
+/** A tab switch is followed in place; navigation out of the page (a row) is dropped. */
 const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		GotPageMessage: ({ message: inner }) => step(DetailUpdate.update(model.page, inner, CONTEXT)),
+		GotPageMessage: ({ message: inner }) => {
+			const next = DetailUpdate.update(model.page, inner, CONTEXT)
+			const out = next.outMessage
+			if (out === undefined || out._tag !== "RequestedNavigation") return step(next)
+			const followed = follow(next.model, out.url)
+			return step({ ...followed, commands: [...(next.commands ?? []), ...(followed.commands ?? [])] })
+		},
 	})
 
 const view = (model: Model, h: HtmlBuilder<Message>) =>
@@ -176,7 +194,7 @@ export const lab = defineShellLab("Service runtimes", {
 	Model,
 	Message,
 	Flags,
-	flags: Effect.succeed({}),
+	flags: Effect.sync(() => ({ tab: new URLSearchParams(window.location.search).get("tab") })),
 	init,
 	update,
 	view,

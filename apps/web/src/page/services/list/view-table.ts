@@ -46,7 +46,8 @@ import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
 
 export const ERROR_RATE_COLOR = TONE_COLOR.crit
-export const THROUGHPUT_COLOR = "var(--color-primary, #3b82f6)"
+/** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
+export const THROUGHPUT_COLOR = "--chart-throughput"
 const CHART_MODEL = Chart.init()
 const toSparklineMessage = (message: Chart.Message) => Message.GotSparklineMessage({ message })
 const SERVICE_OVERVIEW_ROW_CAP = 500

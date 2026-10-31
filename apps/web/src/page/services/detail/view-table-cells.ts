@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { eyebrowVariants } from "../../../ui/eyebrow"
 import { backdropBar } from "../../../ui/meter"
+import { panelHeader } from "../../../ui/panel"
 import { ariaSort, sortButton, tableCell, tableHead } from "../../../ui/table"
 import { Message } from "./message"
 import type { SortState } from "../../kit/table-sort"
@@ -58,16 +59,17 @@ export const sortColumnHead = (
 	)
 }
 
+// Volume and latency bars stay neutral; only errors carry a colour.
 const BAR_TONE = {
-	calls: "bg-severity-info-a3",
+	calls: "bg-muted",
 	errors: "bg-severity-error-a3",
-	latency: "bg-severity-warn-a3",
+	latency: "bg-muted",
 } as const
 
 /** `BarCell`: a numeric cell over a column-tinted distribution bar. */
 export const barCell = (
 	h: H,
-	options: Readonly<{ value: number; max: number; tone: keyof typeof BAR_TONE }>,
+	options: Readonly<{ value: number; max: number; tone: keyof typeof BAR_TONE; className?: string }>,
 	child: Html,
 ): Html =>
 	tableCell(
@@ -77,12 +79,39 @@ export const barCell = (
 				value: options.value,
 				max: options.max,
 				align: "right",
-				className: cn(
-					"opacity-50 transition-opacity group-hover/row:opacity-90",
-					BAR_TONE[options.tone],
-				),
+				className: BAR_TONE[options.tone],
 			}),
 			h.span([h.Class("relative pr-1.5")], [child]),
 		],
-		"relative py-2 text-right align-middle tabular-nums",
+		cn("relative py-2 text-right align-middle tabular-nums", options.className),
 	)
+
+/**
+ * The title row every tab table opens with: its name, the row count, and optional controls.
+ * Loading skeletons pass no count.
+ */
+export const tableTitle = (h: H, options: Readonly<{ title: string; count?: number; action?: Html }>): Html =>
+	panelHeader(h, {
+		title: options.title,
+		scope:
+			options.count === undefined
+				? undefined
+				: h.span(
+						[h.Class("font-mono text-2xs tabular-nums text-foreground-subtle")],
+						[String(options.count)],
+					),
+		action: options.action,
+	})
+
+/** Past 30 days a tab's summaries outlive the raw spans its drill-downs read. */
+export const rangeNote = (h: H, subject: string): Html =>
+	h.p(
+		[h.Class("text-xs text-muted-foreground")],
+		[`${subject} summaries cover the selected range; trace drill-downs show the latest 30 days.`],
+	)
+
+/** A loading table's title and column-header rows, sized like the loaded ones. */
+export const tableSkeletonHead = (h: H, title: string): ReadonlyArray<Html> => [
+	tableTitle(h, { title }),
+	h.div([h.Class("h-8 border-b")]),
+]
