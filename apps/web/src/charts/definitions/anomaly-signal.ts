@@ -10,7 +10,7 @@ import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
-import { verticalGradient } from "./fixed-metric-axes"
+import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 // The anomaly timeseries chart's definition. `thresholdRules` is copied below because
@@ -63,7 +63,8 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 	const color = (key: string) => spec.colors[key] ?? spec.colors.border ?? ""
 	const stroke = color("stroke")
 	const chrome = { border: color("border"), background: color("background") }
-	const valueFormatter = (value: number) => formatSignalValue(spec.signalType, Number.isFinite(value) ? value : 0)
+	const valueFormatter = (value: number) =>
+		formatSignalValue(spec.signalType, Number.isFinite(value) ? value : 0)
 	const data = sortedSignal(spec.points)
 	const axis = makeBucketAxis(
 		data.map((point) => point.bucket),
@@ -73,7 +74,8 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 	// Snap the incident window to actual bucket values so the shading lines up with the points.
 	const startMs = toEpochMs(spec.firstTriggeredAt)
 	const endMs = spec.resolvedAt !== null ? toEpochMs(spec.resolvedAt) : Infinity
-	const x1 = data.find((point) => toEpochMs(point.bucket) >= startMs)?.bucket ?? data[data.length - 1]?.bucket
+	const x1 =
+		data.find((point) => toEpochMs(point.bucket) >= startMs)?.bucket ?? data[data.length - 1]?.bucket
 	const x2Raw = data.findLast((point) => toEpochMs(point.bucket) <= endMs)?.bucket
 	const x2 = x2Raw === undefined || x1 === undefined || toEpochMs(x2Raw) < toEpochMs(x1) ? x1 : x2Raw
 	const window = x1 === undefined || x2 === undefined ? null : { x1: bucketDate(x1), x2: bucketDate(x2) }
@@ -89,7 +91,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 
 	return {
 		definition: defineChart({
-			gradients: [verticalGradient(spec.gradientId, stroke, 0.3, 0.03)],
+			gradients: [verticalGradient(spec.gradientId, stroke)],
 			marks: [
 				...(window
 					? [
@@ -118,10 +120,11 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 					y: value,
 					y1: () => yDomain[0],
 					fill: `url(#${spec.gradientId})`,
+					fillOpacity: 1,
 					stroke: "none",
 					curve: d3Curve(curveMonotoneX),
 				}),
-				lineY(data, { x: at, y: value, stroke, strokeWidth: 2, curve: d3Curve(curveMonotoneX) }),
+				lineY(data, { x: at, y: value, stroke, strokeWidth: SERIES_STROKE_WIDTH, curve: d3Curve(curveMonotoneX) }),
 				focusDot(data, at, value, stroke, chrome),
 				focusCrosshair(chrome),
 			],
@@ -130,7 +133,14 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
-					axis: { line: false, ticks: { size: 0, padding: 8, format: valueFormatter } },
+					axis: {
+						line: false,
+						ticks: {
+							size: 0,
+							padding: 8,
+							format: (value: number) => (value === 0 ? "0" : valueFormatter(value)),
+						},
+					},
 				},
 			},
 			margin: { top: 8, right: 8, left: 70 },
@@ -143,7 +153,14 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 			Option.map(Option.fromNullishOr(points[0]), ({ datum }) =>
 				ChartTooltip.Bucket({
 					heading: axis.heading(datum.bucket),
-					rows: [{ label: "Observed", color: stroke, dashed: false, value: valueFormatter(datum.value) }],
+					rows: [
+						{
+							label: "Observed",
+							color: stroke,
+							dashed: false,
+							value: valueFormatter(datum.value),
+						},
+					],
 				}),
 			),
 	}

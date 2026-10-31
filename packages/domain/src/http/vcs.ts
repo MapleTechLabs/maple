@@ -547,6 +547,8 @@ export const PullRequestEventJob = Schema.Struct({
 	title: Schema.NullOr(Schema.String),
 	body: Schema.NullOr(Schema.String),
 	authorLogin: Schema.NullOr(Schema.String),
+	/** GitHub's `author_association` for the pull request's author; absent means untrusted. */
+	authorAssociation: Schema.optionalKey(Schema.String),
 	merged: Schema.Boolean,
 	mergeCommitSha: Schema.NullOr(Schema.String),
 	mergedAtMs: Schema.NullOr(Schema.Number),
@@ -612,6 +614,32 @@ export const PullRequestChecklistJob = Schema.Struct({
 	deliveryId: Schema.optionalKey(Schema.String),
 })
 export type PullRequestChecklistJob = Schema.Schema.Type<typeof PullRequestChecklistJob>
+
+/**
+ * Someone other than the author ran CI on a pull request: approved a fork's workflows, or re-ran
+ * them. Mapped from `workflow_run`; the review side checks the approver's permission and that the
+ * pull request's head is still `headSha` before reviewing it as a trusted author's.
+ */
+export const PullRequestCiApprovedJob = Schema.Struct({
+	kind: Schema.Literal("pull-request-ci-approved"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	runId: Schema.String,
+	headSha: GitCommitSha,
+	headBranch: Schema.String,
+	/** The repository the head branch lives in: a fork's on a fork's pull request. */
+	headRepoFullName: Schema.String,
+	/** Who let the run go (GitHub `triggering_actor`). */
+	approverLogin: Schema.String,
+	/** Who opened the run's pull request (GitHub `actor`). */
+	authorLogin: Schema.String,
+	/** Empty on a fork's run: GitHub does not link those to their pull request. */
+	pullRequestNumbers: Schema.Array(Schema.Number),
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type PullRequestCiApprovedJob = Schema.Schema.Type<typeof PullRequestCiApprovedJob>
 
 /**
  * A finished CI workflow run (GitHub `workflow_run`, action `completed`). Becomes the root span of
@@ -721,6 +749,7 @@ export const VcsSyncJob = Schema.Union([
 	PullRequestEventJob,
 	PullRequestCommentJob,
 	PullRequestChecklistJob,
+	PullRequestCiApprovedJob,
 	WorkflowRunJob,
 	WorkflowJobJob,
 ])

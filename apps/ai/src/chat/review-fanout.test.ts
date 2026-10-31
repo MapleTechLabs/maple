@@ -33,7 +33,7 @@ describe("childFailureMessage", () => {
 		const message = childFailureMessage(
 			AgentPolicyError.make({ limit: "tool-calls", message: "too many" }),
 		)
-		assert.include(message, "AgentPolicyError")
+		assert.include(message, "AgentPolicyError: too many")
 		assert.notInclude(message, "ran out of")
 	})
 })

@@ -198,6 +198,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				title: "Fix the checkout crash",
 				body: "Fixes the crash.",
 				user: { login: "octocat" },
+				author_association: "CONTRIBUTOR",
 				merged: true,
 				merge_commit_sha: SHA,
 				merged_at: "2026-01-02T03:04:05Z",
@@ -222,6 +223,7 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.merged, true)
 			assert.strictEqual(job.mergeCommitSha, SHA)
 			assert.strictEqual(job.authorLogin, "octocat")
+			assert.strictEqual(job.authorAssociation, "CONTRIBUTOR")
 			assert.strictEqual(job.mergedAtMs, Date.parse("2026-01-02T03:04:05Z"))
 		}).pipe(Effect.provide(providerLayer())),
 	)
@@ -988,6 +990,69 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
+	// Approving a fork's held run re-attempts it with the approver as `triggering_actor`; GitHub
+	// sends `in_progress`, then `completed`, and no pull request number for a fork.
+	const approvedForkRun = (action: string, overrides: Record<string, unknown> = {}) =>
+		JSON.stringify({
+			...JSON.parse(
+				workflowRunBody({
+					conclusion: action === "completed" ? "success" : null,
+					triggering_actor: { login: "maintainer", type: "User" },
+					head_repository: { full_name: "octocat/repo" },
+					pull_requests: [],
+					...overrides,
+				}),
+			),
+			action,
+		})
+
+	it.effect("maps a fork run a maintainer approved to a CI approval", () =>
+		Effect.gen(function* () {
+			const started = yield* mapWorkflow("workflow_run", approvedForkRun("in_progress"))
+			assert.strictEqual(started.length, 1)
+			const job = started[0]!
+			if (job.kind !== "pull-request-ci-approved") return assert.fail(`unexpected ${job.kind}`)
+			assert.strictEqual(job.approverLogin, "maintainer")
+			assert.strictEqual(job.authorLogin, "octocat")
+			assert.strictEqual(job.headRepoFullName, "octocat/repo")
+			assert.strictEqual(job.headBranch, "feat/x")
+			assert.strictEqual(job.headSha, SHA)
+			assert.deepStrictEqual(job.pullRequestNumbers, [])
+
+			const finished = yield* mapWorkflow("workflow_run", approvedForkRun("completed"))
+			assert.deepStrictEqual(
+				finished.map((each) => each.kind),
+				["workflow-run", "pull-request-ci-approved"],
+			)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("finds no approval in a run the author started, a held run, or a bot's re-run", () =>
+		Effect.gen(function* () {
+			const kinds = (body: string) =>
+				mapWorkflow("workflow_run", body).pipe(Effect.map((jobs) => jobs.map((job) => job.kind)))
+			assert.deepStrictEqual(
+				yield* kinds(
+					approvedForkRun("in_progress", { triggering_actor: { login: "OctoCat", type: "User" } }),
+				),
+				[],
+			)
+			assert.deepStrictEqual(
+				yield* kinds(approvedForkRun("completed", { conclusion: "action_required" })),
+				["workflow-run"],
+			)
+			assert.deepStrictEqual(
+				yield* kinds(
+					approvedForkRun("in_progress", {
+						triggering_actor: { login: "renovate[bot]", type: "Bot" },
+					}),
+				),
+				[],
+			)
+			assert.deepStrictEqual(yield* kinds(approvedForkRun("in_progress", { event: "push" })), [])
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
 	it.effect("keeps a workflow job under the queue's message cap with many steps", () =>
 		Effect.gen(function* () {
 			const steps = Array.from({ length: 1000 }, (_, n) => ({
@@ -1278,10 +1343,10 @@ describe("VcsRepository", () => {
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO vcs_installations
+					`WITH source AS (INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at) VALUES (gen_random_uuid()::text, $2, 'Source', 'github', 'integration', now(), now()) RETURNING id) INSERT INTO vcs_installations
 						(id, org_id, provider, external_installation_id, account_login, account_type,
-						 external_account_id, repository_selection, status, installed_by_user_id, created_at, updated_at)
-					 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now())`,
+						 external_account_id, repository_selection, status, installed_by_user_id, created_at, updated_at, source_id)
+					 SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now(), source.id FROM source`,
 					[randomUUID(), "org_x", "github", "55", "octo", "team", "1", "all", "active", "user_1"],
 				),
 			)
@@ -1347,8 +1412,16 @@ describe("VcsRepository", () => {
 				yield* upsertCommitsFor(repo, orgId, "7", [commitFixture(SHA_42)])
 				yield* upsertCommitsFor(repo, orgId, "8", [commitFixture(SHA_99)])
 
+				// Each installation sends CI traces as its own source, purged with it.
+				const sources = () =>
+					Effect.promise(() =>
+						testDb.pglite.query<{ name: string }>("SELECT name FROM sources ORDER BY name"),
+					).pipe(Effect.map((result) => result.rows.map((row) => row.name)))
+				assert.deepStrictEqual(yield* sources(), ["GitHub octo", "GitHub other"])
+
 				yield* purgeInstallationFor(repo, orgId, "42")
 
+				assert.deepStrictEqual(yield* sources(), ["GitHub other"])
 				assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 				assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
 				assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_42))))
@@ -1579,6 +1652,55 @@ describe("VcsRepository", () => {
 				["7"],
 			)
 			assert.deepStrictEqual(all.map((r) => r.externalRepoId).sort(), ["7", "8"])
+		}).pipe(Effect.provide(repoLayer(testDb)))
+	})
+
+	it.effect("reports repository syncs and installation status on the installation's source", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sourceState = Effect.promise(() =>
+			queryFirstRow<{
+				last_poll_ok_at: Date | null
+				last_poll_error: string | null
+				disconnected_at: Date | null
+				poll_resources: { total: number; unhealthy: number } | null
+			}>(
+				testDb,
+				`SELECT s.last_poll_ok_at, s.last_poll_error, s.disconnected_at, s.poll_resources
+				 FROM vcs_installations i JOIN sources s ON s.id = i.source_id
+				 WHERE i.external_installation_id = '42'`,
+			),
+		).pipe(Effect.map((row) => row!))
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_health")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [
+				repoFixture({ externalRepoId: "7", fullName: "octo/a", name: "a" }),
+				repoFixture({ externalRepoId: "8", fullName: "octo/b", name: "b" }),
+			])
+			const a = yield* repoFor(repo, orgId, "7")
+			const b = yield* repoFor(repo, orgId, "8")
+
+			yield* repo.updateRepoSyncStatus(a.id, { status: "ready", syncedAt: 1 })
+			const ok = yield* sourceState
+			assert.isNotNull(ok.last_poll_ok_at)
+			assert.isNull(ok.last_poll_error)
+			assert.deepStrictEqual(ok.poll_resources, { total: 2, unhealthy: 0 })
+
+			yield* repo.markRepoSyncError(b.id, "upstream unavailable")
+			const failed = yield* sourceState
+			assert.strictEqual(failed.last_poll_error, "octo/b: upstream unavailable")
+			assert.deepStrictEqual(failed.poll_resources, { total: 2, unhealthy: 1 })
+
+			// A suspension disconnects the source; reactivating reconnects it at once with its
+			// repositories' health, so the still-failing repo keeps it failing.
+			yield* markInstStatusFor(repo, "42", "suspended")
+			assert.isNotNull((yield* sourceState).disconnected_at)
+			yield* markInstStatusFor(repo, "42", "active")
+			const recovered = yield* sourceState
+			assert.isNull(recovered.disconnected_at)
+			assert.strictEqual(recovered.last_poll_error, "octo/b: upstream unavailable")
+			assert.deepStrictEqual(recovered.poll_resources, { total: 2, unhealthy: 1 })
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 

@@ -32,7 +32,7 @@ Maple is an observability platform built on OpenTelemetry. Your applications sen
 For a copy-paste walkthrough, including a curl command that sends a test span without an SDK, follow the [Quickstart](/docs/getting-started/quickstart). The short version:
 
 1. Sign up at [app.maple.dev](https://app.maple.dev). During onboarding you pick the region your organization lives in (US or EU).
-2. Open **Settings → Ingestion** and copy an ingest key. Use the private key (`maple_sk_…`) for server applications and the public key (`maple_pk_…`) for browser code.
+2. Open **Settings → Ingestion** and copy an ingest key. Use the private key (`maple_sk_…`) for server applications and the public key (`maple_pk_…`) for browser and mobile code. The public key also works on servers.
 3. Point an OpenTelemetry SDK at the ingest endpoint for your region:
 
     | Region         | Ingest endpoint               |
@@ -47,7 +47,8 @@ For a copy-paste walkthrough, including a curl command that sends a test span wi
 With the standard OpenTelemetry environment variables, step 3 looks like this:
 
 ```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # EU: https://ingest.eu.maple.dev
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+# EU organizations use https://ingest.eu.maple.dev
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_SERVICE_NAME="my-service"
@@ -61,10 +62,10 @@ If you use a coding agent, the [maple-onboard](https://github.com/MapleTechLabs/
 - [Node.js](/docs/guides/instrumentation-nodejs): Express, Fastify, Hono
 - [Next.js](/docs/guides/instrumentation-nextjs): App Router, Pages Router, middleware
 - [Python](/docs/guides/instrumentation-python): FastAPI, Django, Flask
-- [Go](/docs/guides/instrumentation-go)
+- [Go](/docs/guides/instrumentation-go): `net/http`, gRPC, `database/sql`
 - [Rust](/docs/guides/instrumentation-rust): through the `tracing` crate
 - [Java](/docs/guides/instrumentation-java): the OpenTelemetry Java agent
-- [C# / .NET](/docs/guides/instrumentation-csharp)
+- [C# / .NET](/docs/guides/instrumentation-csharp): ASP.NET Core, HttpClient, Entity Framework Core
 - [Kotlin](/docs/guides/instrumentation-kotlin): Ktor and Spring Boot
 - [Laravel](/docs/guides/instrumentation-laravel): Eloquent, queues, HTTP client
 

@@ -67,15 +67,74 @@ describe("Keyed slots", () => {
 		)
 	})
 
+	test("a retry of a failed key keeps the failure on screen until the answer lands", () => {
+		const failed = Keyed.accept(
+			requested(Keyed.idle<number, string>(), morning),
+			morning,
+			Result.fail("timeout"),
+		)
+		const retrying = requested(failed, morning, "Refresh")
+		expect(retrying.data).toEqual(AsyncData.Failure({ error: "timeout" }))
+		expect(Keyed.request(retrying, morning, "Refresh")).toEqual(Option.none())
+		expect(Keyed.request(retrying, morning, "Load")).toEqual(Option.none())
+		expect(Keyed.accept(retrying, morning, Result.fail("still down")).data).toEqual(
+			AsyncData.Failure({ error: "still down" }),
+		)
+		const recovered = Keyed.accept(retrying, morning, Result.succeed(3))
+		expect(recovered.data).toEqual(AsyncData.Success({ data: 3 }))
+		expect(requested(Keyed.accept(retrying, morning, Result.fail("again")), morning).data).toEqual(
+			AsyncData.Failure({ error: "again" }),
+		)
+	})
+
+	test("a new window after a failure loads fresh; a parked failure loads from scratch", () => {
+		const failed = Keyed.accept(
+			requested(Keyed.idle<number, string>(), morning),
+			morning,
+			Result.fail("timeout"),
+		)
+		expect(requested(failed, evening).data).toEqual(AsyncData.Loading())
+		expect(requested(Keyed.forgetFailure(failed), morning).data).toEqual(AsyncData.Loading())
+	})
+
 	test("a post-write re-read supersedes the read in flight: the older answer is dropped", () => {
 		const reloading = requested(loaded(morning, 1), morning, "Refresh")
 		const superseded = Keyed.supersede(reloading, morning)
 		expect(superseded.key).not.toBe(morning)
 		const afterOld = Keyed.accept(superseded, morning, Result.succeed(1))
 		expect(afterOld).toEqual(superseded)
-		const key = superseded.key ?? ""
+		const key = superseded.key
 		expect(Keyed.accept(afterOld, key, Result.succeed(2)).data).toEqual(AsyncData.Success({ data: 2 }))
-		expect(Keyed.request(Keyed.accept(afterOld, key, Result.succeed(2)), morning, "Load")).toEqual(Option.none())
+		expect(Keyed.request(Keyed.accept(afterOld, key, Result.succeed(2)), morning, "Load")).toEqual(
+			Option.none(),
+		)
 		expect(Keyed.supersede(superseded, morning).key).not.toBe(key)
+	})
+
+	test("a later poll or retry keeps the superseding generation: the pre-write answer stays dropped", () => {
+		const superseded = Keyed.supersede(requested(loaded(morning, 1), morning, "Refresh"), morning)
+		const landed = Keyed.accept(superseded, superseded.key, Result.succeed(2))
+		const polled = requested(landed, morning, "Refresh")
+		expect(polled.key).toBe(superseded.key)
+		expect(Keyed.accept(polled, morning, Result.succeed(1))).toEqual(polled)
+		const failed = Keyed.accept(polled, polled.key, Result.fail("timeout"))
+		const retried = requested(failed, morning, "Refresh")
+		expect(Keyed.accept(retried, morning, Result.succeed(1))).toEqual(retried)
+		expect(Keyed.accept(retried, retried.key, Result.succeed(3)).data).toEqual(
+			AsyncData.Success({ data: 3 }),
+		)
+	})
+
+	test("requestFor: `Supersede` always re-reads, the other modes defer to `request`", () => {
+		const pending = requested(Keyed.idle<number, string>(), morning)
+		expect(Keyed.requestFor(pending, morning, "Load")).toEqual(Option.none())
+		expect(Keyed.requestFor(pending, morning, "Refresh")).toEqual(
+			Keyed.request(pending, morning, "Refresh"),
+		)
+		const superseded = Option.getOrThrow(Keyed.requestFor(pending, morning, "Supersede"))
+		expect(Keyed.accept(superseded, morning, Result.succeed(1))).toEqual(superseded)
+		expect(Keyed.accept(superseded, superseded.key, Result.succeed(2)).data).toEqual(
+			AsyncData.Success({ data: 2 }),
+		)
 	})
 })

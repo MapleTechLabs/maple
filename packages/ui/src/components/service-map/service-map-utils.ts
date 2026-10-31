@@ -1,4 +1,4 @@
-import type { Node, Edge } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { getServiceColor, getValueHue } from "../../lib/colors"
 import { type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
@@ -90,6 +90,8 @@ export interface ServiceNodeData {
 	maxLatencyMs?: number
 	selected: boolean
 	infra?: ServiceNodeInfra
+	/** The platform resource the service runs as ("Cloud Run"); the card then drops its pods cell. */
+	runsOn?: string
 	platform?: ServicePlatform
 	runtime?: string
 	dbSystem?: string
@@ -303,6 +305,8 @@ export interface BuildFlowElementsInput {
 	serviceOverviews: ReadonlyArray<ServiceMapOverviewRow>
 	durationSeconds: number
 	serviceWorkloads?: ReadonlyArray<ServiceMapWorkloadRow>
+	/** service.name → the short name of the platform resource it runs as. */
+	serviceRunsOn?: ReadonlyMap<string, string>
 	platforms?: ReadonlyMap<string, ServicePlatform>
 	runtimes?: ReadonlyMap<string, string>
 	/** Cloudflare direct-integration Worker analytics (instrumented-Worker overlay). */
@@ -338,6 +342,7 @@ export function buildFlowElements({
 	serviceOverviews,
 	durationSeconds,
 	serviceWorkloads = [],
+	serviceRunsOn,
 	platforms,
 	runtimes,
 	cloudflareServices = [],
@@ -433,6 +438,7 @@ export function buildFlowElements({
 				avgLatencyMs: overview?.p50LatencyMs ?? 0,
 				selected: false,
 				infra,
+				runsOn: serviceRunsOn?.get(service),
 				platform: platforms?.get(service),
 				runtime: runtimes?.get(service),
 				namespace: overview?.serviceNamespace || undefined,

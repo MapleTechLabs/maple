@@ -2,6 +2,8 @@
  * Local oxlint JS plugin for test cases that cannot catch a bug. Scoped to test files in
  * `.oxlintrc.json`. Each rule is a shape the 2026-10 test audit found deleting was free:
  * the case either mirrored the source, asserted nothing about the result, or grepped code.
+ * `no-exact-name-list` and `no-sql-text-pin` come from the same audit's CI history: exact command
+ * lists and SQL projection pins failed ~130 times with no real catch outside SQL predicates.
  */
 
 const TEST_CALLEES = new Set(["it", "test"])
@@ -33,8 +35,10 @@ const testCallback = (node) => {
 	return undefined
 }
 
+const EXPECT_ROOTS = new Set(["expect"])
+
 /** `expect(x).not.toBe(y)` → `{ subject: x, matcher: "toBe", negated: true, args: [y] }`. */
-const readExpect = (node) => {
+const readExpect = (node, roots = EXPECT_ROOTS) => {
 	if (node.callee.type !== "MemberExpression" || node.callee.computed) return undefined
 	const matcher = node.callee.property.name
 	let negated = false
@@ -48,10 +52,8 @@ const readExpect = (node) => {
 	if (object.type !== "CallExpression") return undefined
 	const root = object.callee
 	const isExpect =
-		(root.type === "Identifier" && root.name === "expect") ||
-		(root.type === "MemberExpression" &&
-			root.object.type === "Identifier" &&
-			root.object.name === "expect")
+		(root.type === "Identifier" && roots.has(root.name)) ||
+		(root.type === "MemberExpression" && root.object.type === "Identifier" && roots.has(root.object.name))
 	if (!isExpect) return undefined
 	return { subject: object.arguments[0], matcher, negated, args: node.arguments }
 }
@@ -440,12 +442,209 @@ const noClassnameAssertions = {
 	},
 }
 
+// --- no-exact-name-list ----------------------------------------------------------------------
+
+const EXACT_NAME_LIST_MESSAGE =
+	"Do not pin the exact list of command or message names. It breaks whenever an unrelated command is added or reordered. Pin the one command that matters with `toContain`, or assert its effect."
+
+/** A Foldkit command, message or tag name: `FetchClerkOrganization`, `ChangedTimeZonePreference`. */
+const PASCAL_NAME = /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/
+
+/** `"FetchX"` or `FetchX.name`, the two spellings scene tests use for a command name. */
+const isNameElement = (node) => {
+	if (node?.type === "Literal") return typeof node.value === "string" && PASCAL_NAME.test(node.value)
+	return (
+		node?.type === "MemberExpression" &&
+		!node.computed &&
+		node.property.name === "name" &&
+		node.object.type === "Identifier" &&
+		/^[A-Z]/.test(node.object.name)
+	)
+}
+
+const nameKey = (node) => (node.type === "Literal" ? node.value : node.object.name)
+
+/** Two or more distinct names. `[FetchX.name, FetchX.name]` pins a count ("sent twice"), not a list. */
+const isNameList = (node) =>
+	node?.type === "ArrayExpression" &&
+	node.elements.length >= 2 &&
+	node.elements.every(isNameElement) &&
+	new Set(node.elements.map(nameKey)).size >= 2
+
+/**
+ * Only command lists: event streams and column lists of PascalCase names are real ordering contracts.
+ * `names` stays: scene tests bind `const names = commands.map(...)`; row-name lists are not PascalCase.
+ */
+const COMMAND_SUBJECT = /command|\bnames\b/i
+
+const LIST_MATCHERS = new Set(["toEqual", "toStrictEqual"])
+const LIST_ASSERTS = new Set(["deepEqual", "deepStrictEqual"])
+// Scene tests sometimes alias `expect` as `assert(x).toEqual(...)`.
+const LIST_EXPECT_ROOTS = new Set(["expect", "assert"])
+
+const noExactNameList = {
+	meta: {
+		type: "suggestion",
+		docs: { description: "Disallow pinning an exact list of PascalCase command or message names." },
+		messages: { noExactNameList: EXACT_NAME_LIST_MESSAGE },
+	},
+	create(context) {
+		const nodeAssertNames = new Map()
+		const isCommandList = (subject, expected) =>
+			subject !== undefined &&
+			COMMAND_SUBJECT.test(context.sourceCode.getText(subject)) &&
+			isNameList(expected)
+		return {
+			ImportDeclaration: trackImports(new Set(), nodeAssertNames),
+			CallExpression(node) {
+				const expectation = readExpect(node, LIST_EXPECT_ROOTS)
+				if (expectation) {
+					if (
+						!expectation.negated &&
+						LIST_MATCHERS.has(expectation.matcher) &&
+						isCommandList(expectation.subject, expectation.args[0])
+					)
+						context.report({ node, messageId: "noExactNameList" })
+					return
+				}
+				const assertion = readAssert(node, nodeAssertNames)
+				if (
+					assertion &&
+					LIST_ASSERTS.has(assertion.name) &&
+					isCommandList(assertion.args[0], assertion.args[1])
+				)
+					context.report({ node, messageId: "noExactNameList" })
+			},
+		}
+	},
+}
+
+// --- no-sql-text-pin -------------------------------------------------------------------------
+
+const SQL_TEXT_PIN_MESSAGE =
+	"Do not pin the shape of a compiled query (`TraceId AS traceId`, `FORMAT JSON`, `UNION ALL`). It breaks on every refactor and caught no bugs. Keep predicate and security pins (OrgId, WHERE, comparisons, IN, LIMIT, params, escaping) and negated checks; otherwise assert decoded rows, tenantScope or the bound parameters."
+
+const SQL_SUBJECT = /sql|statement/i
+// Exact names only: `searchQuery`, `docs` or `liveQuery` are rarely compiled query text.
+const SQL_SUBJECT_NAMES = new Set(["query", "queryText", "doc", "gql", "graphql"])
+
+/** `sql`, `receivedSql`, `compiled.sql`, `result.query`; not `document.*` or `queryClient`. */
+const sqlSubjectName = (node) => {
+	if (node?.type === "Identifier") return node.name
+	if (node?.type !== "MemberExpression" || node.computed) return undefined
+	const root = memberRoot(node)
+	if (root.type === "Identifier" && root.name === "document") return undefined
+	return node.property.name
+}
+
+const isSqlSubject = (node) => {
+	const name = sqlSubjectName(node)
+	return name !== undefined && (SQL_SUBJECT.test(name) || SQL_SUBJECT_NAMES.has(name))
+}
+
+/** Text a pin asserts on: the string, the template's static parts, or a regex source. */
+const pinText = (node) => {
+	if (node?.type === "Literal") {
+		if (typeof node.value === "string") return node.value
+		// Unescape so `/groupArray\(/` reads as the call it pins.
+		if (node.regex) return node.regex.pattern.replace(/\\(.)/g, "$1")
+		return undefined
+	}
+	if (node?.type === "TemplateLiteral")
+		return node.quasis.map((quasi) => quasi.value.cooked ?? "").join("${}")
+	return undefined
+}
+
+// Predicates and security invariants: the only SQL pins that ever caught a real bug.
+const PREDICATE_PINS = [
+	/OrgId|orgFilter|\borg|tenant/i,
+	/\b(PRE)?WHERE\b|\bHAVING\b/,
+	// Real comparison operators only, so a lambda arrow `x -> x.4` does not exempt a pin.
+	/\s(<=|>=|<>|!=|<|>)(\s|$)|!=|<=|>=|\s=(\s|$)|=\s*'/,
+	/\bBETWEEN\b|\bIN\b|\bNOT\b|\b(I)?LIKE\b/,
+	/ifNotFinite|isFinite|isNaN|SampleRate|Weighted/,
+	/\bLIMIT\b|\bOFFSET\b/,
+	/__PARAM_|\{[a-z]\w*:\w/,
+	/\\'|\\\\|''|`/,
+	// Time bounds and GraphQL filter arguments (`edgeResponseStatus_geq: 500`, `requestSource: "x"`).
+	/\d{4}-\d{2}-\d{2}/,
+	/_(geq|gt|leq|lt|neq|in|notin|like)\b|\bfilter\b|:\s*"[^"]*"/,
+	/\b(mapContains|has|hasAny|hasAll|startsWith|endsWith|position\w*|match|multiSearch\w*|(not)?[eE]mpty|isNull|isNotNull)\(/,
+	// A bare value (`'production'`, `api-gateway`, `http.method`) pins a filter value or table.
+	/^'[^']*'$/,
+	/^[a-z0-9][a-z0-9._-]*$/,
+	// Table routing (`FROM service_overview_hourly`) picks the rollup tier, a semantic choice.
+	/^FROM \w+$/,
+	// A function call, grain, order or bucket width is the computation, not its shape.
+	/\w\(/,
+	/\b(GROUP|ORDER|PARTITION) BY\b|\bINTERVAL\b/,
+]
+
+// Cosmetic only: a bare `col AS alias`, output format, unions, a bare SELECT or JOIN keyword.
+// Anything with a function call, grain, order or bucket width is exempt via PREDICATE_PINS.
+const COSMETIC_PINS = [
+	/\bAS\s+[`"]?\w+/,
+	/\bFORMAT\b/,
+	/\bUNION(\s+ALL)?\b/,
+	/^\s*SELECT\s*$/,
+	/^\s*((LEFT|RIGHT|INNER|CROSS|FULL)\s+)?JOIN\s*$/,
+]
+
+/** A template with no static words (`${token}`) is a catalog-driven coverage check, not a pin. */
+const isProjectionPin = (text) =>
+	/[A-Za-z]{2}/.test(text.replaceAll("${}", "")) &&
+	COSMETIC_PINS.some((pattern) => pattern.test(text)) &&
+	!PREDICATE_PINS.some((pattern) => pattern.test(text))
+
+const SQL_MATCHERS = new Set(["toContain", "toMatch"])
+const SQL_ASSERTS = new Set(["include", "match"])
+
+const noSqlTextPin = {
+	meta: {
+		type: "suggestion",
+		docs: {
+			description: "Disallow pinning projection or clause text of a compiled SQL or GraphQL query.",
+		},
+		messages: { noSqlTextPin: SQL_TEXT_PIN_MESSAGE },
+	},
+	create(context) {
+		const report = (node, subject, pin) => {
+			if (!isSqlSubject(subject)) return
+			const text = pinText(pin)
+			if (text !== undefined && isProjectionPin(text))
+				context.report({ node, messageId: "noSqlTextPin" })
+		}
+		return {
+			CallExpression(node) {
+				const expectation = readExpect(node)
+				if (expectation) {
+					if (!expectation.negated && SQL_MATCHERS.has(expectation.matcher))
+						report(node, expectation.subject, expectation.args[0])
+					return
+				}
+				const callee = node.callee
+				if (
+					callee.type === "MemberExpression" &&
+					!callee.computed &&
+					callee.object.type === "Identifier" &&
+					callee.object.name === "assert" &&
+					SQL_ASSERTS.has(callee.property.name)
+				) {
+					report(node, node.arguments[0], node.arguments[1])
+				}
+			},
+		}
+	},
+}
+
 export default {
 	meta: { name: "test-slop" },
 	rules: {
 		"no-classname-assertions": noClassnameAssertions,
 		"no-constant-pin": noConstantPin,
+		"no-exact-name-list": noExactNameList,
 		"no-source-text-assertions": noSourceTextAssertions,
+		"no-sql-text-pin": noSqlTextPin,
 		"no-weak-only-assertions": noWeakOnlyAssertions,
 	},
 }

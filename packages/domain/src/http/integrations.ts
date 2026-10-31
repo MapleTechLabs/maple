@@ -1,14 +1,18 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import {
+	AwsAccountId,
 	ExternalUserId,
 	GcpProjectId,
 	GcpResourceNumber,
 	GcpScopeType,
 	ScrapeTargetId,
+	SourceId,
+	SupabaseProjectRef,
 	UserId,
 } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
+import { OAuthCompleteRequest, OAuthCompleteResponse } from "./oauth-return"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
@@ -122,6 +126,48 @@ export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectRespons
 	},
 ) {}
 
+export class LinearIntegrationStatus extends Schema.Class<LinearIntegrationStatus>("LinearIntegrationStatus")(
+	{
+		connected: Schema.Boolean,
+		/** The Linear workspace the app is installed in. */
+		workspaceName: Schema.NullOr(Schema.String),
+		connectedByUserId: Schema.NullOr(UserId),
+		/** Set once Linear rejected the grant; the org must reconnect. */
+		revoked: Schema.Boolean,
+	},
+) {}
+
+export class LinearTeamSummary extends Schema.Class<LinearTeamSummary>("LinearTeamSummary")({
+	id: Schema.String,
+	key: Schema.String,
+	name: Schema.String,
+}) {}
+
+export class LinearTeamsListResponse extends Schema.Class<LinearTeamsListResponse>("LinearTeamsListResponse")(
+	{
+		teams: Schema.Array(LinearTeamSummary),
+	},
+) {}
+
+export class LinearStartConnectRequest extends Schema.Class<LinearStartConnectRequest>(
+	"LinearStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class LinearStartConnectResponse extends Schema.Class<LinearStartConnectResponse>(
+	"LinearStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class LinearDisconnectResponse extends Schema.Class<LinearDisconnectResponse>(
+	"LinearDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
 /** Per-zone edge-analytics collection state (from the GraphQL Analytics poller). */
 export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyticsZoneStatus>(
 	"CloudflareAnalyticsZoneStatus",
@@ -139,6 +185,11 @@ export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyt
 	 * it, and once history is complete. optionalKey only for deploy-window compat; always sent.
 	 */
 	backfillAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	/**
+	 * False when the customer turned collection off for this zone. Separate from `enabled`, which
+	 * is the poller's own state. optionalKey only for deploy-window compat; always sent.
+	 */
+	watched: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Account-level Workers invocation-metrics collection state. */
@@ -172,6 +223,8 @@ export class CloudflareConnectedAccountStatus extends Schema.Class<CloudflareCon
 	revoked: Schema.Boolean,
 	zones: Schema.Array(CloudflareAnalyticsZoneStatus),
 	workers: Schema.NullOr(CloudflareAnalyticsWorkersStatus),
+	/** Whether zones discovered later are collected. optionalKey only for deploy-window compat. */
+	watchNewZones: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /**
@@ -311,6 +364,25 @@ export class CloudflareStartConnectResponse extends Schema.Class<CloudflareStart
 	state: Schema.String,
 }) {}
 
+export class CloudflareZoneWatchSetting extends Schema.Class<CloudflareZoneWatchSetting>(
+	"CloudflareZoneWatchSetting",
+)({
+	zoneId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watched: Schema.Boolean,
+}) {}
+
+/**
+ * Replaces one account's zone selection. `zones` lists explicit choices; a zone it leaves out
+ * follows `watchNewZones`.
+ */
+export class CloudflareZoneSettingsRequest extends Schema.Class<CloudflareZoneSettingsRequest>(
+	"CloudflareZoneSettingsRequest",
+)({
+	accountId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watchNewZones: Schema.Boolean,
+	zones: Schema.Array(CloudflareZoneWatchSetting).check(Schema.isMaxLength(5000)),
+}) {}
+
 export class CloudflareDisconnectResponse extends Schema.Class<CloudflareDisconnectResponse>(
 	"CloudflareDisconnectResponse",
 )({
@@ -356,6 +428,29 @@ export class PlanetScaleScrapeTargetSummary extends Schema.Class<PlanetScaleScra
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
+export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetricsStatus>(
+	"PlanetScaleApiMetricsStatus",
+)({
+	/** Epoch ms of the last poll that landed its window; null before the first. */
+	lastPolledAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+/** The webhooks Maple registers on the bound organization's databases. */
+export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
+	"PlanetScaleWebhookStatus",
+)({
+	/**
+	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
+	 * `pending`: not every database has one yet. `failing`: registering one failed.
+	 */
+	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	registeredDatabases: Schema.Number,
+	databases: Schema.Number,
+	/** The most recent registration failure, or null. */
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
 export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegrationStatus>(
 	"PlanetScaleIntegrationStatus",
 )({
@@ -371,14 +466,16 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	/** API permissions probed at org-binding time (e.g. readMetricsEndpoints). */
 	detectedPermissions: Schema.NullOr(Schema.Record(Schema.String, Schema.Boolean)),
 	/**
-	 * How branch-metrics scraping authenticates. PlanetScale's metrics endpoints
-	 * only document service-token auth, so "oauth" applies only when the bearer
-	 * probe succeeded; "missing" means scraping is paused until a service token
-	 * with the read_metrics_endpoints permission is added (the one manual step —
-	 * inventory, insights, and webhooks run on the OAuth grant regardless).
+	 * Where branch metrics come from: `api` polls PlanetScale's metrics API on the
+	 * OAuth grant; `service_token` scrapes Prometheus with a token stored on the
+	 * managed target (connections set up before the API existed).
 	 */
-	metricsAuth: Schema.Literals(["oauth", "service_token", "missing"]),
+	metricsAuth: Schema.Literals(["api", "service_token"]),
+	/** The metrics API poller's progress; null for `service_token` and before binding. */
+	apiMetrics: Schema.NullOr(PlanetScaleApiMetricsStatus),
 	scrapeTarget: Schema.NullOr(PlanetScaleScrapeTargetSummary),
+	/** Null until an organization is bound. */
+	webhooks: Schema.NullOr(PlanetScaleWebhookStatus),
 	/** Epoch ms of the last successful inventory refresh; null before the first. */
 	lastInventoryAt: Schema.NullOr(Schema.Number),
 	lastInventoryError: Schema.NullOr(Schema.String),
@@ -973,6 +1070,171 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 	disconnected: Schema.Boolean,
 }) {}
 
+/**
+ * A log drain configured on a Supabase project, as discovery last listed it. Only the destination
+ * host is kept: drain configs carry API keys and auth headers.
+ */
+export const SupabaseLogDrainSummary = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	/** Supabase's `backend_type`: `otlp`, `datadog`, `s3`, `webhook`, ... */
+	backendType: Schema.String,
+	/** Host, bucket or region the drain sends to; null when the config names none. */
+	destination: Schema.NullOr(Schema.String),
+	/** The drain sends to this Maple deployment's ingest gateway. */
+	toMaple: Schema.Boolean,
+	/** Maple's integration created it (the project's managed drain). */
+	managedByMaple: Schema.Boolean,
+})
+export type SupabaseLogDrainSummary = typeof SupabaseLogDrainSummary.Type
+
+/** One project discovered under the connected Supabase organization. */
+export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("SupabaseProjectStatus")({
+	ref: SupabaseProjectRef,
+	name: Schema.String,
+	region: Schema.String,
+	/** Supabase's lifecycle status as reported, e.g. `ACTIVE_HEALTHY` or `INACTIVE`. */
+	status: Schema.String,
+	metricsEnabled: Schema.Boolean,
+	/** Logs arrive through a Supabase log drain Maple created (opt-in; excludes `logsEnabled`). */
+	logDrainEnabled: Schema.Boolean,
+	/** Why an enabled drain is not delivering (removed in Supabase, its source deleted). */
+	logDrainError: Schema.NullOr(Schema.String),
+	/** The token source the managed drain sends as. */
+	logDrainSourceId: Schema.NullOr(SourceId),
+	/** Every drain on the project at the last discovery, including ones set up outside Maple. */
+	logDrains: Schema.Array(SupabaseLogDrainSummary),
+	/** When `logDrains` was last listed; null when it never was (or the listing keeps failing). */
+	logDrainsCheckedAt: Schema.NullOr(Schema.Number),
+	/** Whether Maple polls this project's logs (opt-in). */
+	logsEnabled: Schema.Boolean,
+	logsLastPolledAt: Schema.NullOr(Schema.Number),
+	/** The last logs poll's error, cleared by the next good poll. */
+	logsError: Schema.NullOr(Schema.String),
+	lastSeenAt: Schema.Number,
+}) {}
+
+export class SupabaseOrganizationSummary extends Schema.Class<SupabaseOrganizationSummary>(
+	"SupabaseOrganizationSummary",
+)({
+	id: Schema.String,
+	slug: Schema.String,
+	name: Schema.String,
+}) {}
+
+/** Connection state of the Supabase integration (Management API OAuth, one organization per org). */
+export class SupabaseIntegrationStatus extends Schema.Class<SupabaseIntegrationStatus>(
+	"SupabaseIntegrationStatus",
+)({
+	/** False when this Maple deployment has no Supabase OAuth app configured. */
+	configured: Schema.Boolean,
+	connected: Schema.Boolean,
+	organization: Schema.NullOr(SupabaseOrganizationSummary),
+	connectedByUserId: Schema.NullOr(UserId),
+	connectedAt: Schema.NullOr(Schema.Number),
+	/** True when Supabase rejected the grant; discovery stops until the org reconnects. */
+	revoked: Schema.Boolean,
+	lastDiscoveryAt: Schema.NullOr(Schema.Number),
+	lastDiscoveryError: Schema.NullOr(Schema.String),
+	/** Projects currently present in the organization, by name. */
+	projects: Schema.Array(SupabaseProjectStatus),
+}) {}
+
+export class SupabaseConnectRequest extends Schema.Class<SupabaseConnectRequest>("SupabaseConnectRequest")({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class SupabaseConnectResponse extends Schema.Class<SupabaseConnectResponse>("SupabaseConnectResponse")(
+	{
+		redirectUrl: Schema.String,
+		state: Schema.String,
+	},
+) {}
+
+/** Per-project switches. `logDrainEnabled` creates or deletes a log drain at Supabase. */
+export class SupabaseProjectUpdateRequest extends Schema.Class<SupabaseProjectUpdateRequest>(
+	"SupabaseProjectUpdateRequest",
+)({
+	metricsEnabled: Schema.optionalKey(Schema.Boolean),
+	logsEnabled: Schema.optionalKey(Schema.Boolean),
+	logDrainEnabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectResponse>(
+	"SupabaseDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
+export const SupabaseAdvisorLevel = Schema.Literals(["ERROR", "WARN", "INFO"])
+export type SupabaseAdvisorLevel = typeof SupabaseAdvisorLevel.Type
+
+/** Which Management API advisor reported a lint. */
+export const SupabaseAdvisorKind = Schema.Literals(["performance", "security"])
+export type SupabaseAdvisorKind = typeof SupabaseAdvisorKind.Type
+
+/** One advisor finding (a Splinter lint such as `unindexed_foreign_keys`), as stored and served. */
+export const SupabaseAdvisorLint = Schema.Struct({
+	advisor: SupabaseAdvisorKind,
+	/** The lint id, e.g. `rls_disabled_in_public`. */
+	name: Schema.String,
+	title: Schema.String,
+	level: SupabaseAdvisorLevel,
+	/** `PERFORMANCE`, `SECURITY`, `HEALTH`. */
+	categories: Schema.Array(Schema.String),
+	description: Schema.String,
+	/** The finding itself, naming the object (markdown-ish text from Supabase). */
+	detail: Schema.String,
+	/** A docs URL. */
+	remediation: Schema.String,
+	/** The database object the lint is about, when it names one. */
+	schema: Schema.NullOr(Schema.String),
+	object: Schema.NullOr(Schema.String),
+	/** `table`, `view`, `function`, `extension`, `auth`... */
+	objectType: Schema.NullOr(Schema.String),
+	cacheKey: Schema.String,
+})
+export type SupabaseAdvisorLint = typeof SupabaseAdvisorLint.Type
+
+/** One `pg_stat_statements` entry, ranked by total execution time. */
+export const SupabaseTopQuery = Schema.Struct({
+	/** `queryid` as text (a 64-bit hash). */
+	queryId: Schema.String,
+	/** Normalized statement text (`$1` placeholders), cut at 2000 chars. */
+	query: Schema.String,
+	calls: Schema.Number,
+	totalExecMs: Schema.Number,
+	meanExecMs: Schema.Number,
+	rows: Schema.Number,
+})
+export type SupabaseTopQuery = typeof SupabaseTopQuery.Type
+
+export class SupabaseAdvisorsByLevel extends Schema.Class<SupabaseAdvisorsByLevel>("SupabaseAdvisorsByLevel")(
+	{
+		error: Schema.Array(SupabaseAdvisorLint),
+		warn: Schema.Array(SupabaseAdvisorLint),
+		info: Schema.Array(SupabaseAdvisorLint),
+	},
+) {}
+
+/**
+ * A project's polled advisors (hourly) and slowest statements (every 15 minutes). A null
+ * `*CheckedAt` means never polled; an `*Error` is the last poll's failure, with the previous
+ * good result kept beside it.
+ */
+export class SupabaseProjectInsights extends Schema.Class<SupabaseProjectInsights>("SupabaseProjectInsights")(
+	{
+		projectRef: SupabaseProjectRef,
+		advisors: SupabaseAdvisorsByLevel,
+		advisorsCheckedAt: Schema.NullOr(Schema.Number),
+		advisorsError: Schema.NullOr(Schema.String),
+		/** Top 10 by total execution time since the project's stats were last reset. */
+		topQueries: Schema.Array(SupabaseTopQuery),
+		queriesCheckedAt: Schema.NullOr(Schema.Number),
+		queriesError: Schema.NullOr(Schema.String),
+	},
+) {}
+
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
 	{
@@ -997,6 +1259,22 @@ export class IntegrationsValidationError extends HttpTaggedError<IntegrationsVal
 		status: 400,
 		code: "integration_request_invalid",
 		title: "Invalid integration request",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The provider refused a feature the connected account's plan does not include. */
+export class IntegrationsPlanRequiredError extends HttpTaggedError<IntegrationsPlanRequiredError>()(
+	"@maple/http/errors/IntegrationsPlanRequiredError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 402,
+		code: "integration_plan_required",
+		title: "Provider plan required",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",
@@ -1141,6 +1419,40 @@ export class GcpMetricsUnavailableError extends HttpTaggedError<GcpMetricsUnavai
 	},
 ) {}
 
+/** The organization already has a connection for this AWS account. */
+export class AwsAccountAlreadyConnectedError extends HttpTaggedError<AwsAccountAlreadyConnectedError>()(
+	"@maple/http/errors/AwsAccountAlreadyConnectedError",
+	{
+		accountId: AwsAccountId,
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "aws_account_already_connected",
+		title: "Already connected",
+		param: "account_id",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** This Maple deployment has no AWS identity to assume customer roles with. */
+export class AwsIntegrationUnavailableError extends HttpTaggedError<AwsIntegrationUnavailableError>()(
+	"@maple/http/errors/AwsIntegrationUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "aws_integration_unavailable",
+		title: "AWS is not available",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
 export type IntegrationHttpError =
 	| IntegrationsForbiddenError
 	| IntegrationsConfigurationError
@@ -1152,7 +1464,7 @@ export type IntegrationHttpError =
 	| IntegrationsPersistenceError
 
 /**
- * Dashboard control surface for the Hazel, Cloudflare, Railway and GitHub
+ * Dashboard control surface for the Hazel, Linear, Cloudflare, Railway and GitHub
  * integrations, plus VCS lookups. Internal transport: session-only, absent from
  * the public docs. PlanetScale and chat connectors are public v2 resources.
  *
@@ -1212,6 +1524,42 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.get("linearStatus", "/linear/status", {
+			success: LinearIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("linearStart", "/linear/start", {
+			payload: LinearStartConnectRequest,
+			success: LinearStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("linearTeams", "/linear/teams", {
+			success: LinearTeamsListResponse,
+			error: [
+				IntegrationsValidationError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("linearDisconnect", "/linear", {
+			success: LinearDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("cloudflareStatus", "/cloudflare/status", {
 			success: CloudflareIntegrationStatus,
 			error: IntegrationsPersistenceError,
@@ -1246,6 +1594,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("cloudflareZoneSettings", "/cloudflare/zones", {
+			payload: CloudflareZoneSettingsRequest,
+			success: CloudflareIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(
@@ -1302,6 +1657,58 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.get("supabaseStatus", "/supabase/status", {
+			success: SupabaseIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Starts the Management API OAuth flow (PKCE); the callback binds the granted organization.
+		HttpApiEndpoint.post("supabaseConnect", "/supabase/connect", {
+			payload: SupabaseConnectRequest,
+			success: SupabaseConnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsConfigurationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Runs project discovery now instead of waiting for the hourly cron.
+		HttpApiEndpoint.post("supabaseSync", "/supabase/sync", {
+			success: SupabaseIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsNotConnectedError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.patch("supabaseUpdateProject", "/supabase/projects/:ref", {
+			params: { ref: SupabaseProjectRef },
+			payload: SupabaseProjectUpdateRequest,
+			success: SupabaseIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsNotFoundError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsPlanRequiredError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("supabaseProjectInsights", "/supabase/projects/:ref/insights", {
+			params: { ref: SupabaseProjectRef },
+			success: SupabaseProjectInsights,
+			error: [IntegrationsNotFoundError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("supabaseDisconnect", "/supabase", {
+			success: SupabaseDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		// The inventory behind Infrastructure -> Google Cloud. Connectors are public v2
 		// (`/v2/integrations/gcp`); only the dashboard reads what they discovered.
 		HttpApiEndpoint.get("gcpResources", "/gcp/resources", {
@@ -1319,6 +1726,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
 			success: GithubIntegrationStatus,
 			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Finishes any OAuth / app-install return for the signed-in caller (see `oauth-return.ts`).
+		// Failures come back as an `error` status with display copy, like the old callback page.
+		HttpApiEndpoint.post("oauthComplete", "/oauth/complete", {
+			payload: OAuthCompleteRequest,
+			success: OAuthCompleteResponse,
 		}),
 	)
 	.add(

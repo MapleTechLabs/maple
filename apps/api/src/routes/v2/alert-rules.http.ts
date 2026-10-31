@@ -90,6 +90,9 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	threshold: doc.threshold,
 	threshold_upper: doc.thresholdUpper,
 	window_minutes: doc.windowMinutes,
+	evaluation_interval_minutes: doc.evaluationIntervalMinutes,
+	slowed_interval_minutes: doc.slowedIntervalMinutes,
+	slowed_at: doc.slowedAt,
 	minimum_sample_count: doc.minimumSampleCount,
 	consecutive_breaches_required: doc.consecutiveBreachesRequired,
 	breaches_out_of: doc.breachesOutOf,
@@ -103,6 +106,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	no_data_behavior: doc.noDataBehavior,
 	alert_on_no_data: doc.noDataBehavior === "alert",
 	last_evaluation_error: doc.lastEvaluationError,
+	last_evaluation_error_kind: doc.lastEvaluationErrorKind,
 	last_evaluated_at: doc.lastEvaluatedAt,
 	last_scheduled_at: doc.lastScheduledAt,
 	created_at: doc.createdAt,
@@ -130,6 +134,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"threshold",
 		"threshold_upper",
 		"window_minutes",
+		"evaluation_interval_minutes",
 		"minimum_sample_count",
 		"consecutive_breaches_required",
 		"breaches_out_of",
@@ -213,6 +218,9 @@ const toUpsertRequest = (
 				? { destinationIds: params.destination_ids }
 				: undefined),
 			...(params.breaches_out_of !== undefined ? { breachesOutOf: params.breaches_out_of } : undefined),
+			...(params.evaluation_interval_minutes !== undefined
+				? { evaluationIntervalMinutes: params.evaluation_interval_minutes }
+				: undefined),
 			...(params.notes !== undefined ? { notes: params.notes } : undefined),
 			...(params.notification_template !== undefined
 				? {
@@ -370,6 +378,10 @@ const mergeUpsertRequest = (
 			signalType,
 			comparator,
 			windowMinutes: patch.window_minutes ?? doc.windowMinutes,
+			evaluationIntervalMinutes:
+				patch.evaluation_interval_minutes !== undefined
+					? patch.evaluation_interval_minutes
+					: doc.evaluationIntervalMinutes,
 			minimumSampleCount: patch.minimum_sample_count ?? doc.minimumSampleCount,
 			consecutiveBreachesRequired:
 				patch.consecutive_breaches_required ?? doc.consecutiveBreachesRequired,
@@ -412,6 +424,19 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 		end: span.end,
 		severity: span.severity,
 	})),
+	...(preview.seriesFailure === undefined ? undefined : { series_failure: preview.seriesFailure }),
+	...(preview.queryTiming === undefined
+		? undefined
+		: {
+				query_timing: {
+					elapsed_ms: preview.queryTiming.elapsedMs,
+					failure: preview.queryTiming.failure,
+					probe_limit_ms: preview.queryTiming.probeLimitMs,
+					interval_minutes: preview.queryTiming.intervalMinutes,
+					limit_ms: preview.queryTiming.limitMs,
+					fits_interval_minutes: preview.queryTiming.fitsIntervalMinutes,
+				},
+			}),
 })
 
 export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules", (handlers) =>

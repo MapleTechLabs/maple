@@ -52,8 +52,10 @@ const loadingSkeleton = (h: H): Html =>
 			skeleton(h, "h-52 w-full rounded-md"),
 			tableSkeleton(h, {
 				rows: 8,
+				// The loaded table sits in a card panel.
+				className: "bg-card",
 				columns: [
-					{ header: "Release", headClassName: "w-[46%] min-w-[260px]", skeleton: "w-48" },
+					{ header: "Release", headClassName: "w-[46%] min-w-64", skeleton: "w-48" },
 					{ header: "Services" },
 					{ header: "Deployed", headClassName: "whitespace-nowrap" },
 					{ header: "Error rate", headClassName: "whitespace-nowrap", skeleton: "w-12" },
@@ -87,7 +89,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 			emptyMessage(h, { className: "flex flex-col items-center gap-1 py-12 text-sm" }, [
 				h.span([], ["No releases detected in this window."]),
 				h.span(
-					[h.Class("text-xs text-muted-foreground/70")],
+					[h.Class("text-xs text-foreground-subtle")],
 					[
 						"Releases compare errors and latency before and after each deploy. Release tracking needs spans to carry the ",
 						inlineCode(h, {}, ["vcs.ref.head.revision"]),
@@ -111,9 +113,9 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 					...(flagged > 0
 						? [stat(h, formatNumber(flagged), [pluralize(flagged, "release"), " with errors up"], "text-severity-error")]
 						: []),
-					h.span([h.Class("text-muted-foreground/70")], ["Each release is compared with the version it replaced"]),
+					h.span([h.Class("text-foreground-subtle")], ["Each release is compared with the version it replaced"]),
 					...(response.truncated
-						? [h.span([h.Class("text-muted-foreground/70")], ["Showing the newest ", formatNumber(response.releases.length), " rows"])]
+						? [h.span([h.Class("text-foreground-subtle")], ["Showing the newest ", formatNumber(response.releases.length), " rows"])]
 						: []),
 				],
 			),
@@ -160,7 +162,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 							...(issues?.hasMore === true
 								? [
 										h.span(
-											[h.Class("px-0.5 text-2xs text-muted-foreground/70")],
+											[h.Class("px-0.5 text-2xs text-foreground-subtle")],
 											["Issue counts cover the 100 most recently active issues introduced in this window."],
 										),
 									]
@@ -175,8 +177,8 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.releases.data, {
 		onIdle: () => loadingSkeleton(h),
 		onLoading: () => loadingSkeleton(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load releases", onRetry: Message.ClickedRetry() }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Failed to load releases", onRetry: Message.ClickedRetry() }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
+		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
 		onSuccess: (data) => loaded(h, model, data, false, timeZone),
 		onRefreshing: (data) => loaded(h, model, data, true, timeZone),
 	})
@@ -188,6 +190,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: "Releases",
 			filters: filtersRail(h, model),
 			actions: timeControls(h, {
 				search: model.search,

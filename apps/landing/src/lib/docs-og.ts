@@ -42,6 +42,7 @@ const GROUP_ART = new Map([
 	["AI Gateways", "ai-mcp-integration"],
 	["Agent Sessions", "ai-mcp-integration"],
 	["Alerting", "alerts"],
+	["Code Review", "service-catalog"],
 	["Errors", "error-tracking"],
 	["Explore", "distributed-tracing"],
 	["Instrumentation", "distributed-tracing"],

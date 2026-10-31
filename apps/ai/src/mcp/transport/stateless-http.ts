@@ -24,7 +24,7 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Ref, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -146,7 +146,7 @@ export const layerStatelessMcpHttp = (options: {
 
 			const disconnects = yield* Queue.make<number>()
 			let writeRequest!: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>
-			let clientId = 0
+			const nextClientId = yield* Ref.make(0)
 
 			type Client = {
 				readonly write: (response: FromServerEncoded) => Effect.Effect<void>
@@ -173,7 +173,11 @@ export const layerStatelessMcpHttp = (options: {
 			): Effect.Effect<HttpServerResponse.HttpServerResponse, never, Scope.Scope> =>
 				Effect.gen(function* () {
 					const scope = yield* Scope.Scope
-					const requestHeaders = Object.entries(request.headers)
+					// No session id is ever issued, so a client's leftover one is dropped: the server
+					// would look the session up by that id instead of by this request's client.
+					const requestHeaders = Object.entries(request.headers).filter(
+						([name]) => name !== "mcp-session-id",
+					)
 					// A body that cannot be read is a request we can still answer as
 					// JSON-RPC — the same `-32700` an undecodable body gets below.
 					// `Effect.orDie` here made it a defect instead, which escaped every
@@ -187,7 +191,7 @@ export const layerStatelessMcpHttp = (options: {
 					)
 					if (body === undefined) return jsonRpcError(null, -32700, "Parse error")
 
-					const id = clientId++
+					const id = yield* Ref.getAndUpdate(nextClientId, (n) => n + 1)
 					const queue = yield* Queue.make<FromServerEncoded, Cause.Done>()
 					const requestIds: Array<RequestId> = []
 

@@ -6,6 +6,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tabs from "../../../ui/tabs"
+import * as IngestRules from "./ingest-rules"
 import * as MappingDialog from "./mapping-dialog"
 
 // `IngestionSection`: the ingest-health strip, the OTLP endpoint and ingest keys, install steps,
@@ -31,7 +32,6 @@ export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
 	overview: OverviewData.schema,
 	ingest: IngestData.schema,
-	isSendingTest: Schema.Boolean,
 	endpointCopy: CopyButton.Model,
 	/** Admin-only rows: which keys are revealed, each key's copy state, and the regenerate flow. */
 	revealedKeys: Schema.Array(IngestKeyKind),
@@ -49,6 +49,7 @@ export const Model = Schema.Struct({
 	recommendationTab: RecommendationTab,
 	/** Rows with an apply, dismiss or reopen in flight. */
 	pendingRecommendations: Schema.Array(Schema.String),
+	ingestRules: IngestRules.Model,
 	mappings: MappingsData.schema,
 	pendingToggles: Schema.Array(Schema.String),
 	rowMenus: Schema.Record(Schema.String, Menu.Model),

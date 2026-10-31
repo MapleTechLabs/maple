@@ -7,11 +7,12 @@ import {
 	totalReferrals,
 } from "../../components/analytics/ai/ai-traffic-model"
 import { DEFAULT_TRAFFIC, hasActiveFilters } from "../../components/analytics/filters"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta } from "../../ui/delta"
+import { errorState } from "../../ui/error-state"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { inlineCode } from "../../ui/inline-code"
@@ -65,7 +66,11 @@ export const crawledPagesCard = (model: Model, crawlers: AiCrawlers): BreakdownC
 		dimensions: [
 			{
 				tab: "Pages read by AI crawlers",
-				rows: crawlers.pages.map((page) => ({ name: page.path, count: page.requests, secondary: page.host })),
+				rows: crawlers.pages.map((page) => ({
+					name: page.path,
+					count: page.requests,
+					secondary: page.host,
+				})),
 				filterKey: "pagePath",
 				noun: "page",
 				nounPlural: "pages",
@@ -87,7 +92,9 @@ const noAiTraffic = (h: H): Html =>
 				"See visits sent by ChatGPT, Claude and other assistants, and which pages AI crawlers read. Visits come from the Maple browser SDK, crawler fetches from your server’s traces.",
 			]),
 		]),
-		emptyContent(h, [emptyActions(h, [docsLink(h, "browserSdk", "Setup guide"), docsLink(h, "webAnalytics")])]),
+		emptyContent(h, [
+			emptyActions(h, [docsLink(h, "browserSdk", "Setup guide"), docsLink(h, "webAnalytics")]),
+		]),
 	])
 
 const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
@@ -99,12 +106,14 @@ const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
 
 export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 	const window = model.window
-	if (window === null) return h.div([], [])
+	if (window === null) return skeleton(h, "h-64 w-full")
 	const filters = filtersOf(model.search)
 	const bucketSeconds = sparkBucketSeconds(window.startTime, window.endTime)
 	const referralPoints = dataOf(model.aiReferrals)
 	const referrals =
-		referralPoints === undefined ? undefined : summarizeReferrals(referralPoints, { ...window, bucketSeconds })
+		referralPoints === undefined
+			? undefined
+			: summarizeReferrals(referralPoints, { ...window, bucketSeconds })
 	const previousPoints = dataOf(model.previousAiReferrals)
 	const previousTotals = previousPoints === undefined ? undefined : totalReferrals(previousPoints)
 	const crawlers = dataOf(model.aiCrawlers)
@@ -119,53 +128,74 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 		crawlers.crawlers.every((row) => row.requests === 0)
 	if (isNoAiTraffic && !hasActiveFilters(filters)) return noAiTraffic(h)
 	const clock = { nowMs: model.nowMs, timeZone }
-	return h.div([h.Class("space-y-6")], [
-		aiKpis(h, model, referrals, previousTotals, crawlers),
-		AsyncData.matchData(model.aiReferrals.data, {
-			onEmpty: () =>
-				h.div(
-					[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
-					CARD_PRODUCTS.map(() => skeleton(h, "h-[148px] w-full")),
-				),
-			onFailure: () => h.div([], []),
-			onData: () =>
-				h.div(
-					[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
-					CARD_PRODUCTS.map((product, index) =>
-						aiProductCard(h, product, referrals?.get(product.id), crawls?.get(product.id), (index % 3) * 60, model.nowMs),
+	return h.div(
+		[h.Class("space-y-6")],
+		[
+			aiKpis(h, model, referrals, previousTotals, crawlers),
+			AsyncData.matchData(model.aiReferrals.data, {
+				onEmpty: () =>
+					h.div(
+						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
+						CARD_PRODUCTS.map(() => skeleton(h, "h-[148px] w-full")),
 					),
-				),
-		}),
-		h.div([h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")], [
-			referrals === undefined ? skeleton(h, "h-64 w-full") : rankingPanel(h, rankReferrals(referrals, previousTotals)),
-			AsyncData.matchData(model.aiCrawlers.data, {
-				onEmpty: () => skeleton(h, "h-64 w-full"),
-				onFailure: () => h.div([], []),
-				onData: (data) => crawlersPanel(h, data, clock),
+				onFailure: (failure) => errorState(h, { failure, title: "Couldn't load AI referrals" }),
+				onData: () =>
+					h.div(
+						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
+						CARD_PRODUCTS.map((product, index) =>
+							aiProductCard(
+								h,
+								product,
+								referrals?.get(product.id),
+								crawls?.get(product.id),
+								(index % 3) * 60,
+								model.nowMs,
+							),
+						),
+					),
 			}),
-		]),
-		h.section([h.Class("space-y-3")], [
-			sectionHeading(h, {
-				title: "What AI crawlers read",
-				hint: isVisitorFiltered ? "Crawls follow the site and page filters only" : undefined,
-			}),
-			...AsyncData.matchData(model.aiCrawlers.data, {
-				onEmpty: () => [skeleton(h, "h-32 w-full")],
-				onFailure: () => [],
-				onData: (data) => [
-					contentFormats(h, data.formats),
-					data.pages.length === 0
-						? aiPanel(h, { title: "Pages read by AI crawlers" }, [
-								aiEmpty(h, ["No page was served to an AI crawler in this window."]),
-							])
-						: (breakdownPanel(h, model, crawledPagesCard(model, data), {
-								selectedOf: (key) => (key === "pagePath" ? filters.pagePath : undefined),
-								isWaiting: false,
-							}) ?? h.div([], [])),
+			h.div(
+				[h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")],
+				[
+					referrals === undefined
+						? skeleton(h, "h-64 w-full")
+						: rankingPanel(h, rankReferrals(referrals, previousTotals)),
+					AsyncData.matchData(model.aiCrawlers.data, {
+						onEmpty: () => skeleton(h, "h-64 w-full"),
+						onFailure: (failure) =>
+							errorState(h, { failure, title: "Couldn't load AI crawlers" }),
+						onData: (data) => crawlersPanel(h, data, clock),
+					}),
 				],
-			}),
-		]),
-	])
+			),
+			h.section(
+				[h.Class("space-y-3")],
+				[
+					sectionHeading(h, {
+						title: "What AI crawlers read",
+						hint: isVisitorFiltered ? "Crawls follow the site and page filters only" : undefined,
+					}),
+					...AsyncData.matchData(model.aiCrawlers.data, {
+						onEmpty: () => [skeleton(h, "h-32 w-full")],
+						// The crawlers panel above already shows this read's failure.
+						onFailure: () => [],
+						onData: (data) => [
+							contentFormats(h, data.formats),
+							data.pages.length === 0
+								? aiPanel(h, { title: "Pages read by AI crawlers" }, [
+										aiEmpty(h, ["No page was served to an AI crawler in this window."]),
+									])
+								: (breakdownPanel(h, model, crawledPagesCard(model, data), {
+										selectedOf: (key) =>
+											key === "pagePath" ? filters.pagePath : undefined,
+										isWaiting: false,
+									}) ?? h.div([], [])),
+						],
+					}),
+				],
+			),
+		],
+	)
 }
 
 const rankingPanel = (h: H, ranks: ReturnType<typeof rankReferrals>): Html => {
@@ -178,11 +208,19 @@ const rankingPanel = (h: H, ranks: ReturnType<typeof rankReferrals>): Html => {
 			])
 		: aiPanel(h, {
 				...options,
-				expand: { id: "ai-ranking", count: plural(ranks.length, "assistant", "assistants"), table: rankingTable(h, ranks, CARD_SURFACE) },
+				expand: {
+					id: "ai-ranking",
+					count: plural(ranks.length, "assistant", "assistants"),
+					table: rankingTable(h, ranks, CARD_SURFACE),
+				},
 			})
 }
 
-const crawlersPanel = (h: H, data: AiCrawlers, clock: Readonly<{ nowMs: number; timeZone: string }>): Html => {
+const crawlersPanel = (
+	h: H,
+	data: AiCrawlers,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): Html => {
 	const requests = data.crawlers.reduce((sum, row) => sum + row.requests, 0)
 	const failed = data.crawlers.reduce((sum, row) => sum + row.failedRequests, 0)
 	const options = {
@@ -195,7 +233,11 @@ const crawlersPanel = (h: H, data: AiCrawlers, clock: Readonly<{ nowMs: number; 
 		aside:
 			failed > 0
 				? h.span(
-						[h.Title("User agents are easy to spoof: scanners borrow crawler names and mostly get 404s.")],
+						[
+							h.Title(
+								"User agents are easy to spoof: scanners borrow crawler names and mostly get 404s.",
+							),
+						],
 						[formatPercent(failed / Math.max(requests, 1)), " of fetches failed"],
 					)
 				: undefined,
@@ -253,8 +295,10 @@ const aiKpis = (
 		(total, summary) => summary.spark.map((value, i) => value + (total[i] ?? 0)),
 		[],
 	)
-	const previousVisits = previousTotals === undefined ? undefined : [...previousTotals.values()].reduce((a, b) => a + b, 0)
-	const change = previousVisits !== undefined && previousVisits > 0 ? (visits - previousVisits) / previousVisits : null
+	const previousVisits =
+		previousTotals === undefined ? undefined : [...previousTotals.values()].reduce((a, b) => a + b, 0)
+	const change =
+		previousVisits !== undefined && previousVisits > 0 ? (visits - previousVisits) / previousVisits : null
 	const sessions = dataOf(model.summary)?.sessions
 	const fetches = crawlers?.crawlers.reduce((sum, row) => sum + row.requests, 0) ?? 0
 	const failed = crawlers?.crawlers.reduce((sum, row) => sum + row.failedRequests, 0) ?? 0
@@ -269,7 +313,7 @@ const aiKpis = (
 				referrals === undefined
 					? undefined
 					: products > 0
-						? `from ${products} ${products === 1 ? "assistant" : "assistants"}`
+						? `from ${products} ${pluralize(products, "assistant")}`
 						: "No AI referrals yet",
 		}),
 		statRailItem(h, {
@@ -288,7 +332,12 @@ const aiKpis = (
 			eyebrow: "Crawler fetches",
 			value: crawlers === undefined ? EMPTY_VALUE : formatNumber(fetches),
 			tone: crawlers !== undefined && fetches > 0 && failed / fetches > 0.5 ? "warn" : "neutral",
-			subline: crawlers === undefined ? undefined : failed > 0 ? `${formatNumber(failed)} got an error` : "All served",
+			subline:
+				crawlers === undefined
+					? undefined
+					: failed > 0
+						? `${formatNumber(failed)} got an error`
+						: "All served",
 			delay: 180,
 		}),
 	])

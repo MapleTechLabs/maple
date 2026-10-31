@@ -115,7 +115,7 @@ const preview = (h: H, model: Model): ReadonlyArray<Html> => {
 					icon(h, "ArrowRightIcon", { size: 12, className: "text-muted-foreground shrink-0" }),
 					inlineCode(h, { variant: "plain", className: "text-foreground" }, [target]),
 					badge(h, { variant: operation.value === "copy" ? "info" : "warn", className: "ml-1 gap-1" }, [
-						icon(h, operation.icon, { size: 11 }),
+						icon(h, operation.icon, { size: 12 }),
 						operation.label,
 					]),
 				],

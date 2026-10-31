@@ -24,12 +24,14 @@ import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
 import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
-import { type BreadcrumbEntry, topbar } from "./view-topbar"
+import { type BreadcrumbEntry, hidesTopbarConnect, topbar } from "./view-topbar"
 import { splitPageRails } from "./page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
+import { FLAGGED_HREFS } from "./palette/entries"
 import { paletteView } from "./palette/view"
 import { shortcutsDialogView } from "./palette/shortcuts-view"
 import { paletteContextOf } from "./update-palette"
+import type { SourceLink } from "./source-link"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
@@ -52,10 +54,10 @@ const sidebarRegions = (
 
 const RAIL_TIP_PREFIX = "shell-rail-tip-"
 
-/** Every row that can carry a rail tooltip: the nav items, Search and the footer links. */
-const RAIL_TIP_TITLES = [
+/** The rows that carry a rail tooltip: Search, the nav rows this org is shown, the footer links. */
+const railTipTitles = (clerk: ShellClerk | null): ReadonlyArray<string> => [
 	"Search",
-	...shellNavGroups().flatMap((group) => group.items.map((item) => item.title)),
+	...shellNavGroups(clerk).flatMap((group) => group.items.map((item) => item.title)),
 	"Sources",
 	"Settings",
 ]
@@ -66,23 +68,36 @@ const desktopSidebar = (
 	model: Model,
 	currentPath: string,
 	clerk: ShellClerk | null,
-	isOpen = model.isSidebarOpen,
 ): Html => {
-	if (isOpen) return sidebarDesktop(h, "expanded", sidebarRegions(h, model, currentPath, clerk))
+	const isInstant = model.isSidebarToggleInstant
+	if (model.isSidebarOpen)
+		return sidebarDesktop(
+			h,
+			"expanded",
+			sidebarRegions(h, model, currentPath, clerk),
+			undefined,
+			isInstant,
+		)
 	return h.submodel({
 		slotId: "shell-rail-tooltip",
 		model: model.railTooltip,
 		view: Tooltip.view,
 		viewInputs: {
 			toView: ({ trigger, portal }) =>
-				sidebarDesktop(h, "collapsed", [
-					...sidebarRegions(h, model, currentPath, clerk, (title) =>
-						trigger(`${RAIL_TIP_PREFIX}${title}`),
-					),
-					...(portal === null ? [] : [portal]),
-				]),
+				sidebarDesktop(
+					h,
+					"collapsed",
+					[
+						...sidebarRegions(h, model, currentPath, clerk, (title) =>
+							trigger(`${RAIL_TIP_PREFIX}${title}`),
+						),
+						...(portal === null ? [] : [portal]),
+					],
+					undefined,
+					isInstant,
+				),
 			toContent: (triggerId) => [triggerId.slice(RAIL_TIP_PREFIX.length)],
-			triggerIds: RAIL_TIP_TITLES.map((title) => `${RAIL_TIP_PREFIX}${title}`),
+			triggerIds: railTipTitles(clerk).map((title) => `${RAIL_TIP_PREFIX}${title}`),
 		},
 		toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
 	})
@@ -97,6 +112,8 @@ export type FrameInputs = Readonly<{
 	page: () => Html
 	/** `DashboardPage`'s `topbarActions`, after the shell's own buttons. */
 	topbarActions: () => Html
+	/** The page's source, linked from the top bar. */
+	sourceLink?: SourceLink | null
 }>
 
 const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: ShellClerk): Html =>
@@ -130,7 +147,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 		? splitPageRails(inputs.page())
 		: { body: inputs.page(), maybeFilters: Option.none(), maybeRight: Option.none() }
 	const railTriggers = [
-		...(Option.isSome(page.maybeFilters) ? [filterSheetTrigger(h, model)] : []),
+		...Option.toArray(Option.map(page.maybeFilters, (rail) => filterSheetTrigger(h, model, rail))),
 		...(Option.isSome(page.maybeRight) ? [rightSheetTrigger(h, model)] : []),
 	]
 	const railSheets = [
@@ -154,7 +171,15 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 				h.div(
 					[h.Class(pageLayoutStyles), h.DataAttribute("slot", "page-layout")],
 					[
-						topbar(h, model, inputs.breadcrumbs, inputs.topbarActions(), railTriggers),
+						topbar(
+							h,
+							model,
+							inputs.breadcrumbs,
+							inputs.topbarActions(),
+							railTriggers,
+							!hidesTopbarConnect(inputs.currentPath),
+							inputs.sourceLink ?? null,
+						),
 						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
 						...(inputs.clerk === undefined || inputs.clerk === null
 							? []
@@ -179,25 +204,12 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 	)
 })
 
-export type BareFrameInputs = Readonly<{ currentPath: string; clerk: ShellClerk | null; page: () => Html }>
-
-/**
- * `/chat`'s own `SidebarProvider open={false} className="h-svh overflow-hidden"`: the rail held
- * collapsed (its toggle does nothing there) and the page straight in the inset, no top bar.
- */
-export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs>((model, inputs, h) =>
-	sidebarWrapper(
-		h,
-		[
-			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath, inputs.clerk, false)]),
-			sidebarInset(h, [inputs.page()]),
-		],
-		model.isMobile && model.isMobileNavOpen ? [h.AriaHidden(true)] : [],
-		"h-svh overflow-hidden",
-	),
-)
-
-const mobileNav = (h: HtmlBuilder<Message>, model: Model, currentPath: string, clerk: ShellClerk | null): Html =>
+const mobileNav = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	currentPath: string,
+	clerk: ShellClerk | null,
+): Html =>
 	leftSheet(
 		h,
 		{
@@ -264,7 +276,9 @@ export type OverlayInputs = Readonly<{ currentPath: string; clerk?: ShellClerk |
 
 /** Base UI's sheet portal for the mobile nav, after the frame in the app root. */
 export const sheetLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
-	model.isMobile && model.isMobileNavOpen ? mobileNav(h, model, inputs.currentPath, inputs.clerk ?? null) : null,
+	model.isMobile && model.isMobileNavOpen
+		? mobileNav(h, model, inputs.currentPath, inputs.clerk ?? null)
+		: null,
 )
 
 /** A box-less holder that always renders, so a portal moved to `<body>` is never an insertion point. */
@@ -273,32 +287,44 @@ const layer = (h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
 
 /** `CommandPalette`'s portal while it is mounted. */
 export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
-	layer(h, model.palette === null
-		? []
-		: [paletteView(
-				h,
-				model.palette,
-				{
-					context: paletteContextOf(model),
-					isReleasesVisible: shellNavGroups(inputs.clerk ?? null).some((group) =>
-						group.items.some((item) => item.href === "/releases"),
+	layer(
+		h,
+		model.palette === null
+			? []
+			: [
+					paletteView(
+						h,
+						model.palette,
+						{
+							context: paletteContextOf(model),
+							visibleFlagged: shellNavGroups(inputs.clerk ?? null).flatMap((group) =>
+								group.items.flatMap((item) =>
+									FLAGGED_HREFS.has(item.href) ? [item.href] : [],
+								),
+							),
+						},
+						(message) => Message.GotPaletteMessage({ message }),
 					),
-				},
-				(message) => Message.GotPaletteMessage({ message }),
-			)]),
+				],
+	),
 )
 
 /** `KeyboardShortcutsDialog`'s portal while it is mounted. */
 export const shortcutsLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, _inputs, h) =>
-	layer(h, model.shortcutsDialog === null
-		? []
-		: [shortcutsDialogView(
-				h,
-				model.shortcutsDialog,
-				model.platform,
-				(message) => Message.GotShortcutsDialogMessage({ message }),
-				Message.MeasuredShortcutsPanel(),
-			)]),
+	layer(
+		h,
+		model.shortcutsDialog === null
+			? []
+			: [
+					shortcutsDialogView(
+						h,
+						model.shortcutsDialog,
+						model.platform,
+						(message) => Message.GotShortcutsDialogMessage({ message }),
+						Message.MeasuredShortcutsPanel(),
+					),
+				],
+	),
 )
 
 /** Base UI's menu portal for the open menu, last in the app root. */

@@ -8,7 +8,7 @@ import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { makeRandom } from "alchemy/Random"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
@@ -27,7 +27,7 @@ import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWork
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const { stage, region, domains, devEnv, db } = stack
+	const { stage, region, domains, devEnv, db, awsOidc, deviceToken } = stack
 	// api keeps the hostname and OAuth, and forwards `/mcp` and chat to maple-ai.
 	const ai = yield* AiWorker
 	// Resolved up front so a misconfigured deploy fails before applying anything.
@@ -50,6 +50,8 @@ const props = Effect.gen(function* () {
 			// Minted once and kept in state; bound to this Worker alone.
 			[VCS_SYNC_HOP_SECRET]: yield* makeRandom("VcsSyncHopSecret"),
 			...configuredEnv,
+			...awsOidc,
+			...deviceToken,
 			...devEnv,
 		},
 	}

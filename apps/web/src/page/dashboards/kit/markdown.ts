@@ -53,7 +53,7 @@ const inlineToken = <M>(h: HtmlBuilder<M>, segment: string): ReadonlyArray<Html 
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
 							h.Class(
-								"text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary",
+								"text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
 							),
 						],
 						[label],

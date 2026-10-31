@@ -34,6 +34,7 @@ import {
 	INVESTIGATIONS_LIMIT,
 	issuesOf,
 	listQueryOf,
+	rankingFailed,
 	type Search,
 	severityOf,
 	signalsOf,
@@ -81,7 +82,7 @@ const keyed = <A, E>(
 ): Step =>
 	Option.match(Keyed.request(slot, key, mode), {
 		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
+		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key)] }),
 	})
 
 /** Applies steps in order, each seeing the Model the previous one left. */
@@ -158,15 +159,18 @@ const rankingStep =
 		)
 	}
 
+/** The ranking's filters without its window: a new window alone keeps the ranked rows usable. */
+const rankingFiltersOf = (search: Model["search"]): string =>
+	JSON.stringify([search.service ? search.service : null, search.env ? search.env : null])
+
 /** The ranked hashes the list waits for: `Some(null)` when not ranking, `None` until ready. */
 const rankedHashes = (model: Model): Option.Option<ReadonlyArray<string> | null> => {
 	if (sortOf(model.search) !== "volume") return Option.some(null)
-	const ranking = model.ranking.data
-	// Still refreshing with no rows: the previous mode's answer, not a ranking.
-	return Option.filter(
-		AsyncData.getData(ranking),
-		(rows) => !(AsyncData.isRefreshing(ranking) && rows.length === 0),
-	)
+	// A ranking retained from other filters ranks the wrong issues: wait for the current one.
+	if (model.ranking.retained === true && model.rankedFilters !== rankingFiltersOf(model.search)) {
+		return Option.none()
+	}
+	return AsyncData.getData(model.ranking.data)
 }
 
 /** Page one of the current list query; a new query drops the pages loaded for the old one. */
@@ -241,7 +245,9 @@ export const requestAll = (
 ): Return =>
 	applySteps({ ...model, window }, [
 		summaryStep(context, window, mode),
-		...(model.isFilterRailMounted ? [serviceCountsStep(context), environmentsStep(context, window, mode)] : []),
+		...(model.isFilterRailMounted
+			? [serviceCountsStep(context), environmentsStep(context, window, mode)]
+			: []),
 		investigationsStep(context),
 		rankingStep(context, window, mode),
 		listStep(context),
@@ -342,12 +348,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		environments: Keyed.idle(),
 		isFilterRailMounted: false,
 		ranking: Keyed.idle(),
+		rankedFilters: null,
 		listKey: null,
 		pages: [],
 		volume: Keyed.idle(),
 		spark: Keyed.idle(),
 		investigations: Keyed.idle(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		selectedIds: [],
 		selectionAnchor: null,
 		focusedId: null,
@@ -372,6 +379,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -488,6 +496,10 @@ const retryFirstPage = (model: Model): Return => {
 	})
 }
 
+/** The failed volume ranking, asked again; its answer requests the list (`follow`). */
+const retryRanking = (model: Model, context: PageContext): Return =>
+	model.window === null ? { model } : applySteps(model, [rankingStep(context, model.window, "Refresh")])
+
 const settled = <
 	K extends "summary" | "serviceCounts" | "environments" | "volume" | "spark" | "investigations",
 >(
@@ -510,7 +522,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: settled(model, "environments", Keyed.accept(model.environments, key, result)),
 		}),
 		CompletedFetchRanking: ({ key, result }) =>
-			follow({ ...model, ranking: Keyed.accept(model.ranking, key, result) }, context),
+			follow(
+				{
+					...model,
+					ranking: Keyed.accept(model.ranking, key, result),
+					rankedFilters:
+						key === model.ranking.key ? rankingFiltersOf(model.search) : model.rankedFilters,
+				},
+				context,
+			),
 		CompletedFetchPage: ({ key, result }) =>
 			follow(
 				{
@@ -535,15 +555,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }
 			const mounted = { ...model, isFilterRailMounted: true }
-			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
+			return mounted.window === null
+				? { model: mounted }
+				: requestAll(mounted, context, mounted.window, "Load")
 		},
-		PaintedEmptyList: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
@@ -560,7 +575,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		// TODO(retry): this should reload the whole window; it refetches page one instead.
-		ClickedRetry: () => retryFirstPage(model),
+		ClickedRetry: () => (rankingFailed(model) ? retryRanking(model, context) : retryFirstPage(model)),
 		ClickedLoadMore: () => loadMore(model, context),
 		ToggledFilterOption: ({ param, name }) => navigate(model, toggledFilter(model, param, name)),
 		ClickedClearFilters: () => navigate(model, CLEARED_ERROR_FILTERS),
@@ -595,7 +610,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			outMessage: copyToast(
 				label,
 				isOk,
-				label === "Agent prompt" ? "Agent prompt copied — paste it into your MCP agent" : undefined,
+				label === "Agent prompt" ? "Agent prompt copied. Paste it into your MCP agent" : undefined,
 			),
 		}),
 		CompletedOpenInNewTab: () => ({ model }),

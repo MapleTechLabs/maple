@@ -97,7 +97,7 @@ describe("OrgIngestKeysService", () => {
 			const row = yield* Effect.promise(() =>
 				queryFirstRow<{ count: number; name: string; key_hash: string | null }>(
 					testDb,
-					"SELECT count(*)::int AS count, min(name) AS name, min(key_hash) AS key_hash FROM sources WHERE org_id = $1 AND is_default",
+					"SELECT count(*)::int AS count, min(name) AS name, min(key_hash) AS key_hash FROM sources WHERE org_id = $1 AND kind = 'default'",
 					["org_a"],
 				),
 			)

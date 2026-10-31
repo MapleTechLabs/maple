@@ -1,6 +1,7 @@
 import { Duration, Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
+import { emptyOnFailure } from "../../../data/enrichment"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { commitDetailsKey } from "../../kit/commit-card"
@@ -203,11 +204,11 @@ const followData =
 		}
 	}
 
-/** The health summary, once the overview, incidents and anomalies have all loaded. */
+/** The health summary, once the overview, incidents and anomalies have all settled (a failed enrichment reads as none). */
 export const summaryOf = (model: Model) => {
 	const overview = AsyncData.getData(model.overview.data)
-	const incidents = AsyncData.getData(model.incidents)
-	const anomalies = AsyncData.getData(model.anomalies.data)
+	const incidents = AsyncData.getData(emptyOnFailure(model.incidents))
+	const anomalies = AsyncData.getData(emptyOnFailure(model.anomalies.data))
 	return Option.isSome(overview) && Option.isSome(incidents) && Option.isSome(anomalies)
 		? healthSummary(overview.value, incidents.value, anomalies.value, model.nowMs)
 		: undefined
@@ -287,6 +288,13 @@ const windowOnly = (search: Search): Search => ({
 
 // ENTRY POINTS
 
+const loadChartRuntime = () =>
+	Command.mapMessage(LoadChartRuntime(), (message) =>
+		message._tag === "CompletedLoadChartRuntime"
+			? Message.CompletedLoadChartRuntime()
+			: Message.FailedLoadChartRuntime({ reason: message.reason }),
+	)
+
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -303,7 +311,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		incidents: IncidentsData.Loading(),
 		hasPaintedTable: false,
 		commitMessages: Keyed.idle(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		...initOverlays(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("services-time-range"),
@@ -313,15 +321,45 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			loadChartRuntime(),
+		],
+	}
+}
+
+/** Back after leaving: the last rows stay on screen while the window re-resolves like entry (snapped). */
+export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	// The open-anomalies key never changes, so the window re-resolve alone would keep the parked counts.
+	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
+	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	const next = {
+		...model,
+		...initOverlays(),
+		search: route.search,
+		refreshVersion: 0,
+		isReloading: false,
+		rowRevision: model.rowRevision + 1,
+		overview: Keyed.forgetFailure(model.overview),
+		sparklines: Keyed.forgetFailure(model.sparklines),
+		facets: Keyed.forgetFailure(model.facets),
+		baseline: Keyed.forgetFailure(model.baseline),
+		anomalies: Option.getOrElse(anomalies, () => model.anomalies),
+		commitMessages: Keyed.forgetFailure(model.commitMessages),
+		// A runtime that failed before parking is asked for again, as entry does.
+		chartRuntime:
+			model.chartRuntime._tag === "Failed" ? { _tag: "Loading" as const } : model.chartRuntime,
+	}
+	return {
+		model: next,
+		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
+			resolveCommand(next, context, "Load"),
+			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey })] : []),
+			...(model.chartRuntime._tag === "Failed" ? [loadChartRuntime()] : []),
 		],
 	}
 }
@@ -409,14 +447,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.hasPaintedTable
 				? { model }
 				: followData(context)({ model: { ...model, hasPaintedTable: true } }),
-		// `useSignalPresence` mounts with the empty state, so the "unknown" copy paints first.
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
@@ -424,6 +454,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId
 				? followData(context)({
 						model: { ...model, incidents: IncidentsData.Success({ data: incidents }) },
+					})
+				: { model },
+		FailedLoadIncidents: ({ orgId }) =>
+			orgId === context.orgId && AsyncData.isLoading(model.incidents)
+				? followData(context)({
+						model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) },
 					})
 				: { model },
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),

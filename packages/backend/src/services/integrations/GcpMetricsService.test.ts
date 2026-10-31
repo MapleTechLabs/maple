@@ -8,6 +8,7 @@ import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
+	insertTestSource,
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
@@ -439,16 +440,19 @@ const insertConnector = (
 ) => {
 	const projectId = options.projectId ?? "acme-prod"
 	const [scopeType, scopeId] = options.scope ?? ["project", projectId]
-	return Effect.promise(() =>
-		executeSql(
+	const orgId = options.orgId ?? "org_gcp"
+	// With its source, as GcpConnectorService.create writes it.
+	return Effect.promise(async () => {
+		const sourceId = await insertTestSource(testDb, { orgId, platform: "gcp", name: `Google Cloud ${scopeId}` })
+		await executeSql(
 			testDb,
 			`INSERT INTO gcp_connectors
 			   (id, org_id, scope_type, scope_id, project_id, secret_ciphertext, secret_iv, secret_tag,
-			    secret_hash, metrics_enabled, created_by, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now())`,
-			[id, options.orgId ?? "org_gcp", scopeType, scopeId, projectId, options.metricsEnabled ?? true],
-		),
-	)
+			    secret_hash, metrics_enabled, created_by, created_at, updated_at, source_id)
+			 VALUES ($1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now(), $7)`,
+			[id, orgId, scopeType, scopeId, projectId, options.metricsEnabled ?? true, sourceId],
+		)
+	})
 }
 
 interface PollState {
@@ -468,6 +472,24 @@ const pollState = (testDb: TestDb, id: string) =>
 			`SELECT metrics_watermark_at, last_metrics_received_at, last_metrics_error, metrics_lease_until,
 			        resources_synced_at, last_resources_error, applied_metrics_enabled
 			 FROM gcp_connectors WHERE id = $1`,
+			[id],
+		),
+	).pipe(Effect.map((row) => row!))
+
+interface SourcePollState {
+	readonly last_poll_at: Date | null
+	readonly last_poll_ok_at: Date | null
+	readonly last_poll_error: string | null
+	readonly disconnected_at: Date | null
+}
+
+/** The poll state on the connector's source, which its health reads. */
+const sourcePollState = (testDb: TestDb, id: string) =>
+	Effect.promise(() =>
+		queryFirstRow<SourcePollState>(
+			testDb,
+			`SELECT s.last_poll_at, s.last_poll_ok_at, s.last_poll_error, s.disconnected_at
+			 FROM sources s JOIN gcp_connectors c ON c.source_id = s.id WHERE c.id = $1`,
 			[id],
 		),
 	).pipe(Effect.map((row) => row!))
@@ -593,7 +615,7 @@ describe("GcpMetricsService", () => {
 				const source = yield* Effect.promise(() =>
 					queryFirstRow<{ id: string }>(
 						testDb,
-						`SELECT id FROM sources WHERE platform = 'gcp' AND integration_id = '${CONNECTOR_A}'`,
+						`SELECT source_id AS id FROM gcp_connectors WHERE id = '${CONNECTOR_A}'`,
 					),
 				)
 				assert.strictEqual(
@@ -740,6 +762,29 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
+	it.effect("reads nothing for a paused source and moves its watermark to now", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = (SELECT source_id FROM gcp_connectors WHERE id = $1)", [
+						CONNECTOR_A,
+					]),
+				)
+				assert.deepInclude(yield* pollAll, { polled: 1, rowsIngested: 0 })
+				assert.deepStrictEqual(
+					[calls.impersonate.length, calls.monitoring.length, calls.ingest.length],
+					[0, 0, 0],
+				)
+				assert.isNotNull((yield* pollState(testDb, CONNECTOR_A)).metrics_watermark_at)
+			}),
+		)
+	})
+
 	it.effect("is a no-op without a service account key", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
@@ -822,6 +867,48 @@ describe("GcpMetricsService", () => {
 			}),
 		)
 	})
+
+	it.effect(
+		"reports each tick on the connector's source: a lost sign-in fails it, a read clears it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const calls = makeCalls()
+			let impersonate: () => Response | undefined = () => undefined
+			const stub = stubFetch(calls, { impersonate: () => impersonate(), monitoring: onlyRequestCount })
+			return run(
+				testDb,
+				stub,
+				Effect.gen(function* () {
+					yield* insertConnector(testDb, CONNECTOR_A)
+					yield* pollAll
+					const ok = yield* sourcePollState(testDb, CONNECTOR_A)
+					assert.strictEqual(ok.last_poll_ok_at?.getTime(), now)
+					assert.isNull(ok.last_poll_error)
+
+					impersonate = () => googleError(403, "PERMISSION_DENIED")
+					yield* TestClock.setTime(now + 5 * minute)
+					yield* pollAll
+					const failed = yield* sourcePollState(testDb, CONNECTOR_A)
+					// The source says what the connection says, and it is not a disconnect.
+					assert.strictEqual(
+						failed.last_poll_error,
+						(yield* pollState(testDb, CONNECTOR_A)).last_metrics_error,
+					)
+					assert.include(failed.last_poll_error, "can no longer sign in")
+					assert.strictEqual(failed.last_poll_at?.getTime(), now + 5 * minute)
+					assert.strictEqual(failed.last_poll_ok_at?.getTime(), now)
+					assert.isNull(failed.disconnected_at)
+
+					impersonate = () => undefined
+					yield* TestClock.setTime(now + 10 * minute)
+					yield* pollAll
+					const recovered = yield* sourcePollState(testDb, CONNECTOR_A)
+					assert.strictEqual(recovered.last_poll_ok_at?.getTime(), now + 10 * minute)
+					assert.isNull(recovered.last_poll_error)
+				}),
+			)
+		},
+	)
 
 	it.effect("names an organization's host project, and its parts when it is too large", () => {
 		const testDb = createTestDb(trackedDbs)

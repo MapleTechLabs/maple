@@ -8,6 +8,7 @@ import {
 	postSessionBlob,
 	postSessionEvents,
 	postSessionMeta,
+	resetRefusedChannelsForTests,
 	SDK_HINT_HEADER,
 	sdkHint,
 } from "./transport"
@@ -93,6 +94,7 @@ describe("transport", () => {
 
 	beforeEach(() => {
 		resetKeepaliveBudgetForTests()
+		resetRefusedChannelsForTests()
 		fetchMock = vi.fn(async () => new Response(null, { status: 202 }))
 		vi.stubGlobal("fetch", fetchMock)
 	})
@@ -196,8 +198,78 @@ describe("transport", () => {
 
 	it("reports how ingest answered an events batch", async () => {
 		expect(await postSessionEvents(CONFIG, [{ seq: 0 }])).toBe("accepted")
-		fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }))
-		expect(await postSessionEvents(CONFIG, [{ seq: 0 }])).toBe("rejected")
+		for (const [status, outcome] of [
+			[503, "retry"],
+			[429, "retry"],
+			[400, "rejected"],
+			[404, "rejected"],
+		] as const) {
+			fetchMock.mockResolvedValueOnce(new Response(null, { status }))
+			expect(await postSessionEvents(CONFIG, [{ seq: 0 }])).toBe(outcome)
+		}
+	})
+
+	it("lets a re-init with another key send where the previous key was refused", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }))
+		expect(await postSessionEvents({ ...CONFIG, ingestKey: "placeholder" }, [{ seq: 0 }])).toBe("refused")
+		expect(await postSessionEvents({ ...CONFIG, ingestKey: "placeholder" }, [{ seq: 1 }])).toBe("refused")
+		expect(await postSessionEvents({ ...CONFIG, ingestKey: "real" }, [{ seq: 2 }])).toBe("accepted")
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+		warn.mockRestore()
+	})
+
+	it.each([401, 402, 403])(
+		"stops a channel for the rest of the page once ingest answers %i",
+		async (status) => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+			const CHUNK = { sessionId: "s1", chunkSeq: 0, isCheckpoint: true, eventCount: 1, durationMs: 0 }
+			fetchMock.mockResolvedValueOnce(new Response(null, { status }))
+			expect(await postSessionEvents(CONFIG, [{ seq: 0 }])).toBe("refused")
+			expect(await postSessionEvents(CONFIG, [{ seq: 1 }])).toBe("refused")
+			expect(fetchMock).toHaveBeenCalledTimes(1)
+			expect(warn).toHaveBeenCalledTimes(1)
+			// Other channels have their own answer.
+			expect(await postSessionBlob(CONFIG, CHUNK, new Uint8Array([0x1f, 0x8b]))).toBe("accepted")
+			fetchMock.mockResolvedValueOnce(new Response(null, { status }))
+			expect(await postSessionBlob(CONFIG, CHUNK, new Uint8Array([0x1f, 0x8b]))).toBe("refused")
+			await postSessionMeta(CONFIG, { session_id: "s1" })
+			fetchMock.mockResolvedValueOnce(new Response(null, { status }))
+			await postSessionMeta(CONFIG, { session_id: "s1" })
+			await postSessionMeta(CONFIG, { session_id: "s1" })
+			expect(fetchMock).toHaveBeenCalledTimes(5)
+			warn.mockRestore()
+		},
+	)
+
+	it("writes lone surrogates as U+FFFD, so one bad string cannot cost ingest the batch", async () => {
+		await postSessionEvents(CONFIG, [{ message: "cut \ud83d" }])
+		await postSessionMeta(CONFIG, { url: "\udc00tail" })
+		const bodies = fetchMock.mock.calls.map((call) => String((call[1] as RequestInit).body))
+		expect(bodies).toEqual(['{"message":"cut \\ufffd"}\n', '{"url":"\\ufffdtail"}\n'])
+	})
+
+	it("on the way out, sends the rows that fit the keepalive room with keepalive and the rest without", async () => {
+		// Another unload write already holds most of the budget.
+		const release = reserveKeepalive(true, 40 * 1024)
+		const rows = Array.from({ length: 20 }, (_, seq) => ({ seq, message: "x".repeat(1_000) }))
+		expect(await postSessionEvents(CONFIG, rows, true)).toBe("accepted")
+		const sent = fetchMock.mock.calls.map((call) => {
+			const init = call[1] as RequestInit
+			const body = String(init.body)
+			return { keepalive: init.keepalive, bytes: new TextEncoder().encode(body).byteLength, body }
+		})
+		expect(sent.map((part) => part.keepalive)).toEqual([true, false])
+		expect(sent[0]!.bytes).toBeLessThanOrEqual(8 * 1024)
+		// SAFETY: each line is one of the rows above, serialized by the transport.
+		const seqs = sent.flatMap((part) =>
+			part.body
+				.trim()
+				.split("\n")
+				.map((line) => (JSON.parse(line) as { seq: number }).seq),
+		)
+		expect(seqs).toEqual(rows.map((row) => row.seq))
+		release?.()
 	})
 
 	it("never throws into the host app when ingest is unreachable", async () => {
@@ -255,5 +327,16 @@ describe("gzip", () => {
 		}
 		vi.stubGlobal("CompressionStream", TruncatingStream)
 		await expect(gzip(new TextEncoder().encode("[]"))).rejects.toThrow(/not a complete gzip stream/)
+	})
+
+	it("still produces gzip any inflater reads where CompressionStream does not exist", async () => {
+		vi.stubGlobal("CompressionStream", undefined)
+		const body = `[${Array.from({ length: 50 }, (_, i) => `{"type":3,"timestamp":${i}}`).join(",")}]`
+		const out = await gzip(new TextEncoder().encode(body))
+		vi.unstubAllGlobals()
+		const inflated = await new Response(
+			new Blob([new Uint8Array(out)]).stream().pipeThrough(new DecompressionStream("gzip")),
+		).text()
+		expect(inflated).toBe(body)
 	})
 })

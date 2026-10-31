@@ -21,7 +21,6 @@ export type ProductEvent =
 	| "alert_rule_created"
 	| "api_key_created"
 	| "dashboard_created"
-	| "chat_message_sent"
 	/** A member asked for a Slack Connect invite to the org's shared channel with the Maple team. */
 	| "support_channel_invite_sent"
 	/**

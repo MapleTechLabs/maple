@@ -146,7 +146,7 @@ export const linkedCursorOverlay = <M>(h: HtmlBuilder<M>, chartId: string): Html
 		],
 		[
 			h.div([
-				h.Class("absolute inset-y-0 left-0 w-px bg-muted-foreground/45 will-change-transform"),
+				h.Class("absolute inset-y-0 left-0 w-px bg-foreground-faint will-change-transform"),
 				h.Style({ transform: "translateX(calc(var(--linked-cursor-ratio) * (100cqw - 1px)))" }),
 			]),
 		],

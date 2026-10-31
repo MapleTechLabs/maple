@@ -54,7 +54,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 			"Read describe_dashboard_schema before authoring: data-source kinds, units (`percent` is a 0-1 fraction, `percent_100` is 0-100, the reverse of Grafana), aggregations, group-by tokens. " +
 			"Layout is auto-placed unless layout_json is given. The result carries a validation verdict; suspicious or broken means the chart will not render meaningfully as saved.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			// The enum is the list: a newly `mcpExposed` widget type is advertised and accepted
 			// from the same table.
 			panel_type: P.optionalOneOf(

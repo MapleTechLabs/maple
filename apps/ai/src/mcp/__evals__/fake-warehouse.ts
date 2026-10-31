@@ -4,12 +4,19 @@ import { __testables } from "@maple/backend/services/warehouse/WarehouseQuerySer
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
 import { FIXTURES } from "./utils"
 
-export interface FixtureRule {
+export type FixtureRule = {
 	/** Match against the compiled SQL the WarehouseQueryService would execute. */
 	readonly match: (sql: string) => boolean
-	/** Fixed rows, or rows computed from the SQL (to honor a service filter, say). */
-	readonly rows: ReadonlyArray<unknown> | ((sql: string) => ReadonlyArray<unknown>)
-}
+} & (
+	| {
+			/** Fixed rows, or rows computed from the SQL (to honor a service filter, say). */
+			readonly rows: ReadonlyArray<unknown> | ((sql: string) => ReadonlyArray<unknown>)
+	  }
+	| {
+			/** Fail the statement as ClickHouse would, with this message and error type. */
+			readonly failure: { readonly message: string; readonly type: string }
+	  }
+)
 
 /** A read of known traces' spans: `traces` seeked through the `trace_index` subquery. */
 export const readsTraceSpans = (sql: string): boolean =>
@@ -72,6 +79,16 @@ export const installFakeWarehouse = (
 								new WarehouseDriverError({
 									reason: "unknown",
 									message: `[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
+								}),
+							)
+						}
+						if ("failure" in rule) {
+							return Effect.fail(
+								new WarehouseDriverError({
+									reason: "server",
+									status: 400,
+									message: rule.failure.message,
+									type: rule.failure.type,
 								}),
 							)
 						}

@@ -125,7 +125,17 @@ Install them together with the per-language guides they read:
 bunx skills add MapleTechLabs/maple/skills --skill '*'
 ```
 
-Then ask: _"Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk\_…"_ or _"Audit my Maple instrumentation."_ EU organizations give `https://ingest.eu.maple.dev`. With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
+Then ask your agent:
+
+```text
+Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk_…
+```
+
+Or ask it to audit an existing setup: `Audit my Maple instrumentation.` EU organizations give `https://ingest.eu.maple.dev`.
+
+Give the public key (`maple_pk_…`). The skill writes the key into your source code, and the public key is safe to commit: it can only send telemetry. Your servers can switch to the private key later; see [Ingest keys](/docs/reference/authentication#ingest-keys).
+
+With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
 
 ## Stay in control
 
@@ -145,7 +155,7 @@ The [`maple` CLI](/docs/reference/cli) outputs JSON by default, so an agent with
 - **Source code tools return nothing.** They need the [GitHub App](/docs/integrations/github) installed with access to that repository.
 - **The agent guesses instead of querying.** Tell it to use Maple: _"Use the maple MCP tools to check."_
 
-## Related
+## Next steps
 
 - [MCP server reference](/docs/reference/mcp): endpoints, authentication and every tool
 - [Errors](/docs/errors/overview): issue states, leases and fix verification

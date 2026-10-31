@@ -26,7 +26,7 @@ import {
 	type WarehouseAuditInputs,
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -137,6 +137,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 										"enabled",
 										"destinationIdsJson",
 										"windowMinutes",
+										"evaluationIntervalMinutes",
+										"slowedIntervalMinutes",
 										"lastScheduledAt",
 										"createdAt",
 									)
@@ -188,6 +190,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 										"sourceContext",
 										"sourceKey",
 										"targetKey",
+										"operation",
+										"updatedAt",
 									)
 									.where(($) => [$.orgId.eq(orgId)]),
 							),
@@ -270,6 +274,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					enabled: rule.enabled,
 					destinationIds: rule.destinationIdsJson ?? [],
 					windowMinutes: rule.windowMinutes,
+					evaluationIntervalMinutes: alertRuleIntervalMinutes(rule),
 					lastScheduledAt: rule.lastScheduledAt,
 					createdAt: rule.createdAt,
 				})),
@@ -308,6 +313,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					sourceContext: mapping.sourceContext,
 					sourceKey: mapping.sourceKey,
 					targetKey: mapping.targetKey,
+					operation: mapping.operation,
+					updatedAt: mapping.updatedAt,
 				})),
 				clickhouse: clickhouseRow
 					? {
@@ -627,7 +634,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 )
 
 export class SetupAuditService extends Context.Service<SetupAuditService, SetupAuditServiceApi>()(
-	"@maple/api/services/SetupAuditService",
+	"@maple/backend/services/SetupAuditService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

@@ -1,8 +1,10 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
-	"ignore": [".deepsec/**", "**/*.type-test.ts"],
+	"ignore": ["**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
+	// The tsconfig plugin name @effect/tsgo reads its options from; no package is loaded.
+	"ignoreDependencies": ["@effect/language-service"],
 	"workspaces": {
 		".": {
 			"entry": ["alchemy.run.ts", "scripts/**/*.ts", "scripts/oxlint-plugins/*.mjs"],
@@ -13,9 +15,11 @@
 		"apps/landing": {
 			// scripts/figures/*.mjs generate blog figures and covers, run by hand with node.
 			// iso/ is a vendored drawing kit; only part of its API is used.
+			// The fontsource packages are read by path in src/lib/docs-og.ts for OG images;
+			// the site itself serves the subsets from scripts/fonts/subset-fonts.py.
 			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js", "scripts/figures/*.mjs"],
 			"ignore": ["src/components/blog/foldkit/iso/**"],
-			"ignoreDependencies": ["@paper-design/shaders"]
+			"ignoreDependencies": ["@paper-design/shaders", "@fontsource-variable/geist", "@fontsource-variable/geist-mono"]
 		},
 		"apps/api": {
 			// src/worker.ts was auto-detected from wrangler.jsonc's `main` until the
@@ -33,7 +37,12 @@
 		// alchemy bundles it, so it is the app's one entry.
 		// The tool playground config is run by path from scripts/tool-playground.sh.
 		"apps/ai": {
-			"entry": ["src/worker.ts", "vitest.playground.config.ts", "src/evals/playground/*.playground.ts"]
+			"entry": [
+				"src/worker.ts",
+				"vitest.playground.config.ts",
+				"src/evals/playground/*.playground.ts",
+				"scripts/cold-path/*.{ts,mjs}"
+			]
 		},
 		"apps/alerting": {
 			"entry": ["src/worker.ts"]
@@ -42,6 +51,9 @@
 			"entry": ["src/worker.ts"]
 		},
 		"apps/electric-sync": {
+			"entry": ["src/worker.ts"]
+		},
+		"apps/status": {
 			"entry": ["src/worker.ts"]
 		},
 		// The sandbox Worker's entry is its own plain module (that is the point: a
@@ -53,23 +65,16 @@
 		},
 		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web": {
-			// `src/worker-entry.ts` is named by string in `src/worker.ts`.
-			"entry": [
-				"src/worker-entry.ts",
-				"e2e/e2e.config.ts",
-				"e2e/tests/**/*.e2e.ts"
-			]
+			// `src/worker-entry.ts` is named by string in `src/worker.ts`; `src/boot.ts` is a build
+			// input added by `vite.config.ts`.
+			"entry": ["src/worker-entry.ts", "src/boot.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
 		},
 		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
 		// must resolve from this app too.
 		// `src/worker-entry.ts` is named by string in `src/worker.ts`.
 		"apps/local-ui": {
 			"entry": ["src/worker.ts", "src/worker-entry.ts"],
-			"ignoreDependencies": [
-				"@floating-ui/dom",
-				"@tanstack/charts",
-				"@tanstack/charts-scales"
-			]
+			"ignoreDependencies": ["@floating-ui/dom", "@tanstack/charts", "@tanstack/charts-scales"]
 		},
 		"apps/cli": {
 			"entry": [
@@ -77,20 +82,23 @@
 				"test/archive-probe-helpers.ts",
 				"test/merge-injection-probe.ts",
 				"test/native-local-store-migration-fixture.ts",
-				"test/native-service-map-ingest-bridge-probe.ts"
+				"test/native-service-map-ingest-bridge-probe.ts",
+				"test/native-projector-modules.ts"
 			],
 			"ignoreBinaries": ["duckdb"]
 		},
 		"packages/db": {
 			"entry": ["scripts/**/*.ts", "effect-orm.config.ts"]
 		},
+		"packages/security-audit": {
+			// The vendored skill's own validator tests run under `node --test`.
+			"entry": ["scripts/**/*.ts", "skill/*.test.cjs"]
+		},
 		"packages/email": {
 			"entry": ["scripts/**/*.ts"],
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
-		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
-		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},
@@ -105,8 +113,10 @@
 			"entry": ["src/drain/index.ts"]
 		},
 		"packages/browser": {
-			// Imported by the private packages it bundles (browser-session, sdk-core); listed here so the build keeps them external.
-			"ignoreDependencies": ["rrweb", "web-vitals"]
+			// The e2e suite's fixture pages are built by vite from HTML, which knip does not follow.
+			"entry": ["e2e/**/*.e2e.test.ts", "e2e/fixture/*.ts"],
+			// Imported by the private packages it bundles (sdk-core); listed here so the build keeps it external.
+			"ignoreDependencies": ["web-vitals"]
 		}
 	},
 	"rules": {

@@ -1,4 +1,4 @@
-import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
+import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
 import { Option, Stream } from "effect"
 import { Dom } from "foldkit"
 import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
@@ -47,7 +47,7 @@ export const globalShortcuts: Stream.Stream<Message> = Dom.streamFromEventFilter
 	target: () => document,
 	type: "keydown",
 	filterMapEvent: (event): Option.Option<Message> => {
-		const key = event.key.toLowerCase()
+		const key = pressedKey(event).toLowerCase()
 		if ((event.metaKey || event.ctrlKey) && key === "k") {
 			event.preventDefault()
 			return Option.some(Message.PressedPaletteShortcut())

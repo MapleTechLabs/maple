@@ -1,4 +1,5 @@
 import { normalizeEvents } from "../../../components/replays/replay-events"
+import { deriveRangeMeta, firstEventMs } from "../kit/replay-meta"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import {
@@ -33,6 +34,8 @@ export const emptyLoader = (): Loader => ({
 	range: { key: null, data: AsyncData.Idle() },
 	rangeCache: {},
 	seedVersion: 0,
+	originMs: null,
+	rangeMetas: [],
 })
 
 export const manifestOf = (model: Model): Manifest | undefined =>
@@ -57,7 +60,11 @@ export const subscribedRange = (model: Model): ReplayRange =>
 export const loadedThroughSeq = (loader: Loader): number =>
 	loader.loaded.reduce((max, entry) => Math.max(max, entry.lastChunkSeq), -1)
 
-export const seedEvents = (loader: Loader): ReadonlyArray<unknown> => loader.seed
+export const seedEvents = (loader: Pick<Loader, "seed">): ReadonlyArray<unknown> => loader.seed
+
+/** How far into the recording the seed starts: 0 for the opening seed, more after a seek rebuild. */
+export const seedShiftMs = (loader: Pick<Loader, "originMs" | "seed">): number =>
+	loader.originMs === null || loader.seed.length === 0 ? 0 : Math.max(0, firstEventMs(loader.seed) - loader.originMs)
 
 /** Range answers kept for re-seeks; the oldest go first past this many. */
 export const RANGE_CACHE_LIMIT = 12
@@ -73,7 +80,7 @@ export const cacheRange = (
 }
 
 /** Ranges after the seed, for the feed Mounts. */
-export const trailingRanges = (loader: Loader): ReadonlyArray<LoadedRange> =>
+export const trailingRanges = (loader: Pick<Loader, "seedCount" | "loaded">): ReadonlyArray<LoadedRange> =>
 	loader.seedCount === 0 ? [] : loader.loaded.slice(loader.seedCount)
 
 const loadedUntilMs = (model: Model): number => {
@@ -104,6 +111,8 @@ export const planOnce = (model: Model): Model => {
 			isSeeking: false,
 			seekTargetMs: null,
 			queue: initialRanges(chunks, planOf(model)),
+			originMs: null,
+			rangeMetas: [],
 		},
 	}
 }
@@ -123,13 +132,23 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 			(row) => row.chunk_seq >= active.fromChunkSeq && row.chunk_seq <= active.toChunkSeq && row.chunk_seq > through,
 		)
 		.toSorted((a, b) => a.chunk_seq - b.chunk_seq)
+	const events = normalizeEvents(own.flatMap((row) => row.events))
 	const entry: LoadedRange = {
 		key,
 		range: active,
-		events: normalizeEvents(own.flatMap((row) => row.events)),
+		events,
 		lastChunkSeq: own.reduce((max, row) => Math.max(max, row.chunk_seq), through),
 	}
-	return cutSeed({ ...model, loader: { ...loader, loaded: [...loader.loaded, entry], queue: loader.queue.slice(1) } })
+	const originMs = loader.originMs ?? (events.length > 0 ? firstEventMs(events) : null)
+	const isKnown = loader.rangeMetas.some((meta) => meta.fromChunkSeq === active.fromChunkSeq)
+	const rangeMetas =
+		originMs === null || isKnown || events.length === 0
+			? loader.rangeMetas
+			: [...loader.rangeMetas, deriveRangeMeta(active, events, originMs)]
+	return cutSeed({
+		...model,
+		loader: { ...loader, loaded: [...loader.loaded, entry], queue: loader.queue.slice(1), originMs, rangeMetas },
+	})
 }
 
 const cutSeed = (model: Model): Model => {

@@ -162,11 +162,12 @@ export interface VcsProviderClient {
 	 * The repository's most recently updated pull requests, newest first,
 	 * normalized. Bounded to `limit` and deliberately NOT paginated: this feeds a
 	 * picker, and the PR that fixes a live issue is recent by construction.
+	 * With `head` (`owner:branch`), only the open pull requests from that branch.
 	 */
 	readonly fetchPullRequests: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		opts: { readonly limit: number },
+		opts: { readonly limit: number; readonly head?: string },
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestSummary>,
 		| VcsProviderError
@@ -214,6 +215,23 @@ export interface VcsProviderClient {
 		number: number,
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestReviewThread>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Hide this App's earlier comments whose body starts with `prefix` as outdated, all but the one
+	 * carrying `keep`, so a pull request shows only its latest review. Answers how many it hid.
+	 */
+	readonly hideEarlierComments: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: { readonly number: number; readonly prefix: string; readonly keep: string },
+	) => Effect.Effect<
+		number,
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError
@@ -441,6 +459,15 @@ export interface VcsProviderClient {
 		| VcsRepoUnavailableError
 		| VcsRepositoryBlockedError
 		| VcsRateLimitedError
+	>
+
+	/** The repository's size in bytes as the provider reports it, read without cloning. */
+	readonly repositorySizeBytes: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+	) => Effect.Effect<
+		number,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 
 	/** The commit a ref (branch, tag or SHA) names right now. `Option.none` is an unknown ref. */

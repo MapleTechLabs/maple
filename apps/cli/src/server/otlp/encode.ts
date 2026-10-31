@@ -518,7 +518,7 @@ function numberPointValue(
 
 // Exemplars (port of Rust `encode_exemplars`)
 
-interface Exemplar {
+export interface Exemplar {
 	traceId?: string
 	spanId?: string
 	timeUnixNano?: string | number
@@ -579,20 +579,20 @@ function toBatches(byDatasource: Map<string, Record<string, unknown>[]>): Encode
 
 // Traces
 
-interface TraceRequest {
+export interface TraceRequest {
 	resourceSpans?: ResourceSpans[]
 }
-interface ResourceSpans {
+export interface ResourceSpans {
 	resource?: { attributes?: KeyValue[] }
 	scopeSpans?: ScopeSpans[]
 	schemaUrl?: string
 }
-interface ScopeSpans {
+export interface ScopeSpans {
 	scope?: { name?: string; version?: string; attributes?: KeyValue[] }
 	spans?: Span[]
 	schemaUrl?: string
 }
-interface SpanEvent {
+export interface SpanEvent {
 	timeUnixNano?: string | number
 	name?: string
 	attributes?: KeyValue[]
@@ -603,7 +603,7 @@ interface SpanLink {
 	traceState?: string
 	attributes?: KeyValue[]
 }
-interface Span {
+export interface Span {
 	traceId?: string
 	spanId?: string
 	parentSpanId?: string
@@ -679,20 +679,20 @@ export function encodeTraces(req: unknown): EncodedBatch[] {
 
 // Logs
 
-interface LogsRequest {
+export interface LogsRequest {
 	resourceLogs?: ResourceLogs[]
 }
-interface ResourceLogs {
+export interface ResourceLogs {
 	resource?: { attributes?: KeyValue[] }
 	scopeLogs?: ScopeLogs[]
 	schemaUrl?: string
 }
-interface ScopeLogs {
+export interface ScopeLogs {
 	scope?: { name?: string; version?: string; attributes?: KeyValue[] }
 	logRecords?: LogRecord[]
 	schemaUrl?: string
 }
-interface LogRecord {
+export interface LogRecord {
 	timeUnixNano?: string | number
 	observedTimeUnixNano?: string | number
 	severityNumber?: number
@@ -760,20 +760,20 @@ function isNonZeroNano(value: string | number | undefined): boolean {
 
 // Metrics
 
-interface MetricsRequest {
+export interface MetricsRequest {
 	resourceMetrics?: ResourceMetrics[]
 }
-interface ResourceMetrics {
+export interface ResourceMetrics {
 	resource?: { attributes?: KeyValue[] }
 	scopeMetrics?: ScopeMetrics[]
 	schemaUrl?: string
 }
-interface ScopeMetrics {
+export interface ScopeMetrics {
 	scope?: { name?: string; version?: string; attributes?: KeyValue[] }
 	metrics?: Metric[]
 	schemaUrl?: string
 }
-interface NumberDataPoint {
+export interface NumberDataPoint {
 	attributes?: KeyValue[]
 	startTimeUnixNano?: string | number
 	timeUnixNano?: string | number
@@ -782,7 +782,7 @@ interface NumberDataPoint {
 	exemplars?: Exemplar[]
 	flags?: number | string
 }
-interface HistogramDataPoint {
+export interface HistogramDataPoint {
 	attributes?: KeyValue[]
 	startTimeUnixNano?: string | number
 	timeUnixNano?: string | number
@@ -799,7 +799,7 @@ interface ExpHistogramBuckets {
 	offset?: number | string
 	bucketCounts?: (string | number)[]
 }
-interface ExpHistogramDataPoint {
+export interface ExpHistogramDataPoint {
 	attributes?: KeyValue[]
 	startTimeUnixNano?: string | number
 	timeUnixNano?: string | number
@@ -814,7 +814,7 @@ interface ExpHistogramDataPoint {
 	min?: ProtoDouble
 	max?: ProtoDouble
 }
-interface Metric {
+export interface Metric {
 	name?: string
 	description?: string
 	unit?: string

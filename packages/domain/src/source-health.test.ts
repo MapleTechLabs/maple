@@ -1,163 +1,151 @@
 import { describe, expect, it } from "vitest"
-import {
-	gcpSourceHealth,
-	githubInstallationHealth,
-	integrationSourceHealth,
-	pushSourceHealth,
-} from "./source-health"
+import { type SourceHealthInput, sourceHealth, worstSourceStatus } from "./source-health"
 
 const HOUR = 3_600_000
+const MINUTE = 60_000
 const now = 100 * HOUR
 
-describe("pushSourceHealth", () => {
+const source = (fields: Partial<SourceHealthInput> = {}): SourceHealthInput => ({
+	platform: "nodejs",
+	status: "active",
+	lastUsedAt: null,
+	lastRejectedAt: null,
+	lastRejection: null,
+	lastPollOkAt: null,
+	lastPollError: null,
+	disconnectedAt: null,
+	pollResources: null,
+	...fields,
+})
+
+describe("sourceHealth", () => {
 	it.each([
 		["active", null, "pending"],
 		["active", now - HOUR, "healthy"],
 		["active", now - 25 * HOUR, "stale"],
 		["paused", now - HOUR, "paused"],
 		["expired", now - HOUR, "disconnected"],
-	] as const)("%s with last data %s is %s", (status, lastUsedAt, expected) => {
-		expect(pushSourceHealth({ status, lastUsedAt }, now).status).toBe(expected)
+	] as const)("a push source %s with last data %s is %s", (status, lastUsedAt, expected) => {
+		expect(sourceHealth(source({ status, lastUsedAt }), now).status).toBe(expected)
 	})
 
 	it("fails while a refusal is under 15 minutes old, even with data still accepted", () => {
-		const refused = { status: "active" as const, lastUsedAt: now - 60_000, lastRejection: "Rate limited" }
-		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 5 * 60_000 }, now)).toEqual({
+		const refused = source({ lastUsedAt: now - MINUTE, lastRejection: "Rate limited" })
+		expect(sourceHealth({ ...refused, lastRejectedAt: now - 5 * MINUTE }, now)).toEqual({
 			status: "failing",
-			lastDataAt: now - 60_000,
+			lastDataAt: now - MINUTE,
 			problem: "Rate limited",
 		})
-		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 20 * 60_000 }, now).status).toBe("healthy")
-		expect(pushSourceHealth({ ...refused, status: "paused", lastRejectedAt: now - 60_000 }, now).status).toBe(
+		expect(sourceHealth({ ...refused, lastRejectedAt: now - 20 * MINUTE }, now).status).toBe("healthy")
+		expect(sourceHealth({ ...refused, status: "paused", lastRejectedAt: now - MINUTE }, now).status).toBe(
 			"paused",
 		)
 	})
-})
 
-describe("integrationSourceHealth", () => {
-	it("reads the provider status and its newest resource success", () => {
-		const health = integrationSourceHealth({
-			provider: "railway",
+	it("judges a polled integration by its last good poll, not by data arriving", () => {
+		const railway = source({ platform: "railway", lastUsedAt: now - MINUTE })
+		expect(sourceHealth(railway, now).status).toBe("pending")
+		expect(sourceHealth({ ...railway, lastPollOkAt: now - 5 * MINUTE }, now).status).toBe("healthy")
+		expect(sourceHealth({ ...railway, lastPollOkAt: now - HOUR }, now)).toEqual({
 			status: "stale",
-			account: null,
-			connectedAt: null,
-			problem: "1 of 2 stale",
-			feeds: [],
-			resources: [
-				{
-					kind: "environment",
-					name: "a",
-					status: "healthy",
-					lastSuccessAt: now - HOUR,
-					lastError: null,
-					note: null,
-				},
-				{
-					kind: "environment",
-					name: "b",
-					status: "stale",
-					lastSuccessAt: now - 5 * HOUR,
-					lastError: null,
-					note: null,
-				},
-			],
-		})
-		expect(health).toEqual({
-			status: "stale",
-			lastDataAt: now - HOUR,
-			problem: "1 of 2 stale",
-			resources: { total: 2, unhealthy: 1 },
+			lastDataAt: now - MINUTE,
+			problem: "No successful update in the last 30 minutes",
 		})
 	})
 
-	it("is disconnected once the integration is gone", () => {
-		expect(integrationSourceHealth(undefined).status).toBe("disconnected")
+	it("fails on the poller's last error and counts the resources behind it", () => {
+		expect(
+			sourceHealth(
+				source({
+					platform: "cloudflare",
+					lastPollOkAt: now - 5 * MINUTE,
+					lastPollError: "1 of 3 zones failing",
+					pollResources: { total: 3, unhealthy: 1 },
+				}),
+				now,
+			),
+		).toEqual({
+			status: "failing",
+			lastDataAt: now - 5 * MINUTE,
+			problem: "1 of 3 zones failing",
+			resources: { total: 3, unhealthy: 1 },
+		})
+	})
+
+	it("is stale when the poll worked but some of its resources are behind", () => {
+		expect(
+			sourceHealth(
+				source({
+					platform: "railway",
+					lastPollOkAt: now - MINUTE,
+					pollResources: { total: 3, unhealthy: 1 },
+				}),
+				now,
+			),
+		).toMatchObject({ status: "stale", problem: "1 of 3 not up to date" })
+	})
+
+	it("waits out a source's own cadence when it has one", () => {
+		const slow = source({ platform: "prometheus", lastPollOkAt: now - 20 * MINUTE })
+		expect(sourceHealth(slow, now).status).toBe("stale")
+		expect(sourceHealth({ ...slow, staleAfterMs: 50 * MINUTE }, now).status).toBe("healthy")
+	})
+
+	it("is disconnected while the grant is revoked, ahead of a pause", () => {
+		const revoked = source({
+			platform: "github",
+			status: "paused",
+			disconnectedAt: now - HOUR,
+			lastPollError: "The GitHub installation is suspended",
+		})
+		expect(sourceHealth(revoked, now)).toMatchObject({
+			status: "disconnected",
+			problem: "The GitHub installation is suspended",
+		})
 	})
 })
 
-describe("gcpSourceHealth", () => {
-	const connector = {
-		logsEnabled: true,
-		metricsEnabled: true,
-		lastReceivedAt: now - HOUR,
-		lastError: null,
-		lastMetricsReceivedAt: now - 5 * 60_000,
-		lastMetricsError: null,
-	}
+describe("sourceHealth for AWS", () => {
+	const aws = (fields: Partial<SourceHealthInput> = {}) => source({ platform: "aws", ...fields })
 
-	it("is healthy while both capabilities deliver", () => {
-		expect(gcpSourceHealth(connector, now)).toEqual({
-			status: "healthy",
-			lastDataAt: now - 5 * 60_000,
-			problem: null,
-		})
-	})
-
-	it("fails on a rejected log push", () => {
-		expect(gcpSourceHealth({ ...connector, lastError: "bad token" }, now)).toMatchObject({
-			status: "failing",
-			problem: "bad token",
-		})
-	})
-
-	it("tolerates a metrics error while reads still land, then fails", () => {
-		const erroring = { ...connector, lastMetricsError: "quota" }
-		expect(gcpSourceHealth(erroring, now).status).toBe("healthy")
-		expect(gcpSourceHealth({ ...erroring, lastMetricsReceivedAt: now - 20 * 60_000 }, now).status).toBe(
-			"failing",
-		)
-	})
-
-	it("is pending before anything arrived and stale once metrics stop", () => {
-		const fresh = { ...connector, lastReceivedAt: null, lastMetricsReceivedAt: null }
-		expect(gcpSourceHealth(fresh, now).status).toBe("pending")
-		expect(gcpSourceHealth({ ...connector, lastMetricsReceivedAt: now - HOUR }, now).status).toBe("stale")
-	})
-})
-
-describe("githubInstallationHealth", () => {
-	const repo = (
-		name: string,
-		status: "healthy" | "failing" | "pending",
-		lastError: string | null = null,
-	) => ({
-		kind: "repository",
-		name,
-		status,
-		lastSuccessAt: status === "healthy" ? now - HOUR : null,
-		lastError,
-		note: null,
-	})
-	const entry = {
-		provider: "github" as const,
-		status: "failing" as const,
-		account: "acme, globex",
-		connectedAt: null,
-		problem: "1 of 3 failing",
-		feeds: [],
-		resources: [
-			repo("acme/api", "healthy"),
-			repo("Globex/web", "failing", "sync denied"),
-			repo("acme/app", "healthy"),
-		],
-	}
-
-	it("scores each installation by its own repositories", () => {
-		expect(githubInstallationHealth(entry, "acme")).toEqual({
-			status: "healthy",
-			lastDataAt: now - HOUR,
-			problem: null,
-			resources: { total: 2, unhealthy: 0 },
-		})
-		expect(githubInstallationHealth(entry, "globex")).toEqual({
-			status: "failing",
+	it("is not healthy on a good role check alone: only metric deliveries are data", () => {
+		expect(sourceHealth(aws({ lastPollOkAt: now - MINUTE }), now)).toEqual({
+			status: "pending",
 			lastDataAt: null,
-			problem: "Globex/web: sync denied",
+			problem: null,
 		})
 	})
 
-	it("is pending before any repository synced and disconnected once GitHub is gone", () => {
-		expect(githubInstallationHealth(entry, "initech").status).toBe("pending")
-		expect(githubInstallationHealth(undefined, "acme").status).toBe("disconnected")
+	it("is healthy while deliveries arrive and stale once they stop", () => {
+		const delivering = aws({ lastPollOkAt: now - MINUTE, lastUsedAt: now - 2 * MINUTE })
+		expect(sourceHealth(delivering, now)).toEqual({
+			status: "healthy",
+			lastDataAt: now - 2 * MINUTE,
+			problem: null,
+		})
+		expect(sourceHealth({ ...delivering, lastUsedAt: now - HOUR }, now)).toMatchObject({
+			status: "stale",
+			problem: "No data in the last 30 minutes",
+		})
+	})
+
+	it("fails with what its integration reports, after a failed role check", () => {
+		const refused = aws({ lastUsedAt: now - MINUTE, failing: "A delivery was refused" })
+		expect(sourceHealth(refused, now)).toMatchObject({
+			status: "failing",
+			problem: "A delivery was refused",
+		})
+		expect(sourceHealth({ ...refused, lastPollError: "Role gone" }, now)).toMatchObject({
+			status: "failing",
+			problem: "Role gone",
+		})
+	})
+})
+
+describe("worstSourceStatus", () => {
+	it("ranks disconnected over failing over stale, and nothing as healthy", () => {
+		expect(worstSourceStatus(["healthy", "stale", "failing"])).toBe("failing")
+		expect(worstSourceStatus(["paused", "disconnected"])).toBe("disconnected")
+		expect(worstSourceStatus([])).toBe("healthy")
 	})
 })

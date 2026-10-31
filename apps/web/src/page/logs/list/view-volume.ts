@@ -11,7 +11,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
 import type { ChartSpec } from "../../../charts/chart-spec"
 import { plotFrame } from "../../../charts/plot-frame"
-import { chartLoading } from "../../../ui/chart-state"
+import { chartError, chartLoading } from "../../../ui/chart-state"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { HISTOGRAM_TARGET_POINTS, volumeSeriesKeys, volumeTotal } from "./derive"
 import { Message } from "./message"
@@ -112,7 +112,7 @@ const emptyStrip = (
 		left: (i / (EMPTY_STRIP_TICKS - 1)) * 100,
 	}))
 	const dashed = (className: string) =>
-		h.div([h.Class(`absolute inset-x-0 ${className} border-t border-dashed border-border/60`)])
+		h.div([h.Class(`absolute inset-x-0 ${className} border-t border-dashed border-border-subtle`)])
 	return h.div(
 		[
 			h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
@@ -220,8 +220,7 @@ const header = (h: HtmlBuilder<Message>, total: number): Html =>
 export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.volume.data, {
 		onEmpty: () => chartLoading(h, { variant: "bar", height: LOGS_VOLUME_CHART_HEIGHT }),
-		// A failed volume query renders nothing.
-		onFailure: () => h.empty,
+		onFailure: (failure) => chartError(h, { height: LOGS_VOLUME_CHART_HEIGHT }, [failure.message]),
 		onData: (buckets) => {
 			const isWaiting = AsyncData.isRefreshing(model.volume.data)
 			const total = volumeTotal(buckets)

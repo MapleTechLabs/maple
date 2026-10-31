@@ -20,6 +20,7 @@ import { icon } from "../../ui/icon"
 import { panel, panelHeader } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
+import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { truncatedText } from "../../ui/truncated-text"
 import { statRail } from "../kit/stat-rail"
@@ -36,20 +37,6 @@ const TONE_ORDER = ["crit", "warn", "neutral"] as const
 const VALUES_SHOWN = 3
 const VALUE_VISIBLE = ["flex", "hidden @sm:flex", "hidden @lg:flex"]
 const WINDOW = "24h"
-
-const chip = (h: H, value: string, label: string, count: number): ToggleGroup.ToggleGroupItem => ({
-	value,
-	label,
-	className:
-		"group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs",
-	children: [
-		label,
-		h.span(
-			[h.Class("tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground")],
-			[String(count)],
-		),
-	],
-})
 
 const workloads = (h: H, model: Model, className: string): Html => {
 	const fleet = fleetOf(model)
@@ -73,9 +60,9 @@ const workloads = (h: H, model: Model, className: string): Html => {
 		)
 	const manyProjects =
 		new Set(all.map((row) => gcpWorkloadProject(row.service, row.workload.keys))).size > 1
-	return panel(h, { className: cn("@container border-border/60", className) }, [
+	return panel(h, { className: cn("@container border-border-subtle", className) }, [
 		panelHeader(h, {
-			className: "gap-2 border-border/60 pr-2.5",
+			className: "gap-2 border-border-subtle pr-2.5",
 			children: [
 				h.div(
 					[h.Class("flex min-w-0 flex-1 items-baseline gap-3")],
@@ -93,14 +80,13 @@ const workloads = (h: H, model: Model, className: string): Html => {
 								size: "xs",
 								className: "gap-1.5",
 								items: [
-									chip(h, "all", "All", all.length),
+									countChipItem(h, { value: "all", label: "All", count: all.length }),
 									...services.map((entry) =>
-										chip(
-											h,
-											entry.service,
-											GCP_INFRA_SERVICES[entry.service].title,
-											entry.workloads.length,
-										),
+										countChipItem(h, {
+											value: entry.service,
+											label: GCP_INFRA_SERVICES[entry.service].title,
+											count: entry.workloads.length,
+										}),
 									),
 								],
 							}),
@@ -112,7 +98,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 			? []
 			: [
 					h.p(
-						[h.Class("border-b border-border/40 px-4 py-2 text-2xs text-severity-warn")],
+						[h.Class("border-b border-border-subtle px-4 py-2 text-2xs text-severity-warn")],
 						[`${gcpTitles(unread)} metrics could not be read. Reload to try again.`],
 					),
 				]),
@@ -146,7 +132,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 										),
 									),
 									h.Class(
-										"group flex items-center gap-3 border-b border-border/40 px-4 py-2.5 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+										"group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 									),
 								],
 								[
@@ -218,9 +204,9 @@ const resources = (h: H, model: Model, className: string): Html => {
 	const inventory = inventoryOf(model)
 	if (inventory === null) return skeleton(h, cn("h-40 rounded-md", className))
 	const types = inventory === "failed" ? [] : inventory.types.toSorted((a, b) => b.count - a.count)
-	return panel(h, { className: cn("h-fit border-border/60", className) }, [
+	return panel(h, { className: cn("h-fit border-border-subtle", className) }, [
 		panelHeader(h, {
-			className: "border-border/60",
+			className: "border-border-subtle",
 			children: [h.h3([h.Class("text-sm font-semibold")], ["Resources"])],
 			action: h.span([h.Class("text-2xs text-muted-foreground")], ["listed hourly"]),
 		}),
@@ -231,36 +217,34 @@ const resources = (h: H, model: Model, className: string): Html => {
 				)
 			: h.ul(
 					[h.Class("flex flex-col px-2 py-1.5")],
-					types
-						.slice(0, TYPES_SHOWN)
-						.map(({ assetType, count }) =>
-							h.li(
-								[],
-								[
-									h.a(
-										[
-											h.Href(
-												hrefOf(
-													AppRoute.InfraGcp({
-														search: { tab: GCP_RESOURCES_TAB, type: assetType },
-													}),
-												),
+					types.slice(0, TYPES_SHOWN).map(({ assetType, count }) =>
+						h.li(
+							[],
+							[
+								h.a(
+									[
+										h.Href(
+											hrefOf(
+												AppRoute.InfraGcp({
+													search: { tab: GCP_RESOURCES_TAB, type: assetType },
+												}),
 											),
-											h.Class(
-												"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
-											),
-										],
-										[
-											truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
-											h.span(
-												[h.Class("shrink-0 tabular-nums text-muted-foreground")],
-												[formatNumber(count)],
-											),
-										],
-									),
-								],
-							),
+										),
+										h.Class(
+											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+										),
+									],
+									[
+										truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
+										h.span(
+											[h.Class("shrink-0 tabular-nums text-muted-foreground")],
+											[formatNumber(count)],
+										),
+									],
+								),
+							],
 						),
+					),
 				),
 		...(inventory === "failed" || inventory.total === 0
 			? []
@@ -268,7 +252,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 					h.footer(
 						[
 							h.Class(
-								"flex items-center justify-between gap-3 border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground",
+								"flex items-center justify-between gap-3 border-t border-border-subtle px-4 py-2.5 text-xs text-muted-foreground",
 							),
 						],
 						[
@@ -284,14 +268,14 @@ const resources = (h: H, model: Model, className: string): Html => {
 								[
 									h.Href(hrefOf(AppRoute.InfraGcp({ search: { tab: GCP_RESOURCES_TAB } }))),
 									h.Class(
-										"inline-flex shrink-0 items-center gap-1 text-foreground hover:text-primary",
+										"inline-flex shrink-0 items-center gap-1 text-foreground hover:text-primary active:text-primary",
 									),
 								],
 								[
 									types.length > TYPES_SHOWN
 										? `All ${countLabel(types.length, "type")}`
 										: "All resources",
-									icon(h, "ArrowRightIcon", { size: 11 }),
+									icon(h, "ArrowRightIcon", { size: 12 }),
 								],
 							),
 						],

@@ -128,6 +128,11 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 	}))
 
 	const integrationLinks: MenuLink[] = [
+		{
+			href: l("/integrations"),
+			label: () => m.nav_all_integrations(),
+			desc: () => m.nav_desc_all_integrations(),
+		},
 		{ href: l("/integrations/nextjs"), label: () => m.nav_nextjs(), desc: () => m.nav_desc_nextjs() },
 		{ href: l("/integrations/python"), label: () => m.nav_python(), desc: () => m.nav_desc_python() },
 		{ href: l("/integrations/nodejs"), label: () => m.nav_nodejs(), desc: () => m.nav_desc_nodejs() },

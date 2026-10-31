@@ -33,7 +33,7 @@ export const liveControls = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>)
 						? [
 								h.span(
 									[h.Class("flex items-center gap-1.5 text-muted-foreground text-xs")],
-									[icon(h, "MediaPauseIcon", { size: 10 }), "Paused while you inspect"],
+									[icon(h, "MediaPauseIcon", { size: 12 }), "Paused while you inspect"],
 								),
 							]
 						: []),

@@ -6,6 +6,7 @@ import { Schema } from "effect"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
+import { googleChatTransport } from "./google-chat"
 import { hazelTransport } from "./hazel"
 import { pagerDutyTransport } from "./pagerduty"
 import { telegramTransport } from "./telegram"
@@ -22,7 +23,7 @@ import { webhookTransport } from "./webhook"
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const destinationRow: AlertDestinationRow = {
 	id: DESTINATION_ID,
@@ -127,6 +128,15 @@ describe("transport render: guard flags", () => {
 				inputFor({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
 			),
 		],
+		[
+			"google-chat",
+			googleChatTransport.render(
+				inputFor({
+					type: "google-chat",
+					webhookUrl: "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=k&token=t",
+				}),
+			),
+		],
 	]
 
 	it("guards exactly the user-configured hosts", () => {
@@ -134,13 +144,14 @@ describe("transport render: guard flags", () => {
 		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
-		assert.deepStrictEqual(guarded, ["webhook", "discord", "hazel-oauth"])
+		assert.deepStrictEqual(guarded, ["webhook", "discord", "hazel-oauth", "google-chat"])
 	})
 
 	it("marks exactly the providers whose token rides in the URL path", () => {
 		const sensitive = specs.filter(([, spec]) => spec.sensitivePath).map(([name]) => name)
 		// telegram is the first provider where this disagrees with `guarded`: a
-		// fixed vendor host, but the bot token rides in the path.
+		// fixed vendor host, but the bot token rides in the path. google-chat carries its
+		// credential in the query string, which no span records.
 		assert.deepStrictEqual(sensitive, ["discord", "hazel-oauth", "telegram"])
 	})
 
@@ -351,5 +362,89 @@ describe("pagerduty dedup keys across severity tiers", () => {
 			"resolve org_1:rule_1:checkout",
 			"resolve org_1:rule_1:checkout:critical",
 		])
+	})
+})
+
+describe("transport render: uptime monitors", () => {
+	const uptime: DispatchContext = {
+		...context,
+		ruleName: "checkout-api",
+		groupKey: "checkout-api",
+		signalType: "uptime",
+		comparator: "gte",
+		threshold: 1,
+		windowMinutes: 1,
+		value: 1,
+		sampleCount: 1,
+		detail: "Status 503, expected 2xx",
+	}
+	const uptimeInput = <Config>(config: Config, overrides: Partial<DispatchContext> = {}) =>
+		inputFor(config, { context: { ...uptime, ...overrides } })
+	const discord = (overrides: Partial<DispatchContext> = {}) =>
+		Schema.decodeUnknownSync(
+			Schema.fromJsonString(
+				Schema.Struct({
+					content: Schema.String,
+					embeds: Schema.Array(
+						Schema.Struct({
+							title: Schema.String,
+							fields: Schema.Array(
+								Schema.Struct({ name: Schema.String, value: Schema.String }),
+							),
+						}),
+					),
+				}),
+			),
+		)(
+			discordTransport.render(
+				uptimeInput({ type: "discord", webhookUrl: "https://discord.com/api/w/1/tok" }, overrides),
+			).body,
+		)
+
+	it("leads with the monitor being down and says why, not a threshold", () => {
+		const body = discord()
+		assert.strictEqual(body.content, "**checkout-api is down**")
+		assert.strictEqual(body.embeds[0]?.title, "\u{1F6A8} checkout-api is down")
+		assert.deepStrictEqual(
+			body.embeds[0]?.fields.find((field) => field.name === "Observed"),
+			{ name: "Observed", value: "Status 503, expected 2xx" },
+		)
+	})
+
+	it("reads as back up on recovery and still down on a reminder", () => {
+		assert.strictEqual(
+			discord({ eventType: "resolve", value: 0, detail: "The check is passing" }).embeds[0]?.title,
+			"✅ checkout-api is back up",
+		)
+		assert.strictEqual(
+			discord({ eventType: "renotify" }).embeds[0]?.title,
+			"\u{1F514} checkout-api is still down",
+		)
+	})
+
+	it("puts the check's error in the PagerDuty summary and details", () => {
+		const body = Schema.decodeUnknownSync(
+			Schema.fromJsonString(
+				Schema.Struct({
+					payload: Schema.Struct({
+						summary: Schema.String,
+						custom_details: Schema.Struct({ detail: Schema.String }),
+					}),
+				}),
+			),
+		)(pagerDutyTransport.render(uptimeInput({ type: "pagerduty", integrationKey: "k" })).body)
+		assert.strictEqual(body.payload.summary, "checkout-api is down: Status 503, expected 2xx.")
+		assert.strictEqual(body.payload.custom_details.detail, "Status 503, expected 2xx")
+	})
+
+	it("writes the Telegram message from the check's error", () => {
+		const body = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ text: Schema.String })))(
+			telegramTransport.render(
+				uptimeInput({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
+			).body,
+		)
+		assert.isTrue(
+			body.text.startsWith("\u{1F6A8} <b>checkout-api is down</b>\n\nStatus 503, expected 2xx."),
+		)
 	})
 })

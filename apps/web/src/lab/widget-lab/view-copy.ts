@@ -91,10 +91,10 @@ const copyableValue = (h: H, model: Model): Html => {
 						h.AriaLabel("Copy span ID"),
 						h.Class(
 							status === "copied"
-								? "-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors bg-severity-info/20"
+								? "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors bg-severity-info-a3"
 								: status === "error"
-									? "-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors bg-severity-error/20"
-									: "-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors hover:bg-muted/50",
+									? "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors bg-severity-error-a3"
+									: "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 						),
 						h.Title("Click to copy"),
 						h.OnClick(

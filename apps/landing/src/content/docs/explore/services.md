@@ -38,7 +38,7 @@ Click a row to open the service, scoped to that row's environment.
 
 ## Service detail
 
-The header has an environment switcher (**All environments** or one environment) and a **Create Alert** button. The page has four tabs.
+The header has an environment switcher (**All environments** or one environment) and a **Create alert** button. The page has four tabs.
 
 ### Overview
 

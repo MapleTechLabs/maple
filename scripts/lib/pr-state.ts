@@ -4,10 +4,11 @@
  * Auth: GITHUB_REPOSITORY + GITHUB_TOKEN/GH_TOKEN.
  */
 
-/** `live`: open and labelled `preview`. `retired`: closed, or open without the label. */
+/** `live`: open with a preview label. `retired`: closed, or open without one. */
 export type PreviewState = "live" | "retired" | "unknown"
 
-export const PREVIEW_LABEL = "preview"
+/** `preview` is the full stack, `preview:web` the Workers alone (deploy-pr-preview.yml). */
+export const PREVIEW_LABELS: ReadonlySet<string> = new Set(["preview", "preview:web"])
 
 export const hasPrStateCredentials = (): boolean =>
 	Boolean(
@@ -21,7 +22,9 @@ export const previewStateOf = (pull: {
 }): PreviewState => {
 	if (pull.state === "closed") return "retired"
 	if (pull.state !== "open") return "unknown"
-	return pull.labels?.some((label) => label.name === PREVIEW_LABEL) ? "live" : "retired"
+	return pull.labels?.some((label) => label.name !== undefined && PREVIEW_LABELS.has(label.name))
+		? "live"
+		: "retired"
 }
 
 /**

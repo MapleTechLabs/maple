@@ -147,7 +147,7 @@ const errorRow = (
 									[
 										h.Class(
 											cn(
-												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-[5px] text-2xs leading-3.5",
+												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-1.5 text-2xs leading-3.5",
 												TONE_TEXT.crit,
 											),
 										),
@@ -161,7 +161,7 @@ const errorRow = (
 								h.span(
 									[
 										h.Class(
-											"shrink-0 pl-1.5 text-2xs leading-3.5 text-muted-foreground/70",
+											"shrink-0 pl-1.5 text-2xs leading-3.5 text-foreground-subtle",
 										),
 									],
 									[String(row.variants), " variants"],
@@ -171,7 +171,7 @@ const errorRow = (
 				],
 			),
 			h.span(
-				[h.Class("hidden w-[96px] shrink-0 items-center @min-[720px]/panel:flex")],
+				[h.Class("hidden w-24 shrink-0 items-center @min-[720px]/panel:flex")],
 				[
 					miniBars(h, {
 						values: row.spark,
@@ -180,7 +180,7 @@ const errorRow = (
 						floorColor: "var(--input)",
 						minHeight: 18.75,
 						gap: row.spark.length > 12 ? 1 : 4.3,
-						className: "h-4 w-[92px] shrink-0",
+						className: "h-4 w-24 shrink-0",
 					}),
 				],
 			),
@@ -191,13 +191,13 @@ const errorRow = (
 				tone: { bar: TONE_FILL.crit, text: "text-muted-foreground" },
 			}),
 			h.span(
-				[h.Class("w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
+				[h.Class("w-20 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
 				[formatToolCount(row.calls)],
 			),
 			h.span(
 				[
 					h.Class(
-						"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
+						"hidden w-20 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
 					),
 				],
 				[formatToolCount(row.sessions)],
@@ -209,10 +209,10 @@ const errorRow = (
 				nowMs: inputs.nowMs,
 				timeZone: inputs.timeZone,
 				className:
-					"hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block",
+					"hidden w-24 shrink-0 text-right font-mono text-2xs tabular-nums text-foreground-subtle @min-[800px]/panel:block",
 			}),
 			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60")],
+				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
 				[icon(h, "ChevronRightIcon", { size: 14, attributes: [h.AriaHidden(true)] })],
 			),
 		],
@@ -225,7 +225,7 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 		h.div(
 			[
 				h.Key(String(width)),
-				h.Class("flex h-[38px] items-center gap-3 border-b border-border/50 px-2.5 last:border-0"),
+				h.Class("flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0"),
 				h.Style({ opacity: String(1 - index * 0.2) }),
 			],
 			[
@@ -234,20 +234,20 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 					[skeleton(h, "h-2.5", { width: `${width}px`, "max-width": "100%" })],
 				),
 				h.span(
-					[h.Class("hidden w-[96px] shrink-0 @min-[720px]/panel:block")],
-					[skeleton(h, "h-2.5 w-[92px]")],
+					[h.Class("hidden w-24 shrink-0 @min-[720px]/panel:block")],
+					[skeleton(h, "h-2.5 w-24")],
 				),
 				h.span(
-					[h.Class("flex w-[150px] shrink-0 justify-end gap-2.5")],
+					[h.Class("flex w-36 shrink-0 justify-end gap-2.5")],
 					[skeleton(h, "h-1 w-[60px]"), h.span([h.Class("w-[46px]")], [])],
 				),
-				h.span([h.Class("flex w-[76px] shrink-0 justify-end")], [skeleton(h, "h-2.5 w-7")]),
+				h.span([h.Class("flex w-20 shrink-0 justify-end")], [skeleton(h, "h-2.5 w-7")]),
 				h.span(
-					[h.Class("hidden w-[76px] shrink-0 justify-end @min-[640px]/panel:flex")],
+					[h.Class("hidden w-20 shrink-0 justify-end @min-[640px]/panel:flex")],
 					[skeleton(h, "h-2.5 w-[22px]")],
 				),
 				h.span(
-					[h.Class("hidden w-[96px] shrink-0 justify-end @min-[800px]/panel:flex")],
+					[h.Class("hidden w-24 shrink-0 justify-end @min-[800px]/panel:flex")],
 					[skeleton(h, "h-2.5 w-11")],
 				),
 				h.span([h.Class("w-3.5 shrink-0")], []),
@@ -259,7 +259,7 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 	const sortable = (label: string, key: string, hidden?: string) =>
 		th(h, {
 			label,
-			width: "w-[76px] shrink-0",
+			width: "w-20 shrink-0",
 			align: "right",
 			sortKey: key,
 			sort: inputs.sort,
@@ -273,20 +273,20 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 				eyebrow(h, { variant: "mono" }, ["Error"]),
 				...(headHint === ""
 					? []
-					: [truncatedText(h, { text: headHint, className: "text-muted-foreground/60" })]),
+					: [truncatedText(h, { text: headHint, className: "text-foreground-subtle" })]),
 			],
 		),
 		th(h, {
 			label: windowRangeLabel(inputs.range.startMs, inputs.range.endMs, inputs.timeZone),
-			width: "w-[96px] shrink-0",
+			width: "w-24 shrink-0",
 			hidden: "hidden @min-[720px]/panel:flex",
 		}),
-		th(h, { label: "Share", width: "w-[150px] shrink-0 pl-6" }),
+		th(h, { label: "Share", width: "w-36 shrink-0 pl-6" }),
 		sortable("Count", "calls"),
 		sortable("Sessions", "sessions", "hidden @min-[640px]/panel:flex"),
 		th(h, {
 			label: "Last seen",
-			width: "w-[96px] shrink-0",
+			width: "w-24 shrink-0",
 			align: "right",
 			sortKey: "lastSeen",
 			sort: inputs.sort,
@@ -303,7 +303,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 		[
 			h.AriaExpanded(isExpanded),
 			h.Class(
-				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs transition-colors hover:bg-muted/30",
+				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			h.Type("button"),
 			h.OnClick(Message.ToggledErrorsExpanded()),
@@ -323,18 +323,17 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 				[
 					isExpanded
 						? "Show fewer errors"
-						: `Show ${formatToolCount(hidden.length)} more error${hidden.length === 1 ? "" : "s"}`,
+						: `Show ${formatToolCount(hidden.length)} more ${pluralize(hidden.length, "error")}`,
 				],
 			),
 			...(isExpanded
 				? []
 				: [
 						h.span(
-							[h.Class("text-muted-foreground/70")],
+							[h.Class("text-foreground-subtle")],
 							[
 								formatToolCount(hiddenCalls),
-								" failed call",
-								hiddenCalls === 1 ? "" : "s",
+								` failed ${pluralize(hiddenCalls, "call")}`,
 								...(hiddenCalls === hidden.length && hidden.length > 1 ? [", 1 each"] : []),
 							],
 						),
@@ -396,11 +395,11 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 						[
 							h.span([h.Class("text-xs font-medium text-foreground")], ["Errors"]),
 							inputs.isLoading
-								? skeleton(h, "h-2.5 w-[150px] self-center")
+								? skeleton(h, "h-2.5 w-36 self-center")
 								: h.span(
 										[
 											h.Class(
-												"text-2xs leading-3.5 tabular-nums text-muted-foreground/70",
+												"text-2xs leading-3.5 tabular-nums text-foreground-subtle",
 											),
 										],
 										[
@@ -434,7 +433,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 				? h.div(
 						[
 							h.Class(
-								"flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono",
+								"flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono",
 							),
 						],
 						[
@@ -468,7 +467,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 								? [
 										errorState(h, {
 											failure: inputs.failure,
-											title: `Failed to load ${inputs.tool} errors`,
+											title: `Couldn't load ${inputs.tool} errors`,
 										}),
 									]
 								: inputs.isLoading
@@ -481,14 +480,14 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 												? [showMore(h, hidden, inputs.isExpanded)]
 												: []),
 										],
-							{ isWaiting: inputs.isWaiting, maxHeight: inputs.isExpanded ? 760 : 460 },
+							{ isWaiting: inputs.isWaiting },
 						),
 						...(masks.length > 0 && !inputs.isLoading
 							? [
 									h.div(
 										[
 											h.Class(
-												"flex flex-wrap items-center gap-2 border-t border-border px-2.5 pt-3 font-mono text-2xs leading-3.5 text-muted-foreground/70",
+												"flex flex-wrap items-center gap-2 border-t border-border px-2.5 pt-3 font-mono text-2xs leading-3.5 text-foreground-subtle",
 											),
 										],
 										[

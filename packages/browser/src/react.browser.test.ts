@@ -120,6 +120,22 @@ describe("mapleReactErrorHandler", () => {
 		expect(reported[0]?.attributes["maple.exception.source"]).toBe("react.root")
 		expect(reported[0]?.attributes["maple.react.component_stack"]).toBe("at Widget")
 	})
+
+	it("still logs to the console as React would, or hands the error to the app's own handler", async () => {
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+		const logged = new Error("logged by default")
+		mapleReactErrorHandler()(logged, {})
+		expect(consoleError).toHaveBeenCalledWith(logged)
+
+		const next = vi.fn()
+		const handed = new Error("handed on")
+		const info = { componentStack: "\n    at Panel" }
+		mapleReactErrorHandler("react.root", next)(handed, info)
+		expect(next).toHaveBeenCalledWith(handed, info)
+		expect(consoleError).toHaveBeenCalledTimes(1)
+		await stop()
+		expect(exported.filter((span) => span.name === "react.render_error")).toHaveLength(2)
+	})
 })
 
 /** A React Router data router, reduced to what the adapter reads. */
@@ -141,6 +157,63 @@ function fakeReactRouter(initial: ReactRouterState) {
 
 const idle = { state: "idle" }
 const projectMatches = [{ route: { path: "/" } }, { route: { path: "projects/:id" } }]
+
+describe("router adapter lifecycle", () => {
+	const loadingRouter = () =>
+		fakeReactRouter({
+			initialized: false,
+			location: { pathname: "/" },
+			navigation: idle,
+			matches: [{ route: { path: "/" } }],
+		})
+
+	it("keeps the page load whole when the adapter is attached twice (StrictMode, HMR)", async () => {
+		const router = loadingRouter()
+		const first = instrumentReactRouter(router)
+		const second = instrumentReactRouter(router)
+		router.set({ initialized: true })
+		first()
+		second()
+		await stop()
+		const pageloads = exported.filter((span) => span.name.startsWith("pageload"))
+		expect(pageloads.map((span) => span.name)).toEqual(["pageload /"])
+		expect(pageloads[0]?.attributes["maple.navigation.interrupted"]).toBeUndefined()
+	})
+
+	it("survives StrictMode's detach and re-attach in one go", async () => {
+		const router = loadingRouter()
+		instrumentReactRouter(router)()
+		const unsubscribe = instrumentReactRouter(router)
+		router.set({ initialized: true })
+		unsubscribe()
+		await stop()
+		expect(spanNames()).toEqual(["pageload /"])
+	})
+
+	it("ends the navigation it opened when it is detached, as interrupted", async () => {
+		const router = loadingRouter()
+		instrumentReactRouter(router)()
+		// Past the microtask a re-attach would have used.
+		await Promise.resolve()
+		// Would name the page load had the detach left it open.
+		MapleBrowser.endNavigation("/late")
+		await stop()
+		const [pageload] = exported.filter((span) => span.name.startsWith("pageload"))
+		expect(pageload?.name).toBe("pageload")
+		expect(pageload?.attributes["maple.navigation.interrupted"]).toBe(true)
+	})
+
+	it("ends a TanStack navigation in flight when detached", async () => {
+		const router = fakeTanStackRouter()
+		instrumentTanStackRouter(router)()
+		await Promise.resolve()
+		MapleBrowser.endNavigation("/late")
+		await stop()
+		const [pageload] = exported.filter((span) => span.name.startsWith("pageload"))
+		expect(pageload?.name).toBe("pageload")
+		expect(pageload?.attributes["maple.navigation.interrupted"]).toBe(true)
+	})
+})
 
 describe("instrumentReactRouter", () => {
 	it("spans the page load until the router initializes, then each loading navigation by template", async () => {

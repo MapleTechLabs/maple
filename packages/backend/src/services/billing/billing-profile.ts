@@ -5,6 +5,7 @@ import {
 	BillingProfile,
 	BillingProfileUnavailableError,
 	BillingTaxId,
+	type BillingCustomerId,
 	type BillingNotConfiguredError,
 	type BillingUpstreamError,
 } from "@maple/domain/http"
@@ -53,13 +54,13 @@ const CUSTOMER_EXPAND = ["subscriptions.plan"] as const
 export const readStripeCustomerId = (
 	edgeCache: Pick<EdgeCacheServiceApi, "getOrCompute">,
 	autumn: Pick<AutumnClientApi, "getOrCreateCustomer">,
-	orgId: string,
+	customerId: BillingCustomerId,
 ): Effect.Effect<Option.Option<string>, BillingUpstreamError | BillingNotConfiguredError> =>
 	Effect.gen(function* () {
 		const { result } = yield* readCustomerCached(
 			edgeCache,
-			orgId,
-			autumn.getOrCreateCustomer(orgId, { expand: CUSTOMER_EXPAND }),
+			customerId,
+			autumn.getOrCreateCustomer(customerId, { expand: CUSTOMER_EXPAND }),
 		)
 		const response = yield* ensureOk(result)
 		return stripeCustomerIdOf(response)
@@ -74,20 +75,20 @@ export const readStripeCustomerId = (
 export const ensureStripeCustomerId = (
 	edgeCache: Pick<EdgeCacheServiceApi, "getOrCompute" | "invalidate">,
 	autumn: Pick<AutumnClientApi, "getOrCreateCustomer">,
-	orgId: string,
+	customerId: BillingCustomerId,
 ): Effect.Effect<string, BillingUpstreamError | BillingNotConfiguredError | BillingProfileUnavailableError> =>
 	Effect.gen(function* () {
-		const cached = yield* readStripeCustomerId(edgeCache, autumn, orgId)
+		const cached = yield* readStripeCustomerId(edgeCache, autumn, customerId)
 		if (Option.isSome(cached)) return cached.value
 
-		const created: AutumnResult = yield* autumn.getOrCreateCustomer(orgId, {
+		const created: AutumnResult = yield* autumn.getOrCreateCustomer(customerId, {
 			expand: CUSTOMER_EXPAND,
 			createInStripe: true,
 		})
 		const response = yield* ensureOk(created)
 		// The cached snapshot predates the link; drop it so the next customer read
 		// (and the next call here) sees the Stripe id.
-		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
+		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: customerId })
 		const linked = stripeCustomerIdOf(response)
 		yield* Effect.annotateCurrentSpan({ "maple.billing.stripe_customer_created": Option.isSome(linked) })
 		if (Option.isSome(linked)) return linked.value

@@ -1,5 +1,10 @@
 import { Effect, Schema } from "effect"
-import { ServiceName, ServiceWorkloadsRequest } from "@maple/domain/http"
+import {
+	ServiceName,
+	ServiceRuntimesRequest,
+	type ServiceRuntimeRow,
+	ServiceWorkloadsRequest,
+} from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
@@ -64,4 +69,30 @@ export const getServiceWorkloads = Effect.fn("QueryEngine.getServiceWorkloads")(
 			avgMemoryLimitUtilization: row.avgMemoryLimitUtilization,
 		})),
 	} satisfies ServiceWorkloadsResult
+})
+
+/** A platform resource a traced service runs as: see `@maple/domain/service-runtimes`. */
+export type ServiceRuntime = ServiceRuntimeRow
+
+export const getServiceRuntimes = Effect.fn("QueryEngine.getServiceRuntimes")(function* ({
+	data,
+}: {
+	data: GetServiceWorkloadsInput
+}) {
+	const input = yield* decodeInput(GetServiceWorkloadsInputSchema, data, "getServiceRuntimes")
+	if (input.services.length === 0) return { runtimes: [] }
+
+	const result = yield* runWarehouseQuery("serviceRuntimes", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.serviceRuntimes({
+				payload: new ServiceRuntimesRequest({
+					startTime: input.startTime,
+					endTime: input.endTime,
+					services: input.services,
+				}),
+			})
+		}),
+	)
+	return { runtimes: result.data }
 })

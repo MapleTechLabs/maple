@@ -8,6 +8,8 @@ import type { IntegrationFlags } from "../data/infra-surfaces"
 import type { Resources } from "../platform/resources"
 import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import type { NavSurface } from "../shell/nav"
+import type { PageSourceRef } from "../shell/source-link"
 import { ToastType } from "../ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
@@ -28,12 +30,16 @@ export interface PageContext {
 /** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */
 export interface ShellInfraSurfaces {
 	readonly presence: ReadonlyArray<InfraSurfaceLiteral> | null
+	/** The probe failed: `presence` stays `null` for good, so readers stop waiting on it. */
+	readonly isPresenceFailed: boolean
 	readonly integrations: IntegrationFlags
+	/** The org's surfaces as of its last visit, until the live answer is complete. */
+	readonly remembered: ReadonlyArray<NavSurface> | undefined
 }
 
 export interface PageViewInputs {
 	readonly context: PageContext
-	/** `useIsMobile()` (below `md`), for the few layouts that branch on it in JSX (`/chat`). */
+	/** `useIsMobile()` (below `md`), for the few layouts that branch on it in JSX (the trace detail split). */
 	readonly isMobile?: boolean
 	/** `useMediaQuery("max-sm")`, likewise (the analytics chart's narrow margin). */
 	readonly isBelowSm?: boolean
@@ -76,11 +82,11 @@ export const PageOutMessage = defineMessageUnion({
 		followUpToast: Schema.optionalKey(
 			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
 		),
+		/** A confirmed checkout's URL cleanup: the root re-reads the app's customer too. */
+		refreshesCustomer: Schema.optionalKey(Schema.Boolean),
 	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
-	/** A page's own `SidebarTrigger` (`/chat` renders its header without the shell's top bar). */
-	RequestedSidebarToggle: {},
 	/**
 	 * `useInfraSurfaces()` in the page: the sidebar's presence probe and integration statuses. The
 	 * shell owns those reads; below `md` its sidebar is unmounted, so the page is what asks for them.
@@ -88,6 +94,12 @@ export const PageOutMessage = defineMessageUnion({
 	RequestedInfraSurfaces: {},
 	/** `retryOrgCollections` / `handleCollectionStuck`: recreate the org's synced collections. */
 	RequestedReconnectOrgCollections: {},
+	/** A billing change in a page: the root re-reads the app's customer (plan gate, quota banners). */
+	RequestedCustomerRefresh: {
+		toast: Schema.optionalKey(
+			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
+		),
+	},
 	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
@@ -146,12 +158,24 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 		route: RouteOf<Tags>,
 		context: PageContext,
 	) => PageReturn<Model, Message>
+	/**
+	 * Makes a page revivable: coming back restores the instance it left, last data on screen. Resets
+	 * what was in flight when it was parked and re-resolves its window the way entry does.
+	 */
+	readonly revive?: (model: Model, route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/** The namespace pin or time zone changed (an org change builds a new instance). */
 	readonly contextChanged?: (model: Model, context: PageContext) => PageReturn<Model, Message>
+	/** Every integration status answered, after the page may have entered without them. */
+	readonly infraSurfacesSettled?: (model: Model, context: PageContext) => PageReturn<Model, Message>
 	readonly view: Submodel.View<Model, Message, PageViewInputs>
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
 	/** `DashboardPage`'s `breadcrumbs`. */
 	readonly breadcrumbs: (model: Model) => ReadonlyArray<BreadcrumbEntry>
+	/**
+	 * Where the page's data comes from: the top bar links to that source. `null` until the page
+	 * knows (a host's `src_` id arrives with its summary).
+	 */
+	readonly source?: (model: Model) => PageSourceRef | null
 	/** `DashboardPage`'s `topbarActions`: the page's own controls after the shell's top-bar buttons. */
 	readonly topbarActions?: Submodel.View<Model, Message, PageViewInputs>
 	/**
@@ -159,7 +183,11 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	 * keeps the page and hands it `blockedNavigation` with where the user was going.
 	 */
 	readonly isBlockingNavigation?: (model: Model) => boolean
-	readonly blockedNavigation?: (model: Model, url: string, context: PageContext) => PageReturn<Model, Message>
+	readonly blockedNavigation?: (
+		model: Model,
+		url: string,
+		context: PageContext,
+	) => PageReturn<Model, Message>
 }
 
 // ERASED PAGE (what the registry and root consume)
@@ -346,26 +374,69 @@ export const definePage = <
 				: Option.none<ReadonlyArray<Command.Command<WrappedType, never, Resources>>>(),
 		update: (slot: PageSlotBase, message: PageMessageBase, context: PageContext) =>
 			isOwnSlot(slot) && isOwnMessage(message) && isForInstance(slot, message)
-				? Option.some(step(slot.key, slot.instance, context, spec.update(slot.model, message.message, context)))
+				? Option.some(
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.update(slot.model, message.message, context),
+						),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		routeChanged: (slot: PageSlotBase, route: AppRoute, context: PageContext) =>
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
-				? Option.some(step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)))
+				? Option.some(
+						step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
+		isRevivable: spec.revive !== undefined,
+		/** A parked instance of this route's page, back as `instance`; `None` if it cannot be. */
+		revive: (slot: PageSlotBase, route: AppRoute, context: PageContext, instance: number) => {
+			const revive = spec.revive
+			if (!isOwnSlot(slot) || !ownsRoute(route) || revive === undefined)
+				return Option.none<PageStep<SlotType, WrappedType>>()
+			if (slot.key !== keyOf(route) || slot.orgId !== context.orgId)
+				return Option.none<PageStep<SlotType, WrappedType>>()
+			return Option.some(step(slot.key, instance, context, revive(slot.model, route, context)))
+		},
 		/** A navigation away from this instance, held: the page's confirm step, or `None` if it allows it. */
 		blockedNavigation: (slot: PageSlotBase, url: string, context: PageContext) =>
 			isOwnSlot(slot) &&
 			spec.isBlockingNavigation !== undefined &&
 			spec.blockedNavigation !== undefined &&
 			spec.isBlockingNavigation(slot.model)
-				? Option.some(step(slot.key, slot.instance, context, spec.blockedNavigation(slot.model, url, context)))
+				? Option.some(
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.blockedNavigation(slot.model, url, context),
+						),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged
-				? Option.some(step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)))
+				? Option.some(
+						step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)),
+					)
+				: Option.none<PageStep<SlotType, WrappedType>>(),
+		infraSurfacesSettled: (slot: PageSlotBase, context: PageContext) =>
+			isOwnSlot(slot) && spec.infraSurfacesSettled
+				? Option.some(
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.infraSurfacesSettled(slot.model, context),
+						),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		breadcrumbs: (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 			isOwnSlot(slot) ? spec.breadcrumbs(slot.model) : [],
+		/** Whether the page links to a source at all, so the root reads the sources on entry. */
+		hasSource: spec.source !== undefined,
+		source: (slot: PageSlotBase): PageSourceRef | null =>
+			isOwnSlot(slot) && spec.source !== undefined ? spec.source(slot.model) : null,
 		/** The root embeds this; it renders the page's own view under its own boundary. */
 		hostView: Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>((slot, inputs, h) =>
 			isOwnSlot(slot)

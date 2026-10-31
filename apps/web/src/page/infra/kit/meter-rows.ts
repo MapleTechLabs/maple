@@ -24,7 +24,7 @@ const meterRow = <M>(h: HtmlBuilder<M>, row: MeterRow, hideLabel: boolean): Html
 								h.Class(
 									cn(
 										"w-8",
-										"shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70",
+										"shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle",
 									),
 								),
 							],
@@ -33,7 +33,7 @@ const meterRow = <M>(h: HtmlBuilder<M>, row: MeterRow, hideLabel: boolean): Html
 					]),
 			meter(h, {
 				value: clamped,
-				className: "h-[3px] flex-1 rounded-[1px]",
+				className: "h-[3px] flex-1 rounded-2xs",
 				fillClassName: BAR_FILL[level],
 			}),
 			h.span(

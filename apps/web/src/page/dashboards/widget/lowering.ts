@@ -378,7 +378,7 @@ export const validationErrorOf = (state: EditorState): string | null => {
 	const visible = active.filter(isVisibleQuery)
 	const panel = panelOf(state)
 	if (WIDGET_TYPES[panel].requiresGroupBy && !visible.some(hasActiveGroupBy))
-		return "This visualization groups data into categories — add a group-by field"
+		return "This visualization groups data into categories. Add a group-by field"
 	// An ungrouped histogram bucketizes a numeric column, and only traces have one.
 	if (panel === "histogram" && !visible.some(hasActiveGroupBy)) {
 		const unsupported = visible.find((query) => query.dataSource !== "traces")

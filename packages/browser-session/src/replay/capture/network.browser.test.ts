@@ -12,6 +12,13 @@ afterEach(() => {
 	XMLHttpRequest.prototype.open = originalOpen
 })
 
+/** `open` as the browser takes it: the DOM types allow only a string or a URL, the browser any value. */
+type AnyUrl = string | URL | null | { toString(): string }
+interface AnyUrlOpen {
+	open(method: string, url: AnyUrl): void
+}
+const openAny = (xhr: AnyUrlOpen, url: AnyUrl): void => xhr.open("GET", url)
+
 const request = (xhr: XMLHttpRequest): Promise<void> =>
 	new Promise((resolve) => {
 		// A macrotask later, so the capture's own `loadend` listener has run.
@@ -160,5 +167,165 @@ describe("installNetworkCapture", () => {
 			uninstall = undefined
 			window.fetch = realFetch
 		}
+	})
+
+	it("blanks credential-looking values in kept bodies, even in a body cut short", async () => {
+		const realFetch = window.fetch
+		window.fetch = async () =>
+			new Response(
+				'{"user":"ada","access_token":"eyJhbGciOi.secret","refresh":{"apiKey":"k-123"},"note":"x"}',
+				{
+					headers: { "content-type": "application/json" },
+				},
+			)
+		try {
+			const events: SessionEvent[] = []
+			uninstall = installNetworkCapture(
+				(event) => events.push(event),
+				() => false,
+				{ urls: ["https://api.test/"], maxLength: 1_000 },
+			)
+			await fetch("https://api.test/login", {
+				method: "POST",
+				body: "username=ada&password=hunter2&remember=1",
+			})
+			await vi.waitFor(() => expect(events.some((event) => event.type === "network")).toBe(true))
+			const attrs = events.find((event) => event.type === "network")?.attrs ?? {}
+			expect(attrs["request.body"]).toBe("username=ada&password=[REDACTED]&remember=1")
+			expect(attrs["response.body"]).toBe(
+				'{"user":"ada","access_token":"[REDACTED]","refresh":{"apiKey":"[REDACTED]"},"note":"x"}',
+			)
+		} finally {
+			uninstall?.()
+			uninstall = undefined
+			window.fetch = realFetch
+		}
+	})
+
+	it("blanks a credential key's whole value when it is an object, and a bare pass field", async () => {
+		const realFetch = window.fetch
+		window.fetch = async () =>
+			new Response(
+				'{"password":{"current":"hunter2","next":"hunter3"},"user":"ada","raw":"user=ada&pass=hunter5"}',
+				{
+					headers: { "content-type": "application/json" },
+				},
+			)
+		try {
+			const events: SessionEvent[] = []
+			uninstall = installNetworkCapture(
+				(event) => events.push(event),
+				() => false,
+				{ urls: ["https://api.test/"], maxLength: 1_000, requestBodies: true },
+			)
+			await fetch("https://api.test/login", { method: "POST", body: "user=ada&pass=hunter4" })
+			await vi.waitFor(() => expect(events.some((event) => event.type === "network")).toBe(true))
+			const attrs = events.find((event) => event.type === "network")?.attrs ?? {}
+			// A string value holding a form body is redacted too, and the JSON stays valid.
+			expect(attrs["response.body"]).toBe(
+				'{"password":"[REDACTED]","user":"ada","raw":"user=ada&pass=[REDACTED]"}',
+			)
+			expect(attrs["request.body"]).toBe("user=ada&pass=[REDACTED]")
+		} finally {
+			uninstall?.()
+			uninstall = undefined
+			window.fetch = realFetch
+		}
+	})
+
+	it("opens an XHR whose URL is null or an object with its own toString, as the browser does", async () => {
+		const events: SessionEvent[] = []
+		uninstall = installNetworkCapture(
+			(event) => events.push(event),
+			() => false,
+		)
+		const xhr = new XMLHttpRequest()
+		openAny(xhr, { toString: () => "/?from-object" })
+		await request(xhr)
+		const nullXhr = new XMLHttpRequest()
+		// The native method coerces `null` to "null", a relative URL.
+		openAny(nullXhr, null)
+		await request(nullXhr)
+		expect(events.map((event) => event.net?.url)).toEqual(["/?from-object", "null"])
+	})
+})
+
+describe("installNetworkCapture next to the app's own wrappers", () => {
+	const realFetch = window.fetch
+	afterEach(() => {
+		window.fetch = realFetch
+		XMLHttpRequest.prototype.send = originalSend
+	})
+	const originalSend = XMLHttpRequest.prototype.send
+	const base = async () => new Response("ok", { headers: { "content-type": "text/plain" } })
+
+	it("keeps a fetch wrapper installed after it working once capture is torn down", async () => {
+		window.fetch = base
+		const events: SessionEvent[] = []
+		const stop = installNetworkCapture(
+			(event) => events.push(event),
+			() => false,
+		)
+		// An auth interceptor installed later, on top of the capture.
+		const seen: string[] = []
+		const underneath = window.fetch
+		const interceptor: typeof fetch = (input, init) => {
+			seen.push(String(input))
+			return underneath(input, init)
+		}
+		window.fetch = interceptor
+		stop()
+
+		expect(window.fetch).toBe(interceptor)
+		expect(await (await fetch("https://api.test/after")).text()).toBe("ok")
+		expect(seen).toEqual(["https://api.test/after"])
+		// Torn down, the capture underneath only forwards.
+		expect(events).toEqual([])
+	})
+
+	it("restores the original when nothing was installed on top", () => {
+		window.fetch = base
+		XMLHttpRequest.prototype.send = originalSend
+		const stop = installNetworkCapture(
+			() => {},
+			() => false,
+		)
+		stop()
+		expect(window.fetch).toBe(base)
+		expect(XMLHttpRequest.prototype.send).toBe(originalSend)
+	})
+
+	it("does not grow the chain across repeated starts and stops under a foreign wrapper", async () => {
+		window.fetch = base
+		let depth = 0
+		const counting =
+			(inner: typeof fetch): typeof fetch =>
+			(input, init) => {
+				depth++
+				return inner(input, init)
+			}
+		const first = installNetworkCapture(
+			() => {},
+			() => false,
+		)
+		const foreign = counting(window.fetch)
+		window.fetch = foreign
+		first()
+		const events: SessionEvent[] = []
+		for (let i = 0; i < 10; i++)
+			installNetworkCapture(
+				(event) => events.push(event),
+				() => false,
+			)()
+		const stop = installNetworkCapture(
+			(event) => events.push(event),
+			() => false,
+		)
+		// The wrapper left under the foreign one is reused, not stacked on top again.
+		expect(window.fetch).toBe(foreign)
+		await fetch("https://api.test/once")
+		stop()
+		expect(depth).toBe(1)
+		expect(events.filter((event) => event.type === "network")).toHaveLength(1)
 	})
 })

@@ -8,7 +8,14 @@
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.maple.mobile</string>
+		<!-- The widgets' DPoP signing keys, shared with the extension. Second, so
+		     Clerk's group stays the default for items that name none. -->
+		<string>$(AppIdentifierPrefix)com.maple.mobile.widget-keys</string>
 	</array>
+	<!-- App Attest for the widget key registration. Distributed builds use the
+	     production environment whatever this says. -->
+	<key>com.apple.developer.devicecheck.appattest-environment</key>
+	<string>development</string>
 	<!-- Push. Xcode rewrites `development` to `production` for App Store and
 	     TestFlight archives; the app reads whichever landed in the embedded
 	     profile to pick the APNs host it registers with (PushEnvironment). -->

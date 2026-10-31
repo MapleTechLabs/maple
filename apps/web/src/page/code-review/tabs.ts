@@ -7,6 +7,7 @@ import * as IssuesModel from "./issues/model"
 import { Retained } from "./kit/retained"
 import * as PullRequestsModel from "./pull-requests/model"
 import * as SettingsModel from "./settings/model"
+import * as TeamModel from "./team/model"
 
 // The Code Review tabs as one page instance (switching tabs reuses what the last one read): the
 // active tab's Model and what it hands on.
@@ -15,6 +16,7 @@ export const Tab = Schema.Union([
 	Schema.TaggedStruct("Analytics", { model: AnalyticsModel.Model }),
 	Schema.TaggedStruct("PullRequests", { model: PullRequestsModel.Model }),
 	Schema.TaggedStruct("Ci", { model: CiModel.Model }),
+	Schema.TaggedStruct("Team", { model: TeamModel.Model }),
 	Schema.TaggedStruct("Issues", { model: IssuesModel.Model }),
 	Schema.TaggedStruct("Settings", { model: SettingsModel.Model }),
 ])
@@ -33,6 +35,7 @@ export const Message = defineMessageUnion({
 	GotAnalyticsMessage: { message: AnalyticsMessage.Message },
 	GotPullRequestsMessage: { message: PullRequestsModel.Message },
 	GotCiMessage: { message: CiModel.Message },
+	GotTeamMessage: { message: TeamModel.Message },
 	GotIssuesMessage: { message: IssuesModel.Message },
 	GotSettingsMessage: { message: SettingsModel.Message },
 })

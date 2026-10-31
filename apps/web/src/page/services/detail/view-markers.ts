@@ -14,7 +14,13 @@ const DASH_HIT = 5
 
 const px = (value: number) => `${value}px`
 
-export const markersOverlay = <M>(h: HtmlBuilder<M>, layout: MarkerLayout, plot: PlotGeometry): Html =>
+/** `labelGap` lifts the labels clear of the plot, into a gutter the chart reserves above it. */
+export const markersOverlay = <M>(
+	h: HtmlBuilder<M>,
+	layout: MarkerLayout,
+	plot: PlotGeometry,
+	labelGap: number = LABEL_GAP,
+): Html =>
 	layout.groups.length === 0
 		? null
 		: h.div(
@@ -23,9 +29,9 @@ export const markersOverlay = <M>(h: HtmlBuilder<M>, layout: MarkerLayout, plot:
 					h.Class(cn("absolute inset-0", "pointer-events-none")),
 				],
 				layout.groups.flatMap((group) => {
-					const labelTop = plot.y - LABEL_HEIGHT - LABEL_GAP
-					const dashTop = layout.labeled ? plot.y - LABEL_GAP : plot.y
-					const dashHeight = layout.labeled ? Math.max(plot.height + LABEL_GAP, 0) : plot.height
+					const labelTop = plot.y - LABEL_HEIGHT - labelGap
+					const dashTop = layout.labeled ? plot.y - labelGap : plot.y
+					const dashHeight = layout.labeled ? Math.max(plot.height + labelGap, 0) : plot.height
 					const badge = group.commits.length - 1
 					const dashes = group.dashXs.map((x, index) =>
 						h.div(
@@ -79,8 +85,8 @@ export const markersOverlay = <M>(h: HtmlBuilder<M>, layout: MarkerLayout, plot:
 							}),
 							h.Class(
 								cn(
-									"pointer-events-auto flex cursor-pointer items-center justify-center gap-1 rounded-[5px] border px-1.5 font-mono text-2xs leading-none backdrop-blur-sm transition-colors",
-									"border-border/60 bg-popover/85 text-muted-foreground hover:text-popover-foreground",
+									"pointer-events-auto flex cursor-pointer items-center justify-center gap-1 rounded-sm border px-1.5 font-mono text-2xs leading-none backdrop-blur-sm",
+									"border-border-subtle bg-popover/85 text-muted-foreground hover:text-popover-foreground active:text-popover-foreground",
 								),
 							),
 						],
@@ -92,8 +98,8 @@ export const markersOverlay = <M>(h: HtmlBuilder<M>, layout: MarkerLayout, plot:
 											[
 												h.Class(
 													cn(
-														"shrink-0 rounded-[3px] px-1 text-3xs tabular-nums",
-														"bg-muted/70 text-muted-foreground",
+														"shrink-0 rounded-xs px-1 text-3xs tabular-nums",
+														"bg-surface-strong text-muted-foreground",
 													),
 												),
 											],

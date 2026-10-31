@@ -11,6 +11,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { skeleton } from "../../../ui/skeleton"
+import { statusDot } from "../../../ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { actorInitials, KIND_DOT, KIND_LABEL, type VersionRow } from "./history"
@@ -24,7 +25,13 @@ type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 const dot = (h: H): Html => h.span([h.AriaHidden(true), h.Class("opacity-50")], ["·"])
 
-const versionItem = (h: H, version: VersionRow, isPreviewing: boolean, isCurrent: boolean, clock: Clock): Html =>
+const versionItem = (
+	h: H,
+	version: VersionRow,
+	isPreviewing: boolean,
+	isCurrent: boolean,
+	clock: Clock,
+): Html =>
 	h.li(
 		[h.Class("relative")],
 		[
@@ -35,21 +42,20 @@ const versionItem = (h: H, version: VersionRow, isPreviewing: boolean, isCurrent
 					h.Class(
 						cn(
 							"group relative w-full pl-7 pr-3 py-2.5 text-left transition-colors",
-							"hover:bg-muted/40",
+							"hover:bg-surface-sunken active:bg-surface-sunken",
 							rowSelectedClass(isPreviewing),
 						),
 					),
 				],
 				[
-					h.span([
-						h.AriaHidden(true),
-						h.Class(
-							cn(
-								"absolute left-[15px] top-[14px] block size-2 rounded-full ring-2 ring-background",
-								KIND_DOT[version.changeKind],
-							),
+					statusDot(h, {
+						tone: "custom",
+						size: "lg",
+						className: cn(
+							"absolute left-[15px] top-[14px] ring-2 ring-background",
+							KIND_DOT[version.changeKind],
 						),
-					]),
+					}),
 					h.div(
 						[h.Class("flex items-start gap-2")],
 						[
@@ -65,12 +71,21 @@ const versionItem = (h: H, version: VersionRow, isPreviewing: boolean, isCurrent
 													variant: "label",
 													className: isPreviewing
 														? "text-primary"
-														: "text-muted-foreground/70 group-hover:text-foreground/80",
+														: "text-foreground-subtle group-hover:text-foreground-soft",
 												},
 												[KIND_LABEL[version.changeKind]],
 											),
 											...(isCurrent
-												? [badge(h, { variant: "tag", className: "bg-primary/10 text-primary" }, ["Current"])]
+												? [
+														badge(
+															h,
+															{
+																variant: "tag",
+																className: "bg-primary-a2 text-primary",
+															},
+															["Current"],
+														),
+													]
 												: []),
 											...(version.isRestore
 												? [
@@ -88,7 +103,11 @@ const versionItem = (h: H, version: VersionRow, isPreviewing: boolean, isCurrent
 										[version.changeSummary ?? KIND_LABEL[version.changeKind]],
 									),
 									h.div(
-										[h.Class("mt-1 flex items-center gap-1.5 font-mono text-3xs text-muted-foreground")],
+										[
+											h.Class(
+												"mt-1 flex items-center gap-1.5 font-mono text-3xs text-muted-foreground",
+											),
+										],
 										[
 											h.span(
 												[
@@ -101,7 +120,11 @@ const versionItem = (h: H, version: VersionRow, isPreviewing: boolean, isCurrent
 											),
 											h.span([], ["v", String(version.versionNumber)]),
 											dot(h),
-											relativeTime(h, { value: version.createdAt, ...clock, tooltip: "title" }),
+											relativeTime(h, {
+												value: version.createdAt,
+												...clock,
+												tooltip: "title",
+											}),
 										],
 									),
 								],
@@ -117,7 +140,10 @@ const loading = (h: H): Html =>
 	h.div(
 		[h.Role("status"), h.AriaLabel("Loading history"), h.Class("flex flex-col gap-4 px-4 py-4")],
 		[0, 1, 2, 3].map(() =>
-			h.div([h.Class("flex flex-col gap-1.5")], [skeleton(h, "h-3 w-32"), skeleton(h, "h-2.5 w-48 opacity-60")]),
+			h.div(
+				[h.Class("flex flex-col gap-1.5")],
+				[skeleton(h, "h-3 w-32"), skeleton(h, "h-2.5 w-48 opacity-60")],
+			),
 		),
 	)
 
@@ -130,7 +156,11 @@ const noHistory = (h: H): Html =>
 					icon(h, "HistoryIcon", { size: 16, className: "text-muted-foreground" }),
 				]),
 				emptyTitle(h, ["No history yet"], "text-xs font-medium"),
-				emptyDescription(h, ["Each save is captured here so you can revisit or restore."], "text-2xs"),
+				emptyDescription(
+					h,
+					["Each save is captured here so you can revisit or restore."],
+					"text-2xs",
+				),
 			]),
 		],
 		"gap-0 px-4 py-12 md:py-12",
@@ -146,7 +176,13 @@ const list = (h: H, model: Model, versions: ReadonlyArray<VersionRow>, clock: Cl
 				[
 					h.span([h.AriaHidden(true), h.Class("absolute left-4 top-3 bottom-3 w-px bg-border")]),
 					...versions.map((version) =>
-						versionItem(h, version, previewed?.id === version.id, previewed === null && version.id === latest, clock),
+						versionItem(
+							h,
+							version,
+							previewed?.id === version.id,
+							previewed === null && version.id === latest,
+							clock,
+						),
 					),
 				],
 			)
@@ -155,8 +191,8 @@ const list = (h: H, model: Model, versions: ReadonlyArray<VersionRow>, clock: Cl
 export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 	const versions = model.history.versions
 	const count = AsyncData.getOrElse(versions, () => []).length
-	return h.aside(
-		[h.Class("flex h-full w-80 shrink-0 flex-col border-l bg-background")],
+	return h.div(
+		[h.Class("flex h-full flex-col")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 border-b px-4 py-3")],
@@ -168,7 +204,7 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 						{
 							label: "Close history panel",
 							size: "icon-xs",
-							className: "ml-auto text-muted-foreground hover:text-foreground",
+							className: "ml-auto text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(Message.ClickedCloseHistory())],
 						},
 						[icon(h, "XmarkIcon")],
@@ -182,7 +218,12 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 						onIdle: () => loading(h),
 						onLoading: () => loading(h),
 						onFailure: (failure) =>
-							errorState(h, { failure, variant: "inline", title: "Failed to load history", className: "px-4" }),
+							errorState(h, {
+								failure,
+								variant: "inline",
+								title: "Couldn't load history",
+								className: "px-4",
+							}),
 						onSuccess: (rows) => list(h, model, rows, clock),
 						onRefreshing: (rows) => list(h, model, rows, clock),
 						onStale: ({ data }) => list(h, model, data, clock),
@@ -196,11 +237,11 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 /** `PreviewBanner` and its restore confirmation. */
 export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Clock): ReadonlyArray<Html> => [
 	h.div(
-		[h.Class("mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2")],
+		[h.Class("mb-4 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2")],
 		[
 			icon(h, "HistoryIcon", { className: "size-4 shrink-0 text-primary" }),
 			h.div(
-				[h.Class("flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground/80")],
+				[h.Class("flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground-soft")],
 				[
 					h.span([h.Class("font-semibold text-primary")], ["PREVIEW"]),
 					dot(h),
@@ -212,11 +253,29 @@ export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Cl
 			h.div(
 				[h.Class("flex items-center gap-1.5")],
 				[
-					button(h, { variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedCancelPreview())] }, ["Cancel"]),
-					button(h, { variant: "default", size: "sm", attributes: [h.OnClick(Message.ClickedRestoreVersion())] }, [
-						icon(h, "ArrowPathIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-						"Restore this version",
-					]),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							attributes: [h.OnClick(Message.ClickedCancelPreview())],
+						},
+						["Cancel"],
+					),
+					button(
+						h,
+						{
+							variant: "default",
+							size: "sm",
+							attributes: [h.OnClick(Message.ClickedRestoreVersion())],
+						},
+						[
+							icon(h, "ArrowPathIcon", {
+								attributes: [h.DataAttribute("icon", "inline-start")],
+							}),
+							"Restore this version",
+						],
+					),
 				],
 			),
 		],

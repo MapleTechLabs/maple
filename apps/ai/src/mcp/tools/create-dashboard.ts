@@ -88,7 +88,7 @@ const VALID_GROUP_BY: Record<string, readonly string[]> = {
 } satisfies Record<string, readonly string[]>
 
 /** Sources whose query builder also groups by an attribute key, `attr.<key>`. */
-const ATTR_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics", "product_events"])
+const ATTR_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["traces", "metrics", "product_events"])
 
 /** Sources that also group by a resource attribute, `resource.<key>` (host.name, k8s.pod.name). */
 const RESOURCE_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics"])
@@ -543,6 +543,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				blocks: [
 					doc.fields([
 						["ID", output.dashboard.id],
+						["REST id", output.dashboard.publicId],
 						["Name", output.dashboard.name],
 						["Description", output.dashboard.description],
 						["Widgets", output.dashboard.widgetCount],

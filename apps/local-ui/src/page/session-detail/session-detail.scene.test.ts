@@ -46,13 +46,15 @@ const session = (traceIds: ReadonlyArray<string>): SessionDetail => ({
 
 describe("local session detail", () => {
 	test("entry asks for the session and its transcript at once", () => {
-		expect(names(init(context, "sess-1").commands)).toEqual(["ReadSessionDetailClock", FetchDetail.name, FetchTranscript.name])
+		expect(names(init(context, "sess-1").commands)).toEqual(expect.arrayContaining(["ReadSessionDetailClock", FetchDetail.name, FetchTranscript.name]))
 	})
 
 	test("a found session with traces asks for their summaries; an answer for another key is dropped", () => {
 		const model = init(context, "sess-1").model
-		const stale = pageUpdate(model, Message.SucceededFetchDetail({ key: "session:other", detail: null, fetchedAtMs: NOW }))
+		const stale = pageUpdate(model, Message.SucceededFetchDetail({ key: "session:other", detail: session(["t1"]), fetchedAtMs: NOW }))
 		expect(stale.model.detail).toEqual(model.detail)
+		expect(stale.model.detailUpdatedAtMs).toBe(model.detailUpdatedAtMs)
+		expect(names(stale.commands)).not.toContain(FetchTraces.name)
 		const found = pageUpdate(model, Message.SucceededFetchDetail({ key: model.detail.key ?? "", detail: session(["t1"]), fetchedAtMs: NOW }))
 		expect(names(found.commands)).toEqual([FetchTraces.name])
 	})

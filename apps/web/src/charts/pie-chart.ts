@@ -121,8 +121,8 @@ const tooltipBody = (
 						h.div(
 							[h.Class("mt-0.5 text-muted-foreground tabular-nums")],
 							[
-								h.span([h.Class("text-foreground/90")], [fmtValue(slice.value, unit)]),
-								h.span([h.Class("px-1 text-muted-foreground/60")], ["·"]),
+								h.span([h.Class("text-foreground-soft")], [fmtValue(slice.value, unit)]),
+								h.span([h.Class("px-1 text-foreground-subtle")], ["·"]),
 								h.span([], [formatPercent(slice.fraction)]),
 							],
 						),

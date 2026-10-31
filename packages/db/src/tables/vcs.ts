@@ -28,8 +28,9 @@ import {
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
 import { Schema } from "effect"
+import { Sources } from "./sources"
 
 // Vendor-agnostic VCS integration tables. Every row carries a `provider`
 // discriminator; GitHub-specific concepts never reach this layer. External
@@ -50,6 +51,8 @@ export const VcsInstallations = PG.table("vcs_installations", {
 	columns: {
 		id: PG.brand(PG.text, VcsInstallationId),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// The source this integration sends as. Deleting the source deletes the row.
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		provider: PG.brand(PG.text, VcsProviderId),
 		externalInstallationId: PG.column(PG.text, { name: "external_installation_id" }),
 		accountLogin: PG.column(PG.text, { name: "account_login" }),
@@ -70,8 +73,17 @@ export const VcsInstallations = PG.table("vcs_installations", {
 	},
 	primaryKey: ["id"],
 	indexes: [
+		PG.index("vcs_installations_source_idx", ["sourceId"]),
 		PG.uniqueIndex("vcs_installations_provider_external_idx", ["provider", "externalInstallationId"]),
 		PG.index("vcs_installations_org_idx", ["orgId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
 	],
 	tenantColumn: "orgId",
 })

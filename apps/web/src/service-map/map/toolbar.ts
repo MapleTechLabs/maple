@@ -122,7 +122,7 @@ const focusControls = <M>(
 				{
 					size: "icon-xs",
 					label: "Clear focus",
-					className: "-mr-0.5 size-5 text-muted-foreground hover:text-foreground sm:size-5",
+					className: "-mr-0.5 size-5 text-muted-foreground hover:text-foreground active:text-foreground sm:size-5",
 					attributes: [h.OnClick(inputs.onClearFocus)],
 				},
 				[icon(h, "XmarkIcon")],
@@ -174,7 +174,7 @@ const tipContent = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, triggerId: s
 			? ["Discard manual positions and auto-arrange"]
 			: triggerId === TIP_HIDE_REST
 				? ["Remove everything outside the neighborhood and re-layout, instead of fading it"]
-				: ["Below ", String(inputs.minTrafficPct), "% of the peak edge rate — click to show all"],
+				: ["Below ", String(inputs.minTrafficPct), "% of the peak edge rate. Click to show all"],
 	)
 
 const hiddenButton = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: Trigger): Html =>
@@ -236,7 +236,7 @@ const presentationControls = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, tr
 
 const bar = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: Trigger, portal: Html | null): Html =>
 	h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2")],
+		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
 		[
 			...Option.match(inputs.focus, {
 				onNone: () => [focusCombobox(h, inputs)],

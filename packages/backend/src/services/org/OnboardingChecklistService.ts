@@ -1,4 +1,5 @@
 import { BillingCustomer, BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import type { OrgId } from "@maple/domain/primitives"
 import {
 	emptyOnboardingChecklistInputs,
@@ -302,7 +303,7 @@ const make = Effect.gen(function* () {
 		// lost response may have applied the discount, so the lease stays until it expires and
 		// the failure is logged for reconciliation. `classifyAutumn` keeps the 4xx/5xx split
 		// that `ensureOk` collapses.
-		const customer = yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(
+		const customer = yield* autumn.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: [] }).pipe(
 			Effect.flatMap(classifyAutumn),
 			Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 			Effect.catchTags({
@@ -326,7 +327,7 @@ const make = Effect.gen(function* () {
 				reason: "no_subscription",
 			})
 		}
-		yield* autumn.applyReward(orgId, { planId, rewardId: ONBOARDING_REWARD_ID }).pipe(
+		yield* autumn.applyReward(ownBillingCustomer(orgId), { planId, rewardId: ONBOARDING_REWARD_ID }).pipe(
 			Effect.flatMap(classifyAutumn),
 			Effect.catchTags({
 				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
@@ -352,7 +353,7 @@ const make = Effect.gen(function* () {
 export class OnboardingChecklistService extends Context.Service<
 	OnboardingChecklistService,
 	OnboardingChecklistServiceApi
->()("@maple/api/services/OnboardingChecklistService", { make }) {
+>()("@maple/backend/services/OnboardingChecklistService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(

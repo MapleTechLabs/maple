@@ -16,6 +16,12 @@ export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>
 
+// Every variant dims to the same 50% when disabled; a loading button stays solid so its spinner shows.
+const STATE_CLASSES = "disabled:opacity-50 data-loading:disabled:opacity-100"
+
+const buttonClasses = (options: VariantProps<typeof buttonVariants> & Readonly<{ className?: string }>) =>
+	cn(buttonVariants({ size: options.size, variant: options.variant }), STATE_CLASSES, options.className)
+
 /** `<Button>`: the same class composition, attributes and loading spinner as @maple/ui. */
 export const button = <Message>(
 	h: HtmlBuilder<Message>,
@@ -26,15 +32,7 @@ export const button = <Message>(
 	return h.button(
 		[
 			h.Type(options.type ?? "button"),
-			h.Class(
-				cn(
-					buttonVariants({
-						className: options.className,
-						size: options.size,
-						variant: options.variant,
-					}),
-				),
-			),
+			h.Class(buttonClasses(options)),
 			...(isLoading ? [h.AriaDisabled(true), h.DataAttribute("loading", "")] : []),
 			h.DataAttribute("slot", options.slot ?? "button"),
 			...(isLoading || (options.isDisabled ?? false) ? [h.Disabled(true)] : []),
@@ -45,7 +43,12 @@ export const button = <Message>(
 			...(isLoading
 				? [
 						icon(h, "LoaderIcon", {
-							className: cn(spinnerStyles, buttonLoadingIndicatorStyles),
+							// The loader's graded spokes vanish on a solid fill; draw every spoke in the button's foreground.
+							className: cn(
+								spinnerStyles,
+								buttonLoadingIndicatorStyles,
+								"opacity-100 [&_[opacity]]:opacity-100",
+							),
 							attributes: [
 								h.AriaHidden(true),
 								h.AriaLabel("Loading"),
@@ -67,15 +70,7 @@ export const linkButton = <Message>(
 ): Html =>
 	h.a(
 		[
-			h.Class(
-				cn(
-					buttonVariants({
-						className: options.className,
-						size: options.size,
-						variant: options.variant,
-					}),
-				),
-			),
+			h.Class(buttonClasses(options)),
 			h.DataAttribute("slot", options.slot ?? "button"),
 			h.Href(options.href),
 			...(options.attributes ?? []),

@@ -1,18 +1,29 @@
 import type { AiTriageSettingsDocument, OpenRouterKeyDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { PASSES_PER_DAY_LIMITS, parseDailyLimit, RUNS_PER_DAY_LIMITS } from "../../../components/settings/ai-triage-limits"
+import {
+	PASSES_PER_DAY_LIMITS,
+	parseDailyLimit,
+	RUNS_PER_DAY_LIMITS,
+} from "../../../components/settings/ai-triage-limits"
 import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
 import * as Field from "../../../ui/field"
-import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
+import {
+	field,
+	fieldDescription,
+	fieldError,
+	type FieldIds,
+	fieldLabel,
+	input,
+	type FieldState,
+} from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { input as plainInput } from "../../../ui/input"
 import { meter } from "../../../ui/meter"
@@ -29,7 +40,13 @@ import { isLimitsDirty, limitsDraftOf } from "./update"
 type H = HtmlBuilder<Message>
 
 const ADD_ON_PRICE = "$15/month"
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 const TRIAGE_DESCRIPTION =
 	"When an error or anomaly incident opens, an agent investigates it with read-only tools and attaches a triage summary. Runs on the model provider above."
 
@@ -82,7 +99,10 @@ const providerCard = (
 		],
 		[
 			h.label(
-				[h.Id(RadioGroup.labelId(radioInputId(options.value))), h.Class("flex cursor-pointer flex-col gap-2")],
+				[
+					h.Id(RadioGroup.labelId(radioInputId(options.value))),
+					h.Class("flex cursor-pointer flex-col gap-2"),
+				],
 				[
 					h.span(
 						[h.Class("flex items-center gap-2.5")],
@@ -92,10 +112,15 @@ const providerCard = (
 							...(options.badge === undefined ? [] : [options.badge]),
 						],
 					),
-					h.span([h.Class("pl-6.5 text-xs leading-relaxed text-muted-foreground")], [options.description]),
+					h.span(
+						[h.Class("pl-6.5 text-xs leading-relaxed text-muted-foreground")],
+						[options.description],
+					),
 				],
 			),
-			...(isSelected && options.children !== undefined ? [h.div([h.Class("pl-6.5")], options.children)] : []),
+			...(isSelected && options.children !== undefined
+				? [h.div([h.Class("pl-6.5")], options.children)]
+				: []),
 		],
 	)
 }
@@ -116,7 +141,9 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 						h.Attribute("autocomplete", "off"),
 						h.Placeholder("sk-or-v1-..."),
 						...(model.isSavingKey ? [h.Disabled(true)] : []),
-						...Field.controlAttributes(h, model.keyDraft, (message) => Message.GotKeyDraftMessage({ message })),
+						...Field.controlAttributes(h, model.keyDraft, (message) =>
+							Message.GotKeyDraftMessage({ message }),
+						),
 					],
 				}),
 				fieldDescription(
@@ -130,14 +157,24 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 				[
 					button(
 						h,
-						{ type: "submit", size: "sm", isLoading: model.isSavingKey, isDisabled: model.keyDraft.value.trim() === "" },
-						[model.isSavingKey ? "Checking..." : "Save key"],
+						{
+							type: "submit",
+							size: "sm",
+							isLoading: model.isSavingKey,
+							isDisabled: model.keyDraft.value.trim() === "",
+						},
+						["Save key"],
 					),
 					...(isReplacing
 						? [
 								button(
 									h,
-									{ variant: "ghost", size: "sm", isDisabled: model.isSavingKey, attributes: [h.OnClick(Message.ClickedCancelReplace())] },
+									{
+										variant: "ghost",
+										size: "sm",
+										isDisabled: model.isSavingKey,
+										attributes: [h.OnClick(Message.ClickedCancelReplace())],
+									},
 									["Cancel"],
 								),
 							]
@@ -156,11 +193,19 @@ const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =
 			...(current.configured
 				? [
 						h.div(
-							[h.Class("flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5")],
+							[
+								h.Class(
+									"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
+								),
+							],
 							[
 								h.p(
 									[h.Class("text-xs leading-relaxed text-muted-foreground")],
-									["Your saved key (sk-or-...", current.keyHint ?? "", ") is not in use because the add-on has lapsed."],
+									[
+										"Your saved key (sk-or-...",
+										current.keyHint ?? "",
+										") is not in use because the add-on has lapsed.",
+									],
 								),
 								button(
 									h,
@@ -179,11 +224,20 @@ const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =
 				: []),
 			h.p(
 				[h.Class("text-xs leading-relaxed text-muted-foreground")],
-				["Needs the OpenRouter add-on, ", ADD_ON_PRICE, ", billed with your plan. Cancel any time from billing."],
+				[
+					"Needs the OpenRouter add-on, ",
+					ADD_ON_PRICE,
+					", billed with your plan. Cancel any time from billing.",
+				],
 			),
 			button(
 				h,
-				{ size: "sm", className: "w-fit", isDisabled: model.isAttachingAddOn, attributes: [h.OnClick(Message.ClickedAddOn())] },
+				{
+					size: "sm",
+					className: "w-fit",
+					isDisabled: model.isAttachingAddOn,
+					attributes: [h.OnClick(Message.ClickedAddOn())],
+				},
 				["Add to plan"],
 			),
 			confirmDialog(h, {
@@ -206,7 +260,11 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 	if (current.configured && !model.isReplacing)
 		return [
 			h.div(
-				[h.Class("flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5")],
+				[
+					h.Class(
+						"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
+					),
+				],
 				[
 					h.code([h.Class("truncate font-mono text-sm")], ["sk-or-...", current.keyHint ?? ""]),
 					h.div(
@@ -214,7 +272,12 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 						[
 							button(
 								h,
-								{ variant: "outline", size: "sm", isDisabled: model.isRemoving, attributes: [h.OnClick(Message.ClickedReplace())] },
+								{
+									variant: "outline",
+									size: "sm",
+									isDisabled: model.isRemoving,
+									attributes: [h.OnClick(Message.ClickedReplace())],
+								},
 								["Replace"],
 							),
 							button(
@@ -275,13 +338,18 @@ const providerSection = (h: H, model: Model): Html =>
 		{
 			id: "ai-provider-heading",
 			title: "Model provider",
-			description: ["Runs chat, investigations and pull request reviews. Models stay the same either way."],
+			description: ["Runs investigations and pull request reviews. Models stay the same either way."],
 			framed: false,
 		},
 		AsyncData.matchData(model.key, {
 			onEmpty: () => [skeleton(h, "h-28 w-full")],
 			onFailure: (failure) => [
-				errorState(h, { failure, title: "Failed to load the model provider", variant: "row", onRetry: Message.ClickedRetryKey() }),
+				errorState(h, {
+					failure,
+					title: "Couldn't load the model provider",
+					variant: "row",
+					onRetry: Message.ClickedRetryKey(),
+				}),
 			],
 			onData: (current) => providerChoice(h, model, current),
 		}),
@@ -308,7 +376,10 @@ const limitRow = (
 	return field(h, { className: "flex-row items-start justify-between gap-6 p-4", state }, [
 		h.div(
 			[h.Class("flex min-w-0 flex-col gap-0.5")],
-			[fieldLabel(h, { ids, state }, options.label), fieldDescription(h, { ids, state, className: "max-w-sm leading-relaxed" }, options.help)],
+			[
+				fieldLabel(h, { ids, state }, options.label),
+				fieldDescription(h, { ids, state, className: "max-w-sm leading-relaxed" }, options.help),
+			],
 		),
 		h.div(
 			[h.Class("flex w-48 shrink-0 flex-col gap-2")],
@@ -327,8 +398,15 @@ const limitRow = (
 				}),
 				...(options.error === null
 					? [
-							meter(h, { value: options.spent, max: options.limit, label: `${options.label} used today` }),
-							h.span([h.Class("font-mono text-2xs text-muted-foreground")], [formatNumber(options.spent), " used today"]),
+							meter(h, {
+								value: options.spent,
+								max: options.limit,
+								label: `${options.label} used today`,
+							}),
+							h.span(
+								[h.Class("font-mono text-2xs text-muted-foreground")],
+								[formatNumber(options.spent), " used today"],
+							),
 						]
 					: [fieldError(h, { ids, state }, options.error)]),
 			],
@@ -336,9 +414,24 @@ const limitRow = (
 	])
 }
 
-const switchRow = (h: H, options: Readonly<{ id: string; label: string; description: string; isChecked: boolean; isDisabled?: boolean; onToggle?: Message; className: string }>): Html =>
+const switchRow = (
+	h: H,
+	options: Readonly<{
+		id: string
+		label: string
+		description: string
+		isChecked: boolean
+		isDisabled?: boolean
+		onToggle?: Message
+		className: string
+	}>,
+): Html =>
 	settingRow(h, {
-		ids: { control: `${options.id}-input`, label: `${options.id}-label`, description: `${options.id}-description` },
+		ids: {
+			control: `${options.id}-input`,
+			label: `${options.id}-label`,
+			description: `${options.id}-description`,
+		},
 		label: options.label,
 		description: options.description,
 		className: options.className,
@@ -385,7 +478,10 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 				onInput: (value) => Message.ChangedLimit({ field: "maxRunsPerDay", value }),
 			}),
 			h.div(
-				[h.DataAttribute(isAdvancedOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+				[
+					h.DataAttribute(isAdvancedOpen ? "open" : "closed", ""),
+					h.DataAttribute("slot", "collapsible"),
+				],
 				[
 					h.button(
 						[
@@ -402,7 +498,8 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 						[
 							icon(h, "ChevronRightIcon", {
 								size: 14,
-								className: "shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90",
+								className:
+									"shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90",
 							}),
 							h.span([h.Class("text-xs font-medium text-foreground")], ["Advanced limits"]),
 							h.span(
@@ -419,7 +516,11 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 										h.DataAttribute("open", ""),
 										h.DataAttribute("slot", "collapsible-panel"),
 										h.Id("ai-triage-advanced"),
-										h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto", "animation-name": "none" }),
+										h.Style({
+											"--collapsible-panel-height": "auto",
+											"--collapsible-panel-width": "auto",
+											"animation-name": "none",
+										}),
 									],
 									[
 										h.div(
@@ -434,7 +535,11 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 													limit: current.maxPassesPerDay,
 													spent: current.usage.passes,
 													isDisabled: model.isSavingLimits,
-													onInput: (value) => Message.ChangedLimit({ field: "maxPassesPerDay", value }),
+													onInput: (value) =>
+														Message.ChangedLimit({
+															field: "maxPassesPerDay",
+															value,
+														}),
 												}),
 											],
 										),
@@ -462,7 +567,7 @@ const triageTeaser = (h: H): Html =>
 			id: "ai-triage-heading",
 			title: "Auto-triage",
 			description: [TRIAGE_DESCRIPTION],
-			actions: badge(h, { variant: "muted" }, ["Coming soon"]),
+			badge: badge(h, { variant: "muted" }, ["Coming soon"]),
 			framed: false,
 		},
 		[
@@ -473,19 +578,29 @@ const triageTeaser = (h: H): Html =>
 					description: "Not yet available for your organization.",
 					isChecked: false,
 					isDisabled: true,
-					className: "p-4 opacity-60",
+					className: "p-4",
 				}),
 				settingRow(h, {
-					ids: { control: "ai-triage-teaser-runs", label: "ai-triage-teaser-runs-label", description: "ai-triage-teaser-runs-description" },
+					ids: {
+						control: "ai-triage-teaser-runs",
+						label: "ai-triage-teaser-runs-label",
+						description: "ai-triage-teaser-runs-description",
+					},
 					label: "Investigations per day",
 					description: "Per UTC day. Investigations you start or retry yourself are never blocked.",
-					className: "p-4 opacity-60",
+					className: "p-4",
+					disabled: true,
 					control: [
 						plainInput(h, {
 							id: "ai-triage-teaser-runs",
 							className: "w-48",
 							isDisabled: true,
-							attributes: [h.Value(""), h.Readonly(true), h.AriaLabel("Investigations per day")],
+							attributes: [
+								// The server's default (`DEFAULT_MAX_RUNS_PER_DAY`), shown greyed so the box is not blank.
+								h.Value("250"),
+								h.Readonly(true),
+								h.AriaLabel("Investigations per day"),
+							],
 						}),
 					],
 				}),
@@ -497,11 +612,21 @@ const triageSection = (h: H, model: Model): Html =>
 	model.isTriageAvailable
 		? settingsSection(
 				h,
-				{ id: "ai-triage-heading", title: "Auto-triage", description: [TRIAGE_DESCRIPTION], framed: false },
+				{
+					id: "ai-triage-heading",
+					title: "Auto-triage",
+					description: [TRIAGE_DESCRIPTION],
+					framed: false,
+				},
 				AsyncData.matchData(model.triage, {
 					onEmpty: () => [skeleton(h, "h-40 w-full")],
 					onFailure: (failure) => [
-						errorState(h, { failure, title: "Failed to load auto-triage settings", variant: "row", onRetry: Message.ClickedRetryTriage() }),
+						errorState(h, {
+							failure,
+							title: "Couldn't load auto-triage settings",
+							variant: "row",
+							onRetry: Message.ClickedRetryTriage(),
+						}),
 					],
 					onData: (current) => triageForm(h, model, current),
 				}),
@@ -521,19 +646,18 @@ const escalationCard = (h: H): Html =>
 						[
 							h.span([h.Class("text-sm font-medium text-foreground")], ["Escalation routing"]),
 							h.span(
-								[h.Class("text-xs leading-relaxed text-muted-foreground")],
-								["Route triaged issues by severity and confidence to your alert destinations."],
+								[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
+								[
+									"Route triaged issues by severity and confidence to your alert destinations.",
+								],
 							),
 						],
 					),
 				],
 			),
-			h.a(
-				[
-					h.Href("/settings?tab=automation"),
-					h.Class(cn(buttonVariants({ variant: "outline", size: "sm", className: "shrink-0" }))),
-					h.DataAttribute("slot", "button"),
-				],
+			linkButton(
+				h,
+				{ variant: "outline", size: "sm", className: "shrink-0", href: "/settings?tab=automation" },
 				["Open automation"],
 			),
 		],
@@ -542,5 +666,5 @@ const escalationCard = (h: H): Html =>
 type NoInputs = Readonly<{ readonly none?: never }>
 
 export const view = Submodel.defineView<Model, Message, NoInputs>((model, _inputs, h) =>
-	settingsSections(h, "standard", [providerSection(h, model), triageSection(h, model), escalationCard(h)]),
+	settingsSections(h, [providerSection(h, model), triageSection(h, model), escalationCard(h)]),
 )

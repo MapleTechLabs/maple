@@ -12,7 +12,7 @@ import { MeasureScrollArea } from "./command"
 import { scrollOverflowOf } from "./derive"
 import { type FormulaDraft, Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
-import { fieldEyebrow, nameBadge } from "./view-controls"
+import { fieldEyebrow } from "./view-controls"
 import { queryRow } from "./view-query"
 import { resultsContent } from "./view-results"
 
@@ -61,7 +61,7 @@ const footer = (h: H, model: Model): Html =>
 							size: "sm",
 							attributes: [h.OnClick(Message.ClickedAddQuery())],
 						},
-						[icon(h, "PlusIcon"), "Add Query"],
+						[icon(h, "PlusIcon"), "Add query"],
 					),
 					button(
 						h,
@@ -70,20 +70,21 @@ const footer = (h: H, model: Model): Html =>
 							size: "sm",
 							attributes: [h.OnClick(Message.ClickedAddFormula())],
 						},
-						[icon(h, "PlusIcon"), "Add Formula"],
+						[icon(h, "PlusIcon"), "Add formula"],
 					),
 				],
 			),
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					h.span([h.Class(META)], [model.window.startTime, " -> ", model.window.endTime]),
+					// The window Run query will use, beside the button that runs it.
+					h.span([h.Class(META)], [model.window.startTime, " → ", model.window.endTime]),
 					...(model.lastRunAt === null
 						? []
 						: [h.span([h.Class(META)], ["last run: ", model.lastRunAt])]),
 					button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRun())] }, [
-						icon(h, "MagnifierIcon"),
-						"Run Query",
+						icon(h, "MediaPlayIcon"),
+						"Run query",
 					]),
 				],
 			),
@@ -95,9 +96,8 @@ const formulaRow = (h: H, formula: FormulaDraft): Html => {
 	const text = (field: "expression" | "legend") => (value: string) =>
 		Message.ChangedFormulaText({ formulaId: formula.id, field, value })
 	return h.div(
-		[h.Key(formula.id), h.Class("grid grid-cols-[44px_1fr] gap-2")],
+		[h.Key(formula.id)],
 		[
-			nameBadge(h, formula.name),
 			card(
 				h,
 				[
@@ -168,7 +168,7 @@ const statePreview = (h: H, model: Model): Html =>
 			h.pre(
 				[
 					h.Class(
-						"max-h-72 overflow-auto rounded-none border bg-muted/30 p-2 font-mono text-2xs leading-relaxed",
+						"max-h-72 overflow-auto rounded-none border bg-surface-sunken p-2 font-mono text-2xs leading-relaxed",
 					),
 				],
 				[
@@ -192,7 +192,7 @@ const resultsCard = (h: H, model: Model): Html =>
 	card(
 		h,
 		[
-			cardHeader(h, [cardTitle(h, ["Execution Results"], "text-xs")], "pb-1"),
+			cardHeader(h, [cardTitle(h, ["Execution results"], "text-xs")], "pb-1"),
 			cardPanel(h, [resultsContent(h, model)], "space-y-2"),
 		],
 		"gap-2",
@@ -208,12 +208,10 @@ export const view = (model: Model, h: H): Html =>
 					[
 						cardTitle(
 							h,
-							[icon(h, "PulseIcon", { size: 16 }), "Query Builder MVP"],
+							[icon(h, "PulseIcon", { size: 16 }), "Query builder"],
 							"flex items-center gap-2 text-sm",
 						),
-						cardDescription(h, [
-							"Executes enabled queries against Maple Query Engine and returns real Tinybird-backed timeseries data.",
-						]),
+						cardDescription(h, ["Runs enabled queries against Maple and returns timeseries."]),
 					],
 					"border-b py-3",
 				),
@@ -229,7 +227,7 @@ export const view = (model: Model, h: H): Html =>
 						cardPanel(
 							h,
 							[
-								resultsCard(h, model),
+								// Inputs first: the results answer them, so they follow.
 								h.div(
 									[h.Class("space-y-2")],
 									[
@@ -237,6 +235,7 @@ export const view = (model: Model, h: H): Html =>
 										...model.formulas.map((formula) => formulaRow(h, formula)),
 									],
 								),
+								resultsCard(h, model),
 								separator(h, "horizontal", undefined),
 								statePreview(h, model),
 							],

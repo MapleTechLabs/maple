@@ -22,26 +22,26 @@ export const TONE_FILL: Record<Tone, string> = {
 	ok: "bg-severity-info",
 	info: "bg-severity-info",
 	done: "bg-severity-debug",
-	neutral: "bg-muted-foreground/50",
+	neutral: "bg-foreground-subtle",
 } satisfies Record<Tone, string>
 
 /** Tinted surface + text: chips, badges, row highlights. */
 export const TONE_SOFT: Record<Tone, string> = {
-	crit: "bg-severity-error/12 text-severity-error",
-	warn: "bg-severity-warn/12 text-severity-warn",
-	ok: "bg-severity-info/12 text-severity-info",
-	info: "bg-severity-info/12 text-severity-info",
-	done: "bg-severity-debug/12 text-severity-debug",
+	crit: "bg-severity-error-a2 text-severity-error",
+	warn: "bg-severity-warn-a2 text-severity-warn",
+	ok: "bg-severity-info-a2 text-severity-info",
+	info: "bg-severity-info-a2 text-severity-info",
+	done: "bg-severity-debug-a2 text-severity-debug",
 	neutral: "bg-muted text-muted-foreground",
 } satisfies Record<Tone, string>
 
 /** Border accent for outlined chips and callouts. */
 export const TONE_BORDER: Record<Tone, string> = {
-	crit: "border-severity-error/40",
-	warn: "border-severity-warn/40",
-	ok: "border-severity-info/40",
-	info: "border-severity-info/40",
-	done: "border-severity-debug/40",
+	crit: "border-severity-error-a4",
+	warn: "border-severity-warn-a4",
+	ok: "border-severity-info-a4",
+	info: "border-severity-info-a4",
+	done: "border-severity-debug-a4",
 	neutral: "border-border",
 } satisfies Record<Tone, string>
 

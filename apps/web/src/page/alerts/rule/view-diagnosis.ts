@@ -143,7 +143,7 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 												{
 													variant: "link",
 													size: "xs",
-													className: "mt-1.5 text-muted-foreground hover:text-foreground",
+													className: "mt-1.5 text-muted-foreground hover:text-foreground active:text-foreground",
 													attributes: [h.OnClick(Message.ClickedShowAllStages())],
 												},
 												[
@@ -181,8 +181,8 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 			h.Class(
 				cn(
 					"rounded-md px-2 py-1",
-					stage.status === "fail" && "bg-severity-error/5",
-					stage.status === "warn" && "bg-severity-warn/5",
+					stage.status === "fail" && "bg-severity-error-a1",
+					stage.status === "warn" && "bg-severity-warn-a1",
 				),
 			),
 		],
@@ -230,7 +230,7 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 														{
 															variant: "link",
 															size: "xs",
-															className: "text-muted-foreground/80 hover:text-foreground",
+															className: "text-foreground-subtle hover:text-foreground active:text-foreground",
 															attributes: [h.OnClick(Message.ClickedShowAllEvidence({ stageId: stage.id }))],
 														},
 														["+", String(hiddenEvidence), " more"],

@@ -182,7 +182,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			value: typeSelectValue(route.search),
 			selectedIndex: null,
 		}),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		timePicker: TimeRangePicker.init("metrics-time-range"),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -192,6 +192,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
@@ -221,7 +222,8 @@ export const routeChanged = (
 	// A filter or view change reads its new keys under the kept window; only a moved window re-resolves.
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -347,13 +349,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		}),
 		ClickedClearFilters: () => patchSearch(model, { ...model.search, q: undefined, type: undefined }),
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

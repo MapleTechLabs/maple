@@ -1,0 +1,265 @@
+diff --git a/lib/Auth/OAuthFlow.d.ts b/lib/Auth/OAuthFlow.d.ts
+index 37fd00f..276a99d 100644
+--- a/lib/Auth/OAuthFlow.d.ts
++++ b/lib/Auth/OAuthFlow.d.ts
+@@ -1,4 +1,5 @@
+-import * as Crypto from "effect/Crypto";
++import * as Digest from "effect/crypto/Digest";
++import * as SecureRandom from "effect/crypto/SecureRandom";
+ import * as Effect from "effect/Effect";
+ import * as Redacted from "effect/Redacted";
+ import * as Schema from "effect/Schema";
+@@ -226,7 +227,7 @@ export interface OAuthClient {
+      * take them per-authorization; omit for providers whose scopes are
+      * configured on the application.
+      */
+-    readonly authorize: (scopes?: ReadonlyArray<string>) => Effect.Effect<Authorization, OAuthCryptoError | UnsupportedOAuthFlowError, Crypto.Crypto>;
++    readonly authorize: (scopes?: ReadonlyArray<string>) => Effect.Effect<Authorization, UnsupportedOAuthFlowError, SecureRandom.SecureRandom | Digest.Digest>;
+     /**
+      * Exchange an authorization code directly. `authorization` supplies the
+      * PKCE verifier; omit for non-PKCE clients (tests, relay-less flows).
+diff --git a/lib/Auth/OAuthFlow.js b/lib/Auth/OAuthFlow.js
+index c598780..a73bc3e 100644
+--- a/lib/Auth/OAuthFlow.js
++++ b/lib/Auth/OAuthFlow.js
+@@ -1,6 +1,8 @@
+ import http from "node:http";
+ import * as Clock from "effect/Clock";
+-import * as Crypto from "effect/Crypto";
++// Patched (maple): effect 4.1 replaced effect/Crypto (alchemy-run/alchemy#2754).
++import * as Digest from "effect/crypto/Digest";
++import * as SecureRandom from "effect/crypto/SecureRandom";
+ import * as Data from "effect/Data";
+ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+@@ -121,18 +123,13 @@ export const OAuthCredentials = Schema.Struct({
+     scopes: Schema.String.pipe(Schema.Array, Schema.mutable),
+ });
+ const randomText = Effect.fn(function* (length) {
+-    const crypto = yield* Crypto.Crypto;
+-    const bytes = yield* crypto
+-        .randomBytes(length)
+-        .pipe(Effect.mapError((cause) => new OAuthCryptoError({ operation: "Secure random generation", cause })));
+-    return Base64Url.encode(bytes);
++    const random = yield* SecureRandom.SecureRandom;
++    return Base64Url.encode(yield* random.randomBytes(length));
+ });
+ const generatePKCE = Effect.fn(function* (length = 96) {
+-    const crypto = yield* Crypto.Crypto;
++    const digest = yield* Digest.Digest;
+     const verifier = yield* randomText(length);
+-    const challenge = yield* crypto
+-        .digest("SHA-256", new TextEncoder().encode(verifier))
+-        .pipe(Effect.mapError((cause) => new OAuthCryptoError({ operation: "PKCE digest", cause })));
++    const challenge = yield* digest.digest(Digest.sha256, new TextEncoder().encode(verifier));
+     return { verifier, challenge: Base64Url.encode(challenge) };
+ });
+ const TokenResponse = Schema.Struct({
+diff --git a/lib/Stack.d.ts b/lib/Stack.d.ts
+index 1182271..bf90d70 100644
+--- a/lib/Stack.d.ts
++++ b/lib/Stack.d.ts
+@@ -1,6 +1,7 @@
+ import type { ConfigError } from "effect/Config";
+ import * as Context from "effect/Context";
+-import type { Crypto } from "effect/Crypto";
++import type { Digest } from "effect/crypto/Digest";
++import type { SecureRandom } from "effect/crypto/SecureRandom";
+ import * as Effect from "effect/Effect";
+ import { FileSystem } from "effect/FileSystem";
+ import type { HttpClient } from "effect/http/HttpClient";
+@@ -23,7 +24,7 @@ import type { SecretsEntry, SecretsOption } from "./Secrets/Provider.ts";
+ import { Stage } from "./Stage.ts";
+ import type { State } from "./State/State.ts";
+ import { PlatformServices } from "./Util/PlatformServices.ts";
+-export type StackServices = Stack | Stage | Scope.Scope | FileSystem | Crypto | Path | AlchemyContext | HttpClient | ChildProcessSpawner | AuthProviders | ProfileStore | ArtifactStore | CredentialsStore | Interaction;
++export type StackServices = Stack | Stage | Scope.Scope | FileSystem | Digest | SecureRandom | Path | AlchemyContext | HttpClient | ChildProcessSpawner | AuthProviders | ProfileStore | ArtifactStore | CredentialsStore | Interaction;
+ export type ProviderServices = ProviderCollectionLike | Provider<any> | EnvironmentLike | CredentialsLike | DockerLike;
+ export interface EnvironmentLike {
+     readonly kind: "Environment";
+@@ -133,7 +134,7 @@ export interface MakeStackProps<ROut = never> {
+     /** @internal */
+     stack?: StackSpec;
+ }
+-export declare const make: <ROut = never>(options: MakeStackProps<ROut>) => <A, Err = never, Req extends ROut | StackServices = never>(effect: Effect.Effect<A, Err, Req>) => Effect.Effect<CompiledStack<A, ROut | StackServices>, Err | ConfigError, AlchemyContext | ArtifactStore | AuthProviders | ChildProcessSpawner | CredentialsStore | Crypto | FileSystem | HttpClient | Interaction | Path | ProfileStore | Scope.Scope | Stage | Exclude<ROut, ROut | Stack | State> | Exclude<Req, ROut | Stack | State> | Exclude<AlchemyContext, ROut | Stack | State> | Exclude<ArtifactStore, ROut | Stack | State> | Exclude<AuthProviders, ROut | Stack | State> | Exclude<ChildProcessSpawner, ROut | Stack | State> | Exclude<CredentialsStore, ROut | Stack | State> | Exclude<Crypto, ROut | Stack | State> | Exclude<FileSystem, ROut | Stack | State> | Exclude<HttpClient, ROut | Stack | State> | Exclude<Interaction, ROut | Stack | State> | Exclude<Path, ROut | Stack | State> | Exclude<ProfileStore, ROut | Stack | State> | Exclude<Scope.Scope, ROut | Stack | State> | Exclude<Stack, ROut | Stack | State> | Exclude<Stage, ROut | Stack | State>>;
++export declare const make: <ROut = never>(options: MakeStackProps<ROut>) => <A, Err = never, Req extends ROut | StackServices = never>(effect: Effect.Effect<A, Err, Req>) => Effect.Effect<CompiledStack<A, ROut | StackServices>, Err | ConfigError, AlchemyContext | ArtifactStore | AuthProviders | ChildProcessSpawner | CredentialsStore | Digest | SecureRandom | FileSystem | HttpClient | Interaction | Path | ProfileStore | Scope.Scope | Stage | Exclude<ROut, ROut | Stack | State> | Exclude<Req, ROut | Stack | State> | Exclude<AlchemyContext, ROut | Stack | State> | Exclude<ArtifactStore, ROut | Stack | State> | Exclude<AuthProviders, ROut | Stack | State> | Exclude<ChildProcessSpawner, ROut | Stack | State> | Exclude<CredentialsStore, ROut | Stack | State> | Exclude<Digest | SecureRandom, ROut | Stack | State> | Exclude<FileSystem, ROut | Stack | State> | Exclude<HttpClient, ROut | Stack | State> | Exclude<Interaction, ROut | Stack | State> | Exclude<Path, ROut | Stack | State> | Exclude<ProfileStore, ROut | Stack | State> | Exclude<Scope.Scope, ROut | Stack | State> | Exclude<Stack, ROut | Stack | State> | Exclude<Stage, ROut | Stack | State>>;
+ export declare const CurrentStack: Effect.Effect<Omit<StackSpec<any>, "output"> | undefined, never, never>;
+ export declare const evalStack: <A, B, StackErr, Err, Req>(effect: StackEffect<CompiledStack<A>, StackErr, Stage | AlchemyContext>, fn: (stack: CompiledStack<A>) => Effect.Effect<B, Err, Req>, options: {
+     stage: string;
+diff --git a/lib/Util/PlatformServices.d.ts b/lib/Util/PlatformServices.d.ts
+index 533d43c..2831b2f 100644
+--- a/lib/Util/PlatformServices.d.ts
++++ b/lib/Util/PlatformServices.d.ts
+@@ -1,4 +1,5 @@
+-import type { Crypto } from "effect/Crypto";
++import type { Digest } from "effect/crypto/Digest";
++import type { SecureRandom } from "effect/crypto/SecureRandom";
+ import type { Input as DurationInput } from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import type { FileSystem } from "effect/FileSystem";
+@@ -18,7 +19,7 @@ export declare const platformLayer: <A, E, R>(constructors: {
+     bun: () => Promise<Layer.Layer<A, E, R>>;
+     node: () => Promise<Layer.Layer<A, E, R>>;
+ }) => Layer.Layer<A, E, R>;
+-export type PlatformServices = ChildProcessSpawner | Crypto | FileSystem | Path | Stdio | Terminal | WebSocketConstructor;
++export type PlatformServices = ChildProcessSpawner | Digest | SecureRandom | FileSystem | Path | Stdio | Terminal | WebSocketConstructor;
+ export declare const PlatformServices: Layer.Layer<PlatformServices>;
+ export declare const runMain: <E, A>(effect: Effect.Effect<A, E>, options?: {
+     readonly disableErrorReporting?: boolean | undefined;
+diff --git a/lib/Util/PlatformServices.js b/lib/Util/PlatformServices.js
+index 7a31f1e..8aa7a1c 100644
+--- a/lib/Util/PlatformServices.js
++++ b/lib/Util/PlatformServices.js
+@@ -1,7 +1,11 @@
++import * as Digest from "effect/crypto/Digest";
++import * as SecureRandom from "effect/crypto/SecureRandom";
+ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+ import { defaultTeardown } from "effect/Runtime";
+ import { disableCrossSpawnChdir } from "./Node.js";
++// Patched (maple): effect 4.1 dropped crypto from the platform `*Services` bundles.
++const WebCryptoServices = () => Layer.mergeAll(SecureRandom.layerWebCrypto, Digest.layerWebCrypto);
+ const isBun = typeof Bun !== "undefined";
+ const importPlatformPeer = (peerDependency, load) => load().catch(() => {
+     console.error([
+@@ -28,14 +32,14 @@ export const PlatformServices = platformLayer({
+             importPlatformPeer("@effect/platform-bun", () => import("@effect/platform-bun/BunServices")),
+             importPlatformPeer("@effect/platform-bun", () => import("@effect/platform-bun/BunSocket")),
+         ]);
+-        return Layer.merge(BunServices.layer, BunSocket.layerWebSocketConstructor);
++        return Layer.mergeAll(BunServices.layer, BunSocket.layerWebSocketConstructor, WebCryptoServices());
+     },
+     node: async () => {
+         const [NodeServices, NodeSocket] = await Promise.all([
+             importPlatformPeer("@effect/platform-node", () => import("@effect/platform-node/NodeServices")),
+             importPlatformPeer("@effect/platform-node", () => import("@effect/platform-node/NodeSocket")),
+         ]);
+-        return Layer.merge(NodeServices.layer, NodeSocket.layerWebSocketConstructor);
++        return Layer.mergeAll(NodeServices.layer, NodeSocket.layerWebSocketConstructor, WebCryptoServices());
+     },
+ });
+ /**
+diff --git a/src/Auth/OAuthFlow.ts b/src/Auth/OAuthFlow.ts
+index 76e5bc1..edce891 100644
+--- a/src/Auth/OAuthFlow.ts
++++ b/src/Auth/OAuthFlow.ts
+@@ -1,6 +1,8 @@
+ import http from "node:http";
+ import * as Clock from "effect/Clock";
+-import * as Crypto from "effect/Crypto";
++// Patched (maple): effect 4.1 replaced effect/Crypto (alchemy-run/alchemy#2754).
++import * as Digest from "effect/crypto/Digest";
++import * as SecureRandom from "effect/crypto/SecureRandom";
+ import * as Data from "effect/Data";
+ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+@@ -245,7 +247,7 @@ export interface OAuthClient {
+    */
+   readonly authorize: (
+     scopes?: ReadonlyArray<string>,
+-  ) => Effect.Effect<Authorization, OAuthCryptoError | UnsupportedOAuthFlowError, Crypto.Crypto>;
++  ) => Effect.Effect<Authorization, UnsupportedOAuthFlowError, SecureRandom.SecureRandom | Digest.Digest>;
+   /**
+    * Exchange an authorization code directly. `authorization` supplies the
+    * PKCE verifier; omit for non-PKCE clients (tests, relay-less flows).
+@@ -312,23 +314,14 @@ export interface OAuthClient {
+ }
+ 
+ const randomText = Effect.fn(function* (length: number) {
+-  const crypto = yield* Crypto.Crypto;
+-  const bytes = yield* crypto
+-    .randomBytes(length)
+-    .pipe(
+-      Effect.mapError(
+-        (cause) => new OAuthCryptoError({ operation: "Secure random generation", cause }),
+-      ),
+-    );
+-  return Base64Url.encode(bytes);
++  const random = yield* SecureRandom.SecureRandom;
++  return Base64Url.encode(yield* random.randomBytes(length));
+ });
+ 
+ const generatePKCE = Effect.fn(function* (length = 96) {
+-  const crypto = yield* Crypto.Crypto;
++  const digest = yield* Digest.Digest;
+   const verifier = yield* randomText(length);
+-  const challenge = yield* crypto
+-    .digest("SHA-256", new TextEncoder().encode(verifier))
+-    .pipe(Effect.mapError((cause) => new OAuthCryptoError({ operation: "PKCE digest", cause })));
++  const challenge = yield* digest.digest(Digest.sha256, new TextEncoder().encode(verifier));
+   return { verifier, challenge: Base64Url.encode(challenge) };
+ });
+ 
+diff --git a/src/Stack.ts b/src/Stack.ts
+index 09aaf3c..ebb66ee 100644
+--- a/src/Stack.ts
++++ b/src/Stack.ts
+@@ -1,7 +1,8 @@
+ import type { ConfigError } from "effect/Config";
+ import { ConfigProvider } from "effect/ConfigProvider";
+ import * as Context from "effect/Context";
+-import type { Crypto } from "effect/Crypto";
++import type { Digest } from "effect/crypto/Digest";
++import type { SecureRandom } from "effect/crypto/SecureRandom";
+ import * as Effect from "effect/Effect";
+ import { FileSystem } from "effect/FileSystem";
+ import * as FetchHttpClient from "effect/http/FetchHttpClient";
+@@ -40,7 +41,8 @@ export type StackServices =
+   | Stage
+   | Scope.Scope
+   | FileSystem
+-  | Crypto
++  | Digest
++  | SecureRandom
+   | Path
+   | AlchemyContext
+   | HttpClient
+diff --git a/src/Util/PlatformServices.ts b/src/Util/PlatformServices.ts
+index a6daed0..709dee9 100644
+--- a/src/Util/PlatformServices.ts
++++ b/src/Util/PlatformServices.ts
+@@ -1,4 +1,5 @@
+-import type { Crypto } from "effect/Crypto";
++import * as Digest from "effect/crypto/Digest";
++import * as SecureRandom from "effect/crypto/SecureRandom";
+ import type { Input as DurationInput } from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import type { FileSystem } from "effect/FileSystem";
+@@ -13,6 +14,9 @@ import type { Stdio } from "effect/Stdio";
+ import type { Terminal } from "effect/Terminal";
+ import { disableCrossSpawnChdir } from "./Node.ts";
+ 
++// Patched (maple): effect 4.1 dropped crypto from the platform `*Services` bundles.
++const WebCryptoServices = () => Layer.mergeAll(SecureRandom.layerWebCrypto, Digest.layerWebCrypto);
++
+ const isBun = typeof Bun !== "undefined";
+ 
+ const importPlatformPeer = <A>(
+@@ -49,7 +53,8 @@ export const platformLayer = <A, E, R>(constructors: {
+ 
+ export type PlatformServices =
+   | ChildProcessSpawner
+-  | Crypto
++  | Digest.Digest
++  | SecureRandom.SecureRandom
+   | FileSystem
+   | Path
+   | Stdio
+@@ -63,7 +68,7 @@ export const PlatformServices: Layer.Layer<PlatformServices> = platformLayer({
+       importPlatformPeer("@effect/platform-bun", () => import("@effect/platform-bun/BunServices")),
+       importPlatformPeer("@effect/platform-bun", () => import("@effect/platform-bun/BunSocket")),
+     ]);
+-    return Layer.merge(BunServices.layer, BunSocket.layerWebSocketConstructor);
++    return Layer.mergeAll(BunServices.layer, BunSocket.layerWebSocketConstructor, WebCryptoServices());
+   },
+   node: async () => {
+     const [NodeServices, NodeSocket] = await Promise.all([
+@@ -73,7 +78,7 @@ export const PlatformServices: Layer.Layer<PlatformServices> = platformLayer({
+       ),
+       importPlatformPeer("@effect/platform-node", () => import("@effect/platform-node/NodeSocket")),
+     ]);
+-    return Layer.merge(NodeServices.layer, NodeSocket.layerWebSocketConstructor);
++    return Layer.mergeAll(NodeServices.layer, NodeSocket.layerWebSocketConstructor, WebCryptoServices());
+   },
+ });
+ 

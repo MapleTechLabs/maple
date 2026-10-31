@@ -19,7 +19,7 @@ export const scopeChip = <M>(
 ): Html => {
 	const chipClass = cn(
 		"bg-background/60 font-normal",
-		options.tone === "muted" ? "text-muted-foreground/70" : "text-muted-foreground",
+		options.tone === "muted" ? "text-foreground-subtle" : "text-muted-foreground",
 		options.className,
 	)
 	return options.trigger === undefined

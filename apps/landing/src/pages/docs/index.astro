@@ -108,7 +108,7 @@ const introduction = bySlug("getting-started/introduction");
 
         {/* ── Start here ─────────────────────────────────────── */}
         <section class="mt-10" aria-labelledby="start-here">
-            <h2 id="start-here" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
+            <h2 id="start-here" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 {START_HERE.map(({ doc, icon, blurb }) => (
                     <a href={`/docs/${doc.id}`} class="cell group flex flex-col p-5 transition-colors hover:bg-bg-elevated">
@@ -138,7 +138,7 @@ const introduction = bySlug("getting-started/introduction");
         {/* ── Instrumentation ─────────────────────────────────── */}
         <section class="mt-12" aria-labelledby="instrument">
             <div class="flex items-baseline justify-between gap-4">
-                <h2 id="instrument" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Instrument your application</h2>
+                <h2 id="instrument" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Instrument your application</h2>
                 <a href={`/docs/${INSTRUMENTATION_SLUG}`} class="text-[13px] text-primary transition-colors hover:text-fg">All guides</a>
             </div>
             <div class="hairline-grid mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -147,27 +147,27 @@ const introduction = bySlug("getting-started/introduction");
                         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
                             <LanguageLogo id={lang.id} class="h-4 w-4" />
                         </span>
-                        <span class="truncate text-[14px] font-medium text-fg">{lang.name}</span>
+                        <span class="min-w-0 text-[14px] leading-snug font-medium text-fg">{lang.name}</span>
                     </a>
                 ))}
                 <a href="/docs/session-replay/browser-sdk" class="cell flex items-center gap-3 p-4 transition-colors hover:bg-bg-elevated">
                     <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
                         <BrandMarkIcon id="javascript" class="h-4 w-4" />
                     </span>
-                    <span class="truncate text-[14px] font-medium text-fg">Browser</span>
+                    <span class="min-w-0 text-[14px] leading-snug font-medium text-fg">Browser</span>
                 </a>
                 <a href={`/docs/${INSTRUMENTATION_SLUG}#anything-that-speaks-otlp`} class="cell flex items-center gap-3 p-4 transition-colors hover:bg-bg-elevated">
                     <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
                         <BrandMarkIcon id="opentelemetry" class="h-4 w-4" />
                     </span>
-                    <span class="truncate text-[14px] font-medium text-fg">Any OTLP exporter</span>
+                    <span class="min-w-0 text-[14px] leading-snug font-medium text-fg">Any OTLP exporter</span>
                 </a>
             </div>
         </section>
 
         {/* ── Common tasks ────────────────────────────────────── */}
         <section class="mt-12" aria-labelledby="tasks">
-            <h2 id="tasks" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Common tasks</h2>
+            <h2 id="tasks" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Common tasks</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                 {TASKS.map(({ title, icon, links }) => (
                     <div class="cell p-5">
@@ -209,7 +209,7 @@ const introduction = bySlug("getting-started/introduction");
         <footer class="mt-14 flex flex-col gap-2 border-t border-border pt-6 text-[13px] text-fg-muted sm:flex-row sm:items-center sm:justify-between">
             <p>
                 Every page is also plain markdown: append <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">.md</code> to its URL, or start from
-                <a href="/llms.txt" class="text-fg transition-colors hover:text-primary">/llms.txt</a>.
+                <a href="/llms.txt" class="text-fg underline decoration-border underline-offset-4 transition-colors hover:text-primary hover:decoration-primary"><code class="rounded bg-bg-elevated px-1.5 py-0.5">/llms.txt</code></a>.
             </p>
             <p class="flex flex-wrap items-center gap-3">
                 <a href="/changelog" class="text-fg transition-colors hover:text-primary">Changelog</a>

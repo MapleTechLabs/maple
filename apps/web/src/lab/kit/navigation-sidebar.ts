@@ -25,6 +25,9 @@ import {
 // `SidebarFrame`: a layout-contained frame holds the sidebar's
 // fixed container, so an expanded and a collapsed sidebar sit side by side.
 
+/** The app sidebar's group label (`GROUP_LABEL` in shell/view-sidebar.ts): muted, not bold white. */
+const GROUP_LABEL = "h-6 text-muted-foreground"
+
 const TELEMETRY: ReadonlyArray<
 	Readonly<{ title: string; icon: IconName; badge?: string; isActive: boolean }>
 > = [
@@ -62,12 +65,32 @@ export const sidebarFrame = <Message>(h: HtmlBuilder<Message>, options: SidebarF
 						options.state,
 						[
 							sidebarHeader(h, [
-								h.span([h.Class("truncate px-2 font-semibold text-sm")], ["Maple"]),
+								h.span(
+									[
+										h.Class(
+											"truncate px-2 font-semibold text-sm group-data-[collapsible=icon]:hidden",
+										),
+									],
+									["Maple"],
+								),
+								// Collapsed, the brand is a monogram tile like the app's org avatar, not "M…".
+								h.span(
+									[
+										h.AriaHidden(true),
+										h.Class(
+											"hidden size-8 items-center justify-center rounded-md bg-primary font-semibold text-primary-foreground text-sm group-data-[collapsible=icon]:flex",
+										),
+									],
+									["M"],
+								),
 							]),
 							sidebarContent(h, [
 								sidebarGroup(h, undefined, [
-									sidebarGroupLabel(h, undefined, ["Telemetry"]),
-									sidebarGroupAction(h, { ariaLabel: "Add view" }, [icon(h, "PlusIcon")]),
+									sidebarGroupLabel(h, GROUP_LABEL, ["Telemetry"]),
+									// Centred on the h-6 group label, not the shared style's h-8 one.
+									sidebarGroupAction(h, { ariaLabel: "Add view", className: "top-2.5" }, [
+										icon(h, "PlusIcon"),
+									]),
 									sidebarGroupContent(h, [
 										sidebarMenu(
 											h,
@@ -85,7 +108,7 @@ export const sidebarFrame = <Message>(h: HtmlBuilder<Message>, options: SidebarF
 								]),
 								sidebarSeparator(h),
 								sidebarGroup(h, undefined, [
-									sidebarGroupLabel(h, undefined, ["Infrastructure"]),
+									sidebarGroupLabel(h, GROUP_LABEL, ["Infrastructure"]),
 									sidebarMenu(h, undefined, [
 										sidebarMenuItem(h, undefined, [
 											menuButton("Hosts", "ServerIcon", false),
