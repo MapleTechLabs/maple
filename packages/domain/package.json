@@ -65,7 +65,8 @@
 		"./organization-feature-flags": "./src/organization-feature-flags.ts",
 		"./organization-regions": "./src/organization-regions.ts",
 		"./chat-session-stub": "./src/chat-session-stub.ts",
-		"./chat-transcript": "./src/chat-transcript.ts"
+		"./chat-transcript": "./src/chat-transcript.ts",
+		"./http/v2/dashboard-data": "./src/http/v2/dashboard-data.ts"
 	},
 	"scripts": {
 		"gen:anticipated-errors": "bun scripts/gen-anticipated-errors.ts",
