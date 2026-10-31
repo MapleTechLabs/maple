@@ -36,15 +36,36 @@ export const buildIsolateHandler = <ROut, E>(
 	>,
 ) => forIsolate(isolate)(HttpRouter.toHttpEffect(routes)).pipe(Effect.map(bridgeHandler))
 
-/** The route graph as one request handler, built once per isolate on the first request. */
+/** The `/mcp` graph as one request handler, built once per isolate on the first `/mcp` request. */
+export const buildMcpApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =>
+	Effect.gen(function* () {
+		const [{ McpRoutes }, { AiAuthLive }] = yield* Effect.all([
+			Effect.promise(() => import("../runtime/mcp-http-graph")),
+			Effect.promise(() => import("../runtime/auth-graph")),
+		])
+		return yield* buildIsolateHandler(
+			isolate,
+			McpRoutes.pipe(
+				// The tool executor's graph loads on the first `tools/*` request, not here.
+				Layer.provideMerge(McpToolExecutorLoader.layer),
+				Layer.provideMerge(AiAuthLive),
+				Layer.provideMerge(WorkerPlatformLive),
+				Layer.provideMerge(DatabasePgLive),
+				Layer.provide(ports),
+			),
+		)
+	})
+
+/** Every other route as one request handler, built once per isolate on the first such request. */
 export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =>
 	Effect.gen(function* () {
-		const { AllRoutes, AiAuthLive } = yield* Effect.promise(() => import("../runtime/http-graph"))
+		const [{ AllRoutes }, { AiAuthLive }] = yield* Effect.all([
+			Effect.promise(() => import("../runtime/http-graph")),
+			Effect.promise(() => import("../runtime/auth-graph")),
+		])
 		return yield* buildIsolateHandler(
 			isolate,
 			AllRoutes.pipe(
-				// The tool executor's graph loads on the first `tools/*` request, not here.
-				Layer.provideMerge(McpToolExecutorLoader.layer),
 				Layer.provideMerge(AiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
 				Layer.provideMerge(DatabasePgLive),
@@ -56,14 +77,19 @@ export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =
 /**
  * The request handler the bridge serves. Liveness answers before the route graph
  * exists: it needs neither the domain graph nor the database, and a cold isolate
- * can report health when an unrelated binding is unavailable.
+ * can report health when an unrelated binding is unavailable. `/mcp` runs on its
+ * own graph, so a cold `/mcp` request does not load the other routes.
  *
  * No CORS preflight branch here, unlike api's: the api owns the origin and
  * answers `OPTIONS` before it forwards, so a second set of headers from this
  * Worker would be a duplicate `access-control-allow-origin`, which browsers
  * reject outright.
  */
-export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: Layer.Layer<MapleDbConnection>) =>
+export const makeFetch = <E, EMcp = E>(
+	app: Effect.Effect<HttpEffect, E>,
+	ports: Layer.Layer<MapleDbConnection>,
+	mcpApp: Effect.Effect<HttpEffect, E | EMcp> = app,
+) =>
 	IsolateAge.useSync((isolateAge) =>
 		Effect.gen(function* () {
 			const request = yield* HttpServerRequest.HttpServerRequest
@@ -75,7 +101,7 @@ export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: Layer.Lay
 			// Before the graph builds, so its failures count too and cold and warm compare unconditioned.
 			// The stamp goes back to the caller, whose span is the only one that sees cold-start CPU.
 			const stamp = yield* isolateAge.record
-			const built = yield* Effect.exit(app)
+			const built = yield* Effect.exit(path === "/mcp" ? mcpApp : app)
 			if (Exit.isFailure(built)) {
 				yield* Effect.logError("AI worker route graph failed to build", built.cause).pipe(
 					Effect.annotateLogs({ method: request.method, path }),

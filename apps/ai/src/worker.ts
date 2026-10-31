@@ -36,7 +36,7 @@ import SecurityAuditWorkflow from "./security-audit/SecurityAuditWorkflow"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
 import { aiPorts, AiBindingsLive, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
-import { buildApp, makeFetch } from "./worker/http"
+import { buildApp, buildMcpApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
 
 /** Config-sourced env. The tools query the warehouse as the calling org, so this is largely api's set. */
@@ -115,7 +115,8 @@ export default MapleAi.make(
 		// Captured before any event, so the first request's context cannot leak into later ones.
 		const isolate = isolateContext(yield* Effect.context())
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
-		return { fetch: yield* makeFetch(app, ports) }
+		const mcpApp = yield* cachedRecoverable(buildMcpApp(isolate, ports))
+		return { fetch: yield* makeFetch(app, ports, mcpApp) }
 	}).pipe(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(

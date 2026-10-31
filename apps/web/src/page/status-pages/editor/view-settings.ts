@@ -264,7 +264,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 
 const dangerZone = (h: H): Html =>
 	settingsSection(h, { id: "status-page-settings-danger", title: "Danger zone", framed: false }, [
-		panel(h, { className: "border-destructive/40" }, [
+		panel(h, { className: "border-destructive-a4" }, [
 			h.div(
 				[h.Class("flex items-start justify-between gap-6 p-4")],
 				[
