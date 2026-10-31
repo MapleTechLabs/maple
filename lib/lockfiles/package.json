@@ -1,0 +1,26 @@
+{
+	"name": "@maple/lockfiles",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsrs --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"effect": "catalog:effect",
+		"smol-toml": "^1.9.1",
+		"yaml": "^2.9.1"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:tooling",
+		"@types/semver": "^7.7.1",
+		"fast-check": "^4.10.2",
+		"semver": "^7.8.1",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}
