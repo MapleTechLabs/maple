@@ -116,10 +116,6 @@ export const presetCards = <M>(
 	}>,
 ): Html =>
 	h.div(
-		[
-			h.Role("group"),
-			h.AriaLabel("Preset"),
-			h.Class("grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5"),
-		],
+		[h.Role("group"), h.AriaLabel("Preset"), h.Class("grid grid-cols-2 gap-2 sm:grid-cols-3")],
 		PRESETS.map((preset) => presetCard(h, preset, options)),
 	)

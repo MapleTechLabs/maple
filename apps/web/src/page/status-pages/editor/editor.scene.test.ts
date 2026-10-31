@@ -427,6 +427,11 @@ describe("the page as the editor", () => {
 		expect(settled.model.panel).toEqual(reopened.panel)
 	})
 
+	test("Add does not reopen while an earlier add is still saving", () => {
+		const saving = { ...loaded(), isAddingComponents: true }
+		expect(pageUpdate(saving, Message.ClickedAddComponent()).model.panel).toBeNull()
+	})
+
 	test("a failed add closes the panel, so a retry cannot add the components that did land twice", () => {
 		const adding = pageUpdate(loaded(), Message.ClickedAddComponent()).model
 		const failed = pageUpdate(

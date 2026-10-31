@@ -648,7 +648,8 @@ export const addPanel = (h: H, model: Model): Html => {
 			monitors: monitorsOf(model),
 			toMessage: (message) => Message.GotAddPickerMessage({ message }),
 			idPrefix: ADD_PICKER_ID,
-			isDisabled: model.isAddingComponents,
+			// Locked while a URL is being monitored: its completion submits what is ticked.
+			isDisabled: model.isAddingComponents || model.addPicker.isCreatingMonitor,
 			focusOnMount: h.OnMount(FocusNewRow()),
 			isOrderable: false,
 		}),

@@ -231,7 +231,7 @@ export const deletedComponent = (
 
 /** The monitors not on the page yet, none picked; a URL or a component by hand join them. */
 export const openAdd = (model: Model): Return => {
-	if (!model.isAdmin) return { model }
+	if (!model.isAdmin || model.isAddingComponents) return { model }
 	const used = new Set(
 		componentsOf(model).flatMap((component) =>
 			component.monitor_id === null ? [] : [component.monitor_id],

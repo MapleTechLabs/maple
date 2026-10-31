@@ -401,7 +401,7 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 							size: "sm",
 							variant: "ghost",
 							isDisabled: options.isDisabled,
-							className: "self-start",
+							className: "h-auto max-w-full self-start text-left whitespace-normal",
 							attributes: [
 								h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
 								// Keys typed before the new row mounts reach the button; they belong to the row.

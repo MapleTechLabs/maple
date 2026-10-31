@@ -287,6 +287,8 @@ const onThisPage = (h: H, model: Model): Html => {
 										size: "sm",
 										variant: "outline",
 										className: "mt-1.5",
+										// Reopened mid-save, Add would list the monitors being added again.
+										isLoading: model.isAddingComponents,
 										attributes: [h.OnClick(Message.ClickedAddComponent())],
 									},
 									[icon(h, "PlusIcon"), "Add monitor"],
