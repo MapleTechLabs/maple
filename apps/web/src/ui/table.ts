@@ -10,10 +10,14 @@ import {
 	tableRowLinkLiftStyles,
 	tableRowLinkStyles,
 	tableRowStyles,
+	tableSortButtonStyles,
+	tableSortIconStyles,
+	tableSortIdleIconStyles,
 	tableStyles,
 } from "@maple/ui/styles/ui/table"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { withHint } from "./eyebrow"
+import { icon } from "./icon"
 
 // Port of packages/ui/src/components/ui/table.tsx. Rows and cells repeat, so they set one class
 // attribute (S4) instead of `h.Class`.
@@ -146,4 +150,42 @@ export const rowLink = <M>(
 			...(options.attributes ?? []),
 		],
 		children,
+	)
+
+export type SortDirection = "asc" | "desc"
+
+/** `aria-sort` for a sortable head; only the active column carries it. */
+export const ariaSort = <M>(h: HtmlBuilder<M>, isActive: boolean, direction: SortDirection) =>
+	isActive ? [h.AriaSort(direction === "asc" ? "ascending" : "descending")] : []
+
+/** A sortable column label: the active column shows its direction, the others an arrow on hover. */
+export const sortButton = <M>(
+	h: HtmlBuilder<M>,
+	options: {
+		readonly isActive: boolean
+		readonly direction: SortDirection
+		readonly onClick: M
+		readonly align?: "left" | "right"
+		readonly className?: string
+		readonly attributes?: ReadonlyArray<Attribute<M>>
+	},
+	children: Children,
+): Html =>
+	h.button(
+		[
+			h.Type("button"),
+			h.Class(cn(tableSortButtonStyles, options.className)),
+			h.DataAttribute("align", options.align ?? "left"),
+			...(options.isActive ? [h.DataAttribute("active", "")] : []),
+			h.OnClick(options.onClick),
+			...(options.attributes ?? []),
+		],
+		[
+			...children,
+			options.isActive
+				? icon(h, "ArrowUpIcon", {
+						className: cn(tableSortIconStyles, options.direction === "desc" && "rotate-180"),
+					})
+				: icon(h, "ArrowUpDownIcon", { className: cn(tableSortIconStyles, tableSortIdleIconStyles) }),
+		],
 	)

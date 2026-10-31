@@ -12,9 +12,8 @@ import type { VariableValues } from "@maple/query-engine"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
-import { icon } from "../../../ui/icon"
 import { skeletonList } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
 import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
@@ -141,38 +140,17 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 
 // TILES
 
-const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html => {
-	const sort = ctx.tableSort
-	const isActive = sort.key === column.field
-	return h.button(
-		[
-			h.Type("button"),
-			h.OnClick(ctx.onSort(column.field, isText)),
-			h.Class(
-				cn(
-					"inline-flex items-center gap-1 transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground active:text-foreground",
-					cn(
-						"max-w-full",
-						column.align === "right" && "justify-end",
-						!isActive && "text-muted-foreground",
-					),
-				),
-			),
-		],
-		[
-			h.span([h.Class("truncate")], [column.header]),
-			icon(h, "ArrowUpDownIcon", {
-				size: 10,
-				className: cn(
-					"shrink-0 transition-opacity",
-					isActive ? "opacity-100" : "opacity-40",
-					isActive && sort.dir === "asc" && "rotate-180",
-				),
-			}),
-		],
+const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html =>
+	sortButton(
+		h,
+		{
+			isActive: ctx.tableSort.key === column.field,
+			direction: ctx.tableSort.dir,
+			onClick: ctx.onSort(column.field, isText),
+			align: column.align === "right" ? "right" : "left",
+		},
+		[h.span([h.Class("truncate")], [column.header])],
 	)
-}
 
 const cellStyle = <M>(h: HtmlBuilder<M>, column: Column, extra: Readonly<Record<string, string>> = {}) =>
 	h.Style(

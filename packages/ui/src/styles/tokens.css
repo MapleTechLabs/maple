@@ -418,6 +418,8 @@
 	--shadow-accent-start: inset 2px 0 0 var(--color-primary);
 	/* A sticky footer lifting over content scrolled under it. */
 	--shadow-overflow-up: 0 -6px 12px oklch(0 0 0 / 35%);
+	/* A sticky table header's bottom rule: a collapsed table's row border scrolls away under it. */
+	--shadow-rule-bottom: inset 0 -1px 0 var(--color-border);
 	/* A filled button's top-edge light at rest, and its pressed-in shade. */
 	--inset-shadow-highlight: 0 1px oklch(1 0 0 / 16%);
 	--inset-shadow-pressed: 0 1px oklch(0 0 0 / 8%);
