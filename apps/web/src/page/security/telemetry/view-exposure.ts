@@ -252,7 +252,10 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Categories",
-			action: h.span([h.Class("text-xs text-muted-foreground")], ["Answered counts 2xx responses"]),
+			action: h.span(
+				[h.Class("text-xs text-muted-foreground")],
+				["Answered counts 2xx responses, catch-all routes left out"],
+			),
 		}),
 		table(h, { ariaLabel: "Probe categories" }, [
 			tableHeader(h, [
@@ -312,7 +315,7 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 					tableHead(h, ["Tool"]),
 					tableHead(h, ["User agent"]),
 					tableHead(h, ["Requests"], "text-right"),
-					tableHead(h, ["Probes"], "text-right"),
+					tableHead(h, ["Distinct probes"], "text-right"),
 					tableHead(h, ["Last seen"]),
 				]),
 			]),

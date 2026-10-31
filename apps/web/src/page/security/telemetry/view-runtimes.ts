@@ -12,7 +12,14 @@ import { textLink } from "../../../ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { NARROW_TWO_COLUMNS } from "../kit/layout"
-import { type RuntimeEntry, runtimeEntries, runtimeLabelOf, runtimeTotals, sdkLabelOf } from "./derive"
+import {
+	isSeenThisHour,
+	type RuntimeEntry,
+	runtimeEntries,
+	runtimeLabelOf,
+	runtimeTotals,
+	sdkLabelOf,
+} from "./derive"
 import { Message, type Model } from "./model"
 import { telemetryLoading } from "./view-exposure"
 
@@ -144,14 +151,19 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 							tableCell(h, [statusCell(h, entry)]),
 							tableCell(h, [sdkLabelOf(entry.row)], "text-xs text-muted-foreground"),
 							tableCell(h, [
-								relativeTime(h, {
-									value: entry.row.lastSeen,
-									nowMs,
-									timeZone,
-									variant: "orDate",
-									tooltip: "title",
-									className: "whitespace-nowrap text-xs text-muted-foreground",
-								}),
+								isSeenThisHour(entry.row.lastSeen, nowMs)
+									? h.span(
+											[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
+											["This hour"],
+										)
+									: relativeTime(h, {
+											value: entry.row.lastSeen,
+											nowMs,
+											timeZone,
+											variant: "orDate",
+											tooltip: "title",
+											className: "whitespace-nowrap text-xs text-muted-foreground",
+										}),
 							]),
 						],
 						undefined,

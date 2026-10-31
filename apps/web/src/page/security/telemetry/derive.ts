@@ -134,26 +134,29 @@ const rowOf = (
 	label: string,
 	category: ProbeCategoryInfo | null,
 	rows: ReadonlyArray<SignatureRow>,
+	catchAll: ReadonlySet<string>,
 ): CategoryRow => ({
 	key,
 	label,
 	category,
 	requests: sum(rows.map((row) => row.requests)),
-	answered: sum(rows.map((row) => row.answered)),
+	// Like the callout, a catch-all route's answers are not counted as served.
+	answered: sum(rows.filter((row) => !catchAll.has(row.service)).map((row) => row.answered)),
 	services: distinct(rows.map((row) => row.service)),
 	topSignatures: category === null ? [] : topSignaturesOf(rows, 3),
 })
 
 /** One row per category with traffic, in catalog order, then named scanners on ordinary paths. */
 export const categoryRows = (exposure: Exposure): ReadonlyArray<CategoryRow> => {
+	const catchAll = new Set(catchAllServices(exposure).map((entry) => entry.service))
 	const byCategory = PROBE_CATEGORIES.flatMap((category) => {
 		const rows = exposure.signatures.filter((row) => probeCategoryOf(row.signature) === category.id)
-		return rows.length === 0 ? [] : [rowOf(category.id, category.label, category, rows)]
+		return rows.length === 0 ? [] : [rowOf(category.id, category.label, category, rows, catchAll)]
 	})
 	const scanners = exposure.signatures.filter((row) => row.signature === "")
 	return scanners.length === 0
 		? byCategory
-		: [...byCategory, rowOf("scanners", "Named scanners on ordinary paths", null, scanners)]
+		: [...byCategory, rowOf("scanners", "Named scanners on ordinary paths", null, scanners, catchAll)]
 }
 
 export const categoryLabelOf = (signature: string): string => {
@@ -240,6 +243,12 @@ export const runtimeTotals = (entries: ReadonlyArray<RuntimeEntry>): RuntimeTota
 }
 
 /** The product's name when Maple tracks it (Bun or Deno for an emulated Node.js), else the raw name. */
+const HOUR_MS = 3_600_000
+
+/** The rollup is hourly, so a combination seen in the current hour cannot be dated closer. */
+export const isSeenThisHour = (lastSeen: string, nowMs: number): boolean =>
+	toEpochMs(lastSeen) >= Math.floor(nowMs / HOUR_MS) * HOUR_MS
+
 export const runtimeLabelOf = (entry: RuntimeEntry): string => {
 	if ("product" in entry.posture) return RUNTIME_PRODUCTS[entry.posture.product].label
 	const product = runtimeProductOf(entry.row.runtimeName, entry.row.sdkLanguage)

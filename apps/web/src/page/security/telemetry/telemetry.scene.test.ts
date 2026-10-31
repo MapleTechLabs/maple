@@ -105,6 +105,8 @@ describe("security telemetry tabs", () => {
 			expectView(text("2 probe paths answered with a success")).toExist(),
 			expectView(text("Likely catch-all routes")).toExist(),
 			expectView(text("4 of 4 sensitive probe paths answered")).toExist(),
+			// The catch-all app's 30 answered /.env probes stay out of the category count (120, not 150).
+			expectView(text("150")).toBeAbsent(),
 		)
 	})
 
