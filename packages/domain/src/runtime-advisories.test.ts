@@ -79,11 +79,12 @@ describe("fixedVersionFor", () => {
 })
 
 describe("severityOf", () => {
-	it("reads OSV's severity labels and calls anything else unknown", () => {
+	it("reads OSV's severity labels, GitHub's MODERATE as medium, and anything else as unknown", () => {
 		expect(severityOf("Critical")).toBe("critical")
 		expect(severityOf("High")).toBe("high")
 		expect(severityOf("Unknown")).toBe("unknown")
-		expect(severityOf("moderate")).toBe("unknown")
+		expect(severityOf("MODERATE")).toBe("medium")
+		expect(severityOf("severe")).toBe("unknown")
 		expect(severityOf(undefined)).toBe("unknown")
 	})
 })

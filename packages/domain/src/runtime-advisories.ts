@@ -52,8 +52,13 @@ export function advisoryTargetOf(input: Parameters<typeof runtimePosture>[0]): A
 
 export function severityOf(raw: string | undefined): AdvisorySeverity {
 	const severity = (raw ?? "").trim().toLowerCase()
+	// GitHub's advisory database says MODERATE for medium.
+	if (severity === "moderate") return "medium"
 	return ADVISORY_SEVERITIES.find((known) => known === severity) ?? "unknown"
 }
+
+/** Orders two versions: negative, zero or positive. Ecosystems with their own rules pass theirs. */
+export type VersionComparator = (a: string, b: string) => number
 
 export interface OsvRangeEvent {
 	readonly introduced?: string
@@ -64,13 +69,16 @@ export interface OsvRangeEvent {
  * The fix for `version` in OSV range events, which pair an `introduced` with the `fixed` after it:
  * the `fixed` of the pair whose span holds the version.
  */
-export function fixedVersionFor(events: ReadonlyArray<OsvRangeEvent>, version: string): string | null {
+export function fixedVersionFor(
+	events: ReadonlyArray<OsvRangeEvent>,
+	version: string,
+	compare: VersionComparator = compareVersions,
+): string | null {
 	const spans = events.reduce<{ introduced: string | null; fixes: ReadonlyArray<string> }>(
 		(state, event) => {
 			if (event.introduced !== undefined) return { ...state, introduced: event.introduced }
 			if (event.fixed === undefined || state.introduced === null) return state
-			const holds =
-				compareVersions(version, state.introduced) >= 0 && compareVersions(version, event.fixed) < 0
+			const holds = compare(version, state.introduced) >= 0 && compare(version, event.fixed) < 0
 			return { introduced: null, fixes: holds ? [...state.fixes, event.fixed] : state.fixes }
 		},
 		{ introduced: null, fixes: [] },
@@ -95,10 +103,13 @@ export const sortAdvisories = (advisories: ReadonlyArray<RuntimeAdvisory>): Read
 export const isUrgentSeverity = (severity: AdvisorySeverity): boolean =>
 	severity === "critical" || severity === "high"
 
-/** The lowest of dotted versions, null for none. */
-export const lowestVersion = (versions: ReadonlyArray<string>): string | null =>
+/** The lowest of the versions, null for none. */
+export const lowestVersion = (
+	versions: ReadonlyArray<string>,
+	compare: VersionComparator = compareVersions,
+): string | null =>
 	versions.reduce<string | null>(
-		(lowest, version) => (lowest === null || compareVersions(version, lowest) < 0 ? version : lowest),
+		(lowest, version) => (lowest === null || compare(version, lowest) < 0 ? version : lowest),
 		null,
 	)
 

@@ -34,6 +34,7 @@
 		"@maple/chat-platform": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/lockfiles": "workspace:*",
 		"@maple/email": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
 		"@maple/infra": "workspace:*",
