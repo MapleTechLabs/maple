@@ -34,7 +34,7 @@ const retryDelaySeconds = (attempts: number) => 60 * 2 ** (attempts - 1)
 const decodeJob = Schema.decodeUnknownEffect(CancellationReviewJob)
 
 /** What became of a message, on its span, so a dropped review can be found by it. */
-const settle = (outcome: "reviewed" | "retried" | "interrupted" | "dropped") =>
+const settle = (outcome: "reviewed" | "retried" | "interrupted" | "dropped" | "malformed") =>
 	Effect.annotateCurrentSpan({ "maple.cancellation.queue_outcome": outcome })
 
 /**
@@ -54,6 +54,7 @@ export const processCancellationReviewBatch = (batch: QueueBatch) =>
 						onFailure: (error) =>
 							Effect.logError("Discarding malformed cancellation review queue message").pipe(
 								Effect.annotateLogs({ attempt: message.attempts, error: String(error) }),
+								Effect.andThen(settle("malformed")),
 								Effect.andThen(Effect.sync(() => message.ack())),
 							),
 						onSuccess: (job) =>
