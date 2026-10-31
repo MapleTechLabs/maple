@@ -42,7 +42,7 @@ its own bot, with its own redirect URI.
    message (`POST /api/v1/channels/{id}/threads`) and edits one message in it as the answer streams.
    A follow-up inside that thread needs no mention.
 3. **Send it alerts.** A Hazel channel is an alert destination like any other chat channel. The
-   picker lists what `GET /api/v1/organizations/{id}/channels` answers: every public channel and the
+   picker lists what `GET /api/v1/organizations/{id}/bot-channels` answers: every public channel and the
    private ones the bot was added to. Delivery posts as the bot.
 4. **Decide what it proposes.** A write the agent wants to make is an embed with two buttons. A
    press reaches the bot as an `interaction.create` gateway event, and the card is then edited with

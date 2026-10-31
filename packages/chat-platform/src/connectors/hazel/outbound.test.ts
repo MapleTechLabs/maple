@@ -315,7 +315,7 @@ describe("hazel transport", () => {
 				{ id: CHANNEL, name: "incidents", private: true },
 				{ id: THREAD, name: "general", private: false },
 			])
-			expect(http.seen[0]?.url).toBe(`https://api.hazel.sh/api/v1/organizations/${ORG}/channels`)
+			expect(http.seen[0]?.url).toBe(`https://api.hazel.sh/api/v1/organizations/${ORG}/bot-channels`)
 			expect(http.seen[0]?.headers.authorization).toBe("Bearer hzl_bot_token")
 		}).pipe(Effect.provide(http.layer))
 	})

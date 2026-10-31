@@ -11,7 +11,7 @@
  * is `PATCH /messages/{id}` naming its channel, history is `GET /messages?channel_id=` newest first
  * with Stripe-style cursors, a thread is `POST /channels/{id}/threads` (idempotent: a message's
  * thread is answered again), the people behind ids are `GET /organizations/{id}/users?ids=`, and
- * the channels the bot can post in are `GET /organizations/{id}/channels`.
+ * the channels the bot can post in are `GET /organizations/{id}/bot-channels`.
  * A thread IS a channel, so once a turn answers in one every call addresses the thread's id.
  */
 import { ChatConversationKey } from "@maple/primitives"
@@ -365,9 +365,9 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			destinations: Effect.fn("Hazel.destinations")(function* (workspaceId: string) {
 				const response = yield* send(
 					"destinations",
-					"/organizations/{organization_id}/channels",
+					"/organizations/{organization_id}/bot-channels",
 					HttpClientRequest.get(
-						`${API_BASE}/organizations/${encodeURIComponent(workspaceId)}/channels`,
+						`${API_BASE}/organizations/${encodeURIComponent(workspaceId)}/bot-channels`,
 					),
 				)
 				const page = yield* read("destinations", response, Channels, "no list of channels")
