@@ -579,12 +579,6 @@ export type HttpMethod = Schema.Schema.Type<typeof HttpMethod>
 export const ExternalUserId = MapleId("@maple/ExternalUserId", "External User ID")
 export type ExternalUserId = Schema.Schema.Type<typeof ExternalUserId>
 
-export const HazelOrganizationId = MapleId("@maple/HazelOrganizationId", "Hazel Organization ID")
-export type HazelOrganizationId = Schema.Schema.Type<typeof HazelOrganizationId>
-
-export const HazelChannelId = MapleId("@maple/HazelChannelId", "Hazel Channel ID")
-export type HazelChannelId = Schema.Schema.Type<typeof HazelChannelId>
-
 export const WidgetId = MapleId("@maple/WidgetId", "Widget ID")
 export type WidgetId = Schema.Schema.Type<typeof WidgetId>
 

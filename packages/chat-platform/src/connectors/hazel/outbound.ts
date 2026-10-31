@@ -10,7 +10,8 @@
  * The API (`@hazel/domain/http` `api-v1-messages`, `api-v1-bots`): create is `POST /messages`, edit
  * is `PATCH /messages/{id}` naming its channel, history is `GET /messages?channel_id=` newest first
  * with Stripe-style cursors, a thread is `POST /channels/{id}/threads` (idempotent: a message's
- * thread is answered again), and the people behind ids are `GET /organizations/{id}/users?ids=`.
+ * thread is answered again), the people behind ids are `GET /organizations/{id}/users?ids=`, and
+ * the channels the bot can post in are `GET /organizations/{id}/channels`.
  * A thread IS a channel, so once a turn answers in one every call addresses the thread's id.
  */
 import { ChatConversationKey } from "@maple/primitives"
@@ -82,6 +83,11 @@ const Users = Schema.Struct({
 	data: Schema.Array(
 		Schema.Struct({ id: Schema.String, displayName: Schema.String, isBot: Schema.Boolean }),
 	),
+})
+
+/** The public channels, and the private ones the bot was added to, already sorted by name. */
+const Channels = Schema.Struct({
+	data: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, private: Schema.Boolean })),
 })
 
 /** Who an id is, as far as the model's context names them. */
@@ -353,10 +359,20 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			}),
 
 			/**
-			 * None: alerts reach Hazel through Maple's Hazel webhook integration, which provisions a
-			 * channel webhook per destination. The bot API lists no channels for a bot to pick from.
+			 * What Hazel says the bot may post in: every public channel of the workspace and the
+			 * private ones it was added to. Threads and direct messages are never listed.
 			 */
-			destinations: () => Effect.succeed([]),
+			destinations: Effect.fn("Hazel.destinations")(function* (workspaceId: string) {
+				const response = yield* send(
+					"destinations",
+					"/organizations/{organization_id}/channels",
+					HttpClientRequest.get(
+						`${API_BASE}/organizations/${encodeURIComponent(workspaceId)}/channels`,
+					),
+				)
+				const page = yield* read("destinations", response, Channels, "no list of channels")
+				return page.data
+			}),
 
 			/**
 			 * A mention is answered in a thread on it, so a channel keeps reading as a channel. On

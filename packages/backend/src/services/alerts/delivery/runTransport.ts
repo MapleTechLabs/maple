@@ -120,7 +120,7 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 		"http.request.method": "POST",
 		...(Option.isSome(parsed) ? { "server.address": parsed.value.host } : undefined),
 		// Never `url.full`, and `url.path` only when the path carries no secret:
-		// Discord and Hazel webhook URLs embed their delivery token in the path.
+		// Discord webhook URLs embed their delivery token in the path.
 		...(Option.isSome(parsed) && !spec.sensitivePath ? { "url.path": parsed.value.pathname } : undefined),
 	})
 
@@ -139,7 +139,7 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 	// cancelled when `runHttpTransport`'s scope closes.
 	const scoped = HttpClient.withScope(client)
 	const response = yield* (spec.guarded ? guard(scoped) : scoped).execute(request).pipe(
-		// The client's own span records `url.full`, and Discord, Hazel and
+		// The client's own span records `url.full`, and Discord and
 		// Telegram carry their delivery token in the URL path. This span is the
 		// client span.
 		Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),

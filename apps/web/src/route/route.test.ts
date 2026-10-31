@@ -64,6 +64,13 @@ describe("routes", () => {
 		)
 	})
 
+	test("the old Hazel integration link opens the Hazel chat connector", () => {
+		expect(routeRedirect(parse("/integrations?integration=hazel"))).toEqual(
+			Option.some({ url: "/integrations?integration=chat-hazel", isReplace: true }),
+		)
+		expect(routeRedirect(parse("/integrations?integration=chat-hazel"))).toEqual(Option.none())
+	})
+
 	test("an org outside the statusPages rollout is sent home from every status page route", () => {
 		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
 			expect(flaggedRouteRedirect(parse(path), { statusPages: false })).toEqual(

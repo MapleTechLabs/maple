@@ -17,7 +17,6 @@ import { ConnectProvider } from "./connect"
 /** The provider a popup reports to (`ReceivedConnectMessage`); the chat flows report via search. */
 const PROVIDER_OF = {
 	cloudflare: "cloudflare",
-	hazel: "hazel",
 	linear: "linear",
 	github: "github",
 	planetscale: "planetscale",
