@@ -305,6 +305,47 @@ describe("service detail view", () => {
 		)
 	})
 
+	test("the Dependencies tab shows a skeleton, not an empty table, until its read answers", () => {
+		const model = entered({ tab: "dependencies" })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+		)
+		const empty = pageUpdate(
+			model,
+			Message.CompletedFetchDependencies({
+				key: model.dependencies.key ?? "",
+				result: Result.succeed({ serviceEdges: [], dbEdges: [], externalEdges: [] }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			themeResolved(),
+			expectView(text("No downstream dependencies in this window.")).toExist(),
+		)
+	})
+
+	test("a failed dependencies read shows its error instead of an empty table", () => {
+		const model = entered({ tab: "dependencies" })
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchDependencies({
+				key: model.dependencies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(text("Couldn't load dependencies")).toExist(),
+			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+		)
+	})
+
 	test("more than eight deploys list eight until Show all", () => {
 		const model = entered()
 		const releases = Array.from({ length: 10 }, (_, index) =>
