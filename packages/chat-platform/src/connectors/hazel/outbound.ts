@@ -14,7 +14,7 @@
  * A thread IS a channel, so once a turn answers in one every call addresses the thread's id.
  */
 import { ChatConversationKey } from "@maple/primitives"
-import { Array as Arr, Duration, Effect, Option, Redacted, Schema } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
@@ -425,9 +425,22 @@ const retryAfter = (response: HttpClientResponse.HttpClientResponse) =>
 	response.json.pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(RateLimited)),
 		Effect.map((limited) => Duration.millis(limited.retryAfterMs)),
-		Effect.orElseSucceed(() => {
-			const seconds = Number(response.headers["retry-after"])
-			return Number.isFinite(seconds) && seconds >= 0 ? Duration.seconds(seconds) : DEFAULT_RETRY_AFTER
-		}),
+		Effect.catch(() =>
+			Effect.map(Clock.currentTimeMillis, (now) =>
+				headerRetryAfter(response.headers["retry-after"], now),
+			),
+		),
 		Effect.map(Duration.min(MAX_RETRY_AFTER)),
 	)
+
+/**
+ * A `retry-after` header: delay-seconds or an HTTP-date. Absent, blank, unparseable or already past
+ * is the default rather than zero, which would retry at once into the same limit.
+ */
+export const headerRetryAfter = (value: string | undefined, now: number): Duration.Duration => {
+	const trimmed = value?.trim() ?? ""
+	if (trimmed === "") return DEFAULT_RETRY_AFTER
+	if (/^\d+$/u.test(trimmed)) return Duration.seconds(Number(trimmed))
+	const at = Date.parse(trimmed)
+	return Number.isNaN(at) || at <= now ? DEFAULT_RETRY_AFTER : Duration.millis(at - now)
+}

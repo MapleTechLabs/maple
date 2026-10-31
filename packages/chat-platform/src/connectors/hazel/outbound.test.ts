@@ -3,14 +3,14 @@
  * out, and the conversation a mention opens.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer } from "effect"
+import { Duration, Effect, Fiber, Layer } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
 import type { InboundAction, InboundMessage } from "../../ingress"
 import { ConnectorCredentials } from "../../outbound"
 import { BOT_TOKEN_CONFIG } from "./api"
 import { HAZEL_CONNECTOR_ID } from "./id"
-import { hazelOutbound } from "./outbound"
+import { hazelOutbound, headerRetryAfter } from "./outbound"
 
 interface Reply {
 	readonly status: number
@@ -74,6 +74,17 @@ const mention: InboundMessage = {
 	text: "why is checkout slow",
 	mentionsBot: true,
 }
+
+describe("retry-after header", () => {
+	const now = Date.parse("2026-10-31T10:00:00.000Z")
+	it("reads seconds and HTTP-dates, and never reads blank or past as zero", () => {
+		expect(Duration.toMillis(headerRetryAfter("3", now))).toBe(3000)
+		expect(Duration.toMillis(headerRetryAfter("Sat, 31 Oct 2026 10:00:05 GMT", now))).toBe(5000)
+		for (const value of [undefined, "", "  ", "soon", "Sat, 31 Oct 2026 09:00:00 GMT"]) {
+			expect(Duration.toMillis(headerRetryAfter(value, now))).toBe(1000)
+		}
+	})
+})
 
 describe("hazel transport", () => {
 	it.effect("posts as the bot, and edits the message in its channel", () => {
