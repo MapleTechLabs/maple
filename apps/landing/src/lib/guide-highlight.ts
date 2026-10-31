@@ -19,7 +19,8 @@ export type GuideLang =
     | "shell"
     | "python-logging"
     | "loguru-output"
-    | "otel-debug";
+    | "otel-debug"
+    | "sql";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -92,7 +93,8 @@ const yaml = (code: string) =>
         [/#.*/y, (m) => span("comment", m[0])],
         [/(?<=^|\n)(\s*-?\s*)([\w./-]+)(:)/y, (m) => escape(m[1]) + span("name", m[2]) + escape(m[3])],
         [/"[^"\n]*"/y, (m) => span("labels", m[0])],
-        [/\b\d+[a-z]*\b/y, (m) => span("value", m[0])],
+        [/(?<![\w.-])\d+[a-z]*\b/y, (m) => span("value", m[0])],
+        [/[\w.-]+/y, (m) => escape(m[0])],
     ]);
 
 const python = (code: string) =>
@@ -181,6 +183,20 @@ const pythonLogging = (code: string) =>
         [/[a-zA-Z_]\w*/y, (m) => escape(m[0])],
     ]);
 
+// ClickHouse SQL: comments, strings, $__ macros, function calls, column names.
+// Keywords stay plain so the columns and functions stand out.
+const sql = (code: string) =>
+    tokenize(code, [
+        [/--.*/y, (m) => span("comment", m[0])],
+        [/'[^'\n]*'/y, (m) => span("labels", m[0])],
+        [/\$__\w+/y, (m) => span("value", m[0])],
+        [/\b(?:SELECT|FROM|WHERE|AND|OR|NOT|IN|AS|GROUP|BY|ORDER|LIMIT|WITH)\b/y, (m) => escape(m[0])],
+        [/[a-zA-Z_]\w*(?=\()/y, (m) => span("fn", m[0])],
+        [/\b[A-Z][A-Za-z]+\b/y, (m) => span("name", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/[a-zA-Z_]\w*/y, (m) => escape(m[0])],
+    ]);
+
 // Loguru's default console line: time | LEVEL | location - message. Each level
 // gets its own class (tok-level-info, tok-level-error...); traceback lines pass through.
 const loguruOutput = (code: string) =>
@@ -252,4 +268,5 @@ export const highlight = (code: string, lang: GuideLang) =>
         "python-logging": pythonLogging,
         "loguru-output": loguruOutput,
         "otel-debug": otelDebug,
+        sql,
     })[lang](code);
