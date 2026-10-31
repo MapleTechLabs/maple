@@ -4356,13 +4356,13 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:security-telemetry:scannerSourcesQuery:default  [f31d4a9d]
+-- builder:security-telemetry:scannerSourcesQuery:default  [5b760c49]
 SELECT
           scanner_requests.ClientAddress AS clientAddress,
           uniq(scanner_requests.TraceId) AS requests,
           uniqIf(scanner_requests.Signature, scanner_requests.Signature != '') AS signatures,
           max(scanner_requests.Scanner) AS scanner,
-          any(scanner_requests.UserAgent) AS userAgent,
+          if(max(scanner_requests.Scanner) != '', anyIf(scanner_requests.UserAgent, scanner_requests.Scanner != ''), any(scanner_requests.UserAgent)) AS userAgent,
           max(scanner_requests.Timestamp) AS lastSeen
         FROM scanner_requests
         WHERE scanner_requests.OrgId = 'org_sql_catalog'
@@ -4370,7 +4370,7 @@ SELECT
           AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
           AND scanner_requests.ClientAddress != ''
         GROUP BY clientAddress
-        ORDER BY requests DESC
+        ORDER BY requests DESC, clientAddress ASC
         LIMIT 20
         FORMAT JSON
 
