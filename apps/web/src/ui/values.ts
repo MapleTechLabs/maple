@@ -20,8 +20,8 @@ export const NIL_VALUE = "text-foreground-subtle"
 export const emptyValue = <M>(h: HtmlBuilder<M>, className?: string): Html =>
 	h.span([h.Class(cn(NIL_VALUE, className))], [EMPTY_VALUE])
 
-/** A unit straight after a digit: the `ms` of `29ms`, the ` KB` of `9.2 KB`, the `h` and `m` of `1h 5m`. */
-const UNIT_AFTER_DIGIT = /(?<=\d)(\s?[a-zA-Zµ%]+)/
+/** A unit straight after a digit (any letter, so the Greek mu of `397μs` too): the `ms` of `29ms`, the ` KB` of `9.2 KB`, the `h` and `m` of `1h 5m`. */
+const UNIT_AFTER_DIGIT = /(?<=\d)(\s?[\p{L}%]+)/u
 
 /** A formatted value whose units sit a grey step under the number, so a column scans by magnitude.
  *  `unitClassName` names that step; toned values pass `null` to keep the unit in the tone. */

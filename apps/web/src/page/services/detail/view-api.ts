@@ -1,3 +1,4 @@
+import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import {
 	type EndpointGroup,
 	type EndpointSort,
@@ -345,7 +346,7 @@ const groupHeaderRow = (
 		http5xxCount: sum((endpoint) => endpoint.http5xxCount),
 	})
 	const cell = (text: string, width: string, tone?: string) =>
-		tableCell(h, [text === "—" ? emptyValue(h) : text], cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width))
+		tableCell(h, [text === EMPTY_VALUE ? emptyValue(h) : text], cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width))
 	return tableRow(
 		h,
 		[
@@ -381,23 +382,23 @@ const groupHeaderRow = (
 				"max-w-0 py-0 pl-4 align-middle",
 			),
 			cell(formatRate(callsPerSecond(group.totals.estimatedSpanCount, options.seconds)), COLUMN.rate),
-			cell(mix === null ? "—" : formatErrorRate(mix.client), COLUMN.mix),
+			cell(mix === null ? EMPTY_VALUE : formatErrorRate(mix.client), COLUMN.mix),
 			cell(
 				formatErrorRate(mix === null ? group.totals.errorRate : mix.server),
 				COLUMN.err,
 				(mix === null ? group.totals.errorRate : mix.server) > 0 ? TONE_TEXT.crit : undefined,
 			),
-			cell("—", COLUMN.p50),
+			cell(EMPTY_VALUE, COLUMN.p50),
 			cell(formatLatencyText(group.totals.p95DurationMs), COLUMN.p95),
 			cell(formatLatencyText(group.totals.p99DurationMs), COLUMN.p99),
-			cell("—", COLUMN.body),
+			cell(EMPTY_VALUE, COLUMN.body),
 			tableCell(h, [], COLUMN.chevron),
 		],
 		"h-10 border-b bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
 	)
 }
 
-const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : "—")
+const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : EMPTY_VALUE)
 
 /** Whether a sibling in the group serves the same route, so only the method tells them apart. */
 const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
