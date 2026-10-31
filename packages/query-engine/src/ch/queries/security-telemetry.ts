@@ -117,12 +117,17 @@ export function scannerSourcesQuery(opts: ScannerSourcesOpts = {}): CHQuery<any,
 			requests: CH.uniq($.TraceId),
 			signatures: CH.uniqIf($.Signature, $.Signature.neq("")),
 			scanner: CH.max_($.Scanner),
-			userAgent: CH.any_($.UserAgent),
+			// The named tool's own user agent when there is one, so the pair shown belongs together.
+			userAgent: CH.if_(
+				CH.max_($.Scanner).neq(""),
+				CH.anyIf($.UserAgent, $.Scanner.neq("")),
+				CH.any_($.UserAgent),
+			),
 			lastSeen: CH.max_($.Timestamp),
 		}))
 		.where(($) => [...scannerWhere($), $.ClientAddress.neq("")])
 		.groupBy("clientAddress")
-		.orderBy(["requests", "desc"])
+		.orderBy(["requests", "desc"], ["clientAddress", "asc"])
 		.limit(opts.limit ?? 20)
 		.format("JSON")
 }
