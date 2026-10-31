@@ -20,15 +20,20 @@ export const mentionOf = (userId: string): string => `@[userId:${userId}]`
  * beside each mention go: line breaks and indentation stay, so a pasted log or code block reaches
  * the model as it was written.
  */
-const stripMention = (text: string, botUserId: string): string =>
-	text
-		.split(mentionOf(botUserId))
-		.map((part, index, parts) => {
-			const start = index === 0 ? part : part.replace(/^[ \t]+/u, "")
-			return index === parts.length - 1 ? start : start.replace(/[ \t]+$/u, "")
-		})
-		.join(" ")
-		.trim()
+const stripMention = (text: string, botUserId: string): string => {
+	const parts = text.split(mentionOf(botUserId)).map((part, index, all) => {
+		const start = index === 0 ? part : part.replace(/^[ \t]+/u, "")
+		return index === all.length - 1 ? start : start.replace(/[ \t]+$/u, "")
+	})
+	// A space only where the mention sat between words, never at a line's edge.
+	let joined = ""
+	for (const part of parts) {
+		if (joined !== "" && part !== "" && !joined.endsWith("\n") && !part.startsWith("\n")) joined += " "
+		joined += part
+	}
+	// A mention alone on its line leaves a blank one; the next line keeps its indentation.
+	return joined.replace(/^(?:[ \t]*\r?\n)+/u, "").trimEnd()
+}
 
 /** The workspace out of `org:<orgId>:channel:<channelId>`. */
 const organizationOf = (partitionKey: string): string | undefined => {

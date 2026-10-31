@@ -145,6 +145,18 @@ describe("dispatch", () => {
 		expect(step.events?.[0]).toMatchObject({ text: "what does this mean?\n\n    Error: pool exhausted" })
 	})
 
+	it("keeps the first line's indentation when the mention sits alone above it", () => {
+		const texts = [
+			`@[userId:${BOT_USER}]\n    Error: pool exhausted`,
+			`is @[userId:${BOT_USER}] around?`,
+			`  @[userId:${BOT_USER}] hi`,
+		].map((content) => {
+			const step = gatewayProtocol.onFrame(ready(), dispatch([messageCreate(content)]), NOW, config)
+			return step.events?.[0]?.type === "message" ? step.events[0].text : undefined
+		})
+		expect(texts).toEqual(["    Error: pool exhausted", "is around?", "hi"])
+	})
+
 	it("reports an unaddressed message too, and drops its own, other bots' and empty ones", () => {
 		const step = gatewayProtocol.onFrame(
 			ready(),
