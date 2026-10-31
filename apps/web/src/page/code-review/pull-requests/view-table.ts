@@ -10,6 +10,7 @@ import { badge } from "../../../ui/display"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { emptyValue } from "../../../ui/values"
 import { authorLabel } from "../kit/author"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
@@ -30,7 +31,7 @@ const OUTCOME_ICONS = {
 
 const scoreCell = (h: H, value: number | null, out: string): ReadonlyArray<Html | string> =>
 	value === null
-		? [h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])]
+		? [emptyValue(h)]
 		: [String(value), h.span([h.Class("text-muted-foreground")], [out])]
 
 export type RowContext = Readonly<{ selected: string | undefined; nowMs: number; timeZone: string }>

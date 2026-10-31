@@ -9,7 +9,9 @@ import { AppRoute, hrefOf } from "../../../route"
 import { icon, type IconName } from "../../../ui/icon"
 import { loadingMoreRow } from "../../../ui/list-footer"
 import { ariaSort, rowLink, sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { middleTruncate } from "../../../ui/middle-truncate"
 import { tableSkeleton } from "../../../ui/table-skeleton"
+import { emptyValue, measure, NIL_VALUE } from "../../../ui/values"
 import { servicePills } from "../../../ui/trace-badges"
 import type { DetectedModel } from "../kit/detected-models"
 import { modelLabel } from "../kit/model-label"
@@ -117,6 +119,8 @@ const COLUMNS: ReadonlyArray<Column> = [
 export const listSkeleton = (h: H): Html =>
 	tableSkeleton(h, {
 		rows: 10,
+		// Loaded rows carry a name and an id line (55px); matching them keeps the list from jumping.
+		rowClassName: "h-14",
 		tableClassName: "w-full table-fixed",
 		columns: COLUMNS.map((column) => ({
 			header: column.header,
@@ -248,11 +252,12 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 			h.div(
 				[h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"), ...triggerAttributes(h)],
 				[
+					// The id only tells sessions apart: it reads under the name and keeps both of its ends.
 					h.span(
-						[h.Class("shrink-0 text-foreground-subtle")],
+						[h.Class("shrink-0 text-foreground-faint")],
 						[id.kind === "trace" ? "Trace" : "Session"],
 					),
-					h.span([h.Class("min-w-0 truncate font-mono text-muted-foreground")], [id.short]),
+					middleTruncate(h, { text: id.short, tail: 6, mono: true, className: "text-foreground-subtle" }),
 					...inlineModel(h, row, context),
 				],
 			),
@@ -300,7 +305,7 @@ const modelCell = (h: H, row: DisplayRow, context: RowContext): Html | null => {
 const workCount = (h: H, iconName: IconName, tone: string, count: number): Html =>
 	hint(
 		h,
-		cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : "text-muted-foreground"),
+		cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : NIL_VALUE),
 		[
 			icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
 			formatNumber(count),
@@ -333,7 +338,7 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	// One line, in then out; the exact counts ride on the title.
 	const side = (part: typeof input) =>
 		h.span(
-			[h.Class(part.count > 0 ? part.tone : "text-foreground-faint")],
+			[h.Class(part.count > 0 ? part.tone : NIL_VALUE)],
 			[part.count > 0 ? formatNumber(part.count) : EMPTY_VALUE],
 		)
 	return h.span(
@@ -359,7 +364,7 @@ const errorChip = (
 const errorChips = (h: H, row: DisplayRow): Html => {
 	// A measured zero reads "0"; the dash is kept for a value that does not apply.
 	if (row.errorSpanCount === 0)
-		return h.span([h.Class("font-mono text-xs tabular-nums text-foreground-faint")], ["0"])
+		return h.span([h.Class(cn("font-mono text-xs tabular-nums", NIL_VALUE))], ["0"])
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
 	return h.div(
@@ -414,13 +419,13 @@ const servicesCell = (h: H, services: ReadonlyArray<string>): Html | null => {
 }
 
 /** A cell with nothing to report reads as a muted dash, never blank. */
-const emptyCell = (h: H): Html => h.span([h.Class("text-xs text-foreground-faint")], [EMPTY_VALUE])
+const emptyCell = (h: H): Html => emptyValue(h, "text-xs")
 
 const cellsOf = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html | null> => [
 	sessionCell(h, row, context),
 	servicesCell(h, row.serviceNames),
 	modelCell(h, row, context),
-	hint(h, "font-mono text-xs tabular-nums", [formatSessionDuration(row.durationMs)]),
+	hint(h, "font-mono text-xs tabular-nums", measure(h, formatSessionDuration(row.durationMs))),
 	workCount(h, "PixelSparkleIcon", "text-chart-ai-inference", row.llmCalls),
 	workCount(h, "GearIcon", "text-chart-ai-tool", row.toolCalls),
 	tokenBar(h, row),
