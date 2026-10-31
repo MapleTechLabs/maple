@@ -27,6 +27,7 @@ const toc = [
     { depth: 2, slug: "collector", text: "A Collector at every edge site" },
     { depth: 3, slug: "pipeline", text: "The pipeline, stage by stage" },
     { depth: 3, slug: "gateways", text: "Regional gateways" },
+    { depth: 3, slug: "tools", text: "Edge observability tools" },
     { depth: 2, slug: "config", text: "The edge Collector config" },
     { depth: 3, slug: "buffering", text: "Buffer while offline" },
     { depth: 3, slug: "volume", text: "Cut volume before the uplink" },
@@ -365,13 +366,20 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>Edge observability, defined</h2>
 
-                    <div class="guide-answer">
-                        <p><strong>Edge observability</strong> is collecting traces, metrics and logs from code that runs outside your central cloud region, and getting them to the same backend as the rest of your telemetry. The edge is either a function on a CDN, such as a Cloudflare Worker, or a site you run yourself, such as a store, a factory or a small Kubernetes cluster.</p>
-                    </div>
-
                     <p>
-                        The questions stay the same as anywhere else: which requests failed, which site is slow, what changed. The trip the data takes is what differs. An edge site can be offline for hours and pays for every gigabyte it sends, and an edge function's runtime can be gone milliseconds after it responds. The telemetry has to survive both.
+                        A retailer runs 400 shops, each with a till, a few sensors and a 4G router that drops out when the weather turns. A website runs a small function in a data center near each visitor, and the function is gone milliseconds after it answers. <strong>Edge observability</strong> is collecting traces, metrics and logs from code like this, which runs outside your main cloud region, and getting them to the same backend as the rest of your telemetry. In the cloud that data crosses a fast network that rarely fails; at the edge the link can be down for hours and every gigabyte sent costs money, so a default setup loses the data from the very outage you need to debug. By the end of this guide you'll have a Collector config for each site that survives a dead uplink, plus setups for edge Kubernetes and Cloudflare Workers.
                     </p>
+
+                    <div class="guide-callout guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Run one OpenTelemetry Collector at each edge site. Edge functions have no host for one, so the platform exports for them.</li>
+                            <li>A Collector exporter retries a failed batch for five minutes and then drops it. Put its sending queue on disk to keep data through longer outages.</li>
+                            <li>Filter and sample at the site, before data crosses a metered uplink.</li>
+                            <li>Add a site ID to every signal, or hundreds of identical sites can't be told apart.</li>
+                            <li>Cloudflare Workers export traces and logs over OTLP, but no metrics, and don't pass trace context to services outside Cloudflare.</li>
+                        </ul>
+                    </div>
 
                     <h3 id="two-edges" class="scroll-mt-24">Serverless edge and edge sites</h3>
                     <p>
@@ -395,6 +403,19 @@ const articleJsonLd = {
                     </div>
 
                     <h3 id="constraints" class="scroll-mt-24">Constraints at the edge</h3>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Cloud</th><th>Edge site</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Network</td><td>Data center links to the backend</td><td>Shop broadband, cellular or satellite</td></tr>
+                                <tr><td>Connectivity</td><td>Always on</td><td>Down for minutes or days</td></tr>
+                                <tr><td>Data volume</td><td>Sent in full, paid for at the backend</td><td>Every gigabyte over the uplink costs money</td></tr>
+                                <tr><td>Processing</td><td>In a central Collector or the backend</td><td>In a Collector at the site, before the uplink</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                     <p>
                         Each constraint below carries the part of the setup that handles it. The colored ones are jobs of the edge site Collector, and the rest of this guide uses the same colors for them.
                     </p>
@@ -495,6 +516,23 @@ const articleJsonLd = {
                     <p>
                         Large fleets sometimes add a gateway tier: one Collector per region that every site in the region exports to. It is worth running when you need a single egress point per region, or want the backend's ingest key kept off site hardware. Without one of those reasons, export from each site directly. A gateway is one more machine that can be down, which is why it is dashed in the diagram.
                     </p>
+
+                    <h3 id="tools" class="scroll-mt-24">Edge observability tools</h3>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Tool</th><th>What it is</th><th>License</th><th>At the edge</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a></td><td>Receives, processes and exports traces, metrics and logs</td><td>Open source (Apache 2.0)</td><td>Exporter queue on disk (<code>file_storage</code>, contrib build) and a memory ceiling (<code>memory_limiter</code>). Used in this guide.</td></tr>
+                                <tr><td><a href="https://docs.fluentbit.io/manual/administration/buffering-and-storage" target="_blank" rel="noopener noreferrer">Fluent Bit</a></td><td>Lightweight forwarder for logs, metrics and traces, a CNCF graduated project</td><td>Open source (Apache 2.0)</td><td>Buffers to the filesystem, with a size cap per output that drops the oldest data first</td></tr>
+                                <tr><td><a href="https://vector.dev/docs/architecture/buffering-model/" target="_blank" rel="noopener noreferrer">Vector</a></td><td>Observability data pipeline, maintained by Datadog</td><td>Open source (MPL 2.0)</td><td>Disk buffers that survive restarts and crashes</td></tr>
+                                <tr><td><a href="https://docs.px.dev/installing-pixie/requirements/" target="_blank" rel="noopener noreferrer">Pixie</a></td><td>Kubernetes observability from eBPF probes, no code changes, a CNCF sandbox project</td><td>Open source (Apache 2.0)</td><td>Needs Kubernetes 1.21+, Linux kernel 4.14+ and at least 1 GiB of memory per node</td></tr>
+                                <tr><td>Backend</td><td>Stores and queries what every site sends: Maple or any other OTLP backend</td><td>Varies</td><td>Receives OTLP over HTTP; the site's Collector does the buffering</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="guide-caption">Facts from each project's own documentation, last verified October 31, 2026.</p>
                 </section>
 
                 <section id="config" class="scroll-mt-24">
@@ -733,7 +771,7 @@ const articleJsonLd = {
     .edge-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .edge-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .edge-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .edge-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .edge-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .edge-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .edge-guide > section > ul { display: grid; gap: 0.6rem; margin: 0 0 1.4rem; padding-left: 1.2rem; list-style: disc; font-size: 16px; line-height: 1.65; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .edge-guide > section > ul li::marker { color: var(--muted-foreground); }
     .edge-guide strong { font-weight: 600; color: var(--foreground); }
@@ -742,8 +780,9 @@ const articleJsonLd = {
     .edge-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .edge-guide a:not(.guide-button):hover { color: var(--foreground); }
     .edge-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .edge-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .edge-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .edge-guide .guide-takeaways { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--primary); border-radius: 0.5rem; background: color-mix(in oklab, var(--primary) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .edge-guide .guide-takeaways ul { margin: 0.7rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 14px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .edge-guide .guide-takeaways li + li { margin-top: 0.35rem; }
     .edge-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
 
     /* One color per job of the edge Collector: set --type on badges and dots, --c on config parts and steps. */
