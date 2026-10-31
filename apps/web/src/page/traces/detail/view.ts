@@ -3,8 +3,11 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { view as traceFlowView } from "../../../service-map/trace-flow/view"
+import type * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
 import { errorState } from "../../../ui/error-state"
 import { icon, type IconName } from "../../../ui/icon"
+import { pageTitle } from "../../../ui/page-layout"
+import { traceIdBadge } from "../../../ui/trace-badges"
 import type * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import * as Resizable from "../../../ui/resizable"
@@ -21,6 +24,7 @@ import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
 import * as SpanPanel from "./span-panel"
 import { MeasureSplit } from "./split"
 import { spanSheetOf } from "./update"
+import type { TraceData } from "./trace-data"
 import * as Timeline from "./timeline"
 import { headerActions, titleContent } from "./view-header"
 import { errorCallout, productEvents, traceErrors } from "./view-findings"
@@ -30,13 +34,13 @@ import * as Waterfall from "./waterfall"
 
 // The trace detail page on `ResultPage`.
 
-/** `ResultPage`'s crumb: the short id once loaded, else the state it is in. */
+/** `ResultPage`'s crumb: the short id once loaded or failed, else the state it is in. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const crumb = Option.isNone(decodeTraceId(model.traceId))
 		? "Not found"
 		: AsyncData.matchData(model.hierarchy.data, {
 				onEmpty: () => "Loading…",
-				onFailure: () => "Error",
+				onFailure: () => shortId(model.traceId, "trace"),
 				onData: () =>
 					Option.isSome(loadedTrace(model)) ? shortId(model.traceId, "trace") : "Not found",
 			})
@@ -48,6 +52,9 @@ const TAB_ICON = new Map<string, IconName>([
 	["timeline", "FireIcon"],
 	["flow", "NetworkNodesIcon"],
 ])
+
+/** Module-level so the flow view's lazy layers see the same function every render. */
+const toFlow = (message: TraceFlow.Message) => Message.GotFlowMessage({ message })
 
 export const tabPanel = (h: HtmlBuilder<Message>, model: Model, value: string) => {
 	if (value !== model.tabs.selected) return undefined
@@ -72,11 +79,7 @@ export const tabPanel = (h: HtmlBuilder<Message>, model: Model, value: string) =
 			}),
 		]
 	if (value === "flow" && model.flow !== null)
-		return [
-			traceFlowView(h, model.flow.graph, model.flow.model, (message) =>
-				Message.GotFlowMessage({ message }),
-			),
-		]
+		return [traceFlowView(h, model.flow.graph, model.flow.model, toFlow)]
 	return undefined
 }
 
@@ -117,6 +120,18 @@ export const callout = (
 	trace: LoadedTrace,
 	selectedSpanId: string | undefined,
 ): Html => errorCallout(h, traceErrors(trace.data.rootSpans), selectedSpanId)
+
+// The slots key on the model's `TraceData`: `selectTrace` wraps it in a new `LoadedTrace` every render.
+const lazyAnatomy = (
+	h: HtmlBuilder<Message>,
+	data: TraceData,
+	traceStartTime: string,
+	timeZone: string,
+	nowMs: number,
+): Html => anatomy(h, { data, traceStartTime, rootSpan: data.rootSpans[0] }, timeZone, nowMs)
+
+const lazyCallout = (h: HtmlBuilder<Message>, data: TraceData, selectedSpanId: string | undefined): Html =>
+	errorCallout(h, traceErrors(data.rootSpans), selectedSpanId)
 
 const spanPanelView = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html | null => {
 	const selected = selectedSpanOf(model)
@@ -191,8 +206,14 @@ const body = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, tra
 	return h.div(
 		[h.Class("flex flex-1 flex-col gap-y-3 min-h-0"), h.OnMount(MeasureSplit())],
 		[
-			anatomySlot(anatomy, [h, trace, inputs.context.timeZone, model.nowMs]),
-			calloutSlot(callout, [h, trace, selected?.spanId]),
+			anatomySlot(lazyAnatomy, [
+				h,
+				trace.data,
+				trace.traceStartTime,
+				inputs.context.timeZone,
+				model.nowMs,
+			]),
+			calloutSlot(lazyCallout, [h, trace.data, selected?.spanId]),
 			productEvents(
 				h,
 				Option.getOrElse(AsyncData.getData(model.productEvents.data), () => []),
@@ -211,7 +232,12 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs)
 		})
 	return AsyncData.matchData(model.hierarchy.data, {
 		onEmpty: () => detailLoading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load trace details" }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load trace details",
+				onRetry: Message.ClickedRetryHierarchy(),
+			}),
 		onData: () =>
 			Option.match(loadedTrace(model), {
 				onNone: () =>
@@ -233,13 +259,32 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs)
 	})
 }
 
+/** A failed load shows the full id once, as a copy chip; the failure card owns the retry. */
+const failedHeaderActions = (h: HtmlBuilder<Message>, model: Model): Html =>
+	traceIdBadge(h, model.traceId, {
+		size: "sm",
+		className: "max-w-[260px]",
+		onCopy: Message.ClickedCopyTraceId(),
+	})
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const trace = Option.getOrUndefined(loadedTrace(model))
 	return dashboardPage(
 		h,
 		{
-			titleContent: trace === undefined ? undefined : titleContent(h, trace),
-			actions: trace === undefined ? undefined : headerActions(h, model, trace),
+			// A failed load still gets a header naming the trace, so the error sits under a title.
+			titleContent:
+				trace !== undefined
+					? titleContent(h, trace)
+					: AsyncData.isFailure(model.hierarchy.data)
+						? pageTitle(h, { title: model.traceId, className: "leading-8" }, ["Trace"])
+						: undefined,
+			actions:
+				trace !== undefined
+					? headerActions(h, model, trace)
+					: AsyncData.isFailure(model.hierarchy.data)
+						? failedHeaderActions(h, model)
+						: undefined,
 		},
 		[pageBody(h, model, inputs)],
 	)

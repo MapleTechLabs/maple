@@ -190,7 +190,7 @@ const isoOf = (value: DateTime.Utc) => decodeIsoDateTimeStringSync(DateTime.form
 export class AlertReadModelsService extends Context.Service<
 	AlertReadModelsService,
 	AlertReadModelsServiceApi
->()("@maple/api/services/alerts/AlertReadModelsService", {
+>()("@maple/backend/services/alerts/AlertReadModelsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService

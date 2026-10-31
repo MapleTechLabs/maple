@@ -5,6 +5,7 @@ import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { McpToolExecutor } from "./dispatcher"
@@ -40,7 +41,7 @@ const countingGraph = (options: { readonly failFirstBuild: boolean }) => {
 		McpToolExecutor,
 		Effect.gen(function* () {
 			const build = yield* Ref.updateAndGet(builds, (n) => n + 1)
-			if (options.failFirstBuild && build === 1) yield* Config.string("MAPLE_TEST_UNSET_KEY")
+			if (options.failFirstBuild && build === 1) yield* Config.String("MAPLE_TEST_UNSET_KEY")
 			return {
 				execute: () => Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 				prepareRepository: () => Effect.void,
@@ -53,11 +54,17 @@ const countingGraph = (options: { readonly failFirstBuild: boolean }) => {
 	return { counts, loader: McpToolExecutorLoader.layerFrom(importGraph) }
 }
 
+const ToolsListBody = Schema.Struct({
+	result: Schema.Struct({ tools: Schema.Array(Schema.Unknown) }),
+})
+const ErrorBody = Schema.Struct({ error: Schema.String })
+
 /** The public MCP routes over the given loader, and a client holding a valid MCP key. */
 const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFrom>) => {
 	const db = createTestDb(createdDbs)
 	const services = Layer.mergeAll(
 		ApiKeysService.layer,
+		ErrorActorsService.layer,
 		AuthService.layer,
 		Layer.succeed(McpToolRateLimiter, { check: () => Effect.succeed("allowed" as const) }),
 	).pipe(Layer.provideMerge(Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig)))))
@@ -120,7 +127,9 @@ describe("McpToolExecutorLoader", () => {
 				builds: 0,
 			})
 
-			const listed = await (await send("tools/list", { authorized: true })).json()
+			const listed = Schema.decodeUnknownSync(ToolsListBody)(
+				await (await send("tools/list", { authorized: true })).json(),
+			)
 			await send("tools/list", { authorized: true })
 			expect(listed.result.tools.length).toBeGreaterThan(0)
 			expect(counts()).toEqual({ imports: 1, builds: 1 })
@@ -134,9 +143,9 @@ describe("McpToolExecutorLoader", () => {
 		const { send, dispose } = await mcpClient(loader)
 		try {
 			const failed = await send("tools/list", { authorized: true })
-			const failedBody = await failed.json()
+			const failedBody = Schema.decodeUnknownSync(ErrorBody)(await failed.json())
 			const retried = await send("tools/list", { authorized: true })
-			const listed = await retried.json()
+			const listed = Schema.decodeUnknownSync(ToolsListBody)(await retried.json())
 			expect({
 				statuses: [failed.status, retried.status],
 				failedError: failedBody.error,

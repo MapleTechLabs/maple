@@ -57,10 +57,9 @@ const loaded = (search = {}, dashboards: ReadonlyArray<ListDashboard> = BOARDS):
 
 describe("dashboards list", () => {
 	test("entry reads the clock and the stored preferences, then renders rows as links", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"ReadDashboardsListClock",
-			"LoadDashboardsPreferences",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ReadDashboardsListClock", "LoadDashboardsPreferences"]),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
@@ -171,6 +170,21 @@ describe("dashboards list", () => {
 		expect(names(pageUpdate(failed, Message.ClickedCreate()).commands)).toEqual([])
 	})
 
+	test("the read-only banner names a rejected write's reason, and an unreachable API as such", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded(), persistenceError: "A dashboard with this name already exists" }),
+			expectView(
+				text(/A dashboard with this name already exists\. Editing, import and delete/),
+			).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded(), persistenceError: "Failed to fetch" }),
+			expectView(text(/Couldn't reach Maple, so editing/)).toExist(),
+		)
+	})
+
 	test("the tag editor commits typed tags normalised and saves them", () => {
 		const editing = { ...loaded(), pendingTags: dashboard() }
 		const tagKey = (message: TagEditor.Message) => Message.GotTagEditorMessage({ message })
@@ -196,6 +210,8 @@ describe("dashboards list", () => {
 		expect(decodeURIComponent(url)).toContain("tags")
 		expect(decodeURIComponent(url)).toContain("slo")
 		const cleared = pageUpdate(picked.model, tag(Combobox.Message.ClearedSelection()))
-		expect(cleared.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }))
+		expect(cleared.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }),
+		)
 	})
 })

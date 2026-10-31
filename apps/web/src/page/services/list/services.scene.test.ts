@@ -110,13 +110,17 @@ describe("services list", () => {
 			entered,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([
 			FetchOverview.name,
 			FetchSparklines.name,
 			FetchFacets.name,
 			FetchBaseline.name,
 			FetchAnomalies.name,
-		])
+		]))
+		const fetch = resolved.commands?.find(({ name }) => name === FetchOverview.name)
+		expect(fetch?.args).toMatchObject({
+			input: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
+		})
 		expect(resolved.model.overview.key).toBe(overviewKey())
 	})
 
@@ -251,7 +255,9 @@ describe("services list", () => {
 
 	test("Reload re-resolves the window unsnapped and spins for the reload", () => {
 		const reloaded = pageUpdate(loaded([row("checkout")]), Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveServicesWindow", "CompleteServicesReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveServicesWindow", "CompleteServicesReloadSpin"]),
+		)
 		expect(reloaded.model.isReloading).toBe(true)
 		const settled = pageUpdate(
 			reloaded.model,

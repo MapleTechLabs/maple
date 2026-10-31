@@ -15,6 +15,8 @@ import { queryPanelView } from "../../kit/query-builder/view"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
 import { baseValuesOf } from "./where-inputs"
 import type { RuleForm } from "./form"
+import type { AlertQueryTiming } from "@maple/domain/http"
+import { draftTimingOf } from "./derive-rows"
 import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
@@ -41,7 +43,12 @@ const KIND_HINT = new Map<SignalKind, string>([
 	["raw_query", "ClickHouse SQL, replayed per evaluation window."],
 ])
 
-const BUILTIN_SIGNALS: ReadonlyArray<{ value: AlertSignalType; label: string; hint: string; icon: IconName }> = [
+const BUILTIN_SIGNALS: ReadonlyArray<{
+	value: AlertSignalType
+	label: string
+	hint: string
+	icon: IconName
+}> = [
 	{ value: "error_rate", label: "Error rate", hint: "failed / all", icon: "CircleXmarkIcon" },
 	{ value: "p95_latency", label: "P95", hint: "latency", icon: "ClockIcon" },
 	{ value: "p99_latency", label: "P99", hint: "tail latency", icon: "ArrowTrendUpIcon" },
@@ -52,8 +59,8 @@ const BUILTIN_SIGNALS: ReadonlyArray<{ value: AlertSignalType; label: string; hi
 const SIGNAL_CLASS = cn(
 	"group flex cursor-pointer flex-col items-start gap-0.5 border-b-2 border-transparent px-3 py-2.5 text-left",
 	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-	"data-[checked]:border-primary data-[checked]:bg-muted/40",
-	"[&:not([data-checked])]:hover:bg-muted/20",
+	"data-[checked]:border-primary data-[checked]:bg-surface-sunken",
+	"[&:not([data-checked])]:hover:bg-surface-faint [&:not([data-checked])]:active:bg-surface-faint",
 )
 
 const signalRadios = (h: H, form: RuleForm): Html => {
@@ -67,7 +74,11 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 		})),
 	}
 	return h.div(
-		[h.AriaLabel("Built-in signal"), h.Class("grid grid-cols-2 border-b sm:grid-cols-5"), h.Role("radiogroup")],
+		[
+			h.AriaLabel("Built-in signal"),
+			h.Class("grid grid-cols-2 border-b sm:grid-cols-5"),
+			h.Role("radiogroup"),
+		],
 		BUILTIN_SIGNALS.flatMap((signal) =>
 			RadioGroup.radio(h, config, signal.value, SIGNAL_CLASS, {
 				children: [
@@ -116,7 +127,10 @@ const chipsPicker = (
 			className: options.className,
 			isDisabled: options.isDisabled,
 			toView: (parts) =>
-				h.div(options.wrapperClassName === undefined ? [] : [h.Class(options.wrapperClassName)], parts),
+				h.div(
+					options.wrapperClassName === undefined ? [] : [h.Class(options.wrapperClassName)],
+					parts,
+				),
 		},
 	})
 }
@@ -137,7 +151,10 @@ const builtinRow = (h: H, label: string, htmlFor: string, hint: string | undefin
 			h.label([h.Class("pt-2 text-sm text-muted-foreground"), h.For(htmlFor)], [label]),
 			h.div(
 				[h.Class("min-w-0 space-y-1")],
-				[control, ...(hint === undefined ? [] : [h.p([h.Class("text-2xs text-muted-foreground")], [hint])])],
+				[
+					control,
+					...(hint === undefined ? [] : [h.p([h.Class("text-2xs text-muted-foreground")], [hint])]),
+				],
 			),
 		],
 	)
@@ -162,7 +179,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						undefined,
 						chipsPicker(h, model, "rule-services", form.serviceNames, {
 							items: facets.services,
-							placeholder: hasServices ? "Add service..." : "All services",
+							placeholder: hasServices ? "Add service…" : "All services",
 							emptyText: "No services found.",
 						}),
 					),
@@ -173,7 +190,8 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						undefined,
 						chipsPicker(h, model, "rule-environments", form.environments, {
 							items: facets.environments,
-							placeholder: form.environments.length === 0 ? "All environments" : "Add environment...",
+							placeholder:
+								form.environments.length === 0 ? "All environments" : "Add environment…",
 							emptyText: "No environments found.",
 						}),
 					),
@@ -218,10 +236,17 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 											attributes: [
 												h.InputMode("numeric"),
 												h.Value(form.apdexThresholdMs),
-												h.OnInput((value) => Message.ChangedField({ field: "apdexThresholdMs", value })),
+												h.OnInput((value) =>
+													Message.ChangedField({
+														field: "apdexThresholdMs",
+														value,
+													}),
+												),
 											],
 										}),
-										inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, ["ms"])]),
+										inputGroupAddon(h, { align: "inline-end" }, [
+											inputGroupText(h, {}, ["ms"]),
+										]),
 									]),
 								),
 							]
@@ -243,7 +268,11 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 					),
 					button(
 						h,
-						{ variant: "link", size: "xs", attributes: [h.OnClick(Message.ClickedOpenInBuilder())] },
+						{
+							variant: "link",
+							size: "xs",
+							attributes: [h.OnClick(Message.ClickedOpenInBuilder())],
+						},
 						["Open in query builder"],
 					),
 				],
@@ -273,11 +302,14 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 				},
 				toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 			}),
-			h.p([h.Class("text-xs text-muted-foreground")], ["Each group is checked on its own and gets its own incident."]),
+			h.p(
+				[h.Class("text-xs text-muted-foreground")],
+				["Each group is checked on its own and gets its own incident."],
+			),
 		],
 	)
 
-const query = (h: H, model: QueryView, form: RuleForm): Html => {
+const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	const kind = signalTypeToKind(form.signalType)
 	return h.div(
 		[h.Class("space-y-2")],
@@ -292,30 +324,32 @@ const query = (h: H, model: QueryView, form: RuleForm): Html => {
 						ariaLabel: "Query mode",
 						size: "sm",
 					}),
-					h.p([h.Class("min-w-0 flex-1 text-xs text-muted-foreground")], [model.kindNotice ?? KIND_HINT.get(kind) ?? ""]),
+					h.p(
+						[h.Class("min-w-0 flex-1 text-xs text-muted-foreground")],
+						[model.kindNotice ?? KIND_HINT.get(kind) ?? ""],
+					),
 				],
 			),
 			kind === "builtin"
 				? builtinForm(h, model, form)
 				: kind === "builder_query"
 					? builderPanel(h, model, form)
-					: rawQueryEditor(h, model, form),
+					: rawQueryEditor(h, model, form, timing),
 		],
 	)
 }
 
 const slot = createLazy()
-const viewOf = stableSlice(
-	(model: Model): QueryView => ({
-		kindNotice: model.kindNotice,
-		queryPanels: model.queryPanels,
-		combos: model.combos,
-		traceFacets: model.traceFacets,
-		autocomplete: model.autocomplete,
-		isSqlCollapsed: model.isSqlCollapsed,
-		reducerSelect: model.selects[REDUCER_SELECT_ID],
-	}),
-)
+const viewOf = stableSlice((model: Model): QueryView => ({
+	kindNotice: model.kindNotice,
+	queryPanels: model.queryPanels,
+	combos: model.combos,
+	traceFacets: model.traceFacets,
+	autocomplete: model.autocomplete,
+	isSqlCollapsed: model.isSqlCollapsed,
+	reducerSelect: model.selects[REDUCER_SELECT_ID],
+}))
 
 /** Step 1, "What to watch"; `form` is the evaluated draft (`evaluatedFormOf`). */
-export const querySection = (h: H, model: Model, form: RuleForm): Html => slot(query, [h, viewOf(model), form])
+export const querySection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(query, [h, viewOf(model), form, draftTimingOf(model, form)])

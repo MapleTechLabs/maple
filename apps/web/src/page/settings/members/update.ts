@@ -14,7 +14,7 @@ import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
-import { memberDisplayName } from "../kit/members"
+import { memberDisplayName, otherAdminName } from "../kit/members"
 import { type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -34,16 +34,18 @@ const settleClerk =
 
 export const FetchOrganization = Command.define("FetchMembersOrganization", {
 	messages: [Message.CompletedFetchOrganization],
-	execute: Effect.sync(() => Message.CompletedFetchOrganization({ name: window.Clerk?.organization?.name ?? null })),
+	execute: Effect.sync(() =>
+		Message.CompletedFetchOrganization({ name: window.Clerk?.organization?.name ?? null }),
+	),
 })
 
 const FetchAdminName = Command.define("FetchMembersAdminName", {
 	messages: [Message.CompletedFetchAdminName],
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) =>
-			clerkTry("", () => organization.getMemberships({ role: ["org:admin"], pageSize: 1 })),
+			clerkTry("", () => organization.getMemberships({ role: ["org:admin"], pageSize: 2 })),
 		),
-		Effect.map((page) => memberDisplayName(page.data[0]?.publicUserData) ?? null),
+		Effect.map((page) => otherAdminName(page.data, window.Clerk?.user?.id)),
 		Effect.orElseSucceed(() => null),
 		Effect.map((name) => Message.CompletedFetchAdminName({ name })),
 	),
@@ -53,7 +55,8 @@ const memberRow = (member: ClerkMembershipResource, userId: string | null): Memb
 	id: member.id,
 	name: memberDisplayName(member.publicUserData) ?? "Unknown",
 	identifier: member.publicUserData?.identifier ?? "",
-	imageUrl: member.publicUserData?.imageUrl ?? "",
+	// Clerk's generated silhouette is not the member's; the warm initials tile stands in.
+	imageUrl: member.publicUserData?.hasImage === true ? member.publicUserData.imageUrl : "",
 	role: member.role,
 	createdAtMs: member.createdAt.getTime(),
 	isCurrentUser: userId !== null && member.publicUserData?.userId === userId,
@@ -67,10 +70,12 @@ const invitationRow = (invitation: ClerkInvitationResource): InvitationRow => ({
 })
 
 const membershipsPage = (organization: ClerkOrganizationResource, page: number) =>
-	clerkTry("Failed to load members", () => organization.getMemberships({ initialPage: page, pageSize: PAGE_SIZE }))
+	clerkTry("Couldn't load members", () =>
+		organization.getMemberships({ initialPage: page, pageSize: PAGE_SIZE }),
+	)
 
 const invitationsPage = (organization: ClerkOrganizationResource, page: number) =>
-	clerkTry("Failed to load invitations", () =>
+	clerkTry("Couldn't load invitations", () =>
 		organization.getInvitations({ initialPage: page, pageSize: PAGE_SIZE, status: ["pending"] }),
 	)
 
@@ -82,7 +87,10 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 			Effect.flatMap((organization) => membershipsPage(organization, page)),
 			Effect.map((result) => {
 				const userId = window.Clerk?.user?.id ?? null
-				return { rows: result.data.map((member) => memberRow(member, userId)), total: result.total_count }
+				return {
+					rows: result.data.map((member) => memberRow(member, userId)),
+					total: result.total_count,
+				}
 			}),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -105,7 +113,9 @@ const FetchInvitations = Command.define("FetchClerkInvitations", {
 
 /** The resource behind a row: the list pages are read again until the id turns up. */
 const findInPages = <A extends { readonly id: string }>(
-	read: (page: number) => Effect.Effect<{ readonly data: ReadonlyArray<A>; readonly total_count: number }, ClerkActionError>,
+	read: (
+		page: number,
+	) => Effect.Effect<{ readonly data: ReadonlyArray<A>; readonly total_count: number }, ClerkActionError>,
 	id: string,
 	page = 1,
 ): Effect.Effect<Option.Option<A>, ClerkActionError> =>
@@ -118,7 +128,10 @@ const findInPages = <A extends { readonly id: string }>(
 
 const gone = (message: string) => new ClerkActionError({ message, cause: undefined })
 
-const withMembership = <A>(id: string, use: (member: ClerkMembershipResource) => Effect.Effect<A, ClerkActionError>) =>
+const withMembership = <A>(
+	id: string,
+	use: (member: ClerkMembershipResource) => Effect.Effect<A, ClerkActionError>,
+) =>
 	currentClerkOrganization.pipe(
 		Effect.flatMap((organization) => findInPages((page) => membershipsPage(organization, page), id)),
 		Effect.flatMap(
@@ -129,7 +142,10 @@ const withMembership = <A>(id: string, use: (member: ClerkMembershipResource) =>
 		),
 	)
 
-const withInvitation = <A>(id: string, use: (invitation: ClerkInvitationResource) => Effect.Effect<A, ClerkActionError>) =>
+const withInvitation = <A>(
+	id: string,
+	use: (invitation: ClerkInvitationResource) => Effect.Effect<A, ClerkActionError>,
+) =>
 	currentClerkOrganization.pipe(
 		Effect.flatMap((organization) => findInPages((page) => invitationsPage(organization, page), id)),
 		Effect.flatMap(
@@ -146,7 +162,9 @@ const InviteMember = Command.define("InviteClerkMember", {
 	execute: ({ email, role }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) =>
-				clerkTry("Failed to send invitation", () => organization.inviteMember({ emailAddress: email, role })),
+				clerkTry("Couldn't send invitation", () =>
+					organization.inviteMember({ emailAddress: email, role }),
+				),
 			),
 			settleClerk((result) => Message.CompletedInvite({ email, result })),
 		),
@@ -156,27 +174,27 @@ const ChangeRole = Command.define("ChangeClerkMemberRole", {
 	args: { memberId: Schema.String, name: Schema.String, next: OrgRole },
 	messages: [Message.CompletedRoleChange],
 	execute: ({ memberId, name, next }) =>
-		withMembership(memberId, (member) => clerkTry("Failed to change role", () => member.update({ role: next }))).pipe(
-			settleClerk((result) => Message.CompletedRoleChange({ name, next, result })),
-		),
+		withMembership(memberId, (member) =>
+			clerkTry("Couldn't change role", () => member.update({ role: next })),
+		).pipe(settleClerk((result) => Message.CompletedRoleChange({ name, next, result }))),
 })
 
 const RemoveMember = Command.define("RemoveClerkMember", {
 	args: { memberId: Schema.String, name: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ memberId, name }) =>
-		withMembership(memberId, (member) => clerkTry("Failed to remove member", () => member.destroy())).pipe(
-			settleClerk((result) => Message.CompletedRemove({ name, result })),
-		),
+		withMembership(memberId, (member) =>
+			clerkTry("Couldn't remove member", () => member.destroy()),
+		).pipe(settleClerk((result) => Message.CompletedRemove({ name, result }))),
 })
 
 const RevokeInvitation = Command.define("RevokeClerkInvitation", {
 	args: { id: Schema.String, email: Schema.String },
 	messages: [Message.CompletedRevoke],
 	execute: ({ id, email }) =>
-		withInvitation(id, (invitation) => clerkTry("Failed to revoke invitation", () => invitation.revoke())).pipe(
-			settleClerk((result) => Message.CompletedRevoke({ email, result })),
-		),
+		withInvitation(id, (invitation) =>
+			clerkTry("Couldn't revoke invitation", () => invitation.revoke()),
+		).pipe(settleClerk((result) => Message.CompletedRevoke({ email, result }))),
 })
 
 /** Clerk has no resend: revoke the old invitation, then invite the same email with the same role. */
@@ -186,10 +204,15 @@ const ResendInvitation = Command.define("ResendClerkInvitation", {
 	execute: ({ id, email, role }) =>
 		Effect.gen(function* () {
 			const revoked = yield* withInvitation(id, (invitation) =>
-				clerkTry("Failed to resend invitation", () => invitation.revoke()),
+				clerkTry("Couldn't resend invitation", () => invitation.revoke()),
 			).pipe(Effect.result)
 			if (Result.isFailure(revoked))
-				return Message.CompletedResend({ id, email, isRevoked: false, result: Result.fail(revoked.failure.message) })
+				return Message.CompletedResend({
+					id,
+					email,
+					isRevoked: false,
+					result: Result.fail(revoked.failure.message),
+				})
 			const sent = yield* currentClerkOrganization.pipe(
 				Effect.flatMap((organization) =>
 					clerkTry(
@@ -271,7 +294,11 @@ const revalidateMembers = (model: Model): Return => {
 	const members = stopPaging(model.members)
 	const generation = model.membersGeneration + 1
 	return {
-		model: { ...model, members: Option.getOrElse(AsyncData.revalidate(members), () => members), membersGeneration: generation },
+		model: {
+			...model,
+			members: Option.getOrElse(AsyncData.revalidate(members), () => members),
+			membersGeneration: generation,
+		},
 		commands: [FetchMembers({ page: 1, generation })],
 	}
 }
@@ -295,7 +322,10 @@ const mergePage = <A, E>(
 	page: number,
 	next: { readonly rows: ReadonlyArray<A>; readonly total: number },
 ) => {
-	const previous = page === 1 ? [] : Option.match(AsyncData.getData(current), { onNone: () => [], onSome: (data) => data.rows })
+	const previous =
+		page === 1
+			? []
+			: Option.match(AsyncData.getData(current), { onNone: () => [], onSome: (data) => data.rows })
 	return { rows: [...previous, ...next.rows], total: next.total, page, isFetchingMore: false }
 }
 
@@ -305,7 +335,12 @@ const mergePage = <A, E>(
  */
 const settlePage = <A, E>(
 	current: AsyncData.AsyncData<
-		{ readonly rows: ReadonlyArray<A>; readonly total: number; readonly page: number; readonly isFetchingMore: boolean },
+		{
+			readonly rows: ReadonlyArray<A>
+			readonly total: number
+			readonly page: number
+			readonly isFetchingMore: boolean
+		},
 		E
 	>,
 	page: number,
@@ -313,10 +348,17 @@ const settlePage = <A, E>(
 ) =>
 	page > 1 && Result.isFailure(result)
 		? Option.match(AsyncData.getData(current), {
-				onNone: () => AsyncData.settle(current, Result.map(result, (next) => mergePage(current, page, next))),
+				onNone: () =>
+					AsyncData.settle(
+						current,
+						Result.map(result, (next) => mergePage(current, page, next)),
+					),
 				onSome: (data) => AsyncData.Success({ data: { ...data, isFetchingMore: false } }),
 			})
-		: AsyncData.settle(current, Result.map(result, (next) => mergePage(current, page, next)))
+		: AsyncData.settle(
+				current,
+				Result.map(result, (next) => mergePage(current, page, next)),
+			)
 
 export const hasMore = (data: { readonly rows: ReadonlyArray<unknown>; readonly total: number }): boolean =>
 	data.rows.length < data.total
@@ -331,7 +373,11 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 		)
 		return Option.match(member, {
 			onNone: () => ({ model }),
-			onSome: (row) => liftRemove({ ...model, removing: { id: row.id, name: row.name } }, Dialog.open(model.removeDialog)),
+			onSome: (row) =>
+				liftRemove(
+					{ ...model, removing: { id: row.id, name: row.name } },
+					Dialog.open(model.removeDialog),
+				),
 		})
 	}
 	const invitationId = menuId.slice("invitation-actions-".length)
@@ -347,7 +393,9 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 					? { model }
 					: {
 							model: { ...model, resending: [...model.resending, row.id] },
-							commands: [ResendInvitation({ id: row.id, email: row.email, role: toOrgRole(row.role) })],
+							commands: [
+								ResendInvitation({ id: row.id, email: row.email, role: toOrgRole(row.role) }),
+							],
 						},
 	})
 }
@@ -363,7 +411,9 @@ export const revisit = (model: Model): Return => {
 		: revisitData(model.members, () => FetchMembers({ page: 1, generation: model.membersGeneration + 1 }))
 	const invitations = isPaging(model.invitations)
 		? { data: model.invitations, commands: [] }
-		: revisitData(model.invitations, () => FetchInvitations({ page: 1, generation: model.invitationsGeneration + 1 }))
+		: revisitData(model.invitations, () =>
+				FetchInvitations({ page: 1, generation: model.invitationsGeneration + 1 }),
+			)
 	return {
 		model: {
 			...model,
@@ -404,8 +454,16 @@ export const update = (model: Model, message: Message): Return =>
 					data.isFetchingMore || AsyncData.isRefreshing(model.members)
 						? { model }
 						: {
-								model: { ...model, members: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },
-								commands: [FetchMembers({ page: data.page + 1, generation: model.membersGeneration })],
+								model: {
+									...model,
+									members: AsyncData.Success({ data: { ...data, isFetchingMore: true } }),
+								},
+								commands: [
+									FetchMembers({
+										page: data.page + 1,
+										generation: model.membersGeneration,
+									}),
+								],
 							},
 			}),
 		ClickedLoadMoreInvitations: () =>
@@ -416,35 +474,58 @@ export const update = (model: Model, message: Message): Return =>
 					data.isFetchingMore || AsyncData.isRefreshing(model.invitations)
 						? { model }
 						: {
-								model: { ...model, invitations: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },
-								commands: [FetchInvitations({ page: data.page + 1, generation: model.invitationsGeneration })],
+								model: {
+									...model,
+									invitations: AsyncData.Success({
+										data: { ...data, isFetchingMore: true },
+									}),
+								},
+								commands: [
+									FetchInvitations({
+										page: data.page + 1,
+										generation: model.invitationsGeneration,
+									}),
+								],
 							},
 			}),
 		ClickedInvite: () => liftInvite(model, Dialog.open(model.inviteDialog)),
-		GotInviteDialogMessage: ({ message: child }) => liftInvite(model, Dialog.update(model.inviteDialog, child)),
+		GotInviteDialogMessage: ({ message: child }) =>
+			liftInvite(model, Dialog.update(model.inviteDialog, child)),
 		GotInviteEmailMessage: ({ message: child }) => {
 			const step = Field.update(model.inviteEmail, child)
 			return {
 				model: { ...model, inviteEmail: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotInviteEmailMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotInviteEmailMessage({ message: inner }),
+				),
 			}
 		},
 		GotInviteRoleMessage: ({ message: child }) => {
 			const step = Select.update(model.inviteRole, child)
 			return {
 				model: { ...model, inviteRole: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotInviteRoleMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotInviteRoleMessage({ message: inner }),
+				),
 			}
 		},
 		SubmittedInvite: () => {
 			const email = model.inviteEmail.value.trim()
 			if (model.isInviting || email.length === 0) return { model }
-			return { model: { ...model, isInviting: true }, commands: [InviteMember({ email, role: inviteRoleOf(model) })] }
+			return {
+				model: { ...model, isInviting: true },
+				commands: [InviteMember({ email, role: inviteRoleOf(model) })],
+			}
 		},
 		CompletedInvite: ({ email, result }) =>
 			Result.match(result, {
 				onSuccess: () => {
-					const reset = { ...model, isInviting: false, inviteEmail: Field.init(), inviteRole: roleSelect("invite-role", "org:member") }
+					const reset = {
+						...model,
+						isInviting: false,
+						inviteEmail: Field.init(),
+						inviteRole: roleSelect("invite-role", "org:member"),
+					}
 					const closed = liftInvite(reset, Dialog.close(model.inviteDialog))
 					const refreshed = revalidateInvitations(closed.model)
 					return {
@@ -453,16 +534,24 @@ export const update = (model: Model, message: Message): Return =>
 						outMessage: toast("success", `Invitation sent to ${email}`),
 					}
 				},
-				onFailure: (error) => ({ model: { ...model, isInviting: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isInviting: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		GotRoleSelectMessage: ({ memberId, message: child }) =>
 			Option.match(
-				Option.flatMap(AsyncData.getData(model.members), (data) => Array.findFirst(data.rows, (row) => row.id === memberId)),
+				Option.flatMap(AsyncData.getData(model.members), (data) =>
+					Array.findFirst(data.rows, (row) => row.id === memberId),
+				),
 				{
 					onNone: () => ({ model }),
 					onSome: (member) => {
 						const step = Select.update(roleSelectFor(model, member), child)
-						const next = { ...model, roleSelects: { ...model.roleSelects, [memberId]: step.model } }
+						const next = {
+							...model,
+							roleSelects: { ...model.roleSelects, [memberId]: step.model },
+						}
 						const commands = Command.mapMessages(step.commands ?? [], (inner) =>
 							Message.GotRoleSelectMessage({ memberId, message: inner }),
 						)
@@ -474,12 +563,19 @@ export const update = (model: Model, message: Message): Return =>
 							onSome: (role) =>
 								role === toOrgRole(member.role)
 									? { model: next, commands }
-									: { model: { ...next, pendingRole: { memberId, name: member.name, next: role } }, commands },
+									: {
+											model: {
+												...next,
+												pendingRole: { memberId, name: member.name, next: role },
+											},
+											commands,
+										},
 						})
 					},
 				},
 			),
-		ClickedCancelRole: () => (model.isRoleSaving ? { model } : { model: { ...model, pendingRole: null } }),
+		ClickedCancelRole: () =>
+			model.isRoleSaving ? { model } : { model: { ...model, pendingRole: null } },
 		ClickedConfirmRole: () => {
 			const pending = model.pendingRole
 			if (pending === null || model.isRoleSaving) return { model }
@@ -488,15 +584,28 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedRoleChange: ({ name, next, result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
-					...revalidateMembers({ ...model, isRoleSaving: false, pendingRole: null, roleSelects: {} }),
-					outMessage: toast("success", `${name} is now ${next === "org:admin" ? "an admin" : "a member"}`),
+					...revalidateMembers({
+						...model,
+						isRoleSaving: false,
+						pendingRole: null,
+						roleSelects: {},
+					}),
+					outMessage: toast(
+						"success",
+						`${name} is now ${next === "org:admin" ? "an admin" : "a member"}`,
+					),
 				}),
-				onFailure: (error) => ({ model: { ...model, isRoleSaving: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isRoleSaving: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		GotRowMenuMessage: ({ menuId, message: child }) => {
 			const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), child)
 			const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }
-			const commands = Command.mapMessages(step.commands ?? [], (inner) => Message.GotRowMenuMessage({ menuId, message: inner }))
+			const commands = Command.mapMessages(step.commands ?? [], (inner) =>
+				Message.GotRowMenuMessage({ menuId, message: inner }),
+			)
 			if (step.outMessage?._tag !== "SelectedItem") return { model: next, commands }
 			const after = pickedRowAction(next, menuId, step.outMessage.value)
 			return { ...after, commands: [...commands, ...(after.commands ?? [])] }
@@ -513,7 +622,10 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedRemove: ({ name, result }) =>
 			Result.match(result, {
 				onSuccess: () => {
-					const closed = liftRemove({ ...model, isRemoving: false, removing: null }, Dialog.close(model.removeDialog))
+					const closed = liftRemove(
+						{ ...model, isRemoving: false, removing: null },
+						Dialog.close(model.removeDialog),
+					)
 					const refreshed = revalidateMembers(closed.model)
 					return {
 						model: refreshed.model,
@@ -522,7 +634,10 @@ export const update = (model: Model, message: Message): Return =>
 					}
 				},
 				// The confirmation stays open with its member selected so the admin can retry.
-				onFailure: (error) => ({ model: { ...model, isRemoving: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isRemoving: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		GotRevokeDialogMessage: ({ message: child }) =>
 			model.isRevoking ? { model } : liftRevoke(model, Dialog.update(model.revokeDialog, child)),
@@ -536,7 +651,10 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedRevoke: ({ email, result }) =>
 			Result.match(result, {
 				onSuccess: () => {
-					const closed = liftRevoke({ ...model, isRevoking: false, revoking: null }, Dialog.close(model.revokeDialog))
+					const closed = liftRevoke(
+						{ ...model, isRevoking: false, revoking: null },
+						Dialog.close(model.revokeDialog),
+					)
 					const refreshed = revalidateInvitations(closed.model)
 					return {
 						model: refreshed.model,
@@ -544,7 +662,10 @@ export const update = (model: Model, message: Message): Return =>
 						outMessage: toast("success", `Invitation to ${email} revoked`),
 					}
 				},
-				onFailure: (error) => ({ model: { ...model, isRevoking: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isRevoking: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		CompletedResend: ({ id, email, isRevoked, result }) => {
 			const next = { ...model, resending: model.resending.filter((entry) => entry !== id) }

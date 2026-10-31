@@ -20,6 +20,7 @@ describe("normalizeAnswer", () => {
 			normalizeAnswer(
 				{ ...answer, verdict: "override", reason: "Needed SSO", category: "missing_features" },
 				"m",
+				context,
 			).category,
 		).toBe("missing_features")
 	})

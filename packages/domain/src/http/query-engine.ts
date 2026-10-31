@@ -1,6 +1,8 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
+import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
@@ -12,7 +14,9 @@ import {
 	SpanId,
 	SpanName,
 	StatusCode,
+	SupabaseProjectRef,
 	TraceId,
+	UptimeMonitorId,
 } from "../primitives"
 import {
 	AttributeFilter,
@@ -182,7 +186,7 @@ export class ErrorsByTypeRequest extends Schema.Class<ErrorsByTypeRequest>("Erro
 	excludedDeploymentEnvs: OptionalDeploymentEnvs,
 	excludedErrorLabels: OptionalErrorLabels,
 	excludedServiceVersions: OptionalServiceVersions,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ErrorsByTypeResponse extends Schema.Class<ErrorsByTypeResponse>("ErrorsByTypeResponse")({
@@ -259,7 +263,7 @@ export class ErrorDetailTracesRequest extends Schema.Class<ErrorDetailTracesRequ
 	fingerprintHash: FingerprintHash,
 	rootOnly: Schema.optional(Schema.Boolean),
 	services: OptionalServiceNames,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ErrorDetailTracesResponse extends Schema.Class<ErrorDetailTracesResponse>(
@@ -490,6 +494,238 @@ export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsRespo
 	"RailwayInfraRowsResponse",
 )({
 	data: Schema.Array(WireRow),
+}) {}
+
+// Supabase infrastructure page (/infra/supabase): the metrics scraped from each project, keyed by
+// the `supabase_project_ref` attribute.
+export class SupabaseInfraProjectsRequest extends Schema.Class<SupabaseInfraProjectsRequest>(
+	"SupabaseInfraProjectsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export class SupabaseInfraProjectTimeseriesRequest extends Schema.Class<SupabaseInfraProjectTimeseriesRequest>(
+	"SupabaseInfraProjectTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	projectRef: SupabaseProjectRef,
+}) {}
+
+export class SupabaseInfraRowsResponse extends Schema.Class<SupabaseInfraRowsResponse>(
+	"SupabaseInfraRowsResponse",
+)({
+	data: Schema.Array(WireRow),
+}) {}
+
+// Supabase insights: the polled Supabase logs (edge, postgres, auth...) and the org's own client
+// spans that call a project. Times are ISO-8601 UTC strings; durations are milliseconds.
+
+/** One project over a window. */
+export class SupabaseProjectWindowRequest extends Schema.Class<SupabaseProjectWindowRequest>(
+	"SupabaseProjectWindowRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	projectRef: SupabaseProjectRef,
+}) {}
+
+export class SupabaseApiTrafficBucket extends Schema.Class<SupabaseApiTrafficBucket>(
+	"SupabaseApiTrafficBucket",
+)({
+	/** Bucket start, ISO-8601 UTC. */
+	bucket: Schema.String,
+	status2xx: Schema.Number,
+	status3xx: Schema.Number,
+	status4xx: Schema.Number,
+	status5xx: Schema.Number,
+}) {}
+
+/** Edge (API gateway) requests of one project, by status class per bucket, plus window totals. */
+export class SupabaseApiTrafficResponse extends Schema.Class<SupabaseApiTrafficResponse>(
+	"SupabaseApiTrafficResponse",
+)({
+	buckets: Schema.Array(SupabaseApiTrafficBucket),
+	/** Every edge request of the window, including those without a parseable status. */
+	requests: Schema.Number,
+	errors5xx: Schema.Number,
+	/** `errors5xx / requests`, 0..1; 0 with no requests. */
+	errorRate5xx: Schema.Number,
+	/** p95 of `response.origin_time`: the upstream (PostgREST, auth...) time in ms. */
+	p95OriginMs: Schema.Number,
+}) {}
+
+export class SupabaseApiPath extends Schema.Class<SupabaseApiPath>("SupabaseApiPath")({
+	method: Schema.String,
+	/** The request path without its query string. */
+	path: Schema.String,
+	requests: Schema.Number,
+	errors5xx: Schema.Number,
+	p95OriginMs: Schema.Number,
+}) {}
+
+/** The ten busiest (method, path) pairs of one project's edge requests. */
+export class SupabaseApiTopPathsResponse extends Schema.Class<SupabaseApiTopPathsResponse>(
+	"SupabaseApiTopPathsResponse",
+)({
+	paths: Schema.Array(SupabaseApiPath),
+}) {}
+
+export class SupabaseCallerBucket extends Schema.Class<SupabaseCallerBucket>("SupabaseCallerBucket")({
+	bucket: Schema.String,
+	calls: Schema.Number,
+}) {}
+
+/** Calls of one service to the project by product: path prefix for the API, `postgresql` spans for the database. */
+export class SupabaseCallerMix extends Schema.Class<SupabaseCallerMix>("SupabaseCallerMix")({
+	rest: Schema.Number,
+	auth: Schema.Number,
+	storage: Schema.Number,
+	realtime: Schema.Number,
+	functions: Schema.Number,
+	postgres: Schema.Number,
+	other: Schema.Number,
+}) {}
+
+/** One of the org's services calling the project (its Client spans). */
+export class SupabaseProjectCaller extends Schema.Class<SupabaseProjectCaller>("SupabaseProjectCaller")({
+	serviceName: Schema.String,
+	/** Stored spans, not sample-weighted. */
+	calls: Schema.Number,
+	callsPerMinute: Schema.Number,
+	errors: Schema.Number,
+	/** Spans with status `Error` over calls, 0..1. */
+	errorRate: Schema.Number,
+	p95DurationMs: Schema.Number,
+	mix: SupabaseCallerMix,
+	/** Calls per bucket, for a sparkline; buckets without calls are absent. */
+	series: Schema.Array(SupabaseCallerBucket),
+}) {}
+
+/** Up to 100 services, busiest first. */
+export class SupabaseProjectCallersResponse extends Schema.Class<SupabaseProjectCallersResponse>(
+	"SupabaseProjectCallersResponse",
+)({
+	callers: Schema.Array(SupabaseProjectCaller),
+}) {}
+
+export class SupabaseLogIssuesRequest extends Schema.Class<SupabaseLogIssuesRequest>(
+	"SupabaseLogIssuesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Omitted: every project of the org. */
+	projectRef: Schema.optionalKey(SupabaseProjectRef),
+}) {}
+
+/** A recurring WARN-or-worse Supabase log message. */
+export class SupabaseLogIssue extends Schema.Class<SupabaseLogIssue>("SupabaseLogIssue")({
+	projectRef: Schema.String,
+	/** `supabase.log.source`: `edge_logs`, `postgres_logs`, `auth_logs`, ... */
+	source: Schema.String,
+	/** Edge: `METHOD path status`; auth: its `msg`; else the body. Digit runs read `0`, cut at 200 chars. */
+	message: Schema.String,
+	count: Schema.Number,
+	lastSeen: Schema.String,
+	/** Highest OTLP severity number seen: 13 WARN, 17 ERROR, 21 FATAL. */
+	maxSeverity: Schema.Number,
+}) {}
+
+/** Top 20 by count. */
+export class SupabaseLogIssuesResponse extends Schema.Class<SupabaseLogIssuesResponse>(
+	"SupabaseLogIssuesResponse",
+)({
+	issues: Schema.Array(SupabaseLogIssue),
+}) {}
+
+// AWS infrastructure page (/infra/aws): `aws.*` metrics from the CloudWatch metric stream.
+const AwsInfraKind = Schema.Literals(AWS_INFRA_KIND_IDS)
+
+export class AwsInfraPresenceRequest extends Schema.Class<AwsInfraPresenceRequest>("AwsInfraPresenceRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
+
+export class AwsInfraPresenceResponse extends Schema.Class<AwsInfraPresenceResponse>(
+	"AwsInfraPresenceResponse",
+)({
+	/** The kinds with a metric in the window, in tab order. */
+	kinds: Schema.Array(AwsInfraKind),
+}) {}
+
+export class AwsInfraMetricsRequest extends Schema.Class<AwsInfraMetricsRequest>("AwsInfraMetricsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	kind: AwsInfraKind,
+}) {}
+
+export class AwsInfraMetricsResponse extends Schema.Class<AwsInfraMetricsResponse>("AwsInfraMetricsResponse")(
+	{
+		/** One row per resource and metric: see `awsInfraMetricsSQL`. */
+		data: Schema.Array(
+			Schema.Struct({
+				keys: Schema.Array(Schema.String),
+				metric: Schema.String,
+				total: Schema.Number,
+				samples: Schema.Number,
+				peak: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+	},
+) {}
+
+export class AwsInfraSparklinesRequest extends Schema.Class<AwsInfraSparklinesRequest>(
+	"AwsInfraSparklinesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	kind: AwsInfraKind,
+}) {}
+
+export class AwsInfraSparklinesResponse extends Schema.Class<AwsInfraSparklinesResponse>(
+	"AwsInfraSparklinesResponse",
+)({
+	/** One row per resource, bucket and metric: see `awsInfraSparklinesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			keys: Schema.Array(Schema.String),
+			bucket: Schema.String,
+			metric: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
+}) {}
+
+export class AwsInfraTimeseriesRequest extends Schema.Class<AwsInfraTimeseriesRequest>(
+	"AwsInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	kind: AwsInfraKind,
+	/** The resource's keys, as `AwsInfraMetricsResponse` returns them. */
+	keys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(8)),
+}) {}
+
+export class AwsInfraTimeseriesResponse extends Schema.Class<AwsInfraTimeseriesResponse>(
+	"AwsInfraTimeseriesResponse",
+)({
+	/** One row per bucket and metric: see `awsInfraTimeseriesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			metric: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
 }) {}
 
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
@@ -839,7 +1075,7 @@ export class CloudflareInfraZoneBreakdownRequest extends Schema.Class<Cloudflare
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	bucketSeconds: BucketSeconds,
-	limit: Schema.optionalKey(Schema.Number),
+	limit: Schema.optionalKey(RowLimit),
 	...CloudflareZoneFilterFields,
 }) {}
 
@@ -1020,6 +1256,66 @@ export class ReleasesListResponse extends Schema.Class<ReleasesListResponse>("Re
 	truncated: Schema.Boolean,
 }) {}
 
+export class UptimePhaseTimingsRequest extends Schema.Class<UptimePhaseTimingsRequest>(
+	"UptimePhaseTimingsRequest",
+)({
+	monitorId: UptimeMonitorId,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+}) {}
+
+/** A bucket's mean phases (ms) over its checks that got a response; buckets with none are absent. */
+const UptimePhaseTimingsPoint = Schema.Struct({
+	bucket: Schema.String,
+	timedChecks: Schema.Number,
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+export type UptimePhaseTimingsPoint = Schema.Schema.Type<typeof UptimePhaseTimingsPoint>
+
+export class UptimePhaseTimingsResponse extends Schema.Class<UptimePhaseTimingsResponse>(
+	"UptimePhaseTimingsResponse",
+)({
+	points: Schema.Array(UptimePhaseTimingsPoint),
+}) {}
+
+export class UptimeChecksRequest extends Schema.Class<UptimeChecksRequest>("UptimeChecksRequest")({
+	monitorId: UptimeMonitorId,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Most checks returned, newest kept. */
+	limit: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(5000)),
+}) {}
+
+/** An HTTP check's phases in ms; a phase the check skipped is 0 (TLS on http://, no body read). */
+const UptimeCheckPhases = Schema.Struct({
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+
+const UptimeCheck = Schema.Struct({
+	at: Schema.String,
+	traceId: TraceId,
+	durationMs: Schema.Number,
+	ok: Schema.Boolean,
+	statusCode: Schema.NullOr(Schema.Number),
+	/** Null when the check recorded none: TCP and DNS checks, older checks, no response. */
+	phases: Schema.NullOr(UptimeCheckPhases),
+})
+export type UptimeCheck = Schema.Schema.Type<typeof UptimeCheck>
+
+export class UptimeChecksResponse extends Schema.Class<UptimeChecksResponse>("UptimeChecksResponse")({
+	/** Newest first. */
+	checks: Schema.Array(UptimeCheck),
+}) {}
+
 export class ReleaseDetailRequest extends Schema.Class<ReleaseDetailRequest>("ReleaseDetailRequest")({
 	serviceName: ServiceName,
 	commitSha: CommitSha,
@@ -1190,6 +1486,36 @@ export class ServiceWorkloadsResponse extends Schema.Class<ServiceWorkloadsRespo
 	data: Schema.Array(ServiceWorkloadRow),
 }) {}
 
+export class ServiceRuntimesRequest extends Schema.Class<ServiceRuntimesRequest>("ServiceRuntimesRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	services: Schema.Array(ServiceName),
+}) {}
+
+/**
+ * A platform resource a traced service runs as (`@maple/domain/service-runtimes`). The resource
+ * shares the service's name (a Worker's script name is the service name too).
+ */
+export const ServiceRuntimeRow = Schema.Struct({
+	serviceName: ServiceName,
+	kind: Schema.Literals(SERVICE_RUNTIME_KIND_IDS),
+	/** GCP project, AWS account or Cloudflare account; "" when the series carry none. */
+	account: Schema.String,
+	region: Schema.String,
+	/** ECS cluster. */
+	cluster: Schema.String,
+	railwayServiceId: Schema.String,
+	railwayEnvironmentId: Schema.String,
+	railwayEnvironmentName: Schema.String,
+})
+export type ServiceRuntimeRow = typeof ServiceRuntimeRow.Type
+
+export class ServiceRuntimesResponse extends Schema.Class<ServiceRuntimesResponse>("ServiceRuntimesResponse")(
+	{
+		data: Schema.Array(ServiceRuntimeRow),
+	},
+) {}
+
 export class ServiceMapBundleRequest extends Schema.Class<ServiceMapBundleRequest>("ServiceMapBundleRequest")(
 	{
 		startTime: TinybirdDateTime,
@@ -1204,9 +1530,13 @@ export class ServiceMapBundleResponse extends Schema.Class<ServiceMapBundleRespo
 )({
 	dependencies: Schema.Array(WireRow),
 	dbEdges: Schema.Array(WireRow),
+	/** The database edges ran past their budget; `dbEdges` is empty, not "no databases". */
+	dbEdgesTimedOut: Schema.optionalKey(Schema.Boolean),
 	overview: Schema.Array(WireRow),
 	platforms: Schema.Array(ServicePlatformRow),
 	workloads: Schema.Array(ServiceWorkloadRow),
+	/** Optional so a web deploy ahead of the API still decodes the bundle. */
+	runtimes: Schema.optionalKey(Schema.Array(ServiceRuntimeRow)),
 }) {}
 
 export class ServiceUsageRequest extends Schema.Class<ServiceUsageRequest>("ServiceUsageRequest")({
@@ -1234,7 +1564,7 @@ export class ServiceOperationsRequest extends Schema.Class<ServiceOperationsRequ
 	// Bucket size for the per-operation sparkline sub-query (client-computed,
 	// like ServiceDetailOverviewRequest.releasesBucketSeconds).
 	bucketSeconds: Schema.optional(BucketSeconds),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ServiceOperationsResponse extends Schema.Class<ServiceOperationsResponse>(
@@ -1272,7 +1602,7 @@ export class ServiceEndpointsRequest extends Schema.Class<ServiceEndpointsReques
 		startTime: TinybirdDateTime,
 		endTime: TinybirdDateTime,
 		environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
-		limit: Schema.optional(Schema.Number),
+		limit: Schema.optional(RowLimit),
 	},
 ) {}
 
@@ -1301,6 +1631,144 @@ export class ServiceEndpointsResponse extends Schema.Class<ServiceEndpointsRespo
 			p50DurationMs: Schema.Number,
 			p95DurationMs: Schema.Number,
 			p99DurationMs: Schema.Number,
+			// Migration 0048, Server spans only. httpClassifiedSpanCount below spanCount
+			// means part of the window predates 0048: the status mix is unknown there.
+			httpClassifiedSpanCount: Schema.Number,
+			httpStatusCount: Schema.Number,
+			http4xxCount: Schema.Number,
+			http5xxCount: Schema.Number,
+			requestBodyBytes: Schema.Number,
+			requestBodyCount: Schema.Number,
+		}),
+	),
+}) {}
+
+/** Every HTTP endpoint of one service merged; the API tab's headline numbers. */
+export const ServiceApiTotals = Schema.Struct({
+	spanCount: Schema.Number,
+	estimatedSpanCount: Schema.Number,
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	requestBodyCount: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+
+/** One timeseries bucket; `spanName` is `''` for the series merged across endpoints. */
+export const ServiceApiBucket = Schema.Struct({
+	bucket: Schema.String,
+	spanName: Schema.String,
+	estimatedSpanCount: Schema.Number,
+	/** 0 when the bucket predates the status counters: its status mix is unknown. */
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+
+export class ServiceApiOverviewRequest extends Schema.Class<ServiceApiOverviewRequest>(
+	"ServiceApiOverviewRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	// Both or neither: the totals for the comparison window, same scope.
+	previousStartTime: Schema.optional(TinybirdDateTime),
+	previousEndTime: Schema.optional(TinybirdDateTime),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	bucketSeconds: BucketSeconds,
+}) {}
+
+export class ServiceApiOverviewResponse extends Schema.Class<ServiceApiOverviewResponse>(
+	"ServiceApiOverviewResponse",
+)({
+	totals: ServiceApiTotals,
+	previous: Schema.NullOr(ServiceApiTotals),
+	buckets: Schema.Array(ServiceApiBucket),
+}) {}
+
+export class ServiceEndpointsTimeseriesRequest extends Schema.Class<ServiceEndpointsTimeseriesRequest>(
+	"ServiceEndpointsTimeseriesRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	bucketSeconds: BucketSeconds,
+	spanNames: Schema.Array(SpanName).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
+}) {}
+
+export class ServiceEndpointsTimeseriesResponse extends Schema.Class<ServiceEndpointsTimeseriesResponse>(
+	"ServiceEndpointsTimeseriesResponse",
+)({
+	buckets: Schema.Array(ServiceApiBucket),
+}) {}
+
+export class ServiceEndpointStatusBreakdownRequest extends Schema.Class<ServiceEndpointStatusBreakdownRequest>(
+	"ServiceEndpointStatusBreakdownRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	spanName: Schema.optional(SpanName),
+}) {}
+
+export class ServiceEndpointStatusBreakdownResponse extends Schema.Class<ServiceEndpointStatusBreakdownResponse>(
+	"ServiceEndpointStatusBreakdownResponse",
+)({
+	rows: Schema.Array(
+		Schema.Struct({
+			spanName: Schema.String,
+			httpStatusCode: Schema.String,
+			// `error.type` as written, '' when the span carried none.
+			errorType: Schema.String,
+			spanCount: Schema.Number,
+			estimatedSpanCount: Schema.Number,
+		}),
+	),
+}) {}
+
+export class ServiceEndpointDetailRequest extends Schema.Class<ServiceEndpointDetailRequest>(
+	"ServiceEndpointDetailRequest",
+)({
+	serviceName: ServiceName,
+	spanName: SpanName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+}) {}
+
+export class ServiceEndpointDetailResponse extends Schema.Class<ServiceEndpointDetailResponse>(
+	"ServiceEndpointDetailResponse",
+)({
+	latencyQuantileLevels: Schema.Array(Schema.Number),
+	// Empty when the window holds no request; otherwise one value per level, in ms.
+	latencyQuantilesMs: Schema.Array(Schema.Number),
+	body: Schema.NullOr(
+		Schema.Struct({
+			p50Bytes: Schema.Number,
+			p95Bytes: Schema.Number,
+			maxBytes: Schema.Number,
+			count: Schema.Number,
+		}),
+	),
+	userAgents: Schema.Array(Schema.Struct({ value: Schema.String, count: Schema.NullOr(Schema.Number) })),
+	slowest: Schema.Array(
+		Schema.Struct({
+			traceId: Schema.String,
+			timestamp: Schema.String,
+			durationMs: Schema.Number,
+			httpStatusCode: Schema.String,
+			bodyBytes: Schema.NullOr(Schema.Number),
 		}),
 	),
 }) {}
@@ -1345,7 +1813,7 @@ export class ListLogsRequest extends Schema.Class<ListLogsRequest>("ListLogsRequ
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	/** Scopes a log's surrounding context to one instance (`k8s.pod.name`, `service.instance.id`). */
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	/** `asc` reads oldest-first from `startTime`. Defaults to newest-first; `cursor` follows the order. */
 	order: Schema.optional(Schema.Literals(["asc", "desc"])),
 }) {}
@@ -1381,7 +1849,7 @@ export class ListMetricsRequest extends Schema.Class<ListMetricsRequest>("ListMe
 	service: Schema.optional(ServiceName),
 	metricType: Schema.optional(Schema.String),
 	search: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -1411,7 +1879,7 @@ export class ListHostsRequest extends Schema.Class<ListHostsRequest>("ListHostsR
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	search: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -1473,6 +1941,8 @@ export class HostDetailSummaryResponse extends Schema.Class<HostDetailSummaryRes
 			hostArch: Schema.String,
 			cloudProvider: Schema.String,
 			cloudRegion: Schema.String,
+			/** The `src_` id of the source the host last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuPct: Schema.Number,
@@ -1565,7 +2035,7 @@ export class ListPodsRequest extends Schema.Class<ListPodsRequest>("ListPodsRequ
 	lifecycle: Schema.optional(PodLifecycleLiteral),
 	sortBy: Schema.optional(PodSortKeyLiteral),
 	sortDir: Schema.optional(SortDirectionLiteral),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -1663,7 +2133,7 @@ export class ListContainersRequest extends Schema.Class<ListContainersRequest>("
 	scope: Schema.optional(ContainerScopeLiteral),
 	sortBy: Schema.optional(ContainerSortKeyLiteral),
 	sortDir: Schema.optional(SortDirectionLiteral),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -1751,6 +2221,8 @@ export class ContainerDetailSummaryResponse extends Schema.Class<ContainerDetail
 			composeProject: Schema.String,
 			composeService: Schema.String,
 			runtime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuPct: Schema.Number,
@@ -1922,7 +2394,7 @@ export class WebAnalyticsPagesRequest extends Schema.Class<WebAnalyticsPagesRequ
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -1944,7 +2416,7 @@ export class WebAnalyticsEventsRequest extends Schema.Class<WebAnalyticsEventsRe
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -1965,7 +2437,7 @@ export class WebAnalyticsBreakdownsRequest extends Schema.Class<WebAnalyticsBrea
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	limitPerDimension: Schema.optional(Schema.Number),
+	limitPerDimension: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -2112,7 +2584,7 @@ export class ProductEventsFunnelBreakdownRequest extends Schema.Class<ProductEve
 	...ProductEventsFunnelFields,
 	breakdownBy: FunnelBreakdownBy,
 	/** Groups to keep, ranked by step-1 count. Default 10, max 20. */
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ProductEventsFunnelBreakdownResponse extends Schema.Class<ProductEventsFunnelBreakdownResponse>(
@@ -2188,7 +2660,7 @@ export class ProductEventNamesRequest extends Schema.Class<ProductEventNamesRequ
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	/** Default 100. */
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -2332,6 +2804,8 @@ export class PodDetailSummaryResponse extends Schema.Class<PodDetailSummaryRespo
 			podUid: Schema.String,
 			computeType: Schema.String,
 			podStartTime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuUsage: Schema.Number,
@@ -2352,7 +2826,7 @@ export class PodRestartsRequest extends Schema.Class<PodRestartsRequest>("PodRes
 	endTime: TinybirdDateTime,
 	podNames: Schema.optional(StringArray),
 	namespace: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class PodRestartsResponse extends Schema.Class<PodRestartsResponse>("PodRestartsResponse")({
@@ -2402,7 +2876,7 @@ export class ListNodesRequest extends Schema.Class<ListNodesRequest>("ListNodesR
 	nodeNames: Schema.optional(StringArray),
 	clusters: Schema.optional(StringArray),
 	environments: Schema.optional(StringArray),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -2466,6 +2940,8 @@ export class NodeDetailSummaryResponse extends Schema.Class<NodeDetailSummaryRes
 			nodeUid: Schema.String,
 			kubeletVersion: Schema.String,
 			containerRuntime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			...NodeCapacityFields,
@@ -2506,7 +2982,7 @@ export class ListWorkloadsRequest extends Schema.Class<ListWorkloadsRequest>("Li
 	clusters: Schema.optional(StringArray),
 	environments: Schema.optional(StringArray),
 	computeTypes: Schema.optional(StringArray),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -2582,6 +3058,8 @@ export class WorkloadDetailSummaryResponse extends Schema.Class<WorkloadDetailSu
 			kind: WorkloadKindLiteral,
 			namespace: Schema.String,
 			podCount: Schema.Number,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			avgCpuLimitPct: Schema.Number,
@@ -2912,6 +3390,76 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("supabaseInfraProjects", "/supabase-infra-projects", {
+			payload: SupabaseInfraProjectsRequest,
+			success: SupabaseInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseInfraProjectTimeseries", "/supabase-infra-project-timeseries", {
+			payload: SupabaseInfraProjectTimeseriesRequest,
+			success: SupabaseInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseApiTraffic", "/supabase-api-traffic", {
+			payload: SupabaseInfraProjectTimeseriesRequest,
+			success: SupabaseApiTrafficResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseApiTopPaths", "/supabase-api-top-paths", {
+			payload: SupabaseProjectWindowRequest,
+			success: SupabaseApiTopPathsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseProjectCallers", "/supabase-project-callers", {
+			payload: SupabaseInfraProjectTimeseriesRequest,
+			success: SupabaseProjectCallersResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseLogIssues", "/supabase-log-issues", {
+			payload: SupabaseLogIssuesRequest,
+			success: SupabaseLogIssuesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraPresence", "/aws-infra-presence", {
+			payload: AwsInfraPresenceRequest,
+			success: AwsInfraPresenceResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraMetrics", "/aws-infra-metrics", {
+			payload: AwsInfraMetricsRequest,
+			success: AwsInfraMetricsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraSparklines", "/aws-infra-sparklines", {
+			payload: AwsInfraSparklinesRequest,
+			success: AwsInfraSparklinesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraTimeseries", "/aws-infra-timeseries", {
+			payload: AwsInfraTimeseriesRequest,
+			success: AwsInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("gcpInfraPresence", "/gcp-infra-presence", {
 			payload: GcpInfraPresenceRequest,
 			success: GcpInfraPresenceResponse,
@@ -3046,6 +3594,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("uptimePhaseTimings", "/uptime-phase-timings", {
+			payload: UptimePhaseTimingsRequest,
+			success: UptimePhaseTimingsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("uptimeChecks", "/uptime-checks", {
+			payload: UptimeChecksRequest,
+			success: UptimeChecksResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("releaseDetail", "/release-detail", {
 			payload: ReleaseDetailRequest,
 			success: ReleaseDetailResponse,
@@ -3082,6 +3644,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("serviceRuntimes", "/service-runtimes", {
+			payload: ServiceRuntimesRequest,
+			success: ServiceRuntimesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("serviceUsage", "/service-usage", {
 			payload: ServiceUsageRequest,
 			success: ServiceUsageResponse,
@@ -3099,6 +3668,34 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceEndpoints", "/service-endpoints", {
 			payload: ServiceEndpointsRequest,
 			success: ServiceEndpointsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceApiOverview", "/service-api-overview", {
+			payload: ServiceApiOverviewRequest,
+			success: ServiceApiOverviewResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointsTimeseries", "/service-endpoints-timeseries", {
+			payload: ServiceEndpointsTimeseriesRequest,
+			success: ServiceEndpointsTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointStatusBreakdown", "/service-endpoint-status-breakdown", {
+			payload: ServiceEndpointStatusBreakdownRequest,
+			success: ServiceEndpointStatusBreakdownResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointDetail", "/service-endpoint-detail", {
+			payload: ServiceEndpointDetailRequest,
+			success: ServiceEndpointDetailResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

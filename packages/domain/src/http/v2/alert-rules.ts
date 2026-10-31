@@ -25,9 +25,14 @@ import {
 	AlertValidationError,
 	AlertWindowMinutes,
 	AlertBreachWindow,
+	AlertEvaluationIntervalMinutes,
+	AlertEvaluationErrorKind,
 	type AlertThreshold,
 } from "../alerts"
 import { AlertDestinationPublicId } from "./alert-destinations"
+
+const EVALUATION_INTERVAL_DESCRIPTION =
+	"Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes."
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
@@ -141,6 +146,9 @@ const alertRuleExample = {
 		},
 	],
 	window_minutes: 5,
+	evaluation_interval_minutes: null,
+	slowed_interval_minutes: null,
+	slowed_at: null,
 	minimum_sample_count: 50,
 	consecutive_breaches_required: 2,
 	breaches_out_of: null,
@@ -154,6 +162,7 @@ const alertRuleExample = {
 	no_data_behavior: "skip",
 	alert_on_no_data: false,
 	last_evaluation_error: null,
+	last_evaluation_error_kind: null,
 	last_evaluated_at: "2026-07-15T09:10:00.000Z",
 	last_scheduled_at: "2026-07-15T09:10:00.000Z",
 	created_at: "2026-07-01T12:00:00.000Z",
@@ -235,6 +244,19 @@ export const V2AlertRule = Schema.Struct({
 		description: "Length of the evaluation window in minutes.",
 		examples: [5],
 	}),
+	evaluation_interval_minutes: Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+		description: EVALUATION_INTERVAL_DESCRIPTION,
+		examples: [null],
+	}),
+	slowed_interval_minutes: Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+		description:
+			"Set when Maple slowed the rule down after its query hit its time or memory limit 3 checks in a row: it is checked at least this many minutes apart, which allows a longer query. Any update clears it.",
+		examples: [null],
+	}),
+	slowed_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the rule was last slowed down, or `null`.",
+		examples: [null],
+	}),
 	minimum_sample_count: NonNegativeInt.annotate({
 		description:
 			"Minimum samples required in the window before the rule can breach; below it the check is skipped.",
@@ -284,6 +306,10 @@ export const V2AlertRule = Schema.Struct({
 	last_evaluation_error: Schema.NullOr(Schema.String).annotate({
 		description:
 			"The most recent evaluation error for this rule, or `null` if the last evaluation succeeded.",
+	}),
+	last_evaluation_error_kind: Schema.NullOr(AlertEvaluationErrorKind).annotate({
+		description:
+			"Why the last evaluation failed: `query_too_slow` or `query_too_much_memory` (the query hit its limit; check less often or narrow it), `invalid_query`, or `other`. `null` with no error.",
 	}),
 	last_evaluated_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the rule was last evaluated, or `null` if never.",
@@ -399,6 +425,12 @@ const createParamsFields = {
 		description: "Length of the evaluation window in minutes.",
 		examples: [5],
 	}),
+	evaluation_interval_minutes: Schema.optionalKey(
+		Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+			description: EVALUATION_INTERVAL_DESCRIPTION,
+			examples: [10],
+		}),
+	),
 	minimum_sample_count: Schema.optionalKey(NonNegativeInt),
 	consecutive_breaches_required: Schema.optionalKey(PositiveInt),
 	breaches_out_of: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),
@@ -450,6 +482,7 @@ export const V2AlertRuleUpdateParams = Schema.Struct({
 	comparator: Schema.optionalKey(createParamsFields.comparator),
 	threshold: createParamsFields.threshold,
 	window_minutes: Schema.optionalKey(createParamsFields.window_minutes),
+	evaluation_interval_minutes: createParamsFields.evaluation_interval_minutes,
 	destination_ids: createParamsFields.destination_ids,
 	breaches_out_of: createParamsFields.breaches_out_of,
 	notes: createParamsFields.notes,
@@ -593,6 +626,32 @@ const V2AlertRulePreviewFiringSpan = Schema.Struct({
 	description: "A span during which the rule's state machine would have held an open incident.",
 })
 
+export const V2AlertQueryTiming = Schema.Struct({
+	elapsed_ms: Schema.NullOr(Schema.Number).annotate({
+		description:
+			"Milliseconds one check of the latest window took, or null when it did not finish within `probe_limit_ms`.",
+	}),
+	failure: Schema.NullOr(Schema.Literals(["query_too_slow", "query_too_much_memory"])).annotate({
+		description: "Why the check did not finish, when it did not.",
+	}),
+	probe_limit_ms: Schema.Number.annotate({
+		description:
+			"The longest any check may run (the limit at the slowest intervals), where timing stops.",
+	}),
+	interval_minutes: Schema.Number.annotate({ description: "The rule's check interval, in minutes." }),
+	limit_ms: Schema.Number.annotate({
+		description:
+			"The query time limit at that interval: 5s under 5 minutes, 15s at 5, 25s at 10 or more.",
+	}),
+	fits_interval_minutes: Schema.Array(AlertEvaluationIntervalMinutes).annotate({
+		description: "Check intervals whose time limit the query fits with a fifth to spare.",
+	}),
+}).annotate({
+	identifier: "AlertQueryTiming",
+	title: "Alert query timing",
+	description: "How long one check of a raw SQL rule takes, timed once on the latest window.",
+})
+
 export const V2AlertRulePreviewResult = Schema.Struct({
 	object: Schema.Literal("alert_rule.preview").annotate({
 		description: 'The object type — always `"alert_rule.preview"`.',
@@ -610,6 +669,15 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	would_fire: Schema.Array(V2AlertRulePreviewFiringSpan).annotate({
 		description: "Spans during which the rule would have held an open incident.",
 	}),
+	query_timing: Schema.optionalKey(V2AlertQueryTiming).annotate({
+		description: "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
+	}),
+	series_failure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])).annotate(
+		{
+			description:
+				"Raw SQL rules only: the range was too heavy to chart within the longest limit, so `series` is empty. `query_timing` still says whether one check fits. Preview a shorter range to chart it.",
+		},
+	),
 }).annotate({
 	identifier: "AlertRulePreviewResult",
 	title: "Alert rule preview result",

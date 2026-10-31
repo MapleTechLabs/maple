@@ -1,18 +1,20 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
 import { kbd } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
+import { errorState } from "../../../ui/error-state"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
-	filterSidebarError,
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
+	filterSidebarGroupLabel,
 } from "../../../ui/filters/filter-sidebar"
 import type * as Popover from "../../../ui/popover"
 import { MountFilterRail } from "./command"
@@ -74,14 +76,10 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 	h.div(
 		[h.Class("pb-3")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1")],
-				[eyebrow(h, { variant: "label" }, ["Search"]), searchHelp(h, help)],
-			),
+			filterSidebarGroupLabel(h, "Search", [searchHelp(h, help)]),
 			searchInput(h, {
 				id: "logs-search-input",
 				size: "sm",
-				className: "mt-2",
 				placeholder: "Text or trace id",
 				value,
 				onInput: (text) => Message.ChangedSearchText({ text }),
@@ -91,6 +89,30 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 			}),
 		],
 	)
+
+/**
+ * The facets failed: the search stays, so the page keeps its shape and a query can still be typed.
+ * The main panel explains a shared failure, so the rail only notes it.
+ */
+const failedRail = (h: HtmlBuilder<Message>, model: Model, failure: LoadFailure): Html => {
+	const main = Option.getOrUndefined(AsyncData.getError(model.firstPage.data))
+	const isEchoed = main !== undefined && isSameFailure(main, failure)
+	return filterSidebarFrame(h, {}, [
+		filterSidebarHeader(h),
+		...filterSidebarBody(h, "logs-filters", [
+			logSearchInput(h, model.searchText, model.searchHelp),
+			isEchoed
+				? errorState(h, {
+						failure,
+						onRetry: Message.ClickedRetryFacets(),
+						variant: "quiet",
+						title: "Filters unavailable",
+						hidesRetryButton: true,
+					})
+				: errorState(h, { failure, onRetry: Message.ClickedRetryFacets(), variant: "inline" }),
+		]),
+	])
+}
 
 const loadedRail = (
 	h: HtmlBuilder<Message>,
@@ -137,7 +159,7 @@ export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespa
 		[
 			AsyncData.matchData(model.facets.data, {
 				onEmpty: () => filterSidebarLoading(h, 3),
-				onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
+				onFailure: (failure) => failedRail(h, model, failure),
 				onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
 			}),
 		],

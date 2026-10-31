@@ -1,6 +1,6 @@
 {
 	"name": "@maple-examples/effect-todo",
-	"version": "0.0.3",
+	"version": "0.0.5",
 	"private": true,
 	"description": "Distributed-tracing demo: React + effect-atom frontend and an Effect (Bun) backend, both instrumented with the Maple SDK and feeding Maple local mode.",
 	"type": "module",
@@ -12,7 +12,7 @@
 		"typecheck": "tsrs -p tsconfig.json && tsrs -p web/tsconfig.json"
 	},
 	"dependencies": {
-		"@effect/atom-react": "catalog:effect",
+		"@effect/atom-react": "4.1.0",
 		"@effect/platform-bun": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"effect": "catalog:effect",
@@ -21,7 +21,7 @@
 	},
 	"devDependencies": {
 		"@tailwindcss/vite": "catalog:tailwind",
-		"@types/bun": "^1.4.2",
+		"@types/bun": "^1.4.4",
 		"@types/node": "catalog:tooling",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",

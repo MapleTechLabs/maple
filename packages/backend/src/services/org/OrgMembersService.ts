@@ -247,7 +247,7 @@ const make = Effect.gen(function* () {
 })
 
 export class OrgMembersService extends Context.Service<OrgMembersService, OrgMembersServiceApi>()(
-	"@maple/api/services/OrgMembersService",
+	"@maple/backend/services/OrgMembersService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make)

@@ -49,7 +49,7 @@ Every field accepted by `MapleBrowser.init`:
 | `environment`                          | `string`                  | none                                      | Deployment environment, e.g. `"production"`.                                                                                                                                                                                                              |
 | `user`                                 | `MapleIdentity`           | none                                      | End-user identity attached to sessions and browser spans. Same shape as the `identify()` object. See [Identifying users](#identifying-users).                                                                                                             |
 | `userId`                               | `string`                  | none                                      | **Deprecated**, use `user`. User id attached to the replay session and future browser spans.                                                                                                                                                              |
-| `tracing.enabled`                      | `boolean`                 | `true`                                    | Enable OTel browser tracing.                                                                                                                                                                                                                              |
+| `tracing.enabled`                      | `boolean`                 | `true`                                    | Enable OTel browser tracing. Off, the SDK makes no spans at all: no network, navigation, `traced` or jank spans, and errors are not recorded (an error still keeps a buffered replay, see `replay.onErrorSampleRate`). Sessions, replay, logs and Web Vitals still run. |
 | `tracing.instrumentFetch`              | `boolean`                 | `true`                                    | Auto-instrument `fetch()` to create network spans. Set `false` when another tracer (e.g. the Effect client SDK) already instruments requests. Its spans feed the session through the published sink, and turning this off avoids duplicate network spans. |
 | `tracing.instrumentXhr`                | `boolean`                 | `true`                                    | Auto-instrument `XMLHttpRequest` (axios and older clients) like `fetch`.                                                                                                                                                                                  |
 | `tracing.captureErrors`                | `boolean`                 | `true`                                    | Record uncaught errors and unhandled rejections as error spans. See [Errors](#errors).                                                                                                                                                                    |
@@ -178,14 +178,18 @@ const { sessionId } = MapleBrowser.init({
 fetch("/api/checkout", { headers: { "x-maple-session": sessionId } })
 ```
 
-`init()` is idempotent: calling it again returns the same live handle. On the server (SSR, or
-no `window`) it returns a no-op handle with an empty `sessionId`.
+`init()` is idempotent: calling it again returns the same live handle, and ignores the new config
+(with one console warning if it differs). On the server (SSR, or no `window`) it returns a no-op
+handle with an empty `sessionId`.
 
 ### Teardown
 
-Call `shutdown()` to flush the final replay chunk and tear down tracing and replay. After it
-resolves, telemetry is fully stopped and a later `init()` may start a new session. This is useful
-when a single-page app unmounts its telemetry client:
+Call `shutdown()` to flush the final replay chunk and tear down tracing and replay. The SDK is
+released the moment `shutdown()` is called, so an `init()` right after it (React StrictMode runs
+effects twice, a remount) returns a new, live handle without awaiting the flush. Tracing and error
+capture start at once; the new session starts once the old one has flushed, and `sessionId` is
+empty until then. When `shutdown()` resolves, everything the old handle started is stopped, even
+if part of the teardown failed. This is useful when a single-page app unmounts its telemetry client:
 
 ```ts
 const maple = MapleBrowser.init({ ingestKey: "maple_pk_...", serviceName: "acme-web" })
@@ -257,9 +261,16 @@ try {
 }
 ```
 
-The span name defaults to `"exception"`; `attributes` adds extra span attributes. Turn the global
+The span name defaults to `"exception"`; `attributes` adds extra span attributes. Calls made before
+`init()` are held (up to 30) and recorded, with their original time, when it runs. Turn the global
 handlers off with `tracing: { captureErrors: false }` only when another tracker already owns them
-and the same crash would be recorded twice.
+and the same crash would be recorded twice. With the handlers off, or `tracing.enabled: false`, an
+uncaught error records no span but still keeps a buffered replay (`replay.onErrorSampleRate`).
+
+A thrown value that is not an `Error` (`throw "boom"`, `throw { code: 1 }`) has no stack of its own.
+It is recorded with its fields as the message (`{"code":1}`), and an uncaught one gets a single
+frame at the throw site (`code.file.path:line:column`) instead of frames from inside the SDK.
+`code.file.path` is redacted like every other URL.
 
 Cross-origin scripts report a bare `"Script error."` with no stack or filename. The SDK drops those,
 since they all fingerprint to one empty issue. Add `crossorigin` to the script tag to get the real
@@ -317,9 +328,13 @@ MapleBrowser.init({
 })
 ```
 
-Network failures (no response at all: offline, DNS, CORS, or a timeout, including one from `AbortSignal.timeout()`) are always errors, with
+Network failures (no response at all: offline, DNS, CORS, or a timeout, including one from `AbortSignal.timeout()`) are errors, with
 `error.type` set to what failed (`TypeError` for `fetch`, `error` or `timeout` for XHR). A request your code
-aborts with its own `AbortController` is not. No `error.message` is set: it is deprecated in the conventions, and the status
+aborts with its own `AbortController` is not. Neither is one the browser cancelled because the
+connection went away while it was in flight: the page unloaded (`pagehide`) or was hidden, or the
+browser went offline (or was offline when it failed). That span stays `Unset` and carries
+`maple.connection_lost` (`page_unload`, `page_hidden` or `offline`). A request that starts in an
+already-hidden tab, like a background poll, and then fails is still an error. No `error.message` is set: it is deprecated in the conventions, and the status
 code already says what went wrong.
 
 ### Breadcrumbs
@@ -373,6 +388,10 @@ log-based event named `browser.web_vital`, following the browser semantic conven
 | `browser.web_vital.rating`          | `good`                           |
 | `browser.web_vital.navigation_type` | `navigate`                       |
 | `url.path`                          | `/projects/42`                   |
+
+`url.path` is the path of the page the metric measures: the path the document loaded at, or the
+path when it is restored from the back/forward cache. CLS, INP and LCP cover the whole page
+view, so an SPA route change after the load does not move them to the new route.
 
 Each event carries `session.id` and is linked to the page's `pageload` span when your router calls
 `startNavigation`. CLS, INP and LCP settle when the page is hidden, so they arrive then. Turn them off
@@ -437,7 +456,12 @@ MapleBrowser.init({ ingestKey, serviceName, privacy: { requireConsent: true } })
 MapleBrowser.setConsent(true)
 ```
 
-Revoking stops capture without flushing, and a later grant starts a fresh session. Global Privacy
+Revoking stops capture without flushing, and a later grant starts a fresh session. A revoke also
+deletes the stored visitor id and drops data kept from before it. Consent lives in page memory, so
+call `setConsent()` on every page load with the stored decision. A `setConsent(false)` on a page
+that never granted takes effect after 10 seconds, unless `setConsent(true)` follows. This way, a
+consent tool that starts at "denied" and replays a stored "granted" does not reset the visitor.
+Nothing is captured in the meantime either way. Global Privacy
 Control is honored regardless of `requireConsent`. It suppresses the persistent visitor id (the one
 cross-session identifier the SDK stores) and leaves session-scoped capture alone. `doNotTrack` is
 ignored unless you set `privacy.respectDoNotTrack`. `privacy.persistVisitorId: false` turns the
@@ -546,8 +570,8 @@ MapleBrowser.init({
 ```
 
 Each becomes a string-array attribute, e.g. `http.response.header.x-cache: ["HIT"]`.
-`authorization`, `proxy-authorization`, `cookie` and `set-cookie` are never recorded, even when
-listed. XHR spans get response headers only (the browser does not expose an XHR's request headers),
+`authorization`, `proxy-authorization`, `cookie`, `set-cookie` and `x-api-key` are never recorded,
+even when listed. XHR spans get response headers only (the browser does not expose an XHR's request headers),
 and a cross-origin response only exposes the headers its server lists in
 `Access-Control-Expose-Headers`.
 
@@ -655,6 +679,8 @@ createRoot(document.getElementById("root")!, {
   function of `{ error, reset }`.
 - `mapleReactErrorHandler()` fits React 19's `onCaughtError`, `onUncaughtError` and
   `onRecoverableError` root options. An error already reported by a boundary is not reported again.
+  Setting one of those options replaces React's own console logging, so the handler passes the
+  error on to `mapleReactErrorHandler(source, next)`'s `next`, `console.error` by default.
 - `instrumentReactRouter(router)` takes a data router (`createBrowserRouter` and friends). A
   navigation starts when the router starts loading and ends when its loaders settle, named by the
   route template (`navigate /projects/:id`). The first is the `pageload`.
@@ -662,8 +688,10 @@ createRoot(document.getElementById("root")!, {
   the leaf route's full path (`navigate /projects/$projectId`). Search-only changes are not
   navigations.
 
-Both adapters return an unsubscribe. Attach them after `MapleBrowser.init`, or the page load is
-missed, and don't also call `startNavigation`/`endNavigation` yourself.
+Both adapters return an unsubscribe, which ends a navigation still open as interrupted
+(`maple.navigation.interrupted`). Attaching the same router again (React StrictMode, HMR) shares
+the one instrumentation instead of restarting the page load. Attach them after `MapleBrowser.init`,
+or the page load is missed, and don't also call `startNavigation`/`endNavigation` yourself.
 
 ## Notes
 

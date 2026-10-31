@@ -7,6 +7,7 @@ import * as BarChart from "../../../charts/bar-chart"
 import type * as Chart from "../../../charts/chart"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { panel } from "../../../ui/panel"
+import { emptyMessage } from "../../../ui/empty"
 import { skeleton } from "../../../ui/skeleton"
 import {
 	integrationPlatformOf,
@@ -15,7 +16,11 @@ import {
 	pausedLabel,
 	rateLimitLabel,
 	signalsSummary,
+	sourceHref,
+	viaLabel,
 } from "../kit/shared"
+import { platformMeta } from "../kit/platforms"
+import { icon } from "../../../ui/icon"
 import { sourceStatusBadge, sourceStatusLabel } from "../kit/status"
 import { signalCounts, volumeSize } from "../kit/volume"
 import { usageRows, usageTotals } from "./derive"
@@ -122,18 +127,10 @@ const volumePanel = (h: H, model: Model, timeZone: string, nowMs: number): Html 
 	const isFailed = AsyncData.isFailure(model.usage.data)
 	const body = Option.match(usage, {
 		onNone: () =>
-			isFailed
-				? h.p(
-						[h.Class("text-muted-foreground py-6 text-center text-xs")],
-						["Volume is unavailable right now."],
-					)
-				: skeleton(h, "h-48 w-full"),
+			isFailed ? emptyMessage(h, {}, ["Volume is unavailable right now."]) : skeleton(h, "h-48 w-full"),
 		onSome: (value) =>
 			value.buckets.length === 0
-				? h.p(
-						[h.Class("text-muted-foreground py-8 text-center text-xs")],
-						["Nothing stored from this source in the last 24 hours."],
-					)
+				? emptyMessage(h, {}, ["Nothing stored from this source in the last 24 hours."])
 				: usageChart(h, model, usageRows(value), timeZone, nowMs),
 	})
 	return panel(h, { padded: true, className: "gap-3" }, [
@@ -185,6 +182,58 @@ const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
 		]),
 	])
 
+const SIGNAL_NAMES = [
+	["spans", "Traces"],
+	["logs", "Logs"],
+	["metrics", "Metrics"],
+] as const
+
+/** The signals stored in the last 24 hours, read from the usage; `null` while it loads. */
+const storedSignals = (model: Model): string | null =>
+	Option.match(AsyncData.getData(model.usage.data), {
+		onNone: () => (AsyncData.isFailure(model.usage.data) ? "Unavailable right now" : null),
+		onSome: (usage) => {
+			const totals = usageTotals(usage)
+			const names = SIGNAL_NAMES.filter(([key]) => totals[key] > 0).map(([, label]) => label)
+			return names.length === 0 ? "None in the last 24 hours" : names.join(", ")
+		},
+	})
+
+const resourcesLabel = (source: V2Source): string | null => {
+	const resources = source.health.resources
+	if (resources === null) return null
+	return resources.unhealthy === 0
+		? String(resources.total)
+		: `${resources.total} · ${resources.unhealthy} unhealthy`
+}
+
+/** What an integration source collects, where its rules table would be: Maple holds the settings. */
+const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number): Html => {
+	const signals = storedSignals(model)
+	const resources = resourcesLabel(source)
+	return panel(h, {}, [
+		h.div(
+			[h.Class("flex items-center justify-between gap-4 border-b px-4 py-3")],
+			[
+				h.span([h.Class("text-sm font-medium")], ["What Maple collects"]),
+				h.a(
+					[
+						h.Href(sourceHref(source, "connection")),
+						h.Class(
+							"text-muted-foreground hover:text-foreground active:text-foreground inline-flex items-center gap-1 text-xs",
+						),
+					],
+					["Manage connection", icon(h, "ArrowRightIcon", { size: 12 })],
+				),
+			],
+		),
+		configRow(h, "Connected", [`${viaLabel(source)} · ${formatRelativeTime(source.created_at, nowMs)}`]),
+		configRow(h, "Collects", [platformMeta(source.platform).description]),
+		...(resources === null ? [] : [configRow(h, "Resources", [resources])]),
+		configRow(h, "Signals", [signals ?? skeleton(h, "h-4 w-32")]),
+	])
+}
+
 export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: string, nowMs: number): Html => {
 	return h.div(
 		[h.Class("flex flex-col gap-4")],
@@ -216,6 +265,7 @@ export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: stri
 			),
 			volumePanel(h, model, timeZone, nowMs),
 			...(hasToken(source) ? [rulesSummary(h, source, nowMs)] : []),
+			...(integrationPlatformOf(source) === null ? [] : [collectionSummary(h, model, source, nowMs)]),
 		],
 	)
 }

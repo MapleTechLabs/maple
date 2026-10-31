@@ -43,6 +43,7 @@ const PRESET_SIGNALS: Record<string, SignalDisplay> = {
 	p99_latency: { label: "P99 Latency", unit: "ms" },
 	apdex: { label: "Apdex", unit: "apdex" },
 	throughput: { label: "Throughput", unit: "rpm" },
+	uptime: { label: "Uptime check", unit: "plain" },
 } satisfies Record<string, SignalDisplay>
 
 /**

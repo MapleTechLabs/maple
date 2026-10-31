@@ -5,6 +5,7 @@ import { ThemeColors } from "../../../../charts/theme-colors"
 import { LoadFailure } from "../../../../data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
+import { TracedService } from "../../kit/traced"
 import { RailwayServiceRow, RailwayServiceTimeseriesRow } from "../model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
@@ -19,6 +20,10 @@ export const Message = defineMessageUnion({
 	CompletedFetchTimeseries: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(RailwayServiceTimeseriesRow), LoadFailure),
+	},
+	CompletedFetchTraced: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(TracedService), LoadFailure),
 	},
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

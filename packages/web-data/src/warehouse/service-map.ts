@@ -453,6 +453,7 @@ export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(
 	return {
 		edges: result.dependencies.map((row) => transformEdge(row, durationSeconds)),
 		dbEdges: result.dbEdges.map((row) => transformDbEdge(row, durationSeconds)),
+		dbEdgesTimedOut: result.dbEdgesTimedOut === true,
 		overview: coerceOverviewRows(result.overview, durationSeconds),
 		platforms: result.platforms.map((row) => ({
 			serviceName: row.serviceName,
@@ -474,5 +475,6 @@ export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(
 			avgCpuLimitUtilization: row.avgCpuLimitUtilization,
 			avgMemoryLimitUtilization: row.avgMemoryLimitUtilization,
 		})),
+		runtimes: result.runtimes ?? [],
 	}
 })

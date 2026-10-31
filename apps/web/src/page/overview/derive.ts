@@ -1,6 +1,7 @@
 import type { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import type { AnomalySignalType } from "@maple/domain/http"
 import {
+	alertIncidentCauseLabel,
 	anomalyDirection,
 	deriveServiceHealthFromCauses,
 	healthRank,
@@ -113,7 +114,10 @@ export const enrichServices = (
 		.map((service) => {
 			const alertCauses: Array<ServiceHealthCause> = incidents
 				.filter((incident) => incident.status === "open" && incident.groupKey === service.serviceName)
-				.map((incident) => ({ severity: incident.severity, label: "Alert firing" }))
+				.map((incident) => ({
+					severity: incident.severity,
+					label: alertIncidentCauseLabel(incident.signalType),
+				}))
 			const anomalyCauses: Array<ServiceHealthCause> = anomalies
 				.filter(
 					(row) =>

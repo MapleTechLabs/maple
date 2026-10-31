@@ -4,7 +4,7 @@ import { tokenizeSql } from "../../../lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { SIGNAL_SOURCE_LABEL } from "@maple/web-data/alerts/chart-series"
 import { comparatorLabels, formatSignalValue, ruleToFormState, signalLabels } from "@maple/web-data/alerts/form-utils"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "../../../data/load-failure"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -37,6 +37,7 @@ import { Message } from "./message"
 import type { Model, SignalSource } from "./model"
 import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
+import { queryTimeCard } from "./view-query-time"
 import { sectionHeading } from "../../kit/section-heading"
 
 // The rule detail's Overview tab.
@@ -175,7 +176,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 														h.pre(
 															[
 																h.Class(
-																	"overflow-x-auto whitespace-pre rounded-md border bg-muted/30 px-3 py-2.5 font-mono text-xs leading-relaxed",
+																	"overflow-x-auto whitespace-pre rounded-md border bg-surface-sunken p-3 font-mono text-xs leading-relaxed",
 																),
 															],
 															[
@@ -251,6 +252,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 				now: model.nowMs,
 				timeZone,
 			}),
+			...Arr.fromNullishOr(queryTimeCard(h, rule, checks, timeZone)),
 			h.div(
 				[h.Class("space-y-3")],
 				[
@@ -337,7 +339,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 						[h.Class("space-y-4")],
 						[
 							sectionHeading(h, { title: "Checks" }),
-							errorState(h, { failure, title: "Failed to load checks", onRetry: Message.ClickedReload() }),
+							errorState(h, { failure, title: "Couldn't load checks", onRetry: Message.ClickedReload() }),
 						],
 					),
 				onNone: () => checksPanel(h, model, { rule, page, isLoading: isChecksLoading, timeZone }),

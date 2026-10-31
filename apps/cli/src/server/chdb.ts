@@ -11,9 +11,9 @@
 // struct, so there is no struct-offset fragility across libchdb versions.
 
 import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
-import { Effect, Schema, type Scope } from "effect"
+import { Effect, Result, Schema, type Scope } from "effect"
 import { existsSync } from "node:fs"
-import { lstatSync, readFileSync } from "node:fs"
+import { lstatSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { durableJson } from "./durable-files"
@@ -242,6 +242,25 @@ export const applyRawTelemetryRetentionFloor = (db: Pick<Chdb, "query" | "exec">
  */
 export const MAX_QUERY_SIZE_BYTES = 64 * 1024 * 1024
 
+/**
+ * MergeTree defaults for every config Maple generates. chDB keeps no outdated
+ * parts (`old_parts_lifetime` 0) but cleans them only every 30-40 s on 128
+ * threads; a traces insert leaves ~30 merged-away parts across the view
+ * targets, so each pass deleted thousands at once and stalled inserts for seconds.
+ * Small passes every second do not. Only a config file reaches these: chDB
+ * ignores `--merge_tree.*` arguments.
+ */
+export const MERGE_TREE_CONFIG_XML = `  <merge_tree>
+    <cleanup_delay_period>1</cleanup_delay_period>
+    <cleanup_delay_period_random_add>1</cleanup_delay_period_random_add>
+    <max_cleanup_delay_period>5</max_cleanup_delay_period>
+    <cleanup_threads>4</cleanup_threads>
+  </merge_tree>`
+
+/** A chDB config carrying only {@link MERGE_TREE_CONFIG_XML}, for stores that need no backups. */
+export const writeIngestConfig = (path: string): void =>
+	writeFileSync(path, `<clickhouse>\n${MERGE_TREE_CONFIG_XML}\n</clickhouse>\n`, { mode: 0o600 })
+
 export const chdbArgv = (options: Pick<ChdbOptions, "dataDir" | "configFile">): string[] => [
 	"clickhouse",
 	"--async_load_databases=0",
@@ -318,6 +337,8 @@ export class Chdb {
 	readonly #sym: ChdbSymbols
 	#connPtrPtr: Pointer | bigint | null
 	readonly #conn: Pointer
+	#beforeStatement: (() => void) | undefined
+	#inBeforeStatement = false
 
 	private constructor(sym: ChdbSymbols, connPtrPtr: Pointer | bigint, conn: Pointer) {
 		this.#sym = sym
@@ -357,6 +378,10 @@ export class Chdb {
 		// never inherit a host-specific timezone.
 		db.exec("SET session_timezone = 'UTC'")
 		db.exec(`SET max_query_size = ${MAX_QUERY_SIZE_BYTES}`)
+		// An insert into `traces` feeds 28 views; pushing to them concurrently
+		// cuts a small export from ~100 ms to ~30 ms. A view on another view's
+		// target still runs after it; sibling views never read each other.
+		db.exec("SET parallel_view_processing = 1")
 		if (options.bootstrapSchema !== false) {
 			db.#bootstrap(options.schemaSql)
 			if (options.rawTelemetryRetentionDays !== undefined)
@@ -402,6 +427,19 @@ export class Chdb {
 		this.#run(sql, "CSV", () => undefined, undefined)
 	}
 
+	/**
+	 * Run `hook` before every later statement, except the ones `hook` itself runs.
+	 * The server's `InsertBatcher` inserts its queued rows here, so no statement
+	 * runs ahead of rows that requests before it queued. One hook at a time:
+	 * registering replaces the previous one, and the returned function removes it.
+	 */
+	beforeEachStatement(hook: () => void): () => void {
+		this.#beforeStatement = hook
+		return () => {
+			if (this.#beforeStatement === hook) this.#beforeStatement = undefined
+		}
+	}
+
 	get closed(): boolean {
 		return this.#connPtrPtr === null
 	}
@@ -413,10 +451,20 @@ export class Chdb {
 		}
 	}
 
+	#runBeforeStatement(): void {
+		const hook = this.#beforeStatement
+		if (hook === undefined || this.#inBeforeStatement) return
+		this.#inBeforeStatement = true
+		const ran = Result.try(hook)
+		this.#inBeforeStatement = false
+		if (Result.isFailure(ran)) throw ran.failure
+	}
+
 	#run<A>(sql: string, format: string, read: (view: Uint8Array) => A, empty: A): A {
 		// The connection pointer is freed by close(); dereferencing it afterwards
 		// would crash natively, so a late request fails with a typed error instead.
 		if (this.#connPtrPtr === null) throw new ChdbClosedError({ message: "chDB connection is closed" })
+		this.#runBeforeStatement()
 		// Held in locals so neither buffer can be collected before the call reads it.
 		const query = cstr(sql)
 		const outputFormat = cstr(format)

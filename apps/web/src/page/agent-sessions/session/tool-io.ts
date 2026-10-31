@@ -37,7 +37,7 @@ export const toolIoSummary = (
 		[
 			icon(h, "ArrowDownIcon", {
 				size: 10,
-				className: "text-muted-foreground/70",
+				className: "text-foreground-subtle",
 				attributes: [h.AriaHidden(true)],
 			}),
 			args === undefined ? "not captured" : formatBytes(args.byteLength),
@@ -87,7 +87,7 @@ const marker = (h: H, direction: "in" | "out", isFailed: boolean): Html =>
 export const truncatedNote = (h: H): Html =>
 	h.p(
 		[h.Class("text-2xs text-muted-foreground italic")],
-		["Cut off here by the instrumentation, not by Maple — the tail was never recorded."],
+		["Cut off here by the instrumentation, not by Maple. The tail was never recorded."],
 	)
 
 export const truncatedBadge = (h: H): Html =>
@@ -161,8 +161,8 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 			h.Class(
 				cn(
 					"flex items-stretch",
-					half.direction === "in" ? "bg-black/[0.06]" : "border-border/60 border-t",
-					half.direction === "out" && half.isFailed && "bg-severity-error/5",
+					half.direction === "in" ? "bg-surface-sunken" : "border-border-subtle border-t",
+					half.direction === "out" && half.isFailed && "bg-severity-error-a1",
 				),
 			),
 		],
@@ -210,7 +210,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 						payload: half.payload,
 						textKey: half.textKey,
 						clampLines: half.clampLines,
-						toneClass: half.isFailed ? "text-severity-error/90" : undefined,
+						toneClass: half.isFailed ? "text-severity-error" : undefined,
 					}),
 					...(half.payload.truncatedByEmitter ? [truncatedNote(h)] : []),
 				],
@@ -220,7 +220,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 
 const missingHalf = (h: H, label: string, note: string): Html =>
 	h.div(
-		[h.Class("flex items-center border-input border-t border-dashed bg-muted/20 py-2.5 pr-3")],
+		[h.Class("flex items-center border-input border-t border-dashed bg-surface-faint py-2.5 pr-3")],
 		[
 			h.span(
 				[h.Class("flex w-8 shrink-0 justify-center")],
@@ -259,27 +259,27 @@ export const toolIo = (
 			h.div(
 				[
 					h.Class(
-						"flex items-center gap-2.5 border-input border-t border-dashed bg-muted/20 px-3 py-2.5",
+						"flex items-center gap-2.5 border-input border-t border-dashed bg-surface-faint px-3 py-2.5",
 					),
 				],
 				[
 					h.span(
 						[
 							h.AriaHidden(true),
-							h.Class("flex shrink-0 items-center gap-0.5 text-muted-foreground/60"),
+							h.Class("flex shrink-0 items-center gap-0.5 text-foreground-subtle"),
 						],
 						[icon(h, "ArrowDownIcon", { size: 10 }), icon(h, "ArrowUpIcon", { size: 10 })],
 					),
 					h.span(
 						[h.Class("min-w-0 text-muted-foreground text-xs")],
-						["Payloads not captured — this span records the call's timing and identity only."],
+						["Payloads not captured. This span records the call's timing and identity only."],
 					),
 				],
 			),
 		]
 	return [
 		args === undefined
-			? missingHalf(h, "Sent", "not captured — the span carries no arguments attribute.")
+			? missingHalf(h, "Sent", "not captured. The span carries no arguments attribute.")
 			: ioHalf(h, model, {
 					direction: "in",
 					label: "Sent",

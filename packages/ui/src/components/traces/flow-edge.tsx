@@ -54,7 +54,7 @@ export const TraceFlowEdge = memo(function TraceFlowEdge({
 	let label: React.ReactNode = null
 	if (showLabel && data) {
 		if (isMissing) {
-			label = hovered ? <span className="italic text-muted-foreground/60">no data</span> : null
+			label = hovered ? <span className="italic text-foreground-subtle">no data</span> : null
 		} else if (hovered) {
 			const sharePct = formatShare(share)
 			label = (
@@ -116,7 +116,7 @@ export const TraceFlowEdge = memo(function TraceFlowEdge({
 					className="pointer-events-none overflow-visible"
 				>
 					<div className="flex h-full items-center justify-center">
-						<span className="whitespace-nowrap rounded border border-border/50 bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm">
+						<span className="whitespace-nowrap rounded-sm border border-border-subtle bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm">
 							{label}
 						</span>
 					</div>

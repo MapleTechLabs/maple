@@ -4,6 +4,7 @@ import { docsUrl } from "../../lib/docs"
 import { Array, Option, Schema } from "effect"
 import type { IconName } from "../../ui/icon"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
+import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
 
 // The integration catalog's data.
 
@@ -13,17 +14,22 @@ export type IntegrationId =
 	| "prometheus"
 	| "planetscale"
 	| "gcp"
+	| "aws"
 	| "railway"
+	| "supabase"
 	| "warpstream"
 	| "hazel"
+	| "linear"
 	| "github"
 	| ChatIntegrationId
 
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
+export const LINEAR_ACCENT = "#5E6AD5"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
+export const AWS_ACCENT = "#FF9900"
 
 /** A generated icon, or a chat connector's manifest mark (rendered from its path data). */
 export type EntryIcon =
@@ -117,6 +123,17 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		docsUrl: docsUrl("gcp"),
 	},
 	{
+		id: "aws",
+		category: "infrastructure",
+		isNew: true,
+		name: "AWS",
+		description: "Connect an AWS account through a read-only role you deploy with CloudFormation.",
+		icon: named("AwsIcon"),
+		accent: AWS_ACCENT,
+		iconClassName: "text-foreground",
+		docsUrl: docsUrl("aws"),
+	},
+	{
 		id: "railway",
 		category: "infrastructure",
 		isNew: true,
@@ -126,6 +143,18 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("RailwayIcon"),
 		accent: RAILWAY_ACCENT,
 		iconClassName: "text-foreground",
+		docsUrl: docsUrl("railway"),
+	},
+	{
+		id: "supabase",
+		category: "infrastructure",
+		isNew: true,
+		name: "Supabase",
+		description:
+			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
+		icon: named("SupabaseIcon"),
+		accent: SUPABASE_ACCENT,
+		docsUrl: docsUrl("supabase"),
 	},
 	{
 		id: "warpstream",
@@ -145,6 +174,15 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("HazelIcon"),
 		accent: HAZEL_ACCENT,
 		docsUrl: "https://hazel.sh/docs/integrations/maple",
+	},
+	{
+		id: "linear",
+		category: "notifications",
+		name: "Linear",
+		description:
+			"Open one Linear issue per alert rule, then comment as it fires again, changes severity or resolves.",
+		icon: named("LinearIcon"),
+		accent: LINEAR_ACCENT,
 	},
 	{
 		id: "github",

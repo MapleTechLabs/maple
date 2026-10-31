@@ -1,6 +1,6 @@
 import type { ErrorSignal } from "../../../lib/models/error-signal"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { toLoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
@@ -18,7 +18,7 @@ import { type HeaderSelection, type RowState, signalHeader, signalRow, signalRow
 type H = HtmlBuilder<Message>
 
 /** The fallback when a failed list carries no error of its own. */
-const LIST_FAILURE = toLoadFailure("The errors list could not be loaded.")
+const LIST_FAILURE = toLoadFailure("The errors list couldn't be loaded.")
 
 const SKELETON_ROWS = 8
 const LOAD_MORE_SKELETON_ROWS = 3
@@ -28,21 +28,18 @@ const loadingBody = (h: H): ReadonlyArray<Html> => [
 	skeletonList(h, {
 		rows: SKELETON_ROWS,
 		renderRow: (index) => signalRowSkeleton(h, index),
-		className: "gap-0 divide-y divide-border/40",
+		className: "gap-0 divide-y divide-border-subtle",
 	}),
 ]
 
+/** One compact dashed panel at the top of the list area, as on Services and Traces. */
 const failedBody = (h: H, model: Model): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("p-4")],
-		[
-			errorState(h, {
-				failure: Option.getOrElse(listFailureOf(model), () => LIST_FAILURE),
-				title: "Failed to load errors",
-				onRetry: Message.ClickedRetry(),
-			}),
-		],
-	),
+	errorState(h, {
+		failure: Option.getOrElse(listFailureOf(model), () => LIST_FAILURE),
+		title: "Couldn't load errors",
+		onRetry: Message.ClickedRetry(),
+		className: "mt-4",
+	}),
 ]
 
 /** The bottom of a page that is not the bottom of the list. */
@@ -53,21 +50,16 @@ const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => {
 			skeletonList(h, {
 				rows: LOAD_MORE_SKELETON_ROWS,
 				renderRow: (index) => signalRowSkeleton(h, index),
-				className: "gap-0 divide-y divide-border/40 border-t border-border/40",
+				className: "gap-0 divide-y divide-border-subtle border-t border-border-subtle",
 			}),
 		]
 	}
 	return [
 		h.div(
-			[h.Class("flex items-center justify-center gap-3 border-t border-border/40 p-4")],
+			[h.Class("flex items-center justify-center gap-3 border-t border-border-subtle p-4")],
 			[
 				...(paging === "failed"
-					? [
-							h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								["More errors could not be loaded."],
-							),
-						]
+					? [h.span([h.Class("text-xs text-muted-foreground")], ["Couldn't load more errors."])]
 					: []),
 				loadMoreButton(h, paging === "failed" ? "Retry" : "Load more"),
 			],
@@ -85,6 +77,48 @@ export type ListInputs = Readonly<{
 	rowState: (signal: ErrorSignal) => RowState
 	isNarrowed: boolean
 }>
+
+const rowView = (
+	h: H,
+	signal: ErrorSignal,
+	isSelected: RowState["isSelected"],
+	isSelecting: RowState["isSelecting"],
+	isFocused: RowState["isFocused"],
+	timeZone: RowState["timeZone"],
+	nowMs: RowState["nowMs"],
+	sparkWindow: RowState["sparkWindow"],
+	picker: RowState["picker"],
+	rowMenu: RowState["rowMenu"],
+): Html =>
+	signalRow(h, signal, {
+		isSelected,
+		isSelecting,
+		isFocused,
+		timeZone,
+		nowMs,
+		sparkWindow,
+		picker,
+		rowMenu,
+	})
+
+// One slot per list position, `index % 256` so the cache stays bounded: hovering a row (which moves
+// `focusedId`) rebuilds the two rows whose state changed, not the whole list.
+const lazyRow = createKeyedLazy()
+const ROW_SLOTS = 256
+
+const memoRow = (h: H, signal: ErrorSignal, index: number, state: RowState): Html =>
+	lazyRow(index % ROW_SLOTS, rowView, [
+		h,
+		signal,
+		state.isSelected,
+		state.isSelecting,
+		state.isFocused,
+		state.timeZone,
+		state.nowMs,
+		state.sparkWindow,
+		state.picker,
+		state.rowMenu,
+	])
 
 /** The rows, or the empty state, under the column header. */
 const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> => {
@@ -108,11 +142,11 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 			[
 				signalHeader(h, selection),
 				h.div(
-					[h.Role("list"), h.Class("divide-y divide-border/40"), h.OnMount(MountRowSelect())],
-					signals.map((signal) =>
+					[h.Role("list"), h.Class("divide-y divide-border-subtle"), h.OnMount(MountRowSelect())],
+					signals.map((signal, index) =>
 						h.div(
 							[h.Key(signal.id), h.Role("listitem")],
-							[signalRow(h, signal, inputs.rowState(signal))],
+							[memoRow(h, signal, index, inputs.rowState(signal))],
 						),
 					),
 				),

@@ -6,11 +6,13 @@ import { orgOfKey, type RequestKey } from "./request-key"
  * One request slot in a page Model: the `AsyncData` plus the key it was last requested under.
  * This is what one `useAtomValue(queryAtom(input))` call site becomes. `retained`: the data on
  * screen answers an earlier key (`useRetainedResult`), so a failure of the new key shows as one.
+ * `retrying`: a failed slot asked again; the failure stays on screen until the answer lands.
  */
 export type Keyed<A, E> = Readonly<{
 	key: RequestKey | null
 	data: AsyncData.AsyncData<A, E>
 	retained?: boolean
+	retrying?: boolean
 }>
 
 export const KeyedSchema = <A, AI, E, EI>(
@@ -21,6 +23,7 @@ export const KeyedSchema = <A, AI, E, EI>(
 		key: Schema.NullOr(Schema.String),
 		data: AsyncData.Schema(dataSchema, errorSchema).schema,
 		retained: Schema.optionalKey(Schema.Boolean),
+		retrying: Schema.optionalKey(Schema.Boolean),
 	})
 
 export const idle = <A, E>(): Keyed<A, E> => ({ key: null, data: AsyncData.Idle() })
@@ -58,6 +61,12 @@ export const request = <A, E>(
 	mode: RequestMode,
 ): Option.Option<Requested<A, E>> => {
 	if (slot.key !== null && baseKey(slot.key) === baseKey(key)) {
+		// A retry of a failure (often an auto-retry probe) keeps the error up, not a skeleton.
+		if (AsyncData.isFailure(slot.data)) {
+			return slot.retrying === true
+				? Option.none()
+				: Option.some({ key: slot.key, data: slot.data, retrying: true })
+		}
 		const transition =
 			mode === "Load" ? AsyncData.loadIfMissing(slot.data) : AsyncData.revalidateOrLoad(slot.data)
 		// The slot's own key, generation included, so a read it superseded stays dropped.

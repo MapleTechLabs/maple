@@ -4,7 +4,7 @@
  * afterwards is ignored for a message already retried) over its own light
  * layer graph and one Postgres socket for the batch.
  */
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { renamedFrom } from "alchemy/Rename"
 import { Effect, Layer, Stream } from "effect"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"

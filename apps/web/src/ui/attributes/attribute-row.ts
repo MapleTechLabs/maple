@@ -1,10 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { highlightCode } from "../../lib/sugar-high"
-import { Option, Schema } from "effect"
+import { prettyJson, tryParseJson } from "../../lib/display-text"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
 import { icon } from "../icon"
+import { cappedCode } from "../logs/log-message"
 import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from "./attributes-panel"
 
 // Port of `CopyableValue`, `SelectableValue`, `AttributeRow` (packages/ui/src/components/attributes/
@@ -13,14 +14,6 @@ import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from 
 type H = HtmlBuilder<Message>
 
 const stop = { propagation: "Stop" } as const
-
-const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
-
-/** `tryParseJson`: an object or array body, else `None`. */
-export const tryParseJson = (value: string): Option.Option<unknown> => {
-	const trimmed = value.trimStart()
-	return trimmed[0] !== "{" && trimmed[0] !== "[" ? Option.none() : decodeJson(value)
-}
 
 /** `CopyableValue`: inline text that copies itself, tinted by the copy's outcome. */
 export const copyableValue = (
@@ -36,10 +29,10 @@ export const copyableValue = (
 			h.AriaLabel(`Copy ${options.label ?? "value"}`),
 			h.Class(
 				cn(
-					"-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors",
-					status === "idle" && "hover:bg-muted/50",
-					status === "copied" && "bg-severity-info/20",
-					status === "error" && "bg-severity-error/20",
+					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+					status === "copied" && "bg-severity-info-a3",
+					status === "error" && "bg-severity-error-a3",
 					options.className,
 				),
 			),
@@ -75,7 +68,7 @@ const selectableValue = (
 	)
 
 /** `CollapsibleJsonValue`: an 80-char preview that expands into highlighted, copyable JSON. */
-const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknown): Html => {
+const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 	const isExpanded = isOpen(model, `json:${id}`, false)
 	const preview = value.length > 80 ? value.slice(0, 80) + "…" : value
 	return h.div(
@@ -85,7 +78,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 				[
 					h.Type("button"),
 					h.Class(
-						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-muted/50 rounded px-0.5 -mx-0.5 transition-colors",
+						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken rounded-sm px-0.5 -mx-0.5",
 					),
 					h.OnClick(Message.ToggledCollapsible({ key: `json:${id}`, defaultOpen: false }), stop),
 					h.Title(isExpanded ? "Collapse" : "Expand JSON"),
@@ -103,25 +96,18 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 						h.div(
 							[
 								h.Class(
-									"group/json relative mt-1 overflow-hidden rounded-md border bg-muted/30",
+									"group/json relative mt-1 overflow-hidden rounded-md border bg-surface-sunken",
 								),
 							],
 							[
 								h.div(
 									[h.Class("max-h-64 overflow-auto p-2")],
 									[
-										h.pre(
-											[h.Class("text-xs leading-relaxed")],
-											[
-												h.code(
-													[
-														h.InnerHTML(
-															highlightCode(JSON.stringify(parsed, null, 2)),
-														),
-													],
-													[],
-												),
-											],
+										// Re-indented only once expanded: a collapsed row shows an 80-character preview.
+										...cappedCode(
+											h,
+											Option.getOrElse(prettyJson(value), () => value),
+											"text-xs leading-relaxed",
 										),
 									],
 								),
@@ -131,7 +117,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 									label: "JSON",
 									iconSize: 10,
 									className:
-										"absolute top-1 right-1 border-border/60 bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
+										"absolute top-1 right-1 border-border-subtle bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
 									attributes: [
 										h.OnClick(
 											Message.ClickedCopy({ copyId: `json:${id}`, text: value }),
@@ -149,7 +135,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 
 const COMMIT_SHA_KEYS = new Set(["vcs.ref.head.revision"])
 const FULL_SHA = /^[0-9a-f]{40}$/i
-const COMMIT_SHA_CLASS = "-mx-0.5 cursor-pointer break-all rounded px-0.5 transition-colors hover:bg-muted/50"
+const COMMIT_SHA_CLASS = "-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken"
 
 /** A commit SHA value as a commit link. TODO(commit-card): the hover card itself. */
 const commitShaValue = (h: H, id: string, value: string): Html =>
@@ -217,7 +203,7 @@ export const attributeRow = (
 	const parsed = tryParseJson(value)
 	const isFilterable = context.canFilter && Option.isNone(parsed)
 	const valueView = Option.match(parsed, {
-		onSome: (json) => jsonValue(h, model, id, value, json),
+		onSome: () => jsonValue(h, model, id, value),
 		onNone: () =>
 			COMMIT_SHA_KEYS.has(attrKey) && context.hasCommitShaValues !== false
 				? commitShaValue(h, id, value)
@@ -238,7 +224,7 @@ export const attributeRow = (
 		[
 			h.Key(attrKey),
 			h.Class(
-				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40",
+				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[

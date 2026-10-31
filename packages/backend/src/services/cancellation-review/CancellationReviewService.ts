@@ -11,6 +11,7 @@
  * A `CancellationReviewError` is retried there with backoff; the claim row keeps
  * a retry, or a second delivery of the webhook, from posting twice.
  */
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import {
@@ -24,6 +25,7 @@ import {
 } from "@maple/db/tables"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
 import {
+	BillingCustomerId,
 	CancellationAppEvidence,
 	CancellationBillingEvidence,
 	CancellationCompanyEvidence,
@@ -505,7 +507,10 @@ export class CancellationReviewService extends Context.Service<
 								? optional(
 										"otherOrgBilling",
 										autumn
-											.getOrCreateCustomer(org.orgId, { expand: [] })
+											// Each org's own customer: the report is about the orgs themselves.
+											.getOrCreateCustomer(BillingCustomerId.make(org.orgId), {
+												expand: [],
+											})
 											.pipe(Effect.flatMap(ensureOk)),
 									)
 								: Effect.succeed(null)
@@ -646,7 +651,7 @@ export class CancellationReviewService extends Context.Service<
 
 				// The one required read: it says whether this plan is the org's plan at all.
 				const response = yield* autumn
-					.getOrCreateCustomer(orgId, { expand: ["invoices"] })
+					.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: ["invoices"] })
 					.pipe(
 						Effect.flatMap(ensureOk),
 						Effect.mapError(failedAt("billing", "Could not read the Autumn customer")),

@@ -2,27 +2,28 @@ import { cacheResultStyles, getCacheInfo } from "@maple/ui/lib/cache"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getHttpInfo, HTTP_METHOD_COLORS, httpStatusTone } from "@maple/ui/lib/http"
-import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
+import { getSpanKindLabel } from "@maple/ui/lib/span-kind"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { severityTone, TONE_COLOR, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../../ui/display"
 import { icon } from "../../../../ui/icon"
 import { iconButton } from "../../../../ui/icon-button"
+import { traceStatusBadge } from "../../../../ui/trace-badges"
 import { truncatedId } from "../../../../ui/truncated-id"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { serviceDot } from "../../../../ui/values"
 import type { SpanNodeData } from "../trace-data"
 import { Message } from "./model"
 import { rowPlatform } from "./platform"
-import { countDescendants } from "./tree"
+import { countDescendants, type TreeRow, treeLevel } from "./tree"
 
 // `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
 
 // copied: `outcomeBadgeStyle(true)` (cloud-platforms/types.ts pulls in the React icon set).
-const BAD_OUTCOME_STYLE = "bg-severity-error/15 text-severity-error border-severity-error/30"
+const BAD_OUTCOME_STYLE = "bg-severity-error-a2 text-severity-error border-severity-error-a3"
 
 const MAX_INDENT_DEPTH = 10
 const TOTAL_BLOCKS = 27
@@ -34,27 +35,84 @@ export type RowContext = Readonly<{
 	isSelected: boolean
 }>
 
-const depthIndent = (h: HtmlBuilder<Message>, depth: number): ReadonlyArray<Html> =>
-	depth <= 0
-		? []
-		: [
-				h.div(
-					[h.Class("shrink-0"), h.Style({ width: `${Math.min(depth, MAX_INDENT_DEPTH) * 24}px` })],
-					[],
-				),
-				...(depth > MAX_INDENT_DEPTH
+const COLUMN_PX = 24
+/** Where a row's toggle sits: its column plus the row's `gap-2`, centred in the `w-6` toggle. */
+const RAIL_X = 20
+const RAIL = "absolute w-px bg-foreground/15"
+
+/** The call-path tree: ancestor rails, this row's elbow, and the stem down to its first child. */
+const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean): ReadonlyArray<Html> => {
+	const level = treeLevel(row)
+	const shown = Math.min(level, MAX_INDENT_DEPTH)
+	const hasStem = isExpanded && row.node.children.length > 0
+	if (shown === 0 && !hasStem) return []
+	const x = (column: number) => `${column * COLUMN_PX + RAIL_X}px`
+	const isElbowShown = level > 0 && level <= MAX_INDENT_DEPTH
+	return [
+		h.div(
+			[
+				h.AriaHidden(true),
+				h.Class("relative shrink-0 self-stretch"),
+				h.Style({ width: `${shown * COLUMN_PX}px`, "margin-right": shown === 0 ? "-8px" : "0px" }),
+			],
+			[
+				...row.rails
+					.slice(0, shown)
+					.flatMap((continues, column) =>
+						continues
+							? [h.span([h.Class(`${RAIL} inset-y-0`), h.Style({ left: x(column) })], [])]
+							: [],
+					),
+				...(isElbowShown
 					? [
 							h.span(
 								[
-									h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"),
-									h.Title(`Depth ${depth}`),
+									h.Class(cn(RAIL, "top-0", row.isLast ? "h-1/2" : "bottom-0")),
+									h.Style({ left: x(level - 1) }),
 								],
-								["L", String(depth)],
+								[],
+							),
+							h.span(
+								[
+									h.Class("absolute top-1/2 h-px bg-foreground/15"),
+									h.Style({ left: x(level - 1), width: `${COLUMN_PX - RAIL_X + 12}px` }),
+								],
+								[],
 							),
 						]
 					: []),
-			]
+				...(hasStem && level < MAX_INDENT_DEPTH
+					? [
+							h.span(
+								[
+									h.Class(`${RAIL} top-[calc(50%+8px)] bottom-0`),
+									h.Style({ left: x(level) }),
+								],
+								[],
+							),
+						]
+					: []),
+			],
+		),
+		...(level > MAX_INDENT_DEPTH
+			? [
+					h.span(
+						[
+							h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"),
+							h.Title(`Depth ${level}`),
+						],
+						["L", String(level)],
+					),
+				]
+			: []),
+	]
+}
 
+// The status column carries Ok; the tree only flags errors.
+const statusFill = (statusCode: string): string =>
+	statusCode === "Error" ? TONE_FILL.crit : TONE_FILL.neutral
+
+/** A parent's chevron, or a leaf's status square where the elbow lands. */
 const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean): Html =>
 	span.children.length > 0
 		? iconButton(
@@ -69,7 +127,18 @@ const toggle = (h: HtmlBuilder<Message>, span: SpanNodeData, isExpanded: boolean
 				},
 				[icon(h, isExpanded ? "ChevronDownIcon" : "ChevronRightIcon")],
 			)
-		: h.div([h.Class("w-6 shrink-0")], [])
+		: h.div(
+				[h.Class("flex size-6 shrink-0 items-center justify-center")],
+				[
+					h.span(
+						[
+							h.Class(cn("size-2 rounded-xs", statusFill(span.statusCode))),
+							h.Title(span.statusCode === "" ? "Unset" : span.statusCode),
+						],
+						[],
+					),
+				],
+			)
 
 /** `PixelDurationBar`: fixed blocks, lit where the span covers them. */
 const pixelBar = (
@@ -88,8 +157,9 @@ const pixelBar = (
 				[
 					h.Attribute(
 						"class",
-						`w-[5px] h-2.5 rounded-[1px] shrink-0 ${isActive ? color : "bg-muted"}`,
+						`w-[5px] h-2.5 rounded-2xs shrink-0 ${isActive ? "" : "bg-muted"}`,
 					),
+					...(isActive ? [h.Style({ "background-color": color })] : []),
 				],
 				[],
 			)
@@ -97,13 +167,14 @@ const pixelBar = (
 	)
 }
 
-const missingRow = (h: HtmlBuilder<Message>, span: SpanNodeData, ctx: RowContext): Html =>
-	h.div(
+const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Html => {
+	const span = row.node
+	return h.div(
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-center border-b border-dashed py-1.5 px-2 bg-muted/30",
-					ctx.isSelected && "bg-primary/5 border-l-2 border-l-primary",
+					"@container/row group flex h-7 items-stretch px-2 bg-surface-sunken",
+					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
 		],
@@ -111,7 +182,7 @@ const missingRow = (h: HtmlBuilder<Message>, span: SpanNodeData, ctx: RowContext
 			h.div(
 				[h.Class("flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
 				[
-					...depthIndent(h, span.depth),
+					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
 					badge(
 						h,
@@ -139,42 +210,50 @@ const missingRow = (h: HtmlBuilder<Message>, span: SpanNodeData, ctx: RowContext
 					truncatedId(h, {
 						value: span.spanId,
 						kind: "span",
-						className: "w-16 text-right text-3xs text-muted-foreground/50 truncate",
+						className: "w-16 text-right text-3xs text-foreground-faint truncate",
 					}),
 					h.div([h.Class("w-14")], []),
 				],
 			),
 		],
 	)
+}
 
 type HttpInfo = NonNullable<ReturnType<typeof getHttpInfo>>
 
-const serviceLabel = (h: HtmlBuilder<Message>, span: SpanNodeData): Html => {
+/** The service where the call path enters it; a child in its parent's service keeps only the platform. */
+const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html> => {
+	const span = row.node
 	const platform = rowPlatform({ ...span.spanAttributes })
-	return h.span(
-		[h.Class("flex min-w-0 max-w-[30%] shrink items-center gap-1.5 font-mono text-3xs")],
-		[
-			...(platform === null
-				? []
-				: [
-						icon(h, platform.icon, {
-							size: 11,
-							className: cn("shrink-0", platform.accentClassName),
-							attributes: [h.AriaLabel(platform.label)],
-						}),
-					]),
-			serviceDot(h, { serviceName: span.serviceName, className: "size-1.5" }),
-			h.span(
-				[
-					h.Class("min-w-0 truncate"),
-					h.Style({ color: getServiceColor(span.serviceName) }),
-					h.Title(span.serviceName),
-				],
-				[span.serviceName],
-			),
-			h.span([h.Class("shrink-0 text-muted-foreground/60")], [getSpanKindLabel(span.spanKind)]),
-		],
-	)
+	const platformIcon =
+		platform === null
+			? []
+			: [
+					icon(h, platform.icon, {
+						size: 12,
+						className: cn("shrink-0", platform.accentClassName),
+						attributes: [h.AriaLabel(platform.label)],
+					}),
+				]
+	if (row.parent !== null && row.parent.serviceName === span.serviceName) return platformIcon
+	return [
+		h.span(
+			[h.Class("flex min-w-0 max-w-[30%] shrink items-center gap-1.5 font-mono text-3xs")],
+			[
+				...platformIcon,
+				serviceDot(h, { serviceName: span.serviceName, className: "size-1.5" }),
+				h.span(
+					[
+						h.Class("min-w-0 truncate"),
+						h.Style({ color: getServiceColor(span.serviceName) }),
+						h.Title(span.serviceName),
+					],
+					[span.serviceName],
+				),
+				h.span([h.Class("shrink-0 text-foreground-subtle")], [getSpanKindLabel(span.spanKind)]),
+			],
+		),
+	]
 }
 
 const edgeLabel = (h: HtmlBuilder<Message>, span: SpanNodeData): ReadonlyArray<Html> => {
@@ -194,18 +273,33 @@ const edgeLabel = (h: HtmlBuilder<Message>, span: SpanNodeData): ReadonlyArray<H
 			]
 }
 
+// `Receiver.method(args)`: the receiver and args recede so the called method reads first.
+const CALL_NAME = /^((?:[A-Za-z_$][\w$]*\.)+)([A-Za-z_$][\w$]*)(\(.*\))?$/
+
 const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpInfo | null): Html => {
-	if (httpInfo === null)
-		return truncatedText(h, { text: span.spanName, mono: true, className: "flex-1 text-xs" })
+	if (httpInfo === null) {
+		const call = CALL_NAME.exec(span.spanName)
+		if (call === null)
+			return truncatedText(h, { text: span.spanName, mono: true, className: "min-w-0 text-xs" })
+		const [, receiver = "", method = "", args = ""] = call
+		return h.span(
+			[h.Class("min-w-0 truncate font-mono text-xs"), h.Title(span.spanName)],
+			[
+				h.span([h.Class("text-muted-foreground")], [receiver]),
+				h.span([h.Class("font-semibold text-foreground")], [method]),
+				...(args === "" ? [] : [h.span([h.Class("text-muted-foreground")], [args])]),
+			],
+		)
+	}
 	const route = httpInfo.route === null || httpInfo.route === "" ? span.spanName : httpInfo.route
 	return h.span(
-		[h.Class("flex-1 flex items-center gap-1.5 min-w-0 font-mono text-xs"), h.Title(route)],
+		[h.Class("flex items-center gap-1.5 min-w-0 font-mono text-xs"), h.Title(route)],
 		[
 			h.span(
 				[
 					h.Class(
 						cn(
-							"px-1 py-0.5 rounded text-3xs font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
+							"px-1 py-0.5 rounded-sm text-3xs font-bold text-white shrink-0 leading-none hidden @min-[500px]:inline-flex",
 							HTTP_METHOD_COLORS[httpInfo.method] ?? "bg-muted-foreground",
 						),
 					),
@@ -217,49 +311,69 @@ const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpIn
 	)
 }
 
-/** The status cell: cache result, else the HTTP code, else the span status. */
+type CodeLocation = Readonly<{ file: string; path: string; line: string }>
+
+/** `code.file.path` / `code.line.number`, or their pre-1.30 `code.filepath` / `code.lineno`. */
+const codeLocation = (span: SpanNodeData): CodeLocation | null => {
+	const attrs = span.spanAttributes
+	const path = attrs["code.file.path"] ?? attrs["code.filepath"] ?? ""
+	if (path === "") return null
+	return {
+		file: path.slice(path.lastIndexOf("/") + 1),
+		path,
+		line: attrs["code.line.number"] ?? attrs["code.lineno"] ?? "",
+	}
+}
+
+/** `file.ts:120`, or just `:120` under a parent in the same file. */
+const locationLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html> => {
+	const location = codeLocation(row.node)
+	if (location === null) return []
+	const parentPath = row.parent === null ? null : codeLocation(row.parent)?.path
+	const isSameFile = parentPath === location.path && location.line !== ""
+	return [
+		h.span(
+			[
+				h.Class(
+					"ml-auto hidden shrink-0 pl-2 font-mono text-3xs tabular-nums @min-[640px]/row:inline",
+				),
+				h.Title(location.line === "" ? location.path : `${location.path}:${location.line}`),
+			],
+			[
+				...(isSameFile ? [] : [h.span([h.Class("text-foreground-soft")], [location.file])]),
+				...(location.line === ""
+					? []
+					: [h.span([h.Class("text-muted-foreground")], [":", location.line])]),
+			],
+		),
+	]
+}
+
+const STATUS_CELL = "w-14 justify-center"
+
+/** The status cell: cache result, else the HTTP code, else the span status; soft badges as in the traces list. */
 const statusCell = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpInfo | null): Html => {
 	const cacheInfo = getCacheInfo({ ...span.spanAttributes })
 	if (cacheInfo?.result === "hit" || cacheInfo?.result === "miss") {
 		return badge(
 			h,
-			{
-				variant: "outline",
-				className: cn(
-					"text-3xs w-14 justify-center font-medium",
-					cacheResultStyles[cacheInfo.result],
-				),
-			},
+			{ variant: "outline", className: cn(STATUS_CELL, cacheResultStyles[cacheInfo.result]) },
 			[cacheInfo.result === "hit" ? "HIT" : "MISS"],
 		)
 	}
 	const code = httpInfo?.statusCode ?? null
 	if (code !== null && code !== 0) {
-		const tone = httpStatusTone(code)
-		return h.span(
-			[
-				h.Class(
-					cn(
-						"w-14 text-center font-mono text-xs font-medium",
-						tone !== "neutral"
-							? TONE_TEXT[tone]
-							: code >= 300
-								? "text-chart-p50"
-								: "text-severity-info",
-					),
-				),
-			],
-			[String(code)],
-		)
+		return traceStatusBadge(h, {
+			hasError: span.statusCode === "Error",
+			httpStatusCode: code,
+			className: STATUS_CELL,
+		})
 	}
 	return badge(
 		h,
 		{
-			variant: "outline",
-			className: cn(
-				"text-3xs w-14 justify-center font-medium",
-				getSpanStatusBadgeClass(span.statusCode),
-			),
+			variant: "secondary",
+			className: cn(STATUS_CELL, TONE_SOFT[severityTone(span.statusCode)]),
 		},
 		[span.statusCode === "" ? "Unset" : span.statusCode],
 	)
@@ -276,14 +390,13 @@ const rightSection = (
 		ctx.totalDurationMs > 0 ? ((spanStartMs(span) - traceStartMs) / ctx.totalDurationMs) * 100 : 0
 	const widthPercent = ctx.totalDurationMs > 0 ? (span.durationMs / ctx.totalDurationMs) * 100 : 0
 	const httpTone = httpStatusTone(httpInfo?.statusCode)
+	// Errors and HTTP warnings keep their tone; everything else takes the service colour, as on the Timeline tab.
 	const barColor =
-		httpTone === "crit"
-			? TONE_FILL.crit
+		httpTone === "crit" || span.statusCode === "Error"
+			? TONE_COLOR.crit
 			: httpTone === "warn"
-				? TONE_FILL.warn
-				: span.statusCode === "Error"
-					? TONE_FILL.crit
-					: "bg-primary"
+				? TONE_COLOR.warn
+				: getServiceColor(span.serviceName)
 	const platform = rowPlatform({ ...span.spanAttributes })
 	const outcome = Option.fromNullishOr(platform?.outcome).pipe(Option.filter((o) => o.bad))
 	return h.div(
@@ -319,8 +432,9 @@ const rightSection = (
 const selectKey = (spanId: string) => (key: string) =>
 	key === "Enter" || key === " " ? Option.some(Message.ClickedRow({ spanId })) : Option.none()
 
-export const spanRow = (h: HtmlBuilder<Message>, span: SpanNodeData, ctx: RowContext): Html => {
-	if (span.isMissing === true) return missingRow(h, span, ctx)
+export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Html => {
+	const span = row.node
+	if (span.isMissing === true) return missingRow(h, row, ctx)
 	const httpInfo = getHttpInfo({
 		spanName: span.spanName,
 		spanAttributes: { ...span.spanAttributes },
@@ -331,9 +445,9 @@ export const spanRow = (h: HtmlBuilder<Message>, span: SpanNodeData, ctx: RowCon
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-center border-b py-1.5 hover:bg-muted/50 cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-					span.statusCode === "Error" && "bg-severity-error/5",
-					ctx.isSelected && "bg-primary/5 border-l-2 border-l-primary",
+					"@container/row group flex h-7 items-stretch hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					span.statusCode === "Error" && "bg-severity-error-a1",
+					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
 			h.Role("button"),
@@ -345,11 +459,11 @@ export const spanRow = (h: HtmlBuilder<Message>, span: SpanNodeData, ctx: RowCon
 			h.div(
 				[h.Class("@container flex items-center gap-2 flex-1 min-w-0 overflow-hidden")],
 				[
-					...depthIndent(h, span.depth),
+					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
-					serviceLabel(h, span),
-					...edgeLabel(h, span),
 					nameLabel(h, span, httpInfo),
+					...serviceLabel(h, row),
+					...edgeLabel(h, span),
 					...(hasChildren && !ctx.isExpanded
 						? [
 								h.span(
@@ -358,6 +472,7 @@ export const spanRow = (h: HtmlBuilder<Message>, span: SpanNodeData, ctx: RowCon
 								),
 							]
 						: []),
+					...locationLabel(h, row),
 				],
 			),
 			rightSection(h, span, ctx, httpInfo),

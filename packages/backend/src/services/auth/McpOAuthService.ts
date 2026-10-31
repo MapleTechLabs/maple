@@ -271,7 +271,7 @@ export class McpOAuthService extends Context.Service<
 		>
 		readonly revoke: (token: string, clientId: string) => Effect.Effect<void, McpOAuthPersistenceError>
 	}
->()("@maple/api/services/McpOAuthService", {
+>()("@maple/backend/services/McpOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "McpOAuthService", persistenceError)

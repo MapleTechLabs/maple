@@ -4,7 +4,7 @@ import { SessionId, TraceId } from "../../primitives"
 import { SessionTag } from "../../session-tags"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
-import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
+import { LIST_LIMIT_DEFAULT, wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { V2WarehouseReadErrors } from "./query-errors"
@@ -429,6 +429,27 @@ export const V2SessionReplayCollectionQuery = Schema.Struct({
 	description: "Pagination plus an optional time window for replay child collections.",
 })
 
+/** Transcript events one page may return; a session's transcript runs to a few hundred events. */
+export const MAX_TRANSCRIPT_PAGE_SIZE = 1000
+
+export const V2SessionTranscriptQuery = Schema.Struct({
+	...V2SessionReplayCollectionQuery.fields,
+	limit: Schema.optional(
+		Schema.NumberFromString.check(
+			Schema.isInt(),
+			Schema.isBetween({ minimum: 1, maximum: MAX_TRANSCRIPT_PAGE_SIZE }),
+		).annotate({
+			title: "Limit",
+			description: `Maximum number of events to return, between 1 and ${MAX_TRANSCRIPT_PAGE_SIZE}. Defaults to ${LIST_LIMIT_DEFAULT}.`,
+			examples: [MAX_TRANSCRIPT_PAGE_SIZE],
+		}),
+	),
+}).annotate({
+	identifier: "SessionTranscriptQuery",
+	title: "Session transcript query",
+	description: "Pagination plus an optional time window for a session's transcript.",
+})
+
 /** Chunks one events request may return. */
 export const MAX_REPLAY_CHUNKS_PER_REQUEST = 40
 
@@ -621,7 +642,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 	.add(
 		HttpApiEndpoint.get("transcript", "/:id/transcript", {
 			params: { id: SessionReplayPublicId },
-			query: V2SessionReplayCollectionQuery,
+			query: V2SessionTranscriptQuery,
 			success: SessionTranscriptList,
 			error: [...commonErrors, V2SessionReplayNotFound.schema],
 		}).annotateMerge(

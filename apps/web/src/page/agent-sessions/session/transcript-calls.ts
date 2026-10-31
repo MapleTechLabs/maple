@@ -48,7 +48,7 @@ const assistantError = (
 											rendering: !isRaw && error.isJson ? "json" : "text",
 											isMono: true,
 											clampLines: 14,
-											toneClass: "text-ui text-severity-error/90",
+											toneClass: "text-ui text-severity-error",
 										}),
 									],
 								),
@@ -94,7 +94,17 @@ const assistantHeader = (
 			h.OnClick(Message.ClickedSpan({ spanId: isSelected ? undefined : assistant.span.spanId })),
 		],
 		[
-			...(!isContinued || assistant.failed ? [h.span([h.Class(SPEAKER)], ["Assistant"])] : []),
+			// A continued call keeps a quieter speaker label, so its clock never sits alone over the text.
+			h.span(
+				[
+					h.Class(
+						!isContinued || assistant.failed
+							? SPEAKER
+							: cn(SPEAKER, "font-medium text-muted-foreground"),
+					),
+				],
+				["Assistant"],
+			),
 			...(assistant.failed ? [failedBadge(h)] : []),
 			h.span([h.Class(CLOCK)], [clockOf(assistant.startMs, state.timeZone)]),
 			...(assistant.span.genAi.errorType === undefined
@@ -130,7 +140,7 @@ export const assistantBlock = (
 						h,
 						assistant.failed ? "CircleWarningIcon" : "PixelSparkleIcon",
 						assistant.failed
-							? "bg-severity-error/15 text-severity-error"
+							? "bg-severity-error-a2 text-severity-error"
 							: "bg-chart-2/15 text-chart-2",
 					)
 				: undefined,
@@ -160,7 +170,7 @@ export const assistantBlock = (
 								"The reply isn't captured. This emitter recorded the request but not",
 								" ",
 								mono(h, "gen_ai.output.messages"),
-								", so the call's text is gone — it did not fail.",
+								", so the call's text is gone. It did not fail.",
 							],
 							"mt-2.5",
 						),
@@ -208,7 +218,7 @@ export const promptBlock = (
 						" but not",
 						" ",
 						mono(h, "gen_ai.output.messages"),
-						" — the call finished normally, but the text is gone.",
+						". The call finished normally, but the text is gone.",
 					]),
 				],
 			),
@@ -260,7 +270,7 @@ export const structureRow = (
 						h.AriaPressed(String(isSelected)),
 						h.Class(
 							cn(
-								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted/40",
+								"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 								rowSelectedClass(isSelected),
 							),
 						),
@@ -271,7 +281,7 @@ export const structureRow = (
 					],
 					[
 						icon(h, STRUCTURE_ICON[category], {
-							size: 13,
+							size: 14,
 							className: cn(
 								"shrink-0",
 								structure.failed ? "text-severity-error" : STRUCTURE_TONE[category],

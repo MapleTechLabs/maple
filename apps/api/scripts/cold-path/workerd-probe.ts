@@ -1,6 +1,6 @@
 // oxlint-disable effecttsgo/strict-effect-provide -- Offline Worker entry point.
 /** Exercise actual Workers request ownership with only offline ports. */
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { Context, Effect, Scope } from "effect"
 import { makeAppGraphs, makeFetch } from "../../src/worker/http"

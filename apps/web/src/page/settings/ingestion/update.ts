@@ -17,10 +17,10 @@ import {
 	ReadFramework,
 	RollIngestKey,
 	SaveFramework,
-	SendTestEvent,
 	ToggleMapping,
 	TriageRecommendation,
 } from "./command"
+import * as IngestRules from "./ingest-rules"
 import * as MappingDialog from "./mapping-dialog"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -45,7 +45,6 @@ export const init = (options: InitOptions): Return => ({
 		isAdmin: options.isAdmin,
 		overview: AsyncData.Loading(),
 		ingest: AsyncData.Loading(),
-		isSendingTest: false,
 		endpointCopy: CopyButton.init(),
 		revealedKeys: [],
 		keyCopies: {},
@@ -54,12 +53,17 @@ export const init = (options: InitOptions): Return => ({
 		isRolling: false,
 		isSetupExpanded: false,
 		framework: "nodejs",
-		setupTabs: Tabs.init({ idBase: 40, values: ["install", "instrument", "claude-code"], selected: "install" }),
+		setupTabs: Tabs.init({
+			idBase: 40,
+			values: ["install", "instrument", "claude-code"],
+			selected: "install",
+		}),
 		packageTabs: Tabs.init({ idBase: 50, values: ["npm", "yarn", "pnpm", "bun"], selected: "npm" }),
 		snippetCopies: {},
 		recommendations: AsyncData.Loading(),
 		recommendationTab: "open",
 		pendingRecommendations: [],
+		ingestRules: IngestRules.init(),
 		mappings: AsyncData.Loading(),
 		pendingToggles: [],
 		rowMenus: {},
@@ -72,26 +76,41 @@ export const init = (options: InitOptions): Return => ({
 		FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
 		FetchIngestionKeys(),
 		FetchRecommendations(),
+		...ingestRulesFetches(),
 		FetchMappings(),
 		ReadFramework({ orgKey: options.orgKey }),
 	],
 })
 
+const ingestRulesFetches = () => [
+	Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
+		Message.GotIngestRulesMessage({ message }),
+	),
+	Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
+		Message.GotIngestRulesMessage({ message }),
+	),
+]
+
 /** A refetch keeps the rows on screen (`useAtomRefresh`'s `waiting`). */
-const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) => Option.getOrElse(AsyncData.revalidate(data), () => data)
+const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
+	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
 const withoutPending = (ids: ReadonlyArray<string>, id: string) => ids.filter((entry) => entry !== id)
 
 const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, deleteDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDeleteDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDeleteDialogMessage({ message }),
+	),
 })
 
 const liftMappingDialog = (model: Model, step: ReturnType<typeof MappingDialog.update>): Return => {
 	const out = step.outMessage
 	const lifted: Return = {
 		model: { ...model, mappingDialog: step.model },
-		commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMappingDialogMessage({ message })),
+		commands: Command.mapMessages(step.commands ?? [], (message) =>
+			Message.GotMappingDialogMessage({ message }),
+		),
 	}
 	if (out === undefined) return lifted
 	if (out._tag === "FailedSave")
@@ -99,24 +118,46 @@ const liftMappingDialog = (model: Model, step: ReturnType<typeof MappingDialog.u
 			...lifted,
 			outMessage: toast(
 				"error",
-				out.isCreate ? "Failed to create attribute mapping" : "Failed to update attribute mapping",
+				out.isCreate ? "Couldn't create attribute mapping" : "Couldn't update attribute mapping",
 				out.description,
 			),
 		}
 	return {
-		model: { ...lifted.model, mappings: refresh(lifted.model.mappings), recommendations: refresh(lifted.model.recommendations) },
+		model: {
+			...lifted.model,
+			mappings: refresh(lifted.model.mappings),
+			recommendations: refresh(lifted.model.recommendations),
+		},
 		commands: [...(lifted.commands ?? []), FetchMappings(), FetchRecommendations()],
-		outMessage: toast("success", out.isCreate ? "Attribute mapping created" : "Attribute mapping updated"),
+		outMessage: toast(
+			"success",
+			out.isCreate ? "Attribute mapping created" : "Attribute mapping updated",
+		),
 	}
+}
+
+const liftIngestRules = (model: Model, step: ReturnType<typeof IngestRules.update>): Return => {
+	const lifted: Return = {
+		model: { ...model, ingestRules: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	}
+	return step.outMessage === undefined ? lifted : { ...lifted, outMessage: step.outMessage }
 }
 
 const liftRollDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, rollDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRollDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRollDialogMessage({ message }),
+	),
 })
 
 const mappingById = (model: Model, id: string) =>
-	Array.findFirst(AsyncData.getOrElse(model.mappings, () => []), (mapping) => mapping.id === id)
+	Array.findFirst(
+		AsyncData.getOrElse(model.mappings, () => []),
+		(mapping) => mapping.id === id,
+	)
 
 const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 	Option.match(mappingById(model, menuId.replace(/^mapping-row-/, "")), {
@@ -128,7 +169,10 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 	})
 
 const recommendationById = (model: Model, id: RecommendationId) =>
-	Array.findFirst(AsyncData.getOrElse(model.recommendations, () => []), (issue) => issue.id === id)
+	Array.findFirst(
+		AsyncData.getOrElse(model.recommendations, () => []),
+		(issue) => issue.id === id,
+	)
 
 const triage = (model: Model, id: RecommendationId, action: "dismiss" | "reopen"): Return =>
 	model.pendingRecommendations.includes(id)
@@ -146,7 +190,7 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 	const ingest = revisitData(model.ingest, FetchIngestionKeys)
 	const recommendations = revisitData(model.recommendations, FetchRecommendations)
 	const mappings = revisitData(model.mappings, FetchMappings)
-	return {
+	const base: Return = {
 		model: {
 			...model,
 			overview: overview.data,
@@ -154,45 +198,57 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 			recommendations: recommendations.data,
 			mappings: mappings.data,
 		},
-		commands: [...overview.commands, ...ingest.commands, ...recommendations.commands, ...mappings.commands],
+		commands: [
+			...overview.commands,
+			...ingest.commands,
+			...recommendations.commands,
+			...mappings.commands,
+		],
+	}
+	const rules = revisitData(model.ingestRules.rules, () =>
+		Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	)
+	const stats = revisitData(model.ingestRules.stats, () =>
+		Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	)
+	return {
+		model: { ...base.model, ingestRules: { ...model.ingestRules, rules: rules.data, stats: stats.data } },
+		commands: [...(base.commands ?? []), ...rules.commands, ...stats.commands],
 	}
 }
 
 export const update = (model: Model, message: Message, options: InitOptions): Return =>
 	Message.match<Return>(message, {
-		CompletedFetchOverview: ({ result }) => ({ model: { ...model, overview: AsyncData.settle(model.overview, result) } }),
-		CompletedFetchIngestKeys: ({ result }) => ({ model: { ...model, ingest: AsyncData.settle(model.ingest, result) } }),
+		CompletedFetchOverview: ({ result }) => ({
+			model: { ...model, overview: AsyncData.settle(model.overview, result) },
+		}),
+		CompletedFetchIngestKeys: ({ result }) => ({
+			model: { ...model, ingest: AsyncData.settle(model.ingest, result) },
+		}),
 		CompletedFetchRecommendations: ({ result }) => ({
 			model: { ...model, recommendations: AsyncData.settle(model.recommendations, result) },
 		}),
-		CompletedFetchMappings: ({ result }) => ({ model: { ...model, mappings: AsyncData.settle(model.mappings, result) } }),
+		CompletedFetchMappings: ({ result }) => ({
+			model: { ...model, mappings: AsyncData.settle(model.mappings, result) },
+		}),
 		ReadFramework: ({ framework }) => ({ model: framework === null ? model : { ...model, framework } }),
 		TickedPoll: () => ({
 			model: { ...model, overview: refresh(model.overview) },
-			commands: [FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace })],
+			commands: [
+				FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
+			],
 		}),
-		ClickedSendTestEvent: () => {
-			const publicKey = AsyncData.getOrElse(AsyncData.map(model.ingest, (keys) => keys.public_key), () => "")
-			return model.isSendingTest || publicKey === ""
-				? { model }
-				: { model: { ...model, isSendingTest: true }, commands: [SendTestEvent({ publicKey })] }
-		},
-		CompletedSendTestEvent: ({ isSent }) =>
-			isSent
-				? {
-						model: { ...model, isSendingTest: false, overview: refresh(model.overview) },
-						commands: [FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace })],
-						outMessage: toast("success", "Test event sent. Watch for it to land in traces."),
-					}
-				: {
-						model: { ...model, isSendingTest: false },
-						outMessage: toast("error", "Failed to reach the ingest endpoint", "Double-check your API key."),
-					},
 		GotEndpointCopyMessage: ({ message: child }) => {
 			const step = CopyButton.update(model.endpointCopy, child)
 			return {
 				model: { ...model, endpointCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotEndpointCopyMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotEndpointCopyMessage({ message: inner }),
+				),
 			}
 		},
 		ToggledKeyReveal: ({ kind }) => ({
@@ -207,17 +263,24 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 			const step = CopyButton.update(model.keyCopies[kind] ?? CopyButton.init(), child)
 			return {
 				model: { ...model, keyCopies: { ...model.keyCopies, [kind]: step.model } },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotKeyCopyMessage({ kind, message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotKeyCopyMessage({ kind, message: inner }),
+				),
 			}
 		},
 		ClickedRegenerateKey: ({ kind }) =>
-			model.isRolling ? { model } : liftRollDialog({ ...model, rollType: kind }, Dialog.open(model.rollDialog)),
+			model.isRolling
+				? { model }
+				: liftRollDialog({ ...model, rollType: kind }, Dialog.open(model.rollDialog)),
 		GotRollDialogMessage: ({ message: child }) =>
 			model.isRolling ? { model } : liftRollDialog(model, Dialog.update(model.rollDialog, child)),
 		ClickedConfirmRoll: () =>
 			model.isRolling
 				? { model }
-				: { model: { ...model, isRolling: true }, commands: [RollIngestKey({ kind: model.rollType })] },
+				: {
+						model: { ...model, isRolling: true },
+						commands: [RollIngestKey({ kind: model.rollType })],
+					},
 		CompletedRollKey: ({ kind, result }) => {
 			// The dialog closes either way, after the toast.
 			const closed = liftRollDialog({ ...model, isRolling: false }, Dialog.close(model.rollDialog))
@@ -230,7 +293,10 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 						`${kind === "public" ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
 					),
 				}),
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Unable to complete request", error.message) }),
+				onFailure: (error) => ({
+					...closed,
+					outMessage: toast("error", "Unable to complete request", error.message),
+				}),
 			})
 		},
 		ClickedShowSetup: () => ({ model: { ...model, isSetupExpanded: true } }),
@@ -244,21 +310,27 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 			const step = Tabs.update(model.setupTabs, child)
 			return {
 				model: { ...model, setupTabs: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotSetupTabsMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotSetupTabsMessage({ message: inner }),
+				),
 			}
 		},
 		GotPackageTabsMessage: ({ message: child }) => {
 			const step = Tabs.update(model.packageTabs, child)
 			return {
 				model: { ...model, packageTabs: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotPackageTabsMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotPackageTabsMessage({ message: inner }),
+				),
 			}
 		},
 		GotSnippetCopyMessage: ({ snippet, message: child }) => {
 			const step = CopyButton.update(model.snippetCopies[snippet] ?? CopyButton.init(), child)
 			return {
 				model: { ...model, snippetCopies: { ...model.snippetCopies, [snippet]: step.model } },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotSnippetCopyMessage({ snippet, message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotSnippetCopyMessage({ snippet, message: inner }),
+				),
 			}
 		},
 		ClickedRecommendationTab: ({ tab }) => ({ model: { ...model, recommendationTab: tab } }),
@@ -266,22 +338,40 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 			Option.match(recommendationById(model, id), {
 				onNone: () => ({ model }),
 				onSome: (issue) =>
-					issue.kind !== "rename" || issue.canonical_key === null || model.pendingRecommendations.includes(id)
+					issue.kind !== "rename" ||
+					issue.canonical_key === null ||
+					model.pendingRecommendations.includes(id)
 						? { model }
 						: {
-								model: { ...model, pendingRecommendations: [...model.pendingRecommendations, id] },
-								commands: [ApplyRecommendation({ id, sourceKey: issue.source_key, canonicalKey: issue.canonical_key })],
+								model: {
+									...model,
+									pendingRecommendations: [...model.pendingRecommendations, id],
+								},
+								commands: [
+									ApplyRecommendation({
+										id,
+										sourceKey: issue.source_key,
+										canonicalKey: issue.canonical_key,
+									}),
+								],
 							},
 			}),
 		ClickedDismissRecommendation: ({ id }) => triage(model, id, "dismiss"),
 		ClickedReopenRecommendation: ({ id }) => triage(model, id, "reopen"),
 		CompletedRecommendationAction: ({ id, action, label, result }) => {
-			const settled = { ...model, pendingRecommendations: withoutPending(model.pendingRecommendations, id) }
+			const settled = {
+				...model,
+				pendingRecommendations: withoutPending(model.pendingRecommendations, id),
+			}
 			return Result.match(result, {
 				onSuccess: () =>
 					action === "apply"
 						? {
-								model: { ...settled, recommendations: refresh(settled.recommendations), mappings: refresh(settled.mappings) },
+								model: {
+									...settled,
+									recommendations: refresh(settled.recommendations),
+									mappings: refresh(settled.mappings),
+								},
 								commands: [FetchRecommendations(), FetchMappings()],
 								outMessage: toast("success", `Mapping created: ${label}`),
 							}
@@ -294,15 +384,17 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 					outMessage: toast(
 						"error",
 						action === "apply"
-							? "Failed to create mapping"
+							? "Couldn't create mapping"
 							: action === "dismiss"
-								? "Failed to dismiss recommendation"
-								: "Failed to reopen recommendation",
+								? "Couldn't dismiss recommendation"
+								: "Couldn't reopen recommendation",
 						error.message,
 					),
 				}),
 			})
 		},
+		GotIngestRulesMessage: ({ message: child }) =>
+			liftIngestRules(model, IngestRules.update(model.ingestRules, child)),
 		ClickedAddMapping: () => liftMappingDialog(model, MappingDialog.open(model.mappingDialog, null)),
 		ToggledMapping: ({ id }) =>
 			Option.match(mappingById(model, id), {
@@ -318,39 +410,65 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 		CompletedToggleMapping: ({ id, result }) => {
 			const settled = { ...model, pendingToggles: withoutPending(model.pendingToggles, id) }
 			return Result.match(result, {
-				onSuccess: () => ({ model: { ...settled, mappings: refresh(settled.mappings) }, commands: [FetchMappings()] }),
-				onFailure: (error) => ({ model: settled, outMessage: toast("error", "Failed to update attribute mapping", error.message) }),
+				onSuccess: () => ({
+					model: { ...settled, mappings: refresh(settled.mappings) },
+					commands: [FetchMappings()],
+				}),
+				onFailure: (error) => ({
+					model: settled,
+					outMessage: toast("error", "Couldn't update attribute mapping", error.message),
+				}),
 			})
 		},
 		GotRowMenuMessage: ({ menuId, message: child }) => {
 			const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), child)
 			const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }
-			const commands = Command.mapMessages(step.commands ?? [], (inner) => Message.GotRowMenuMessage({ menuId, message: inner }))
+			const commands = Command.mapMessages(step.commands ?? [], (inner) =>
+				Message.GotRowMenuMessage({ menuId, message: inner }),
+			)
 			if (step.outMessage?._tag !== "SelectedItem") return { model: next, commands }
 			const after = pickedRowAction(next, menuId, step.outMessage.value)
 			return { ...after, commands: [...commands, ...(after.commands ?? [])] }
 		},
-		GotMappingDialogMessage: ({ message: child }) => liftMappingDialog(model, MappingDialog.update(model.mappingDialog, child)),
+		GotMappingDialogMessage: ({ message: child }) =>
+			liftMappingDialog(model, MappingDialog.update(model.mappingDialog, child)),
 		GotDeleteDialogMessage: ({ message: child }) =>
 			model.isDeleting ? { model } : liftDeleteDialog(model, Dialog.update(model.deleteDialog, child)),
 		ClickedConfirmDelete: () =>
 			model.deleting === null || model.isDeleting
 				? { model }
-				: { model: { ...model, isDeleting: true }, commands: [DeleteMapping({ id: model.deleting.id })] },
+				: {
+						model: { ...model, isDeleting: true },
+						commands: [DeleteMapping({ id: model.deleting.id })],
+					},
 		CompletedDelete: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => {
-					const closed = liftDeleteDialog({ ...model, isDeleting: false }, Dialog.close(model.deleteDialog))
+					const closed = liftDeleteDialog(
+						{ ...model, isDeleting: false },
+						Dialog.close(model.deleteDialog),
+					)
 					return {
-						model: { ...closed.model, mappings: refresh(closed.model.mappings), recommendations: refresh(closed.model.recommendations) },
+						model: {
+							...closed.model,
+							mappings: refresh(closed.model.mappings),
+							recommendations: refresh(closed.model.recommendations),
+						},
 						commands: [...(closed.commands ?? []), FetchMappings(), FetchRecommendations()],
 						outMessage: toast("success", "Attribute mapping deleted"),
 					}
 				},
 				onFailure: (error) => ({
 					model: { ...model, isDeleting: false },
-					outMessage: toast("error", "Failed to delete attribute mapping", error.message),
+					outMessage: toast("error", "Couldn't delete attribute mapping", error.message),
 				}),
 			}),
-		ClickedRetryMappings: () => ({ model: { ...model, mappings: AsyncData.Loading() }, commands: [FetchMappings()] }),
+		ClickedRetryMappings: () => ({
+			model: { ...model, mappings: AsyncData.Loading() },
+			commands: [FetchMappings()],
+		}),
+		ClickedRetryIngestKeys: () => ({
+			model: { ...model, ingest: AsyncData.Loading() },
+			commands: [FetchIngestionKeys()],
+		}),
 	})

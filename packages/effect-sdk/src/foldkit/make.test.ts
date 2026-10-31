@@ -138,6 +138,60 @@ describe("MapleFoldkit.make", () => {
 		await maple.dispose()
 	})
 
+	it("puts the document's timing and the app's init time on the page load", async () => {
+		const navigationEntry = {
+			name: "https://app.test/services",
+			entryType: "navigation",
+			startTime: 0,
+			duration: 0,
+			toJSON: () => ({}),
+			responseStart: 40.4,
+			responseEnd: 52.6,
+		}
+		const { target, maple, spans } = setup()
+		vi.spyOn(performance, "getEntriesByType").mockReturnValue([navigationEntry])
+		vi.spyOn(performance, "now").mockReturnValue(812.3)
+		const app = maple.instrument({
+			resources: Layer.empty,
+			init: (_flags: undefined, _url: { readonly pathname: string }) => ({
+				model: {},
+				commands: [
+					{
+						name: "LoadServices",
+						args: {},
+						effect: Effect.succeed({ _tag: "LoadedServices" }).pipe(
+							Effect.withSpan("http.client GET"),
+						),
+					},
+				],
+			}),
+		})
+		const { commands } = app.init(undefined, { pathname: "/services" })
+		vi.restoreAllMocks()
+		await Promise.all(
+			commands.map((command) =>
+				Effect.runPromise(
+					command.effect.pipe(
+						Effect.withSpan(command.name, { attributes: command.args }),
+						Effect.provide(app.resources),
+					),
+				),
+			),
+		)
+		target.dispatchEvent(new Event("pagehide"))
+		await settle()
+		const pageload = Object.fromEntries(
+			(spans().find((span) => span.name === "pageload /services")?.attributes ?? []).map((a) => [
+				a.key,
+				a.value,
+			]),
+		)
+		expect(pageload["maple.pageload.response_start_ms"]).toEqual({ intValue: 40 })
+		expect(pageload["maple.pageload.response_end_ms"]).toEqual({ intValue: 53 })
+		expect(pageload["maple.pageload.init_ms"]).toEqual({ intValue: 812 })
+		await maple.dispose()
+	})
+
 	it("sends a navigation still open at dispose with the final flush", async () => {
 		const { maple, spans } = setup()
 		const app = maple.instrument({
@@ -240,6 +294,33 @@ describe("MapleFoldkit.make", () => {
 		const attribute = (key: string) => crash?.attributes.find((kv) => kv.key === key)?.value
 		expect(attribute("maple.foldkit.message")).toEqual({ stringValue: "ClickedSave" })
 		expect(JSON.stringify(attribute("maple.foldkit.recent_messages"))).toContain("ChangedFilter")
+		await maple.dispose()
+	})
+
+	it("reports slow phases from a visible tab and drops them from a hidden one", async () => {
+		const { target, maple, spans } = setup()
+		const visibility = { state: "visible" }
+		vi.stubGlobal("document", {
+			get visibilityState() {
+				return visibility.state
+			},
+		})
+		const app = maple.instrument({ resources: Layer.empty, slow: { onSlow: (_context: unknown) => {} } })
+		// Phases wait for the runtime's first traced Command to learn the tracer.
+		await Effect.runPromise(
+			Effect.void.pipe(Effect.withSpan("FocusSearch"), Effect.provide(app.resources)),
+		)
+		const onSlow = app.slow.onSlow
+		onSlow({ _tag: "Update", durationMs: 40, thresholdMs: 16, message: { _tag: "ClickedSave" } })
+		visibility.state = "hidden"
+		onSlow({ _tag: "Update", durationMs: 8000, thresholdMs: 16, message: { _tag: "ElapsedPoll" } })
+		target.dispatchEvent(new Event("pagehide"))
+		await settle()
+		const messages = spans()
+			.filter((span) => span.name === "foldkit.update")
+			.flatMap((span) => span.attributes.filter((a) => a.key === "maple.foldkit.message"))
+			.map((a) => a.value)
+		expect(messages).toEqual([{ stringValue: "ClickedSave" }])
 		await maple.dispose()
 	})
 })

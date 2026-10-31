@@ -79,7 +79,7 @@ export function navigationSpanAt(epochMs: number): Span | undefined {
 }
 
 /** End the open navigation as interrupted: something other than its route finishing ended it. */
-function interruptNavigation(): void {
+export function interruptNavigation(): void {
 	navigation?.span.setAttribute("maple.navigation.interrupted", true)
 	navigation?.span.end()
 	navigation = undefined
@@ -118,7 +118,11 @@ export function endNavigation(route?: string): void {
 	navigation = undefined
 }
 
-export async function traced<T>(name: string, fn: () => Promise<T>, options: TracedOptions = {}): Promise<T> {
+export async function traced<T>(
+	name: string,
+	fn: () => T | Promise<T>,
+	options: TracedOptions = {},
+): Promise<T> {
 	const live = tracer()
 	if (!live) return fn()
 	// `fn` runs synchronously inside the span's context, so requests it starts
@@ -197,7 +201,7 @@ function serverContext(): Context | undefined {
  */
 const TRACEPARENT = /^([\da-f]{2})-([\da-f]{32})-([\da-f]{16})-([\da-f]{2})(-.*)?$/
 
-function parseTraceparent(value: string | undefined): SpanContext | undefined {
+export function parseTraceparent(value: string | undefined): SpanContext | undefined {
 	const match = value?.trim().match(TRACEPARENT)
 	// Version ff is invalid; version 00 has exactly four fields
 	if (!match || match[1] === "ff" || (match[1] === "00" && match[5] !== undefined)) return undefined

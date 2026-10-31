@@ -5,6 +5,7 @@ export const DEV_APPS = [
 	"alerting",
 	"chat-bot",
 	"electric-sync",
+	"status",
 	"web",
 	"landing",
 	"ingest",

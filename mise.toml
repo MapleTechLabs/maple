@@ -46,7 +46,7 @@ run = "bun build"
 
 [tasks.test]
 description = "Run the test suite via turbo"
-run = "bun test"
+run = "bun run test"
 
 [tasks.typecheck]
 description = "Type-check all packages/apps via turbo"

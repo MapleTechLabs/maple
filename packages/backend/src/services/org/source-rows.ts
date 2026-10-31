@@ -59,8 +59,8 @@ export const statusOf = (
 	return "active"
 }
 
-/** What a source's integration says about its health beyond the row (a scrape target's cadence). */
-export type SourceHealthOverrides = Pick<SourceHealthInput, "turnedOff" | "staleAfterMs">
+/** What a source's integration says about its health beyond the row (a scrape target's cadence, a metric stream). */
+export type SourceHealthOverrides = Pick<SourceHealthInput, "turnedOff" | "staleAfterMs" | "failing">
 
 /** The `sources` columns health reads: no token or secret column. */
 export const SOURCE_HEALTH_COLUMNS = [
@@ -83,6 +83,4 @@ export const sourceRowHealth = (
 	row: Pick<SourceRow, (typeof SOURCE_HEALTH_COLUMNS)[number]>,
 	now: number,
 	overrides: SourceHealthOverrides = {},
-) =>
-	sourceHealth({ ...row, status: statusOf(row, now), ...overrides }, now)
-
+) => sourceHealth({ ...row, status: statusOf(row, now), ...overrides }, now)

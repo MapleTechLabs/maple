@@ -164,6 +164,13 @@ describe("diffRuleForms", () => {
 		])
 	})
 
+	it("counts a new check interval as a change", () => {
+		const saved = { ...defaultRuleForm(), name: "Checkout errors", windowMinutes: "30" }
+		expect(diffRuleForms(saved, { ...saved, evaluationIntervalMinutes: "10" })).toEqual([
+			{ field: "Check every", before: "Auto", after: "10m" },
+		])
+	})
+
 	it("finds nothing when the draft equals the saved rule", () => {
 		const saved = { ...defaultRuleForm(), name: "Checkout errors" }
 		expect(diffRuleForms(saved, { ...saved })).toEqual([])

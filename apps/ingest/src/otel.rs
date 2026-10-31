@@ -309,6 +309,9 @@ pub fn grpc_server_span(rpc_service: &'static str, signal_path: &'static str) ->
         "maple.ingest.key_type" = Empty,
         "maple.source.id" = Empty,
         "maple.ingest.destination" = Empty,
+        "maple.ingest.rules.count" = Empty,
+        "maple.ingest.rules.dropped_items" = Empty,
+        "maple.ingest.rules.redacted_values" = Empty,
     )
 }
 
@@ -342,6 +345,7 @@ pub fn entitlement_internal_span(signal_path: &'static str) -> Span {
         "maple.signal" = signal_path,
         "maple.ingest.cache_hit" = Empty,
         "maple.billing.allowed" = Empty,
+        "maple.billing_org_id" = Empty,
     )
 }
 
@@ -643,11 +647,15 @@ mod tests {
 
     #[test]
     fn entitlement_span_declares_fields_recorded_by_the_billing_gate() {
-        // `maple.ingest.cache_hit` is recorded from inside
-        // AutumnEntitlements::is_allowed.
+        // `maple.ingest.cache_hit` and `maple.billing_org_id` are recorded from
+        // inside AutumnEntitlements::is_allowed.
         assert_declares(
             &entitlement_internal_span("traces"),
-            &["maple.ingest.cache_hit", "maple.billing.allowed"],
+            &[
+                "maple.ingest.cache_hit",
+                "maple.billing.allowed",
+                "maple.billing_org_id",
+            ],
         );
     }
 

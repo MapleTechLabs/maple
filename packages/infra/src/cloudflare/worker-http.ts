@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, FileSystem, Layer, Logger, Path, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"

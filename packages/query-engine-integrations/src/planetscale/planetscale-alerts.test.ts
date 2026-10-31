@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { rawAlertSqlSelectsSamples, rawSqlIssue } from "@maple/domain/raw-sql"
 
 import { PLANETSCALE_STORAGE_RUNWAY_SQL, PLANETSCALE_STORAGE_USED_SQL } from "./planetscale-alerts"
 
@@ -10,31 +11,12 @@ const STATEMENTS = {
 	"storage runway": PLANETSCALE_STORAGE_RUNWAY_SQL,
 }
 
-const DENIED = [
-	"INSERT",
-	"UPDATE",
-	"DELETE",
-	"DROP",
-	"ALTER",
-	"TRUNCATE",
-	"RENAME",
-	"ATTACH",
-	"DETACH",
-	"CREATE",
-	"GRANT",
-	"REVOKE",
-	"OPTIMIZE",
-	"SYSTEM",
-	"KILL",
-]
-
 // A plain loop, not describe.each: the generic instantiation describe.each
 // produces has OOM'd tsc in this repo before.
 for (const [name, sql] of Object.entries(STATEMENTS)) {
 	describe(`${name} alert SQL`, () => {
-		it("carries both alert-runtime macros", () => {
-			expect(sql).toContain("$__orgFilter")
-			expect(sql).toMatch(/\$__timeFilter\([A-Za-z_][A-Za-z0-9_.]*\)/)
+		it("passes the alert runtime's raw-SQL validation", () => {
+			expect(rawSqlIssue(sql, { workload: "alert" })).toBeNull()
 		})
 
 		it("selects a value column", () => {
@@ -46,13 +28,7 @@ for (const [name, sql] of Object.entries(STATEMENTS)) {
 		})
 
 		it("reports a sample count so a thin series can be gated", () => {
-			expect(sql).toMatch(/\bsamples\b/)
-		})
-
-		it("contains no denied keyword", () => {
-			for (const keyword of DENIED) {
-				expect(sql).not.toMatch(new RegExp(`\\b${keyword}\\b`, "i"))
-			}
+			expect(rawAlertSqlSelectsSamples(sql)).toBe(true)
 		})
 	})
 }

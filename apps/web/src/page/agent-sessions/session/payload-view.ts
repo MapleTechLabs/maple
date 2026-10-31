@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { tryParseJson } from "../../../ui/attributes/attribute-row"
+import { prettyJson } from "../../../lib/display-text"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import { Message } from "./message"
 
@@ -11,9 +11,9 @@ type H = HtmlBuilder<Message>
 
 /** A payload pretty-printed where it parses as a JSON object or array, verbatim otherwise. */
 export const jsonPayload = (text: string): Readonly<{ formatted: string; isJson: boolean }> =>
-	Option.match(tryParseJson(text), {
+	Option.match(prettyJson(text), {
 		onNone: () => ({ formatted: text, isJson: false }),
-		onSome: (parsed) => ({ formatted: JSON.stringify(parsed, null, 2), isJson: true }),
+		onSome: (formatted) => ({ formatted, isJson: true }),
 	})
 
 /** A message body's reading: markdown for prose, pretty-printed JSON for a JSON document. */
@@ -26,7 +26,7 @@ export const messageBody = (text: string): Readonly<{ rendered: "md" | "json"; f
 export const disclosed = (openRows: ReadonlyArray<string>, key: string, byDefault: boolean): boolean =>
 	openRows.includes(key) ? !byDefault : byDefault
 
-const SEGMENT_CLASS = "font-mono text-3xs uppercase tracking-[0.08em] sm:text-3xs"
+const SEGMENT_CLASS = "font-mono text-3xs uppercase tracking-wider sm:text-3xs"
 
 /** `ViewSwitch`: the rendered and raw segments; clicking the pressed one keeps the view. */
 export const viewSwitch = (

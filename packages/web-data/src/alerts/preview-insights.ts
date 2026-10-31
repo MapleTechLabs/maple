@@ -236,6 +236,12 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			same: a.window_minutes === b.window_minutes,
 		},
 		{
+			field: "Check every",
+			before: a.evaluation_interval_minutes == null ? "Auto" : `${a.evaluation_interval_minutes}m`,
+			after: b.evaluation_interval_minutes == null ? "Auto" : `${b.evaluation_interval_minutes}m`,
+			same: a.evaluation_interval_minutes === b.evaluation_interval_minutes,
+		},
+		{
 			field: "Checks to fire",
 			before: String(a.consecutive_breaches_required),
 			after: String(b.consecutive_breaches_required),

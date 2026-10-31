@@ -78,10 +78,18 @@ export const escapeJsonInHtml = (json: string): string =>
 		.split(PARAGRAPH_SEPARATOR)
 		.join("\\u2029")
 
+const REDIRECT_PROBE_ORIGIN = "https://x.invalid"
+
+// Browsers strip tabs and newlines from URLs and read `\\` as `/`, so either can turn a path into a host.
+const UNSAFE_REDIRECT_CHARS = /[\u0000-\u001f\u007f\\]/
+// The same characters percent-encoded, plus an encoded slash right after the leading one.
+const UNSAFE_REDIRECT_ESCAPES = /%(?:[01][0-9a-f]|7f|5c)|^\/%2f/i
+
 /**
  * Validate a post-login `redirect_url` query value. Allows same-origin
  * relative paths (single leading `/`, no `//`). Returns null for absolute
- * URLs, scheme tricks, or empty input — caller should fall back to `/`.
+ * URLs, scheme tricks, control characters or backslashes (raw or
+ * percent-encoded), or empty input. Caller should fall back to `/`.
  */
 export const validateInternalRedirect = (raw: string | undefined | null): string | null => {
 	if (typeof raw !== "string") return null
@@ -89,6 +97,8 @@ export const validateInternalRedirect = (raw: string | undefined | null): string
 	if (trimmed.length === 0) return null
 	if (!trimmed.startsWith("/")) return null
 	if (trimmed.startsWith("//")) return null
-	if (trimmed.startsWith("/\\")) return null
+	if (UNSAFE_REDIRECT_CHARS.test(trimmed) || UNSAFE_REDIRECT_ESCAPES.test(trimmed)) return null
+	if (!URL.canParse(trimmed, REDIRECT_PROBE_ORIGIN)) return null
+	if (new URL(trimmed, REDIRECT_PROBE_ORIGIN).origin !== REDIRECT_PROBE_ORIGIN) return null
 	return trimmed
 }

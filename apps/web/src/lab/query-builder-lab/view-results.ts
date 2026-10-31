@@ -82,7 +82,7 @@ const RUNNING = "Running query…"
 export const resultsContent = (h: H, model: Model): Html => {
 	if (model.noQueriesError !== null) return errorOutcome(h, "-", model.noQueriesError)
 	if (model.submitted === null)
-		return h.p([h.Class("text-xs text-muted-foreground")], ["Run query to fetch Tinybird data."])
+		return h.p([h.Class("text-xs text-muted-foreground")], ["Run the query to see results."])
 	const data = model.results.data
 	switch (data._tag) {
 		case "Idle":

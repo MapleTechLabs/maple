@@ -29,6 +29,7 @@ import { messageResponse } from "./markdown"
 import { bulletList, section } from "./parts"
 import type { ReviewSheet, SheetMessage } from "./review-sheet"
 import { ciRunsSection, historySection, postMergeSection, productionSection } from "./review-sheet-more"
+import { emptyMessage } from "../../../ui/empty"
 
 // `ReviewDetailContent`'s body.
 
@@ -163,7 +164,7 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 			: []),
 		section(h, `Issues (${report.findings.length})`, [
 			report.findings.length === 0
-				? h.p([h.Class("text-sm text-muted-foreground")], ["No issues filed on this head."])
+				? emptyMessage(h, {}, ["No issues filed on this head."])
 				: h.ul(
 						[h.Class("flex flex-col gap-3")],
 						report.findings.map((finding) =>

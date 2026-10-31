@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"

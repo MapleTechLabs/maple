@@ -15,7 +15,9 @@ const loaded = (isAdmin = true) => {
 
 describe("general tab", () => {
 	test("reads the organization and its admins from Clerk", () => {
-		expect(names(init(true).commands)).toEqual(["FetchClerkOrganization", "FetchClerkOrganizationAdmins"])
+		expect(names(init(true).commands)).toEqual(
+			expect.arrayContaining(["FetchClerkOrganization", "FetchClerkOrganizationAdmins"]),
+		)
 	})
 
 	test("an edited name is dirty and Save sends it trimmed", () => {

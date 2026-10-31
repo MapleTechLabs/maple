@@ -14,6 +14,7 @@ import {
 	type ErrorValidationError,
 } from "@maple/domain/http"
 import { McpInvalidInputError, McpQueryError } from "./types"
+import * as P from "../lib/params"
 
 /**
  * The workflow states a caller may ask for. `regressed` and `verifying` are observations
@@ -24,14 +25,16 @@ export const SELECTABLE_STATES = WORKFLOW_STATE_ORDER.filter(
 )
 
 /**
- * An issue id is a UUID. A fingerprint (a decimal UInt64 from find_errors) is the usual wrong
- * value, so the decode failure names where the right one comes from.
+ * An issue id is its UUID or its REST id (`iss_…`). A fingerprint (a decimal UInt64 from
+ * find_errors) is the usual wrong value, so the description names where the right one comes from.
  */
-export const issueIdParam = (description = "The error issue ID (from list_error_issues)") =>
-	Schema.String.annotate({ description })
+export const issueIdParam = (
+	description = "The error issue ID from list_error_issues (a fingerprint from find_errors is not an issue id)",
+) =>
+	P.resourceId("errorIssue", description)
 		.check(
 			Schema.isUUID(undefined, {
-				expected: "an issue UUID from list_error_issues (a fingerprint is not an issue id)",
+				expected: "an issue id from list_error_issues (a fingerprint is not an issue id)",
 			}),
 		)
 		.pipe(Schema.decodeTo(ErrorIssueId))

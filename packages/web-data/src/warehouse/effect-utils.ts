@@ -1,4 +1,5 @@
 import {
+	formatWarehouseDateTime,
 	TinybirdDateTime,
 	type QueryEngineExecuteRequest,
 	type QueryEngineExecuteResponse,
@@ -15,6 +16,24 @@ import { ApiReachability, MapleApiV2Http, MapleInternalHttp, WarehouseExecutor }
 export * from "./warehouse-services"
 
 export const WarehouseDateTimeString = TinybirdDateTime
+
+/** An integration page's window; `resolveInfraWindow` fills a missing bound with the last 6 hours. */
+export const InfraWindowInput = Schema.Struct({
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+})
+
+export const resolveInfraWindow = (input: { startTime?: string; endTime?: string }, nowMillis: number) => ({
+	startTime: input.startTime ?? formatWarehouseDateTime(nowMillis - 6 * 60 * 60 * 1000),
+	endTime: input.endTime ?? formatWarehouseDateTime(nowMillis),
+})
+
+/** A wire-row number; a missing column reads as 0. */
+export const wireNumber = (value: unknown): number => Number(value ?? 0)
+
+/** A wire-row number that may be null on purpose (a gap); missing reads as null too. */
+export const wireNumberOrNull = (value: unknown): number | null =>
+	value === null || value === undefined ? null : Number(value)
 
 export class WarehouseDecodeError extends Schema.TaggedError<WarehouseDecodeError>()(
 	"@maple/web/errors/WarehouseDecodeError",

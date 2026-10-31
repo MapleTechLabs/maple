@@ -21,10 +21,10 @@ export const PLATFORMS = {
 	python: { label: "Python", description: "OpenTelemetry Python SDK", icon: "FrameworkPythonIcon" },
 	go: { label: "Go", description: "OpenTelemetry Go SDK", icon: "FrameworkGoIcon" },
 	java: { label: "Java", description: "Java agent or SDK", icon: "OpenjdkIcon" },
-	dotnet: { label: ".NET", description: "OpenTelemetry .NET SDK", icon: "CodeIcon" },
+	dotnet: { label: ".NET", description: "OpenTelemetry .NET SDK", icon: "CsharpIcon" },
 	ruby: { label: "Ruby", description: "OpenTelemetry Ruby SDK", icon: "RubyIcon" },
-	php: { label: "PHP", description: "OpenTelemetry PHP SDK", icon: "CodeIcon" },
-	rust: { label: "Rust", description: "opentelemetry-rust", icon: "RustIcon" },
+	php: { label: "PHP", description: "OpenTelemetry PHP SDK", icon: "FileCodeIcon" },
+	rust: { label: "Rust", description: "OpenTelemetry Rust SDK", icon: "RustIcon" },
 	browser: { label: "Browser", description: "Sessions, replays and events", icon: "GlobeIcon" },
 	kubernetes: { label: "Kubernetes", description: "Helm chart for a cluster", icon: "KubernetesIcon" },
 	docker: { label: "Docker", description: "Agent container for a host", icon: "DockerIcon" },
@@ -42,9 +42,11 @@ export const PLATFORMS = {
 		icon: "CloudflareBrandIcon",
 	},
 	gcp: { label: "Google Cloud", description: "Logs, metrics and resources", icon: "GoogleCloudIcon" },
+	aws: { label: "AWS", description: "A read-only role in an account", icon: "AwsIcon" },
 	railway: { label: "Railway", description: "Service metrics", icon: "RailwayIcon" },
 	planetscale: { label: "PlanetScale", description: "Database metrics", icon: "PlanetScaleIcon" },
 	github: { label: "GitHub", description: "Repositories, CI and deploys", icon: "GithubIcon" },
+	supabase: { label: "Supabase", description: "Project and Postgres metrics", icon: "SupabaseIcon" },
 } as const satisfies Record<SourcePlatform, PlatformMeta>
 
 export const platformMeta = (platform: SourcePlatform): PlatformMeta => PLATFORMS[platform]

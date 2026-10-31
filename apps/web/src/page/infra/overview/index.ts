@@ -1,7 +1,7 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
-import { contextChanged, init, routeChanged, update } from "./update"
+import { contextChanged, infraSurfacesSettled, init, routeChanged, update } from "./update"
 import { view } from "./view"
 
 /** `/infra`: every source's health, what needs a look first. */
@@ -14,7 +14,8 @@ export const page = definePage(
 		update,
 		routeChanged,
 		contextChanged,
+		infraSurfacesSettled,
 		view,
-		breadcrumbs: () => [{ label: "Infrastructure" }],
+		breadcrumbs: () => [{ label: "Infrastructure", isPageHeading: true }],
 	},
 )

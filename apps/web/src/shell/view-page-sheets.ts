@@ -4,6 +4,7 @@ import {
 	pageRightSheetHeaderStyles,
 	pageRightSheetStyles,
 } from "@maple/ui/styles/ui/page-layout"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Dialog from "../ui/dialog"
 import * as DialogView from "../ui/dialog-view"
@@ -18,7 +19,12 @@ import type { LiftedRail } from "./page-rails"
 /** `<Button variant="outline" size="icon-sm" aria-label>` cloned with the sheet's `onClick`. */
 const railTrigger = (
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ label: string; icon: "LayoutLeftIcon" | "LayoutRightIcon"; id: string; onClick: Message }>,
+	options: Readonly<{
+		label: string
+		icon: "LayoutLeftIcon" | "LayoutRightIcon"
+		id: string
+		onClick: Message
+	}>,
 ): Html =>
 	button(
 		h,
@@ -31,9 +37,11 @@ const railTrigger = (
 		[icon(h, options.icon)],
 	)
 
-export const filterSheetTrigger = (h: HtmlBuilder<Message>, model: Model): Html =>
+const filterLabelOf = (rail: LiftedRail): string => Option.getOrElse(rail.label, () => "Filters")
+
+export const filterSheetTrigger = (h: HtmlBuilder<Message>, model: Model, rail: LiftedRail): Html =>
 	railTrigger(h, {
-		label: "Open filters",
+		label: `Open ${filterLabelOf(rail).toLowerCase()}`,
 		icon: "LayoutLeftIcon",
 		id: Dialog.triggerId(model.filterSheet.id),
 		onClick: Message.ClickedOpenFilters(),
@@ -93,8 +101,10 @@ export const filterSheet = (h: HtmlBuilder<Message>, model: Model, rail: LiftedR
 			side: "left",
 			className: pageFilterSheetStyles,
 			headerClassName: pageFilterSheetHeaderStyles,
-			title: "Filters",
-			description: "Filter options for this page.",
+			title: filterLabelOf(rail),
+			description: Option.isSome(rail.label)
+				? `${rail.label.value} navigation.`
+				: "Filter options for this page.",
 			toParentMessage: (message) => Message.GotFilterSheetMessage({ message }),
 		},
 		rail,

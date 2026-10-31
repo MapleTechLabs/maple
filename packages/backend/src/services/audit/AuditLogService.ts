@@ -216,7 +216,7 @@ const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 }
 
 export class AuditLogService extends Context.Service<AuditLogService, AuditLogServiceApi>()(
-	"@maple/api/services/AuditLogService",
+	"@maple/backend/services/AuditLogService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService

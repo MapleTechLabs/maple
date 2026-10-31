@@ -73,11 +73,11 @@ export const lensRail = <M>(
 	const state = railState(model)
 	return h.div(
 		[
-			h.Class(cn("flex h-full flex-col gap-0.5 p-3", refreshingClass(state.isWaiting))),
+			h.Class(cn("flex h-full flex-col gap-0.5", refreshingClass(state.isWaiting))),
 			...(state.isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[
-			eyebrow(h, { as: "div", className: "px-2 pb-2.5" }, ["Services on this cluster"]),
+			eyebrow(h, { as: "div", className: "flex h-8 items-center px-2" }, ["Services on this cluster"]),
 			...(state.isLoading
 				? [skeletonList(h, { rows: 6, rowClassName: "h-[22px]", className: "gap-1.5 px-2 pt-1" })]
 				: state.services.length === 0
@@ -90,7 +90,7 @@ export const lensRail = <M>(
 			...(state.unlinkedCount > 0
 				? [
 						h.div(
-							[h.Class("mt-auto space-y-1.5 border-t px-2 pb-1 pt-3.5")],
+							[h.Class("-mx-4 mt-auto space-y-1.5 border-t px-6 pb-1 pt-3.5")],
 							[
 								h.div([h.Class("text-2xs text-foreground")], [
 									String(state.unlinkedCount),
@@ -104,7 +104,7 @@ export const lensRail = <M>(
 									h.a(
 										[
 											h.Href(hrefOf(AppRoute.InfraKubernetesPods({ search: timeSearch }))),
-											h.Class("text-primary hover:underline"),
+											h.Class("text-primary hover:underline active:underline"),
 										],
 										["Browse pods directly"],
 									),
@@ -126,9 +126,9 @@ const railRow = <M>(h: HtmlBuilder<M>, service: RailService, isActive: boolean, 
 			h.Href(hrefOf(AppRoute.InfraKubernetesService({ serviceName: service.serviceName, search: timeSearch }))),
 			h.Class(
 				cn(
-					"flex h-[34px] items-center gap-2.5 rounded-md px-2 transition-colors",
+					"flex h-8 items-center gap-2.5 rounded-lg px-2 transition-colors",
 					rowSelectedClass(isActive),
-					!isActive && "hover:bg-accent/50",
+					isActive ? "rounded-l-none" : "hover:bg-surface-sunken active:bg-surface-sunken",
 				),
 			),
 		],

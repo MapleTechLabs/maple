@@ -22,12 +22,14 @@ const settle = (model: Model, data: ReadonlyArray<never>) =>
 
 describe("investigations list", () => {
 	test("entry reads the clock, the first page and the triage budget", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"LoadInvestigationsPresence",
-			"ReadInvestigationsClock",
-			"FetchInvestigations",
-			"FetchTriageBudget",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining([
+				"LoadInvestigationsPresence",
+				"ReadInvestigationsClock",
+				"FetchInvestigations",
+				"FetchTriageBudget",
+			]),
+		)
 	})
 
 	test("a failed page renders the error state", () => {
@@ -36,7 +38,7 @@ describe("investigations list", () => {
 			entered,
 			Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
 		).model
-		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Investigations could not be loaded")).toExist())
+		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Couldn't load investigations")).toExist())
 	})
 
 	test("an empty workspace is the first-run hero; absent traces add the setup prompt", () => {

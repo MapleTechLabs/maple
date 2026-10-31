@@ -285,6 +285,26 @@ function isCamelCaseNoDot(key: string): boolean {
 	return !key.includes(".") && /[A-Z]/.test(key)
 }
 
+/** Keys Maple reads by exact spelling. `SampleRate` is the span's sampling weight; renaming breaks it. */
+const MAPLE_READ_KEYS: ReadonlySet<string> = new Set(["SampleRate"])
+
+/**
+ * Canonical keys of the rename rules that fire for `spanKeys` but are missing from it. The caller
+ * checks these directly in the warehouse, since a top-N key list can miss a rare canonical key.
+ */
+export function canonicalKeysToProbe(
+	spanKeys: ReadonlyArray<{ attributeKey: string }>,
+	existingMappingSourceKeys: ReadonlyArray<string>,
+): string[] {
+	const present = new Set(spanKeys.map((row) => row.attributeKey))
+	const suppressed = new Set(existingMappingSourceKeys)
+	const keys = ATTRIBUTE_RENAMES.filter(
+		(rule) =>
+			present.has(rule.deprecated) && !suppressed.has(rule.deprecated) && !present.has(rule.canonical),
+	).map((rule) => rule.canonical)
+	return [...new Set(keys)].sort()
+}
+
 /**
  * Detect recommended attribute mappings from the org's live span attribute keys.
  *
@@ -354,6 +374,7 @@ export function detectAttributeRecommendations(
 		if (handledKeys.has(attributeKey)) continue
 		if (suppressedKeys.has(attributeKey)) continue
 		if (!isCamelCaseNoDot(attributeKey)) continue
+		if (MAPLE_READ_KEYS.has(attributeKey)) continue
 		const id = `naming:${attributeKey}`
 		if (dismissed.has(id)) continue
 		namingCandidates.push({

@@ -6,10 +6,11 @@ import { MapleApiV2Http } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery, runWarehouseQueryV2 } from "./effect-utils"
 
 import {
+	MAX_TRANSCRIPT_PAGE_SIZE,
 	V2SessionReplayNotFound,
 	type V2SessionReplaySearchParams,
 	type V2SessionReplayWindowQuery,
-	type V2SessionReplayCollectionQuery,
+	type V2SessionTranscriptQuery,
 	type V2SessionReplaysForTraceParams,
 } from "@maple/domain/http/v2"
 import { collectV2Pages } from "../lib/v2-pagination"
@@ -307,9 +308,10 @@ export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript"
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http
 			return yield* collectV2Pages((cursor) => {
-				const query: Types.Mutable<typeof V2SessionReplayCollectionQuery.Type> = {
+				// Pages are sequential round trips; the widest page keeps most sessions to one.
+				const query: Types.Mutable<typeof V2SessionTranscriptQuery.Type> = {
 					...replayWindow(input),
-					limit: 100,
+					limit: MAX_TRANSCRIPT_PAGE_SIZE,
 				}
 				if (cursor !== undefined) query.cursor = cursor
 				return client.sessionReplays.transcript({ params: { id: input.sessionId }, query })

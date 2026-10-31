@@ -7,5 +7,9 @@
 		"build": "cargo build --release",
 		"test": "cargo test",
 		"typecheck": "cargo check"
+	},
+	"dependencies": {
+		"@alchemy.run/aws": "catalog:alchemy",
+		"@alchemy.run/cloudflare": "catalog:alchemy"
 	}
 }

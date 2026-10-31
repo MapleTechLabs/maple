@@ -494,6 +494,56 @@
         "title": "Query-builder draft",
         "type": "object"
       },
+      "AlertQueryTiming": {
+        "additionalProperties": false,
+        "description": "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
+        "properties": {
+          "elapsed_ms": {
+            "description": "Milliseconds one check of the latest window took, or null when it did not finish within `probe_limit_ms`.",
+            "type": "number"
+          },
+          "failure": {
+            "description": "Why the check did not finish, when it did not.",
+            "enum": [
+              "query_too_slow",
+              "query_too_much_memory"
+            ],
+            "type": "string"
+          },
+          "fits_interval_minutes": {
+            "description": "Check intervals whose time limit the query fits with a fifth to spare.",
+            "items": {
+              "enum": [
+                1,
+                5,
+                10,
+                15,
+                30,
+                60
+              ],
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "interval_minutes": {
+            "type": "number"
+          },
+          "limit_ms": {
+            "type": "number"
+          },
+          "probe_limit_ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "probe_limit_ms",
+          "interval_minutes",
+          "limit_ms",
+          "fits_interval_minutes"
+        ],
+        "title": "Alert query timing",
+        "type": "object"
+      },
       "AlertRule": {
         "additionalProperties": false,
         "description": "A monitor that evaluates a built-in signal, query-builder query, or raw SQL over a rolling window and opens incidents when the threshold condition holds for enough consecutive checks. Metrics use the same query-builder path as metric charts. Notifications are delivered to the referenced alert destinations.",
@@ -514,11 +564,13 @@
             "environments": [
               "production"
             ],
+            "evaluation_interval_minutes": null,
             "exclude_service_names": [],
             "group_by": null,
             "id": "alrt_gU26thvJECdQvu54Ad9jiz",
             "last_evaluated_at": "2026-07-15T09:10:00.000Z",
             "last_evaluation_error": null,
+            "last_evaluation_error_kind": null,
             "last_scheduled_at": "2026-07-15T09:10:00.000Z",
             "minimum_sample_count": 50,
             "name": "Checkout error rate",
@@ -535,6 +587,8 @@
             ],
             "severity": "critical",
             "signal_type": "error_rate",
+            "slowed_at": null,
+            "slowed_interval_minutes": null,
             "tags": [
               "payments"
             ],
@@ -631,6 +685,21 @@
             },
             "type": "array"
           },
+          "evaluation_interval_minutes": {
+            "description": "Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              null
+            ],
+            "type": "number"
+          },
           "exclude_service_names": {
             "description": "Services excluded from evaluation.",
             "items": {
@@ -657,6 +726,16 @@
           },
           "last_evaluation_error": {
             "description": "The most recent evaluation error for this rule, or `null` if the last evaluation succeeded.",
+            "type": "string"
+          },
+          "last_evaluation_error_kind": {
+            "description": "Why the last evaluation failed: `query_too_slow` or `query_too_much_memory` (the query hit its limit; check less often or narrow it), `invalid_query`, or `other`. `null` with no error.",
+            "enum": [
+              "query_too_slow",
+              "query_too_much_memory",
+              "invalid_query",
+              "other"
+            ],
             "type": "string"
           },
           "last_scheduled_at": {
@@ -738,6 +817,28 @@
           "signal_type": {
             "$ref": "#/components/schemas/_maple_AlertSignalType"
           },
+          "slowed_at": {
+            "description": "When the rule was last slowed down, or `null`.",
+            "examples": [
+              null
+            ],
+            "type": "string"
+          },
+          "slowed_interval_minutes": {
+            "description": "Set when Maple slowed the rule down after its query hit its time or memory limit 3 checks in a row: it is checked at least this many minutes apart, which allows a longer query. Any update clears it.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              null
+            ],
+            "type": "number"
+          },
           "tags": {
             "description": "Free-form tags used to group and filter rules.",
             "examples": [
@@ -812,6 +913,193 @@
         "title": "Alert Rule",
         "type": "object"
       },
+      "AlertRuleCreateParams": {
+        "additionalProperties": false,
+        "description": "Request body for creating an alert rule. Signal-specific fields (`apdex_threshold_ms`, `query_builder_draft`, `raw_query_*`) are required by their respective `signal_type` and validated server-side.",
+        "examples": [
+          {
+            "comparator": "gt",
+            "destination_ids": [
+              "dest_oybbpTBhtSFGShMjjLiCrh"
+            ],
+            "name": "Checkout error rate",
+            "service_names": [
+              "checkout"
+            ],
+            "severity": "critical",
+            "signal_type": "error_rate",
+            "threshold": 0.05,
+            "window_minutes": 5
+          }
+        ],
+        "properties": {
+          "alert_on_no_data": {
+            "description": "Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped. Not supported on grouped rules, where a group that stops reporting keeps its incident open until telemetry returns.",
+            "type": "boolean"
+          },
+          "apdex_threshold_ms": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "breaches_out_of": {
+            "exclusiveMinimum": 0,
+            "maximum": 30,
+            "type": "integer"
+          },
+          "comparator": {
+            "$ref": "#/components/schemas/_maple_AlertComparator"
+          },
+          "consecutive_breaches_required": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "consecutive_healthy_required": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "destination_ids": {
+            "description": "Destinations (`dest_…`) of a single-threshold rule.",
+            "items": {
+              "$ref": "#/components/schemas/_maple_AlertDestinationId"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "description": "Whether the rule starts enabled. Defaults to `true`.",
+            "type": "boolean"
+          },
+          "environments": {
+            "description": "Deployment environments to scope the rule to. Omit or pass `[]` for all environments.",
+            "examples": [
+              [
+                "production"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "evaluation_interval_minutes": {
+            "description": "Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              10
+            ],
+            "type": "number"
+          },
+          "exclude_service_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "items": {
+              "minLength": 1,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "minimum_sample_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Human-readable name of the rule. Required, non-empty.",
+            "examples": [
+              "Checkout error rate"
+            ],
+            "minLength": 1,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "notification_template": {
+            "$ref": "#/components/schemas/_maple_AlertNotificationTemplate"
+          },
+          "query_builder_draft": {
+            "$ref": "#/components/schemas/AlertQueryBuilderDraft"
+          },
+          "raw_query_reducer": {
+            "$ref": "#/components/schemas/_maple_QueryEngineAlertReducer"
+          },
+          "raw_query_sql": {
+            "type": "string"
+          },
+          "renotify_interval_minutes": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "service_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity"
+          },
+          "signal_type": {
+            "$ref": "#/components/schemas/_maple_AlertSignalType"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 32,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "threshold_upper": {
+            "type": "number"
+          },
+          "thresholds": {
+            "description": "Severity tiers (at most one `warning` and one `critical`). When set, `severity`, `threshold`, `threshold_upper` and `destination_ids` are ignored.",
+            "items": {
+              "$ref": "#/components/schemas/AlertThreshold"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
+          "window_minutes": {
+            "description": "Length of the evaluation window in minutes.",
+            "examples": [
+              5
+            ],
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "signal_type",
+          "comparator",
+          "window_minutes"
+        ],
+        "title": "Alert rule create parameters",
+        "type": "object"
+      },
       "AlertRuleList": {
         "additionalProperties": false,
         "description": "A cursor-paginated page of alert rules.",
@@ -854,6 +1142,228 @@
           "has_more"
         ],
         "title": "Alert rule list",
+        "type": "object"
+      },
+      "AlertRulePreviewFiringSpan": {
+        "additionalProperties": false,
+        "description": "A span during which the rule's state machine would have held an open incident.",
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "group_key": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity"
+          },
+          "start": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_key",
+          "start",
+          "end",
+          "severity"
+        ],
+        "title": "Alert rule preview firing span",
+        "type": "object"
+      },
+      "AlertRulePreviewParams": {
+        "additionalProperties": false,
+        "description": "Request body for previewing what a rule definition would have observed over a historical range.",
+        "properties": {
+          "end_time": {
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/AlertRuleCreateParams"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "start_time",
+          "end_time"
+        ],
+        "title": "Alert rule preview parameters",
+        "type": "object"
+      },
+      "AlertRulePreviewPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity"
+          },
+          "provisional": {
+            "description": "Set on the trailing in-progress window: evaluated over less than a full window, so its value may still move.",
+            "type": "boolean"
+          },
+          "sample_count": {
+            "type": "number"
+          },
+          "skip_reason": {
+            "$ref": "#/components/schemas/_maple_AlertSkipReason"
+          },
+          "status": {
+            "$ref": "#/components/schemas/_maple_AlertEvaluationStatus"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket",
+          "sample_count",
+          "status"
+        ],
+        "title": "Alert rule preview point",
+        "type": "object"
+      },
+      "AlertRulePreviewResult": {
+        "additionalProperties": false,
+        "description": "Evaluator-faithful preview of a rule over a historical range: the per-window observations the scheduler would have computed, and when incidents would have fired.",
+        "examples": [
+          {
+            "bucket_seconds": 300,
+            "comparator": "gt",
+            "object": "alert_rule.preview",
+            "series": [
+              {
+                "group_key": "__total__",
+                "points": [
+                  {
+                    "bucket": "2026-07-15T09:10:00.000Z",
+                    "sample_count": 132,
+                    "status": "breached",
+                    "value": 0.09
+                  }
+                ]
+              }
+            ],
+            "threshold": 0.05,
+            "threshold_upper": null,
+            "thresholds": [
+              {
+                "destination_ids": [
+                  "dest_oybbpTBhtSFGShMjjLiCrh"
+                ],
+                "recovery_value": null,
+                "severity": "critical",
+                "upper": null,
+                "value": 0.05
+              }
+            ],
+            "truncated_to_start": null,
+            "window_minutes": 5,
+            "would_fire": [
+              {
+                "end": "2026-07-15T09:40:00.000Z",
+                "group_key": "__total__",
+                "severity": "critical",
+                "start": "2026-07-15T09:10:00.000Z"
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "bucket_seconds": {
+            "type": "number"
+          },
+          "comparator": {
+            "$ref": "#/components/schemas/_maple_AlertComparator"
+          },
+          "object": {
+            "description": "The object type — always `\"alert_rule.preview\"`.",
+            "enum": [
+              "alert_rule.preview"
+            ],
+            "type": "string"
+          },
+          "query_timing": {
+            "$ref": "#/components/schemas/AlertQueryTiming"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/AlertRulePreviewSeries"
+            },
+            "type": "array"
+          },
+          "series_failure": {
+            "description": "Raw SQL rules only: the range was too heavy to chart within the longest limit, so `series` is empty. `query_timing` still says whether one check fits. Preview a shorter range to chart it.",
+            "enum": [
+              "query_too_slow",
+              "query_too_much_memory"
+            ],
+            "type": "string"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "threshold_upper": {
+            "type": "number"
+          },
+          "thresholds": {
+            "items": {
+              "$ref": "#/components/schemas/AlertThreshold"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
+          "truncated_to_start": {
+            "description": "Set when the requested range was clamped to the preview bucket cap.",
+            "type": "string"
+          },
+          "window_minutes": {
+            "type": "number"
+          },
+          "would_fire": {
+            "description": "Spans during which the rule would have held an open incident.",
+            "items": {
+              "$ref": "#/components/schemas/AlertRulePreviewFiringSpan"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "object",
+          "bucket_seconds",
+          "window_minutes",
+          "threshold",
+          "thresholds",
+          "comparator",
+          "series",
+          "would_fire"
+        ],
+        "title": "Alert rule preview result",
+        "type": "object"
+      },
+      "AlertRulePreviewSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "group_key": {
+            "description": "The group this series describes, or `\"__total__\"` for ungrouped rules.",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/AlertRulePreviewPoint"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "group_key",
+          "points"
+        ],
+        "title": "Alert rule preview series",
         "type": "object"
       },
       "AlertThreshold": {
@@ -1206,6 +1716,32 @@
           "sample_count"
         ],
         "title": "Anomaly timeseries bucket",
+        "type": "object"
+      },
+      "AttestationChallenge": {
+        "additionalProperties": false,
+        "description": "A server challenge that binds an App Attest attestation to this server, user and installation.",
+        "properties": {
+          "challenge": {
+            "description": "Opaque and single-use. Pass it back unchanged in `attestation.challenge`.",
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "attestation_challenge"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "challenge",
+          "expires_at"
+        ],
+        "title": "App Attest challenge",
         "type": "object"
       },
       "AttributeFilter": {
@@ -3097,6 +3633,237 @@
         ],
         "title": "Dashboard widget data source"
       },
+      "DeviceAttestation": {
+        "additionalProperties": false,
+        "description": "Optional proof that the key was registered by a genuine instance of the Maple app. Verified against Apple's App Attest root; a failure rejects the registration.",
+        "properties": {
+          "attestation_object": {
+            "description": "The attestation object `attestKey` returned, base64.",
+            "maxLength": 32768,
+            "minLength": 1,
+            "type": "string"
+          },
+          "challenge": {
+            "description": "The `challenge` from `GET /v2/device_credentials/{installation_id}/attestation_challenge`, unchanged. The `clientDataHash` passed to `attestKey` must be SHA-256 of the UTF-8 string `<challenge>.<jkt>`, where `jkt` is the RFC 7638 thumbprint of `public_jwk`.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "key_id": {
+            "description": "The App Attest key identifier (`generateKey`), base64.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "attestation_object",
+          "challenge"
+        ],
+        "title": "App Attest attestation",
+        "type": "object"
+      },
+      "DeviceCredential": {
+        "additionalProperties": false,
+        "description": "A public key registered for one installation and organization. Tokens are issued only to requests signed by its private key.",
+        "examples": [
+          {
+            "attested": true,
+            "created_at": "2026-10-24T09:10:00.000Z",
+            "expires_at": "2026-11-23T09:10:00.000Z",
+            "hard_expires_at": "2027-01-22T09:10:00.000Z",
+            "id": "dcred_3mJr7AoUXx2Wqd8bGFd1KZ",
+            "installation_id": "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9",
+            "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I",
+            "object": "device_credential",
+            "organization_id": "org_2abcDEF",
+            "scopes": [
+              "widget_summary:read"
+            ]
+          }
+        ],
+        "properties": {
+          "attested": {
+            "description": "Whether an App Attest attestation for this installation verified.",
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "hard_expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_DeviceCredentialId"
+          },
+          "installation_id": {
+            "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+            "examples": [
+              "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+            ],
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Installation ID",
+            "type": "string"
+          },
+          "jkt": {
+            "description": "RFC 7638 SHA-256 thumbprint of the registered key; the `cnf.jkt` of every token.",
+            "type": "string"
+          },
+          "object": {
+            "description": "The object type, always `\"device_credential\"`.",
+            "enum": [
+              "device_credential"
+            ],
+            "type": "string"
+          },
+          "organization_id": {
+            "$ref": "#/components/schemas/_maple_OrgId"
+          },
+          "scopes": {
+            "description": "Fixed by the server. Today, exactly `widget_summary:read`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "object",
+          "id",
+          "organization_id",
+          "installation_id",
+          "jkt",
+          "scopes",
+          "attested",
+          "created_at",
+          "expires_at",
+          "hard_expires_at"
+        ],
+        "title": "Device credential",
+        "type": "object"
+      },
+      "DeviceCredentialDeleteResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "object": {
+            "enum": [
+              "device_credential"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "deleted"
+        ],
+        "title": "Device credential delete response",
+        "type": "object"
+      },
+      "DeviceCredentialRegisterParams": {
+        "additionalProperties": false,
+        "properties": {
+          "attestation": {
+            "$ref": "#/components/schemas/DeviceAttestation"
+          },
+          "public_jwk": {
+            "$ref": "#/components/schemas/DevicePublicJwk"
+          }
+        },
+        "required": [
+          "public_jwk"
+        ],
+        "title": "Register a device credential",
+        "type": "object"
+      },
+      "DevicePublicJwk": {
+        "additionalProperties": false,
+        "description": "The public half of the installation's signing key as an RFC 7517 JWK. EC P-256 only; members other than `kty`, `crv`, `x` and `y` are rejected rather than stored.",
+        "properties": {
+          "crv": {
+            "enum": [
+              "P-256"
+            ],
+            "type": "string"
+          },
+          "kty": {
+            "enum": [
+              "EC"
+            ],
+            "type": "string"
+          },
+          "x": {
+            "description": "a canonical base64url P-256 coordinate (32 bytes, no padding)",
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
+            "type": "string"
+          },
+          "y": {
+            "description": "a canonical base64url P-256 coordinate (32 bytes, no padding)",
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kty",
+          "crv",
+          "x",
+          "y"
+        ],
+        "title": "Device public key",
+        "type": "object"
+      },
+      "DeviceToken": {
+        "additionalProperties": false,
+        "description": "An RFC 9449 DPoP-bound access token response.",
+        "properties": {
+          "access_token": {
+            "description": "A JWT bound to the device key. Send it as `Authorization: DPoP <access_token>` with a fresh `DPoP` proof whose `ath` is its hash.",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "Seconds until the token expires.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "object": {
+            "enum": [
+              "device_token"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "description": "Space-delimited granted scopes.",
+            "type": "string"
+          },
+          "token_type": {
+            "enum": [
+              "DPoP"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "access_token",
+          "token_type",
+          "expires_in",
+          "scope"
+        ],
+        "title": "Device access token",
+        "type": "object"
+      },
       "Environment": {
         "additionalProperties": false,
         "description": "One deployment environment telemetry has been observed in.",
@@ -4603,6 +5370,161 @@
         "title": "Service",
         "type": "object"
       },
+      "ServiceHealth": {
+        "additionalProperties": false,
+        "description": "Per-service golden signals for a window, and optionally for a comparison window, read from the same hourly aggregate as the dashboard overview.",
+        "examples": [
+          {
+            "end_time": "2026-07-15T13:00:00.000Z",
+            "object": "service_health",
+            "previous": null,
+            "services": [
+              {
+                "baseline_p95_latency_ms": 120,
+                "deployment_environment": "production",
+                "error_count": 12,
+                "error_rate": 0.00027,
+                "object": "service_health.service",
+                "p95_latency_ms": 142.9,
+                "request_count": 45000,
+                "service_name": "api",
+                "throughput": 12.5
+              }
+            ],
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "end_time": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "service_health"
+            ],
+            "type": "string"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/ServiceHealthWindow"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceHealthEntry"
+            },
+            "type": "array"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "start_time",
+          "end_time",
+          "services"
+        ],
+        "title": "Service health",
+        "type": "object"
+      },
+      "ServiceHealthEntry": {
+        "additionalProperties": false,
+        "description": "One service in one deployment environment, with its request volume, errors and p95 latency.",
+        "properties": {
+          "baseline_p95_latency_ms": {
+            "type": "number"
+          },
+          "baseline_span_count": {
+            "type": "number"
+          },
+          "deployment_environment": {
+            "type": "string"
+          },
+          "error_count": {
+            "type": "number"
+          },
+          "error_rate": {
+            "type": "number"
+          },
+          "object": {
+            "enum": [
+              "service_health.service"
+            ],
+            "type": "string"
+          },
+          "p95_latency_ms": {
+            "type": "number"
+          },
+          "request_count": {
+            "type": "number"
+          },
+          "service_name": {
+            "$ref": "#/components/schemas/_maple_ServiceName"
+          },
+          "throughput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "object",
+          "service_name",
+          "request_count",
+          "error_count",
+          "error_rate",
+          "p95_latency_ms",
+          "throughput"
+        ],
+        "title": "Service health entry",
+        "type": "object"
+      },
+      "ServiceHealthParams": {
+        "additionalProperties": false,
+        "properties": {
+          "deployment_environment": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "previous_end_time": {
+            "type": "string"
+          },
+          "previous_start_time": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ],
+        "type": "object"
+      },
+      "ServiceHealthWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "end_time": {
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceHealthEntry"
+            },
+            "type": "array"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time",
+          "services"
+        ],
+        "title": "Service health window",
+        "type": "object"
+      },
       "ServiceList": {
         "additionalProperties": false,
         "description": "Cursor-paginated list envelope wrapping a page of objects.",
@@ -5167,6 +6089,7 @@
             "type": "string"
           },
           "span_scope": {
+            "description": "`root` matches filters against each trace's root span (the span without a parent), the span the trace summary describes. In timeseries and breakdowns it keeps entry spans: the root plus every Server and Consumer span.",
             "enum": [
               "root"
             ],
@@ -5497,7 +6420,7 @@
         "examples": [
           {
             "created_at": "2026-08-21T09:10:00.000Z",
-            "expires_at": "2026-09-20T09:10:00.000Z",
+            "expires_at": "2026-09-04T09:10:00.000Z",
             "object": "widget_credential",
             "organization_id": "org_2abcDEF",
             "scopes": [
@@ -5876,10 +6799,25 @@
           "hazel-oauth",
           "discord",
           "telegram",
+          "google-chat",
           "email",
-          "chat"
+          "chat",
+          "linear"
         ],
         "title": "Alert Destination Type",
+        "type": "string"
+      },
+      "_maple_AlertEvaluationStatus": {
+        "description": "The evaluation verdict: `breached`, `healthy`, or `skipped` (not enough samples / no data).",
+        "enum": [
+          "breached",
+          "healthy",
+          "skipped"
+        ],
+        "examples": [
+          "breached"
+        ],
+        "title": "Alert Evaluation Status",
         "type": "string"
       },
       "_maple_AlertEventType": {
@@ -6001,7 +6939,8 @@
           "apdex",
           "throughput",
           "builder_query",
-          "raw_query"
+          "raw_query",
+          "uptime"
         ],
         "examples": [
           "error_rate"
@@ -6117,6 +7056,15 @@
       "_maple_DashboardVariableName": {
         "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
         "title": "Dashboard Variable Name",
+        "type": "string"
+      },
+      "_maple_DeviceCredentialId": {
+        "description": "Opaque, prefixed public object ID (e.g. `dcred_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "dcred_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
         "type": "string"
       },
       "_maple_ErrorIncidentId": {
@@ -6284,7 +7232,7 @@
     "securitySchemes": {
       "bearer": {
         "bearerFormat": "maple_ak_… API key or session JWT",
-        "description": "Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes — see the `Scope` schema.",
+        "description": "Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes (see the `Scope` schema). A device-bound access token from `POST /v2/device_tokens` is sent as `Authorization: DPoP <token>` together with a `DPoP` proof header (RFC 9449) instead.",
         "scheme": "Bearer",
         "type": "http"
       }
@@ -6379,7 +7327,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6389,7 +7337,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -6532,7 +7480,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6542,7 +7490,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -6656,7 +7604,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6666,7 +7614,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -6803,7 +7751,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6813,7 +7761,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -6884,6 +7832,141 @@
         ]
       }
     },
+    "/v2/alerts/rules/preview": {
+      "post": {
+        "description": "Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope.",
+        "operationId": "previewAlertRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRulePreviewParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRulePreviewResult"
+                }
+              }
+            },
+            "description": "Evaluator-faithful preview of a rule over a historical range: the per-window observations the scheduler would have computed, and when incidents would have fired."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/errors/AlertValidationError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertForbiddenError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/errors/TinybirdOrgTokenConfigError failure. HTTP 500. | The @maple/http/errors/TinybirdOrgTokenMintError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preview an alert rule",
+        "tags": [
+          "Alert Rules"
+        ]
+      }
+    },
     "/v2/alerts/rules/{id}": {
       "get": {
         "description": "Returns a single alert rule by its `alrt_…` ID. Requires the `alerts:read` scope.",
@@ -6927,7 +8010,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6937,7 +8020,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -7118,7 +8201,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7128,7 +8211,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -7333,7 +8416,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7343,7 +8426,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -7457,7 +8540,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7467,7 +8550,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -7607,7 +8690,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7617,7 +8700,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -7684,7 +8767,7 @@
                 }
               }
             },
-            "description": "The @maple/http/anomalies/AnomalyPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/anomalies/AnomalyPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -7764,7 +8847,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7774,7 +8857,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -7888,7 +8971,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7898,7 +8981,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -8032,7 +9115,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8042,7 +9125,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -8123,6 +9206,540 @@
         ]
       }
     },
+    "/v2/device_credentials/{installation_id}": {
+      "delete": {
+        "description": "Revokes the caller's own device credential for this installation and organization. Tokens already issued for it stop working on their next request. Idempotent. Signed-in sessions only; there is no path to revoke another member's device (removing the member does that).",
+        "operationId": "revokeDeviceCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+              "examples": [
+                "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+              ],
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Installation ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredentialDeleteResponse"
+                }
+              }
+            },
+            "description": "DeviceCredentialDeleteResponse"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Revoke this installation's device key",
+        "tags": [
+          "Device Credentials"
+        ]
+      },
+      "put": {
+        "description": "Registers the public half of a device-held P-256 key for this installation and organization, revoking the caller's previous key for it in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Signed-in sessions only (API keys and device tokens get `session_required`). The request must also carry a `DPoP` proof signed by the submitted key (`htm` `PUT`, `htu` this URL, no `ath`), proving the caller holds it. An installation another member holds a live credential for answers `device_installation_in_use`.",
+        "operationId": "registerDeviceCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+              "examples": [
+                "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+              ],
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Installation ID",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "dpop",
+            "required": false,
+            "schema": {
+              "description": "The DPoP proof JWT (RFC 9449 section 4.2) for this request.",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceCredentialRegisterParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredential"
+                }
+              }
+            },
+            "description": "A public key registered for one installation and organization. Tokens are issued only to requests signed by its private key."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceKeyInvalidError failure. HTTP 400. | The @maple/http/errors/DpopProofInvalidError failure. HTTP 400. | The @maple/http/errors/DeviceAttestationInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceKeyInUseError failure. HTTP 409. | The @maple/http/errors/DeviceInstallationInUseError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Register this installation's device key",
+        "tags": [
+          "Device Credentials"
+        ]
+      }
+    },
+    "/v2/device_credentials/{installation_id}/attestation_challenge": {
+      "get": {
+        "description": "Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Signed-in sessions only.",
+        "operationId": "getDeviceAttestationChallenge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+              "examples": [
+                "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+              ],
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Installation ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationChallenge"
+                }
+              }
+            },
+            "description": "A server challenge that binds an App Attest attestation to this server, user and installation."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceTokensUnavailableError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get an App Attest challenge",
+        "tags": [
+          "Device Credentials"
+        ]
+      }
+    },
+    "/v2/device_tokens": {
+      "post": {
+        "description": "Exchanges a `DPoP` proof (RFC 9449: `typ` `dpop+jwt`, `alg` `ES256`, the registered key as `jwk`, `htm` `POST`, `htu` this URL, a unique `jti` and an `iat` within 60 seconds) for a one-hour access token bound to that key. Takes no bearer credential: the proof is the credential. Fails with `invalid_device_credential` when the key is unknown, revoked or expired.",
+        "operationId": "issueDeviceToken",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "dpop",
+            "required": false,
+            "schema": {
+              "description": "The DPoP proof JWT (RFC 9449 section 4.2) for this request.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceToken"
+                }
+              }
+            },
+            "description": "An RFC 9449 DPoP-bound access token response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DpopProofInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialInvalidError failure. HTTP 401."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceTokensUnavailableError failure. HTTP 503. | The @maple/http/errors/DeviceCredentialPersistenceError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [],
+        "summary": "Issue a DPoP-bound access token",
+        "tags": [
+          "Device Tokens"
+        ]
+      }
+    },
     "/v2/environments": {
       "get": {
         "description": "Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.",
@@ -8174,7 +9791,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8184,7 +9801,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -8241,7 +9858,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -8455,7 +10072,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8465,7 +10082,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -8522,7 +10139,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -8580,7 +10197,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8590,7 +10207,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -8736,7 +10353,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8746,7 +10363,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -8813,7 +10430,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -8890,7 +10507,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8900,7 +10517,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9044,7 +10661,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9054,7 +10671,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9198,7 +10815,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9208,7 +10825,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9342,7 +10959,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9352,7 +10969,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9487,7 +11104,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9497,7 +11114,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -9554,7 +11171,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -9622,7 +11239,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9632,7 +11249,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -9689,7 +11306,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -9756,7 +11373,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9766,7 +11383,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9833,7 +11450,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -9891,7 +11508,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9901,7 +11518,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -10022,7 +11639,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10032,7 +11649,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -10171,7 +11788,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10181,7 +11798,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -10310,7 +11927,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10320,7 +11937,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -10467,7 +12084,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10477,7 +12094,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -10646,7 +12263,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10656,7 +12273,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -10713,7 +12330,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -10732,6 +12349,141 @@
           }
         ],
         "summary": "List services",
+        "tags": [
+          "Services"
+        ]
+      }
+    },
+    "/v2/services/health": {
+      "post": {
+        "description": "Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window widens to the whole hours it touches (end exclusive), the response carries those hours, and `throughput` is per second over them. Requires `services:read`.",
+        "operationId": "queryServiceHealth",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceHealthParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceHealth"
+                }
+              }
+            },
+            "description": "Per-service golden signals for a window, and optionally for a comparison window, read from the same hourly aggregate as the dashboard overview."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Query service health",
         "tags": [
           "Services"
         ]
@@ -10796,7 +12548,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10806,7 +12558,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -10873,7 +12625,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -10939,7 +12691,7 @@
             "name": "bucket_seconds",
             "required": false,
             "schema": {
-              "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$",
+              "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$",
               "type": "string"
             }
           }
@@ -10973,7 +12725,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10983,7 +12735,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -11050,7 +12802,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -11118,7 +12870,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11128,7 +12880,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -11185,7 +12937,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -11253,7 +13005,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11263,7 +13015,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -11320,7 +13072,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -11388,7 +13140,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11398,7 +13150,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -11455,7 +13207,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -11522,7 +13274,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11532,7 +13284,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -11599,7 +13351,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -11609,7 +13361,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
           }
         },
         "security": [
@@ -11674,7 +13426,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11684,7 +13436,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -11751,7 +13503,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -11826,7 +13578,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11836,7 +13588,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -11956,7 +13708,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11966,7 +13718,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -12080,7 +13832,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -12090,7 +13842,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -12147,7 +13899,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
           },
           "504": {
             "content": {
@@ -12197,7 +13949,7 @@
       "name": "Alert Deliveries"
     },
     {
-      "description": "Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+      "description": "Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
       "name": "Alert Destinations"
     },
     {
@@ -12225,6 +13977,10 @@
       "name": "Google Cloud Integration"
     },
     {
+      "description": "Connect AWS accounts: register a connection, choose what Maple may read, fetch the CloudFormation stack that sets it up, and see whether Maple can assume its role.",
+      "name": "AWS Integration"
+    },
+    {
       "description": "Deduplicated errors and alert-backed issues tracked through Maple's triage workflow.",
       "name": "Error Issues"
     },
@@ -12233,12 +13989,28 @@
       "name": "Attribute Mappings"
     },
     {
+      "description": "Drop or redact telemetry before Maple stores or bills it. Dropped data is not metered; redaction happens before anything is written to disk.",
+      "name": "Ingest Rules"
+    },
+    {
       "description": "The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, MCP, and any linked chat platform, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
       "name": "Audit Log"
     },
     {
       "description": "Metrics endpoints Maple scrapes on a schedule — self-hosted Prometheus endpoints and PlanetScale branch metrics. Manage targets, probe them on demand, and inspect recent scrape checks. Credentials are write-only.",
       "name": "Scrape Targets"
+    },
+    {
+      "description": "Checks Maple runs from outside your infrastructure (HTTP, TCP, DNS) and heartbeats your jobs send. Each check is a span in your traces; a monitor goes down after enough failures in a row.",
+      "name": "Uptime Monitors"
+    },
+    {
+      "description": "Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",
+      "name": "Status Pages"
+    },
+    {
+      "description": "Customer-facing incidents and scheduled maintenance on your status pages, separate from internal alert incidents.",
+      "name": "Status Page Incidents"
     },
     {
       "description": "Automatically detected instrumentation improvements — attribute renames toward canonical semantic conventions, double emissions, and naming violations. List them, and dismiss or reopen individual recommendations.",
@@ -12323,6 +14095,14 @@
     {
       "description": "Device-scoped, read-only credentials for the Maple mobile Home Screen widgets. Minted by a signed-in app for one installation at a time.",
       "name": "Widget Credentials"
+    },
+    {
+      "description": "Device-held keys for the Maple mobile Home Screen widgets. A signed-in app registers a key; the widget then authenticates with DPoP (RFC 9449) proofs signed by it.",
+      "name": "Device Credentials"
+    },
+    {
+      "description": "The DPoP token endpoint for device credentials. Unauthenticated apart from the proof.",
+      "name": "Device Tokens"
     }
   ]
 }

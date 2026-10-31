@@ -111,7 +111,7 @@ export function FlamegraphMinimap({
 	return (
 		<div
 			ref={containerRef}
-			className="relative border-b bg-muted/20 cursor-crosshair select-none"
+			className="relative border-b bg-surface-faint cursor-crosshair select-none"
 			style={{ height: MINIMAP_HEIGHT }}
 			onClick={handleClick}
 			onMouseDown={handleMouseDown}
@@ -143,14 +143,12 @@ export function FlamegraphMinimap({
 
 			{viewportStyle && (
 				<div
-					className="absolute inset-y-0 border-2 border-primary bg-primary/20 cursor-grab active:cursor-grabbing"
+					className="absolute inset-y-0 border-2 border-primary bg-primary-a3 cursor-grab active:cursor-grabbing"
 					style={viewportStyle}
 				/>
 			)}
 
-			<div className="absolute right-3 top-1 text-4xs font-medium text-muted-foreground/60">
-				Minimap
-			</div>
+			<div className="absolute right-3 top-1 text-4xs font-medium text-foreground-subtle">Minimap</div>
 		</div>
 	)
 }

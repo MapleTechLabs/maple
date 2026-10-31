@@ -97,7 +97,9 @@ export const settingRow = <M>(
 										: [
 												h.p(
 													[
-														h.Class(settingRowDescriptionStyles),
+														h.Class(
+															cn(settingRowDescriptionStyles, "font-prose"),
+														),
 														...fieldState,
 														h.Id(options.ids.description),
 													],

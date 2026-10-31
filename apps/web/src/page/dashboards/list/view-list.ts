@@ -1,3 +1,4 @@
+import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +11,8 @@ import { listSectionHeader, toolbarSearch } from "../kit/list-parts"
 import * as Menu from "../../../ui/menu"
 import * as MenuView from "../../../ui/menu-view"
 import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonSlowNote } from "../../../ui/skeleton"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { docsLink } from "../../kit/signal-empty-state"
 import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "../kit/summary"
 import { relativeTime } from "../../kit/relative-time"
@@ -53,7 +55,12 @@ const disabledReason = (h: H, child: Html): Html =>
 /** `TagFilterMenu`: disabled with its reason while no dashboard carries a tag. */
 const tagFilter = (h: H, model: Model, allTags: ReadonlyArray<string>): Html =>
 	allTags.length === 0
-		? disabledReason(h, button(h, { variant: "outline", className: "shrink-0", isDisabled: true }, ["Tags"]))
+		? disabledReason(
+				h,
+				button(h, { variant: "outline", size: "sm", className: "shrink-0", isDisabled: true }, [
+					"Tags",
+				]),
+			)
 		: h.submodel({
 				slotId: "dashboards-tag-filter",
 				model: model.tagFilter,
@@ -62,7 +69,7 @@ const tagFilter = (h: H, model: Model, allTags: ReadonlyArray<string>): Html =>
 				toParentMessage: (message) => Message.GotTagFilterMessage({ message }),
 			})
 
-const sortEntries =(sort: DashboardSortOption): ReadonlyArray<MenuView.MenuEntry> => [
+const sortEntries = (sort: DashboardSortOption): ReadonlyArray<MenuView.MenuEntry> => [
 	{
 		_tag: "RadioGroup",
 		label: "Sort by",
@@ -87,9 +94,11 @@ const sortMenu = (h: H, model: Model): Html => {
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						button(h, { variant: "outline", className: "shrink-0", attributes: trigger }, [
-							SORT_LABELS[sort],
-						]),
+						button(
+							h,
+							{ variant: "outline", size: "sm", className: "shrink-0", attributes: trigger },
+							[SORT_LABELS[sort]],
+						),
 					),
 				),
 		},
@@ -99,49 +108,42 @@ const sortMenu = (h: H, model: Model): Html => {
 
 const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, scoped: number): Html => {
 	const isFiltering = queryOf(model.search).trim().length > 0 || tagsOf(model.search).length > 0
-	return h.div(
-		[
-			h.Class(
-				cn(
-					"flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3",
-					"justify-start gap-2 border-b-0 px-0 pt-0",
-				),
-			),
-		],
-		[
+	return listToolbar(h, {
+		leading: segmentedSelect<Scope, Message>(h, {
+			options: SCOPE_OPTIONS,
+			value: scopeOf(model.search),
+			onChange: (scope) => Message.ChangedScope({ scope }),
+			ariaLabel: "Filter dashboards by favorite",
+			size: "sm",
+			className: "shrink-0",
+		}),
+		trailing: [
 			toolbarSearch(h, {
 				id: "dashboards-search",
 				draft: model.searchDraft,
 				placeholder: "Search dashboards",
-				className: "min-w-0 grow sm:max-w-70",
+				className: "w-full min-w-0 sm:w-70",
 				onInput: (value) => Message.ChangedSearchDraft({ value }),
-			}),
-			segmentedSelect<Scope, Message>(h, {
-				options: SCOPE_OPTIONS,
-				value: scopeOf(model.search),
-				onChange: (scope) => Message.ChangedScope({ scope }),
-				ariaLabel: "Filter dashboards by favorite",
-				className: "shrink-0",
 			}),
 			tagFilter(h, model, collectTags(dashboards)),
 			sortMenu(h, model),
-			h.span([h.Class("grow")], []),
-			h.span(
-				[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
-				[
-					isFiltering || scopeOf(model.search) === "favorites"
-						? `${scoped} of ${dashboards.length}`
-						: `${dashboards.length} of ${dashboards.length}`,
-				],
-			),
+			toolbarCount(h, [
+				isFiltering || scopeOf(model.search) === "favorites"
+					? `${scoped} of ${dashboards.length}`
+					: `${dashboards.length} of ${dashboards.length}`,
+			]),
 		],
-	)
+	})
 }
 
 /** The reason in the menu itself: a tooltip would break the menu's roving focus. */
 const READ_ONLY_NOTE: ReadonlyArray<MenuView.MenuEntry> = [
 	{ _tag: "Separator" },
-	{ _tag: "Label", label: "Dashboard store unreachable, writes are disabled", className: "font-normal text-3xs leading-snug" },
+	{
+		_tag: "Label",
+		label: "Dashboard store unreachable, writes are disabled",
+		className: "font-normal text-3xs leading-snug",
+	},
 ]
 
 /** Export reads what the list holds, so it survives a write failure; the rest write, so they don't. */
@@ -153,7 +155,13 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 			{ _tag: "Item", value: "duplicate", label: "Duplicate", isDisabled: isReadOnly },
 			{ _tag: "Item", value: "tags", label: "Edit tags…", isDisabled: isReadOnly },
 			{ _tag: "Separator" },
-			{ _tag: "Item", value: "delete", label: "Delete…", variant: "destructive", isDisabled: isReadOnly },
+			{
+				_tag: "Item",
+				value: "delete",
+				label: "Delete…",
+				variant: "destructive",
+				isDisabled: isReadOnly,
+			},
 			...(isReadOnly ? READ_ONLY_NOTE : []),
 		],
 	},
@@ -200,13 +208,13 @@ type RowContext = Readonly<{ model: Model; nowMs: number; timeZone: string }>
 /** `DashboardRow`: one link for the whole row, then the star and the kebab above it. */
 const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFavorite: boolean): Html => {
 	const isEmpty = dashboard.widgetCount === 0
-	const widgets = `${dashboard.widgetCount} ${dashboard.widgetCount === 1 ? "widget" : "widgets"}`
+	const widgets = `${dashboard.widgetCount} ${pluralize(dashboard.widgetCount, "widget")}`
 	const name = displayName(dashboard.name)
 	return h.keyed("div")(
 		dashboard.id,
 		[
 			h.Class(
-				"group relative flex items-center border-b border-border last:border-b-0 transition-colors hover:bg-muted/50 focus-within:bg-muted/50",
+				"group relative flex items-center border-b border-border last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-within:bg-surface-sunken",
 			),
 		],
 		[
@@ -326,7 +334,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 						{
 							size: "icon-xs",
 							label: isFavorite ? `Unstar ${name}` : `Star ${name}`,
-							className: isFavorite ? "text-primary" : "text-muted-foreground/40",
+							className: isFavorite ? "text-primary" : "text-foreground-faint",
 							attributes: [
 								h.AriaPressed(String(isFavorite)),
 								h.OnClick(Message.ToggledFavorite({ id: dashboard.id })),
@@ -349,7 +357,7 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 			h.OnClick(Message.ClickedCreate()),
 			...(isReadOnly ? [h.Disabled(true)] : []),
 			h.Class(
-				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50",
+				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left hover:bg-surface-sunken active:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50",
 			),
 		],
 		[
@@ -367,7 +375,7 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 					),
 				],
 			),
-			icon(h, "ArrowRightIcon", { size: 13, className: "text-muted-foreground shrink-0" }),
+			icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 		],
 	)
 
@@ -416,7 +424,7 @@ const nothingMatched = (h: H, model: Model): Html => {
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon", { size: 17 })]),
+				emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon", { size: 16 })]),
 				emptyTitle(h, [
 					isSearching
 						? `No dashboard matches “${query}”`
@@ -471,7 +479,7 @@ const nothingStarred = (h: H): Html =>
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "StarIcon", { size: 17 })]),
+				emptyMedia(h, { variant: "icon" }, [icon(h, "StarIcon", { size: 16 })]),
 				emptyTitle(h, ["Nothing starred on this device"]),
 				emptyDescription(h, [
 					"Favorites are stored in this browser, not shared with your org. Star a dashboard to pin it to the top of the list.",
@@ -581,6 +589,7 @@ export const listSkeleton = (h: H): Html =>
 		[h.Role("status"), h.AriaLabel("Loading dashboards")],
 		[
 			h.span([h.Class("sr-only")], ["Loading dashboards"]),
+			skeletonSlowNote(h, "pb-3"),
 			h.div(
 				[h.AriaHidden(true)],
 				[

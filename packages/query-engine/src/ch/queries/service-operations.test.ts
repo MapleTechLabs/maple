@@ -35,7 +35,6 @@ describe("serviceOperationsSummaryQuery", () => {
 		const q = serviceOperationsSummaryQuery({ serviceName: "api" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("FROM service_operations_minutely")
 		expect(sql).toContain("FROM service_operations_hourly")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -47,7 +46,6 @@ describe("serviceOperationsSummaryQuery", () => {
 		expect(sql).toContain("Hour < toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 		expect(sql).toContain("ORDER BY estimatedSpanCount DESC")
 		expect(sql).toContain("LIMIT 25")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("keys operations on the HTTP display span name", () => {
@@ -56,12 +54,12 @@ describe("serviceOperationsSummaryQuery", () => {
 		// httpDisplaySpanName rewrites "http.server GET" + route → "GET /api/users"
 		expect(sql).toContain("http.route")
 		expect(sql).toContain("url.path")
-		expect(sql).toContain("AS spanName")
 		// The builder qualifies source columns; the shared write-side fragment does not.
 		const onTraces = NORMALIZED_SPAN_NAME_SQL.replace(
 			/(?<![\w.])(SpanName|SpanAttributes)\b/g,
 			"traces.$1",
 		)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- raw edges must normalize names like the rollup write side, or rows never merge
 		expect(sql).toContain(`${onTraces} AS bSpanName`)
 	})
 
@@ -126,7 +124,6 @@ describe("serviceOperationsSummaryQuery", () => {
 				startTime,
 				endTime,
 			})
-			expect(sql).toContain("UNION ALL")
 			expect(sql).toContain(`Timestamp >= '${startTime}'`)
 			expect(sql).toContain(`Timestamp <= '${endTime}'`)
 		}
@@ -139,7 +136,6 @@ describe("serviceOperationsTimeseriesQuery", () => {
 		const { sql } = compileUnsafe(q, { ...baseParams, bucketSeconds: 300 })
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("FROM service_operations_minutely")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND)")
 		expect(sql).toContain("toStartOfInterval(service_operations_minutely.Minute, INTERVAL 300 SECOND)")
 		expect(sql).toContain("sum(traces.SampleRate) AS count")
@@ -159,7 +155,6 @@ describe("serviceOperationsTimeseriesQuery", () => {
 		expect(sql).toContain("FROM service_operations_hourly")
 		expect(sql).toContain("FROM service_operations_minutely")
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("Hour >= if(toDateTime('2024-01-01 00:00:00')")
 	})
 

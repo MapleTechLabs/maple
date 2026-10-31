@@ -1,0 +1,70 @@
+diff --git a/src/Workers/ObservabilityDestination.ts b/src/Workers/ObservabilityDestination.ts
+--- a/src/Workers/ObservabilityDestination.ts
++++ b/src/Workers/ObservabilityDestination.ts
+@@ -206,12 +206,7 @@
+       if (oldDataset !== undefined && oldDataset !== news.logpushDataset) {
+         return { action: "replace" } as const;
+       }
+-      // State written by earlier versions holds `destinationConf` as a plain
+-      // string. Reconcile to re-read it as `Redacted`; without header or URL
+-      // drift this issues no PATCH.
+-      if (output?.destinationConf !== undefined && !Redacted.isRedacted(output.destinationConf)) {
+-        return { action: "update" } as const;
+-      }
++
+       return undefined;
+     }),
+ 
+@@ -247,6 +242,17 @@
+       // just sent.
+       let appliedHeaders = olds?.headers ? unwrapRedacted(olds.headers) : undefined;
+       const enabled = news.enabled ?? true;
++      // Maple: settle unchanged resumed updates without listing destinations.
++      if (output?.slug && olds !== undefined && olds.url === url &&
++          (olds.enabled ?? true) === enabled &&
++          sameHeaders(unwrapRedacted(olds.headers ?? {}), headers, undefined)) {
++        return {
++          ...output,
++          destinationConf: output.destinationConf === undefined || Redacted.isRedacted(output.destinationConf)
++            ? output.destinationConf
++            : Redacted.make(output.destinationConf as unknown as string),
++        };
++      }
+ 
+       // 1. Observe — the slug cached on `output` is a hint, not a
+       //    guarantee; fall back to the name (Cloudflare enforces name
+diff --git a/lib/Workers/ObservabilityDestination.js b/lib/Workers/ObservabilityDestination.js
+--- a/lib/Workers/ObservabilityDestination.js
++++ b/lib/Workers/ObservabilityDestination.js
+@@ -96,12 +96,7 @@
+         if (oldDataset !== undefined && oldDataset !== news.logpushDataset) {
+             return { action: "replace" };
+         }
+-        // State written by earlier versions holds `destinationConf` as a plain
+-        // string. Reconcile to re-read it as `Redacted`; without header or URL
+-        // drift this issues no PATCH.
+-        if (output?.destinationConf !== undefined && !Redacted.isRedacted(output.destinationConf)) {
+-            return { action: "update" };
+-        }
++
+         return undefined;
+     }),
+     read: Effect.fn(function* ({ id, output, olds }) {
+@@ -134,6 +129,17 @@
+         // just sent.
+         let appliedHeaders = olds?.headers ? unwrapRedacted(olds.headers) : undefined;
+         const enabled = news.enabled ?? true;
++        // Maple: settle unchanged resumed updates without listing destinations.
++        if (output?.slug && olds !== undefined && olds.url === url &&
++            (olds.enabled ?? true) === enabled &&
++            sameHeaders(unwrapRedacted(olds.headers ?? {}), headers, undefined)) {
++          return {
++            ...output,
++            destinationConf: output.destinationConf === undefined || Redacted.isRedacted(output.destinationConf)
++              ? output.destinationConf
++              : Redacted.make(output.destinationConf),
++          };
++        }
+         // 1. Observe — the slug cached on `output` is a hint, not a
+         //    guarantee; fall back to the name (Cloudflare enforces name
+         //    uniqueness, and ownership of a name match has already been

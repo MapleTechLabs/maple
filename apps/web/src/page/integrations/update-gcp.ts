@@ -25,6 +25,7 @@ import {
 	type RemovedConnector,
 	WriteRemoved,
 } from "./gcp"
+import { initConfigure } from "./gcp-configure"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ConfigureTarget } from "./gcp-schema"
@@ -45,9 +46,24 @@ export const gcpConnectors = (model: Model): ReadonlyArray<V2GcpConnector> =>
 		onSome: (status) => status.connectors,
 	})
 
-/** The card's entry: the cleanup list from storage. */
+/**
+ * The card's entry: the cleanup list from storage, and a new connection for the connect flow.
+ * Metrics start on until the status says the deployment lacks them.
+ */
 export const enterGcp = (model: Model, context: PageContext): Return => ({
-	model,
+	model:
+		model.gcpCard.configure === null
+			? withCard(model, {
+					configure: initConfigure(
+						{ _tag: "New" },
+						gcpConnectors(model),
+						Option.match(AsyncData.getData(model.statuses.gcp.data), {
+							onNone: () => true,
+							onSome: (status) => status.metrics_available,
+						}),
+					),
+				})
+			: model,
 	commands: [ReadRemoved({ orgId: context.orgId })],
 })
 
@@ -188,6 +204,12 @@ export const gotMenu = (
 	return { model: next, commands }
 }
 
+/** The removal dialog for a connector by id, opened from outside its menu (a source's Delete). */
+export const clickedDisconnect = (model: Model, context: PageContext, id: string): Return => {
+	const connector = gcpConnectors(model).find((entry) => entry.id === id)
+	return connector === undefined ? { model } : openDisconnect(model, context, connector)
+}
+
 /** "Try again" on the script read. */
 export const retriedScripts = (model: Model, context: PageContext): Return => {
 	const id = model.gcpCard.disconnectId
@@ -224,7 +246,7 @@ export const completedDisconnect = (
 			model: settled,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to disconnect",
+				title: "Couldn't disconnect",
 				description: failure?.message ?? "",
 			}),
 		}

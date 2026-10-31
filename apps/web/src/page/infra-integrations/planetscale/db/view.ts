@@ -1,9 +1,13 @@
-import { derivePlanetScaleSetup } from "../../../../components/integrations/planetscale-setup-steps"
+import {
+	derivePlanetScaleSetup,
+	metricsCollectionFailing,
+} from "../../../../components/integrations/planetscale-setup-steps"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { button } from "../../../../ui/button"
+import { textLink } from "../../../../ui/text-link"
 import {
 	empty,
 	emptyContent,
@@ -18,16 +22,15 @@ import { type SelectEntry, view as selectView } from "../../../../ui/select-view
 import * as Tooltip from "../../../../ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { integrationNotConnected } from "../../kit/empty-states"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
 import {
 	BRANCH_ABSENCE_COPY,
-	METRICS_PAUSED_MESSAGE,
 	metricsNotice,
+	planetscaleConnectCta,
 	revokedNotice,
 	setupState,
 } from "../notices"
@@ -150,8 +153,6 @@ const dataSections = (
 	const selected = filters.branches ?? []
 	const candidates = applyBranchFilters(candidatesOf(model), filters)
 	const selectedBranch = selectedBranchOf(model)
-	const status = statusOf(model)
-	const metricsPaused = status?.metrics_auth === "missing"
 	const selectedCandidate = candidates.find((candidate) => candidate.name === selectedBranch?.name) ?? null
 	const reason = selectedCandidate === null ? null : absenceReason(selectedCandidate)
 	const events =
@@ -172,11 +173,7 @@ const dataSections = (
 									theme,
 									timeZone: clock.timeZone,
 									markers: eventsToChartMarkers(events),
-									emptyMessage: metricsPaused
-										? METRICS_PAUSED_MESSAGE
-										: reason !== null
-											? BRANCH_ABSENCE_COPY[reason]
-											: undefined,
+									emptyMessage: reason !== null ? BRANCH_ABSENCE_COPY[reason] : undefined,
 									selected,
 									trigger,
 								}),
@@ -193,13 +190,13 @@ const dataSections = (
 						onFailure: (failure) =>
 							errorState(h, {
 								failure,
-								title: "Failed to load branch stats",
+								title: "Couldn't load branch stats",
 								onRetry: Message.ClickedRetryBranchStats(),
 							}),
 						onStale: ({ error }) =>
 							errorState(h, {
 								failure: error,
-								title: "Failed to load branch stats",
+								title: "Couldn't load branch stats",
 								onRetry: Message.ClickedRetryBranchStats(),
 							}),
 						onRefreshing: () =>
@@ -209,9 +206,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: true,
-								emptyMessage: metricsPaused
-									? METRICS_PAUSED_MESSAGE
-									: "No branches match these filters.",
+								emptyMessage: "No branches match these filters.",
 							}),
 						onSuccess: () =>
 							breakdownPanel(h, {
@@ -220,9 +215,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: false,
-								emptyMessage: metricsPaused
-									? METRICS_PAUSED_MESSAGE
-									: "No branches match these filters.",
+								emptyMessage: "No branches match these filters.",
 							}),
 					}),
 				],
@@ -263,7 +256,7 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model))
 	if (chips.length === 0) return []
 	const chipClass =
-		"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
+		"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
 	return [
 		h.div(
 			[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
@@ -272,13 +265,13 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 					h.span(
 						[h.Class(chipClass)],
 						[
-							h.span([h.Class("max-w-[22ch] truncate text-foreground/80")], [chip.label]),
+							h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [chip.label]),
 							button(
 								h,
 								{
 									variant: "ghost",
 									size: "icon-2xs",
-									className: "text-muted-foreground hover:text-foreground",
+									className: "text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [
 										h.AriaLabel(`Remove ${chip.label}`),
 										h.OnClick(
@@ -291,14 +284,14 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 						],
 					),
 				),
-				h.button(
-					[
-						h.Type("button"),
-						h.OnClick(Message.ClickedClearFilters()),
-						h.Class(
-							"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline ml-1",
-						),
-					],
+				textLink(
+					h,
+					{
+						tone: "muted",
+						isMono: true,
+						className: "ml-1 text-3xs",
+						onClick: Message.ClickedClearFilters(),
+					},
 					["Clear all"],
 				),
 			],
@@ -353,28 +346,51 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	})
 	const body = (trigger: Trigger): ReadonlyArray<Html> =>
 		status !== null && !status.connected
-			? [
-					integrationNotConnected(h, {
-						icon: icon(h, "PlanetScaleIcon", { size: 16 }),
-						title: "Connect PlanetScale to see database health",
-						description:
-							"Authorize your PlanetScale organization with one click and Maple tracks every branch's health (connections, CPU, memory, replication lag) with nothing to install.",
-						integration: "planetscale",
-						actionLabel: "Connect PlanetScale",
-						docsPage: "planetscale",
-					}),
-				]
+			? [planetscaleConnectCta(h)]
 			: [
 					...(status?.revoked_at != null ? [revokedNotice(h)] : []),
-					...(status?.metrics_auth === "missing" && !never ? [metricsNotice(h)] : []),
+					...(status !== null &&
+					status.revoked_at === null &&
+					!never &&
+					metricsCollectionFailing(status, clock.nowMs)
+						? [metricsNotice(h, status)]
+						: []),
 					...(never && status !== null
-						? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).steps)]
+						? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).checks)]
 						: []),
 					...(resolution.kind === "unknown"
 						? [unknownBranchNotice(h, resolution.name, resolution.fallback?.name ?? null)]
 						: []),
 					dataSections(h, model, clock, trigger, model.themeColors),
 				]
+	const heroActions: ReadonlyArray<Html> =
+		database === null
+			? []
+			: [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							attributes: [h.AriaHasPopup("menu"), h.AriaExpanded(false)],
+						},
+						[icon(h, "BellIcon", { size: 14 }), "Alert on this"],
+					),
+				]
+	const hero = pageHeroParts(h, {
+		title: model.dbName,
+		description: "Branch-level health, live from PlanetScale.",
+		meta:
+			database === null
+				? undefined
+				: [
+						heroChip(h, database.kind === "postgresql" ? "Postgres" : "MySQL / Vitess"),
+						...(database.region ? [heroChip(h, database.region)] : []),
+						...(database.plan ? [heroChip(h, database.plan)] : []),
+						heroChip(h, countLabel(database.branches.length, "branch", "branches")),
+						...filterChipRail(h, model),
+					],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))],
 		[
@@ -396,7 +412,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						dashboardPage(
 							h,
 							{
-								scrollClassName: "gap-6",
+								gap: "lg",
 								filters: planetscaleSidebar(
 									h,
 									model,
@@ -404,58 +420,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 									filtersOf(model),
 									AsyncData.isLoading(model.databases.data),
 								),
-								actions: branchSelect(h, model, timeControls),
+								titleContent: hero.title,
+								actions:
+									heroActions.length === 0
+										? branchSelect(h, model, timeControls)
+										: h.div(
+												[h.Class("flex flex-wrap items-center gap-2")],
+												[...heroActions, branchSelect(h, model, timeControls)],
+											),
 								// TODO(alert-menu): see the note at the top of this file.
 							},
-							[
-								pageHero(h, {
-									title: model.dbName,
-									description: "Branch-level health, live from PlanetScale.",
-									actions:
-										database === null
-											? undefined
-											: [
-													button(
-														h,
-														{
-															variant: "outline",
-															size: "sm",
-															attributes: [
-																h.AriaHasPopup("menu"),
-																h.AriaExpanded(false),
-															],
-														},
-														[icon(h, "BellIcon", { size: 14 }), "Alert on this"],
-													),
-												],
-									meta:
-										database === null
-											? undefined
-											: [
-													heroChip(
-														h,
-														database.kind === "postgresql"
-															? "Postgres"
-															: "MySQL / Vitess",
-													),
-													...(database.region
-														? [heroChip(h, database.region)]
-														: []),
-													...(database.plan ? [heroChip(h, database.plan)] : []),
-													heroChip(
-														h,
-														countLabel(
-															database.branches.length,
-															"branch",
-															"branches",
-														),
-													),
-													...filterChipRail(h, model),
-												],
-								}),
-								...body(trigger),
-								...(portal === null ? [] : [portal]),
-							],
+							[hero.body, ...body(trigger), ...(portal === null ? [] : [portal])],
 						),
 				},
 			}),

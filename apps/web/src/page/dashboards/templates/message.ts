@@ -30,7 +30,6 @@ export const Message = defineMessageUnion({
 	ElapsedSearchDebounce: { generation: Schema.Number },
 	ChangedFilter: { filter: ReadinessFilter },
 	ClickedTemplate: { templateId: Schema.String },
-	ClickedBack: {},
 	GotPanelSheetMessage: { message: Dialog.Message },
 	ClickedRetry: {},
 	ChangedParameter: { key: Schema.String, value: Schema.String },

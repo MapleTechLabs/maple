@@ -26,7 +26,13 @@ import {
 
 type H = HtmlBuilder<Message>
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 const previewButton = (h: H, model: Model, digest: "ops" | "web"): Html =>
 	button(
@@ -96,10 +102,16 @@ const scheduleField = (h: H, model: Model): Html => {
 				),
 			],
 		),
-		fieldDescription(h, { ids, state: IDLE }, "Sent in your time zone. Both digests follow this schedule."),
+		fieldDescription(
+			h,
+			{ ids, state: IDLE },
+			"Sent in your time zone. Both digests follow this schedule.",
+		),
 		h.p(
 			[h.Class("text-xs text-muted-foreground")],
-			["Changes apply from the next send, so moving the day right after a digest went out skips to next week."],
+			[
+				"Changes apply from the next send, so moving the day right after a digest went out skips to next week.",
+			],
 		),
 	])
 }
@@ -164,7 +176,12 @@ const preferences = (h: H, model: Model): ReadonlyArray<Html> => {
 					? [
 							panel(h, { tone: "muted", padded: true, className: "gap-4" }, [
 								scheduleField(h, model),
-								scopeField(h, model, { key: "namespaces", label: "Namespaces", noun: "namespace", plural: "namespaces" }),
+								scopeField(h, model, {
+									key: "namespaces",
+									label: "Namespaces",
+									noun: "namespace",
+									plural: "namespaces",
+								}),
 								scopeField(h, model, {
 									key: "environments",
 									label: "Environments",
@@ -191,7 +208,9 @@ const preferences = (h: H, model: Model): ReadonlyArray<Html> => {
 					onToggle: Message.ToggledWeb(),
 					before: [previewButton(h, model, "web")],
 				},
-				!enabled && webEnabled ? [panel(h, { tone: "muted", padded: true }, [scheduleField(h, model)])] : [],
+				!enabled && webEnabled
+					? [panel(h, { tone: "muted", padded: true }, [scheduleField(h, model)])]
+					: [],
 			),
 		]),
 		...saveBar(h, {
@@ -212,30 +231,44 @@ const recipient = (h: H, model: Model): ReadonlyArray<Html | string> =>
 				...(model.orgName === null ? [] : [` for ${model.orgName}`]),
 			]
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) => {
-	if (!model.isLoaded || AsyncData.isLoading(model.subscription) || AsyncData.isIdle(model.subscription))
-		return accountSectionSkeleton(h)
-	return settingsSections(h, "standard", [
-		settingsSection(
-			h,
-			{ id: "account-email-preferences", title: "Email preferences", description: recipient(h, model), framed: false },
-			[
-				// Switches built on defaults would upsert over preferences that could not be read.
-				...AsyncData.matchDataSplitEmpty(model.subscription, {
-					onIdle: () => [],
-					onLoading: () => [],
-					onFailure: (failure) => [
-						errorState(h, {
-							variant: "row",
-							failure,
-							title: "Couldn't load your email preferences",
-							onRetry: Message.ClickedRetry(),
-						}),
-					],
-					onData: () => preferences(h, model),
-				}),
-				h.p([h.Class("text-xs text-muted-foreground")], ["Unsubscribe links in each email turn the matching digest off."]),
-			],
-		),
-	])
-})
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
+	(model, _inputs, h) => {
+		if (
+			!model.isLoaded ||
+			AsyncData.isLoading(model.subscription) ||
+			AsyncData.isIdle(model.subscription)
+		)
+			return accountSectionSkeleton(h)
+		return settingsSections(h, [
+			settingsSection(
+				h,
+				{
+					id: "account-email-preferences",
+					title: "Email preferences",
+					description: recipient(h, model),
+					framed: false,
+				},
+				[
+					// Switches built on defaults would upsert over preferences that could not be read.
+					...AsyncData.matchDataSplitEmpty(model.subscription, {
+						onIdle: () => [],
+						onLoading: () => [],
+						onFailure: (failure) => [
+							errorState(h, {
+								variant: "row",
+								failure,
+								title: "Couldn't load your email preferences",
+								onRetry: Message.ClickedRetry(),
+							}),
+						],
+						onData: () => preferences(h, model),
+					}),
+					h.p(
+						[h.Class("text-xs text-muted-foreground")],
+						["Unsubscribe links in each email turn the matching digest off."],
+					),
+				],
+			),
+		])
+	},
+)

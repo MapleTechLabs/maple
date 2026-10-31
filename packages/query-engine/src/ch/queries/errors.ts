@@ -612,27 +612,35 @@ export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }
 // Trace timestamp probe — resolve any one span timestamp for a trace
 
 export interface TraceTimeProbeOutput {
+	readonly traceId: string
+	/** The trace's first span start. */
 	readonly timestamp: DateTime.Utc
+	/** The trace's last span start, so a window can cover a trace longer than its padding. */
+	readonly endTimestamp: DateTime.Utc
 }
 
 /**
- * Earliest span start of a trace, from `trace_index` (sorted `(OrgId, TraceId, ...)`:
- * one granule per daily partition). Callers with no timestamp (direct URL, shared
- * link, AI surface) derive a window from it so the real query prunes partitions.
- * No row when the trace is unknown.
+ * First and last span start of a trace, aggregated over its `trace_index` rows (one per
+ * service and 5-minute bucket; sorted `(OrgId, TraceId, ...)`, one granule per daily
+ * partition). No row when the trace is unknown.
  */
 export function traceTimeProbeQuery(opts: { traceId: string }) {
 	return from(TraceIndex)
-		.select(($) => ({ timestamp: $.MinTimestamp }))
+		.select(($) => ({
+			traceId: $.TraceId,
+			timestamp: CH.min_($.MinTimestamp),
+			endTimestamp: CH.max_($.MaxTimestamp),
+		}))
 		.where(($) => [$.TraceId.eq(opts.traceId), $.OrgId.eq(orgIdParam)])
-		.orderBy(["timestamp", "asc"])
+		.groupBy("traceId")
 		.limit(1)
 		.format("JSON")
 }
 
 /**
- * {@link traceTimeProbeQuery} bounded below by the `startTime` param, and with
- * `endBounded` also below the `endTime` param, so tiered probes never overlap.
+ * {@link traceTimeProbeQuery} over the rows whose last span is at or after the `startTime`
+ * param (with `endBounded`, whose first is before `endTime`), so tiered probes never overlap.
+ * Rows before the bound are not seen, so `timestamp` is a lower bound only past it.
  */
 export function recentTraceTimeProbeQuery(opts: { traceId: string; endBounded?: boolean }) {
 	return traceTimeProbeQuery(opts).where(($) => [

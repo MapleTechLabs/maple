@@ -30,6 +30,7 @@ const env = {
 		"/pricing.md": "# Pricing\n",
 		"/_astro/app.js": "console.log(1)",
 		"/404.html": "<html>not found</html>",
+		"/docs/404/index.html": "<html>docs not found</html>",
 	}),
 }
 
@@ -96,6 +97,12 @@ describe("markdown content negotiation", () => {
 })
 
 describe("404 handling", () => {
+	it("returns the docs 404 page for missing docs paths", async () => {
+		const response = await get("/docs/nope", { Accept: BROWSER_ACCEPT })
+		expect(response.status).toBe(404)
+		expect(await response.text()).toBe("<html>docs not found</html>")
+	})
+
 	it("returns the HTML 404 page to browsers", async () => {
 		const response = await get("/nope", { Accept: BROWSER_ACCEPT })
 		expect(response.status).toBe(404)

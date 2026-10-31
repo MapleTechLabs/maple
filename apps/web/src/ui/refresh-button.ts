@@ -12,6 +12,8 @@ export type RefreshButtonOptions<Message> = Readonly<{
 	size?: "xs" | "sm" | "default"
 	variant?: "default" | "secondary" | "outline" | "ghost"
 	isDisabled?: boolean
+	/** Keeps the slot but hides the button, e.g. while a failure card offers its own retry. */
+	isHidden?: boolean
 	className?: string
 	/** Base UI's `useId` for the tooltip trigger of the icon-only form. */
 	triggerId?: string
@@ -32,7 +34,9 @@ export const refreshButton = <Message>(
 		className: cn(refreshButtonIconStyles, isPending && refreshButtonIconPendingStyles),
 	})
 	const common = [...(isPending ? [h.AriaBusy(true)] : []), h.OnClick(options.onRefresh)]
-	const isDisabled = (options.isDisabled ?? false) || isPending
+	const isHidden = options.isHidden ?? false
+	const isDisabled = (options.isDisabled ?? false) || isPending || isHidden
+	const className = cn(options.className, isHidden && "invisible")
 	if (options.isIconOnly === true) {
 		return button(
 			h,
@@ -40,6 +44,7 @@ export const refreshButton = <Message>(
 				size: size === "default" ? "icon" : size === "sm" ? "icon-sm" : "icon-xs",
 				variant: options.variant ?? "outline",
 				isDisabled,
+				className,
 				// TooltipTrigger's `data-slot` overrides Button's.
 				slot: "tooltip-trigger",
 				attributes: [
@@ -58,7 +63,7 @@ export const refreshButton = <Message>(
 			size,
 			variant: options.variant ?? "outline",
 			isDisabled,
-			className: options.className,
+			className,
 			attributes: common,
 		},
 		[glyph, h.span([], [label])],

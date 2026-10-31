@@ -188,7 +188,7 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 												],
 											),
 											h.p(
-												[h.Class(cn(SMALL, "text-foreground/80"))],
+												[h.Class(cn(SMALL, "text-foreground-soft"))],
 												[
 													connector.setup_reported_at === null
 														? "Maple sees the cleanup script finish. Removed them another way? Disconnect anyway."

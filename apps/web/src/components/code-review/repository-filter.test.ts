@@ -43,6 +43,16 @@ describe("visibleRepositories", () => {
 		expect(names(rows)[1]).toBe("acme/billing")
 	})
 
+	it("orders numbered names by number, not character by character", () => {
+		const numbered = [10, 2, 1, 11, 3].map((n) => repo(`acme/pipeline-${n}`))
+		const rows = visibleRepositories([...numbered, ...MANY], {
+			search: "pipeline",
+			filter: "all",
+			pinned: NONE,
+		})
+		expect(names(rows)).toEqual([1, 2, 3, 10, 11].map((n) => `acme/pipeline-${n}`))
+	})
+
 	it("ignores a stale search and filter once the list is short enough to hide the toolbar", () => {
 		const few = MANY.slice(0, 8)
 		const rows = visibleRepositories(few, { search: "proxy", filter: "reviewed", pinned: NONE })

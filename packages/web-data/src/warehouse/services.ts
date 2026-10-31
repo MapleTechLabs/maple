@@ -4,6 +4,7 @@ import {
 	coerceServiceOverviewRows,
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
+	serviceHealthSnapshotHours,
 	windowDurationSeconds,
 } from "@maple/query-engine"
 import {
@@ -140,10 +141,8 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
-	const durationSeconds = Math.max(
-		(warehouseDateTimeToMs(endTime) - warehouseDateTimeToMs(startTime)) / 1000,
-		1,
-	)
+	// The snapshot reads whole hours, so its rates are per the hours it actually covered.
+	const durationSeconds = Math.max(serviceHealthSnapshotHours(startTime, endTime).seconds, 1)
 
 	const scope = yield* scopeServicesToNamespaces({
 		namespaces: input.namespaces,

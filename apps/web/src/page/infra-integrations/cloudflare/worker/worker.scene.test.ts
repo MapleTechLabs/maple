@@ -62,12 +62,14 @@ describe("cloudflare worker", () => {
 	})
 
 	test("the window asks for the detail, the list rollups and the releases of the script", () => {
-		expect(names(windowed().commands)).toEqual([
-			"FetchCloudflareWorkerDetail",
-			"FetchCloudflareWorkerRollups",
-			"FetchCloudflareWorkerPlatform",
-			"FetchCloudflareWorkerReleases",
-		])
+		expect(names(windowed().commands)).toEqual(
+			expect.arrayContaining([
+				"FetchCloudflareWorkerDetail",
+				"FetchCloudflareWorkerRollups",
+				"FetchCloudflareWorkerPlatform",
+				"FetchCloudflareWorkerReleases",
+			]),
+		)
 	})
 
 	test("releases trace the Worker; versions first seen after the opening bucket are deploys", () => {

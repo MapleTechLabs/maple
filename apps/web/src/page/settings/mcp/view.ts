@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import { mcpUrl } from "../../../lib/services/common/mcp-url"
 import {
 	claudeCodeCommand,
@@ -15,7 +16,7 @@ import { inlineCode } from "../../../ui/inline-code"
 import * as TabsView from "../../../ui/tabs-view"
 import * as CreateKeyView from "../keys/create-dialog-view"
 import { codeBlock } from "../kit/code-block"
-import { settingsSection, settingsSections } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../kit/section"
 import { Message } from "./message"
 import { CLIENT_LABELS, type Model } from "./model"
 import { connectedClientsSection } from "./view-clients"
@@ -26,8 +27,7 @@ export type ViewInputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: s
 type H = HtmlBuilder<Message>
 
 const mcpEndpoint = `${mcpUrl}/mcp`
-const keysLinkClass = "text-foreground underline underline-offset-2 hover:no-underline"
-const keysLink = (h: H) => h.a([h.Href("/settings?tab=keys"), h.Class(keysLinkClass)], ["Keys"])
+const keysLink = (h: H) => h.a([h.Href("/settings?tab=keys"), h.Class(INLINE_LINK_CLASS)], ["Keys"])
 
 const snippet = (
 	h: H,
@@ -40,7 +40,7 @@ const snippet = (
 	h.div(
 		[h.Class("space-y-2")],
 		[
-			h.p([h.Class("text-xs text-muted-foreground")], hint),
+			h.p([h.Class("font-prose text-xs text-muted-foreground")], hint),
 			codeBlock(h, {
 				code,
 				language,
@@ -62,8 +62,22 @@ const clientSnippets = (h: H, model: Model, client: McpClient): ReadonlyArray<Ht
 				h.div(
 					[h.Class("space-y-4")],
 					[
-						snippet(h, model, "claude-code:0", ["Run in your terminal"], claudeCodeCommand(mcpEndpoint, apiKey), "bash"),
-						snippet(h, model, "claude-code:1", ["Or add to ", code(h, ".mcp.json"), " in your project"], json, "json"),
+						snippet(
+							h,
+							model,
+							"claude-code:0",
+							["Run in your terminal"],
+							claudeCodeCommand(mcpEndpoint, apiKey),
+							"shell",
+						),
+						snippet(
+							h,
+							model,
+							"claude-code:1",
+							["Or add to ", code(h, ".mcp.json"), " in your project"],
+							json,
+							"json",
+						),
 					],
 				),
 			]
@@ -86,7 +100,16 @@ const clientSnippets = (h: H, model: Model, client: McpClient): ReadonlyArray<Ht
 				),
 			]
 		case "windsurf":
-			return [snippet(h, model, "windsurf:0", ["Add to ", code(h, "~/.codeium/windsurf/mcp_config.json")], json, "json")]
+			return [
+				snippet(
+					h,
+					model,
+					"windsurf:0",
+					["Add to ", code(h, "~/.codeium/windsurf/mcp_config.json")],
+					json,
+					"json",
+				),
+			]
 		case "other":
 			return [
 				snippet(
@@ -113,7 +136,7 @@ const oauthNote = (h: H, model: Model): Html =>
 						{
 							variant: "link",
 							size: "xs",
-							className: "h-auto p-0 align-baseline text-xs underline underline-offset-2 hover:no-underline",
+							className: cn("h-auto p-0 align-baseline text-xs", INLINE_LINK_CLASS),
 							attributes: [h.OnClick(Message.ClickedCreateMcpKey())],
 						},
 						["Create an MCP key"],
@@ -141,14 +164,26 @@ const connectSection = (h: H, model: Model): Html =>
 			h.div(
 				[h.Class("space-y-4")],
 				[
-					copyableField(h, {
-						id: "mcp-server-url",
-						value: mcpEndpoint,
-						label: "Server URL",
-						copyLabel: "Server URL",
-						copy: model.serverUrlCopy,
-						toCopyMessage: (message) => Message.GotServerUrlCopyMessage({ message }),
-					}),
+					h.div(
+						[h.Class("space-y-1.5")],
+						[
+							// A sans field label: mono is for the value, not its name.
+							h.label(
+								[
+									h.For("mcp-server-url"),
+									h.Class("block font-prose text-xs text-muted-foreground"),
+								],
+								["Server URL"],
+							),
+							copyableField(h, {
+								id: "mcp-server-url",
+								value: mcpEndpoint,
+								copyLabel: "Server URL",
+								copy: model.serverUrlCopy,
+								toCopyMessage: (message) => Message.GotServerUrlCopyMessage({ message }),
+							}),
+						],
+					),
 					h.submodel({
 						slotId: "mcp-client-tabs",
 						model: model.client,
@@ -158,13 +193,17 @@ const connectSection = (h: H, model: Model): Html =>
 							variant: "underline",
 							labels: CLIENT_LABELS,
 							panelClassName: "pt-3",
-							panel: (value) => (isMcpClient(value) ? clientSnippets(h, model, value) : undefined),
+							panel: (value) =>
+								isMcpClient(value) ? clientSnippets(h, model, value) : undefined,
 						},
 					}),
 					h.div(
-						[h.Class("space-y-1 border-t pt-3 text-xs")],
+						[h.Class("space-y-1 border-t pt-3 font-prose text-xs")],
 						[
-							h.p([h.Class("text-muted-foreground")], ["Your client opens Maple in the browser to approve access."]),
+							h.p(
+								[h.Class("text-muted-foreground")],
+								["Your client opens Maple in the browser to approve access."],
+							),
 							oauthNote(h, model),
 						],
 					),
@@ -184,7 +223,7 @@ const createKeyDialog = (h: H, model: Model): Html =>
 	})
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
-	settingsSections(h, "standard", [
+	settingsSections(h, [
 		connectSection(h, model),
 		connectedClientsSection(h, model, inputs),
 		toolsSection(h, model),

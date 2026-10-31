@@ -27,15 +27,16 @@ import {
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"
 import { ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { ChatSessionLive } from "./chat/ChatSession"
+import SecurityAuditWorkflow from "./security-audit/SecurityAuditWorkflow"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
 import { aiPorts, AiBindingsLive, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
-import { buildApp, makeFetch } from "./worker/http"
+import { buildApp, buildMcpApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
 
 /** Config-sourced env. The tools query the warehouse as the calling org, so this is largely api's set. */
@@ -83,10 +84,16 @@ const props = Effect.gen(function* () {
 		workersDev: false,
 		// Same as api: keeps DB graph init off the first Postgres dial (docs/infra.md).
 		build: { output: { strictExecutionOrder: false } },
+		// A security-audit Workflow step is one agent run that parses up to 20 minutes of streamed
+		// model output; the paid-plan ceiling keeps it inside one step's CPU budget. One Workflow
+		// invocation runs many agents, and the default 10,000 outbound requests cut a run short.
+		limits: { cpuMs: 300_000, subrequests: 100_000 },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...mapleDbEnv(db, "ai"),
 			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
+			// Runs the agents' `run_code` programs, each in a fresh Dynamic Worker with no network.
+			CODE_LOADER: Cloudflare.WorkerLoader(),
 			...env,
 			...devEnv,
 		},
@@ -100,13 +107,16 @@ export default MapleAi.make(
 	Effect.gen(function* () {
 		// Yielding the hosted DO binds, registers and exports it. Its hosting must not move.
 		const chatSessions = yield* ChatSessionObject
+		// Yielding the Workflow binds, registers and exports it from this Worker, where the agents run.
+		const audits = yield* SecurityAuditWorkflow
 		const clients = yield* bindAiClients
 		const env = yield* Cloudflare.WorkerEnvironment
-		const ports = aiPorts(clients, env, yield* WorkersAiGateway, chatSessions)
+		const ports = aiPorts(clients, env, yield* WorkersAiGateway, chatSessions, audits)
 		// Captured before any event, so the first request's context cannot leak into later ones.
 		const isolate = isolateContext(yield* Effect.context())
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
-		return { fetch: yield* makeFetch(app, ports) }
+		const mcpApp = yield* cachedRecoverable(buildMcpApp(isolate, ports))
+		return { fetch: yield* makeFetch(app, ports, mcpApp) }
 	}).pipe(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(

@@ -9,6 +9,7 @@ import {
 	breadcrumbSeparator,
 } from "../../ui/breadcrumb"
 import { button } from "../../ui/button"
+import type * as CopyButton from "../../ui/copy-button"
 import type { CopyStatus } from "../../ui/copy-button"
 import { eyebrow } from "../../ui/eyebrow"
 import { pageHeader, pageHeaderActions, pageLayoutRoot } from "../../ui/page-layout"
@@ -16,6 +17,7 @@ import { spinner } from "../../ui/spinner"
 import { icon } from "../../ui/icon"
 import { marker, markerContent, markerIcon } from "../../ui/marker"
 import { avatarFallback } from "../../ui/display"
+import { codeSection } from "./code-section"
 import { kitRow, kitSection } from "./kit-layout"
 import {
 	conversationSection,
@@ -29,12 +31,15 @@ export interface ContentInputs<M> {
 	readonly copyStatus: CopyStatus
 	readonly onCopy: (value: string) => M
 	readonly calendar: Html
+	readonly codeCopy: CopyButton.Model
+	readonly toCodeCopy: (message: CopyButton.Message) => M
 }
 
 const pageLayoutSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Page layout header", [
 		h.div(
-			[h.Class("overflow-hidden rounded-md border")],
+			// Padded like the shell's page area, and a `page` container so the actions sit beside the title.
+			[h.Class("@container/page overflow-hidden rounded-md border p-4")],
 			[
 				pageLayoutRoot(h, [
 					pageHeader(
@@ -104,4 +109,5 @@ export const contentSections = <M>(h: HtmlBuilder<M>, inputs: ContentInputs<M>):
 	settingRowSection(h),
 	scrollAreaSection(h),
 	kitSection(h, "Calendar", [inputs.calendar]),
+	codeSection(h, inputs.codeCopy, inputs.toCodeCopy, inputs.onCopy),
 ]

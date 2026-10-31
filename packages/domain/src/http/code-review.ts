@@ -35,6 +35,8 @@ const PageLimit = Schema.NumberFromString.check(
 /** `<createdAtMs>_<id>` of the last row on the previous page. */
 const PageCursor = Schema.String.check(Schema.isPattern(/^\d+_[0-9a-zA-Z-]+$/u))
 const AuthorLogin = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100))
+/** Free text over a list's titles, paths, repositories and authors; `#123` or `123` also matches the number. */
+const SearchTerm = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
 
 const filterFields = {
 	startTime: EpochMs,
@@ -50,6 +52,7 @@ export const CodeReviewListQuery = Schema.Struct({
 	...filterFields,
 	status: Schema.optional(PrReviewStatus),
 	verdict: Schema.optional(PrReviewVerdict),
+	q: Schema.optional(SearchTerm),
 	limit: Schema.optional(PageLimit),
 	cursor: Schema.optional(PageCursor),
 })
@@ -60,6 +63,7 @@ export const CodeReviewFindingsQuery = Schema.Struct({
 	severity: Schema.optional(PrReviewSeverity),
 	category: Schema.optional(PrReviewCategory),
 	status: Schema.optional(PrReviewFindingStatus),
+	q: Schema.optional(SearchTerm),
 	limit: Schema.optional(PageLimit),
 	cursor: Schema.optional(PageCursor),
 })
@@ -370,6 +374,68 @@ export class CodeReviewCiRunsResponse extends Schema.Class<CodeReviewCiRunsRespo
 	nextCursor: Schema.NullOr(Schema.String),
 }) {}
 
+// ---------------------------------------------------------------------------------------------
+// Team: per person, what the reviews and CI runs say, by GitHub login. Bots are left out.
+
+export const CodeReviewTeamQuery = Schema.Struct({
+	startTime: EpochMs,
+	endTime: EpochMs,
+	repositoryId: Schema.optional(VcsRepositoryId),
+})
+export type CodeReviewTeamQuery = Schema.Schema.Type<typeof CodeReviewTeamQuery>
+
+/** Counts, not rates: the page divides, so a team median is over the same inputs. */
+export class CodeReviewTeamMember extends Schema.Class<CodeReviewTeamMember>("CodeReviewTeamMember")({
+	login: Schema.String,
+	/** Pull requests first reviewed in the window. */
+	pullRequests: Schema.Number,
+	mergedPullRequests: Schema.Number,
+	/** First review to merge, over merged pull requests; null when none merged. */
+	medianMergeSeconds: Schema.NullOr(Schema.Number),
+	findings: Schema.Number,
+	criticalFindings: Schema.Number,
+	/** Fixed in a later push, on merged pull requests: the fix rate is judged at the merge. */
+	resolvedFindings: Schema.Number,
+	/** Still open when the pull request merged. */
+	openAtMergeFindings: Schema.Number,
+	/** Merged pull requests the post-merge look judged. */
+	shippedClean: Schema.Number,
+	shippedRegressed: Schema.Number,
+	/** Runs the person started that ran a job; runs that only waited for approval are left out. */
+	ciRuns: Schema.Number,
+	/** First attempts that passed or failed: the base of the first-try green rate. */
+	firstTryRuns: Schema.Number,
+	firstTryGreen: Schema.Number,
+	reruns: Schema.Number,
+	/** Cancelled runs, mostly a newer push taking over. */
+	cancelledRuns: Schema.Number,
+	/** Time jobs spent on a runner, queue left out. */
+	runnerMs: Schema.Number,
+}) {}
+
+export class CodeReviewTeamTotals extends Schema.Class<CodeReviewTeamTotals>("CodeReviewTeamTotals")({
+	pullRequests: Schema.Number,
+	mergedPullRequests: Schema.Number,
+	medianMergeSeconds: Schema.NullOr(Schema.Number),
+	/** Queued to posted, the first review of each pull request. */
+	medianFirstReviewSeconds: Schema.NullOr(Schema.Number),
+	/** Pushes to a repository's default branch that passed or failed. */
+	defaultBranchRuns: Schema.Number,
+	defaultBranchFailed: Schema.Number,
+	/** Every run's runner time, bots included. */
+	runnerMs: Schema.Number,
+	p95QueueMs: Schema.NullOr(Schema.Number),
+}) {}
+
+export class CodeReviewTeam extends Schema.Class<CodeReviewTeam>("CodeReviewTeam")({
+	/** The window read, epoch ms; a longer one is cut to what CI runs keep. */
+	startTime: Schema.Number,
+	endTime: Schema.Number,
+	totals: CodeReviewTeamTotals,
+	/** By login. */
+	members: Schema.Array(CodeReviewTeamMember),
+}) {}
+
 export class CodeReviewApiGroup extends HttpApiGroup.make("codeReview")
 	.add(
 		HttpApiEndpoint.get("analytics", "/analytics", {
@@ -410,6 +476,13 @@ export class CodeReviewApiGroup extends HttpApiGroup.make("codeReview")
 		HttpApiEndpoint.get("ciRuns", "/ci/runs", {
 			query: CodeReviewCiRunsQuery,
 			success: CodeReviewCiRunsResponse,
+			error: [PrReviewPersistenceError, ...warehouseReadHttpErrors],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("team", "/team", {
+			query: CodeReviewTeamQuery,
+			success: CodeReviewTeam,
 			error: [PrReviewPersistenceError, ...warehouseReadHttpErrors],
 		}),
 	)

@@ -6,8 +6,10 @@
  * depends on (`apiPorts`).
  *
  */
+import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
+import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
 import { MapleDb } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Effect, Layer, Option } from "effect"
 import {
@@ -60,6 +62,9 @@ export const bindApiClients = Effect.gen(function* () {
 		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewsQueue),
 		// Read side of the replay payload store.
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
+		// Published status pages: the publish endpoint writes snapshots, page deletes clear them.
+		statusKv: yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv),
+		statusBucket: yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
 			namespaceId: 2026071801,
 			simple: { limit: API_V2_RATE_LIMIT_REQUESTS, period: API_V2_RATE_LIMIT_PERIOD_SECONDS },
@@ -86,6 +91,8 @@ export const ApiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Queues.WriteQueueBinding,
 	Cloudflare.R2.ReadBucketBinding,
+	Cloudflare.KV.ReadWriteNamespaceBinding,
+	Cloudflare.R2.ReadWriteBucketBinding,
 	Cloudflare.Workers.RateLimitBinding,
 	Cloudflare.Email.SendBinding,
 )
@@ -181,6 +188,11 @@ export const apiPorts = (
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
+		Layer.unwrap(
+			runtime(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
+				Effect.map(([kv, bucket]) => StatusPageStore.fromBindings(kv, bucket)),
+			),
+		),
 		Layer.succeed(EmailSender, clients.email),
 		Layer.succeed(SchemaApplyWorkflow, workflowStarter(schemaApply)),
 		layerMapleDbConnection(env),

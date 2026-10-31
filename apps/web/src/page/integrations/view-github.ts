@@ -13,16 +13,9 @@ import { settingRow } from "../../ui/setting-row"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
 import { switchControl } from "../../ui/switch"
-import {
-	integrationEmpty,
-	integrationEmptyCard,
-	integrationEmptyFeatures,
-	integrationEmptyFooter,
-	integrationEmptyHint,
-	integrationEmptyMedia,
-	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
+import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { GITHUB_ACCENT } from "./catalog"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { ciTracesShown } from "./update-github"
@@ -92,7 +85,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 													h.Href(`https://github.com/${login}`),
 													h.Target("_blank"),
 													h.Rel("noreferrer"),
-													h.Class("font-semibold hover:underline"),
+													h.Class("font-semibold hover:underline active:underline"),
 												],
 												["@", login],
 											),
@@ -127,7 +120,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 								isLoading: model.connect.isStarting,
 								attributes: [h.OnClick(Message.ClickedConnect())],
 							},
-							["Manage"],
+							["Edit data"],
 						),
 						button(
 							h,
@@ -181,7 +174,7 @@ export const githubCard = (h: H, model: Model, timeZone: string): ReadonlyArray<
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the GitHub integration",
+				title: "Couldn't load the GitHub integration",
 				onRetry: Message.ClickedGithubRefresh(),
 			}),
 		onStale: ({ data }) => byState(h, model, data, timeZone),
@@ -195,8 +188,8 @@ const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: 
 	status.connected
 		? connectedView(h, model, status, timeZone)
 		: status.state === "disconnected" || status.state === "suspended"
-			? deactivated(h, model, status)
-			: notConnected(h, model)
+			? githubDeactivated(h, model, status)
+			: githubReconnect(h)
 // TODO(clerk): `useIsOrgAdmin` gates the CI traces switch; self-hosted is the root admin.
 
 type H = HtmlBuilder<Message>
@@ -218,38 +211,18 @@ const loadingState = (h: H): Html =>
 		],
 	)
 
-const notConnected = (h: H, model: Model): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, [
-			{
-				label: "Deploy markers",
-				title: "Commits on service charts",
-				description: "Metric shifts line up with the deploys that caused them.",
-			},
-			{
-				label: "Commit context",
-				title: "SHAs resolve to authors",
-				description: "Commit SHAs on traces resolve to message, author, and a GitHub link.",
-			},
-			{
-				label: "Org-wide sync",
-				title: "One tracked branch per repo",
-				description: "History backfills automatically in the background after install.",
-			},
-		]),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, BRAND),
-			integrationEmptyHint(h, ["Your repositories and commits will appear here after installing."]),
-			button(
-				h,
-				{ isLoading: model.connect.isStarting, attributes: [h.OnClick(Message.ClickedConnect())] },
-				[icon(h, "GithubIcon"), "Connect GitHub"],
-			),
-			integrationEmptyFooter(h, ["You'll choose which repositories to share during install."]),
-		]),
-	])
+/** A source page whose installation was removed: the way back is the connect flow. */
+const githubReconnect = (h: H): Html =>
+	integrationNotice(h, {
+		message: "GitHub is not connected.",
+		action: linkButton(
+			h,
+			{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })) },
+			["Reconnect"],
+		),
+	})
 
-const deactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
+export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
 	const suspended = status.state === "suspended"
 	const account =
 		status.accountLogin !== null && status.accountLogin !== ""
@@ -259,7 +232,7 @@ const deactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html 
 	return h.div(
 		[
 			h.Class(
-				"flex flex-col items-center gap-5 rounded-lg border border-severity-warn/40 bg-severity-warn/5 px-6 py-10 text-center",
+				"flex flex-col items-center gap-5 rounded-md border border-severity-warn-a4 bg-severity-warn-a1 px-6 py-10 text-center",
 			),
 		],
 		[
@@ -293,7 +266,7 @@ const deactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html 
 							: [
 									"The Maple GitHub App was uninstalled (or its access was revoked) on GitHub",
 									...account,
-									", so syncing is paused. Reconnect to resume — nothing was deleted.",
+									", so syncing is paused. Reconnect to resume; nothing was deleted.",
 								],
 					),
 				],

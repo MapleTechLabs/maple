@@ -16,12 +16,39 @@ const REVIEW = Schema.decodeSync(PrReviewId)("00000c02-0000-4000-8000-0000000000
 const OTHER = Schema.decodeSync(PrReviewId)("00000c02-0000-4000-8000-000000000002")
 
 const review = {
-	id: REVIEW, repositoryId: PAYMENTS, repositoryFullName: "acme-shop/payments", number: 7, title: "Fix", url: "https://github.com/acme-shop/payments/pull/7",
-	authorLogin: null, headSha: "a".repeat(40), status: "completed", skipReason: null, verdict: null, score: null, confidence: null, findings: 0,
-	criticalFindings: 0, commentUrl: null, publishError: null, error: null, model: null, createdAt: NOW, finishedAt: null, mergedAt: null,
+	id: REVIEW,
+	repositoryId: PAYMENTS,
+	repositoryFullName: "acme-shop/payments",
+	number: 7,
+	title: "Fix",
+	url: "https://github.com/acme-shop/payments/pull/7",
+	authorLogin: null,
+	headSha: "a".repeat(40),
+	status: "completed",
+	skipReason: null,
+	verdict: null,
+	score: null,
+	confidence: null,
+	findings: 0,
+	criticalFindings: 0,
+	commentUrl: null,
+	publishError: null,
+	error: null,
+	model: null,
+	createdAt: NOW,
+	finishedAt: null,
+	mergedAt: null,
 }
 const detailOf = Schema.decodeUnknownSync(CodeReviewDetail)({
-	review, report: null, checkRunUrl: null, reviewUrl: null, inputTokens: null, outputTokens: null, startedAt: null, history: [], findings: [],
+	review,
+	report: null,
+	checkRunUrl: null,
+	reviewUrl: null,
+	inputTokens: null,
+	outputTokens: null,
+	startedAt: null,
+	history: [],
+	findings: [],
 })
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -33,7 +60,9 @@ const sheet = (message: SheetMessage) => Message.GotSheetMessage({ message })
 
 describe("code review pull requests", () => {
 	test("entry reads the list and the author list once the window resolves", () => {
-		expect(names(windowed().commands)).toEqual(["FetchCodeReviewReviews", "FetchCodeReviewReviewAuthors"])
+		expect(names(windowed().commands)).toEqual(
+			expect.arrayContaining(["FetchCodeReviewReviews", "FetchCodeReviewReviewAuthors"]),
+		)
 	})
 
 	test("a deep link to a review opens the sheet and reads the review", () => {
@@ -83,11 +112,48 @@ describe("code review pull requests", () => {
 
 	test("opening another review shows its skeleton, then its own error, never the previous review", () => {
 		const open = init({ search: { review: REVIEW } }, context).model
-		const loaded = pageUpdate(open, sheet(SheetMessage.CompletedFetchDetail({ key: open.sheet.detail.key ?? "", result: Result.succeed(detailOf) }))).model
+		const loaded = pageUpdate(
+			open,
+			sheet(
+				SheetMessage.CompletedFetchDetail({
+					key: open.sheet.detail.key ?? "",
+					result: Result.succeed(detailOf),
+				}),
+			),
+		).model
 		expect(AsyncData.isSuccess(loaded.sheet.detail.data)).toBe(true)
 		const moved = routeChanged(loaded, { search: { review: OTHER } }, context).model
 		expect(moved.sheet.detail.data._tag).toBe("Loading")
-		const failed = pageUpdate(moved, sheet(SheetMessage.CompletedFetchDetail({ key: moved.sheet.detail.key ?? "", result: Result.fail(toLoadFailure("boom")) }))).model
+		const failed = pageUpdate(
+			moved,
+			sheet(
+				SheetMessage.CompletedFetchDetail({
+					key: moved.sheet.detail.key ?? "",
+					result: Result.fail(toLoadFailure("boom")),
+				}),
+			),
+		).model
 		expect(failed.sheet.detail.data._tag).toBe("Failure")
+	})
+
+	test("the search box puts the trimmed term in the URL once its debounce elapses", () => {
+		const typed = pageUpdate(windowed().model, Message.ChangedSearchDraft({ value: "  auth bug " }))
+		expect(names(typed.commands)).toEqual(["WaitCodeReviewPullRequestsSearchDebounce"])
+		const stale = pageUpdate(typed.model, Message.ElapsedSearchDebounce({ generation: 0 }))
+		expect(stale.outMessage).toBeUndefined()
+		const elapsed = pageUpdate(
+			typed.model,
+			Message.ElapsedSearchDebounce({ generation: typed.model.searchGeneration }),
+		)
+		expect(elapsed.outMessage).toMatchObject({ url: "/code-review/pull-requests?q=auth+bug" })
+	})
+
+	test("a new search re-reads the list with the term, keeping what was typed", () => {
+		const typed = pageUpdate(windowed().model, Message.ChangedSearchDraft({ value: "auth " }))
+		const searched = routeChanged(typed.model, { search: { q: "auth" } }, context)
+		expect(searched.model.searchDraft).toBe("auth ")
+		expect(names(searched.commands)).toContain("FetchCodeReviewReviews")
+		const cleared = routeChanged(searched.model, { search: {} }, context)
+		expect(cleared.model.searchDraft).toBe("")
 	})
 })

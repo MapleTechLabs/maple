@@ -12,7 +12,7 @@ import { FLEET_BAND_BOXED, fleetBandLoading } from "../../kit/fleet-band"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
-import { countLabel, pageHero, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { countLabel, pageHeroParts, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
 import { hostsViewTabs } from "../../kit/view-tabs"
@@ -29,12 +29,14 @@ import { hostTable, hostTableLoading } from "./view-table"
 type H = HtmlBuilder<Message>
 
 /** `HostRow` columns `useTableSort` reads by key. */
-export const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>([
-	["cpuPct", (row) => row.cpuPct],
-	["hostName", (row) => row.hostName],
-	["load15", (row) => row.load15],
-	["lastSeen", (row) => row.lastSeen],
-])
+export const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>(
+	[
+		["cpuPct", (row) => row.cpuPct],
+		["hostName", (row) => row.hostName],
+		["load15", (row) => row.load15],
+		["lastSeen", (row) => row.lastSeen],
+	],
+)
 
 const openInstall = Message.GotInstallMessage({ message: InstallModal.Message.ClickedOpen() })
 
@@ -96,7 +98,12 @@ const hostList = (
 const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.hosts.data, {
 		onEmpty: () => loading(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load hosts",
+				onRetry: Message.GotFrameMessage({ message: Frame.Message.ClickedReload() }),
+			}),
 		onData: (hosts) => listOrEmpty(h, model, hosts, AsyncData.isRefreshing(model.hosts.data), inputs),
 	})
 
@@ -109,28 +116,32 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(
-						h,
-						model.frame,
-						{ search: model.search, defaultPreset: DEFAULT_PRESET },
-						toFrame,
-					),
-					tabs: hostsViewTabs(h, "hosts", model.search),
-					scrollClassName: "gap-6",
-				},
-				[
-					pageHero(h, {
+					titleContent: pageHeroParts(h, {
 						title: "Hosts",
 						description:
 							"Every machine sending CPU, memory, disk and network metrics, busiest first.",
-						actions: [
+					}).title,
+					actions: h.div(
+						[h.Class("flex flex-wrap items-center gap-2")],
+						[
 							button(
 								h,
 								{ size: "sm", variant: "outline", attributes: [h.OnClick(openInstall)] },
 								[icon(h, "PlusIcon"), "Add host"],
 							),
+							Frame.controls(
+								h,
+								model.frame,
+								{ search: model.search, defaultPreset: DEFAULT_PRESET },
+								toFrame,
+								AsyncData.isFailure(model.hosts.data),
+							),
 						],
-					}),
+					),
+					tabs: hostsViewTabs(h, "hosts", model.search),
+					gap: "lg",
+				},
+				[
 					body(h, model, inputs),
 					h.submodel({
 						slotId: "install-modal",

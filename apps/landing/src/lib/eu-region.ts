@@ -28,7 +28,7 @@ export function euFaqs(): FaqItem[] {
 		},
 		{
 			question: "Is every feature available in the EU region?",
-			answer: "Yes. Traces, logs, metrics, session replay, dashboards, alerting and AI chat work the same in both regions. AI requests from an EU organization are served only by model providers inside the EU.",
+			answer: "Yes. Traces, logs, metrics, session replay, dashboards, alerting and AI investigations work the same in both regions. AI requests from an EU organization are served only by model providers inside the EU.",
 		},
 		{
 			question: "Does the EU region cost more?",

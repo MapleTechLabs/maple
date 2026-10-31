@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId, UserId } from "../primitives"
-import { Authorization, TenantSchema, UnauthorizedError } from "./current-tenant"
+import { Authorization, SessionAuthorization, TenantSchema, UnauthorizedError } from "./current-tenant"
 
 export class CliDeviceStartRequest extends Schema.Class<CliDeviceStartRequest>("CliDeviceStartRequest")({
 	deviceName: Schema.String,
@@ -267,6 +267,20 @@ export class AuthApiGroup extends HttpApiGroup.make("auth")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.delete("cliSessionRevoke", "/cli/session", {
+			success: CliDeviceActionResponse,
+			error: [CliDeviceConflictError, CliDevicePersistenceError],
+		}),
+	)
+	.prefix("/api/auth")
+	.middleware(Authorization) {}
+
+/**
+ * Login approvals: each approve mints a credential for the signed-in user, so
+ * these accept only a human session, never an API key (`SessionAuthorization`).
+ */
+export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
+	.add(
 		HttpApiEndpoint.get("cliDeviceInspect", "/cli/device/:userCode", {
 			params: { userCode: Schema.String },
 			success: CliDeviceInfoResponse,
@@ -295,12 +309,6 @@ export class AuthApiGroup extends HttpApiGroup.make("auth")
 				CliDeviceConflictError,
 				CliDevicePersistenceError,
 			],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.delete("cliSessionRevoke", "/cli/session", {
-			success: CliDeviceActionResponse,
-			error: [CliDeviceConflictError, CliDevicePersistenceError],
 		}),
 	)
 	.add(
@@ -339,4 +347,4 @@ export class AuthApiGroup extends HttpApiGroup.make("auth")
 		}),
 	)
 	.prefix("/api/auth")
-	.middleware(Authorization) {}
+	.middleware(SessionAuthorization) {}

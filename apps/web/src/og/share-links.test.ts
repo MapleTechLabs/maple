@@ -44,6 +44,10 @@ describe("ogIdFromPath", () => {
 		expect(ogIdFromPath("/share/og/.png")).toBeUndefined()
 		expect(ogIdFromPath("/share/mshare_abc123")).toBeUndefined()
 	})
+
+	it("treats an id that will not decode as no id, not a thrown error", () => {
+		expect(ogIdFromPath("/share/og/%.png")).toBeUndefined()
+	})
 })
 
 describe("ogMetaReplacements", () => {

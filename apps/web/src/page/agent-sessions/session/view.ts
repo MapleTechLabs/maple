@@ -131,7 +131,7 @@ const loadingHeader = (h: H): Html =>
 const failureBody = (h: H, failure: LoadFailure): Html =>
 	errorState(h, {
 		failure,
-		title: failure._tag === SESSION_TOO_LARGE_TAG ? undefined : "Failed to load this agent session",
+		title: failure._tag === SESSION_TOO_LARGE_TAG ? undefined : "Couldn't load this agent session",
 	})
 
 const notFoundBody = (h: H, model: Model): Html => {
@@ -144,7 +144,7 @@ const notFoundBody = (h: H, model: Model): Html => {
 			h.span([h.Class("font-mono")], [model.sessionId]),
 			isWindowed
 				? " around the time this link points at. Open it from the Agent Sessions list to search again."
-				: " in any retained trace — the session may be older than the trace retention.",
+				: " in any retained trace. The session may be older than the trace retention.",
 		],
 		back: { href: "/agent-sessions", label: "Back to agent sessions" },
 	})

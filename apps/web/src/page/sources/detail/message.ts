@@ -24,6 +24,8 @@ export const Message = defineMessageUnion({
 	ClickedResume: {},
 	ClickedRollToken: {},
 	ClickedDelete: {},
+	/** "Pause instead" in the delete dialog, and the Settings tab's Pause: pauses until resumed. */
+	ClickedPauseUntilResumed: {},
 	GotRollDialogMessage: { message: Dialog.Message },
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ConfirmedRoll: {},

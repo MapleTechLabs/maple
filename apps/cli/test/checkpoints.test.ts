@@ -508,7 +508,7 @@ describe("checkpoint state resolution", () => {
 			mkdirSync(outside)
 			writeFileSync(
 				join(outside, "manifest.json"),
-				`${JSON.stringify(manifest(checkpointId, newCheckpointId(), dataDir))}\n`,
+				`${JSON.stringify(manifest(checkpointId, newCheckpointOperationId(), dataDir))}\n`,
 			)
 			mkdirSync(join(outside, "backup"))
 			mkdirSync(snapshot, { recursive: true })
