@@ -11,6 +11,7 @@ import {
 	renderIgnoredPaths,
 	resolvedByHandle,
 	type TrackedFinding,
+	uncheckedFixes,
 	withoutRepeats,
 } from "./findings"
 
@@ -193,11 +194,58 @@ describe("renderFollowUp", () => {
 		assert.include(text, "the rest was already reviewed: src/b.ts.")
 	})
 
+	it("asks for the whole diff after an unchecked fix, whatever changed since", () => {
+		const followUp = renderFollowUp({
+			previousSha: "abcdef1234",
+			changes: { paths: ["src/a.ts"], rewritten: false },
+			open: [],
+			recheck: true,
+		})
+		assert.include(followUp.join("\n"), "review the whole diff")
+		assert.isUndefined(followUpScope(["Review pull request #7.", ...followUp].join("\n")))
+	})
+
 	it("asks for the whole diff when the change could not be compared", () => {
 		for (const changes of [undefined, { paths: undefined, rewritten: true }]) {
 			const text = renderFollowUp({ previousSha: "abcdef1234", changes, open: [] }).join("\n")
 			assert.include(text, "review the whole diff")
 		}
+	})
+})
+
+describe("uncheckedFixes", () => {
+	const fixedAt = (resolvedSha: string, overrides: Partial<TrackedFinding> = {}) =>
+		tracked({ status: "resolved", resolvedSha, ...overrides })
+	const delta = (headSha: string) => ({ headSha, wholeDiff: false })
+	const whole = (headSha: string) => ({ headSha, wholeDiff: true })
+
+	it("counts defects fixed by passes since the last whole-diff read", () => {
+		const reviews = [delta("c"), delta("b"), whole("a")]
+		assert.equal(uncheckedFixes(reviews, [fixedAt("b"), fixedAt("c", { handle: "F2" })]), 2)
+	})
+
+	it("drops fixes a whole-diff pass has read since, including one it fixed itself", () => {
+		assert.equal(uncheckedFixes([delta("c"), whole("b"), delta("a")], [fixedAt("a")]), 0)
+		assert.equal(uncheckedFixes([whole("b"), delta("a")], [fixedAt("b")]), 0)
+	})
+
+	it("counts every fix when no pass read the whole diff, as on reviews stored before the flag", () => {
+		assert.equal(
+			uncheckedFixes([delta("b"), delta("a")], [fixedAt("a"), fixedAt("b", { handle: "F2" })]),
+			2,
+		)
+	})
+
+	it("ignores open, dismissed and non-defect findings", () => {
+		const reviews = [delta("b")]
+		assert.equal(
+			uncheckedFixes(reviews, [
+				tracked({ resolvedSha: "b" }),
+				tracked({ status: "dismissed", resolvedSha: "b" }),
+				fixedAt("b", { category: "maintainability" }),
+			]),
+			0,
+		)
 	})
 })
 

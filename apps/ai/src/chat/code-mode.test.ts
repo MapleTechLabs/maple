@@ -228,7 +228,11 @@ describe("run_code", () => {
 				submitDiagnosis: () => Effect.die("no investigation in a review session"),
 				submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
 				review: {
-					coverage: { observe: (tool) => observed.push(tool), unread: () => [] },
+					coverage: {
+						observe: (tool) => observed.push(tool),
+						unread: () => [],
+						wholeDiff: () => true,
+					},
 					ledger: makeReviewLedger(),
 				},
 				codeExecutor: inProcessCodeExecutorLayer,
@@ -327,7 +331,10 @@ describe("run_code", () => {
 					model,
 					submitDiagnosis: () => Effect.die("no investigation in a review session"),
 					submitReview: () => Effect.void,
-					review: { coverage: { observe: () => {}, unread: () => [] }, ledger: makeReviewLedger() },
+					review: {
+						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+						ledger: makeReviewLedger(),
+					},
 					codeExecutor: inProcessCodeExecutorLayer,
 					codeOnly,
 					text: "Review pull request #1.",
