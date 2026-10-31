@@ -57,7 +57,7 @@ import type {
 } from "@maple/domain/http"
 import { Match } from "effect"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { formatWarehouseDateTime } from "../datetime"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
@@ -1122,13 +1122,20 @@ export const scannerSources = defineQuery({
 		CH.compile(CH.scannerSourcesQuery(), securityWindow(payload, orgId)),
 })
 
+/** The requested bucket, widened so the window never needs more buckets than the query returns. */
+export const scannerTimelineBucketSeconds = (payload: SecurityExposureRequest): number => {
+	const requested = payload.bucketSeconds ?? 3600
+	const windowMs = parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)
+	return Math.max(requested, Math.ceil(windowMs / 1000 / CH.SCANNER_TIMELINE_MAX_BUCKETS))
+}
+
 export const scannerTimeline = defineQuery({
 	id: "scannerTimeline",
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
 		CH.compile(
-			CH.scannerTimelineQuery({ bucketSeconds: payload.bucketSeconds }),
+			CH.scannerTimelineQuery({ bucketSeconds: scannerTimelineBucketSeconds(payload) }),
 			securityWindow(payload, orgId),
 		),
 })
