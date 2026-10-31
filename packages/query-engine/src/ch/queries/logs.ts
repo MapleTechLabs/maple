@@ -93,13 +93,11 @@ function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.
 		for (let offset = 0; offset < tokens.length; offset += 50) {
 			batches.push(CH.hasAllTokens(normalizedBody, tokens.slice(offset, offset + 50).join(" ")))
 		}
-		return batches.reduce((condition, next) => condition.and(next)).and(exact)
+		return CH.and(...batches, exact)
 	}
 
-	return tokens
-		.map((token) => CH.hasToken(normalizedBody, token))
-		.reduce((condition, next) => condition.and(next))
-		.and(exact)
+	// One flat AND: a chained `.and()` per word passes ClickHouse's max_parser_depth on a pasted stack trace.
+	return CH.and(...tokens.map((token) => CH.hasToken(normalizedBody, token)), exact)
 }
 
 /**

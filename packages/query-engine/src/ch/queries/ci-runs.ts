@@ -297,16 +297,17 @@ export function ciActorStatsQuery(opts: CiActorStatsOpts) {
 				const firstTry = $.Attempt.lte(1)
 				const passed = $.Result.eq("success")
 				const failed = CH.inList($.Result, CI_FAILED_RESULTS)
-				const isDefaultBranch = opts.defaultBranches
-					.map((repo) =>
-						$.Owner.eq(repo.owner)
-							.and($.Repository.eq(repo.repository))
-							.and($.Branch.eq(repo.branch)),
-					)
-					.reduce<CH.Condition | undefined>(
-						(all, next) => (all === undefined ? next : all.or(next)),
-						undefined,
-					)
+				// One flat OR: chaining `.or()` nests a paren per repository and an org with a few
+				// hundred repositories passes ClickHouse's max_parser_depth (1000).
+				const isDefaultBranch = CH.or(
+					...opts.defaultBranches.map((repo) =>
+						CH.and(
+							$.Owner.eq(repo.owner),
+							$.Repository.eq(repo.repository),
+							$.Branch.eq(repo.branch),
+						),
+					),
+				)
 				// No repository: an empty `inList` compiles to `1 = 0`, so nothing counts as the default branch.
 				const onDefaultBranch = $.TriggerEvent.eq("push").and(
 					isDefaultBranch ?? CH.inList($.Branch, []),
