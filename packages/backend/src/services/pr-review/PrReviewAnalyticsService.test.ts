@@ -286,6 +286,83 @@ describe("PrReviewAnalyticsService", () => {
 		),
 	)
 
+	it.effect("sorts reviews by a column with the ones lacking it last, paging by cursor", () =>
+		provide(
+			Effect.gen(function* () {
+				yield* seed
+				const service = yield* PrReviewAnalyticsService
+				// One row a page, so every row is reached through the previous page's cursor.
+				const walk = (
+					sortBy: "reviewed" | "issues" | "quality" | "confidence",
+					sortDir: "asc" | "desc",
+					cursor?: string,
+				): Effect.Effect<ReadonlyArray<string>, unknown, PrReviewAnalyticsService> =>
+					service.listReviews(ORG, { ...window, sortBy, sortDir, limit: 1, cursor }).pipe(
+						Effect.flatMap((response) => {
+							const ids = response.reviews.map((review) => review.id)
+							return response.nextCursor === null
+								? Effect.succeed(ids)
+								: Effect.map(walk(sortBy, sortDir, response.nextCursor), (rest) => [
+										...ids,
+										...rest,
+									])
+						}),
+					)
+				// 1: two issues, quality 65, confidence 3. 2: clean, 100, 5. 3: failed, none of them.
+				assert.deepStrictEqual(yield* walk("issues", "desc"), [reviewId(1), reviewId(2), reviewId(3)])
+				assert.deepStrictEqual(yield* walk("issues", "asc"), [reviewId(2), reviewId(1), reviewId(3)])
+				assert.deepStrictEqual(yield* walk("quality", "asc"), [reviewId(1), reviewId(2), reviewId(3)])
+				assert.deepStrictEqual(yield* walk("confidence", "desc"), [
+					reviewId(2),
+					reviewId(1),
+					reviewId(3),
+				])
+				assert.deepStrictEqual(yield* walk("reviewed", "asc"), [
+					reviewId(1),
+					reviewId(2),
+					reviewId(3),
+				])
+			}),
+		),
+	)
+
+	it.effect("ranks authors tied on pull requests by their issues", () =>
+		provide(
+			Effect.gen(function* () {
+				yield* seed
+				const database = yield* Database
+				yield* database.execute((db) =>
+					db.run(
+						PG.insertInto(PrReviews).values({
+							id: reviewId(6),
+							orgId: ORG,
+							repositoryId: REPO,
+							number: 12,
+							headSha: Schema.decodeUnknownSync(GitCommitSha)(SHA),
+							url: "https://github.com/acme/web/pull/12",
+							title: "PR 12",
+							authorLogin: "aaron",
+							status: "completed",
+							reportJson: report("clean", 5, []),
+							createdAt: at(6),
+							updatedAt: at(6),
+						}),
+					),
+				)
+				const service = yield* PrReviewAnalyticsService
+				const analytics = yield* service.analytics(ORG, window)
+				assert.deepStrictEqual(
+					analytics.authors.map((row) => [row.author, row.pullRequests, row.findings]),
+					[
+						["ada", 1, 2],
+						["aaron", 1, 0],
+						["lin", 1, 0],
+					],
+				)
+			}),
+		),
+	)
+
 	it.effect("opens one review with its pull request's history and tracked findings", () =>
 		provide(
 			Effect.gen(function* () {

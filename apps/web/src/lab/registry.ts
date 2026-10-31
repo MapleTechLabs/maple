@@ -109,6 +109,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/onboarding-checklist",
+		title: "Onboarding checklist",
+		description:
+			"The top bar's credits pill and its checklist panel in progress, claimable and claimed, over fixtures.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/loaders",
 		title: "Chat loaders",
 		description:
@@ -227,6 +235,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/code-review-team",
+		title: "Code review team",
+		description:
+			"The Code Review Team tab over a month of a seven-person fixture team: KPIs, highlights, the scorecard against the team median and the Ranked view.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/service-api",
 		title: "Service API tab",
 		description:
@@ -238,7 +254,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-runtimes",
 		title: "Service runtimes",
 		description:
-			"The service page's Overview tab for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour.",
+			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour; ?tab=operations or ?tab=dependencies opens that tab.",
 		kind: "lab",
 		session: "none",
 	},
@@ -262,7 +278,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/security",
 		title: "Security Center",
 		description:
-			"Every Security Center page over fixtures: overview, empty, not enabled, Add target and its errors, findings, runs, a live, incomplete, failed and cancelled run, a finding and its triage, and the admins-only states. Pick one with ?state=.",
+			"Every Security Center page over fixtures: overview, empty, not enabled, Add target and its errors, findings, runs, a live, incomplete, failed and cancelled run, a finding and its triage, the admins-only states, and the telemetry tabs (exposure, exposure-empty, runtimes). Pick one with ?state=.",
 		kind: "lab",
 		session: "none",
 	},

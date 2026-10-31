@@ -350,4 +350,4 @@ Vitest uses embedded PGlite — no Docker Postgres required for unit tests.
 - [docs/persistence.md](docs/persistence.md) — Postgres migrations
 - [docs/self-hosted-clickhouse.md](docs/self-hosted-clickhouse.md) — ClickHouse BYO + schema
 - [docs/local-mode.md](docs/local-mode.md) — single-binary local mode
-- [.env.example](.env.example) — full env reference with optional integrations (GitHub App, Hazel, Autumn, email)
+- [.env.example](.env.example): full env reference with optional integrations (GitHub App, Autumn, email)

@@ -1,0 +1,72 @@
+receivers:
+    file_log/nginx:
+        include: [/var/log/nginx/access.log]
+        resource:
+            service.name: nginx
+        operators:
+            - type: regex_parser
+              regex: '^(?P<client_address>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^ "]* HTTP/[0-9.]+" (?P<status>\d{3}) (?P<body_bytes>\d+|-) "[^"]*" "(?P<user_agent>[^"]*)"$'
+              timestamp:
+                  parse_from: attributes.time_local
+                  layout: "%d/%b/%Y:%H:%M:%S %z"
+              severity:
+                  parse_from: attributes.status
+                  overwrite_text: true
+                  mapping:
+                      info:
+                          - min: 100
+                            max: 399
+                      warn: 4xx
+                      error: 5xx
+            # Operators run top to bottom, so the renames come after the parser
+            # that creates the fields. Dots are not allowed in group names.
+            - type: move
+              from: attributes.client_address
+              to: attributes["client.address"]
+              on_error: send_quiet
+            - type: move
+              from: attributes.method
+              to: attributes["http.request.method"]
+              on_error: send_quiet
+            - type: move
+              from: attributes.path
+              to: attributes["url.path"]
+              on_error: send_quiet
+            - type: move
+              from: attributes.status
+              to: attributes["http.response.status_code"]
+              on_error: send_quiet
+            - type: move
+              from: attributes.body_bytes
+              to: attributes["http.response.body.size"]
+              on_error: send_quiet
+            - type: move
+              from: attributes.user_agent
+              to: attributes["user_agent.original"]
+              on_error: send_quiet
+            - type: remove
+              field: attributes.time_local
+              on_error: send_quiet
+
+processors:
+    transform/nginx:
+        error_mode: ignore
+        log_statements:
+            - delete_key(log.attributes, "http.response.body.size") where log.attributes["http.response.body.size"] == "-"
+            - set(log.attributes["http.response.status_code"], Int(log.attributes["http.response.status_code"])) where log.attributes["http.response.status_code"] != nil
+            - set(log.attributes["http.response.body.size"], Int(log.attributes["http.response.body.size"])) where log.attributes["http.response.body.size"] != nil
+    batch: {}
+
+exporters:
+    otlp_http/maple:
+        endpoint: https://ingest.maple.dev
+        compression: gzip
+        headers:
+            x-maple-ingest-key: ${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        logs:
+            receivers: [file_log/nginx]
+            processors: [transform/nginx, batch]
+            exporters: [otlp_http/maple]

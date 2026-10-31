@@ -8,7 +8,6 @@ import { Effect } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
@@ -20,7 +19,6 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 
 const LABELS = {
 	cloudflare: "Cloudflare",
-	hazel: "Hazel",
 	linear: "Linear",
 	github: "GitHub",
 	planetscale: "PlanetScale",
@@ -77,7 +75,6 @@ const failure = (message: string) => new OAuthCompleteResponse({ status: "error"
  * `initiator`, so a callback query carried into another person's session completes nothing.
  */
 export const makeOAuthCompleter = Effect.gen(function* () {
-	const hazel = yield* HazelOAuthService
 	const linear = yield* LinearOAuthService
 	const github = yield* GithubConnectService
 	const cloudflare = yield* CloudflareOAuthService
@@ -239,10 +236,6 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 			switch (request.flow) {
 				case "cloudflare":
 					return withCode(params, (code, state) => completeCloudflare(code, state, initiator))
-				case "hazel":
-					return withCode(params, (code, state) =>
-						hazel.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),
-					)
 				case "linear":
 					return withCode(params, (code, state) =>
 						linear.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),

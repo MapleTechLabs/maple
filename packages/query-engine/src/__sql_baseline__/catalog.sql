@@ -407,6 +407,37 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
+-- builder:ci-runs:ciActorStatsQuery:allWorkflows  [890fdba4]
+SELECT
+          ci_runs.Actor AS actor,
+          count() AS runs,
+          countIf((ci_runs.Attempt <= 1 AND (ci_runs.Result = 'success' OR ci_runs.Result IN ('failure', 'timeout', 'error')))) AS firstTryRuns,
+          countIf((ci_runs.Attempt <= 1 AND ci_runs.Result = 'success')) AS firstTryGreen,
+          countIf(ci_runs.Attempt > 1) AS reruns,
+          countIf(ci_runs.Result = 'cancellation') AS cancelledRuns,
+          sum(jobs.runnerMs) AS runnerMs,
+          countIf(((ci_runs.TriggerEvent = 'push' AND (ci_runs.Owner = 'acme' AND ci_runs.Repository = 'web' AND ci_runs.Branch = 'main')) AND (ci_runs.Result = 'success' OR ci_runs.Result IN ('failure', 'timeout', 'error')))) AS defaultBranchRuns,
+          countIf(((ci_runs.TriggerEvent = 'push' AND (ci_runs.Owner = 'acme' AND ci_runs.Repository = 'web' AND ci_runs.Branch = 'main')) AND ci_runs.Result IN ('failure', 'timeout', 'error'))) AS defaultBranchFailed
+        FROM ci_runs
+        INNER JOIN (SELECT
+          ci_jobs.TraceId AS TraceId,
+          sum(ci_jobs.Duration) / 1000000 - sum(ci_jobs.QueueMs) AS runnerMs
+        FROM ci_jobs
+        WHERE ci_jobs.OrgId = 'org_sql_catalog'
+          AND ci_jobs.Timestamp >= '2026-01-01 10:30:00'
+          AND ci_jobs.Timestamp <= '2026-01-03 14:15:00'
+          AND ci_jobs.Result != 'skip'
+          AND ci_jobs.Duration > 0
+        GROUP BY TraceId) AS jobs ON ci_runs.TraceId = jobs.TraceId
+        WHERE ci_runs.OrgId = 'org_sql_catalog'
+          AND ci_runs.Timestamp >= '2026-01-01 10:30:00'
+          AND ci_runs.Timestamp <= '2026-01-03 14:15:00'
+          AND ci_runs.Result != 'skip'
+        GROUP BY actor
+        ORDER BY runs DESC
+        LIMIT 5000
+        FORMAT JSON
+
 -- builder:ci-runs:ciFailedJobsQuery:default  [fc2d17c0]
 SELECT
           ci_jobs.TraceId AS traceId,
@@ -3198,7 +3229,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:attribute-session-step  [b3496b8e]
+-- builder:product-events:productEventsFunnelBreakdownQuery:attribute-session-step  [c28317af]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3, 4]) AS step,
@@ -3241,7 +3272,7 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND e.UserId != ''
 ) AS funnel_events
         GROUP BY key) AS levels
@@ -3251,7 +3282,7 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:session-dimension  [bb00cfab]
+-- builder:product-events:productEventsFunnelBreakdownQuery:session-dimension  [f210b7b0]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3]) AS step,
@@ -3295,7 +3326,7 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS funnel_events
         GROUP BY key) AS levels
         GROUP BY group
@@ -3304,7 +3335,7 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [ad6d68b1]
+-- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [95bb693c]
 SELECT
           hops.step AS step,
           tupleElement(hop, 1) AS next,
@@ -3393,7 +3424,7 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND e.VisitorId != ''
           AND e.VisitorId IN (SELECT
           session_replays.VisitorId AS key
@@ -3441,7 +3472,7 @@ SELECT
         ORDER BY step ASC, count DESC, next ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:person  [0ee5feae]
+-- builder:product-events:productEventsFunnelQuery:person  [877c57db]
 SELECT
           arrayJoin([1, 2, 3]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -3472,13 +3503,13 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS funnel_events
         GROUP BY key) AS levels) AS totals
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:session-key  [76d377e9]
+-- builder:product-events:productEventsFunnelQuery:session-key  [118d45ba]
 SELECT
           arrayJoin([1, 2, 3]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -3498,13 +3529,13 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND e.SessionId != '') AS funnel_events
         GROUP BY key) AS levels) AS totals
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:session-step-filtered  [dbec8c07]
+-- builder:product-events:productEventsFunnelQuery:session-step-filtered  [7bae7ef8]
 SELECT
           arrayJoin([1, 2, 3, 4]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -3610,7 +3641,7 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != ''
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) IN (SELECT
           multiIf(s.UserId != '', s.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), s.VisitorId) AS key
@@ -3664,7 +3695,7 @@ SELECT
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:visitor-session-step  [c63a28ff]
+-- builder:product-events:productEventsFunnelQuery:visitor-session-step  [59b281c2]
 SELECT
           arrayJoin([1, 2, 3, 4]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -3701,14 +3732,14 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND e.VisitorId != ''
 ) AS funnel_events
         GROUP BY key) AS levels) AS totals
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelTimingQuery:person  [78104129]
+-- builder:product-events:productEventsFunnelTimingQuery:person  [82b59764]
 SELECT
           arrayJoin([2, 3]) AS step,
           arrayElement(totals.p50s, step) AS p50Ms,
@@ -3748,7 +3779,7 @@ SELECT
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS funnel_events
         GROUP BY key) AS chain_events) AS chain) AS totals
         ORDER BY step ASC
@@ -4264,6 +4295,97 @@ SELECT
         WHERE ranked.versionRank <= 20
         ORDER BY serviceName ASC, firstSeen DESC
         LIMIT 500
+        FORMAT JSON
+
+-- builder:security-telemetry:runtimeVersionsQuery:default  [7bc01cfb]
+SELECT
+          service_runtimes_hourly.ServiceName AS service,
+          service_runtimes_hourly.DeploymentEnv AS environment,
+          service_runtimes_hourly.RuntimeName AS runtimeName,
+          service_runtimes_hourly.RuntimeVersion AS runtimeVersion,
+          service_runtimes_hourly.ExecutableName AS executableName,
+          service_runtimes_hourly.SdkLanguage AS sdkLanguage,
+          service_runtimes_hourly.SdkName AS sdkName,
+          service_runtimes_hourly.SdkVersion AS sdkVersion,
+          sum(service_runtimes_hourly.SpanCount) AS spans,
+          max(service_runtimes_hourly.Hour) AS lastSeen
+        FROM service_runtimes_hourly
+        WHERE service_runtimes_hourly.OrgId = 'org_sql_catalog'
+          AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_runtimes_hourly.Hour <= '2026-01-03 14:15:00'
+        GROUP BY service, environment, runtimeName, runtimeVersion, executableName, sdkLanguage, sdkName, sdkVersion
+        ORDER BY service ASC, environment ASC, runtimeName ASC, runtimeVersion ASC, executableName ASC, sdkLanguage ASC, sdkName ASC, sdkVersion ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerExposedQuery:default  [d1c58739]
+SELECT
+          scanner_requests.ServiceName AS service,
+          scanner_requests.Host AS host,
+          scanner_requests.Path AS path,
+          scanner_requests.Signature AS signature,
+          scanner_requests.HttpStatus AS httpStatus,
+          uniq(scanner_requests.TraceId) AS requests,
+          max(scanner_requests.Timestamp) AS lastSeen,
+          any(scanner_requests.TraceId) AS sampleTraceId
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+          AND scanner_requests.Signature IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
+          AND (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)
+        GROUP BY service, host, path, signature, httpStatus
+        ORDER BY lastSeen DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerSignaturesQuery:default  [60ddb44e]
+SELECT
+          scanner_requests.Signature AS signature,
+          scanner_requests.ServiceName AS service,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered,
+          uniqIf(scanner_requests.ClientAddress, scanner_requests.ClientAddress != '') AS sources,
+          max(scanner_requests.Timestamp) AS lastSeen
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY signature, service
+        ORDER BY requests DESC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerSourcesQuery:default  [913fd82e]
+SELECT
+          scanner_requests.ClientAddress AS clientAddress,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.Signature, scanner_requests.Signature != '') AS signatures,
+          max(scanner_requests.Scanner) AS scanner,
+          argMax(scanner_requests.UserAgent, scanner_requests.Scanner) AS userAgent,
+          max(scanner_requests.Timestamp) AS lastSeen
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+          AND scanner_requests.ClientAddress != ''
+        GROUP BY clientAddress
+        ORDER BY requests DESC, clientAddress ASC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerTimelineQuery:default  [6cddc38a]
+SELECT
+          toStartOfInterval(scanner_requests.Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
         FORMAT JSON
 
 -- builder:service-api:serviceApiTimeseriesQuery:mergedSubHour  [d9a67a8b]
@@ -11764,7 +11886,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:bloom  [74bedc54]
+-- pipe:list_logs:searched:bloom  [226ed830]
 SELECT
           logs.Timestamp AS timestamp,
           toString(logs.Timestamp) AS exactTimestamp,
@@ -11786,7 +11908,7 @@ SELECT
           AND logs.ServiceName = 'api'
           AND logs.SeverityText IN ('ERROR', 'Error', 'error')
           AND logs.TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND (((hasToken(lower(logs.Body), 'connection') AND hasToken(lower(logs.Body), 'refused')) AND hasToken(lower(logs.Body), 'by')) AND logs.Body ILIKE '%upstream connection refused by peer%')
+          AND (hasToken(lower(logs.Body), 'connection') AND hasToken(lower(logs.Body), 'refused') AND hasToken(lower(logs.Body), 'by') AND logs.Body ILIKE '%upstream connection refused by peer%')
           AND logs.Timestamp >= (SELECT min(ts) FROM (SELECT
           logs.Timestamp AS ts
         FROM logs
@@ -11798,7 +11920,7 @@ SELECT
           AND logs.ServiceName = 'api'
           AND logs.SeverityText IN ('ERROR', 'Error', 'error')
           AND logs.TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND (((hasToken(lower(logs.Body), 'connection') AND hasToken(lower(logs.Body), 'refused')) AND hasToken(lower(logs.Body), 'by')) AND logs.Body ILIKE '%upstream connection refused by peer%')
+          AND (hasToken(lower(logs.Body), 'connection') AND hasToken(lower(logs.Body), 'refused') AND hasToken(lower(logs.Body), 'by') AND logs.Body ILIKE '%upstream connection refused by peer%')
         ORDER BY ts DESC
         LIMIT 50))
         ORDER BY timestamp DESC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC

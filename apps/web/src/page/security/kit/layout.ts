@@ -5,11 +5,12 @@ import type { IconName } from "../../../ui/icon"
 import { pageTitle } from "../../../ui/page-layout"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import type { Tab } from "../tabs/model"
+// The frame of the Security tabs: title block, the tab strip, content. Overview, Findings and Runs
+// are the code audits' page; Exposure and Runtimes read the org's telemetry.
 
-// The frame of the three Security tabs: title block, Overview / Findings / Runs, content.
+export type SecurityTab = "overview" | "findings" | "runs" | "exposure" | "runtimes"
 
-const TABS: ReadonlyArray<{ tab: Tab; label: string; icon: IconName; href: string }> = [
+const TABS: ReadonlyArray<{ tab: SecurityTab; label: string; icon: IconName; href: string }> = [
 	{ tab: "overview", label: "Overview", icon: "ShieldCheckIcon", href: hrefOf(AppRoute.Security()) },
 	{
 		tab: "findings",
@@ -23,16 +24,18 @@ const TABS: ReadonlyArray<{ tab: Tab; label: string; icon: IconName; href: strin
 		icon: "PlayRotateClockwiseIcon",
 		href: hrefOf(AppRoute.SecurityRuns({ search: {} })),
 	},
+	{ tab: "exposure", label: "Exposure", icon: "GlobeIcon", href: hrefOf(AppRoute.SecurityExposure()) },
+	{ tab: "runtimes", label: "Runtimes", icon: "MicrochipIcon", href: hrefOf(AppRoute.SecurityRuntimes()) },
 ]
 
-export const breadcrumbsOf = (tab: Tab): ReadonlyArray<BreadcrumbEntry> => {
+export const breadcrumbsOf = (tab: SecurityTab): ReadonlyArray<BreadcrumbEntry> => {
 	const label = TABS.find((entry) => entry.tab === tab)?.label ?? ""
 	return tab === "overview"
 		? [{ label: "Security", isPageHeading: true }]
 		: [{ label: "Security", href: hrefOf(AppRoute.Security()) }, { label }]
 }
 
-const tabs = <M>(h: HtmlBuilder<M>, active: Tab): Html =>
+const tabs = <M>(h: HtmlBuilder<M>, active: SecurityTab): Html =>
 	linkTabStrip(
 		h,
 		"Security views",
@@ -46,16 +49,24 @@ const tabs = <M>(h: HtmlBuilder<M>, active: Tab): Html =>
 		})),
 	)
 
-const DESCRIPTION =
+const CODE_AUDITS =
 	"Deep code audits of your connected repositories. Findings are visible to org admins only."
 
+const DESCRIPTION = {
+	overview: CODE_AUDITS,
+	findings: CODE_AUDITS,
+	runs: CODE_AUDITS,
+	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
+	runtimes: "The language runtime each service reports, checked against its published end-of-life dates.",
+} satisfies Record<SecurityTab, string>
+
 /** The title block: the page `<h1>` and its one line of context, like every other page header. */
-const securityTitle = <M>(h: HtmlBuilder<M>): Html =>
+const securityTitle = <M>(h: HtmlBuilder<M>, tab: SecurityTab): Html =>
 	h.div(
 		[h.Class("min-w-0 space-y-0.5")],
 		[
 			pageTitle(h, { className: "leading-8 text-foreground" }, ["Security"]),
-			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [DESCRIPTION]),
+			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [DESCRIPTION[tab]]),
 		],
 	)
 
@@ -64,7 +75,7 @@ export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html
 	h.div([h.Class("flex shrink-0 flex-col gap-6")], children)
 
 type SecurityLayoutOptions = Readonly<{
-	active: Tab
+	active: SecurityTab
 	actions?: Html
 	/** Dialogs the tab owns, rendered after the content. */
 	overlay?: ReadonlyArray<Html>
@@ -78,7 +89,7 @@ export const securityLayout = <M>(
 	dashboardPage(
 		h,
 		{
-			titleContent: securityTitle(h),
+			titleContent: securityTitle(h, options.active),
 			actions: options.actions,
 			tabs: tabs(h, options.active),
 			scrollClassName: "pb-8",

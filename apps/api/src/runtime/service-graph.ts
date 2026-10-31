@@ -1,3 +1,4 @@
+import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { Layer } from "effect"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -13,7 +14,6 @@ import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScal
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
@@ -96,6 +96,7 @@ import { TelemetryReadService } from "@maple/backend/services/warehouse/Telemetr
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
+import { CodeReviewTeamService } from "@maple/backend/services/pr-review/CodeReviewTeamService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
@@ -115,7 +116,6 @@ export const HttpServicesLive = Layer.mergeAll(
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
-	HazelOAuthService.layer,
 	LinearOAuthService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,
@@ -164,6 +164,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	RuntimeReleaseCatalog.layer,
 	TelemetryReadService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
@@ -193,6 +194,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SourceRemovalService.layer,
 	PrReviewAnalyticsService.layer,
 	CiAnalyticsService.layer,
+	CodeReviewTeamService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,

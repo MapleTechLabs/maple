@@ -1,5 +1,5 @@
 // Shared OAuth-connection machinery for provider integrations (Cloudflare,
-// Hazel, ...). Both providers persist into the same `oauth_connections` /
+// Linear, ...). Providers persist into the same `oauth_connections` /
 // `oauth_auth_states` tables, so the state-row lifecycle, encrypted token
 // persistence, token-endpoint HTTP calls, and refresh semantics live here —
 // parameterized by provider id and display label. Provider-specific flow
@@ -131,7 +131,7 @@ const clientCredentials = (
 export interface MakeOAuthConnectionHelpersOptions {
 	/** Row value in `oauth_connections.provider` / `oauth_auth_states.provider`. */
 	readonly provider: string
-	/** Display name used in error messages ("Cloudflare", "Hazel"). */
+	/** Display name used in error messages ("Cloudflare", "Linear"). */
 	readonly providerLabel: string
 	readonly database: DatabaseApi
 	readonly env: EnvConfig

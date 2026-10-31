@@ -34,9 +34,11 @@ import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSou
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import {
+	LinearOAuthService,
+	type LinearOAuthServiceApi,
+} from "@maple/backend/services/auth/LinearOAuthService"
 import { LinearIssueTracker } from "@maple/backend/services/alerts/LinearIssueTracker"
-import { HazelOAuthService, type HazelOAuthServiceApi } from "@maple/backend/services/auth/HazelOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService, type OrgMembersServiceApi } from "@maple/backend/services/org/OrgMembersService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -83,7 +85,7 @@ const warehouseStub = makeWarehouseServiceStub({
 
 const makeHarness = (
 	warehouseService: WarehouseQueryServiceApi = warehouseStub,
-	hazelOAuthService?: HazelOAuthServiceApi,
+	linearOAuthService?: LinearOAuthServiceApi,
 	orgMembersService?: OrgMembersServiceApi,
 ) => {
 	const testDb = createTestDb(createdDbs)
@@ -106,13 +108,10 @@ const makeHarness = (
 		schedulerEvalTimeoutMs: () => 15_000,
 		schedulerSpreadMs: () => 0,
 	})
-	const hazelOAuthLive =
-		hazelOAuthService === undefined
-			? HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
-			: Layer.succeed(HazelOAuthService, hazelOAuthService)
-	const linearOAuthLive = LinearOAuthService.layer.pipe(
-		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
-	)
+	const linearOAuthLive =
+		linearOAuthService === undefined
+			? LinearOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
+			: Layer.succeed(LinearOAuthService, linearOAuthService)
 	const linearIssuesLive = Layer.effect(LinearIssueTracker, LinearIssueTracker.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(linearOAuthLive, testDb.layer)),
@@ -141,7 +140,6 @@ const makeHarness = (
 				envLive,
 				testDb.layer,
 				runtimeLive,
-				hazelOAuthLive,
 				linearOAuthLive,
 				linearIssuesLive,
 				emailLive,
@@ -172,7 +170,6 @@ const makeHarness = (
 				queryEngineLive,
 				warehouseLive,
 				runtimeLive,
-				hazelOAuthLive,
 				linearOAuthLive,
 				linearIssuesLive,
 				emailLive,
@@ -1019,33 +1016,29 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("preserves the exact Hazel integration failure on destination create", async () => {
-		const unavailable = () => Effect.die("unexpected Hazel OAuth method")
-		const hazelOAuth: HazelOAuthServiceApi = {
+	it("preserves the exact Linear integration failure on destination create", async () => {
+		const unavailable = () => Effect.die("unexpected Linear OAuth method")
+		const linearOAuth: LinearOAuthServiceApi = {
 			startConnect: unavailable,
 			completeConnect: unavailable,
 			getStatus: unavailable,
-			getValidAccessToken: unavailable,
-			listOrganizations: unavailable,
-			listChannels: unavailable,
-			createChannelWebhook: () =>
+			withAccessToken: unavailable,
+			listTeams: unavailable,
+			getTeam: () =>
 				Effect.fail(
 					new IntegrationsRevokedError({
-						message: "Hazel rejected the access token — reconnect required",
+						message: "Linear rejected the access token, reconnect required",
 					}),
 				),
 			disconnect: unavailable,
 		}
-		const harness = makeHarness(warehouseStub, hazelOAuth)
+		const harness = makeHarness(warehouseStub, linearOAuth)
 		const key = await harness.bootstrapKey(["alerts:write"])
 
 		const response = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
-			type: "hazel-oauth",
-			name: "Hazel incidents",
-			hazel_organization_id: "hazel-org",
-			hazel_organization_name: "Maple",
-			hazel_channel_id: "hazel-channel",
-			hazel_channel_name: "incidents",
+			type: "linear",
+			name: "Linear incidents",
+			team_id: "9cfb482a-81e3-4154-b5b9-2c805e70a02d",
 		})
 
 		expect(response.status).toBe(401)

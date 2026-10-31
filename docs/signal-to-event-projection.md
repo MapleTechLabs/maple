@@ -1060,7 +1060,7 @@ conflict.
 ## Compatibility and delivery notes
 
 The Local adapter projects OTLP logs only (`otel.log`). Traces and metrics go
-through ordinary warehouse ingestion. Alert webhook and Hazel payloads carry an
+through ordinary warehouse ingestion. Alert webhook payloads carry an
 additive `event` CloudEvent envelope (including `tenantid`, typically about
 1 KB). Alert event identities are deterministic for a scheduled tick. Retries
 reuse the retained payload and identity.

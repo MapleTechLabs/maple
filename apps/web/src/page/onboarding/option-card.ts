@@ -82,10 +82,6 @@ export type OptionCardOptions<M> = Readonly<{
 	layout?: "row" | "stacked"
 	/** Content pinned to the bottom of a `stacked` card. */
 	footer?: Html
-	/** Hex colour that replaces primary for the selected border and tint. */
-	accent?: string
-	/** Classes for the selected check, paired with `accent`. */
-	checkClassName?: string
 }>
 
 /** `OptionCard`: a hidden native input behind a bordered card. */
@@ -94,7 +90,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 	const check = drawnCheck(
 		h,
 		options.isChecked,
-		cn(layout === "row" && "mt-0.5", options.isChecked ? options.checkClassName : options.type === "radio" && "opacity-0"),
+		cn(layout === "row" && "mt-0.5", !options.isChecked && options.type === "radio" && "opacity-0"),
 	)
 	const body: ReadonlyArray<Html> =
 		layout === "row"
@@ -104,7 +100,10 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
 							h.span([h.Class("block text-sm font-semibold")], [options.title]),
-							h.span([h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")], [options.description]),
+							h.span(
+								[h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")],
+								[options.description],
+							),
 						],
 					),
 					check,
@@ -114,13 +113,18 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("space-y-1")],
 						[
-							h.span([h.Class("block text-base font-semibold tracking-tight")], [options.title]),
+							h.span(
+								[h.Class("block text-base font-semibold tracking-tight")],
+								[options.title],
+							),
 							h.span([h.Class("block text-sm text-muted-foreground")], [options.description]),
 						],
 					),
-					...(options.footer === undefined ? [] : [h.div([h.Class("mt-auto flex")], [options.footer])]),
+					...(options.footer === undefined
+						? []
+						: [h.div([h.Class("mt-auto flex")], [options.footer])]),
 				]
-	const isAccented = options.isChecked && options.accent !== undefined
+
 	return h.label(
 		[h.Class("group relative cursor-pointer")],
 		[
@@ -135,14 +139,13 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 			]),
 			h.div(
 				[
-					...(isAccented ? [h.Style({ "border-color": options.accent ?? "", "background-color": `color-mix(in oklab, ${options.accent ?? ""} 6%, transparent)` })] : []),
 					h.Class(
 						cn(
 							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 							layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
 							!options.isChecked
 								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
-								: options.accent === undefined && "border-primary bg-primary-a1",
+								: "border-primary bg-primary-a1",
 						),
 					),
 				],
@@ -179,7 +182,9 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 							h.Class(
 								cn(
 									"transition-colors duration-200 motion-reduce:transition-none",
-									isSelected ? "text-primary/40" : "text-muted-foreground group-hover:text-foreground",
+									isSelected
+										? "text-primary/40"
+										: "text-muted-foreground group-hover:text-foreground",
 								),
 							),
 						],
@@ -187,7 +192,9 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 					),
 					h.g(
 						[h.Class("text-primary")],
-						segments.map((d) => segmentPath(h, d, [h.Style({ opacity: isSelected ? "1" : "0" })])),
+						segments.map((d) =>
+							segmentPath(h, d, [h.Style({ opacity: isSelected ? "1" : "0" })]),
+						),
 					),
 				],
 			),

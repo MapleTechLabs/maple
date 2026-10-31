@@ -636,7 +636,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 			const {
 				hydrateDestination,
-				enrichSecretForDispatch,
 				composeLinkUrl,
 				dispatchDelivery,
 				buildPayload,
@@ -2380,14 +2379,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						incidentRow?.signalType ?? payloadRule?.signalType ?? "throughput",
 					)
 
-					const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
 					const deliveryStart = yield* now
 					const result = yield* dispatchDelivery(
 						{
 							deliveryKey: row.deliveryKey,
 							destination: hydrated.row,
 							publicConfig: hydrated.publicConfig,
-							secretConfig: enrichedSecret,
+							secretConfig: hydrated.secretConfig,
 							ruleId: decodeAlertRuleIdSync(row.ruleId),
 							ruleName: ruleRow?.name ?? payloadRule?.name ?? "Alert",
 							groupKey,

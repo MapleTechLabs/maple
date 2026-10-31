@@ -6,6 +6,8 @@ import {
 	CiBranchName,
 	CiPipelineName,
 	CiRunResult,
+	CodeReviewSortDir,
+	CodeReviewSortKey,
 	IssueKind,
 	PrReviewCategory,
 	PrReviewFindingStatus,
@@ -119,7 +121,31 @@ const CodeReviewListSearchFields = {
 	...CodeReviewSearchFields,
 	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
 	q: Schema.optional(Schema.String),
+	sortBy: Schema.optional(CodeReviewSortKey),
+	sortDir: Schema.optional(CodeReviewSortDir),
 	review: Schema.optional(PrReviewId),
+}
+
+/** The Team scorecard's sort column; `person` is by login. */
+export const CodeReviewTeamSort = Schema.Literals([
+	"person",
+	"merged",
+	"mergeTime",
+	"fixRate",
+	"criticalPerPr",
+	"firstTryGreen",
+	"rerunRate",
+	"shippedClean",
+	"ciTime",
+])
+export type CodeReviewTeamSort = typeof CodeReviewTeamSort.Type
+
+const CodeReviewTeamSearchFields = {
+	repo: Schema.optional(VcsRepositoryId),
+	...TimeRangeSearchFields,
+	sort: Schema.optional(CodeReviewTeamSort),
+	/** Ranked: people with enough pull requests, numbered by the sort column. */
+	ranked: BooleanParam,
 }
 
 const CodeReviewCiSearchFields = {
@@ -348,6 +374,8 @@ export const StatusPageSearch = Schema.Struct({
 })
 
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
+
+export const CodeReviewTeamSearch = Schema.Struct(CodeReviewTeamSearchFields)
 
 export const CodeReviewIssuesSearch = Schema.Struct(CodeReviewIssuesSearchFields)
 

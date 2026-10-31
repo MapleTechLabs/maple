@@ -36,6 +36,7 @@ import * as CodeReview from "./code-review"
 import * as SecurityFinding from "./security/finding"
 import * as SecurityRun from "./security/run"
 import * as SecurityTabs from "./security/tabs"
+import * as SecurityTelemetry from "./security/telemetry"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraContainer from "./infra/containers/detail"
@@ -150,6 +151,7 @@ export const pages = [
 	DashboardWidget.page,
 	CodeReview.page,
 	SecurityTabs.page,
+	SecurityTelemetry.page,
 	SecurityRun.page,
 	SecurityFinding.page,
 	AgentSessionsList.page,

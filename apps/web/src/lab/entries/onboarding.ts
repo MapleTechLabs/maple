@@ -2,6 +2,8 @@ import { CatalogPlan, CatalogPlanItem, CatalogPlanItemPrice } from "@maple/domai
 import { Effect, Schema } from "effect"
 import { Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import * as CreateOrg from "../../page/onboarding/create-org"
+import * as CreateOrgView from "../../page/onboarding/create-org-view"
 import * as PricingCardsView from "../../page/onboarding/pricing-cards-view"
 import * as QuickStartTeamView from "../../page/onboarding/quick-start-team-view"
 import * as QuickStartView from "../../page/onboarding/quick-start-view"
@@ -18,7 +20,8 @@ import { DEFAULT_QUICK_START_STATE, STEP_IDS } from "../../page/onboarding/quick
 import { ready, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
 
 // `/lab/onboarding`: the real quick-start screen with a sample catalog; checkout, rename and invites are
-// simulated and nothing is saved. `?step=stack` opens a later step, Restart starts over.
+// simulated and nothing is saved. `?step=stack` opens a later step (`org` is the create-org screen,
+// `region` the region step), Restart starts over.
 
 const meteredItem = (
 	featureId: string,
@@ -51,11 +54,19 @@ export const PLANS = [
 	}),
 ]
 
+const LAB_STEPS = ["org", "region", ...STEP_IDS] as const
+type LabStep = (typeof LAB_STEPS)[number]
+
 export const Model = Schema.Struct({
 	quickStart: QuickStart.Model,
+	/** The create-org screen, shown instead of the quick start until its form is sent. */
+	createOrg: Schema.NullOr(CreateOrg.Model),
+	needsRegion: Schema.Boolean,
 	/** Picking a sample plan stands in for checkout. */
 	hasPlan: Schema.Boolean,
 	isComplete: Schema.Boolean,
+	/** The name sent from the create-org screen, shown by the steps after it. */
+	orgName: Schema.String,
 	/** Bumped by Restart, so every step remounts. */
 	run: Schema.Number,
 })
@@ -65,19 +76,40 @@ export const Message = defineMessageUnion({
 	GotStepMessage: { message: QuickStart.Message },
 	ClickedRestart: {},
 	SimulatedTeamOperation: { message: TeamMessage },
+	GotCreateOrgMessage: { message: CreateOrg.Message },
 })
 export type Message = typeof Message.Type
 
-const Step = Schema.Literals(STEP_IDS)
+const Step = Schema.Literals(LAB_STEPS)
 
-export const init = (step: (typeof STEP_IDS)[number], run = 0): Model => ({
+const SAMPLE_ORG: CreateOrg.Model = {
+	_tag: "OrgRequired",
+	name: "Acme",
+	suggestedFrom: "acme.com",
+	region: "us",
+	isCreating: false,
+	errorMessage: null,
+	invitations: [],
+	joiningId: null,
+	openingId: null,
+	createdOrgId: null,
+	invitationsError: null,
+}
+
+const quickStartStep = (step: LabStep): (typeof STEP_IDS)[number] =>
+	step === "org" || step === "region" ? "plan" : step
+
+export const init = (step: LabStep, run = 0): Model => ({
 	quickStart: {
 		...QuickStart.init("lab-onboarding").model,
-		state: { ...DEFAULT_QUICK_START_STATE, activeStep: step },
+		state: { ...DEFAULT_QUICK_START_STATE, activeStep: quickStartStep(step) },
 		team: ready("Acme", [], true, null),
 	},
-	hasPlan: step !== "plan",
+	createOrg: step === "org" ? SAMPLE_ORG : null,
+	needsRegion: step === "org" || step === "region",
+	hasPlan: quickStartStep(step) !== "plan",
 	isComplete: false,
+	orgName: SAMPLE_ORG.name,
 	run,
 })
 
@@ -138,6 +170,8 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 			return message.message._tag === "GotSnippetCopyMessage"
 				? copyStep(model, message.message.snippet, message.message.message)
 				: { model: screenStep(model, message) }
+		case "ClickedRegionContinue":
+			return { model: { ...model, needsRegion: false } }
 		case "GotPricingMessage":
 			return message.message._tag === "ClickedPlan" ? { model: { ...model, hasPlan: true } } : { model }
 		case "ClickedContinue":
@@ -151,9 +185,36 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotStepMessage: ({ message: child }) => stepMessage(model, child),
-		ClickedRestart: () => ({ model: init("plan", model.run + 1) }),
+		ClickedRestart: () => ({ model: init("org", model.run + 1) }),
 		SimulatedTeamOperation: ({ message: child }) => teamStep(model, child),
+		GotCreateOrgMessage: ({ message: child }) => createOrgStep(model, child),
 	})
+
+/** The create-org form's own edits; sending it moves on to the region step, nothing is created. */
+const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
+	if (model.createOrg === null) return { model }
+	switch (message._tag) {
+		case "ChangedName":
+		case "PickedRegion":
+			return { model: { ...model, createOrg: CreateOrg.update(model.createOrg, message).model } }
+		case "SubmittedCreate":
+			return model.createOrg.name.trim() === ""
+				? { model }
+				: {
+						model: {
+							...model,
+							orgName: model.createOrg.name.trim(),
+							createOrg: null,
+							quickStart: {
+								...model.quickStart,
+								region: { ...model.quickStart.region, selected: model.createOrg.region },
+							},
+						},
+					}
+		default:
+			return { model }
+	}
+}
 
 // VIEW
 
@@ -188,9 +249,9 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 					separator(h, "vertical", "h-4"),
 					linkButton(h, { href: "/lab", size: "xs", variant: "ghost" }, ["Exit preview"]),
 				]),
-			needsRegion: false,
+			needsRegion: model.needsRegion,
 			hasPlan: model.hasPlan,
-			orgName: "Acme",
+			orgName: model.orgName,
 			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team),
 			planStep: QuickStartTeamView.planStep(
 				h,
@@ -205,25 +266,36 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 		}) ?? h.empty,
 )
 
+const createOrgView = Submodel.defineView<CreateOrg.Model, CreateOrg.Message>((model, h) =>
+	CreateOrgView.view(h, model, "you@acme.com", []),
+)
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	model.isComplete
 		? complete(h)
-		: h.div(
-				[h.Key(String(model.run))],
-				[
-					h.submodel({
-						slotId: "lab-onboarding-step",
-						model,
-						view: stepView,
-						toParentMessage: (message) => Message.GotStepMessage({ message }),
-					}),
-				],
-			)
+		: model.createOrg !== null
+			? h.submodel({
+					slotId: "lab-onboarding-org",
+					model: model.createOrg,
+					view: createOrgView,
+					toParentMessage: (message) => Message.GotCreateOrgMessage({ message }),
+				})
+			: h.div(
+					[h.Key(String(model.run))],
+					[
+						h.submodel({
+							slotId: "lab-onboarding-step",
+							model,
+							view: stepView,
+							toParentMessage: (message) => Message.GotStepMessage({ message }),
+						}),
+					],
+				)
 
 /** `?step=stack` opens the preview on a later step. */
-const initialStep = (search: string): (typeof STEP_IDS)[number] =>
+const initialStep = (search: string): LabStep =>
 	Schema.decodeUnknownOption(Step)(new URLSearchParams(search).get("step")).pipe((step) =>
-		step._tag === "Some" ? step.value : "plan",
+		step._tag === "Some" ? step.value : "org",
 	)
 
 export const lab = defineLabWithFlags("Onboarding", {

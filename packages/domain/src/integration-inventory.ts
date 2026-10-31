@@ -514,9 +514,8 @@ const prometheus = (inputs: IntegrationInventoryInputs, now: number): Integratio
 }
 
 const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
-	const hazel = oauthFor(inputs, "hazel")
 	const linear = oauthFor(inputs, "linear")
-	if (!hazel && !linear && inputs.chatWorkspaces.length === 0) return null
+	if (!linear && inputs.chatWorkspaces.length === 0) return null
 	const workspaces = inputs.chatWorkspaces.map((w): IntegrationResource => ({
 		kind: "workspace",
 		name: w.name,
@@ -525,18 +524,6 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 		lastError: null,
 		note: w.connector,
 	}))
-	const hazelResource: ReadonlyArray<IntegrationResource> = hazel
-		? [
-				{
-					kind: "workspace",
-					name: hazel.externalAccountName ?? hazel.externalUserEmail ?? "Hazel",
-					status: hazel.revokedAt === null ? "healthy" : "disconnected",
-					lastSuccessAt: null,
-					lastError: null,
-					note: "hazel",
-				},
-			]
-		: []
 	const linearResource: ReadonlyArray<IntegrationResource> = linear
 		? [
 				{
@@ -551,13 +538,12 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 		: []
 	const connectedAt = [
 		...inputs.chatWorkspaces.map((w) => w.createdAt),
-		...(hazel ? [hazel.createdAt] : []),
 		...(linear ? [linear.createdAt] : []),
 	]
 	return entry("chat", now, {
 		account: null,
 		connectedAt: Math.min(...connectedAt),
-		resources: [...workspaces, ...hazelResource, ...linearResource],
+		resources: [...workspaces, ...linearResource],
 	})
 }
 

@@ -15,6 +15,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { emptyMessage } from "../../../ui/empty"
 import { listRow } from "../../../ui/list-row"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { textLink } from "../../../ui/text-link"
 import { truncatedText } from "../../../ui/truncated-text"
 import { type DeployEntry, deriveDeploys, firstLine, isResolvableSha } from "./derive-panels"
 import { Message } from "./message"
@@ -76,7 +77,7 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 					...(isLimited
 						? [h.span([h.Class("text-2xs text-muted-foreground")], ["Latest 90 days"])]
 						: []),
-					h.a([h.Class("text-xs text-primary hover:underline active:underline"), h.Href("/errors")], ["View all →"]),
+					textLink(h, { href: "/errors", className: "text-xs" }, ["View all →"]),
 				],
 			),
 		},
@@ -195,15 +196,10 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 				h.div(
 					[h.Class("border-t px-4 py-2 text-xs")],
 					[
-						h.a(
-							[
-								h.Href("/sources/new?integration=github"),
-								h.Class(
-									"inline-flex items-center gap-1 font-medium text-primary hover:underline active:underline",
-								),
-							],
-							["Connect a repository to resolve commits", h.span([h.AriaHidden(true)], ["→"])],
-						),
+						textLink(h, { href: "/sources/new?integration=github" }, [
+							"Connect a repository to resolve commits",
+							h.span([h.AriaHidden(true)], ["→"]),
+						]),
 					],
 				),
 			]

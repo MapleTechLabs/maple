@@ -453,10 +453,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 			const stepConditions = opts.steps
 				.map((step) => eventStepCondition($, step))
 				.filter((cond): cond is CH.Condition => cond !== undefined)
-			const anyStep = stepConditions.reduce<CH.Condition | undefined>(
-				(acc, cond) => (acc ? acc.or(cond) : cond),
-				undefined,
-			)
+			const anyStep = stepConditions.length === 0 ? undefined : CH.or(...stepConditions)
 			return [
 				$.OrgId.eq(orgIdParam),
 				$.Timestamp.gte(param.dateTime("startTime")),

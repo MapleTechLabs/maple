@@ -172,7 +172,7 @@ export const STACK_PLATFORMS = {
 	aws: { label: "AWS", description: "CloudWatch", icon: "AwsIcon", fills: ["infrastructure", "metrics"] },
 	gcp: {
 		label: "Google Cloud",
-		description: "Logging, monitoring",
+		description: "Logs, metrics",
 		icon: "GoogleCloudIcon",
 		fills: ["logs", "metrics"],
 	},
@@ -196,7 +196,7 @@ export const STACK_PLATFORMS = {
 	},
 	prometheus: {
 		label: "Prometheus",
-		description: "Scrape an endpoint",
+		description: "Scrape targets",
 		icon: "PrometheusIcon",
 		fills: ["metrics"],
 	},

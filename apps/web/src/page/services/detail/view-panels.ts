@@ -18,7 +18,8 @@ import type { Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-export const SPARKLINE_TOKEN = "var(--chart-1)"
+/** Calls and requests draw in the Throughput chart's colour on every tab. */
+export const SPARKLINE_TOKEN = "--chart-throughput"
 
 /** `SectionCard`: a `Panel` with a header title, an optional trailing action, and a body. */
 export const sectionCard = (
@@ -73,7 +74,7 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 									backdropBar(h, {
 										value: op.estimatedSpanCount,
 										max: maxCalls,
-										className: "bg-severity-info-a2",
+										className: "bg-muted",
 									}),
 									truncatedText(h, {
 										text: op.spanName,

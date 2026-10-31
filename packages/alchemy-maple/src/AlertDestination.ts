@@ -57,8 +57,8 @@ export type AlertDestination = Resource<
 /**
  * A notification channel (PagerDuty, webhook, Discord, Telegram, Google Chat, workspace-member
  * email, or a Linear team) that `Maple.AlertRule`s deliver to. Linear needs the
- * workspace connected in Maple first. Chat-connector and Hazel destinations use
- * integrations linked in Maple and are managed there.
+ * workspace connected in Maple first. Chat-connector destinations use workspaces
+ * linked in Maple and are managed there.
  *
  * @example
  * ```typescript
