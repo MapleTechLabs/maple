@@ -167,7 +167,9 @@ import {
 	withServiceApiFallback,
 } from "@maple/backend/queries/dashboard-reads"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
+import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
+import { advisoryTargetOf } from "@maple/domain/runtime-advisories"
 import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-posture"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -346,6 +348,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
 		const runtimeReleases = yield* RuntimeReleaseCatalog
+		const runtimeAdvisories = yield* RuntimeAdvisoryCatalog
 		const reads = makeDashboardReads({ warehouse, queryEngine })
 		const { runQuery, runQueryFirst } = reads
 
@@ -2639,7 +2642,17 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							const product = runtimeProductOf(row.runtimeName, row.sdkLanguage)
 							return product === undefined || row.runtimeVersion === "" ? [] : [product]
 						})
-						const releases = yield* runtimeReleases.releases(products)
+						// Busiest services first, so the read cap drops the quietest versions.
+						const targets = rows
+							.toSorted((a, b) => (b.spans || 0) - (a.spans || 0))
+							.flatMap((row) => {
+								const target = advisoryTargetOf(row)
+								return target === undefined ? [] : [target]
+							})
+						const [releases, advisories] = yield* Effect.all(
+							[runtimeReleases.releases(products), runtimeAdvisories.advisories(targets)],
+							{ concurrency: 2 },
+						)
 						return new SecurityRuntimesResponse({
 							data: {
 								runtimes: rows.map((row) => ({
@@ -2655,6 +2668,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
 								releases,
+								advisories,
 							},
 						})
 					}),

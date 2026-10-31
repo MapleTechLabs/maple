@@ -319,4 +319,62 @@ export const runtimesOf = (nowMs: number): Runtimes => ({
 		python: [{ cycle: "3.12", isEol: false, eolFrom: "2028-10-31", latest: "3.12.7" }],
 		go: [{ cycle: "1.23", isEol: false, eolFrom: null, latest: "1.23.2" }],
 	},
+	// Java is absent here too: its advisory read failed. Node.js 23 has none known.
+	advisories: {
+		"nodejs@22.4.0": [
+			{
+				id: "CVE-2025-55130",
+				osvId: "BIT-node-2025-55130",
+				summary: "Permission model bypass through crafted relative symlink paths.",
+				severity: "critical",
+				fixedIn: "22.22.0",
+				published: "2026-01-26T14:47:49.864Z",
+			},
+			{
+				id: "CVE-2026-48617",
+				osvId: "BIT-node-2026-48617",
+				summary: "Malformed HTTP/2 HEADERS frame crashes the process.",
+				severity: "high",
+				fixedIn: "22.17.1",
+				published: "2026-06-23T14:50:46.123Z",
+			},
+			{
+				id: "CVE-2026-58040",
+				osvId: "BIT-node-2026-58040",
+				summary: null,
+				severity: "medium",
+				fixedIn: "22.19.0",
+				published: "2026-08-17T05:52:29.274Z",
+			},
+		],
+		"nodejs@16.20.2": [
+			{
+				id: "CVE-2024-27983",
+				osvId: "BIT-node-2024-27983",
+				summary: "HTTP/2 server crash from a race in nghttp2.",
+				severity: "high",
+				fixedIn: "18.20.1",
+				published: "2024-04-04T00:00:00.000Z",
+			},
+			{
+				id: "CVE-2025-59466",
+				osvId: "BIT-node-2025-59466",
+				summary: "Uncatchable stack overflow through async_hooks.",
+				severity: "high",
+				fixedIn: null,
+				published: "2026-01-26T14:47:58.830Z",
+			},
+		],
+		"python@3.12.7": [
+			{
+				id: "CVE-2025-0938",
+				osvId: "BIT-python-2025-0938",
+				summary: "urllib.parse accepts square brackets in domain names.",
+				severity: "medium",
+				fixedIn: "3.12.9",
+				published: "2025-01-31T00:00:00.000Z",
+			},
+		],
+		"nodejs@23.0.0": [],
+	},
 })

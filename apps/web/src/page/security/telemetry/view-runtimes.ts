@@ -1,3 +1,9 @@
+import {
+	ADVISORY_SEVERITIES,
+	type AdvisorySeverity,
+	isUrgentSeverity,
+	type RuntimeAdvisory,
+} from "@maple/domain/runtime-advisories"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
@@ -13,6 +19,8 @@ import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import {
+	type CriticalUpgrade,
+	criticalUpgrades,
 	isSeenThisHour,
 	type RuntimeEntry,
 	runtimeEntries,
@@ -23,7 +31,8 @@ import {
 import { Message, type Model } from "./model"
 import { telemetryLoading } from "./view-exposure"
 
-// The Runtimes tab: each service's runtime and version against its release cycle, worst first.
+// The Runtimes tab: versions with critical CVEs to upgrade now, then each service's runtime and
+// version against its release cycle and known vulnerabilities, worst first.
 
 type H = HtmlBuilder<Message>
 
@@ -109,6 +118,54 @@ const runtimeCell = (h: H, entry: RuntimeEntry): Html =>
 		],
 	)
 
+const SEVERITY_VARIANT = {
+	critical: "crit",
+	high: "warn",
+	medium: "muted",
+	low: "muted",
+	unknown: "muted",
+} as const satisfies Record<AdvisorySeverity, Mark["variant"]>
+
+const severityCounts = (counts: Record<AdvisorySeverity, number>): string =>
+	ADVISORY_SEVERITIES.filter((severity) => counts[severity] > 0)
+		.map((severity) => `${counts[severity]} ${severity}`)
+		.join(" · ")
+
+const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
+	const vulnerabilities = entry.vulnerabilities
+	switch (vulnerabilities.status) {
+		case "not_covered":
+			return h.span(
+				[h.Class("text-xs text-muted-foreground"), h.Title("No advisory source covers this runtime")],
+				["—"],
+			)
+		case "unavailable":
+			return h.span([h.Class("text-xs text-muted-foreground")], ["Unavailable"])
+		case "checked": {
+			const summary = vulnerabilities.summary
+			if (summary.worst === null)
+				return h.span([h.Class("text-xs text-muted-foreground")], ["None known"])
+			const rest = summary.total - summary.counts[summary.worst]
+			return h.div(
+				[h.Class("flex min-w-0 flex-col items-start gap-1"), h.Title(severityCounts(summary.counts))],
+				[
+					badge(h, { variant: SEVERITY_VARIANT[summary.worst] }, [
+						`${summary.counts[summary.worst]} ${summary.worst}`,
+					]),
+					...(rest === 0
+						? []
+						: [
+								h.span(
+									[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
+									[`${rest} more`],
+								),
+							]),
+				],
+			)
+		}
+	}
+}
+
 const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number, timeZone: string): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
@@ -121,6 +178,7 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 					tableHead(h, ["Service"]),
 					tableHead(h, ["Runtime"]),
 					tableHead(h, ["Status"]),
+					tableHead(h, ["Vulnerabilities"]),
 					tableHead(h, ["SDK"]),
 					tableHead(h, ["Last seen"]),
 				]),
@@ -149,6 +207,7 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 							]),
 							tableCell(h, [runtimeCell(h, entry)]),
 							tableCell(h, [statusCell(h, entry)]),
+							tableCell(h, [vulnerabilitiesCell(h, entry)]),
 							tableCell(h, [sdkLabelOf(entry.row)], "text-xs text-muted-foreground"),
 							tableCell(h, [
 								isSeenThisHour(entry.row.lastSeen, nowMs)
@@ -186,7 +245,17 @@ const totalsRail = (h: H, entries: ReadonlyArray<RuntimeEntry>): Html => {
 			eyebrow: "Services",
 			value: String(totals.services),
 			compact: true,
-			subline: "reporting spans this week",
+			subline:
+				totals.noVersion > 0
+					? `${totals.noVersion} without a runtime version`
+					: "reporting spans this week",
+		}),
+		statRailItem(h, {
+			eyebrow: "Upgrade now",
+			value: String(totals.urgent),
+			tone: totals.urgent > 0 ? "crit" : undefined,
+			compact: true,
+			subline: `${services(totals.urgent)} with a critical or high CVE`,
 		}),
 		statRailItem(h, {
 			eyebrow: "End of life",
@@ -201,12 +270,6 @@ const totalsRail = (h: H, entries: ReadonlyArray<RuntimeEntry>): Html => {
 			tone: totals.behind > 0 ? "warn" : undefined,
 			compact: true,
 			subline: `${services(totals.behind)} behind the latest patch`,
-		}),
-		statRailItem(h, {
-			eyebrow: "No version reported",
-			value: String(totals.noVersion),
-			compact: true,
-			subline: `${services(totals.noVersion)} Maple cannot check`,
 		}),
 	])
 }
@@ -242,9 +305,150 @@ const footnote = (h: H): Html =>
 				},
 				["endoflife.date"],
 			),
+			", vulnerabilities from ",
+			textLink(
+				h,
+				{
+					tone: "muted",
+					className: "underline",
+					href: "https://osv.dev",
+					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+				},
+				["OSV.dev"],
+			),
 			".",
 		],
 	)
+
+// CRITICAL UPGRADES
+
+const ADVISORIES_SHOWN = 3
+
+const UPGRADES_COPY =
+	"These runtime versions have known critical or high severity vulnerabilities. The version shown is the lowest that fixes all of them that have a fix."
+
+const advisoryRow = (h: H, advisory: RuntimeAdvisory): Html =>
+	h.li(
+		[h.Class("flex min-w-0 items-baseline gap-3")],
+		[
+			textLink(
+				h,
+				{
+					className: "shrink-0 font-mono text-xs",
+					href: `https://osv.dev/vulnerability/${encodeURIComponent(advisory.osvId)}`,
+					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+				},
+				[advisory.id],
+			),
+			badge(h, { variant: SEVERITY_VARIANT[advisory.severity], className: "shrink-0" }, [
+				advisory.severity,
+			]),
+			h.span(
+				[h.Class("min-w-0 flex-1 truncate text-muted-foreground"), h.Title(advisory.summary ?? "")],
+				[advisory.summary ?? "No summary published"],
+			),
+			...(advisory.fixedIn === null
+				? []
+				: [
+						h.span(
+							[
+								h.Class(
+									"shrink-0 whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground",
+								),
+							],
+							[`fixed in ${advisory.fixedIn}`],
+						),
+					]),
+		],
+	)
+
+const upgradeAdvice = (upgrade: CriticalUpgrade): string => {
+	const { upgradeTo, unfixed } = upgrade.summary
+	const advice = upgradeTo === null ? "No fixed release yet" : `Upgrade to ${upgradeTo} or later`
+	return unfixed === 0 || upgradeTo === null ? advice : `${advice} · ${unfixed} without a fix yet`
+}
+
+const upgradeItem = (h: H, upgrade: CriticalUpgrade): Html => {
+	const urgent = upgrade.advisories.filter((advisory) => isUrgentSeverity(advisory.severity))
+	const hidden = upgrade.summary.total - Math.min(urgent.length, ADVISORIES_SHOWN)
+	const isEndOfLife = upgrade.entry.posture.status === "end_of_life"
+	return h.li(
+		[h.Class("flex flex-col gap-2 py-3"), h.Key(upgrade.key)],
+		[
+			h.div(
+				[h.Class("flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1")],
+				[
+					h.span(
+						[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2")],
+						[
+							h.span(
+								[h.Class("font-medium")],
+								[`${runtimeLabelOf(upgrade.entry)} ${upgrade.entry.row.runtimeVersion}`],
+							),
+							h.span(
+								[h.Class("truncate text-xs text-muted-foreground")],
+								[upgrade.services.join(", ")],
+							),
+						],
+					),
+					h.span(
+						[h.Class("flex items-center gap-2 text-sm")],
+						[
+							h.span(
+								[h.Class("text-xs text-muted-foreground")],
+								[severityCounts(upgrade.summary.counts)],
+							),
+							h.span([h.Class("font-medium")], [upgradeAdvice(upgrade)]),
+						],
+					),
+				],
+			),
+			...(isEndOfLife
+				? [
+						h.p(
+							[h.Class("text-xs text-severity-error")],
+							[
+								"This release line is end of life and gets no further fixes: move to a supported one.",
+							],
+						),
+					]
+				: []),
+			h.ul(
+				[h.Class("flex flex-col gap-1.5 text-sm")],
+				urgent.slice(0, ADVISORIES_SHOWN).map((advisory) => advisoryRow(h, advisory)),
+			),
+			...(hidden > 0
+				? [
+						h.p(
+							[h.Class("text-xs text-muted-foreground")],
+							[`and ${hidden} more known for this version`],
+						),
+					]
+				: []),
+		],
+	)
+}
+
+const upgradesPanel = (h: H, upgrades: ReadonlyArray<CriticalUpgrade>): Html =>
+	panel(h, { className: "overflow-hidden border-severity-error-a3" }, [
+		panelHeader(h, {
+			className: "bg-severity-error-a1",
+			title: h.span(
+				[h.Class("flex items-center gap-2")],
+				[
+					icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
+					upgrades.length === 1
+						? "1 runtime version to upgrade now"
+						: `${upgrades.length} runtime versions to upgrade now`,
+				],
+			),
+		}),
+		h.p([h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")], [UPGRADES_COPY]),
+		h.ul(
+			[h.Class("divide-y divide-border px-4 pb-1")],
+			upgrades.map((upgrade) => upgradeItem(h, upgrade)),
+		),
+	])
 
 const runtimesEmpty = (h: H): Html =>
 	empty(
@@ -284,8 +488,10 @@ export const runtimesBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 			const entries = runtimeEntries(runtimes)
 			if (entries.length === 0) return [runtimesEmpty(h)]
 			const hasNoVersion = entries.some((entry) => entry.posture.status === "no_version")
+			const upgrades = criticalUpgrades(entries)
 			return [
 				totalsRail(h, entries),
+				...(upgrades.length > 0 ? [upgradesPanel(h, upgrades)] : []),
 				...(hasNoVersion ? [noVersionNote(h)] : []),
 				h.div(
 					[h.Class("flex flex-col gap-2")],

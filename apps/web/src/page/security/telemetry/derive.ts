@@ -1,4 +1,11 @@
 import {
+	type AdvisorySummary,
+	advisoryKey,
+	advisoryTargetOf,
+	type RuntimeAdvisory,
+	summarizeAdvisories,
+} from "@maple/domain/runtime-advisories"
+import {
 	type RuntimePosture,
 	RUNTIME_PRODUCTS,
 	type RuntimeProduct,
@@ -213,18 +220,54 @@ const STATUS_RANK = {
 
 type RuntimeRow = Runtimes["runtimes"][number]
 
+/** What OSV knows about a row's runtime version. */
+export type RuntimeVulnerabilities =
+	/** No version to look up, or a runtime OSV does not cover (Bun, Deno, Workers). */
+	| { readonly status: "not_covered" }
+	/** The advisory read failed. */
+	| { readonly status: "unavailable"; readonly key: string }
+	| {
+			readonly status: "checked"
+			readonly key: string
+			readonly advisories: ReadonlyArray<RuntimeAdvisory>
+			readonly summary: AdvisorySummary
+	  }
+
 export interface RuntimeEntry {
 	readonly row: RuntimeRow
 	readonly posture: RuntimePosture
+	readonly vulnerabilities: RuntimeVulnerabilities
 }
 
 const releasesFor = (runtimes: Runtimes) => (product: RuntimeProduct) => runtimes.releases[product]
 
+const vulnerabilitiesOf = (runtimes: Runtimes, row: RuntimeRow): RuntimeVulnerabilities => {
+	const target = advisoryTargetOf(row)
+	if (target === undefined) return { status: "not_covered" }
+	const key = advisoryKey(target)
+	const advisories = runtimes.advisories[key]
+	return advisories === undefined
+		? { status: "unavailable", key }
+		: { status: "checked", key, advisories, summary: summarizeAdvisories(advisories) }
+}
+
+/** Critical, then high, then everything else: a known critical CVE outranks an end-of-life date. */
+const urgencyRank = (vulnerabilities: RuntimeVulnerabilities): number => {
+	if (vulnerabilities.status !== "checked") return 2
+	if (vulnerabilities.summary.counts.critical > 0) return 0
+	return vulnerabilities.summary.counts.high > 0 ? 1 : 2
+}
+
 export const runtimeEntries = (runtimes: Runtimes): ReadonlyArray<RuntimeEntry> =>
 	runtimes.runtimes
-		.map((row) => ({ row, posture: runtimePosture(row, releasesFor(runtimes)) }))
+		.map((row) => ({
+			row,
+			posture: runtimePosture(row, releasesFor(runtimes)),
+			vulnerabilities: vulnerabilitiesOf(runtimes, row),
+		}))
 		.sort(
 			(a, b) =>
+				urgencyRank(a.vulnerabilities) - urgencyRank(b.vulnerabilities) ||
 				STATUS_RANK[a.posture.status] - STATUS_RANK[b.posture.status] ||
 				a.row.service.localeCompare(b.row.service) ||
 				a.row.environment.localeCompare(b.row.environment),
@@ -232,6 +275,8 @@ export const runtimeEntries = (runtimes: Runtimes): ReadonlyArray<RuntimeEntry> 
 
 export interface RuntimeTotals {
 	readonly services: number
+	/** Services on a version with a critical or high CVE. */
+	readonly urgent: number
 	readonly endOfLife: number
 	readonly behind: number
 	readonly noVersion: number
@@ -242,6 +287,7 @@ export const runtimeTotals = (entries: ReadonlyArray<RuntimeEntry>): RuntimeTota
 		distinct(entries.filter((entry) => entry.posture.status === status).map((entry) => entry.row.service))
 	return {
 		services: distinct(entries.map((entry) => entry.row.service)),
+		urgent: distinct(entries.filter(isUrgent).map((entry) => entry.row.service)),
 		endOfLife: servicesWith("end_of_life"),
 		behind: servicesWith("behind"),
 		noVersion: servicesWith("no_version"),
@@ -265,4 +311,50 @@ export const runtimeLabelOf = (entry: RuntimeEntry): string => {
 export const sdkLabelOf = (row: RuntimeRow): string => {
 	const named = [row.sdkName, row.sdkVersion].filter((part) => part.trim() !== "").join(" ")
 	return named !== "" ? named : row.sdkLanguage
+}
+
+type CheckedEntry = RuntimeEntry & {
+	readonly vulnerabilities: Extract<RuntimeVulnerabilities, { status: "checked" }>
+}
+
+const isUrgent = (entry: RuntimeEntry): entry is CheckedEntry =>
+	entry.vulnerabilities.status === "checked" && entry.vulnerabilities.summary.urgent
+
+/** One runtime version with a critical or high CVE, and every service that runs it. */
+export interface CriticalUpgrade {
+	readonly key: string
+	/** The first entry on this version, worst posture first. */
+	readonly entry: RuntimeEntry
+	readonly advisories: ReadonlyArray<RuntimeAdvisory>
+	readonly summary: AdvisorySummary
+	readonly services: ReadonlyArray<string>
+}
+
+/** Versions to upgrade now: most critical CVEs first, then most high, then most services. */
+export const criticalUpgrades = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray<CriticalUpgrade> => {
+	const byKey = entries.filter(isUrgent).reduce((groups, entry) => {
+		const key = entry.vulnerabilities.key
+		return groups.set(key, [...(groups.get(key) ?? []), entry])
+	}, new Map<string, ReadonlyArray<CheckedEntry>>())
+	return [...byKey.entries()]
+		.flatMap(([key, group]): ReadonlyArray<CriticalUpgrade> => {
+			const entry = group[0]
+			if (entry === undefined) return []
+			return [
+				{
+					key,
+					entry,
+					advisories: entry.vulnerabilities.advisories,
+					summary: entry.vulnerabilities.summary,
+					services: [...new Set(group.map((member) => member.row.service))],
+				},
+			]
+		})
+		.sort(
+			(a, b) =>
+				b.summary.counts.critical - a.summary.counts.critical ||
+				b.summary.counts.high - a.summary.counts.high ||
+				b.services.length - a.services.length ||
+				a.key.localeCompare(b.key),
+		)
 }

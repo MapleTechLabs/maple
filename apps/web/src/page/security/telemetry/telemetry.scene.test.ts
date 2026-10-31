@@ -167,9 +167,10 @@ describe("security telemetry tabs", () => {
 		const runtimes = model.runtimes.data
 		expect(runtimes._tag).toBe("Success")
 		if (runtimes._tag !== "Success") return
+		// A critical CVE outranks an end-of-life date.
 		expect(runtimeEntries(runtimes.data).map((entry) => entry.row.service)).toEqual([
-			"checkout-api",
 			"payments",
+			"checkout-api",
 			"inventory",
 			"search",
 			"ledger",
@@ -190,6 +191,26 @@ describe("security telemetry tabs", () => {
 			expectView(text("Bun")).toExist(),
 			expectView(text("Some services report no runtime version")).toExist(),
 			expectView(role("link", { name: "endoflife.date" })).toExist(),
+		)
+	})
+
+	test("runtime versions with critical or high CVEs list the CVEs and the version that fixes them", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes()),
+			expectView(text("2 runtime versions to upgrade now")).toExist(),
+			expectView(text("Node.js v22.4.0")).toExist(),
+			expectView(text("Upgrade to 22.22.0 or later")).toExist(),
+			expectView(role("link", { name: "CVE-2025-55130" })).toExist(),
+			expectView(text("fixed in 22.22.0")).toExist(),
+			// Node.js 16 is end of life and one of its advisories has no fix in any line it can reach.
+			expectView(text("Upgrade to 18.20.1 or later · 1 without a fix yet")).toExist(),
+			expectView(text(/release line is end of life/)).toExist(),
+			// Python's only advisory is medium: listed in the table, not as an upgrade to make now.
+			expectView(role("link", { name: "CVE-2025-0938" })).toBeAbsent(),
+			expectView(text("1 medium")).toExist(),
+			expectView(text("None known")).toExist(),
+			expectView(role("link", { name: "OSV.dev" })).toExist(),
 		)
 	})
 
