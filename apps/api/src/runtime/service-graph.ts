@@ -1,3 +1,4 @@
+import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { Layer } from "effect"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -163,6 +164,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	RuntimeReleaseCatalog.layer,
 	TelemetryReadService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
