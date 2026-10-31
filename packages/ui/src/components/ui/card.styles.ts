@@ -1,5 +1,5 @@
 export const cardStyles =
-	"relative flex flex-col rounded-md border bg-card not-dark:bg-clip-padding text-card-foreground shadow-xs/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+	"relative flex flex-col rounded-md border bg-card not-dark:bg-clip-padding text-card-foreground shadow-raised before:pointer-events-none before:absolute before:inset-0 before:rounded-md-inset before:shadow-control"
 
 export const cardHeaderStyles =
 	"grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 p-4 in-[[data-slot=card]:has(>[data-slot=card-panel])]:pb-3 has-data-[slot=card-action]:grid-cols-[1fr_auto]"

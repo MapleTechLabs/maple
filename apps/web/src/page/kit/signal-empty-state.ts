@@ -73,7 +73,7 @@ export const docsLink = <M>(h: HtmlBuilder<M>, page: DocsPage, label = "Read the
 	h.a(
 		[
 			h.Class(
-				"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline",
+				"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
 			),
 			h.Href(docsUrl(page)),
 			h.Target("_blank"),

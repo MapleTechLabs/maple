@@ -99,7 +99,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 							isReadOnly
 								? null
 								: isInteractive
-									? "cursor-pointer hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"
+									? "cursor-pointer hover:border-primary active:border-primary focus-visible:ring-2 focus-visible:ring-ring"
 									: "cursor-not-allowed opacity-60",
 							// The dashed outline is a drop cue: shown on hover, focus and drag, not at rest.
 							options.isDragging ? "border-primary ring-2 ring-primary" : "border-transparent",
@@ -128,7 +128,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 								h.div(
 									[
 										h.Class(
-											"absolute inset-0 flex items-center justify-center rounded-md bg-primary/10 text-center text-3xs font-medium text-primary",
+											"absolute inset-0 flex items-center justify-center rounded-md bg-primary-a2 text-center text-3xs font-medium text-primary",
 										),
 									],
 									["Drop image"],

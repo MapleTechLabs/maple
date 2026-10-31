@@ -127,7 +127,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 							// The native title carries the shortcut hint, so no tooltip trigger per row.
 							hasTooltip: false,
 							// No coarse-pointer hit area: it would cover the span label beside it.
-							className: "text-muted-foreground hover:text-foreground pointer-coarse:after:hidden",
+							className: "text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 							attributes: [
 								h.Tabindex(-1),
 								h.Title(`${verb} — ⌥ for the whole subtree`),
@@ -351,11 +351,11 @@ export const timelineRow = (h: H, bar: Bar, state: RowState): Html => {
 				h,
 				cn(
 					"absolute left-0 right-0 flex items-stretch cursor-pointer select-none",
-					"hover:bg-surface-sunken",
+					"hover:bg-surface-sunken active:bg-surface-sunken",
 					state.isHovered && "bg-surface-sunken",
-					state.isSelected && "bg-primary/10",
+					state.isSelected && "bg-primary-a2",
 					state.isFocused && "ring-1 ring-inset ring-primary/60",
-					state.isMatched && "ring-1 ring-inset ring-primary/40",
+					state.isMatched && "ring-1 ring-inset ring-primary-a4",
 					state.isDimmed && "opacity-40",
 				),
 			),

@@ -57,7 +57,7 @@ const heading = (h: H, isReactivating: boolean): Html =>
 								pill: true,
 								size: "lg",
 								className:
-									"mb-6 gap-2 border-primary/20 bg-primary/5 px-3 text-2xs tracking-wider text-primary uppercase sm:text-2xs",
+									"mb-6 gap-2 border-primary-a3 bg-primary-a1 px-3 text-2xs tracking-wider text-primary uppercase sm:text-2xs",
 							},
 							[
 								icon(h, "RocketIcon", { size: 14, className: "size-3.5" }),
@@ -120,7 +120,7 @@ export const view = (h: H, model: Model, customer: BillingCustomer | undefined):
 					h.div(
 						[
 							h.Class(
-								"absolute top-[20%] left-[50%] -translate-x-1/2 -translate-y-1/2 size-[40rem] rounded-full bg-primary/5 blur-[100px]",
+								"absolute top-[20%] left-[50%] -translate-x-1/2 -translate-y-1/2 size-[40rem] rounded-full bg-primary-a1 blur-[100px]",
 							),
 						],
 						[],

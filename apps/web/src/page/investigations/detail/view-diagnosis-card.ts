@@ -141,7 +141,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 					]),
 			reportSheet(h, model, report, trigger),
 		],
-		"gap-4 border-primary/20 bg-card/60 p-5",
+		"gap-4 border-primary-a3 bg-card/60 p-5",
 	)
 }
 
@@ -154,7 +154,7 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 			h.button(
 				[
 					h.Class(
-						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-sunken",
+						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 					h.Type("button"),
 					h.OnClick(Message.ClickedReportAction({ index: action.index })),

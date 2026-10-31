@@ -288,7 +288,7 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 											h.div(
 												[
 													h.Class(
-														"rounded-md bg-severity-error/10 px-3 py-2 text-xs text-foreground",
+														"rounded-md bg-severity-error-a2 px-3 py-2 text-xs text-foreground",
 													),
 												],
 												[

@@ -132,7 +132,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 										),
 									),
 									h.Class(
-										"group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 transition-colors last:border-0 hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+										"group flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 									),
 								],
 								[
@@ -231,7 +231,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 											),
 										),
 										h.Class(
-											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 										),
 									],
 									[
@@ -268,7 +268,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 								[
 									h.Href(hrefOf(AppRoute.InfraGcp({ search: { tab: GCP_RESOURCES_TAB } }))),
 									h.Class(
-										"inline-flex shrink-0 items-center gap-1 text-foreground hover:text-primary",
+										"inline-flex shrink-0 items-center gap-1 text-foreground hover:text-primary active:text-primary",
 									),
 								],
 								[

@@ -77,11 +77,11 @@ const healthDot = (h: HtmlBuilder<Message>, health: ServiceHealth | undefined): 
 const environmentBadge = (h: HtmlBuilder<Message>, environment: string): Html => {
 	const tint =
 		environment.toLowerCase() === "production"
-			? "bg-severity-warn/15 text-severity-warn"
+			? "bg-severity-warn-a2 text-severity-warn"
 			: environment.toLowerCase() === "staging"
 				? "bg-chart-p50/15 text-chart-p50"
 				: environment.toLowerCase() === "development"
-					? "bg-severity-debug/15 text-severity-debug"
+					? "bg-severity-debug-a2 text-severity-debug"
 					: ""
 	return badge(h, { variant: "secondary", className: tint }, [environment])
 }
@@ -213,7 +213,7 @@ const serviceRow = (
 				"class",
 				cn(
 					tableRowStyles,
-					"cursor-pointer border-l-2 border-l-transparent hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+					"cursor-pointer border-l-2 border-l-transparent hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 					health === "unhealthy" && "border-l-severity-error",
 				),
 			),
@@ -229,7 +229,7 @@ const serviceRow = (
 				h.a(
 					[
 						h.Class(
-							"flex max-w-full items-center gap-1.5 font-medium text-foreground hover:underline",
+							"flex max-w-full items-center gap-1.5 font-medium text-foreground hover:underline active:underline",
 						),
 						h.Href(serviceHref(ctx.model, service)),
 						h.Title(service.serviceName),
@@ -430,7 +430,7 @@ const desktopTable = (
 			: groupServices(services, mode).flatMap(([namespace, envGroups]) => [
 					...(mode === "namespace"
 						? [
-								groupHeaderRow(h, `ns-${namespace}`, "bg-surface-sunken hover:bg-surface-strong", [
+								groupHeaderRow(h, `ns-${namespace}`, "bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong", [
 									namespaceLabel(h, namespace),
 									h.span(
 										[h.Class("text-xs text-muted-foreground")],
@@ -448,7 +448,7 @@ const desktopTable = (
 						groupHeaderRow(
 							h,
 							`env-${namespace}-${environment}`,
-							"bg-surface-sunken hover:bg-surface-strong",
+							"bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
 							[
 								environmentBadge(h, environment),
 								h.span(
@@ -556,7 +556,7 @@ const mobileList = (
 													),
 													h.Href(serviceHref(ctx.model, service)),
 													h.Class(
-														"flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+														"flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 													),
 												],
 												[

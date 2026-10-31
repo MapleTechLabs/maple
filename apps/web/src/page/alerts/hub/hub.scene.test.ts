@@ -182,7 +182,7 @@ describe("alerts hub", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed.model),
-			expectView(text("Failed to update the rule. Try again.")).toExist(),
+			expectView(text("Couldn't update the rule. Try again.")).toExist(),
 		)
 	})
 

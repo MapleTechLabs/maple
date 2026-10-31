@@ -196,7 +196,7 @@ describe("onboarding connect drawer", () => {
 		)
 		expect(failed.outMessage).toMatchObject({
 			_tag: "RequestedConnectFlowOut",
-			out: { _tag: "RequestedToast", type: "error", title: "Failed to create source" },
+			out: { _tag: "RequestedToast", type: "error", title: "Couldn't create source" },
 		})
 		expect(failed.model.drawer?.dialog.isOpen).toBe(true)
 	})

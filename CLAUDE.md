@@ -174,4 +174,4 @@ form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
 `ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
-`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`).
+`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`).

@@ -246,7 +246,7 @@ export const completedDisconnect = (
 			model: settled,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to disconnect",
+				title: "Couldn't disconnect",
 				description: failure?.message ?? "",
 			}),
 		}

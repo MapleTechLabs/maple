@@ -221,7 +221,7 @@ const fireRail = (
 						h.Key(mark.key),
 						h.Class(
 							cn(
-								"absolute inset-y-0 min-w-0.5 rounded-[1px]",
+								"absolute inset-y-0 min-w-0.5 rounded-2xs",
 								tone === "crit" ? "bg-severity-error" : "bg-foreground-subtle",
 							),
 						),

@@ -69,7 +69,7 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 			h.Class(
 				cn(
 					"group/row relative flex h-9 items-center gap-2 pr-3 pl-3 text-sm",
-					"hover:bg-surface-sunken",
+					"hover:bg-surface-sunken active:bg-surface-sunken",
 					"data-focused:bg-surface-sunken",
 					"transition-colors",
 				),
@@ -196,7 +196,7 @@ const linkedIssueChip = <M>(h: HtmlBuilder<M>, issueId: ErrorIssueId): Html =>
 						pill: true,
 						size: "sm",
 						mono: false,
-						className: cn(META_CHIP_CLASS, "z-10 hidden gap-1 sm:inline-flex hover:border-border hover:text-foreground"),
+						className: cn(META_CHIP_CLASS, "z-10 hidden gap-1 sm:inline-flex hover:border-border active:border-border hover:text-foreground active:text-foreground"),
 					}),
 				),
 			),

@@ -82,7 +82,7 @@ export const refreshControls = <M>(h: HtmlBuilder<M>, options: RefreshControlsOp
 											[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
 											[formatRefreshInterval(seconds)],
 										),
-										icon(h, "ChevronDownIcon", { className: "size-3.5 opacity-60" }),
+										icon(h, "ChevronDownIcon", { className: "size-3.5" }),
 									],
 								),
 							),

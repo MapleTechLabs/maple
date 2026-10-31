@@ -298,7 +298,7 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 					h.AriaExpanded(isExpanded),
 					h.OnClick(Message.ToggledDrift({ name: entry.name })),
 					h.Class(
-						"hover:bg-surface-sunken flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+						"hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-3 py-2 text-left text-xs",
 					),
 				],
 				[
@@ -415,7 +415,7 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 							h.AriaExpanded(model.showUpToDate),
 							h.OnClick(Message.ToggledUpToDate()),
 							h.Class(
-								"hover:bg-surface-sunken flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs transition-colors",
+								"hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs",
 							),
 						],
 						[

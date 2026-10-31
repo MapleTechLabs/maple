@@ -69,7 +69,7 @@ const title = (h: H, model: Model, name: string): Html => {
 		{
 			title: shown,
 			className: cn(
-				!isReadOnly && "cursor-pointer hover:text-foreground-soft",
+				!isReadOnly && "cursor-pointer hover:text-foreground-soft active:text-foreground-soft",
 				isBlank && "text-muted-foreground",
 			),
 			attributes: [

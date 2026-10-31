@@ -100,7 +100,7 @@ const tooltip = (h: H, hovered: Step, prev: Step, left: number, unit: string | u
 	h.div(
 		[
 			h.Class(
-				"pointer-events-none absolute top-5 z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-md",
+				"pointer-events-none absolute top-5 z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-popup",
 			),
 			h.Style({ left: `${left}px`, width: `${TIP_W}px` }),
 			h.DataAttribute("slot", "funnel-dropoff-tooltip"),
@@ -219,7 +219,7 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 	return h.span(
 		[
 			h.Class(
-				"absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-xs ring-1 ring-border-subtle",
+				"absolute bottom-1.5 left-1.5 flex items-center gap-2 rounded-md bg-card/95 px-1.5 py-1 text-2xs leading-none tabular-nums whitespace-nowrap shadow-raised ring-1 ring-border-subtle",
 			),
 			h.DataAttribute("slot", "funnel-dropoff-pill"),
 		],

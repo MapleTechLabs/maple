@@ -97,7 +97,7 @@ export const accountsStrip = (
 					h.Type("button"),
 					h.OnClick(Message.ClickedAccount({ accountId: account.accountId })),
 					h.Class(
-						"flex flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
+						"flex flex-1 flex-col gap-2 border-b px-4 py-3 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
 					),
 				],
 				[
@@ -143,7 +143,7 @@ export const accountHealthLine = (h: H, account: CloudflareAccount): Html | null
 					h.Class(
 						cn(
 							"flex items-center gap-2 rounded-md px-3 py-2 text-xs",
-							account.health.tone === "crit" ? "bg-severity-error/10" : "bg-severity-warn/10",
+							account.health.tone === "crit" ? "bg-severity-error-a2" : "bg-severity-warn-a2",
 						),
 					),
 				],

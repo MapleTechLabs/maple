@@ -232,7 +232,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 	const isPaused = displayStatus(monitor) === "paused"
 	const recent = monitor.state.recent
 	return h.li(
-		[h.Key(monitor.id), h.Class("relative py-3 pr-2 pl-4 hover:bg-surface-faint")],
+		[h.Key(monitor.id), h.Class("relative py-3 pr-2 pl-4 hover:bg-surface-faint active:bg-surface-faint")],
 		[
 			h.div(
 				[h.Class(ROW_GRID)],

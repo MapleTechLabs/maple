@@ -137,7 +137,7 @@ const body = (
 				[
 					h.AriaOrientation("vertical"),
 					h.Class(
-						"absolute top-0 bottom-0 z-30 w-1 -ml-0.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 pointer-coarse:hidden",
+						"absolute top-0 bottom-0 z-30 w-1 -ml-0.5 cursor-col-resize bg-transparent hover:bg-primary-a3 active:bg-primary-a3 pointer-coarse:hidden",
 					),
 					h.Role("separator"),
 					h.Style({ left: `${sidebarWidth}px` }),

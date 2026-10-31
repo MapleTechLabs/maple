@@ -59,9 +59,9 @@ export const sortColumnHead = (
 }
 
 const BAR_TONE = {
-	calls: "bg-severity-info/20",
-	errors: "bg-severity-error/25",
-	latency: "bg-severity-warn/20",
+	calls: "bg-severity-info-a3",
+	errors: "bg-severity-error-a3",
+	latency: "bg-severity-warn-a3",
 } as const
 
 /** `BarCell`: a numeric cell over a column-tinted distribution bar. */

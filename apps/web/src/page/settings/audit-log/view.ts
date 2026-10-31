@@ -154,7 +154,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 									h.OnClick(Message.ClickedRangePreset({ value: option.key })),
 									h.Class(
 										cn(
-											"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-surface-sunken",
+											"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 											option.key === activeKey
 												? "font-medium text-foreground"
 												: "text-foreground-soft",
@@ -170,7 +170,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 								h.Type("button"),
 								h.Class(
 									cn(
-										"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-surface-sunken hover:text-foreground",
+										"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 										range.kind === "custom"
 											? "font-medium text-foreground"
 											: "text-muted-foreground",
@@ -281,7 +281,7 @@ const resourceCell = (h: H, entry: V2AuditLogEntry): Html => {
 		[
 			h.Href(resourceHref(display.link)),
 			h.Class(
-				"relative z-10 block truncate text-xs text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground",
+				"relative z-10 block truncate text-xs text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
 			),
 			h.Title(display.text),
 		],
@@ -300,7 +300,7 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 			h.div(
 				[
 					h.Class(
-						"hover:bg-surface-sunken relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors @md:flex-nowrap",
+						"hover:bg-surface-sunken active:bg-surface-sunken relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 @md:flex-nowrap",
 					),
 				],
 				[

@@ -121,7 +121,7 @@ const step = <M>(h: HtmlBuilder<M>, direction: "previous" | "next", target: Opti
 		[
 			h.Class(
 				cn(
-					"pointer-events-auto absolute start-0 z-10 inline-flex opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100",
+					"pointer-events-auto absolute start-0 z-10 inline-flex opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100 active:opacity-100",
 					previous ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]",
 				),
 			),
@@ -175,7 +175,7 @@ export const turnMinimap = <M>(
 					"pointer-events-none absolute inset-y-0 start-0 z-30 hidden w-full [@media(pointer:fine)]:block",
 					hasPersistentGutter(state.railWidth)
 						? "opacity-100"
-						: "opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100",
+						: "opacity-0 transition-opacity duration-150 focus-within:opacity-100 hover:opacity-100 active:opacity-100",
 				),
 			),
 			h.DataAttribute("slot", "turn-minimap"),
@@ -252,7 +252,7 @@ export const turnMinimap = <M>(
 												h.span(
 													[
 														h.Class(
-															"block rounded-lg border border-border bg-popover p-3 text-start text-popover-foreground shadow-md",
+															"block rounded-lg border border-border bg-popover p-3 text-start text-popover-foreground shadow-popup",
 														),
 													],
 													[

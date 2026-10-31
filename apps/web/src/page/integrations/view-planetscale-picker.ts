@@ -71,7 +71,7 @@ const optionCard = (h: H, name: string, isChecked: boolean): Html =>
 							"items-start gap-3 p-4",
 							!isChecked
 								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
-								: "border-primary bg-primary/5",
+								: "border-primary bg-primary-a1",
 						),
 					),
 				],

@@ -26,7 +26,7 @@ const filterAction = (h: H, label: string, onClick: Message, text: string): Html
 const commitShaValue = (h: H, id: string, value: string): Html => {
 	const className = cn(
 		"cursor-pointer",
-		"-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 transition-colors hover:bg-surface-sunken",
+		"-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken",
 	)
 	const onClick = h.OnClick(Message.ClickedCopy({ id, text: value }))
 	return FULL_SHA.test(value)
@@ -53,7 +53,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 			h.button(
 				[
 					h.Class(
-						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-surface-sunken rounded-sm px-0.5 -mx-0.5 transition-colors",
+						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken rounded-sm px-0.5 -mx-0.5",
 					),
 					h.Title(isOpen ? "Collapse" : "Expand JSON"),
 					h.Type("button"),
@@ -144,7 +144,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 	return h.div(
 		[
 			h.Class(
-				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-surface-sunken",
+				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -319,7 +319,7 @@ export const attributesSection = (
 										h.AriaDisabled(false),
 										h.AriaExpanded(isInternalOpen),
 										h.Class(
-											"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground transition-colors group",
+											"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground group",
 										),
 										...(isInternalOpen ? [h.DataAttribute("panel-open", "")] : []),
 										h.DataAttribute("slot", "collapsible-trigger"),

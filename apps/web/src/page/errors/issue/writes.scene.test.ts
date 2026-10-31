@@ -101,7 +101,7 @@ describe("error issue writes", () => {
 				result: Result.fail(toLoadFailure("boom")),
 			}),
 		)
-		expect(done.outMessage).toMatchObject({ type: "error", title: "Failed to release issue" })
+		expect(done.outMessage).toMatchObject({ type: "error", title: "Couldn't release issue" })
 		expect(done.commands ?? []).toEqual([])
 	})
 

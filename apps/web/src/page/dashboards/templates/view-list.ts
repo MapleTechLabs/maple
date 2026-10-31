@@ -51,7 +51,7 @@ const templateRow = (
 				cn(
 					"flex min-h-9 w-full items-center text-left transition-colors",
 					rowSelectedClass(isSelected),
-					!isSelected && "hover:bg-surface-sunken",
+					!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
 				),
 			),
 		],
@@ -316,7 +316,7 @@ export const templateList = (
 					h.Type("button"),
 					h.OnClick(Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID })),
 					h.Class(
-						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left transition-colors hover:bg-surface-sunken",
+						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 				],
 				[

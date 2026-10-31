@@ -8,7 +8,7 @@ import type { SortDir } from "../../kit/table-sort"
 // `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
 
 export const ROW_LINK_CLASS =
-	"group flex items-center gap-4 border-b border-border-subtle px-4 py-3 transition-colors last:border-0 hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none"
+	"group flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none"
 
 /** A sortable head's state: `null` sort is the skeleton's inert head (no current key). */
 export const headSort = <M, K extends string>(
@@ -54,7 +54,7 @@ export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>):
 									"inline-flex items-center gap-1 transition-colors",
 									sort.isActive
 										? "text-foreground"
-										: "text-muted-foreground hover:text-foreground",
+										: "text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							),
 						],

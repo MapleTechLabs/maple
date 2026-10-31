@@ -79,7 +79,7 @@ const liveBar = (h: H, isEdge: boolean): Html =>
 			h.AriaHidden(true),
 			h.Class(
 				cn(
-					"overflow-hidden bg-primary/20",
+					"overflow-hidden bg-primary-a3",
 					isEdge
 						? "absolute inset-x-0 bottom-0 h-[3px]"
 						: "relative block h-[3px] w-full shrink-0 rounded-full",
@@ -235,7 +235,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 			? h.a(
 					[
 						h.Href(data.href),
-						h.Class(cn(shell, "transition-colors hover:border-primary/60")),
+						h.Class(cn(shell, "hover:border-primary/60 active:border-primary/60")),
 						h.Title(data.titleHint ?? data.title),
 						nodeLink(h),
 					],
@@ -326,7 +326,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 				h.OnClick(Message.ClickedAction({ index: data.index })),
 				h.OnKeyDownPreventDefault(openKey(data.index)),
 				h.Class(
-					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 hover:border-primary/60 active:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
 				),
 			],
 			[
@@ -360,7 +360,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 												[
 													h.Href(data.target.href),
 													h.Class(
-														"shrink-0 text-4xs font-medium tracking-wider text-primary hover:underline",
+														"shrink-0 text-4xs font-medium tracking-wider text-primary hover:underline active:underline",
 													),
 													nodeLink(h),
 												],
@@ -511,7 +511,7 @@ export const edgeLabel = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | 
 	)
 }
 
-const CONTROL = "flex size-6.5 items-center justify-center text-muted-foreground hover:text-foreground"
+const CONTROL = "flex size-6.5 items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
 
 /** The four zoom buttons: the wheel scrolls the page here. */
 const controls = (h: H): Html =>

@@ -21,7 +21,7 @@ const zoneRow = (h: H, accountId: string, zone: ZoneChoice["zones"][number]): Ht
 		[
 			h.Key(inputId),
 			h.Id(Checkbox.labelId(inputId)),
-			h.Class("flex min-w-0 items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-surface-sunken"),
+			h.Class("flex min-w-0 items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-surface-sunken active:bg-surface-sunken"),
 		],
 		[
 			...Checkbox.view(h, {

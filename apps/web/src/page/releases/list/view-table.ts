@@ -193,7 +193,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 								],
 								[day],
 							),
-						], "hover:bg-transparent", [h.Key(`day:${group.commitSha}`)]),
+						], "hover:bg-transparent active:bg-transparent", [h.Key(`day:${group.commitSha}`)]),
 					]
 				: []),
 			tableRow(
@@ -212,7 +212,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 											label: isOpen ? "Hide services" : "Show services",
 											hasTooltip: false,
 											className: cn(
-												"mt-1 text-foreground-subtle transition-transform hover:text-foreground",
+												"mt-1 text-foreground-subtle transition-transform hover:text-foreground active:text-foreground",
 												isOpen && "rotate-90",
 												group.services.length <= 1 && "invisible",
 											),
@@ -279,7 +279,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 										h.a(
 											[
 												h.Href(href(group.commitSha, service.serviceName, service.environment)),
-												h.Class("inline-flex max-w-full items-center gap-2 text-xs hover:underline"),
+												h.Class("inline-flex max-w-full items-center gap-2 text-xs hover:underline active:underline"),
 											],
 											[
 												serviceDot(h, { serviceName: service.serviceName }),

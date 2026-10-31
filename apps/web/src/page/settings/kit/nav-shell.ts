@@ -21,7 +21,7 @@ const rowClass = (isActive: boolean) =>
 		"group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors text-left",
 		isActive
 			? "bg-accent text-accent-foreground font-medium"
-			: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground",
+			: "text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 	)
 
 const activeIndicator = <M>(h: HtmlBuilder<M>): Html =>

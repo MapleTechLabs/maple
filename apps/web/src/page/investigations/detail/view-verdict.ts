@@ -366,7 +366,7 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 				? h.div(
 						[
 							h.Class(
-								"flex items-start gap-3 rounded-md border border-severity-error/25 bg-severity-error/6 p-3",
+								"flex items-start gap-3 rounded-md border border-severity-error-a3 bg-severity-error-a1 p-3",
 							),
 						],
 						[
@@ -375,7 +375,7 @@ const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: num
 								{
 									size: "xs",
 									mono: true,
-									className: "mt-0.5 bg-severity-error/12 text-severity-error",
+									className: "mt-0.5 bg-severity-error-a2 text-severity-error",
 								},
 								["reason"],
 							),

@@ -34,7 +34,7 @@ const highlighted = (h: H, value: string): Html =>
 		[h.Class("break-all")],
 		segmentsOf(value).map((segment) =>
 			segment.isReplacement
-				? h.mark([h.Class("bg-severity-info/15 text-foreground rounded-sm px-0.5")], [segment.text])
+				? h.mark([h.Class("bg-severity-info-a2 text-foreground rounded-sm px-0.5")], [segment.text])
 				: segment.text,
 		),
 	)

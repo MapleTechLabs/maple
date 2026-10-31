@@ -46,13 +46,13 @@ const RevokeSession = Command.define("RevokeClerkSession", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedRevoke],
 	execute: ({ id }) =>
-		withUserReverified("Failed to sign out that session", (user) =>
+		withUserReverified("Couldn't sign out that session", (user) =>
 			user.getSessions().then((sessions) =>
 				Option.match(
 					Array.findFirst(sessions, (session) => session.id === id),
 					{
 						onNone: () =>
-							Promise.reject(new ClerkActionError({ message: "Failed to sign out that session", cause: undefined })),
+							Promise.reject(new ClerkActionError({ message: "Couldn't sign out that session", cause: undefined })),
 						onSome: (session) => session.revoke(),
 					},
 				),

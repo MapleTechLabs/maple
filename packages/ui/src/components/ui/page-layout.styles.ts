@@ -13,7 +13,7 @@ export const pageHeaderActionsStyles = "min-w-0 @2xl/page:shrink-0"
 
 export const pageStickyAreaStyles = "shrink-0 space-y-4 p-4 transition-shadow"
 
-export const pageStickyAreaScrolledStyles = "shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+export const pageStickyAreaScrolledStyles = "shadow-popup"
 
 export const pageBodyStyles = "flex min-h-0 flex-1 overflow-hidden"
 

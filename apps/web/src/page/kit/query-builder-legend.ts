@@ -39,7 +39,7 @@ const compactStrip = <M>(h: HtmlBuilder<M>, options: QueryBuilderLegendOptions<M
 					h.OnClick(options.onToggle(entry.key)),
 					h.Class(
 						cn(
-							"hover:bg-surface-sunken flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
+							"hover:bg-surface-sunken active:bg-surface-sunken flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
 							options.hidden.includes(entry.key) && "opacity-40",
 						),
 					),
@@ -113,7 +113,7 @@ const statsTable = <M>(h: HtmlBuilder<M>, options: QueryBuilderLegendOptions<M>)
 									h.OnClick(options.onToggle(entry.key)),
 									h.Class(
 										cn(
-											"hover:bg-surface-sunken cursor-pointer select-none",
+											"hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer select-none",
 											options.hidden.includes(entry.key) && "opacity-40",
 										),
 									),

@@ -48,7 +48,7 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 		[
 			h.a(
 				[
-					h.Class("flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary"),
+					h.Class("flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary active:text-primary"),
 					h.Href(
 						hrefOf(
 							AppRoute.Service({
@@ -109,7 +109,7 @@ const noCallers = (h: H): Html =>
 				h.Href(docsUrl("instrumentation")),
 				h.Target("_blank"),
 				h.Rel("noopener noreferrer"),
-				h.Class("underline underline-offset-2 hover:text-foreground"),
+				h.Class("underline underline-offset-2 hover:text-foreground active:text-foreground"),
 			],
 			["Instrument a service"],
 		),

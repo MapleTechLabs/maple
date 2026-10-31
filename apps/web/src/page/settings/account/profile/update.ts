@@ -21,7 +21,7 @@ const SaveName = Command.define("UpdateClerkUserName", {
 	args: { firstName: Schema.String, lastName: Schema.String },
 	messages: [Message.CompletedSaveName],
 	execute: ({ firstName, lastName }) =>
-		withUser("Failed to update profile", (user) => user.update({ firstName, lastName })).pipe(
+		withUser("Couldn't update profile", (user) => user.update({ firstName, lastName })).pipe(
 			settled((result) => Message.CompletedSaveName({ result })),
 		),
 })
@@ -35,7 +35,7 @@ const SetAvatar = Command.define("SetClerkProfileImage", {
 	args: { file: Schema.NullOr(File.File) },
 	messages: [Message.CompletedSetAvatar],
 	execute: ({ file }) =>
-		withUser(file === null ? "Failed to remove profile picture" : "Failed to update profile picture", (user) =>
+		withUser(file === null ? "Couldn't remove profile picture" : "Couldn't update profile picture", (user) =>
 			user.setProfileImage({ file }),
 		).pipe(settled((result) => Message.CompletedSetAvatar({ isRemoved: file === null, result }))),
 })
@@ -43,7 +43,7 @@ const SetAvatar = Command.define("SetClerkProfileImage", {
 /** `user.delete()`, then `signOut()`: the session is gone with the user. */
 const DeleteAccount = Command.define("DeleteClerkUser", {
 	messages: [Message.CompletedDelete],
-	execute: withUserReverified("Failed to delete account", (user) => user.delete()).pipe(
+	execute: withUserReverified("Couldn't delete account", (user) => user.delete()).pipe(
 		Effect.tap(() => signOutOfClerk),
 		settled((result) => Message.CompletedDelete({ result })),
 	),

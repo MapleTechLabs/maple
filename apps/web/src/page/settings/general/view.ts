@@ -163,7 +163,7 @@ const dataRegionSection = (h: H, org: OrgInfo): Html => {
 const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 	const leave = leaveEligibilityOf(model)
 	return settingsSection(h, { id: "settings-general-danger", title: "Danger zone", framed: false }, [
-		panel(h, { className: "divide-y border-destructive/40" }, [
+		panel(h, { className: "divide-y border-destructive-a4" }, [
 			h.div(
 				// Top-aligned like the delete row below, whose consequence list runs longer.
 				[h.Class("flex items-start justify-between gap-6 p-4")],

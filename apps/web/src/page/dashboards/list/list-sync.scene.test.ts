@@ -113,9 +113,9 @@ describe("dashboards list write feedback", () => {
 		expect(names(creating.commands)).toEqual([CreateDashboard.name])
 		const failed = pageUpdate(
 			creating.model,
-			Message.CompletedCreateDashboard({ result: Result.fail("Failed to create dashboard") }),
+			Message.CompletedCreateDashboard({ result: Result.fail("Couldn't create dashboard") }),
 		)
-		expect(failed.model.persistenceError).toBe("Failed to create dashboard")
+		expect(failed.model.persistenceError).toBe("Couldn't create dashboard")
 		expect(failed.outMessage).toBeUndefined()
 	})
 

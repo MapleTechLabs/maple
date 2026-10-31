@@ -33,7 +33,7 @@ type H = HtmlBuilder<Message>
 /** A removed connection whose cleanup script was never seen to run. */
 const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 	model.gcpCard.removed.map((entry) =>
-		panel(h, { className: "gap-3 border-severity-warn/32 bg-severity-warn/4 px-4 py-3" }, [
+		panel(h, { className: "gap-3 border-severity-warn-a3 bg-severity-warn-a1 px-4 py-3" }, [
 			h.div(
 				[],
 				[

@@ -69,7 +69,7 @@ export const multiSegmentedSelect = <T extends string, M>(
 							className: cn(
 								"transition-colors",
 								isSelected &&
-									"border-primary/70 data-pressed:border-primary/70 data-pressed:bg-primary/10 data-pressed:text-foreground hover:bg-primary/15 dark:hover:bg-primary/15",
+									"border-primary/70 data-pressed:border-primary/70 data-pressed:bg-primary-a2 data-pressed:text-foreground hover:bg-primary-a2 active:bg-primary-a2 dark:hover:bg-primary-a2 dark:active:bg-primary-a2",
 							),
 						}),
 					),
@@ -185,7 +185,7 @@ export const segmentedSelect = <T extends string, M>(
 									[
 										h.AriaHidden(true),
 										h.Class(
-											"-z-10 absolute inset-0 rounded-md bg-background shadow-sm ring-1 ring-border-subtle dark:bg-input dark:ring-white/10",
+											"-z-10 absolute inset-0 rounded-md bg-background shadow-raised ring-1 ring-border-subtle dark:bg-input dark:ring-white/10",
 										),
 										h.Style({ opacity: "1" }),
 									],

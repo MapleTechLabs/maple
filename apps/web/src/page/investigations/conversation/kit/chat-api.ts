@@ -55,9 +55,9 @@ export const postMessage = (sessionId: string, text: string) =>
 		const response = yield* client.execute(request)
 		if (response.status === 409) return yield* new ChatRequestError({ message: TURN_IN_FLIGHT_MESSAGE })
 		if (response.status < 200 || response.status >= 300)
-			return yield* new ChatRequestError({ message: `Failed to send message: ${response.status}` })
+			return yield* new ChatRequestError({ message: `Couldn't send message: ${response.status}` })
 		return yield* HttpClientResponse.schemaBodyJson(ChatSendResponse)(response)
-	}).pipe(failWith("Failed to send message."))
+	}).pipe(failWith("Couldn't send message."))
 
 /** `POST .../abort`: best effort, the turn settles on its own if it never lands. */
 export const abortTurn = (sessionId: string) =>

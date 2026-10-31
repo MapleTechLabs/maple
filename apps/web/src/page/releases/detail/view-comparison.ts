@@ -227,7 +227,7 @@ const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput<M>, version: Release
 			),
 			h.Class(
 				cn(
-					"flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					version.commitSha === input.currentSha && "bg-surface-strong",
 				),
 			),

@@ -66,7 +66,7 @@ const connectedRow = (
 			h.Type("button"),
 			h.OnClick(onSelect(entry.id)),
 			h.Class(
-				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
 			),
 		],
 		[

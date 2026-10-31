@@ -455,7 +455,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSuccess: () => ({ model }),
 				onFailure: (failure) => ({
 					model,
-					outMessage: errorToast("Failed to update destination", failure),
+					outMessage: errorToast("Couldn't update destination", failure),
 				}),
 			}),
 		ClickedTestDestination: ({ destinationId }) => testDestination(model, destinationId),
@@ -471,7 +471,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: refreshed.commands,
 				outMessage: Result.match(result, {
 					onSuccess: (outcome) => toast(outcome.success ? "success" : "error", outcome.message),
-					onFailure: (failure) => errorToast("Failed to send test notification", failure),
+					onFailure: (failure) => errorToast("Couldn't send test notification", failure),
 				}),
 			}
 		},
@@ -497,7 +497,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onFailure: (failure) => ({
 					model: settled,
-					outMessage: errorToast("Failed to delete destination", failure),
+					outMessage: errorToast("Couldn't delete destination", failure),
 				}),
 			})
 		},

@@ -259,7 +259,7 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 						cn(
 							"flex items-center gap-3 rounded-md border p-3 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 							isChecked
-								? "border-primary bg-primary/5"
+								? "border-primary bg-primary-a1"
 								: "border-border group-hover:border-border-strong",
 						),
 					),
@@ -1020,7 +1020,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 												[
 													h.Href(card.href),
 													h.Class(
-														"mt-auto flex items-center gap-1.5 text-ui text-primary hover:underline",
+														"mt-auto flex items-center gap-1.5 text-ui text-primary hover:underline active:underline",
 													),
 												],
 												[card.action, icon(h, "ArrowRightIcon", { size: 12 })],
@@ -1073,7 +1073,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 																		Message.ClickedSetUp({ platform }),
 																	),
 																	h.Class(
-																		"text-xs text-primary hover:underline",
+																		"text-xs text-primary hover:underline active:underline",
 																	),
 																],
 																["Set up"],
@@ -1130,7 +1130,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 								[
 									h.Href(hrefOf(AppRoute.Alerts({ search: {} }))),
 									h.Class(
-										"text-xs text-muted-foreground underline-offset-4 hover:underline",
+										"text-xs text-muted-foreground underline-offset-4 hover:underline active:underline",
 									),
 								],
 								["Or set up your first alert"],

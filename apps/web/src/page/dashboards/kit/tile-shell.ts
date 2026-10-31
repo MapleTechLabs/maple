@@ -103,7 +103,7 @@ const grip = <M>(h: HtmlBuilder<M>, title: string): Html =>
 			h.AriaLabel(`Move ${title}`),
 			h.DataAttribute("grid-label", title),
 			h.Class(
-				"widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
+				"widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground active:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
 			),
 			h.AriaDescribedBy(GRID_INSTRUCTIONS_ID),
 		],

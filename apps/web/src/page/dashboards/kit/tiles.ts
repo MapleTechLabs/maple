@@ -266,7 +266,7 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 							),
 							h.Target("_blank"),
 							h.Class(
-								"font-mono text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary",
+								"font-mono text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
 							),
 						],
 						[shortId(value, "trace")],
@@ -277,7 +277,7 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 						[
 							h.Href(hrefOf(AppRoute.Traces({ search: { spanNames: [value] } }))),
 							h.Target("_blank"),
-							h.Class("hover:underline underline-offset-2"),
+							h.Class("hover:underline active:underline underline-offset-2"),
 						],
 						[display],
 					)

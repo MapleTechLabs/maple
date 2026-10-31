@@ -39,7 +39,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 				? [
 						h.button(
 							[
-								h.Class("text-foreground transition-colors hover:text-primary"),
+								h.Class("text-foreground hover:text-primary active:text-primary"),
 								h.Type("button"),
 								h.OnClick(Message.ClickedLoadMore()),
 							],
@@ -53,7 +53,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 								h.button(
 									[
 										h.Class(
-											"text-severity-error transition-colors hover:text-foreground",
+											"text-severity-error hover:text-foreground active:text-foreground",
 										),
 										h.Type("button"),
 										h.OnClick(Message.ClickedLoadMore()),
@@ -136,7 +136,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current === 0,
-									className: "text-muted-foreground hover:text-foreground",
+									className: "text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
 								},
 								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
@@ -156,7 +156,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-									className: "text-muted-foreground hover:text-foreground",
+									className: "text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
 								},
 								[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
@@ -192,7 +192,7 @@ const sampleRow = (
 				[
 					h.Class(
 						cn(
-							"group relative flex w-full items-center gap-3.5 px-6 font-mono transition-colors hover:bg-surface-sunken",
+							"group relative flex w-full items-center gap-3.5 px-6 font-mono hover:bg-surface-sunken active:bg-surface-sunken",
 							options.isOpen ? "h-11" : "h-10",
 						),
 					),
@@ -285,7 +285,7 @@ const sampleRow = (
 								)}`,
 							),
 							h.Class(
-								"relative flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground transition-colors hover:text-foreground",
+								"relative flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 						],
 						[

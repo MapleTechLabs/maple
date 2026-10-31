@@ -73,7 +73,7 @@ const codeAction = <M>(
 			label,
 			size: "icon-xs",
 			hasTooltip: false,
-			className: "text-muted-foreground hover:text-foreground",
+			className: "text-muted-foreground hover:text-foreground active:text-foreground",
 			attributes: [
 				h.DataAttribute("streamdown", slot),
 				h.Title(label),

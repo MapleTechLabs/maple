@@ -55,6 +55,26 @@
 		"require-yield": "off"
 	},
 	"overrides": [
+		// The dashboard's design rules (docs/design-rules.md), on the app and its kit.
+		{
+			"files": ["apps/web/src/**", "packages/ui/src/**"],
+			"rules": {
+				"maple/couldnt-copy": "error",
+				"maple/hover-needs-active": "error",
+				"maple/instant-state": "error",
+				"maple/no-arbitrary-radius": "error",
+				"maple/no-dimmed-icon": "error",
+				"maple/no-raw-shadow": "error",
+				"maple/no-transition-all": "error",
+				"maple/single-tooltip-delay": "error",
+				"maple/tone-alpha-steps": "error"
+			}
+		},
+		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
+		{
+			"files": ["apps/web/src/lab/**"],
+			"rules": { "maple/couldnt-copy": "off" }
+		},
 		// Existing API burndown entries, relocated with their implementation.
 		{
 			"files": [

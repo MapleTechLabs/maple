@@ -50,7 +50,7 @@ export const filterSidebarHeader = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className: "text-muted-foreground hover:text-foreground",
+								className: "text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClear)],
 							},
 							["Clear all"],

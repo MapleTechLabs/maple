@@ -142,7 +142,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 							layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
 							!options.isChecked
 								? "border-border group-hover:border-border-strong group-hover:bg-surface-faint"
-								: options.accent === undefined && "border-primary bg-primary/5",
+								: options.accent === undefined && "border-primary bg-primary-a1",
 						),
 					),
 				],
@@ -159,7 +159,7 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 			h.Class(
 				cn(
 					"flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 motion-reduce:transition-none",
-					isSelected ? "bg-primary/10" : "bg-surface-strong group-hover:bg-muted",
+					isSelected ? "bg-primary-a2" : "bg-surface-strong group-hover:bg-muted",
 				),
 			),
 		],

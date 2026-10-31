@@ -57,7 +57,7 @@ const reportLinks = (h: H, run: SecurityAuditRunDetail): ReadonlyArray<Html> =>
 								[
 									h.Key(report),
 									h.Type("button"),
-									h.Class("font-mono underline underline-offset-2 hover:text-foreground"),
+									h.Class("font-mono underline underline-offset-2 hover:text-foreground active:text-foreground"),
 									h.OnClick(Message.ClickedReport({ report })),
 								],
 								[label],

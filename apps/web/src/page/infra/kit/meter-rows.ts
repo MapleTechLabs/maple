@@ -33,7 +33,7 @@ const meterRow = <M>(h: HtmlBuilder<M>, row: MeterRow, hideLabel: boolean): Html
 					]),
 			meter(h, {
 				value: clamped,
-				className: "h-[3px] flex-1 rounded-[1px]",
+				className: "h-[3px] flex-1 rounded-2xs",
 				fillClassName: BAR_FILL[level],
 			}),
 			h.span(

@@ -127,7 +127,7 @@ const dangerZone = (h: H, user: AccountUser): ReadonlyArray<Html> =>
 							{
 								padded: true,
 								className:
-									"flex-row items-center justify-between gap-4 border-destructive/40",
+									"flex-row items-center justify-between gap-4 border-destructive-a4",
 							},
 							[
 								h.p(

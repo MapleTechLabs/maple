@@ -14,7 +14,7 @@ type InvestigationStatus = V2Investigation["status"]
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
 export const STATUS = {
-	investigating: { label: "In progress", tone: "bg-primary/10 text-primary" },
+	investigating: { label: "In progress", tone: "bg-primary-a2 text-primary" },
 	diagnosed: { label: "Diagnosed", tone: TONE_SOFT.ok },
 	inconclusive: { label: "Inconclusive", tone: TONE_SOFT.warn },
 	resolved: { label: "Resolved", tone: TONE_SOFT.done },
@@ -107,7 +107,7 @@ export const confidenceMeter = <M>(
 						h.Key(height),
 						h.Class(
 							cn(
-								"w-[3px] rounded-[1px]",
+								"w-[3px] rounded-2xs",
 								height,
 								index < filled ? TONE_FILL[CONFIDENCE_TONE_OF[confidence]] : "bg-border",
 							),

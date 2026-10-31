@@ -52,7 +52,7 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 					size: "icon-xs",
 					label: model.isSqlCollapsed ? "Expand SQL" : "Collapse SQL",
 					hasTooltip: false,
-					className: "text-muted-foreground hover:text-foreground",
+					className: "text-muted-foreground hover:text-foreground active:text-foreground",
 					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
 				},
 				[icon(h, model.isSqlCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -135,7 +135,7 @@ const macros = (h: H): Html =>
 							variant: "ghost",
 							size: "xs",
 							className:
-								"h-auto rounded-sm bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted hover:text-foreground sm:h-auto sm:text-2xs",
+								"h-auto rounded-sm bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground sm:h-auto sm:text-2xs",
 							attributes: [h.OnClick(Message.ClickedSqlToken({ token }))],
 						},
 						[token],

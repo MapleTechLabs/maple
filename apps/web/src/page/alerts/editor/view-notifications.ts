@@ -65,7 +65,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 					h.Type("button"),
 					h.OnClick(Message.ToggledMessageTemplate()),
 					h.Class(
-						"flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground",
+						"flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
 					),
 					h.AriaExpanded(isOpen),
 				],
@@ -81,7 +81,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 						? [
 								badge(
 									h,
-									{ pill: true, size: "xs", className: "bg-primary/10 text-primary" },
+									{ pill: true, size: "xs", className: "bg-primary-a2 text-primary" },
 									["Customized"],
 								),
 							]
@@ -230,7 +230,7 @@ const variables = (h: H): Html =>
 							variant: "outline",
 							size: "xs",
 							className:
-								"font-mono text-3xs text-muted-foreground hover:text-foreground sm:text-3xs",
+								"font-mono text-3xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-3xs",
 							attributes: [h.OnClick(Message.ClickedTemplateVariable({ key: variable.key }))],
 						},
 						[variable.key],

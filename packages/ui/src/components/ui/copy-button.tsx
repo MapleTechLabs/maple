@@ -48,7 +48,7 @@ export interface CopyTooltipLabels {
 export function copyTooltipText(
 	status: CopyStatus,
 	label: string,
-	{ copiedLabel = "Copied", errorLabel = "Failed to copy" }: CopyTooltipLabels = {},
+	{ copiedLabel = "Copied", errorLabel = "Couldn't copy" }: CopyTooltipLabels = {},
 ): string {
 	if (status === "copied") return copiedLabel
 	if (status === "error") return errorLabel
@@ -233,7 +233,7 @@ export function CopyButton({
 	 * callsite that passes its own `errorLabel` gets it verbatim in both.
 	 */
 	const inlineErrorLabel = errorLabel ?? "Failed"
-	const errorText = errorLabel ?? "Failed to copy"
+	const errorText = errorLabel ?? "Couldn't copy"
 
 	const button = (
 		<Button

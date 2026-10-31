@@ -57,7 +57,7 @@ const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 				[
 					...(iconName === undefined
 						? []
-						: [icon(h, iconName, { className: "size-4 opacity-70" })]),
+						: [icon(h, iconName, { className: "size-4" })]),
 					h.span([h.Class("font-medium")], [feature.label]),
 				],
 			),
@@ -93,7 +93,7 @@ const platformFeatures = (h: H, slug: string): Html =>
 						[h.Class("flex items-start gap-2.5 text-sm")],
 						[
 							icon(h, PLATFORM_FEATURE_ICONS.get(feature.icon) ?? "CircleCheckIcon", {
-								className: "text-muted-foreground opacity-70 size-4 shrink-0 mt-0.5",
+								className: "text-foreground-subtle size-4 shrink-0 mt-0.5",
 							}),
 							h.span([h.Class("text-muted-foreground leading-snug")], [feature.label]),
 							...(feature.value
@@ -201,7 +201,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 		cn(
 			"flex flex-col transition-colors",
 			isActive && "bg-surface-strong",
-			isUpgrade && "bg-surface-sunken ring-1 ring-primary/30",
+			isUpgrade && "bg-surface-sunken ring-1 ring-primary-a3",
 		),
 	)
 }
@@ -256,7 +256,7 @@ const enterpriseCard = (h: H): Html =>
 				"mt-auto flex-col gap-2 items-stretch",
 			),
 		],
-		"flex flex-col border-primary/20 bg-primary/[0.02]",
+		"flex flex-col border-primary-a3 bg-primary/[0.02]",
 	)
 
 /** `PricingCards`: skeletons while the catalog loads, its error row, or the plan grid. */

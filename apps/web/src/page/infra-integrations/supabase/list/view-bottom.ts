@@ -28,7 +28,7 @@ const listRow = (h: H, key: string, href: string | null, children: ReadonlyArray
 		[
 			href === null
 				? h.div([h.Class(className)], children)
-				: h.a([h.Href(href), h.Class(cn(className, "hover:bg-surface-sunken"))], children),
+				: h.a([h.Href(href), h.Class(cn(className, "hover:bg-surface-sunken active:bg-surface-sunken"))], children),
 		],
 	)
 }

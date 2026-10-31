@@ -23,7 +23,7 @@ import { latencyValue } from "../../../../ui/values"
 const SHELL =
 	"@container/inline flex w-full flex-col gap-1 rounded-md border border-border bg-muted px-3 py-2"
 const LINK_SHELL =
-	"transition-colors hover:border-ring/40 hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+	"hover:border-ring/40 active:border-ring/40 hover:bg-muted active:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
 const ROW = "flex min-w-0 items-center gap-2.5"
 const META = "flex min-w-0 flex-wrap items-center gap-1 ps-6"
 
@@ -288,7 +288,7 @@ const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string):
 										h.Target("_blank"),
 										h.Rel("noreferrer"),
 										h.Class(
-											"shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+											"shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground",
 										),
 										h.Title(data.traceId),
 									],

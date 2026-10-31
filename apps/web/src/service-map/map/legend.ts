@@ -72,7 +72,7 @@ const morePopover = <M>(
 						h.button(
 							[
 								...trigger,
-								h.Class("font-medium hover:text-foreground transition-colors cursor-pointer"),
+								h.Class("font-medium hover:text-foreground active:text-foreground cursor-pointer"),
 								h.Type("button"),
 							],
 							["+", String(services.length - 3), " more"],
