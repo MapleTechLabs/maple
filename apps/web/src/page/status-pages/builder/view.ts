@@ -250,7 +250,7 @@ const footerBar = (h: H, model: Model): Html => {
 	return h.div(
 		[
 			h.Class(
-				"sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-popover py-2 pr-2 pl-4 shadow-lg",
+				"sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-popover py-2 pr-2 pl-4 shadow-popup",
 			),
 		],
 		[
