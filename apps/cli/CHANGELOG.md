@@ -1,5 +1,12 @@
 # @maple/cli
 
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [1c7c733]
+    - @maple-dev/effect-sdk@0.13.1
+
 ## 0.3.1
 
 ### Patch Changes
