@@ -1,7 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { warehouseReadHandlers, warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
-import { formatDurationFromMs, truncate } from "../lib/format"
+import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
@@ -272,7 +272,13 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 						"inspect_trace",
 						{
 							trace_id: output.traceId,
-							timestamp: output.widened === true ? undefined : output.timestamp,
+							// The span's own start is inside its trace, unlike a hint that had to widen.
+							timestamp:
+								output.startTime !== undefined
+									? toSecondTimestamp(output.startTime)
+									: output.widened === true
+										? undefined
+										: output.timestamp,
 						},
 						"see the full span tree",
 					),

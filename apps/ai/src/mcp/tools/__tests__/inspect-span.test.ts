@@ -109,6 +109,8 @@ describe("inspect_span", () => {
 		expect(output).toMatchObject({ spanName: "GET /orders", rawSpanName: "GET" })
 		expect(text).toContain("Name: GET /orders")
 		expect(text).toContain("Stored name: GET")
+		// The follow-up reads the trace around the span's own start, not unbounded.
+		expect(text).toContain(`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-10-27 07:48:56"`)
 	})
 
 	it.each([

@@ -1,12 +1,5 @@
-// The platform a span ran on, read from its attributes.
-//
-// Cloudflare Workers Observability spans carry a `cloudflare.*` / `faas.*` / `geo.*` set no
-// other emitter sends, so they get their own summary. Any other span with a real `cloud.*` or
-// `faas.*` value gets the generic OpenTelemetry cloud/FaaS summary. The trace views and the
-// MCP `inspect_span` tool both read this one detector.
-//
-// Warehouse attributes are `Map(String, String)` and the trimmed tree projection returns every
-// requested key with an empty value, so a key only counts when its value is non-blank.
+// The platform a span ran on, shared by the trace views and MCP `inspect_span`. The tree
+// projection returns every requested key with an empty value, so only non-blank values count.
 
 import { Record, Schema } from "effect"
 
@@ -103,40 +96,55 @@ const cloudflare = (read: ReturnType<typeof reader>): CloudflareWorkerSummary | 
 const coldStart = (raw: string | undefined): boolean | undefined =>
 	raw === "true" ? true : raw === "false" ? false : undefined
 
-const cloud = (read: ReturnType<typeof reader>): CloudPlatformSummary | undefined => {
+/** Keys of the function that ran; `faas.invoked_*` on a client span names the one it called. */
+const FAAS_SELF_KEYS = [
+	"faas.name",
+	"faas.version",
+	"faas.instance",
+	"faas.trigger",
+	"faas.coldstart",
+	"faas.invocation_id",
+]
+
+const cloud = (span: Attrs, resource: Attrs): CloudPlatformSummary | undefined => {
+	// All `cloud.*` come from one map: a client span's `cloud.region` (an AWS SDK call) must not
+	// mix into the resource's own provider.
+	const cloudMap =
+		isPresent(resource["cloud.provider"]) || isPresent(resource["cloud.platform"]) ? resource : span
+	const cloudAttr = (key: string): string | undefined =>
+		isPresent(cloudMap[key]) ? cloudMap[key] : undefined
+	const faas = reader(span, resource)
 	const isCloud =
-		read.get("cloud.provider") !== undefined ||
-		read.get("cloud.platform") !== undefined ||
-		read.hasPrefix("faas.")
+		cloudAttr("cloud.provider") !== undefined ||
+		cloudAttr("cloud.platform") !== undefined ||
+		FAAS_SELF_KEYS.some((key) => faas.get(key) !== undefined)
 	if (!isCloud) return undefined
 	return {
 		_tag: "cloud",
-		...field("provider", read.get("cloud.provider")),
-		...field("platform", read.get("cloud.platform")),
-		...field("region", read.pick("cloud.region", "faas.invoked_region")),
-		...field("availabilityZone", read.get("cloud.availability_zone")),
-		...field("accountId", read.get("cloud.account.id")),
-		...field("resourceId", read.get("cloud.resource_id")),
-		...field("functionName", read.get("faas.name")),
-		...field("functionVersion", read.get("faas.version")),
-		...field("instance", read.get("faas.instance")),
-		...field("trigger", read.get("faas.trigger")),
-		...field("coldStart", coldStart(read.get("faas.coldstart"))),
-		...field("invocationId", read.get("faas.invocation_id")),
+		...field("provider", cloudAttr("cloud.provider")),
+		...field("platform", cloudAttr("cloud.platform")),
+		...field("region", cloudAttr("cloud.region")),
+		...field("availabilityZone", cloudAttr("cloud.availability_zone")),
+		...field("accountId", cloudAttr("cloud.account.id")),
+		...field("resourceId", cloudAttr("cloud.resource_id")),
+		...field("functionName", faas.get("faas.name")),
+		...field("functionVersion", faas.get("faas.version")),
+		...field("instance", faas.get("faas.instance")),
+		...field("trigger", faas.get("faas.trigger")),
+		...field("coldStart", coldStart(faas.get("faas.coldstart"))),
+		...field("invocationId", faas.get("faas.invocation_id")),
 	}
 }
 
 /**
- * The platform a span ran on, or `undefined` when its attributes name none. Span attributes
- * win over resource attributes for the same key.
+ * The platform a span ran on, or `undefined` when its attributes name none. Span attributes win
+ * per key, except that a generic summary takes all `cloud.*` from one map.
  */
 export const detectPlatform = (
 	spanAttributes: Attrs,
 	resourceAttributes: Attrs = EMPTY,
-): PlatformSummary | undefined => {
-	const read = reader(spanAttributes, resourceAttributes)
-	return cloudflare(read) ?? cloud(read)
-}
+): PlatformSummary | undefined =>
+	cloudflare(reader(spanAttributes, resourceAttributes)) ?? cloud(spanAttributes, resourceAttributes)
 
 /** The Cloudflare summary alone, for views that only badge Workers. */
 export const detectCloudflareWorker = (

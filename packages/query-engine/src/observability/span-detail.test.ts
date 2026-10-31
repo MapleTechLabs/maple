@@ -17,7 +17,7 @@ const detailRow = {
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 12,
-	startTime: "2026-03-20 08:00:00.000000000",
+	startTime: "2026-03-20 08:00:00.123456789",
 	statusCode: "Unset",
 	statusMessage: "",
 	spanAttributes: JSON.stringify({ "http.route": "/orders" }),
@@ -73,7 +73,7 @@ describe("spanDetail", () => {
 				serviceName: "api",
 				spanKind: "Server",
 				durationMs: 12,
-				startTime: "2026-03-20 08:00:00.000",
+				startTime: "2026-03-20 08:00:00.123",
 				statusCode: "Unset",
 				statusMessage: "",
 			})

@@ -3,7 +3,7 @@ import { getCloudPlatform, pickAttr } from "../../../../service-map/trace-flow/c
 import type { IconName } from "../../../../ui/icon"
 
 // The `CloudPlatformInfo` fields a span row reads. The flow port's copy of the adapters gives
-// label, icon, edge and outcome; the accents come from the shared @maple/ui module.
+// label, icon, edge, location and outcome; the accents come from the shared @maple/ui module.
 
 export interface RowPlatform {
 	readonly label: string
@@ -17,20 +17,10 @@ export interface RowPlatform {
 export const rowPlatform = (attrs: Record<string, string>): RowPlatform | null => {
 	const platform = getCloudPlatform(attrs)
 	if (platform === null) return null
-	if (platform.id === "cloudflare") {
-		const location = [pickAttr(attrs, "geo.locality.name"), pickAttr(attrs, "geo.country.code")]
-			.filter((part) => part !== null && part !== "")
-			.join(", ")
-		return {
-			...platform,
-			accentClassName: CLOUDFLARE_ACCENT_CLASS,
-			location: location === "" ? null : location,
-		}
-	}
+	if (platform.id === "cloudflare") return { ...platform, accentClassName: CLOUDFLARE_ACCENT_CLASS }
 	const system = (pickAttr(attrs, "db.system.name", "db.system") ?? "").toLowerCase()
 	return {
 		...platform,
 		accentClassName: dbSystemAccentClass(system),
-		location: null,
 	}
 }

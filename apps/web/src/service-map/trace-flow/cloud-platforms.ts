@@ -12,6 +12,7 @@ export interface CloudPlatformInfo {
 	readonly kind: string
 	readonly icon: IconName
 	readonly edge: string | null
+	readonly location: string | null
 	readonly outcome: { readonly value: string; readonly bad: boolean } | null
 }
 
@@ -69,13 +70,14 @@ export const pickAttr = (attrs: Record<string, string>, ...keys: ReadonlyArray<s
 const cloudflare = (attrs: Record<string, string>): CloudPlatformInfo | null => {
 	const worker = detectCloudflareWorker(attrs)
 	if (worker === undefined) return null
-	const { edge, outcome } = cloudflareDisplay(worker)
+	const { edge, location, outcome } = cloudflareDisplay(worker)
 	return {
 		id: "cloudflare",
 		label: "Cloudflare Worker",
 		kind: "Worker",
 		icon: "CloudflareIcon",
 		edge,
+		location,
 		outcome,
 	}
 }
@@ -90,6 +92,7 @@ const database = (attrs: Record<string, string>): CloudPlatformInfo | null => {
 		kind: "Query",
 		icon: "DatabaseIcon",
 		edge: null,
+		location: null,
 		outcome: errorType ? { value: errorType, bad: true } : null,
 	}
 }

@@ -106,6 +106,24 @@ describe("detectPlatform", () => {
 		})
 	})
 
+	it("does not place a client span on the function it invoked", () => {
+		const client = {
+			"faas.invoked_name": "checkout",
+			"faas.invoked_provider": "aws",
+			"faas.invoked_region": "us-east-1",
+		}
+		expect(detectPlatform(client, { "service.name": "web" })).toBeUndefined()
+	})
+
+	it("takes cloud.* from the resource and ignores a span's cloud.region from an SDK call", () => {
+		expect(
+			detectPlatform(
+				{ "cloud.region": "us-east-1", "rpc.service": "DynamoDB" },
+				{ "cloud.provider": "gcp", "cloud.platform": "gcp_cloud_run" },
+			),
+		).toEqual({ _tag: "cloud", provider: "gcp", platform: "gcp_cloud_run" })
+	})
+
 	it("returns nothing for a span with no platform attributes", () => {
 		expect(detectPlatform({ "http.route": "/orders" }, { "service.name": "api" })).toBeUndefined()
 	})
