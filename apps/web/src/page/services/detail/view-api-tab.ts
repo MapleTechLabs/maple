@@ -419,7 +419,7 @@ const filterChip = (h: H, filter: EndpointFilter, active: EndpointFilter): Html 
 					"rounded-sm px-2 py-1 transition-colors",
 					filter === active
 						? "bg-accent text-foreground"
-						: "text-muted-foreground hover:text-foreground",
+						: "text-muted-foreground hover:text-foreground active:text-foreground",
 				),
 			),
 			h.OnClick(Message.ClickedEndpointFilter({ filter })),
@@ -547,7 +547,7 @@ const endpointsTable = (
 						headLabel(h, ["Body avg"], cn("pr-0 text-right", COLUMN.body)),
 						headLabel(h, [], COLUMN.chevron),
 					],
-					"border-b hover:bg-transparent",
+					"border-b hover:bg-transparent active:bg-transparent",
 				),
 			]),
 			tableBody(
@@ -565,7 +565,7 @@ const endpointsTable = (
 										["No endpoint matches this filter."],
 									),
 								],
-								"hover:bg-transparent",
+								"hover:bg-transparent active:bg-transparent",
 							),
 						]
 					: groups.flatMap((group) =>

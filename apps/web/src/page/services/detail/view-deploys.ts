@@ -76,7 +76,7 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 					...(isLimited
 						? [h.span([h.Class("text-2xs text-muted-foreground")], ["Latest 90 days"])]
 						: []),
-					h.a([h.Class("text-xs text-primary hover:underline"), h.Href("/errors")], ["View all →"]),
+					h.a([h.Class("text-xs text-primary hover:underline active:underline"), h.Href("/errors")], ["View all →"]),
 				],
 			),
 		},
@@ -199,7 +199,7 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 							[
 								h.Href("/sources/new?integration=github"),
 								h.Class(
-									"inline-flex items-center gap-1 font-medium text-primary hover:underline",
+									"inline-flex items-center gap-1 font-medium text-primary hover:underline active:underline",
 								),
 							],
 							["Connect a repository to resolve commits", h.span([h.AriaHidden(true)], ["→"])],
@@ -278,7 +278,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 												variant: "ghost",
 												size: "sm",
 												className:
-													"w-full text-xs text-muted-foreground hover:text-foreground",
+													"w-full text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 												attributes: [h.OnClick(Message.ClickedToggleDeploys())],
 											},
 											[

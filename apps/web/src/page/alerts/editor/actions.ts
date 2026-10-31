@@ -41,7 +41,7 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 				description: "",
 			}),
 		}),
-		onFailure: (error) => ({ model: settled, outMessage: errorToast("Failed to preview rule", error.message) }),
+		onFailure: (error) => ({ model: settled, outMessage: errorToast("Couldn't preview rule", error.message) }),
 	})
 }
 
@@ -74,6 +74,6 @@ export const completeSave = (model: Model, message: Extract<Message, { _tag: "Co
 		}),
 		onFailure: (error) => ({
 			model: { ...model, isSaving: false },
-			outMessage: errorToast("Failed to save rule", error.message),
+			outMessage: errorToast("Couldn't save rule", error.message),
 		}),
 	})

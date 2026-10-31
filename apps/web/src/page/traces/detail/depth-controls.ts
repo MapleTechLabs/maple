@@ -27,7 +27,7 @@ const depthButton = <M>(
 			variant: "ghost",
 			size: "sm",
 			className:
-				"h-5 w-6 rounded-xs p-0 text-muted-foreground hover:text-foreground pointer-coarse:h-7 pointer-coarse:w-8",
+				"h-5 w-6 rounded-xs p-0 text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:h-7 pointer-coarse:w-8",
 			slot: "tooltip-trigger",
 			attributes: [
 				h.AriaLabel(label),

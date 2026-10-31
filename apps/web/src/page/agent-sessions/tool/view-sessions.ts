@@ -39,7 +39,7 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 		[
 			h.Key(session.sessionId),
 			h.Class(
-				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 			),
 			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
 			h.Href(

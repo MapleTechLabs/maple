@@ -237,7 +237,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isSaving: false },
-					outMessage: toast("error", "Failed to save escalation policy", error.message),
+					outMessage: toast("error", "Couldn't save escalation policy", error.message),
 				}),
 			}),
 		GotSeveritySelectMessage: ({ message: child }) => {

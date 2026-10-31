@@ -95,7 +95,7 @@ const figure = (h: H, value: string, caption: string, className?: string): Html 
 /** `CloudflareTraceGapCallout`: failures Cloudflare saw that the Worker's spans never recorded. */
 const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedService: string): Html =>
 	h.div(
-		[h.Class("@container rounded-md border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -135,7 +135,7 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							h.a(
 								[
 									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
+										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
 									),
 									h.Href(hrefOf(AppRoute.Logs({ search: { services: [tracedService] } }))),
 								],
@@ -431,7 +431,7 @@ const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 				].filter((node): node is Html => node !== null),
 				h.a(
 					[
-						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80"),
+						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80"),
 						h.Href(hrefOf(AppRoute.Service({ serviceName: traced.service, search: {} }))),
 					],
 					["Open ", traced.service],

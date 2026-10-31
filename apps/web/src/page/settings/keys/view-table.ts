@@ -111,7 +111,7 @@ const apiRow = (
 			: []),
 	]
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken"))],
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken active:bg-surface-sunken"))],
 		[
 			h.div(
 				[h.Class(cn(COL.name, "flex flex-col gap-1"))],
@@ -239,7 +239,7 @@ const deviceRow = (
 			]
 		: []
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-surface-sunken"))],
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-surface-sunken active:bg-surface-sunken"))],
 		[
 			h.div(
 				[h.Class(cn(DEVICE_COL.name, "flex min-w-0 items-center gap-2"))],

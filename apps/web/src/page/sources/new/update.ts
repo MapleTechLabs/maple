@@ -294,7 +294,7 @@ export const updateFlow = (model: Model, message: Message, context: PageContext)
 					model: { ...model, isSaving: false },
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to create source",
+						title: "Couldn't create source",
 						description: failure.message,
 					}),
 				}),

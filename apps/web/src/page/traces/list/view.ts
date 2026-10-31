@@ -58,7 +58,7 @@ const whereClausePanel = (h: HtmlBuilder<Message>, whereClause: string): Html =>
 			{
 				label: "Clear filter",
 				size: "icon-xs",
-				className: "shrink-0 text-muted-foreground hover:text-foreground",
+				className: "shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
 				attributes: [h.OnClick(Message.ClickedClearWhereClause())],
 			},
 			[icon(h, "XmarkIcon")],

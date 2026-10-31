@@ -210,7 +210,7 @@ export const update = (model: Model, message: Message): Return =>
 				onSuccess: () => refreshed(settled),
 				onFailure: (error): Return => ({
 					model: settled,
-					outMessage: toast("error", "Failed to update ingest rule", error.message),
+					outMessage: toast("error", "Couldn't update ingest rule", error.message),
 				}),
 			})
 		},
@@ -229,7 +229,7 @@ export const update = (model: Model, message: Message): Return =>
 			return Result.isFailure(result)
 				? {
 						...after,
-						outMessage: toast("error", "Failed to reorder ingest rules", result.failure.message),
+						outMessage: toast("error", "Couldn't reorder ingest rules", result.failure.message),
 					}
 				: after
 		},
@@ -258,7 +258,7 @@ export const update = (model: Model, message: Message): Return =>
 				},
 				onFailure: (error): Return => ({
 					model: { ...model, isDeleting: false },
-					outMessage: toast("error", "Failed to delete ingest rule", error.message),
+					outMessage: toast("error", "Couldn't delete ingest rule", error.message),
 				}),
 			}),
 	})

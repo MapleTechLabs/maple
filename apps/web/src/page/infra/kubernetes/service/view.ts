@@ -55,7 +55,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 							}),
 						),
 					),
-					h.Class("hover:text-foreground"),
+					h.Class("hover:text-foreground active:text-foreground"),
 				],
 				[workload.workloadKind, " ", workload.workloadName],
 			),
@@ -64,7 +64,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Service({ serviceName, search: model.search }))),
-					h.Class("text-primary hover:underline"),
+					h.Class("text-primary hover:underline active:underline"),
 				],
 				["Open the service"],
 			),
@@ -254,7 +254,7 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 							h.Key(node),
 							h.Href(hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} }))),
 							h.Class(
-								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs transition-colors hover:bg-surface-sunken",
+								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs hover:bg-surface-sunken active:bg-surface-sunken",
 							),
 						],
 						[

@@ -33,7 +33,7 @@ const FACT_TONE = {
 } as const
 
 const RAIL_LINK =
-	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground-soft transition-colors hover:bg-surface-sunken hover:text-foreground"
+	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground-soft hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground"
 
 const label = (h: H, text: string): Html => h.span([h.Class("min-w-0 flex-1 truncate")], [text])
 

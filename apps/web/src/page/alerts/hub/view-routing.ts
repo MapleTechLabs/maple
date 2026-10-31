@@ -323,7 +323,7 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 					),
 				],
 				[...recent].reverse().map((event) =>
-					h.span([h.Key(event.id), h.Class(cn("w-1 rounded-[1px]", ATTEMPT_CLASS.get(event.status)))]),
+					h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
 				),
 			)
 

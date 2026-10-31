@@ -260,7 +260,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isCreating: false },
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
-						title: kind === "mcp" ? "Failed to create MCP key" : "Failed to create API key",
+						title: kind === "mcp" ? "Couldn't create MCP key" : "Couldn't create API key",
 						description: error.message,
 					}),
 				}),

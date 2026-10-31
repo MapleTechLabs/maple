@@ -172,7 +172,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																	size: "icon-2xs",
 																	label: "Clear bucket filter",
 																	hasTooltip: false,
-																	className: "text-muted-foreground hover:text-foreground",
+																	className: "text-muted-foreground hover:text-foreground active:text-foreground",
 																	attributes: [h.OnClick(Message.ClickedClearBucket())],
 																},
 																[icon(h, "XmarkIcon")],
@@ -238,7 +238,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 															[countLabel(skipped, "evaluation"), " hidden by the status filter"],
 														),
 													],
-													"hover:bg-transparent",
+													"hover:bg-transparent active:bg-transparent",
 												),
 											]
 										: []),

@@ -21,7 +21,7 @@ const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 export const serviceDot = <M>(h: HtmlBuilder<M>, serviceName: string, className: string): Html =>
 	h.span([
 		h.AriaHidden(true),
-		h.Class(cn("shrink-0 rounded-[35%] [corner-shape:squircle]", "size-2", className)),
+		h.Class(cn("shrink-0 rounded-dot [corner-shape:squircle]", "size-2", className)),
 		h.Style({ "background-color": getServiceColor(serviceName) }),
 	])
 
@@ -92,8 +92,8 @@ const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string 
 /** `outcomeBadgeStyle` (packages/ui `lib/cloud-platforms/types.ts`). */
 const outcomeBadgeStyle = (bad: boolean): string =>
 	bad
-		? "bg-severity-error/15 text-severity-error border-severity-error/30"
-		: "bg-severity-info/15 text-severity-info border-severity-info/30"
+		? "bg-severity-error-a2 text-severity-error border-severity-error-a3"
+		: "bg-severity-info-a2 text-severity-info border-severity-info-a3"
 
 const statusBadge = <M>(
 	h: HtmlBuilder<M>,
@@ -124,7 +124,7 @@ const statusBadge = <M>(
 					cn(
 						base,
 						"font-mono",
-						code >= 200 && code < 300 && "bg-severity-info/15 text-severity-info",
+						code >= 200 && code < 300 && "bg-severity-info-a2 text-severity-info",
 						code >= 300 && code < 400 && "bg-chart-p50/15 text-chart-p50",
 						tone !== "neutral" && TONE_SOFT[tone],
 						code < 200 && "text-muted-foreground",
@@ -134,9 +134,9 @@ const statusBadge = <M>(
 			[String(code)],
 		)
 	}
-	if (isError) return h.span([h.Class(cn(base, "bg-severity-error/15 text-severity-error"))], ["Error"])
+	if (isError) return h.span([h.Class(cn(base, "bg-severity-error-a2 text-severity-error"))], ["Error"])
 	if (statusCode === "Ok")
-		return h.span([h.Class(cn(base, "bg-severity-info/15 text-severity-info"))], ["OK"])
+		return h.span([h.Class(cn(base, "bg-severity-info-a2 text-severity-info"))], ["OK"])
 	return null
 }
 
@@ -152,7 +152,7 @@ const missingCard = <M>(
 			h.Class(
 				cn(
 					"relative w-[280px] rounded-lg border-2 border-dashed border-foreground-faint bg-card/50",
-					"flex flex-col gap-1 px-3 py-2 transition-all duration-200",
+					"flex flex-col gap-1 px-3 py-2",
 					isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
 				),
 			),
@@ -208,9 +208,9 @@ export const flowSpanNode = <M>(
 			[
 				h.Class(
 					cn(
-						"relative w-[280px] rounded-lg border bg-card shadow-sm transition-all duration-200 hover:shadow-md",
-						isError && "border-severity-error/30 bg-severity-error/5 shadow-severity-error/10",
-						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-md",
+						"relative w-[280px] rounded-lg border bg-card shadow-raised hover:shadow-popup active:shadow-popup",
+						isError && "border-severity-error-a3 bg-severity-error-a1 shadow-severity-error/10",
+						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-popup",
 						isCombined &&
 							"before:absolute before:inset-0 before:-z-10 before:translate-x-1.5 before:translate-y-1.5 before:rounded-lg before:border before:bg-card",
 					),
@@ -222,7 +222,7 @@ export const flowSpanNode = <M>(
 							h.span(
 								[
 									h.Class(
-										"absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-3xs font-semibold tabular-nums text-muted-foreground shadow-sm",
+										"absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-3xs font-semibold tabular-nums text-muted-foreground shadow-raised",
 									),
 								],
 								["×", String(count)],
@@ -238,7 +238,7 @@ export const flowSpanNode = <M>(
 									cn(
 										"flex size-6 shrink-0 items-center justify-center rounded-md",
 										isError
-											? "bg-severity-error/15 text-severity-error"
+											? "bg-severity-error-a2 text-severity-error"
 											: cn(category.accent.soft, category.accent.text),
 									),
 								),
@@ -293,7 +293,7 @@ export const flowSpanNode = <M>(
 				h.div(
 					[
 						h.Class(
-							"absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-surface-sunken",
+							"absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-lg-inset bg-surface-sunken",
 						),
 					],
 					[

@@ -27,7 +27,7 @@ const entryCard = <M>(h: HtmlBuilder<M>, entry: RegistryEntry): Html =>
 				[
 					h.Href(entry.path),
 					h.Class(
-						"flex h-full flex-col gap-1 rounded-md border bg-card p-3 transition-colors hover:bg-accent",
+						"flex h-full flex-col gap-1 rounded-md border bg-card p-3 hover:bg-accent active:bg-accent",
 					),
 				],
 				[

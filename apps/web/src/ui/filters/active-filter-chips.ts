@@ -45,7 +45,7 @@ export const activeFilterChips = <M>(
 							cn(
 								"inline-flex max-w-full items-center gap-1.5 rounded-md border py-1 pr-1 pl-2 text-xs",
 								isNegated
-									? "border-dashed border-destructive/40 bg-destructive/5 text-destructive"
+									? "border-dashed border-destructive-a4 bg-destructive-a1 text-destructive"
 									: "border-border-subtle bg-surface-sunken text-foreground",
 							),
 						),
@@ -69,7 +69,7 @@ export const activeFilterChips = <M>(
 							{
 								size: "icon-xs",
 								label: `Remove filter: ${description}`,
-								className: "-my-1 text-current/60 hover:bg-current/10 hover:text-current",
+								className: "-my-1 text-current/60 hover:bg-current/10 active:bg-current/10 hover:text-current active:text-current",
 								attributes: [h.OnClick(chip.onRemove)],
 							},
 							[icon(h, "XmarkIcon")],
@@ -84,7 +84,7 @@ export const activeFilterChips = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className: "ml-1 text-muted-foreground hover:text-foreground",
+								className: "ml-1 text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClearAll)],
 							},
 							["Clear all"],

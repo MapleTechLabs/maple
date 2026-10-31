@@ -405,7 +405,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 						[
 							h.Href(href),
 							h.AriaLabel(`Open ${target.repository}`),
-							h.Class("text-muted-foreground hover:text-foreground"),
+							h.Class("text-muted-foreground hover:text-foreground active:text-foreground"),
 						],
 						[icon(h, "ChevronRightIcon", { size: 14 })],
 					),
@@ -457,7 +457,7 @@ const listLink = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Ht
 			h.a(
 				[
 					h.Href(href),
-					h.Class("flex items-center gap-4 px-4 py-3 transition-colors hover:bg-surface-sunken"),
+					h.Class("flex items-center gap-4 px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken"),
 				],
 				children,
 			),

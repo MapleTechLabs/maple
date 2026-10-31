@@ -149,7 +149,7 @@ const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 			h.Class(
 				cn(
 					"inline-flex items-center gap-1 transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
+					isActive ? "text-foreground" : "hover:text-foreground active:text-foreground",
 				),
 			),
 			...(column.sort?.hint === true ? triggerAttributes(h) : []),
@@ -254,7 +254,7 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 					h.a(
 						[
 							h.Class(
-								"min-w-0 truncate text-sm font-medium hover:underline focus-visible:underline focus-visible:outline-none",
+								"min-w-0 truncate text-sm font-medium hover:underline active:underline focus-visible:underline focus-visible:outline-none",
 							),
 							...triggerAttributes(h),
 							h.Href(href),
@@ -459,7 +459,7 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 		cellsOf(h, row, context).map((cell, column) =>
 			tableCell(h, [cell ?? emptyCell(h)], cn(CELL_CLASS, COLUMNS[column]?.responsive)),
 		),
-		cn("cursor-pointer hover:bg-surface-sunken", ROW_LIFT_TOOLTIPS),
+		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", ROW_LIFT_TOOLTIPS),
 		[
 			h.Key(row.sessionId),
 			h.DataAttribute("index", String(index)),

@@ -196,7 +196,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedResolve: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({ model: { ...model, busy: null }, outMessage: toast("success", "Investigation resolved") }),
-				onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: toast("error", "Failed to resolve investigation", failure.message) }),
+				onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: toast("error", "Couldn't resolve investigation", failure.message) }),
 			}),
 		CompletedRestart: ({ result }) =>
 			Result.match(result, {
@@ -206,7 +206,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onFailure: (failure) => ({
 					model: { ...model, busy: null },
-					outMessage: toast("error", isResolved(model) ? "Failed to reopen investigation" : "Failed to restart investigation", failure.message),
+					outMessage: toast("error", isResolved(model) ? "Couldn't reopen investigation" : "Couldn't restart investigation", failure.message),
 				}),
 			}),
 		ClickedFollowUp: () => navigateSearch(model, { tab: "chat" }, false),

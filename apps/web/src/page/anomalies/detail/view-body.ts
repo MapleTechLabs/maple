@@ -237,7 +237,7 @@ export const signalChart = (
 	}
 }
 
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 const WORKFLOW_TONE = {
 	triage: TONE_SOFT.warn,
 	regressed: TONE_SOFT.crit,

@@ -42,7 +42,7 @@ const group = (
 						cn(
 							"sticky top-0 z-10 flex h-8 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken pr-2 pl-2 text-left outline-none",
 							"backdrop-blur supports-[backdrop-filter]:bg-surface-strong",
-							"hover:bg-surface-strong",
+							"hover:bg-surface-strong active:bg-surface-strong",
 						),
 					),
 				],

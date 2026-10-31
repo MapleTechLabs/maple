@@ -26,7 +26,7 @@ import { panelScope, type Trigger } from "./view-scope"
 type H = HtmlBuilder<Message>
 
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
 const warehouseTimeToMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
 
@@ -75,7 +75,7 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 								h.AriaLabel("Clear filter"),
 								h.OnClick(Message.ChangedBreakdownSearch({ value: "" })),
 								h.Class(
-									"inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground [&_svg]:size-3",
+									"inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground active:text-foreground [&_svg]:size-3",
 								),
 							],
 							[icon(h, "XmarkIcon")],
@@ -171,7 +171,7 @@ const table = (
 													h.Title(`Filter this page by ${label}`),
 													h.Class(
 														cn(
-															"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
+															"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline active:underline focus-visible:outline-1 focus-visible:outline-ring",
 															isSelected ? "text-primary" : "text-foreground",
 														),
 													),
@@ -471,7 +471,7 @@ export const breakdownPanel = (
 														size: "xs",
 														mono: true,
 														className:
-															"bg-background/60 font-normal transition-colors hover:text-foreground",
+															"bg-background/60 font-normal hover:text-foreground active:text-foreground",
 													}),
 												),
 											),

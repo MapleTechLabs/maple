@@ -60,7 +60,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 								h.Class(
 									cn(
 										isMasked && REPLAY_BLOCK_CLASS,
-										"group/value text-muted-foreground hover:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide transition-colors",
+										"group/value text-muted-foreground hover:text-foreground active:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide",
 									),
 								),
 							],

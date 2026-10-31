@@ -162,7 +162,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 				cn(
 					"flex items-stretch",
 					half.direction === "in" ? "bg-surface-sunken" : "border-border-subtle border-t",
-					half.direction === "out" && half.isFailed && "bg-severity-error/5",
+					half.direction === "out" && half.isFailed && "bg-severity-error-a1",
 				),
 			),
 		],
@@ -210,7 +210,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 						payload: half.payload,
 						textKey: half.textKey,
 						clampLines: half.clampLines,
-						toneClass: half.isFailed ? "text-severity-error/90" : undefined,
+						toneClass: half.isFailed ? "text-severity-error" : undefined,
 					}),
 					...(half.payload.truncatedByEmitter ? [truncatedNote(h)] : []),
 				],

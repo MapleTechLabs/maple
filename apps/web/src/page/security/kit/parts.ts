@@ -44,9 +44,9 @@ export const SECURITY_SEVERITY_FILL = {
 
 const SECURITY_SEVERITY_TINT = {
 	critical: "bg-severity-fatal text-white",
-	high: "bg-severity-warn/12 text-severity-warn",
-	medium: "bg-severity-debug/12 text-severity-debug",
-	low: "bg-severity-trace/12 text-severity-trace",
+	high: "bg-severity-warn-a2 text-severity-warn",
+	medium: "bg-severity-debug-a2 text-severity-debug",
+	low: "bg-severity-trace-a2 text-severity-trace",
 } satisfies Record<RankedSeverity, string>
 
 /** The severity badge: critical is filled so it never reads as one more tinted label. The muted

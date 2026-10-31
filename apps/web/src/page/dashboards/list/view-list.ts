@@ -214,7 +214,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 		dashboard.id,
 		[
 			h.Class(
-				"group relative flex items-center border-b border-border last:border-b-0 transition-colors hover:bg-surface-sunken focus-within:bg-surface-sunken",
+				"group relative flex items-center border-b border-border last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-within:bg-surface-sunken",
 			),
 		],
 		[
@@ -357,7 +357,7 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 			h.OnClick(Message.ClickedCreate()),
 			...(isReadOnly ? [h.Disabled(true)] : []),
 			h.Class(
-				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left transition-colors hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50",
+				"mt-4 flex w-full shrink-0 items-center gap-3 rounded-md border border-dashed border-input bg-card py-3 pr-4 pl-3 text-left hover:bg-surface-sunken active:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-50",
 			),
 		],
 		[

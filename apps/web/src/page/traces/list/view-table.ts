@@ -87,7 +87,7 @@ const sortableHeader = (h: HtmlBuilder<Message>, label: string, sortKey: SortKey
 			h.Class(
 				cn(
 					"inline-flex items-center gap-1 transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
+					isActive ? "text-foreground" : "hover:text-foreground active:text-foreground",
 				),
 			),
 			h.Type("button"),

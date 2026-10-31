@@ -237,7 +237,7 @@ export const createOrganization = (
 			Effect.fail(
 				new OrganizationCreateError({
 					message: Option.match(Cause.findErrorOption(cause), {
-						onNone: () => "Failed to create organization",
+						onNone: () => "Couldn't create organization",
 						onSome: (error) => error.message,
 					}),
 					cause,

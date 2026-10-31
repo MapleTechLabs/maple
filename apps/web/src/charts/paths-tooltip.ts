@@ -68,7 +68,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 	const { node, anchor, width, height, reverse } = inputs
 	return h.div(
 		[
-			h.Class("pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-md"),
+			h.Class("pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-popup"),
 			h.Style({
 				left: `${Math.min(Math.max(0, node.x + NODE_W + 10), Math.max(0, width - TIP_W))}px`,
 				top: `${Math.min(node.y + 4, Math.max(0, height - 96))}px`,

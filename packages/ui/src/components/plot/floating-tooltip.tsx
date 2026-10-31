@@ -78,7 +78,7 @@ export function useChartTooltipSuppressed(): boolean {
  * tooltip. Module-local: charts get it via `ChartFloatingTooltip`, never directly.
  */
 export const chartTooltipCardClassName =
-	"border-border-subtle bg-popover/90 text-popover-foreground rounded-xl border px-3 py-2 text-xs shadow-xl backdrop-blur-md"
+	"border-border-subtle bg-popover/90 text-popover-foreground rounded-xl border px-3 py-2 text-xs shadow-popup backdrop-blur-md"
 
 /**
  * Gates the position transition so a tooltip snaps to its anchor on first

@@ -33,7 +33,7 @@ const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: 
 			h.AriaExpanded(isShown),
 			h.Class(
 				cn(
-					"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground",
+					"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 					!isShown && ON_HOVER,
 				),
 			),
@@ -123,7 +123,7 @@ export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, {
 			[
 				h.AriaExpanded(isOpen),
 				h.Class(
-					"flex w-full cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground hover:text-foreground",
+					"flex w-full cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground hover:text-foreground active:text-foreground",
 				),
 				h.Type("button"),
 				h.OnClick(Message.ToggledRow({ key: system.key })),

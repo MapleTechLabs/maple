@@ -22,7 +22,7 @@ type KnownKind = "deployment" | "statefulset" | "daemonset"
 const knownKindOf = (kind: string): KnownKind | null =>
 	kind === "deployment" || kind === "statefulset" || kind === "daemonset" ? kind : null
 
-const LINK = "inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
+const LINK = "inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 active:text-primary/80"
 
 const podsHref = (workload: ServiceWorkload, kind: KnownKind | null, time: TimeSearch): string => {
 	const namespaces = workload.namespace ? [workload.namespace] : undefined

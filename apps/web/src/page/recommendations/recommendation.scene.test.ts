@@ -109,7 +109,7 @@ describe("recommendation detail", () => {
 		const failed = pageUpdate(started.model, Message.CompletedApply({ result: Result.fail(toLoadFailure(new Error("no"))) }))
 		expect(failed.model.busy).toBeNull()
 		expect(failed.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "error", title: "Failed to create mapping", description: toLoadFailure(new Error("no")).message }),
+			PageOutMessage.RequestedToast({ type: "error", title: "Couldn't create mapping", description: toLoadFailure(new Error("no")).message }),
 		)
 		scene({ update: pageUpdate, view }, given(failed.model), expectView(role("button", { name: "Apply mapping" })).toBeEnabled())
 	})

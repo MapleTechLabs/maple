@@ -18,7 +18,7 @@ import type { Model } from "./model"
 type H = HtmlBuilder<Message>
 
 export const QUIET_LINK =
-	"text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
+	"text-muted-foreground underline decoration-border underline-offset-2 hover:text-foreground active:text-foreground"
 
 const HEADLINE = new Map([
 	["degraded", "Metrics collection degraded"],

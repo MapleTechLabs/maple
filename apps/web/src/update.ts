@@ -512,7 +512,7 @@ const onboardingOut =
 							model,
 							PageOutMessage.RequestedToast({
 								type: "error",
-								title: "Failed to update your plan",
+								title: "Couldn't update your plan",
 								description: message,
 							}),
 						),

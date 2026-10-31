@@ -332,7 +332,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 								cn(
 									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs transition-colors",
 									"before:absolute before:inset-y-1 before:left-0 before:w-[2px] before:rounded-r-sm before:bg-transparent before:transition-colors",
-									"hover:bg-surface-sunken",
+									"hover:bg-surface-sunken active:bg-surface-sunken",
 									isActive && "text-foreground before:bg-primary",
 									!isActive && "text-foreground-soft",
 								),
@@ -353,7 +353,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 					h.Type("button"),
 					h.OnClick(Message.ClickedCustomRange(customSeed(inputs))),
 					h.Class(
-						"mt-1 flex h-7 items-center gap-2 pl-3 pr-2 text-left text-xs text-foreground-soft transition-colors hover:bg-surface-sunken hover:text-foreground",
+						"mt-1 flex h-7 items-center gap-2 pl-3 pr-2 text-left text-xs text-foreground-soft hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 					),
 				],
 				[
@@ -378,7 +378,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.Type("button"),
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
-								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs tracking-wide text-foreground-soft transition-colors hover:border-border hover:bg-surface-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs tracking-wide text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[value],
@@ -416,7 +416,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 							"focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
 							model.isShorthandInvalid
 								? "border-destructive/70"
-								: "border-border-subtle hover:border-border",
+								: "border-border-subtle hover:border-border active:border-border",
 						),
 					),
 				],
@@ -567,7 +567,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 						cn(
 							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
 							"text-2xs tracking-tight outline-none transition-colors",
-							"hover:bg-surface-strong focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-surface-strong",
+							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-surface-strong",
 						),
 					),
 					h.DataAttribute("slot", "combobox-trigger"),

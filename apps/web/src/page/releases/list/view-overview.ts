@@ -53,7 +53,7 @@ export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: Time
 						{
 							variant: "outline",
 							size: "xs",
-							className: cn("font-normal", version.behind > 0 && "border-severity-warn/40 bg-severity-warn/5"),
+							className: cn("font-normal", version.behind > 0 && "border-severity-warn-a4 bg-severity-warn-a1"),
 							href: releaseHref(version.commitSha, { ...timeSearch, environments, service: version.serviceName }),
 							attributes: [
 								h.Key(version.serviceName),

@@ -13,8 +13,8 @@ type Mode = "text" | "trace" | "header"
 
 // The search mode badge's label and colours.
 const MODE = new Map<Mode, Readonly<{ label: string; className: string }>>([
-	["text", { label: "Text", className: "bg-primary/15 text-primary" }],
-	["trace", { label: "Trace", className: "bg-severity-debug/15 text-severity-debug" }],
+	["text", { label: "Text", className: "bg-primary-a2 text-primary" }],
+	["trace", { label: "Trace", className: "bg-severity-debug-a2 text-severity-debug" }],
 	["header", { label: "Header", className: "bg-chart-throughput/15 text-chart-throughput" }],
 ])
 
@@ -113,7 +113,7 @@ export const searchHelp = (h: HtmlBuilder<Message>, model: Popover.Model): Html 
 								h.Type("button"),
 								h.AriaLabel("What you can search for"),
 								h.Class(
-									"cursor-pointer rounded-sm text-foreground-subtle transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
+									"cursor-pointer rounded-sm text-foreground-subtle hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
 								),
 								...trigger,
 							],

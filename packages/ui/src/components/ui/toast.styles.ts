@@ -18,7 +18,7 @@ export const toastViewportStyles = [
 ] as const
 
 export const toastRootStyles = [
-	"absolute z-[calc(9999-var(--toast-index))] h-(--toast-calc-height) w-full select-none rounded-lg border bg-[color-mix(in_srgb,var(--popover),var(--color-black)_calc(1%*max(0,var(--toast-index,0))))] not-dark:bg-clip-padding text-popover-foreground shadow-lg/5 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s,background-color_.5s] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-expanded:bg-popover dark:bg-[color-mix(in_srgb,var(--popover),var(--color-black)_calc(6%*max(0,var(--toast-index,0))))] dark:data-expanded:bg-popover dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+	"absolute z-[calc(9999-var(--toast-index))] h-(--toast-calc-height) w-full select-none rounded-lg border bg-[color-mix(in_srgb,var(--popover),var(--color-black)_calc(1%*max(0,var(--toast-index,0))))] not-dark:bg-clip-padding text-popover-foreground shadow-popup [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s,background-color_.5s] before:pointer-events-none before:absolute before:inset-0 before:rounded-lg-inset before:shadow-control data-expanded:bg-popover dark:bg-[color-mix(in_srgb,var(--popover),var(--color-black)_calc(6%*max(0,var(--toast-index,0))))] dark:data-expanded:bg-popover",
 	"data-[position*=right]:right-0 data-[position*=right]:left-auto",
 	"data-[position*=left]:right-auto data-[position*=left]:left-0",
 	"data-[position*=center]:right-0 data-[position*=center]:left-0",
@@ -84,11 +84,11 @@ export const toastViewportAnchoredStyles = "outline-none"
 export const toastPositionerStyles = "z-50 max-w-[min(--spacing(64),var(--available-width))]"
 
 export const toastPopupStyles =
-	"relative text-balance border bg-popover not-dark:bg-clip-padding text-popover-foreground text-xs transition-[scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:shadow-[0_1px_--theme(--color-black/4%)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+	"relative text-balance border bg-popover not-dark:bg-clip-padding text-popover-foreground text-xs transition-[scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:shadow-control data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0"
 
-export const toastPopupTooltipStyles = "rounded-md shadow-md/5 before:rounded-[calc(var(--radius-md)-1px)]"
+export const toastPopupTooltipStyles = "rounded-md shadow-popup before:rounded-md-inset"
 
-export const toastPopupDefaultStyles = "rounded-lg shadow-lg/5 before:rounded-[calc(var(--radius-lg)-1px)]"
+export const toastPopupDefaultStyles = "rounded-lg shadow-popup before:rounded-lg-inset"
 
 export const toastPopupTooltipContentStyles = "pointer-events-auto px-2 py-1"
 

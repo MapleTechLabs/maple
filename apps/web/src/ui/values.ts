@@ -55,7 +55,7 @@ export const serviceDot = <M>(
 			h.AriaHidden(true),
 			h.Class(
 				cn(
-					"shrink-0 rounded-[35%] [corner-shape:squircle]",
+					"shrink-0 rounded-dot [corner-shape:squircle]",
 					options.size === "sm" ? "size-1.5" : "size-2",
 					options.className,
 				),

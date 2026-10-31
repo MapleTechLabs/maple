@@ -73,7 +73,7 @@ const stat = (h: H, iconName: IconName, label: string, count: number, isDanger =
 			h.Class(
 				cn(
 					"flex flex-col gap-0.5 rounded-md border border-border-subtle bg-surface-sunken px-2 py-1.5",
-					isDanger && "border-severity-error/30 bg-severity-error/5",
+					isDanger && "border-severity-error-a3 bg-severity-error-a1",
 				),
 			),
 		],
@@ -204,7 +204,7 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 							h,
 							hrefOf(AppRoute.Replays({ search: { userId } })),
 							userId,
-							"truncate font-mono text-xs text-primary underline-offset-2 hover:underline",
+							"truncate font-mono text-xs text-primary underline-offset-2 hover:underline active:underline",
 						),
 						copy(h, model, "userId", userId, "User ID"),
 					]),
@@ -226,7 +226,7 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 										h,
 										hrefOf(AppRoute.Replays({ search: { group: groupName } })),
 										groupName,
-										"truncate text-xs text-primary underline-offset-2 hover:underline",
+										"truncate text-xs text-primary underline-offset-2 hover:underline active:underline",
 									)
 								: value(h, groupId, { isMono: true, className: "truncate" }),
 						],
@@ -399,7 +399,7 @@ export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Htm
 								h,
 								hrefOf(AppRoute.Replays({ search: { visitorId: session.visitorId } })),
 								shortId(session.visitorId, "generic", { ellipsis: true }),
-								"truncate font-mono text-xs text-primary underline-offset-2 hover:underline",
+								"truncate font-mono text-xs text-primary underline-offset-2 hover:underline active:underline",
 							),
 						]),
 						row(h, { icon: "UserIcon", label: "Visitor" }, [

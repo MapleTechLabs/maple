@@ -56,9 +56,9 @@ export const copyableValue = (
 			h.Class(
 				cn(
 					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
-					status === "idle" && "hover:bg-surface-sunken",
-					status === "copied" && "bg-severity-info/20",
-					status === "error" && "bg-severity-error/20",
+					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+					status === "copied" && "bg-severity-info-a3",
+					status === "error" && "bg-severity-error-a3",
 					options.className,
 				),
 			),

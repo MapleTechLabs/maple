@@ -6,7 +6,7 @@ import { icon } from "../../../ui/icon"
 
 // `GcpMessage`, `Linked` and `GcpExternalLink`: a failure in the API's own words, laid out to be scanned.
 
-const GCP_LINK = "underline underline-offset-2 hover:no-underline"
+const GCP_LINK = "underline underline-offset-2 hover:no-underline active:no-underline"
 const BILLING_PAGE = "Settings, Billing"
 const LINK_PATTERN = new RegExp(`(https://[^\\s)]*[^\\s).,]|${BILLING_PAGE})`)
 

@@ -32,7 +32,7 @@ export const SESSION_TAG_DESCRIPTIONS = {
 /** Pill colours: the ok green for the sessions worth opening, a chart hue per
  *  noise tier, neutral for bots and idle tabs, and two more chart hues for the visitor traits. */
 export const SESSION_TAG_STYLES = {
-	engaged: "bg-severity-info/12 text-severity-info",
+	engaged: "bg-severity-info-a2 text-severity-info",
 	glance: "bg-chart-2/12 text-chart-2",
 	idle: "bg-muted text-muted-foreground",
 	bounce: "bg-chart-1/12 text-chart-1",

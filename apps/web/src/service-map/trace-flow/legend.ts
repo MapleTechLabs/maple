@@ -82,7 +82,7 @@ export const flowLegend = <M>(
 						[
 							h.span([
 								h.Class(
-									"size-3.5 rounded-sm bg-severity-error/15 ring-1 ring-inset ring-severity-error/40",
+									"size-3.5 rounded-sm bg-severity-error-a2 ring-1 ring-inset ring-severity-error-a4",
 								),
 							]),
 							h.span([h.Class("font-medium")], ["Error"]),

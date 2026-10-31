@@ -176,7 +176,7 @@ describe("source detail", () => {
 		)
 		expect(failed.model.busy).toBeNull()
 		expect(failed.outMessage?._tag === "RequestedToast" && failed.outMessage.title).toBe(
-			"Failed to pause source",
+			"Couldn't pause source",
 		)
 	})
 

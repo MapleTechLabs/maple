@@ -251,7 +251,7 @@ const detailsPanel = (
 			h.a(
 				[
 					h.Href(runHref(finding.firstSeenRunId)),
-					h.Class("font-mono text-sm underline-offset-2 hover:underline"),
+					h.Class("font-mono text-sm underline-offset-2 hover:underline active:underline"),
 				],
 				[`run ${shortId(finding.firstSeenRunId)}`],
 			),
@@ -260,7 +260,7 @@ const detailsPanel = (
 			h.a(
 				[
 					h.Href(runHref(finding.lastSeenRunId)),
-					h.Class("font-mono text-sm underline-offset-2 hover:underline"),
+					h.Class("font-mono text-sm underline-offset-2 hover:underline active:underline"),
 				],
 				[`run ${shortId(finding.lastSeenRunId)}`],
 			),

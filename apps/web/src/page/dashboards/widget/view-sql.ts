@@ -47,7 +47,7 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 					size: "icon-xs",
 					label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
 					hasTooltip: false,
-					className: "text-muted-foreground hover:text-foreground",
+					className: "text-muted-foreground hover:text-foreground active:text-foreground",
 					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
 				},
 				[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -158,8 +158,8 @@ const chipRow = (
 				h,
 				token,
 				index < MACRO_HINTS.length
-					? "bg-surface-sunken text-muted-foreground hover:bg-muted hover:text-foreground"
-					: "bg-primary/10 text-primary hover:bg-primary/20",
+					? "bg-surface-sunken text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground"
+					: "bg-primary-a2 text-primary hover:bg-primary-a3 active:bg-primary-a3",
 				trigger(chipTriggerId(index)),
 			),
 		),

@@ -237,7 +237,7 @@ describe("hazel card", () => {
 			started,
 			Message.FailedStartConnect({
 				attempt: 1,
-				title: "Failed to start Hazel connect flow",
+				title: "Couldn't start Hazel connect flow",
 				description: "nope",
 			}),
 		)
@@ -245,7 +245,7 @@ describe("hazel card", () => {
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to start Hazel connect flow",
+				title: "Couldn't start Hazel connect flow",
 				description: "nope",
 			}),
 		)

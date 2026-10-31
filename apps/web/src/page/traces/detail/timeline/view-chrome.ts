@@ -51,7 +51,7 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 						h.button(
 							[
 								h.AriaLabel("Clear search"),
-								h.Class("-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground"),
+								h.Class("-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground active:text-foreground"),
 								h.Type("button"),
 								h.OnClick(Message.ClickedClearSearch()),
 							],
@@ -302,7 +302,7 @@ export const minimap = (h: H, model: Model): Html => {
 			h.div(
 				[
 					h.Class(
-						"pointer-events-none absolute inset-y-0 border-x border-primary/70 bg-primary/15",
+						"pointer-events-none absolute inset-y-0 border-x border-primary/70 bg-primary-a2",
 					),
 					h.Style({ display: "none" }),
 				],

@@ -112,7 +112,7 @@ export const runStatus = (
 				cn(
 					// On a phone a long error would squeeze the steps above out of view: it scrolls instead.
 					"flex max-h-[40svh] shrink-0 flex-col gap-3 overflow-y-auto border-t px-6 py-4 sm:max-h-none",
-					overdue && "bg-severity-warn/6",
+					overdue && "bg-severity-warn-a1",
 				),
 			),
 		],
@@ -217,7 +217,7 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 			h.span(
 				[
 					h.Class(
-						"flex size-12 items-center justify-center rounded-full bg-severity-info/12 text-severity-info",
+						"flex size-12 items-center justify-center rounded-full bg-severity-info-a2 text-severity-info",
 					),
 				],
 				[icon(h, "CheckIcon", { size: 20 })],

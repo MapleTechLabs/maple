@@ -20,7 +20,7 @@ export type PickerKind = "severity" | "state"
 export const PICKER_HOTKEY = { severity: "P", state: "S" } as const
 
 const TRIGGER =
-	"rounded-md transition-colors hover:bg-surface-sunken data-popup-open:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none"
+	"rounded-md hover:bg-surface-sunken active:bg-surface-sunken data-popup-open:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none"
 
 /** `PopoverTrigger`'s closed-state attributes; an open popover supplies its own. */
 const closedTrigger = <M>(h: HtmlBuilder<M>) => [
@@ -76,7 +76,7 @@ export const statePickerTrigger = <M>(
 			h.Class(
 				cn(
 					TRIGGER,
-					"-ml-1.5 inline-flex h-6 max-w-full items-center gap-1.5 px-1.5 text-2xs whitespace-nowrap text-muted-foreground hover:text-foreground data-popup-open:text-foreground",
+					"-ml-1.5 inline-flex h-6 max-w-full items-center gap-1.5 px-1.5 text-2xs whitespace-nowrap text-muted-foreground hover:text-foreground active:text-foreground data-popup-open:text-foreground",
 					className,
 				),
 			),

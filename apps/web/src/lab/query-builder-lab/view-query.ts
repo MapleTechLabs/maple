@@ -248,7 +248,7 @@ const addOnToggles = (h: H, query: QueryDraft): Html =>
 							size: "xs",
 							isPressed: isOn,
 							onClick: changed(query, QueryChange.ToggledAddOn({ key: addOn.key })),
-							className: isOn ? "border-primary/40 text-foreground" : "text-muted-foreground",
+							className: isOn ? "border-primary-a4 text-foreground" : "text-muted-foreground",
 						},
 						[...(isOn ? [icon(h, "CheckIcon", { size: 12 })] : []), addOn.label],
 					)

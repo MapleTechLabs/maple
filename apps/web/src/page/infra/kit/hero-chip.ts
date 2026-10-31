@@ -39,7 +39,7 @@ export const heroFieldChipClass = (isPicker: boolean): string =>
 	cn(
 		badgeVariants({ variant: isPicker ? "meta" : "muted", size: "xs", mono: true }),
 		FIELD_CLASS,
-		isPicker && "cursor-pointer transition-colors hover:text-foreground",
+		isPicker && "cursor-pointer hover:text-foreground active:text-foreground",
 	)
 
 export type HeroFieldChipOptions = Readonly<{
@@ -61,7 +61,7 @@ export const heroFieldChipParts = <M>(
 	return [
 		...(options.isValueFirst === true ? [value, ...label] : [...label, value]),
 		...(options.isPicker === true
-			? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0 opacity-60" })]
+			? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0" })]
 			: []),
 	]
 }

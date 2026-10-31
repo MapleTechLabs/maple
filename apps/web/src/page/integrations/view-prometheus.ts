@@ -162,7 +162,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken",
+					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken",
 					isSelected && "bg-surface-strong",
 				),
 			),
@@ -279,7 +279,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						slotId: menuId,
 						model: card.menus[menuId] ?? Menu.init(menuId),
 						label: `Actions for ${target.name}`,
-						className: "text-muted-foreground hover:text-foreground shrink-0",
+						className: "text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
 						entries: [
 							{
 								_tag: "Item",
@@ -412,7 +412,7 @@ const setupGuide = (h: H, page: "prometheus" | "warpstream"): Html =>
 			h.Href(docsUrl(page)),
 			h.Target("_blank"),
 			h.Rel("noreferrer"),
-			h.Class("text-foreground underline underline-offset-2 hover:no-underline"),
+			h.Class("text-foreground underline underline-offset-2 hover:no-underline active:no-underline"),
 		],
 		["Setup guide"],
 	)

@@ -162,7 +162,7 @@ const InviteMember = Command.define("InviteClerkMember", {
 	execute: ({ email, role }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) =>
-				clerkTry("Failed to send invitation", () =>
+				clerkTry("Couldn't send invitation", () =>
 					organization.inviteMember({ emailAddress: email, role }),
 				),
 			),
@@ -175,7 +175,7 @@ const ChangeRole = Command.define("ChangeClerkMemberRole", {
 	messages: [Message.CompletedRoleChange],
 	execute: ({ memberId, name, next }) =>
 		withMembership(memberId, (member) =>
-			clerkTry("Failed to change role", () => member.update({ role: next })),
+			clerkTry("Couldn't change role", () => member.update({ role: next })),
 		).pipe(settleClerk((result) => Message.CompletedRoleChange({ name, next, result }))),
 })
 
@@ -184,7 +184,7 @@ const RemoveMember = Command.define("RemoveClerkMember", {
 	messages: [Message.CompletedRemove],
 	execute: ({ memberId, name }) =>
 		withMembership(memberId, (member) =>
-			clerkTry("Failed to remove member", () => member.destroy()),
+			clerkTry("Couldn't remove member", () => member.destroy()),
 		).pipe(settleClerk((result) => Message.CompletedRemove({ name, result }))),
 })
 
@@ -193,7 +193,7 @@ const RevokeInvitation = Command.define("RevokeClerkInvitation", {
 	messages: [Message.CompletedRevoke],
 	execute: ({ id, email }) =>
 		withInvitation(id, (invitation) =>
-			clerkTry("Failed to revoke invitation", () => invitation.revoke()),
+			clerkTry("Couldn't revoke invitation", () => invitation.revoke()),
 		).pipe(settleClerk((result) => Message.CompletedRevoke({ email, result }))),
 })
 
@@ -204,7 +204,7 @@ const ResendInvitation = Command.define("ResendClerkInvitation", {
 	execute: ({ id, email, role }) =>
 		Effect.gen(function* () {
 			const revoked = yield* withInvitation(id, (invitation) =>
-				clerkTry("Failed to resend invitation", () => invitation.revoke()),
+				clerkTry("Couldn't resend invitation", () => invitation.revoke()),
 			).pipe(Effect.result)
 			if (Result.isFailure(revoked))
 				return Message.CompletedResend({

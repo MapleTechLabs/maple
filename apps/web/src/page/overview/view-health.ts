@@ -73,7 +73,7 @@ const railAction = <M>(h: HtmlBuilder<M>, slice: SliceSearch, health?: ServiceHe
 		[
 			h.Href(servicesHref(slice, health)),
 			h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`),
-			h.Class("text-foreground-faint transition-colors hover:text-foreground"),
+			h.Class("text-foreground-faint hover:text-foreground active:text-foreground"),
 		],
 		[icon(h, "ArrowRightIcon", { className: "size-3" })],
 	)
@@ -186,7 +186,7 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				[
 					h.Href(servicesHref(slice)),
 					h.Class(
-						"text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
+						"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
 					),
 				],
 				["View all services →"],

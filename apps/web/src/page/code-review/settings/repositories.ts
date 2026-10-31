@@ -87,7 +87,7 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 					h.a(
 						[
 							h.Class(
-								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline",
+								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline active:underline",
 							),
 							h.Href(repo.htmlUrl),
 							h.Attribute("rel", "noreferrer"),
@@ -170,7 +170,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 			action: h.a(
 				[
 					h.Class(
-						"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground",
+						"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
 					),
 					h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
 				],

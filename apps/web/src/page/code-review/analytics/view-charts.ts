@@ -157,7 +157,7 @@ export const issuesCard = (
 			h.a(
 				[
 					h.Class(
-						"inline-flex items-center gap-1 self-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline",
+						"inline-flex items-center gap-1 self-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
 					),
 					h.Href(href),
 				],

@@ -47,9 +47,9 @@ const copyableId = (
 			h.Class(
 				cn(
 					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
-					model.copy.status === "idle" && "hover:bg-surface-sunken",
-					model.copy.status === "copied" && "bg-severity-info/20",
-					model.copy.status === "error" && "bg-severity-error/20",
+					model.copy.status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+					model.copy.status === "copied" && "bg-severity-info-a3",
+					model.copy.status === "error" && "bg-severity-error-a3",
 					"inline-flex min-w-0 max-w-full items-center gap-1 font-mono",
 				),
 			),

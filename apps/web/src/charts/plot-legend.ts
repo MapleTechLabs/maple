@@ -59,7 +59,7 @@ const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: Plot
 			h.Class(
 				cn(
 					// Labels sit one step under the card title; the focused series reads full strength.
-					"flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground",
+					"flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 					isMuted && "opacity-40",
 					(isActive || (!hovering && isHighlighted)) && "bg-surface-sunken text-foreground",
 				),

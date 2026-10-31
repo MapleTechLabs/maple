@@ -56,7 +56,7 @@ const advanced = (h: H, model: Model): Html => {
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
 					h.Class(
-						"text-muted-foreground hover:text-foreground group flex items-center gap-1.5 text-sm",
+						"text-muted-foreground hover:text-foreground active:text-foreground group flex items-center gap-1.5 text-sm",
 					),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),

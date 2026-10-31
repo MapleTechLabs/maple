@@ -95,7 +95,7 @@ export const completedProbe = (
 		probing: without(model.prometheusCard.probing, id),
 		probes: { ...model.prometheusCard.probes, [id]: outcome },
 	})
-	if (failure !== null) return toast(settled, "error", "Failed to test connection", failure.message)
+	if (failure !== null) return toast(settled, "error", "Couldn't test connection", failure.message)
 	return chain(settled, [
 		(next) => refreshTargets(next, context),
 		(next) =>
@@ -123,7 +123,7 @@ export const completedToggle = (
 	const settled = withCard(model, { toggling: without(model.prometheusCard.toggling, id) })
 	return failure === null
 		? refreshTargets(settled, context)
-		: toast(settled, "error", "Failed to update scrape target", failure.message)
+		: toast(settled, "error", "Couldn't update scrape target", failure.message)
 }
 
 // FORM
@@ -264,7 +264,7 @@ export const completedSave = (
 		return toast(
 			settled,
 			"error",
-			isEdit ? "Failed to update scrape target" : "Failed to create scrape target",
+			isEdit ? "Couldn't update scrape target" : "Couldn't create scrape target",
 			failure.message,
 		)
 	return chain(settled, [
@@ -312,7 +312,7 @@ export const completedDelete = (
 	failure: LoadFailure | null,
 ): Return => {
 	const settled = withCard(model, { isDeleting: false })
-	if (failure !== null) return toast(settled, "error", "Failed to delete scrape target", failure.message)
+	if (failure !== null) return toast(settled, "error", "Couldn't delete scrape target", failure.message)
 	return chain(settled, [
 		(next) => toast(next, "success", "Scrape target deleted"),
 		(next) => refreshTargets(next, context),

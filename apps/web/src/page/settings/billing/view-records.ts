@@ -103,7 +103,7 @@ const invoiceRow = (
 							h.a(
 								[
 									h.AriaLabel(`${unpaid ? "Pay" : "View"} invoice from ${date}`),
-									h.Class("text-primary text-xs font-medium hover:underline"),
+									h.Class("text-primary text-xs font-medium hover:underline active:underline"),
 									...externalLink(h, url),
 								],
 								[unpaid ? "Pay" : "View"],

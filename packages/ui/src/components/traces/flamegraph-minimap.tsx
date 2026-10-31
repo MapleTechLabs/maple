@@ -143,14 +143,12 @@ export function FlamegraphMinimap({
 
 			{viewportStyle && (
 				<div
-					className="absolute inset-y-0 border-2 border-primary bg-primary/20 cursor-grab active:cursor-grabbing"
+					className="absolute inset-y-0 border-2 border-primary bg-primary-a3 cursor-grab active:cursor-grabbing"
 					style={viewportStyle}
 				/>
 			)}
 
-			<div className="absolute right-3 top-1 text-4xs font-medium text-foreground-subtle">
-				Minimap
-			</div>
+			<div className="absolute right-3 top-1 text-4xs font-medium text-foreground-subtle">Minimap</div>
 		</div>
 	)
 }

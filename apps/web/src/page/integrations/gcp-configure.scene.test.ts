@@ -238,7 +238,7 @@ describe("google cloud wizard: a connection", () => {
 			}),
 		)
 		expect(failed.outMessage).toEqual(
-			expect.objectContaining({ _tag: "RequestedToast", title: "Failed to save the change" }),
+			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't save the change" }),
 		)
 		expect(configureOf(failed.model).confirm.isOpen).toBe(true)
 		expect(configureOf(failed.model).opened).toBeNull()

@@ -20,7 +20,7 @@ import { sectionHeading } from "../../kit/section-heading"
 
 type H = HtmlBuilder<Message>
 
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 
 /** `PULL_REQUEST_STATE_TONE`: open is work under way; merged is done. */
 const PULL_REQUEST_STATE_TONE = {
@@ -50,7 +50,7 @@ const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean
 							h.Href(pr.url),
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
-							h.Class("truncate text-sm font-medium text-foreground hover:underline"),
+							h.Class("truncate text-sm font-medium text-foreground hover:underline active:underline"),
 						],
 						[pr.repoFullName, "#", String(pr.number)],
 					),
@@ -269,7 +269,7 @@ export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.AlertRule({ ruleId, search: {} }))),
-							h.Class("text-sm text-primary underline-offset-4 hover:underline"),
+							h.Class("text-sm text-primary underline-offset-4 hover:underline active:underline"),
 						],
 						["View alert rule →"],
 					),

@@ -303,7 +303,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 		[
 			h.AriaExpanded(isExpanded),
 			h.Class(
-				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs transition-colors hover:bg-surface-sunken",
+				"flex h-[38px] w-full items-center gap-2.5 px-2.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			h.Type("button"),
 			h.OnClick(Message.ToggledErrorsExpanded()),

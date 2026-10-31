@@ -368,7 +368,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSuccess: () => ({ model: { ...model, isTogglingRule: false } }),
 				onFailure: (failure) => ({
 					model: { ...model, isTogglingRule: false },
-					outMessage: errorToast("Failed to update rule", failure.message),
+					outMessage: errorToast("Couldn't update rule", failure.message),
 				}),
 			}),
 		ClickedOpenInvestigation: ({ incidentId }) => openInvestigation(model, incidentId),
@@ -383,7 +383,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onFailure: (failure) => ({
 					model: { ...model, isOpeningInvestigation: false },
-					outMessage: errorToast("Failed to open investigation", failure.message),
+					outMessage: errorToast("Couldn't open investigation", failure.message),
 				}),
 			}),
 		GotRowMenuMessage: ({ menuId, message: child }) => updateMenu(model, menuId, child),

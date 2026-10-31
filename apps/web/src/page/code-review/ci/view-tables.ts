@@ -58,7 +58,7 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 			traceKept(red.since, time.nowMs)
 				? h.a(
 						[
-							h.Class("text-foreground underline-offset-4 hover:underline"),
+							h.Class("text-foreground underline-offset-4 hover:underline active:underline"),
 							h.Href(traceHref),
 							h.Title("Open the first failed run's trace"),
 							// `event.stopPropagation()` keeps the row's click off; the page follows the link itself.
@@ -183,7 +183,7 @@ const workflowRow = (
 				"hidden px-4 sm:table-cell",
 			),
 		],
-		cn("cursor-pointer transition-colors hover:bg-surface-sunken", isActive && "bg-surface-strong"),
+		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", isActive && "bg-surface-strong"),
 		[h.Key(`${row.owner}/${row.repository}/${row.pipeline}`), h.OnClick(select)],
 	)
 }

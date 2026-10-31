@@ -106,7 +106,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 		[
 			h.AriaHasPopup("dialog"),
 			h.Class(
-				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-surface-sunken",
+				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			h.Type("button"),
 			h.OnClick(openSpan(model, finding.spanId)),
@@ -164,7 +164,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 											variant: "link",
 											size: "xs",
 											className:
-												"h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground",
+												"h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground active:decoration-muted-foreground",
 											attributes: [h.OnClick(Message.ClickedOpenTools())],
 										},
 										["Tools section"],
@@ -268,7 +268,7 @@ const disclosure = (
 			h.button(
 				[
 					h.AriaExpanded(isExpanded),
-					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken")),
+					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken")),
 					h.Type("button"),
 					h.OnClick(Message.ToggledChecks({ which: options.which, isOpen: !isExpanded })),
 				],

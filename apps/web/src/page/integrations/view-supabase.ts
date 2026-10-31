@@ -261,7 +261,7 @@ const footer = (h: H): Html =>
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.InfraSupabase({ search: {} }))),
-					h.Class("shrink-0 transition-colors hover:text-foreground"),
+					h.Class("shrink-0 hover:text-foreground active:text-foreground"),
 				],
 				["View in Infrastructure"],
 			),

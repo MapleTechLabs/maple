@@ -148,9 +148,7 @@ export function TraceFlowView({
 	)
 
 	if (rootSpans.length === 0) {
-		return (
-			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
-		)
+		return <EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
 	}
 
 	if (nodeCount > MAX_FLOW_NODES) {
@@ -265,7 +263,7 @@ export function TraceFlowView({
 				)}
 				<span className="flex-1" />
 				<div className="flex items-center gap-1.5">
-					<span className="size-3.5 rounded-sm bg-severity-error/15 ring-1 ring-inset ring-severity-error/40" />
+					<span className="size-3.5 rounded-sm bg-severity-error-a2 ring-1 ring-inset ring-severity-error-a4" />
 					<span className="font-medium">Error</span>
 				</div>
 			</div>

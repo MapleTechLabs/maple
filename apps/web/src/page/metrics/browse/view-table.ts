@@ -123,7 +123,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				`${MD_CELL} text-xs text-muted-foreground`,
 			),
 		],
-		"hover:bg-surface-sunken",
+		"hover:bg-surface-sunken active:bg-surface-sunken",
 	)
 
 /** The loaded table: rows up to `tableLimit`, dimmed while the next page loads. */

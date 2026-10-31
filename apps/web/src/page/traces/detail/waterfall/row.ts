@@ -22,7 +22,7 @@ import { countDescendants, type TreeRow, treeLevel } from "./tree"
 // `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
 
 // copied: `outcomeBadgeStyle(true)` (cloud-platforms/types.ts pulls in the React icon set).
-const BAD_OUTCOME_STYLE = "bg-severity-error/15 text-severity-error border-severity-error/30"
+const BAD_OUTCOME_STYLE = "bg-severity-error-a2 text-severity-error border-severity-error-a3"
 
 const MAX_INDENT_DEPTH = 10
 const TOTAL_BLOCKS = 27
@@ -155,7 +155,7 @@ const pixelBar = (
 				[
 					h.Attribute(
 						"class",
-						`w-[5px] h-2.5 rounded-[1px] shrink-0 ${isActive ? color : "bg-muted"}`,
+						`w-[5px] h-2.5 rounded-2xs shrink-0 ${isActive ? color : "bg-muted"}`,
 					),
 				],
 				[],
@@ -171,7 +171,7 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 			h.Class(
 				cn(
 					"@container/row group flex items-stretch px-2 bg-surface-sunken",
-					ctx.isSelected && "bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]",
+					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
 		],
@@ -461,9 +461,9 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 		[
 			h.Class(
 				cn(
-					"@container/row group flex items-stretch hover:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-					span.statusCode === "Error" && "bg-severity-error/5",
-					ctx.isSelected && "bg-primary/5 shadow-[inset_2px_0_0_var(--color-primary)]",
+					"@container/row group flex items-stretch hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					span.statusCode === "Error" && "bg-severity-error-a1",
+					ctx.isSelected && "bg-primary-a1 shadow-accent-start",
 				),
 			),
 			h.Role("button"),

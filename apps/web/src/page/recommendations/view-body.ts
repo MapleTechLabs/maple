@@ -129,7 +129,7 @@ const changeBreakdown = (h: H, issue: V2Recommendation): Html => {
 
 const cautionCallout = (h: H, issue: V2Recommendation): Html =>
 	h.div(
-		[h.Class("rounded-r-md border-l-2 border-severity-warn bg-severity-warn/8 px-4 py-3")],
+		[h.Class("rounded-r-md border-l-2 border-severity-warn bg-severity-warn-a1 px-4 py-3")],
 		[
 			h.p(
 				[h.Class("text-sm leading-relaxed text-foreground-soft")],

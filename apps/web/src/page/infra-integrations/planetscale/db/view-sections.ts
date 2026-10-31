@@ -44,7 +44,7 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 								h.Type("button"),
 								h.OnClick(Message.SelectedBranch({ branch: event.branchName })),
 								h.Class(
-									"min-w-0 max-w-[40%] truncate font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground",
+									"min-w-0 max-w-[40%] truncate font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 								h.Title(event.branchName),
 							],
@@ -66,7 +66,7 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 							[
 								h.AriaLabel("Open in PlanetScale"),
 								h.Class(
-									"shrink-0 text-muted-foreground transition-colors hover:text-foreground",
+									"shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 								h.Href(event.url),
 								h.Rel("noreferrer"),

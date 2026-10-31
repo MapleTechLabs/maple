@@ -242,7 +242,7 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
-							h.Class("min-w-0 truncate font-medium text-sm text-foreground hover:underline"),
+							h.Class("min-w-0 truncate font-medium text-sm text-foreground hover:underline active:underline"),
 							h.Title(headline),
 						],
 						[headline],
@@ -408,7 +408,7 @@ const hubHero = (h: H, model: Model): Html => {
 									...(model.isCreating ? [h.Disabled(true)] : []),
 									h.OnClick(Message.ClickedSuggestion({ title: suggestion })),
 									h.Class(
-										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-ring hover:bg-surface-sunken disabled:opacity-60",
+										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken disabled:opacity-60",
 									),
 								],
 								[
@@ -436,7 +436,7 @@ const hubHero = (h: H, model: Model): Html => {
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.AlertsCreate({ search: {} }))),
-							h.Class("text-foreground underline-offset-4 hover:underline"),
+							h.Class("text-foreground underline-offset-4 hover:underline active:underline"),
 						],
 						["Create an alert rule"],
 					),
