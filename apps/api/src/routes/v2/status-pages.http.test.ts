@@ -209,6 +209,36 @@ describe("v2 status pages", () => {
 			expect(missing.body.error.code).toBe("status_page_not_found")
 		}))
 
+	it("sets, refuses and clears the footer links", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const created = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme Status",
+				slug: "acme-links",
+				privacy_url: "https://acme.example/privacy",
+			})
+			expect(created.status).toBe(200)
+			expect(created.body).toMatchObject({
+				privacy_url: "https://acme.example/privacy",
+				terms_url: null,
+			})
+			const path = `/v2/status_pages/${created.body.id}`
+
+			const insecure = await harness.request("PATCH", path, token, {
+				terms_url: "http://acme.example/terms",
+			})
+			expect(insecure.status).toBe(400)
+			expect(insecure.body.error.message).toContain("Terms of service URL")
+
+			const updated = await harness.request("PATCH", path, token, {
+				privacy_url: null,
+				terms_url: "https://acme.example/terms",
+			})
+			expect(updated.body).toMatchObject({ privacy_url: null, terms_url: "https://acme.example/terms" })
+			const config = await harness.request("GET", `${path}/config`, token)
+			expect(config.body).toMatchObject({ privacy_url: null, terms_url: "https://acme.example/terms" })
+		}))
+
 	it("refuses a taken slug and an invalid one", () =>
 		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey()

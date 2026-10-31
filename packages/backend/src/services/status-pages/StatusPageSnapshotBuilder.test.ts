@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer } from "effect"
 import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, utcDay } from "@maple/domain/status-page"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { StatusPageSnapshotBuilder, toSnapshot, type SnapshotInput } from "./StatusPageSnapshotBuilder"
 import {
 	DAY_MS,
@@ -42,6 +42,8 @@ const baseInput = (overrides: Partial<SnapshotInput> = {}): SnapshotInput => ({
 		description: null,
 		websiteUrl: null,
 		logoUrl: null,
+		privacyUrl: null,
+		termsUrl: "https://acme.example/terms",
 		theme: DEFAULT_STATUS_PAGE_THEME,
 		showPoweredBy: true,
 		breakGlassTokenSha256: null,
@@ -114,6 +116,79 @@ describe("toSnapshot", () => {
 		)
 		assert.deepStrictEqual(snapshot.incidents, [])
 		assert.strictEqual(snapshot.components[0]?.status, "operational")
+		// Past the listing window, the resolved one still marks its day in the calendar index.
+		assert.deepStrictEqual(
+			snapshot.incidentHistory.map((entry) => entry.resolvedAt),
+			[NOW - 20 * DAY_MS],
+		)
+	})
+
+	it("indexes a year of published incidents and started maintenance, newest first, without updates", () => {
+		const id = (n: number) => StatusPageIncidentId.make(`55555555-5555-4555-8555-55555555555${n}`)
+		const snapshot = toSnapshot(
+			baseInput({
+				incidents: [
+					incident({ id: id(0), title: "Open now", startedAt: NOW - 3_600_000 }),
+					incident({
+						id: id(1),
+						title: "Spring outage",
+						impact: "critical",
+						status: "resolved",
+						startedAt: NOW - 200 * DAY_MS,
+						resolvedAt: NOW - 199 * DAY_MS,
+					}),
+					incident({
+						id: id(2),
+						title: "Too old",
+						status: "resolved",
+						startedAt: NOW - 400 * DAY_MS,
+						resolvedAt: NOW - 366 * DAY_MS,
+					}),
+					incident({
+						id: id(3),
+						kind: "maintenance",
+						title: "Not started",
+						status: "scheduled",
+						startedAt: NOW + DAY_MS,
+						scheduledEnd: NOW + 2 * DAY_MS,
+					}),
+					incident({ id: id(4), title: "Draft", published: false }),
+				],
+				updates: [
+					{
+						id: "u-old",
+						incidentId: id(1),
+						status: "resolved",
+						body: "Fixed",
+						source: "dashboard",
+						overlayEntryId: null,
+						createdAt: NOW - 199 * DAY_MS,
+					},
+				],
+			}),
+		)
+		assert.deepStrictEqual(snapshot.incidentHistory, [
+			{
+				id: id(0),
+				title: "Open now",
+				kind: "incident",
+				impact: "minor",
+				startedAt: NOW - 3_600_000,
+				resolvedAt: null,
+			},
+			{
+				id: id(1),
+				title: "Spring outage",
+				kind: "incident",
+				impact: "critical",
+				startedAt: NOW - 200 * DAY_MS,
+				resolvedAt: NOW - 199 * DAY_MS,
+			},
+		])
+		assert.deepStrictEqual(
+			snapshot.incidents.map((listed) => listed.title),
+			["Not started", "Open now"],
+		)
 	})
 
 	it("lists upcoming maintenance without affecting status", () => {
@@ -143,7 +218,7 @@ describe("toSnapshot", () => {
 		assert.strictEqual(snapshot.components[0]?.baseStatus, "operational")
 	})
 
-	it("fills 90 days of bars", () => {
+	it("fills 365 days of bars", () => {
 		const today = utcDay(NOW)
 		const snapshot = toSnapshot(
 			baseInput({
@@ -166,10 +241,10 @@ describe("toSnapshot", () => {
 			}),
 		)
 		const days = snapshot.components[0]?.days ?? []
-		assert.strictEqual(days.length, 90)
+		assert.strictEqual(days.length, 365)
 		assert.deepStrictEqual(days.at(-1), { day: today, checks: 10, failures: 1, downChecks: 0 })
 		assert.deepStrictEqual(days[0], {
-			day: utcDay(NOW - 89 * DAY_MS),
+			day: utcDay(NOW - 364 * DAY_MS),
 			checks: 0,
 			failures: 0,
 			downChecks: 0,
@@ -249,6 +324,14 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				downChecks: 1,
 				lastCheckAt: NOW - 30_000,
 			})
+			yield* seedDaily(testDb, {
+				monitorId,
+				day: utcDay(NOW - 300 * DAY_MS),
+				checks: 7,
+				failures: 0,
+				downChecks: 0,
+				lastCheckAt: NOW - 300 * DAY_MS,
+			})
 			yield* seedComponent(testDb, {
 				id: manualComponent,
 				pageId,
@@ -275,6 +358,26 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				startedAt: NOW - 2000,
 				componentIds: [manualComponent],
 			})
+			yield* seedIncident(testDb, {
+				id: crypto.randomUUID(),
+				pageId,
+				title: "Old outage",
+				impact: "major",
+				status: "resolved",
+				startedAt: NOW - 120 * DAY_MS,
+				resolvedAt: NOW - 120 * DAY_MS + 3_600_000,
+				componentIds: [downComponent],
+			})
+			const otherPage = newPageId()
+			yield* seedPage(testDb, { id: otherPage, slug: "other-build" })
+			yield* seedIncident(testDb, {
+				id: crypto.randomUUID(),
+				pageId: otherPage,
+				title: "Other page",
+				status: "resolved",
+				startedAt: NOW - 10 * DAY_MS,
+				resolvedAt: NOW - 10 * DAY_MS,
+			})
 
 			const builder = yield* StatusPageSnapshotBuilder
 			const snapshot = yield* builder.build(pageId, NOW)
@@ -283,7 +386,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			assert.deepStrictEqual(
 				snapshot.components.map((c) => [c.name, c.status, c.days.length]),
 				[
-					["API", "major_outage", 90],
+					["API", "major_outage", 365],
 					["Docs", "major_outage", 0],
 				],
 			)
@@ -292,12 +395,87 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				[["Docs slow", 1]],
 			)
 			assert.deepStrictEqual(
+				snapshot.incidentHistory.map((entry) => [entry.title, entry.impact]),
+				[
+					["Docs slow", "critical"],
+					["Old outage", "major"],
+				],
+			)
+			assert.strictEqual(snapshot.components[0]?.days[64]?.checks, 7)
+			assert.deepStrictEqual(
 				snapshot.components.map((c) => c.monitored),
 				[true, false],
 			)
 
 			const missing = yield* Effect.exit(builder.build(newPageId(), NOW))
 			assert.isTrue(Exit.isFailure(missing))
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+
+	it.effect("indexes incidents back to the first bar day, not the day before it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const builder = yield* StatusPageSnapshotBuilder
+			const pageId = newPageId()
+			yield* seedPage(testDb, { id: pageId, slug: "cutoff-page" })
+			const firstDayStart = NOW - (NOW % DAY_MS) - 364 * DAY_MS
+			const seedResolved = (title: string, resolvedAt: number) =>
+				seedIncident(testDb, {
+					id: crypto.randomUUID(),
+					pageId,
+					title,
+					status: "resolved",
+					startedAt: resolvedAt - 60_000,
+					resolvedAt,
+				})
+			yield* seedResolved("On the first day", firstDayStart + 60_000)
+			yield* seedResolved("The day before", firstDayStart - 60_000)
+			const snapshot = yield* builder.build(pageId, NOW)
+			assert.deepStrictEqual(
+				snapshot.incidentHistory.map((entry) => entry.title),
+				["On the first day"],
+			)
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+
+	it.effect("keeps an old open incident even when more resolved incidents than the cap are newer", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const builder = yield* StatusPageSnapshotBuilder
+			const pageId = newPageId()
+			yield* seedPage(testDb, { id: pageId, slug: "busy-page" })
+			yield* seedIncident(testDb, {
+				id: crypto.randomUUID(),
+				pageId,
+				title: "Long-running",
+				status: "identified",
+				startedAt: NOW - 200 * DAY_MS,
+			})
+			yield* Effect.forEach(
+				Array.from({ length: 501 }, (_, index) => index),
+				(index) =>
+					seedIncident(testDb, {
+						id: crypto.randomUUID(),
+						pageId,
+						title: `Blip ${index}`,
+						status: "resolved",
+						startedAt: NOW - (index + 1) * 60_000,
+						resolvedAt: NOW - (index + 1) * 60_000 + 1_000,
+					}),
+				{ discard: true },
+			)
+			const snapshot = yield* builder.build(pageId, NOW)
+			assert.isTrue(snapshot.incidents.some((incident) => incident.title === "Long-running"))
+			// Resolve it now: as the most recently resolved, it stays indexed despite its old start.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE status_page_incidents SET status = 'resolved', resolved_at = $1 WHERE title = 'Long-running'`,
+					[new Date(NOW).toISOString()],
+				),
+			)
+			const after = yield* builder.build(pageId, NOW + 1_000)
+			assert.isTrue(after.incidentHistory.some((entry) => entry.title === "Long-running"))
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 

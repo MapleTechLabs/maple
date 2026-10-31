@@ -32,6 +32,7 @@ import {
 	STATUS_PAGE_INCIDENT_HISTORY_DAYS,
 	STATUS_PAGE_SNAPSHOT_VERSION,
 	type StatusPageSnapshot,
+	type StatusPageIncidentHistoryEntry,
 	type StatusPageSnapshotIncident,
 	type StatusPageTheme,
 	utcDay,
@@ -40,6 +41,9 @@ import { Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { StatusPageGoneError, StatusPagePublishDbError } from "./publish-errors"
+
+/** Most resolved incidents one snapshot indexes for the calendar: about one a day for a year. */
+const STATUS_PAGE_INCIDENT_INDEX_LIMIT = 500
 
 const DAY_MS = 86_400_000
 
@@ -50,6 +54,8 @@ export interface SnapshotPageInput {
 	readonly description: string | null
 	readonly websiteUrl: string | null
 	readonly logoUrl: string | null
+	readonly privacyUrl: string | null
+	readonly termsUrl: string | null
 	readonly theme: StatusPageTheme
 	readonly showPoweredBy: boolean
 	readonly breakGlassTokenSha256: string | null
@@ -126,6 +132,15 @@ export const isListedIncident = (incident: SnapshotIncidentInput, nowMs: number)
 	)
 }
 
+/**
+ * Whether the incident belongs in the calendar index: it started, or was still open, within the
+ * last `STATUS_PAGE_HISTORY_DAYS`. Maintenance that has not started yet has no days to mark.
+ */
+export const isIndexedIncident = (incident: SnapshotIncidentInput, nowMs: number): boolean =>
+	incident.published &&
+	!(incident.kind === "maintenance" && incident.status === "scheduled") &&
+	(incident.resolvedAt ?? nowMs) >= nowMs - STATUS_PAGE_HISTORY_DAYS * DAY_MS
+
 /** The snapshot for already-read rows; no I/O, so the rules are testable without a database. */
 export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 	const days = lastDays(input.nowMs, STATUS_PAGE_HISTORY_DAYS)
@@ -167,6 +182,17 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 			}
 		})
 	const active = incidents.filter(isActiveIncident)
+	const incidentHistory: ReadonlyArray<StatusPageIncidentHistoryEntry> = input.incidents
+		.filter((incident) => isIndexedIncident(incident, input.nowMs))
+		.toSorted((a, b) => b.startedAt - a.startedAt)
+		.map((incident) => ({
+			id: incident.id,
+			title: incident.title,
+			kind: incident.kind,
+			impact: incident.impact,
+			startedAt: incident.startedAt,
+			resolvedAt: incident.resolvedAt,
+		}))
 
 	const components = input.components.map((component) => ({
 		id: component.id,
@@ -216,10 +242,13 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 			logoUrl: input.page.logoUrl,
 			theme: input.page.theme,
 			showPoweredBy: input.page.showPoweredBy,
+			privacyUrl: input.page.privacyUrl,
+			termsUrl: input.page.termsUrl,
 		},
 		breakGlassTokenSha256: input.page.breakGlassTokenSha256,
 		components,
 		incidents,
+		incidentHistory,
 	}
 }
 
@@ -255,7 +284,9 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ "maple.status_page.id": pageId })
 			const firstDay = lastDays(nowMs, STATUS_PAGE_HISTORY_DAYS)[0] ?? ""
-			const resolvedCutoff = nowMs - STATUS_PAGE_INCIDENT_HISTORY_DAYS * DAY_MS
+			// The calendar index starts where the bars do, midnight UTC of the first day; updates are read
+			// only for the listed incidents.
+			const indexCutoff = nowMs - (nowMs % DAY_MS) - (STATUS_PAGE_HISTORY_DAYS - 1) * DAY_MS
 			const input = yield* dbExecute((db) =>
 				Effect.gen(function* () {
 					const [page] = yield* db.run(
@@ -268,6 +299,8 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 								description: $.description,
 								websiteUrl: $.websiteUrl,
 								logoUrl: $.logoUrl,
+								privacyUrl: $.privacyUrl,
+								termsUrl: $.termsUrl,
 								theme: $.theme,
 								showPoweredBy: $.showPoweredBy,
 								breakGlassTokenSha256: $.breakGlassTokenSha256,
@@ -316,28 +349,42 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 											$.day.gte(firstDay),
 										]),
 								)
-					const incidents = yield* db.run(
-						PG.from(StatusPageIncidents)
-							.select(($) => ({
-								id: $.id,
-								kind: $.kind,
-								title: $.title,
-								impact: $.impact,
-								status: $.status,
-								published: $.published,
-								startedAt: $.startedAt,
-								resolvedAt: $.resolvedAt,
-								scheduledStart: $.scheduledStart,
-								scheduledEnd: $.scheduledEnd,
-							}))
+					const incidentFields = PG.from(StatusPageIncidents).select(($) => ({
+						id: $.id,
+						kind: $.kind,
+						title: $.title,
+						impact: $.impact,
+						status: $.status,
+						published: $.published,
+						startedAt: $.startedAt,
+						resolvedAt: $.resolvedAt,
+						scheduledStart: $.scheduledStart,
+						scheduledEnd: $.scheduledEnd,
+					}))
+					// Open incidents always, however old; resolved ones are capped, most recently resolved first.
+					const open = yield* db.run(
+						incidentFields.where(($) => [
+							$.orgId.eq(orgId),
+							$.pageId.eq(pageId),
+							$.published.eq(true),
+							$.resolvedAt.isNull(),
+						]),
+					)
+					const resolved = yield* db.run(
+						incidentFields
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.pageId.eq(pageId),
 								$.published.eq(true),
-								PG.or($.resolvedAt.isNull(), $.resolvedAt.gte(resolvedCutoff)),
-							]),
+								$.resolvedAt.gte(indexCutoff),
+							])
+							.orderBy(["resolvedAt", "desc"], ["id", "desc"])
+							.limit(STATUS_PAGE_INCIDENT_INDEX_LIMIT),
 					)
-					const incidentIds = incidents.map((incident) => incident.id)
+					const incidents = [...open, ...resolved]
+					const incidentIds = incidents
+						.filter((incident) => isListedIncident(incident, nowMs))
+						.map((incident) => incident.id)
 					const updates =
 						incidentIds.length === 0
 							? []

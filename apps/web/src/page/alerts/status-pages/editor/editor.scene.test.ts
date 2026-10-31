@@ -426,12 +426,23 @@ describe("settings tab", () => {
 		)
 	})
 
+	test("a footer link must use https before the settings save", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings" })),
+			type(role("textbox", { name: "Terms of service URL" }), "http://acme.example/terms"),
+			expectView(text("Use an https URL.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+	})
+
 	test("saving sends every field and settles once the page matches", () => {
 		const edited = [
 			Message.ChangedThemeColor({ field: "accent", value: "#1A2B3C" }),
 			Message.PickedThemePreset({ preset: "paper" }),
 			Message.ChangedSetting({ field: "autoIncidents", value: "publish" }),
 			Message.ToggledPoweredBy(),
+			Message.ChangedSetting({ field: "privacyUrl", value: " https://acme.example/privacy " }),
 		].reduce((model, message) => pageUpdate(model, message).model, loaded({ tab: "settings" }))
 		const saving = pageUpdate(edited, Message.ClickedSaveSettings())
 		expect(saving.commands).toMatchObject([
@@ -445,6 +456,8 @@ describe("settings tab", () => {
 						show_powered_by: false,
 						auto_incidents: "publish",
 						website_url: null,
+						privacy_url: "https://acme.example/privacy",
+						terms_url: null,
 					},
 				},
 			},
@@ -453,6 +466,7 @@ describe("settings tab", () => {
 			theme: { ...DEFAULT_STATUS_PAGE_THEME, preset: "paper", accent: "#1a2b3c" },
 			show_powered_by: false,
 			auto_incidents: "publish",
+			privacy_url: "https://acme.example/privacy",
 		})
 		const done = pageUpdate(
 			saving.model,

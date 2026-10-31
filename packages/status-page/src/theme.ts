@@ -51,11 +51,19 @@ const TOKEN_NAMES = [
 	"major",
 	"maint",
 	"none",
+	"okTint",
+	"degradedTint",
+	"partialTint",
+	"majorTint",
+	"maintTint",
 ] as const satisfies ReadonlyArray<keyof ResolvedStatusPageThemeTokens>
+
+/** `okTint` as `ok-tint`. */
+const cssName = (name: string): string => name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`)
 
 /** One scheme's CSS variables; `safeColor` drops any token that is not a hex colour. */
 export const tokenVariables = (tokens: ResolvedStatusPageThemeTokens): string =>
 	TOKEN_NAMES.flatMap((name) => {
 		const value = safeColor(tokens[name])
-		return value === null ? [] : [`--${name}:${value}`]
+		return value === null ? [] : [`--${cssName(name)}:${value}`]
 	}).join(";")

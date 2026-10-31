@@ -13,12 +13,13 @@ export const COMPONENT_STATUS_LABEL = {
 	major_outage: "Major outage",
 } as const satisfies Record<StatusPageComponentStatus, string>
 
-export const OVERALL_STATUS_LABEL = {
-	operational: "All systems operational",
-	maintenance: "Maintenance in progress",
-	degraded: "Degraded performance",
-	partial_outage: "Partial system outage",
-	major_outage: "Major system outage",
+/** The banner sentence for the overall status. */
+export const HERO_SENTENCE = {
+	operational: "We're fully operational",
+	maintenance: "Scheduled maintenance in progress",
+	degraded: "We're experiencing degraded performance",
+	partial_outage: "We're experiencing a partial outage",
+	major_outage: "We're experiencing a major outage",
 } as const satisfies Record<StatusPageComponentStatus, string>
 
 export const INCIDENT_STATUS_LABEL = {
@@ -38,7 +39,7 @@ export const IMPACT_LABEL = {
 	critical: "Critical",
 } as const satisfies Record<StatusPageIncidentImpact, string>
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 const pad = (value: number): string => String(value).padStart(2, "0")
 

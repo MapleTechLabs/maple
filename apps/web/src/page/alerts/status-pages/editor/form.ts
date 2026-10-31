@@ -23,6 +23,7 @@ import {
 	StatusPageThemeRadius,
 	type StatusPageTheme,
 	themeContrastIssue,
+	STATUS_PAGE_MAX_URL_LENGTH,
 } from "@maple/domain/status-page"
 import { DateTime, Option, Schema } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "../../shared/status-page-derive"
@@ -226,6 +227,8 @@ export const SettingsTextField = Schema.Literals([
 	"slug",
 	"description",
 	"websiteUrl",
+	"privacyUrl",
+	"termsUrl",
 	"logoUrl",
 	"autoIncidents",
 ])
@@ -256,6 +259,8 @@ export const SettingsForm = Schema.Struct({
 	slug: Schema.String,
 	description: Schema.String,
 	websiteUrl: Schema.String,
+	privacyUrl: Schema.String,
+	termsUrl: Schema.String,
 	logoUrl: Schema.String,
 	showPoweredBy: Schema.Boolean,
 	autoIncidents: StatusPageAutoIncidents,
@@ -277,6 +282,8 @@ export const settingsFormOf = (page: V2StatusPage): SettingsForm => ({
 	slug: page.slug,
 	description: page.description ?? "",
 	websiteUrl: page.website_url ?? "",
+	privacyUrl: page.privacy_url ?? "",
+	termsUrl: page.terms_url ?? "",
 	logoUrl: page.logo_url ?? "",
 	showPoweredBy: page.show_powered_by,
 	autoIncidents: page.auto_incidents,
@@ -301,6 +308,8 @@ const normalizedSettings = (form: SettingsForm): SettingsForm => ({
 	name: form.name.trim(),
 	description: form.description.trim(),
 	websiteUrl: form.websiteUrl.trim(),
+	privacyUrl: form.privacyUrl.trim(),
+	termsUrl: form.termsUrl.trim(),
 	logoUrl: form.logoUrl.trim(),
 	theme: themeFormOf(themeOf(form.theme)),
 })
@@ -314,6 +323,8 @@ const sameNormalized = (a: SettingsForm, b: SettingsForm): boolean =>
 	a.slug === b.slug &&
 	a.description === b.description &&
 	a.websiteUrl === b.websiteUrl &&
+	a.privacyUrl === b.privacyUrl &&
+	a.termsUrl === b.termsUrl &&
 	a.logoUrl === b.logoUrl &&
 	a.showPoweredBy === b.showPoweredBy &&
 	a.autoIncidents === b.autoIncidents &&
@@ -329,19 +340,25 @@ const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
 	a.border === b.border &&
 	a.radius === b.radius &&
 	a.font === b.font
-const isHttpsUrl = (value: string): boolean => /^https:\/\/\S+$/u.test(value)
-const isHttpUrl = (value: string): boolean => /^https?:\/\/\S+$/u.test(value)
+/** The service's rule: a URL `URL` can parse, over https. Checked here so Save never sends what it refuses. */
+const httpsIssue = (value: string): string | null => {
+	const url = value.trim()
+	if (url === "") return null
+	if (url.length > STATUS_PAGE_MAX_URL_LENGTH)
+		return `Keep it under ${STATUS_PAGE_MAX_URL_LENGTH} characters.`
+	if (!URL.canParse(url)) return "Use a valid URL, like https://acme.example."
+	return new URL(url).protocol === "https:" ? null : "Use an https URL."
+}
 
 /** Each field's problem, or `null`: the API refuses the same values. */
 export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsTextField, string | null>> => ({
 	name: form.name.trim() === "" ? "Add a name." : null,
 	slug: slugIssue(form.slug),
 	description: null,
-	websiteUrl:
-		form.websiteUrl.trim() === "" || isHttpUrl(form.websiteUrl.trim())
-			? null
-			: "Use an http or https URL.",
-	logoUrl: form.logoUrl.trim() === "" || isHttpsUrl(form.logoUrl.trim()) ? null : "Use an https URL.",
+	websiteUrl: httpsIssue(form.websiteUrl),
+	privacyUrl: httpsIssue(form.privacyUrl),
+	termsUrl: httpsIssue(form.termsUrl),
+	logoUrl: httpsIssue(form.logoUrl),
 	autoIncidents: null,
 })
 
@@ -375,6 +392,8 @@ export const settingsPayload = (form: SettingsForm): V2StatusPageUpdateParams =>
 	slug: form.slug,
 	description: orNull(form.description),
 	website_url: orNull(form.websiteUrl),
+	privacy_url: orNull(form.privacyUrl),
+	terms_url: orNull(form.termsUrl),
 	logo_url: orNull(form.logoUrl),
 	theme: themeOf(form.theme),
 	show_powered_by: form.showPoweredBy,

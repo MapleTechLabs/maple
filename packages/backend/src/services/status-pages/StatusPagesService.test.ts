@@ -99,6 +99,45 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("stores https footer links, refuses other schemes and clears a link on null", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* service.create(ORG, {
+				name: "Acme",
+				slug: "links",
+				privacyUrl: " https://acme.test/privacy ",
+				createdBy: USER,
+			})
+			assert.strictEqual(page.privacyUrl, "https://acme.test/privacy")
+			assert.isNull(page.termsUrl)
+
+			const linked = yield* service.update(ORG, page.id, { termsUrl: "https://acme.test/terms" })
+			assert.strictEqual(linked.termsUrl, "https://acme.test/terms")
+			assert.strictEqual(linked.privacyUrl, "https://acme.test/privacy")
+
+			const insecure = yield* Effect.flip(
+				service.update(ORG, page.id, { privacyUrl: "http://acme.test/privacy" }),
+			)
+			assert.strictEqual(insecure._tag, "@maple/http/errors/StatusPageValidationError")
+			assert.include(insecure.message, "Privacy policy URL")
+			const script = yield* Effect.flip(
+				service.create(ORG, {
+					name: "Bad",
+					slug: "bad-links",
+					termsUrl: "javascript:alert(1)",
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(script._tag, "@maple/http/errors/StatusPageValidationError")
+			assert.include(script.message, "Terms of service URL")
+
+			const cleared = yield* service.update(ORG, page.id, { privacyUrl: null })
+			assert.isNull(cleared.privacyUrl)
+			assert.strictEqual(cleared.termsUrl, "https://acme.test/terms")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("stores a forced theme with lower-cased colours and refuses unreadable text", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -574,6 +613,8 @@ describe("StatusPagesService", () => {
 					description: null,
 					website_url: null,
 					logo_url: null,
+					privacy_url: null,
+					terms_url: null,
 					show_powered_by: true,
 					auto_incidents: "off",
 					theme: DEFAULT_STATUS_PAGE_THEME,
@@ -587,6 +628,39 @@ describe("StatusPagesService", () => {
 						show_uptime: true,
 					})),
 				})
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("applies footer links, reads them back and clears them when omitted", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const linked = yield* service.applyConfig(
+					ORG,
+					page.id,
+					{
+						...config,
+						privacy_url: "https://acme.test/privacy",
+						terms_url: "https://acme.test/terms",
+					},
+					USER,
+				)
+				assert.deepStrictEqual(linked.changes.fields, ["privacy_url", "terms_url"])
+				const read = yield* service.getConfig(ORG, page.id)
+				assert.strictEqual(read.privacy_url, "https://acme.test/privacy")
+				assert.strictEqual(read.terms_url, "https://acme.test/terms")
+				assert.strictEqual((yield* service.get(ORG, page.id)).termsUrl, "https://acme.test/terms")
+
+				const insecure = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, { ...read, terms_url: "http://acme.test/terms" }, USER),
+				)
+				assert.strictEqual(insecure._tag, "@maple/http/errors/StatusPageValidationError")
+
+				const { privacy_url: _privacy, terms_url: _terms, ...withoutLinks } = read
+				const cleared = yield* service.applyConfig(ORG, page.id, withoutLinks, USER)
+				assert.deepStrictEqual(cleared.changes.fields, ["privacy_url", "terms_url"])
+				assert.isNull(cleared.config.privacy_url)
+				assert.isNull(cleared.config.terms_url)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 

@@ -51,6 +51,8 @@ export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	description: page.description,
 	website_url: page.websiteUrl,
 	logo_url: page.logoUrl,
+	privacy_url: page.privacyUrl,
+	terms_url: page.termsUrl,
 	theme: page.theme,
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
@@ -110,6 +112,8 @@ const pageAuditDiff = auditDiff({
 		"description",
 		"website_url",
 		"logo_url",
+		"privacy_url",
+		"terms_url",
 		"theme",
 		"show_powered_by",
 		"auto_incidents",
@@ -192,6 +196,10 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
+						...(payload.privacy_url === undefined
+							? undefined
+							: { privacyUrl: payload.privacy_url }),
+						...(payload.terms_url === undefined ? undefined : { termsUrl: payload.terms_url }),
 						...(payload.theme === undefined
 							? undefined
 							: { theme: { ...DEFAULT_STATUS_PAGE_THEME, ...payload.theme } }),
@@ -225,6 +233,10 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
+						...(payload.privacy_url === undefined
+							? undefined
+							: { privacyUrl: payload.privacy_url }),
+						...(payload.terms_url === undefined ? undefined : { termsUrl: payload.terms_url }),
 						// Omitted theme fields keep the page's current values.
 						...(payload.theme === undefined ? undefined : { theme: payload.theme }),
 						...(payload.show_powered_by === undefined

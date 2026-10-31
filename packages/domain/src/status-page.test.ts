@@ -39,6 +39,8 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 		logoUrl: null,
 		theme: DEFAULT_STATUS_PAGE_THEME,
 		showPoweredBy: true,
+		privacyUrl: null,
+		termsUrl: null,
 	},
 	breakGlassTokenSha256: null,
 	components: [
@@ -55,6 +57,7 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 		},
 	],
 	incidents: [],
+	incidentHistory: [],
 	...overrides,
 })
 
@@ -114,6 +117,17 @@ describe("decodeStatusPageSnapshotJson", () => {
 		const decoded = decodeStatusPageSnapshotJson(legacy)
 		expect(Option.isSome(decoded)).toBe(true)
 		expect(Option.getOrThrow(decoded).page.theme).toEqual(DEFAULT_STATUS_PAGE_THEME)
+	})
+
+	it("reads a snapshot published before footer links and the incident index with neither", () => {
+		const legacy = JSON.stringify({
+			...snapshot(),
+			incidentHistory: undefined,
+			page: { ...snapshot().page, privacyUrl: undefined, termsUrl: undefined },
+		})
+		const decoded = Option.getOrThrow(decodeStatusPageSnapshotJson(legacy))
+		expect(decoded.incidentHistory).toEqual([])
+		expect([decoded.page.privacyUrl, decoded.page.termsUrl]).toEqual([null, null])
 	})
 })
 
@@ -327,6 +341,31 @@ describe("contrastRatio", () => {
 
 describe("resolveStatusPageTheme", () => {
 	const theme = { ...DEFAULT_STATUS_PAGE_THEME }
+
+	it("tints the status banner visibly in every preset and mode while text on it stays AA", () => {
+		const themes: ReadonlyArray<StatusPageTheme> = [
+			...(["default", "mono", "midnight", "paper"] as const).map((preset) => ({ ...theme, preset })),
+			// A custom pale card with mid-grey text: the tint backs off to stay readable.
+			{ ...theme, appearance: "light", card: "#ffffff", text: "#595959" },
+		]
+		const tints = themes.flatMap((t) => {
+			const resolved = resolveStatusPageTheme(t)
+			return [resolved.light, resolved.dark].flatMap((tokens) =>
+				[
+					tokens.okTint,
+					tokens.degradedTint,
+					tokens.partialTint,
+					tokens.majorTint,
+					tokens.maintTint,
+				].map((tint) => ({ tint, fg: tokens.fg, card: tokens.card })),
+			)
+		})
+		expect(tints).toHaveLength(50)
+		for (const { tint, fg, card } of tints) {
+			expect(contrastRatio(fg, tint)).toBeGreaterThanOrEqual(4.5)
+			expect(tint).not.toBe(card)
+		}
+	})
 
 	it("auto applies the accent but ignores the colour overrides", () => {
 		const resolved = resolveStatusPageTheme({
