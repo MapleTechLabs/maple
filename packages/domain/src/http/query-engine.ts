@@ -2631,6 +2631,8 @@ export class SecurityRuntimesResponse extends Schema.Class<SecurityRuntimesRespo
 		releases: Schema.Record(Schema.String, Schema.Array(RuntimeReleaseRow)),
 		/** Known vulnerabilities per `advisoryKey` (`nodejs@22.4.0`); a version whose read failed is absent. */
 		advisories: Schema.Record(Schema.String, Schema.Array(RuntimeAdvisoryRow)),
+		/** `advisoryKey`s not read this time because the request's read budget ran out. */
+		advisoriesSkipped: Schema.Array(Schema.String),
 	}),
 }) {}
 

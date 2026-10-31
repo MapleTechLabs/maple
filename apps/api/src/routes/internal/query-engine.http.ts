@@ -2668,7 +2668,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
 								releases,
-								advisories,
+								advisories: advisories.advisories,
+								advisoriesSkipped: advisories.skipped,
 							},
 						})
 					}),

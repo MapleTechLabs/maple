@@ -84,7 +84,8 @@ describe("RuntimeAdvisoryCatalog", () => {
 				// Deno has no OSV package, so it is never asked for.
 				{ product: "deno", version: "2.1.0" },
 			])
-			assert.deepStrictEqual(advisories, {
+			assert.deepStrictEqual(advisories.skipped, [])
+			assert.deepStrictEqual(advisories.advisories, {
 				"nodejs@20.10.0": [
 					{
 						id: "CVE-2024-27983",
@@ -115,8 +116,28 @@ describe("RuntimeAdvisoryCatalog", () => {
 			const catalog = yield* RuntimeAdvisoryCatalog
 			yield* catalog.advisories([{ product: "nodejs", version: "20.10.0" }])
 			const again = yield* catalog.advisories([{ product: "nodejs", version: "20.10.0" }])
-			assert.strictEqual(again["nodejs@20.10.0"]?.length, 2)
+			assert.strictEqual(again.advisories["nodejs@20.10.0"]?.length, 2)
 			assert.deepStrictEqual(requests, ["node@20.10.0"])
+		}).pipe(Effect.provide(catalogWith(requests)))
+	})
+
+	it.effect("reads at most 24 uncached versions a request and serves cached ones past that", () => {
+		const requests: Array<string> = []
+		const targets = Array.from({ length: 26 }, (_, index) => ({
+			product: "nodejs" as const,
+			version: `20.${index}.0`,
+		}))
+		return Effect.gen(function* () {
+			const catalog = yield* RuntimeAdvisoryCatalog
+			const first = yield* catalog.advisories(targets)
+			assert.strictEqual(Object.keys(first.advisories).length, 24)
+			assert.strictEqual(first.skipped.length, 2)
+			assert.strictEqual(requests.length, 24)
+			// The 24 now cached cost nothing, so the next request reads the two it skipped.
+			const second = yield* catalog.advisories(targets)
+			assert.strictEqual(Object.keys(second.advisories).length, 26)
+			assert.deepStrictEqual(second.skipped, [])
+			assert.strictEqual(requests.length, 26)
 		}).pipe(Effect.provide(catalogWith(requests)))
 	})
 })

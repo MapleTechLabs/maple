@@ -377,4 +377,5 @@ export const runtimesOf = (nowMs: number): Runtimes => ({
 		],
 		"nodejs@23.0.0": [],
 	},
+	advisoriesSkipped: [],
 })

@@ -226,6 +226,8 @@ export type RuntimeVulnerabilities =
 	| { readonly status: "not_covered" }
 	/** The advisory read failed. */
 	| { readonly status: "unavailable"; readonly key: string }
+	/** Not read this time: the request spent its read budget on busier services. */
+	| { readonly status: "not_checked"; readonly key: string }
 	| {
 			readonly status: "checked"
 			readonly key: string
@@ -246,6 +248,8 @@ const vulnerabilitiesOf = (runtimes: Runtimes, row: RuntimeRow): RuntimeVulnerab
 	if (target === undefined) return { status: "not_covered" }
 	const key = advisoryKey(target)
 	const advisories = runtimes.advisories[key]
+	if (advisories === undefined && runtimes.advisoriesSkipped.includes(key))
+		return { status: "not_checked", key }
 	return advisories === undefined
 		? { status: "unavailable", key }
 		: { status: "checked", key, advisories, summary: summarizeAdvisories(advisories) }

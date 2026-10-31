@@ -136,8 +136,23 @@ const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 	switch (vulnerabilities.status) {
 		case "not_covered":
 			return h.span(
-				[h.Class("text-xs text-muted-foreground"), h.Title("No advisory source covers this runtime")],
+				[
+					h.Class("text-xs text-muted-foreground"),
+					h.Title(
+						entry.posture.status === "no_version"
+							? "This service reports no runtime version to check"
+							: "No advisory source covers this runtime",
+					),
+				],
 				["—"],
+			)
+		case "not_checked":
+			return h.span(
+				[
+					h.Class("text-xs text-muted-foreground"),
+					h.Title("Too many versions to read at once; it is read on a later visit"),
+				],
+				["Not checked yet"],
 			)
 		case "unavailable":
 			return h.span([h.Class("text-xs text-muted-foreground")], ["Unavailable"])

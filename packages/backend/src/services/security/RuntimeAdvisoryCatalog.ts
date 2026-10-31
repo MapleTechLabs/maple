@@ -11,7 +11,7 @@ import {
 	severityOf,
 	sortAdvisories,
 } from "@maple/domain/runtime-advisories"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 // Known vulnerabilities per runtime version for the Security Center's Runtimes tab, read from
@@ -24,8 +24,8 @@ const FAILURE_TTL_SECONDS = 10 * 60
 const CACHE_READ_TIMEOUT_MS = 150
 const REQUEST_TIMEOUT = "3 seconds"
 const SUMMARY_MAX_LENGTH = 160
-/** Distinct versions read per request, so a cold cache costs at most three rounds of reads. */
-const MAX_TARGETS = 24
+/** OSV reads per request; cached versions do not count, so a cold cache costs at most three rounds. */
+const MAX_READS = 24
 const CONCURRENCY = 8
 
 const OsvEvent = Schema.Struct({
@@ -92,11 +92,22 @@ const toAdvisory = (vuln: OsvVuln, version: string): RuntimeAdvisory => {
 	}
 }
 
+/** A version not in the cache once the request's read budget is spent; never cached. */
+class RuntimeAdvisoryReadSkipped extends Schema.TaggedError<RuntimeAdvisoryReadSkipped>()(
+	"@maple/security/RuntimeAdvisoryReadSkipped",
+	{ message: Schema.String, key: Schema.String },
+) {}
+
+export interface RuntimeAdvisoryReadResult {
+	/** Advisories per `advisoryKey`. A version whose read failed or was skipped is absent. */
+	readonly advisories: Record<string, ReadonlyArray<RuntimeAdvisory>>
+	/** Versions left unread because the request spent its read budget; a later request reads them. */
+	readonly skipped: ReadonlyArray<string>
+}
+
 export interface RuntimeAdvisoryCatalogApi {
-	/** Advisories per `advisoryKey`, for the first `MAX_TARGETS` distinct versions in priority order. A version whose read failed is absent. */
-	readonly advisories: (
-		targets: ReadonlyArray<AdvisoryTarget>,
-	) => Effect.Effect<Record<string, ReadonlyArray<RuntimeAdvisory>>>
+	/** Every cached version is served; at most `MAX_READS` misses are read, in `targets` order. */
+	readonly advisories: (targets: ReadonlyArray<AdvisoryTarget>) => Effect.Effect<RuntimeAdvisoryReadResult>
 }
 
 export class RuntimeAdvisoryCatalog extends Context.Service<
@@ -137,10 +148,30 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 				}),
 			)
 
-		const advisoriesFor = (target: AdvisoryTarget) => {
+		type Read =
+			| {
+					readonly _tag: "read"
+					readonly key: string
+					readonly value: ReadonlyArray<RuntimeAdvisory> | null
+			  }
+			| { readonly _tag: "skipped"; readonly key: string }
+
+		const advisoriesFor = (target: AdvisoryTarget, budget: Ref.Ref<number>): Effect.Effect<Read> => {
 			const key = advisoryKey(target)
 			const name = OSV_RUNTIME_PACKAGES.get(target.product)
-			if (name === undefined) return Effect.succeed(Option.none())
+			if (name === undefined) return Effect.succeed({ _tag: "read", key, value: null })
+			const spend = Ref.modify(budget, (left) => [left > 0, left - 1] as const).pipe(
+				Effect.flatMap((allowed) =>
+					allowed
+						? Effect.void
+						: Effect.fail(
+								new RuntimeAdvisoryReadSkipped({
+									message: `read budget spent for ${key}`,
+									key,
+								}),
+							),
+				),
+			)
 			return edgeCache
 				.getOrCompute(
 					{
@@ -150,21 +181,21 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 						schema: CachedAdvisories,
 						readTimeoutMs: CACHE_READ_TIMEOUT_MS,
 					},
-					fetchAdvisories(target, name).pipe(
-						Effect.tapError((error) => Effect.logWarning("runtime advisory read failed", error)),
-						Effect.orElseSucceed(() => null),
+					spend.pipe(
+						Effect.andThen(
+							fetchAdvisories(target, name).pipe(
+								Effect.tapError((error) =>
+									Effect.logWarning("runtime advisory read failed", error),
+								),
+								Effect.orElseSucceed(() => null),
+							),
+						),
 					),
 				)
 				.pipe(
-					Effect.map((result) =>
-						result.value === null ? Option.none() : Option.some([key, result.value] as const),
-					),
-					// A cache error falls back to the read; only a failed read leaves the version out.
-					Effect.catch(() =>
-						fetchAdvisories(target, name).pipe(
-							Effect.map((value) => Option.some([key, value] as const)),
-							Effect.orElseSucceed(() => Option.none()),
-						),
+					Effect.map((result): Read => ({ _tag: "read", key, value: result.value })),
+					Effect.catchTag("@maple/security/RuntimeAdvisoryReadSkipped", () =>
+						Effect.succeed<Read>({ _tag: "skipped", key }),
 					),
 				)
 		}
@@ -173,10 +204,18 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 			targets: ReadonlyArray<AdvisoryTarget>,
 		) {
 			const distinct = [...new Map(targets.map((target) => [advisoryKey(target), target])).values()]
-			const read = yield* Effect.forEach(distinct.slice(0, MAX_TARGETS), advisoriesFor, {
+			const budget = yield* Ref.make(MAX_READS)
+			const reads = yield* Effect.forEach(distinct, (target) => advisoriesFor(target, budget), {
 				concurrency: CONCURRENCY,
 			})
-			return Object.fromEntries(read.flatMap(Option.toArray))
+			return {
+				advisories: Object.fromEntries(
+					reads.flatMap((read) =>
+						read._tag === "read" && read.value !== null ? [[read.key, read.value] as const] : [],
+					),
+				),
+				skipped: reads.flatMap((read) => (read._tag === "skipped" ? [read.key] : [])),
+			} satisfies RuntimeAdvisoryReadResult
 		})
 
 		return { advisories } satisfies RuntimeAdvisoryCatalogApi
