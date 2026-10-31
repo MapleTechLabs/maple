@@ -14,6 +14,7 @@ import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAu
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 
 // Select the already-decorated group: its session auth and error middleware
@@ -41,6 +42,7 @@ export const QueryRoutes = Layer.mergeAll(
 			AuditLogService.layer,
 			OrganizationRegionService.layer,
 			RuntimeReleaseCatalog.layer,
+			RuntimeAdvisoryCatalog.layer,
 		),
 	),
 	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
