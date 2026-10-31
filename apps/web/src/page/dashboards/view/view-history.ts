@@ -191,8 +191,8 @@ const list = (h: H, model: Model, versions: ReadonlyArray<VersionRow>, clock: Cl
 export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 	const versions = model.history.versions
 	const count = AsyncData.getOrElse(versions, () => []).length
-	return h.aside(
-		[h.Class("flex h-full w-80 shrink-0 flex-col border-l bg-background")],
+	return h.div(
+		[h.Class("flex h-full flex-col")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 border-b px-4 py-3")],

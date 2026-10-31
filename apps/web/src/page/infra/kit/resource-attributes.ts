@@ -1,12 +1,8 @@
-import { cn } from "@maple/ui/lib/utils"
-import { cardStyles } from "@maple/ui/styles/ui/card"
 import { Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { card, cardHeader, cardPanel, cardTitle } from "../../../ui/card"
 import * as CopyButton from "../../../ui/copy-button"
-import { detailRailMetaRow } from "../../../ui/detail-rail"
-import { icon, type IconName } from "../../../ui/icon"
+import { detailRailGroup, detailRailMetaRow } from "../../../ui/detail-rail"
 import { skeleton } from "../../../ui/skeleton"
 
 // `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` and `DetailRail.MetaRow` with its copy buttons.
@@ -29,25 +25,9 @@ export const updateCopy = <M>(
 	}
 }
 
-const titled = <M>(h: HtmlBuilder<M>, iconName: IconName) =>
-	cardHeader(
-		h,
-		[
-			cardTitle(
-				h,
-				[icon(h, iconName, { size: 14, className: "text-muted-foreground" }), "Resource attributes"],
-				"flex items-center gap-2 text-sm font-medium",
-			),
-		],
-		"pb-3",
-	)
-
-export const resourceAttributesCard = <M>(
-	h: HtmlBuilder<M>,
-	iconName: IconName,
-	children: ReadonlyArray<Html>,
-	contentClassName?: string,
-): Html => card(h, [titled(h, iconName), cardPanel(h, children, contentClassName ?? "space-y-1")])
+/** `ResourceAttributesCard`: the infra detail rail's attribute group, flat like every other rail group. */
+export const resourceAttributesCard = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+	detailRailGroup(h, "Resource attributes", children)
 
 const SKELETON_ROWS = [
 	["w-12", "w-24"],
@@ -58,20 +38,19 @@ const SKELETON_ROWS = [
 	["w-16", "w-24"],
 ] as const
 
-export const resourceAttributesCardSkeleton = <M>(h: HtmlBuilder<M>, iconName: IconName): Html =>
+export const resourceAttributesCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class(cn(cardStyles)), h.DataAttribute("slot", "card"), h.AriaBusy(true)],
+		[h.AriaBusy(true)],
 		[
-			titled(h, iconName),
-			cardPanel(
+			detailRailGroup(
 				h,
+				"Resource attributes",
 				SKELETON_ROWS.map(([label, value]) =>
 					h.div(
-						[h.Class("flex items-center justify-between gap-3")],
+						[h.Class("flex items-center justify-between gap-3 py-1")],
 						[skeleton(h, `h-2.5 ${label}`), skeleton(h, `h-2.5 ${value}`)],
 					),
 				),
-				"space-y-3",
 			),
 		],
 	)

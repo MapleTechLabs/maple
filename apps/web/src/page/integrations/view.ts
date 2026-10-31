@@ -96,6 +96,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 	dashboardPage(
 		h,
 		{
+			filtersLabel: "Settings",
 			filters: settingsNav(h, model),
 			titleContent: integrationHeader(h, model, integration, {
 				connect: connectButton(h, model, integration),
@@ -121,6 +122,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					titleContent: hubTitle(h),
+					filtersLabel: "Settings",
 					filters: settingsNav(h, model),
 					actions: integrationsSummary(h, model) ?? h.empty,
 					width: "settings",

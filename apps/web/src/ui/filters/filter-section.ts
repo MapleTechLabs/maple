@@ -217,7 +217,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 				h,
 				{
 					className: cn(
-						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs font-normal",
+						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs font-normal sm:text-xs",
 						isExcluded
 							? "text-foreground-subtle line-through decoration-1 decoration-muted-foreground/50"
 							: "text-foreground",
@@ -470,7 +470,7 @@ export const singleCheckboxFilter = <M>(
 				h,
 				{
 					className:
-						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal",
+						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal sm:text-xs",
 					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(config.title)],
 				},
 				[h.span([h.Class("truncate")], [config.title])],

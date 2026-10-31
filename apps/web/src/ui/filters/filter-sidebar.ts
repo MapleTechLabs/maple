@@ -50,7 +50,7 @@ export const filterSidebarHeader = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className: "text-muted-foreground hover:text-foreground active:text-foreground",
+								className: "px-0 text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClear)],
 							},
 							["Clear all"],
@@ -59,15 +59,34 @@ export const filterSidebarHeader = <M>(
 		],
 	)
 
+/** The header's rule, edge to edge across the rail like the shell's own dividers. */
+const railRule = <M>(h: HtmlBuilder<M>): Html =>
+	separator(h, "horizontal", "-mx-4 my-2 data-[orientation=horizontal]:w-auto")
+
+/** The heading of a group that is not a collapsible `filterSection`, spaced like that section's. */
+export const filterSidebarGroupLabel = <M>(
+	h: HtmlBuilder<M>,
+	title: string,
+	trailing: ReadonlyArray<Html> = [],
+): Html =>
+	h.div(
+		[h.Class("flex items-center gap-1 py-2")],
+		[eyebrow(h, { as: "h4", variant: "label", className: "text-muted-foreground" }, [title]), ...trailing],
+	)
+
+/** A rule between groups of sections inside the body. */
+export const filterSidebarDivider = <M>(h: HtmlBuilder<M>): Html => separator(h, "horizontal", "my-2")
+
 /** `FilterSidebarBody`: separator, the scrolling section list and its bottom fade. */
 export const filterSidebarBody = <M>(
 	h: HtmlBuilder<M>,
 	idPrefix: string,
 	children: ReadonlyArray<Html>,
 ): Html[] => [
-	separator(h, "horizontal", "my-2"),
+	railRule(h),
+	// Bleeds into the rail's right padding: the scrollbar sits in that gutter, the rows keep its edge.
 	h.div(
-		[h.Class("relative min-h-0 flex-1")],
+		[h.Class("relative -mr-4 min-h-0 flex-1")],
 		[
 			scrollArea(h, { className: "h-full", idPrefix }, [
 				h.div([h.Class("space-y-2 pr-4 pb-6")], children),
@@ -95,9 +114,9 @@ export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Ht
 			[h.AriaBusy(true), h.Class("contents")],
 			[
 				h.div([h.Class("flex h-8 items-center py-2")], [skeleton(h, "h-2.5 w-12")]),
-				separator(h, "horizontal", "my-2"),
+				railRule(h),
 				h.div(
-					[h.Class("space-y-2 pr-4")],
+					[h.Class("space-y-2")],
 					Array.from({ length: sectionCount }, (_, section) =>
 						h.div(
 							[h.Class("pb-3")],
@@ -137,9 +156,9 @@ export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Ht
 export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
 	filterSidebarFrame(h, { isIdle: true }, [
 		filterSidebarHeader(h),
-		separator(h, "horizontal", "my-2"),
+		railRule(h),
 		h.div(
-			[h.Class("space-y-1 py-2 pr-4")],
+			[h.Class("space-y-1 py-2")],
 			[
 				h.p([h.Class("font-prose text-xs font-medium text-foreground")], ["Nothing to filter yet"]),
 				h.p(
@@ -164,7 +183,7 @@ export const filterSidebarError = <M>(
 	const isEchoed = mainFailure !== undefined && isSameFailure(mainFailure, failure)
 	return filterSidebarFrame(h, { isIdle: isEchoed }, [
 		filterSidebarHeader(h),
-		separator(h, "horizontal", "my-2"),
+		railRule(h),
 		isEchoed
 			? errorState(h, {
 					failure,
@@ -173,7 +192,7 @@ export const filterSidebarError = <M>(
 					title: "Filters unavailable",
 					// The main panel shows the same failure with its own Try again.
 					hidesRetryButton: true,
-					className: "py-2 pr-4",
+					className: "py-2",
 				})
 			: errorState(h, { failure, onRetry, variant: "inline" }),
 	])

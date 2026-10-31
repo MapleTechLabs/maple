@@ -6,7 +6,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
 import { kbd } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
 import {
@@ -15,6 +14,7 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
+	filterSidebarGroupLabel,
 } from "../../../ui/filters/filter-sidebar"
 import type * as Popover from "../../../ui/popover"
 import { MountFilterRail } from "./command"
@@ -76,14 +76,10 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 	h.div(
 		[h.Class("pb-3")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1")],
-				[eyebrow(h, { variant: "label" }, ["Search"]), searchHelp(h, help)],
-			),
+			filterSidebarGroupLabel(h, "Search", [searchHelp(h, help)]),
 			searchInput(h, {
 				id: "logs-search-input",
 				size: "sm",
-				className: "mt-2",
 				placeholder: "Text or trace id",
 				value,
 				onInput: (text) => Message.ChangedSearchText({ text }),

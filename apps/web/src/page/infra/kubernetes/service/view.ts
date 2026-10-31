@@ -312,6 +312,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 					tabs: kubernetesViewTabs(h, "services", model.search),
+					filtersLabel: "Services",
 					filters: lensRail(h, model.rail, model.serviceName ?? undefined, model.search),
 					filtersWidth: "w-72",
 				},

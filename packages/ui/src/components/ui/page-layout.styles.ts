@@ -19,7 +19,7 @@ export const pageBodyStyles = "flex min-h-0 flex-1 overflow-hidden"
 
 export const pageFilterSidebarWidthStyles = "w-64"
 
-export const pageFilterSheetStyles = "w-72 p-4 overflow-y-auto"
+export const pageFilterSheetStyles = "w-72 overflow-y-auto p-4 pt-12"
 
 export const pageFilterSheetHeaderStyles = "sr-only"
 
@@ -33,7 +33,7 @@ export const pageFillStyles = "flex min-h-0 min-w-0 flex-1 flex-col"
 
 export const pageRightSidebarWidthStyles = "w-72"
 
-export const pageRightSheetStyles = "w-80 overflow-y-auto p-4"
+export const pageRightSheetStyles = "w-80 overflow-y-auto pt-10"
 
 export const pageRightSheetHeaderStyles = "sr-only"
 
