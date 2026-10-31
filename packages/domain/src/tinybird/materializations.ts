@@ -81,10 +81,13 @@ import {
 } from "./ai-crawler-columns"
 import {
 	CLIENT_ADDRESS_SQL,
-	PROBE_INDEX_SQL,
+	CRITICAL_PROBE_INDEX_SQL,
+	EXECUTABLE_NAME_SQL,
+	OTHER_PROBE_INDEX_SQL,
 	PROBE_SIGNATURE_SQL,
 	RUNTIME_NAME_SQL,
 	RUNTIME_VERSION_SQL,
+	SCANNER_HOST_SQL,
 	SCANNER_INDEX_SQL,
 	SCANNER_NAME_SQL,
 	SCANNER_USER_AGENT_SQL,
@@ -1320,14 +1323,14 @@ export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
           ServiceName,
           ${PROBE_SIGNATURE_SQL} AS Signature,
           ${SCANNER_NAME_SQL} AS Scanner,
-          ${REQUEST_HOST_SQL} AS Host,
+          ${SCANNER_HOST_SQL} AS Host,
           ${REQUEST_PATH_SQL} AS Path,
           ${RESPONSE_STATUS_SQL} AS HttpStatus,
           ${CLIENT_ADDRESS_SQL} AS ClientAddress,
           ${SCANNER_USER_AGENT_SQL} AS UserAgent
         FROM traces
         WHERE SpanKind = 'Server'
-          AND (${PROBE_INDEX_SQL} > 0 OR ${SCANNER_INDEX_SQL} > 0)
+          AND (${CRITICAL_PROBE_INDEX_SQL} > 0 OR ${OTHER_PROBE_INDEX_SQL} > 0 OR ${SCANNER_INDEX_SQL} > 0)
           AND ${REQUEST_PATH_SQL} != ''
       `,
 		}),
@@ -1350,13 +1353,14 @@ export const serviceRuntimesHourlyMv = defineMaterializedView("service_runtimes_
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           ${RUNTIME_NAME_SQL} AS RuntimeName,
           ${RUNTIME_VERSION_SQL} AS RuntimeVersion,
+          ${EXECUTABLE_NAME_SQL} AS ExecutableName,
           ${SDK_LANGUAGE_SQL} AS SdkLanguage,
           ${SDK_NAME_SQL} AS SdkName,
           ${SDK_VERSION_SQL} AS SdkVersion,
           count() AS SpanCount
         FROM traces
         WHERE ServiceName != ''
-        GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, SdkLanguage, SdkName, SdkVersion
+        GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, ExecutableName, SdkLanguage, SdkName, SdkVersion
       `,
 		}),
 	],

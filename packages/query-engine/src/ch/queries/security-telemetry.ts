@@ -81,7 +81,14 @@ export function scannerExposedQuery(opts: ScannerExposedOpts = {}): CHQuery<any,
 			lastSeen: CH.max_($.Timestamp),
 			sampleTraceId: CH.any_($.TraceId),
 		}))
-		.where(($) => [...scannerWhere($), CH.inList($.Signature, CRITICAL_PROBE_SIGNATURES), answered($)])
+		.where(($) => [
+			...scannerWhere($),
+			CH.inList(
+				$.Signature,
+				CRITICAL_PROBE_SIGNATURES.map((signature) => signature.token),
+			),
+			answered($),
+		])
 		.groupBy("service", "host", "path", "signature", "httpStatus")
 		.orderBy(["lastSeen", "desc"])
 		.limit(opts.limit ?? 50)
@@ -143,6 +150,7 @@ export function scannerTimelineQuery(
 		.where(scannerWhere)
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
+		.limit(2000)
 		.format("JSON")
 }
 
@@ -151,10 +159,12 @@ export interface RuntimeVersionsOutput {
 	readonly environment: string
 	readonly runtimeName: string
 	readonly runtimeVersion: string
+	readonly executableName: string
 	readonly sdkLanguage: string
 	readonly sdkName: string
 	readonly sdkVersion: string
 	readonly spans: number
+	/** Start of the last hour the combination was seen in: the rollup is hourly. */
 	readonly lastSeen: DateTime.Utc
 }
 
@@ -166,6 +176,7 @@ export function runtimeVersionsQuery(): CHQuery<any, RuntimeVersionsOutput, any>
 			environment: $.DeploymentEnv,
 			runtimeName: $.RuntimeName,
 			runtimeVersion: $.RuntimeVersion,
+			executableName: $.ExecutableName,
 			sdkLanguage: $.SdkLanguage,
 			sdkName: $.SdkName,
 			sdkVersion: $.SdkVersion,
@@ -183,6 +194,7 @@ export function runtimeVersionsQuery(): CHQuery<any, RuntimeVersionsOutput, any>
 			"environment",
 			"runtimeName",
 			"runtimeVersion",
+			"executableName",
 			"sdkLanguage",
 			"sdkName",
 			"sdkVersion",

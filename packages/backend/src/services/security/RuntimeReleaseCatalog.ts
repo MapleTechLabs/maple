@@ -8,8 +8,10 @@ import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 
 const CACHE_BUCKET = "runtime-releases"
 const CACHE_TTL_SECONDS = 24 * 60 * 60
+/** A failed read is remembered briefly, so an outage costs one timeout per runtime, not one per request. */
+const FAILURE_TTL_SECONDS = 10 * 60
 const CACHE_READ_TIMEOUT_MS = 150
-const REQUEST_TIMEOUT = "5 seconds"
+const REQUEST_TIMEOUT = "2 seconds"
 
 const EndoflifeProduct = Schema.Struct({
 	result: Schema.Struct({
@@ -24,13 +26,16 @@ const EndoflifeProduct = Schema.Struct({
 	}),
 })
 
-const CachedReleases = Schema.Array(
-	Schema.Struct({
-		cycle: Schema.String,
-		isEol: Schema.Boolean,
-		eolFrom: Schema.NullOr(Schema.String),
-		latest: Schema.NullOr(Schema.String),
-	}),
+/** `null` records a failed read. */
+const CachedReleases = Schema.NullOr(
+	Schema.Array(
+		Schema.Struct({
+			cycle: Schema.String,
+			isEol: Schema.Boolean,
+			eolFrom: Schema.NullOr(Schema.String),
+			latest: Schema.NullOr(Schema.String),
+		}),
+	),
 )
 
 export class RuntimeReleaseCatalogError extends Schema.TaggedError<RuntimeReleaseCatalogError>()(
@@ -82,18 +87,30 @@ export class RuntimeReleaseCatalog extends Context.Service<RuntimeReleaseCatalog
 						{
 							bucket: CACHE_BUCKET,
 							key: product,
-							ttlSeconds: CACHE_TTL_SECONDS,
+							ttlSeconds: (value) => (value === null ? FAILURE_TTL_SECONDS : CACHE_TTL_SECONDS),
 							schema: CachedReleases,
 							readTimeoutMs: CACHE_READ_TIMEOUT_MS,
 						},
-						fetchReleases(product),
+						fetchReleases(product).pipe(
+							Effect.tapError((error) =>
+								Effect.logWarning("runtime release catalog read failed", error),
+							),
+							Effect.orElseSucceed(() => null),
+						),
 					)
 					.pipe(
-						Effect.map((result) => Option.some([product, result.value] as const)),
-						Effect.tapError((error) =>
-							Effect.logWarning("runtime release catalog read failed", error),
+						Effect.map((result) =>
+							result.value === null
+								? Option.none()
+								: Option.some([product, result.value] as const),
 						),
-						Effect.orElseSucceed(() => Option.none()),
+						// A cache error falls back to the read; only a failed read leaves the product out.
+						Effect.catch(() =>
+							fetchReleases(product).pipe(
+								Effect.map((value) => Option.some([product, value] as const)),
+								Effect.orElseSucceed(() => Option.none()),
+							),
+						),
 					)
 
 			const releases = Effect.fn("RuntimeReleaseCatalog.releases")(function* (

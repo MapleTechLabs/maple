@@ -528,16 +528,16 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// TODO(v42): what changed, whether any part is rewritten or any row
-		// moves, and what this edge does NOT backfill.
+		// v42: scanner_requests, service_runtimes_hourly and their views, new and
+		// filled forward. Nothing is rewritten and nothing is backfilled.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 42,
-		fingerprint: "afe0d6021c29fd6f",
-		digest: "afe0d6021c29fd6ffa379749dc7104b2561b034f004c0709c3333e38b180e099",
-		manifestDigest: "f9a80bf04faed384fd6332c7f09e7c3ce7cd9404f15bbb6a66d8a88f80e960d2",
+		fingerprint: "d03ed074b19ce990",
+		digest: "d03ed074b19ce99042d1e8f867f80b0ad14a7cd14f167e6fa223c314cc15cebc",
+		manifestDigest: "7fa5b1193b333d6432b26e258f6735f1f795e46383a7b68e097c59b61d71563d",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

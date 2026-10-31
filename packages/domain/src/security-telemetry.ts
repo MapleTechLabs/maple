@@ -30,9 +30,11 @@ export const PROBE_CATEGORIES: ReadonlyArray<ProbeCategoryInfo> = [
 ]
 
 export interface ProbeSignature {
-	/** Matched case-insensitively anywhere in the request path. */
+	/** Matched case-insensitively in the request path and query. */
 	readonly token: string
 	readonly category: ProbeCategory
+	/** Match only at the start of the path: `/api/server-status` is a health check, not a probe. */
+	readonly anchored?: boolean
 }
 
 /**
@@ -54,20 +56,22 @@ export const PROBE_SIGNATURES: ReadonlyArray<ProbeSignature> = [
 	{ token: "/.svn/", category: "source_control" },
 	{ token: "/.hg/", category: "source_control" },
 	{ token: "/.ds_store", category: "source_control" },
-	{ token: "/actuator/env", category: "debug_endpoints" },
-	{ token: "/actuator/heapdump", category: "debug_endpoints" },
-	{ token: "/actuator/configprops", category: "debug_endpoints" },
-	{ token: "/actuator/gateway", category: "debug_endpoints" },
-	{ token: "/server-status", category: "debug_endpoints" },
-	{ token: "/server-info", category: "debug_endpoints" },
+	{ token: "/actuator/env", category: "debug_endpoints", anchored: true },
+	{ token: "/actuator/heapdump", category: "debug_endpoints", anchored: true },
+	{ token: "/actuator/configprops", category: "debug_endpoints", anchored: true },
+	{ token: "/actuator/gateway", category: "debug_endpoints", anchored: true },
+	{ token: "/server-status", category: "debug_endpoints", anchored: true },
+	{ token: "/server-info", category: "debug_endpoints", anchored: true },
 	{ token: "phpinfo", category: "debug_endpoints" },
 	{ token: "/info.php", category: "debug_endpoints" },
-	{ token: "/_profiler", category: "debug_endpoints" },
-	{ token: "/debug/pprof", category: "debug_endpoints" },
-	{ token: "/telescope/requests", category: "debug_endpoints" },
+	{ token: "/_profiler", category: "debug_endpoints", anchored: true },
+	{ token: "/debug/pprof", category: "debug_endpoints", anchored: true },
+	{ token: "/telescope/requests", category: "debug_endpoints", anchored: true },
 	{ token: "../", category: "path_traversal" },
 	{ token: "..%2f", category: "path_traversal" },
 	{ token: "%2e%2e", category: "path_traversal" },
+	{ token: "..%5c", category: "path_traversal" },
+	{ token: "%252e%252e", category: "path_traversal" },
 	{ token: "/etc/passwd", category: "path_traversal" },
 	{ token: "/proc/self/environ", category: "path_traversal" },
 	{ token: "win.ini", category: "path_traversal" },
@@ -122,7 +126,12 @@ const CATEGORY_BY_TOKEN = new Map(PROBE_SIGNATURES.map((signature) => [signature
 export const probeCategoryOf = (signature: string): ProbeCategory | undefined =>
 	CATEGORY_BY_TOKEN.get(signature)
 
-/** Signatures whose success answer is an exposure, for the exposed-probe query's filter. */
-export const CRITICAL_PROBE_SIGNATURES: ReadonlyArray<string> = PROBE_SIGNATURES.filter(
-	(signature) => PROBE_CATEGORIES.find((category) => category.id === signature.category)?.critical === true,
-).map((signature) => signature.token)
+const isCritical = (signature: ProbeSignature) =>
+	PROBE_CATEGORIES.find((category) => category.id === signature.category)?.critical === true
+
+/** Critical signatures, matched first so a WordPress token earlier in a path cannot hide one. */
+export const CRITICAL_PROBE_SIGNATURES: ReadonlyArray<ProbeSignature> = PROBE_SIGNATURES.filter(isCritical)
+
+export const OTHER_PROBE_SIGNATURES: ReadonlyArray<ProbeSignature> = PROBE_SIGNATURES.filter(
+	(signature) => !isCritical(signature),
+)

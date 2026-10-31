@@ -2647,6 +2647,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									environment: row.environment,
 									runtimeName: row.runtimeName,
 									runtimeVersion: row.runtimeVersion,
+									executableName: row.executableName,
 									sdkLanguage: row.sdkLanguage,
 									sdkName: row.sdkName,
 									sdkVersion: row.sdkVersion,

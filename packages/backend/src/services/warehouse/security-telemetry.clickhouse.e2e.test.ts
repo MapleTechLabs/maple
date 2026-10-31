@@ -26,6 +26,7 @@ interface SeedSpan {
 	readonly kind?: string
 	readonly service?: string
 	readonly path: string
+	readonly query?: string
 	readonly status: string
 	readonly client?: string
 	readonly userAgent?: string
@@ -49,6 +50,24 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 	{ traceId: "p4", path: "/api/.ENV.production", status: "200", client: "203.0.113.7" },
 	// WordPress answering is normal for a WordPress site: counted, never critical.
 	{ traceId: "p5", path: "/wp-login.php", status: "200", client: "198.51.100.2" },
+	// Anchored: a health route ending in server-status is not a probe, the root one is.
+	{ traceId: "a1", path: "/api/server-status", status: "200", client: "10.0.0.5" },
+	{ traceId: "a2", path: "/server-status", status: "403", client: "203.0.113.7" },
+	// A WordPress path that hides a traversal is filed under the critical signature.
+	{
+		traceId: "w1",
+		path: "/wp-content/plugins/x/../../../etc/passwd",
+		status: "404",
+		client: "203.0.113.7",
+	},
+	// Traversal in the query string.
+	{
+		traceId: "q1",
+		path: "/index.php",
+		query: "page=../../etc/passwd",
+		status: "404",
+		client: "203.0.113.7",
+	},
 	// A named scanner on an ordinary path.
 	{ traceId: "s1", path: "/", status: "200", client: "192.0.2.9", userAgent: "Mozilla/5.0 zgrab/0.x" },
 	// Not probes: an ordinary request, and a probe path on a client span.
@@ -61,6 +80,18 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 		path: "/invoices",
 		status: "200",
 		resource: { "process.runtime.name": "cpython", "process.runtime.version": "3.12.4" },
+	},
+	// Bun under the stock OTel JS SDK reports nodejs and its Node.js compatibility version.
+	{
+		traceId: "n5",
+		service: "worker",
+		path: "/jobs",
+		status: "200",
+		resource: {
+			"process.runtime.name": "nodejs",
+			"process.runtime.version": "24.3.0",
+			"process.executable.name": "bun",
+		},
 	},
 	{
 		traceId: "n4",
@@ -86,6 +117,7 @@ const insert = (spans: ReadonlyArray<SeedSpan>, orgId: string) =>
 					const attributes = Object.fromEntries(
 						[
 							["url.path", span.path],
+							["url.query", span.query],
 							["http.response.status_code", span.status],
 							["client.address", span.client],
 							["user_agent.original", span.userAgent],
@@ -133,56 +165,27 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			`SELECT TraceId, Signature, Scanner, Path, HttpStatus, ClientAddress
 			 FROM scanner_requests WHERE OrgId = '${ORG_ID}' ORDER BY TraceId`,
 		)
-		assert.deepStrictEqual(rows, [
-			{
-				TraceId: "p1",
-				Signature: "/.env",
-				Scanner: "",
-				Path: "/.env",
-				HttpStatus: 404,
-				ClientAddress: "203.0.113.7",
-			},
-			{
-				TraceId: "p2",
-				Signature: "/.git/",
-				Scanner: "",
-				Path: "/.git/config",
-				HttpStatus: 404,
-				ClientAddress: "203.0.113.7",
-			},
-			{
-				TraceId: "p3",
-				Signature: "/wp-login.php",
-				Scanner: "",
-				Path: "/wp-login.php",
-				HttpStatus: 404,
-				ClientAddress: "198.51.100.2",
-			},
-			{
-				TraceId: "p4",
-				Signature: "/.env",
-				Scanner: "",
-				Path: "/api/.ENV.production",
-				HttpStatus: 200,
-				ClientAddress: "203.0.113.7",
-			},
-			{
-				TraceId: "p5",
-				Signature: "/wp-login.php",
-				Scanner: "",
-				Path: "/wp-login.php",
-				HttpStatus: 200,
-				ClientAddress: "198.51.100.2",
-			},
-			{
-				TraceId: "s1",
-				Signature: "",
-				Scanner: "ZGrab",
-				Path: "/",
-				HttpStatus: 200,
-				ClientAddress: "192.0.2.9",
-			},
-		])
+		assert.deepStrictEqual(
+			rows.map((row) => [
+				row.TraceId,
+				row.Signature,
+				row.Scanner,
+				row.Path,
+				row.HttpStatus,
+				row.ClientAddress,
+			]),
+			[
+				["a2", "/server-status", "", "/server-status", 403, "203.0.113.7"],
+				["p1", "/.env", "", "/.env", 404, "203.0.113.7"],
+				["p2", "/.git/", "", "/.git/config", 404, "203.0.113.7"],
+				["p3", "/wp-login.php", "", "/wp-login.php", 404, "198.51.100.2"],
+				["p4", "/.env", "", "/api/.ENV.production", 200, "203.0.113.7"],
+				["p5", "/wp-login.php", "", "/wp-login.php", 200, "198.51.100.2"],
+				["q1", "../", "", "/index.php", 404, "203.0.113.7"],
+				["s1", "", "ZGrab", "/", 200, "192.0.2.9"],
+				["w1", "../", "", "/wp-content/plugins/x/../../../etc/passwd", 404, "203.0.113.7"],
+			],
+		)
 	})
 
 	it("matches every catalog signature the write filter compiles", async () => {
@@ -191,7 +194,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 		await applyRealMigrations(probeDb)
 		const values = PROBE_SIGNATURES.map(
 			(signature, index) =>
-				`('${ORG_ID}', '${chDateTime(BASE_MS + index * 1000)}', 'c${index}', 's${index}', '', 'GET', 'Server', 'api', 1, 'Unset', '', 1, map('url.path', '/x${signature.token}y'), map())`,
+				`('${ORG_ID}', '${chDateTime(BASE_MS + index * 1000)}', 'c${index}', 's${index}', '', 'GET', 'Server', 'api', 1, 'Unset', '', 1, map('url.path', ${signature.anchored === true ? `'${signature.token}y'` : `'/x${signature.token}y'`}), map())`,
 		).join(",")
 		await clickhouseExec(
 			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes) VALUES ${values}`,
@@ -225,13 +228,15 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			"/.env": [2, 1, 1],
 			"/.git/": [1, 0, 1],
 			"/wp-login.php": [2, 1, 1],
+			"/server-status": [1, 0, 1],
+			"../": [2, 0, 1],
 			"": [1, 1, 1],
 		})
 		const sources = await read(CH.scannerSourcesQuery())
 		assert.deepStrictEqual(
 			sources.map((row) => [row.clientAddress, row.requests, row.signatures, row.scanner]),
 			[
-				["203.0.113.7", 3, 2, ""],
+				["203.0.113.7", 6, 4, ""],
 				["198.51.100.2", 2, 1, ""],
 				["192.0.2.9", 1, 0, "ZGrab"],
 			],
@@ -241,11 +246,18 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 	it("rolls runtimes up per service and reads them back", async () => {
 		const rows = await read(CH.runtimeVersionsQuery())
 		assert.deepStrictEqual(
-			rows.map((row) => [row.service, row.runtimeName, row.runtimeVersion, row.sdkVersion, row.spans]),
+			rows.map((row) => [
+				row.service,
+				row.runtimeName,
+				row.runtimeVersion,
+				row.executableName,
+				row.spans,
+			]),
 			[
-				["api", "nodejs", "18.20.8", "1.30.0", 8],
+				["api", "nodejs", "18.20.8", "", 12],
 				["billing", "cpython", "3.12.4", "", 1],
 				["edge", "workerd", "", "", 1],
+				["worker", "nodejs", "24.3.0", "bun", 1],
 			],
 		)
 	})

@@ -5,8 +5,13 @@
 import type { Expr } from "@maple-dev/effect-orm/expr"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compile } from "@maple-dev/effect-orm/sql"
-import { PROBE_SIGNATURES, SCANNER_AGENTS } from "../security-telemetry"
-import { requestPathExpr, userAgentExpr } from "./ai-crawler-columns"
+import {
+	CRITICAL_PROBE_SIGNATURES,
+	OTHER_PROBE_SIGNATURES,
+	type ProbeSignature,
+	SCANNER_AGENTS,
+} from "../security-telemetry"
+import { requestHostExpr, requestPathExpr, userAgentExpr } from "./ai-crawler-columns"
 
 interface MapColumnLike {
 	get(key: string): Expr<string>
@@ -26,20 +31,55 @@ const firstNonEmpty = (...values: ReadonlyArray<Expr<string>>): Expr<string> =>
 
 const leftUtf8 = (value: Expr<string>, max: number) => CH.compileFnCall<string>("leftUTF8", value, max)
 
-const SIGNATURE_TOKENS = PROBE_SIGNATURES.map((signature) => signature.token)
+/** Longest query string searched. Probes hide traversal in parameters (`?page=../../etc/passwd`). */
+export const PROBE_QUERY_MAX = 1024
 
-/** 1-based index into {@link PROBE_SIGNATURES} of the token found in the path, 0 for none. */
-export function probeIndexExpr(attrs: MapColumnLike): Expr<number> {
-	return CH.compileFnCall<number>(
-		"multiSearchFirstIndexCaseInsensitive",
-		requestPathExpr(attrs),
-		stringArray(SIGNATURE_TOKENS),
+/**
+ * What a signature is searched in: ` <path> <query>`. Paths and queries hold no raw spaces, so an
+ * anchored token is searched as ` <token>` and only matches at the start of the path.
+ */
+function probeHaystackExpr(attrs: MapColumnLike): Expr<string> {
+	const query = leftUtf8(
+		firstNonEmpty(attrs.get("url.query"), CH.extract_(attrs.get("http.target"), "\\?(.*)")),
+		PROBE_QUERY_MAX,
 	)
+	return CH.concat(CH.lit(" "), requestPathExpr(attrs), CH.lit(" "), query)
 }
 
-/** The matched token, `''` when the path matches none. */
+const needles = (signatures: ReadonlyArray<ProbeSignature>) =>
+	stringArray(
+		signatures.map((signature) =>
+			signature.anchored === true ? ` ${signature.token}` : signature.token,
+		),
+	)
+
+const tokens = (signatures: ReadonlyArray<ProbeSignature>) =>
+	stringArray(signatures.map((signature) => signature.token))
+
+const probeIndex = (attrs: MapColumnLike, signatures: ReadonlyArray<ProbeSignature>): Expr<number> =>
+	CH.compileFnCall<number>(
+		"multiSearchFirstIndexCaseInsensitive",
+		probeHaystackExpr(attrs),
+		needles(signatures),
+	)
+
+/** 1-based index into `CRITICAL_PROBE_SIGNATURES` of the token found, 0 for none. */
+export function criticalProbeIndexExpr(attrs: MapColumnLike): Expr<number> {
+	return probeIndex(attrs, CRITICAL_PROBE_SIGNATURES)
+}
+
+/** 1-based index into `OTHER_PROBE_SIGNATURES` of the token found, 0 for none. */
+export function otherProbeIndexExpr(attrs: MapColumnLike): Expr<number> {
+	return probeIndex(attrs, OTHER_PROBE_SIGNATURES)
+}
+
+/** The matched token, a critical one first; `''` when nothing matches. */
 export function probeSignatureExpr(attrs: MapColumnLike): Expr<string> {
-	return CH.arrayElement(stringArray(SIGNATURE_TOKENS), probeIndexExpr(attrs))
+	return CH.if_(
+		criticalProbeIndexExpr(attrs).gt(0),
+		CH.arrayElement(tokens(CRITICAL_PROBE_SIGNATURES), criticalProbeIndexExpr(attrs)),
+		CH.arrayElement(tokens(OTHER_PROBE_SIGNATURES), otherProbeIndexExpr(attrs)),
+	)
 }
 
 /** 1-based index into {@link SCANNER_AGENTS} of the tool named in the user agent, 0 for none. */
@@ -60,6 +100,7 @@ export function scannerNameExpr(attrs: MapColumnLike): Expr<string> {
 export const CLIENT_ADDRESS_MAX = 64
 export const USER_AGENT_MAX = 256
 export const RUNTIME_FIELD_MAX = 64
+export const HOST_MAX = 255
 
 /** The caller's address: `client.address`, then the legacy spellings. */
 export function clientAddressExpr(attrs: MapColumnLike): Expr<string> {
@@ -73,7 +114,9 @@ const sql = (expr: Expr<unknown>) => compile(expr.toFragment())
 
 const resourceField = (key: string) => sql(leftUtf8(resourceAttributes.get(key), RUNTIME_FIELD_MAX))
 
-export const PROBE_INDEX_SQL = sql(probeIndexExpr(spanAttributes))
+export const CRITICAL_PROBE_INDEX_SQL = sql(criticalProbeIndexExpr(spanAttributes))
+export const OTHER_PROBE_INDEX_SQL = sql(otherProbeIndexExpr(spanAttributes))
+export const SCANNER_HOST_SQL = sql(leftUtf8(requestHostExpr(spanAttributes), HOST_MAX))
 export const PROBE_SIGNATURE_SQL = sql(probeSignatureExpr(spanAttributes))
 export const SCANNER_INDEX_SQL = sql(scannerIndexExpr(spanAttributes))
 export const SCANNER_NAME_SQL = sql(scannerNameExpr(spanAttributes))
@@ -82,6 +125,7 @@ export const SCANNER_USER_AGENT_SQL = sql(leftUtf8(userAgentExpr(spanAttributes)
 
 export const RUNTIME_NAME_SQL = resourceField("process.runtime.name")
 export const RUNTIME_VERSION_SQL = resourceField("process.runtime.version")
+export const EXECUTABLE_NAME_SQL = resourceField("process.executable.name")
 export const SDK_LANGUAGE_SQL = resourceField("telemetry.sdk.language")
 export const SDK_NAME_SQL = resourceField("telemetry.sdk.name")
 export const SDK_VERSION_SQL = resourceField("telemetry.sdk.version")

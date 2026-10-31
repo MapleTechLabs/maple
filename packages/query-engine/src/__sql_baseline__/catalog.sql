@@ -4297,12 +4297,13 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:security-telemetry:runtimeVersionsQuery:default  [4636f2c4]
+-- builder:security-telemetry:runtimeVersionsQuery:default  [7dc35564]
 SELECT
           service_runtimes_hourly.ServiceName AS service,
           service_runtimes_hourly.DeploymentEnv AS environment,
           service_runtimes_hourly.RuntimeName AS runtimeName,
           service_runtimes_hourly.RuntimeVersion AS runtimeVersion,
+          service_runtimes_hourly.ExecutableName AS executableName,
           service_runtimes_hourly.SdkLanguage AS sdkLanguage,
           service_runtimes_hourly.SdkName AS sdkName,
           service_runtimes_hourly.SdkVersion AS sdkVersion,
@@ -4312,12 +4313,12 @@ SELECT
         WHERE service_runtimes_hourly.OrgId = 'org_sql_catalog'
           AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND service_runtimes_hourly.Hour <= '2026-01-03 14:15:00'
-        GROUP BY service, environment, runtimeName, runtimeVersion, sdkLanguage, sdkName, sdkVersion
+        GROUP BY service, environment, runtimeName, runtimeVersion, executableName, sdkLanguage, sdkName, sdkVersion
         ORDER BY service ASC
         LIMIT 1000
         FORMAT JSON
 
--- builder:security-telemetry:scannerExposedQuery:default  [e48e74ef]
+-- builder:security-telemetry:scannerExposedQuery:default  [d1c58739]
 SELECT
           scanner_requests.ServiceName AS service,
           scanner_requests.Host AS host,
@@ -4331,7 +4332,7 @@ SELECT
         WHERE scanner_requests.OrgId = 'org_sql_catalog'
           AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
           AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
-          AND scanner_requests.Signature IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
+          AND scanner_requests.Signature IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
           AND (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)
         GROUP BY service, host, path, signature, httpStatus
         ORDER BY lastSeen DESC
@@ -4373,7 +4374,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:security-telemetry:scannerTimelineQuery:default  [1f52f1f6]
+-- builder:security-telemetry:scannerTimelineQuery:default  [6cddc38a]
 SELECT
           toStartOfInterval(scanner_requests.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           uniq(scanner_requests.TraceId) AS requests,
@@ -4384,6 +4385,7 @@ SELECT
           AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY bucket
         ORDER BY bucket ASC
+        LIMIT 2000
         FORMAT JSON
 
 -- builder:service-api:serviceApiTimeseriesQuery:mergedSubHour  [d9a67a8b]

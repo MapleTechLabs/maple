@@ -33,9 +33,12 @@ describe("runtimeProductOf", () => {
 		expect(runtimeProductOf("fpm-fcgi", "php")).toBe("php")
 	})
 
-	it("leaves Workers and unknown Node.js hosts untracked", () => {
+	it("leaves Workers, unknown Node.js hosts and unlisted runtimes untracked", () => {
 		expect(runtimeProductOf("workerd", "")).toBeUndefined()
 		expect(runtimeProductOf("", "nodejs")).toBeUndefined()
+		expect(runtimeProductOf("jruby", "ruby")).toBeUndefined()
+		expect(runtimeProductOf(".NET Framework", "dotnet")).toBeUndefined()
+		expect(runtimeProductOf("", "ruby")).toBe("ruby")
 	})
 })
 
@@ -45,6 +48,7 @@ describe("normalizeRuntimeVersion", () => {
 		expect(normalizeRuntimeVersion("go1.22.1")).toBe("1.22.1")
 		expect(normalizeRuntimeVersion("17.0.9+9")).toBe("17.0.9")
 		expect(normalizeRuntimeVersion("1.8.0_392-b08")).toBe("8.0.392")
+		expect(normalizeRuntimeVersion("8u504-b01")).toBe("8.0.504")
 		expect(normalizeRuntimeVersion("")).toBeUndefined()
 	})
 })
@@ -70,6 +74,20 @@ describe("runtimePosture", () => {
 	it("flags a supported cycle behind its latest patch", () => {
 		expect(posture("nodejs", "v22.11.0")).toMatchObject({ status: "behind", latest: "22.21.1" })
 		expect(posture("nodejs", "22.21.1")).toMatchObject({ status: "supported" })
+	})
+
+	it("does not judge Bun or Deno by the Node.js version they emulate", () => {
+		expect(
+			runtimePosture(
+				{
+					runtimeName: "nodejs",
+					runtimeVersion: "18.20.8",
+					sdkLanguage: "nodejs",
+					executableName: "bun",
+				},
+				releases,
+			),
+		).toEqual({ status: "emulated", product: "bun", version: "18.20.8" })
 	})
 
 	it("says why a runtime cannot be judged", () => {

@@ -37,7 +37,8 @@ const BY_RUNTIME_NAME: ReadonlyArray<readonly [RegExp, RuntimeProduct]> = [
 	[/^php$/, "php"],
 ]
 
-// PHP reports its SAPI (`cli`, `fpm-fcgi`) as the runtime name, so the SDK language decides.
+// PHP reports its SAPI (`cli`, `fpm-fcgi`) as the runtime name, so its SDK language decides. Any
+// other unrecognized name (JRuby, .NET Framework, PyPy) stays untracked rather than guessed.
 const BY_SDK_LANGUAGE = new Map<string, RuntimeProduct>([
 	["python", "python"],
 	["go", "go"],
@@ -50,23 +51,32 @@ const BY_SDK_LANGUAGE = new Map<string, RuntimeProduct>([
 /** Runtimes with no version to check, named so the UI can say so instead of "unknown". */
 const UNVERSIONED_RUNTIMES = new Set(["workerd", "edge-light", "fastly", "netlify", "browser", "webjs"])
 
+/** Runtimes that run Node.js code and report themselves as `nodejs` through the stock OTel SDK. */
+const NODE_EMULATORS = new Map<string, RuntimeProduct>([
+	["bun", "bun"],
+	["deno", "deno"],
+])
+
 /** The product a service runs on, undefined when Maple does not track it. */
 export function runtimeProductOf(runtimeName: string, sdkLanguage: string): RuntimeProduct | undefined {
 	const name = runtimeName.trim().toLowerCase()
 	if (UNVERSIONED_RUNTIMES.has(name)) return undefined
 	const byName = BY_RUNTIME_NAME.find(([pattern]) => pattern.test(name))
 	if (byName !== undefined) return byName[1]
+	const language = sdkLanguage.trim().toLowerCase()
 	// A Node.js SDK may run on Bun or Deno, so `nodejs` only counts with the runtime name above.
-	return BY_SDK_LANGUAGE.get(sdkLanguage.trim().toLowerCase())
+	return name === "" || language === "php" ? BY_SDK_LANGUAGE.get(language) : undefined
 }
 
 /**
  * The dotted numeric version, undefined when there is none: `v22.1.0` and `go1.22.1` drop their
- * prefix, Java's `17.0.9+9` its build and `1.8.0_392` becomes `8.0.392`.
+ * prefix, Java's `17.0.9+9` its build, and `1.8.0_392` and `8u392-b08` become `8.0.392`.
  */
 export function normalizeRuntimeVersion(raw: string): string | undefined {
 	const java8 = /^1\.(\d+)\.(\d+)_(\d+)/.exec(raw.trim())
 	if (java8 !== null) return `${java8[1]}.${java8[2]}.${java8[3]}`
+	const update = /^(\d+)u(\d+)/.exec(raw.trim())
+	if (update !== null) return `${update[1]}.0.${update[2]}`
 	const match = /(\d+(?:\.\d+)*)/.exec(raw.trim().replace(/^(v|go)/i, ""))
 	return match?.[1]
 }
@@ -113,6 +123,8 @@ export type RuntimePosture =
 	| { readonly status: "untracked" }
 	/** The runtime is known but the service sends no `process.runtime.version`. */
 	| { readonly status: "no_version"; readonly product: RuntimeProduct }
+	/** Bun or Deno reporting itself as Node.js: its version is the Node.js compatibility level. */
+	| { readonly status: "emulated"; readonly product: RuntimeProduct; readonly version: string }
 	/** The release data could not be read. */
 	| { readonly status: "catalog_unavailable"; readonly product: RuntimeProduct; readonly version: string }
 	/** The version matches no published cycle (a pre-release or a vendor build). */
@@ -128,12 +140,22 @@ export type RuntimePosture =
 
 /** How a reported runtime stands. `releases` is undefined when the catalog could not be read. */
 export function runtimePosture(
-	input: { readonly runtimeName: string; readonly runtimeVersion: string; readonly sdkLanguage: string },
+	input: {
+		readonly runtimeName: string
+		readonly runtimeVersion: string
+		readonly sdkLanguage: string
+		/** `process.executable.name`, which tells Bun and Deno apart from Node.js. */
+		readonly executableName?: string
+	},
 	releasesFor: (product: RuntimeProduct) => ReadonlyArray<RuntimeRelease> | undefined,
 ): RuntimePosture {
 	const product = runtimeProductOf(input.runtimeName, input.sdkLanguage)
 	if (product === undefined) return { status: "untracked" }
 	const version = normalizeRuntimeVersion(input.runtimeVersion)
+	const emulator = NODE_EMULATORS.get((input.executableName ?? "").trim().toLowerCase())
+	if (product === "nodejs" && emulator !== undefined) {
+		return { status: "emulated", product: emulator, version: version ?? "" }
+	}
 	if (version === undefined) return { status: "no_version", product }
 	const releases = releasesFor(product)
 	if (releases === undefined) return { status: "catalog_unavailable", product, version }

@@ -2607,6 +2607,8 @@ export class SecurityRuntimesResponse extends Schema.Class<SecurityRuntimesRespo
 				environment: Schema.String,
 				runtimeName: Schema.String,
 				runtimeVersion: Schema.String,
+				/** `process.executable.name`: tells Bun and Deno apart from Node.js under the stock OTel SDK. */
+				executableName: Schema.String,
 				sdkLanguage: Schema.String,
 				sdkName: Schema.String,
 				sdkVersion: Schema.String,
