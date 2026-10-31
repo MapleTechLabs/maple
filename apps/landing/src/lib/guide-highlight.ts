@@ -19,7 +19,8 @@ export type GuideLang =
     | "shell"
     | "python-logging"
     | "loguru-output"
-    | "otel-debug";
+    | "otel-debug"
+    | "env";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -141,11 +142,18 @@ const markdown = (code: string) =>
         [/\||-{3,}/y, (m) => span("comment", m[0])],
     ]);
 
-const typescript = braces("import|from|const|let|new|async|await|return|if");
+const typescript = braces("import|from|export|function|const|let|new|async|await|return|if");
 const go = braces("package|import|var|func|defer|return|if");
-const rust = braces("use|fn|let|mut|for|in");
-const java = braces("import|public|static|final|class|void|new|try|throws");
-const csharp = braces("using|var|new|await");
+const rust = braces("use|mod|pub|fn|async|let|mut|for|in");
+const java = braces("import|public|static|final|class|void|new|try|catch|finally|throws|return");
+const csharp = braces("using|var|new|await|async|static|class|public|readonly|return");
+
+// Environment variables: KEY=value lines.
+const env = (code: string) =>
+    tokenize(code, [
+        [/#.*/y, (m) => span("comment", m[0])],
+        [/(?<=^|\n)([A-Z_][A-Z0-9_]*)(=)([^\n]*)/y, (m) => span("name", m[1]) + escape(m[2]) + span("labels", m[3])],
+    ]);
 
 // JavaScript and TypeScript application code: all three string quotes, no metric classes.
 const javascript = (code: string) =>
@@ -252,4 +260,15 @@ export const highlight = (code: string, lang: GuideLang) =>
         "python-logging": pythonLogging,
         "loguru-output": loguruOutput,
         "otel-debug": otelDebug,
+        env,
     })[lang](code);
+
+// highlight(), plus `tok-mark` around each of `words` outside tags, so a guide can
+// point at the calls it is about (in code and comments alike).
+export const highlightMarked = (code: string, lang: GuideLang, words: readonly string[]) => {
+    const re = new RegExp(`\\b(?:${words.join("|")})\\b`, "g");
+    return highlight(code, lang)
+        .split(/(<[^>]+>)/)
+        .map((part) => (part.startsWith("<") ? part : part.replace(re, (w) => `<span class="tok-mark">${w}</span>`)))
+        .join("");
+};
