@@ -12,7 +12,7 @@ import { Option, Schema } from "effect"
 import { AlertSignalType } from "@maple/domain/http"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
-import { roundCapDasharray } from "./fixed-metric-axes"
+import { roundCapDasharray, SERIES_STROKE_WIDTH } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
 
 // The alert rule chart's definition. The view half is `page/alerts/shared/rule-chart.ts`.
@@ -52,7 +52,11 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 	}
 	const formatTime = (value: number, mode: "tick" | "tooltip") =>
 		formatBucketLabel(new Date(value).toISOString(), axisContext, mode)
-	const points: Array<SignalPoint> = spec.rows.map((row) => ({ ...row, t: num(row.t), at: new Date(num(row.t)) }))
+	const points: Array<SignalPoint> = spec.rows.map((row) => ({
+		...row,
+		t: num(row.t),
+		at: new Date(num(row.t)),
+	}))
 	const at = (point: SignalPoint) => point.at
 	const valueOf = (key: string) => (point: SignalPoint) => {
 		const value = point[key]
@@ -175,7 +179,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 							x: at,
 							y: valueOf(SINGLE_KEY),
 							stroke: palette.signal,
-							strokeWidth: 2,
+							strokeWidth: SERIES_STROKE_WIDTH,
 							curve,
 						}),
 					]),
@@ -186,7 +190,11 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				scale: bucketTimeScale([new Date(spec.domainMin), new Date(spec.domainMax)], spec.timeZone),
 				axis: {
 					line: false,
-					ticks: { size: 0, padding: 8, format: (value: Date) => formatTime(value.getTime(), "tick") },
+					ticks: {
+						size: 0,
+						padding: 8,
+						format: (value: Date) => formatTime(value.getTime(), "tick"),
+					},
 					tickLabels: { thin: { minGap: 12 } },
 				},
 			},
@@ -195,7 +203,11 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				scale: scaleLinear().domain(yDomain),
 				axis: {
 					line: false,
-					ticks: { size: 0, padding: 8, format: (value: number) => formatSignalValue(signalType, value) },
+					ticks: {
+						size: 0,
+						padding: 8,
+						format: (value: number) => (value === 0 ? "0" : formatSignalValue(signalType, value)),
+					},
 				},
 			},
 		},
@@ -206,7 +218,10 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 	})
 
 	const metaByT = new Map(spec.meta.map((entry) => [entry.t, entry]))
-	const tooltipKeys = [...(spec.isMultiSeries ? spec.seriesKeys : [SINGLE_KEY]), ...(spec.hasGhost ? [GHOST_KEY] : [])]
+	const tooltipKeys = [
+		...(spec.isMultiSeries ? spec.seriesKeys : [SINGLE_KEY]),
+		...(spec.hasGhost ? [GHOST_KEY] : []),
+	]
 	const tooltipOf = (
 		focused: ReadonlyArray<{ readonly datum: SignalPoint }>,
 	): Option.Option<ChartTooltip> =>
@@ -228,7 +243,12 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 						: [
 								{
 									label: spec.labels[key] ?? key,
-									color: key === GHOST_KEY ? palette.muted : spec.isMultiSeries ? color(key) : palette.signal,
+									color:
+										key === GHOST_KEY
+											? palette.muted
+											: spec.isMultiSeries
+												? color(key)
+												: palette.signal,
 									dashed: key === GHOST_KEY,
 									value: formatSignalValue(signalType, value),
 								},

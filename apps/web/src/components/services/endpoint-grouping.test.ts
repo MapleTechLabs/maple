@@ -15,6 +15,12 @@ const endpoint = (method: string, route: string, calls = 100, errors = 0): Servi
 	p50DurationMs: 10,
 	p95DurationMs: 20,
 	p99DurationMs: 30,
+	httpClassifiedSpanCount: calls,
+	httpStatusCount: calls,
+	http4xxCount: 0,
+	http5xxCount: errors,
+	requestBodyBytes: 0,
+	requestBodyCount: 0,
 })
 
 const stems = (groups: ReturnType<typeof groupEndpoints>) =>

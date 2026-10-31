@@ -23,6 +23,7 @@ import {
 	testId,
 	within,
 } from "foldkit/scene"
+import { Lazy } from "foldkit/test"
 import { describe, test, expect as expectValue } from "vitest"
 import { Message as ComboboxMessage } from "../../ui/combobox"
 import { Message as ResizableMessage, MountResizeGroup } from "../../ui/resizable"
@@ -327,5 +328,16 @@ describe("service map declutter controls", () => {
 		const once = ServiceMap.setFocus(revealed, focus).model
 		expectValue(ServiceMap.setFocus(once, focus).model).toBe(once)
 		expectValue(ServiceMap.setFocus(once, Option.none()).model.focus).toEqual(Option.none())
+	})
+})
+
+const toSelf = (message: ServiceMap.Message) => message
+
+describe("service map lazy layers", () => {
+	test("an unchanged map reuses its node, edge, particle and minimap layers", () => {
+		Lazy.expectAllReused({
+			view: (model: ServiceMap.Model, h: HtmlBuilder<ServiceMap.Message>) => view(h, model, toSelf),
+			model: revealed,
+		})
 	})
 })

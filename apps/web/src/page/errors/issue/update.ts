@@ -70,19 +70,16 @@ type Step = Readonly<{ patch: Partial<Model>; commands: ReadonlyArray<Cmd> }>
 
 const NO_STEP: Step = { patch: {}, commands: [] }
 
-/** `Supersede`: a post-write re-read, which restarts a read already in flight (reactivity invalidation). */
-type SlotMode = Keyed.RequestMode | "Supersede"
-
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
-	mode: SlotMode,
+	mode: Keyed.ReadMode,
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Cmd,
 ): Step =>
-	Option.match(mode === "Supersede" ? Option.some(Keyed.supersede(slot, key)) : Keyed.request(slot, key, mode), {
+	Option.match(Keyed.requestFor(slot, key, mode), {
 		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key ?? key)] }),
+		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key)] }),
 	})
 
 const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
@@ -182,7 +179,7 @@ const loadedReads =
 	}
 
 const detailStep =
-	(context: PageContext, window: TimeWindow, mode: RequestMode | "Supersede") =>
+	(context: PageContext, window: TimeWindow, mode: Keyed.ReadMode) =>
 	(model: Model): Step => {
 		const query = detailQueryOf(window)
 		return keyed(
@@ -563,7 +560,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: settled,
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to add comment",
+						title: "Couldn't add comment",
 						description: failure.message,
 					}),
 				}),
@@ -598,7 +595,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: settled,
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to detach the pull request",
+						title: "Couldn't detach the pull request",
 						description: failure.message,
 					}),
 				}),

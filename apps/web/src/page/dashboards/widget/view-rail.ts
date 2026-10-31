@@ -4,6 +4,7 @@ import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
+import { separator } from "../../../ui/display"
 import { field, fieldLabel, type FieldState, input } from "../../../ui/field"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { textarea } from "../../../ui/textarea"
@@ -51,7 +52,7 @@ export const railSetting = (
 		...children,
 	])
 
-export const divider = (h: H): Html => h.div([h.Class("h-px bg-border")], [])
+export const divider = (h: H): Html => separator(h, "horizontal", undefined)
 
 /** `Segments`: the rail's full-width segmented control. */
 export const segments = <T extends string>(
@@ -119,7 +120,7 @@ const descriptionField = (h: H, state: EditorState): Html =>
 			defaultValue: state.description,
 			attributes: [
 				h.AriaLabelledBy(idsOf("description").label),
-				h.Placeholder("Add a description..."),
+				h.Placeholder("Add a description…"),
 				h.Rows(2),
 				h.OnInput((value) => Message.ChangedDescription({ value })),
 			],
@@ -153,7 +154,10 @@ const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string
 								view: TimeRangePicker.view,
 								viewInputs: {
 									label: widgetTimeRangeLabel(state.timeRange, timeZone, model.nowMs ?? 0),
-									selectedPreset: state.timeRange.type === "relative" ? state.timeRange.value : undefined,
+									selectedPreset:
+										state.timeRange.type === "relative"
+											? state.timeRange.value
+											: undefined,
 									presets: TimeRangePicker.PRESET_VALUES,
 									timeZone,
 									hasHotkey: false,
@@ -225,18 +229,18 @@ export const legendField = (h: H, state: EditorState, hasSeriesStats = true): Ht
 	])
 
 const seriesStats = (h: H, state: EditorState): Html =>
-		h.div(
-			[h.Class("pt-0.5")],
-			[
-				checkboxRow(
-					h,
-					"qb-series-stats",
-					"Show Min/Max/Mean/Last stats",
-					state.seriesStatsEnabled,
-					Message.ToggledSeriesStats(),
-				),
-			],
-		)
+	h.div(
+		[h.Class("pt-0.5")],
+		[
+			checkboxRow(
+				h,
+				"qb-series-stats",
+				"Show Min/Max/Mean/Last stats",
+				state.seriesStatsEnabled,
+				Message.ToggledSeriesStats(),
+			),
+		],
+	)
 
 /** `QueryOptions`: comparison and its % change. */
 export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [

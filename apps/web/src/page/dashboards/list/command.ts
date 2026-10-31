@@ -221,6 +221,8 @@ const listPages = (
 		},
 	)
 
+const FALLBACK_TIMEOUT = "10 seconds"
+
 /** `useDashboardsFallback`: the list over plain HTTP while the shape stream is down. */
 export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback", {
 	args: { orgId: Schema.String },
@@ -229,9 +231,13 @@ export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback",
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const dashboards = yield* listPages(client, null, 0, [])
-			const documents = yield* Effect.forEach(dashboards, (dashboard) => Effect.option(documentOf(dashboard)))
+			const documents = yield* Effect.forEach(dashboards, (dashboard) =>
+				Effect.option(documentOf(dashboard)),
+			)
 			return documents.flatMap((document) => Option.toArray(Option.map(document, toListDashboard)))
 		}).pipe(
+			// A hung snapshot read gives up too, so the list lands on its error state.
+			Effect.timeout(FALLBACK_TIMEOUT),
 			Effect.mapError(errorMessageOf),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFallback({ orgId, result })),

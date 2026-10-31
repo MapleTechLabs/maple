@@ -19,7 +19,7 @@ const resolved = buildResolved(
 		ingestKey: Redacted.make("test-key"),
 		resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
 	},
-	{ userAgent: "test", keyless: "disable" },
+	{ userAgent: "test", keyless: "disable-at-maple-ingest" },
 )
 
 const recordSpan = (spans: ReturnType<typeof makeSpanBuffer>, name: string) =>
@@ -36,14 +36,27 @@ describe("buildResolved", () => {
 		expect(resolved.headers.authorization).toBe("Bearer test-key")
 	})
 
-	vitestIt("applies each preset's keyless policy: disable, or send without Authorization", () => {
-		const keyless = {
-			endpoint: "https://proxy.test",
-			ingestKey: undefined,
-			resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
-		}
-		expect(buildResolved(keyless, { userAgent: "test", keyless: "disable" }).noOp).toBe(true)
-		const sent = buildResolved(keyless, { userAgent: "test", keyless: "send" })
+	const keylessTo = (endpoint: string | undefined) => ({
+		endpoint,
+		ingestKey: undefined,
+		resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
+	})
+
+	vitestIt("disables keyless export only against Maple's hosted ingest", () => {
+		const policy = { userAgent: "test", keyless: "disable-at-maple-ingest" } as const
+		expect(buildResolved(keylessTo("https://ingest.maple.dev"), policy).noOp).toBe(true)
+		expect(buildResolved(keylessTo("https://ingest.eu.maple.dev/"), policy).noOp).toBe(true)
+		expect(buildResolved(keylessTo(undefined), policy).noOp).toBe(true)
+		const local = buildResolved(keylessTo("http://localhost:4318"), policy)
+		expect(local.noOp).toBe(false)
+		expect(local.headers).not.toHaveProperty("authorization")
+	})
+
+	vitestIt("sends keyless writes without Authorization under the send policy", () => {
+		const sent = buildResolved(keylessTo("https://ingest.maple.dev"), {
+			userAgent: "test",
+			keyless: "send",
+		})
 		expect(sent.noOp).toBe(false)
 		expect(sent.headers).not.toHaveProperty("authorization")
 	})

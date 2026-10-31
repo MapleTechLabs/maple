@@ -1,24 +1,16 @@
 import { Effect } from "effect"
 import { HttpClient, type HttpClientRequest } from "effect/http"
 import { apiBaseUrl } from "./api-base-url"
-import { hasCachedMapleAuthToken, invalidateMapleAuthToken } from "./auth-headers"
 import { withMapleRetryPolicy } from "./retry-policy"
 
-const retriedUnauthorized = new WeakSet<object>()
-
-const refreshStaleAuthorization = (request: HttpClientRequest.HttpClientRequest): boolean => {
-	if (!retriedUnauthorized.has(request) && hasCachedMapleAuthToken()) {
-		retriedUnauthorized.add(request)
-		invalidateMapleAuthToken()
-		return true
-	}
-	// Billing reads can race Clerk's token-settle window and briefly leave without
-	// a bearer token. Keep this exception URL-scoped; genuine 401s elsewhere fail fast.
-	// Both prefixes are load-bearing: the authenticated operations moved to
-	// `/internal/billing`, while the unauthenticated plan catalog stayed on
-	// `/api/billing`. Dropping either one silently reinstates the hard 401.
-	return request.url.includes("/internal/billing/") || request.url.includes("/api/billing/")
-}
+/**
+ * Billing reads can race Clerk's token-settle window and briefly leave without a bearer
+ * token, so their 401s are re-signed and resent (`withUnauthorizedResign` in `api-clients.ts`).
+ * Both prefixes are load-bearing: authenticated operations live at `/internal/billing`, the
+ * unauthenticated plan catalog at `/api/billing`. Genuine 401s elsewhere fail fast.
+ */
+export const isBillingRequest = (request: HttpClientRequest.HttpClientRequest): boolean =>
+	request.url.includes("/internal/billing/") || request.url.includes("/api/billing/")
 
 export const transformMapleApiClient = <E, R>(
 	client: HttpClient.HttpClient.With<E, R>,
@@ -30,5 +22,5 @@ export const transformMapleApiClient = <E, R>(
 					? Effect.annotateSpans(effect, "peer.service", "maple-api")
 					: effect,
 			),
-		(self) => withMapleRetryPolicy(self, { retryUnauthorized: refreshStaleAuthorization }),
+		withMapleRetryPolicy,
 	)

@@ -35,7 +35,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 		[
 			h.Class(
 				cn(
-					"mx-3 my-2 rounded-lg border border-severity-error/25 bg-severity-error/4 px-3 py-2.5",
+					"mx-3 my-2 rounded-md border border-severity-error-a3 bg-severity-error-a1 p-3",
 					input.className,
 				),
 			),
@@ -51,7 +51,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 						: [
 								h.span(
 									[
-										h.Class("min-w-0 truncate font-mono text-2xs text-foreground/80"),
+										h.Class("min-w-0 truncate font-mono text-2xs text-foreground-soft"),
 										h.Title(input.badge),
 									],
 									[input.badge],
@@ -62,7 +62,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 								h.span(
 									[
 										h.Class(
-											"flex shrink-0 items-center gap-1 rounded border border-severity-error/25 px-1 py-px font-mono text-4xs text-severity-error/70 uppercase",
+											"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
 										),
 										h.Title("JSON payload"),
 									],
@@ -83,7 +83,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 						iconSize: 12,
 						tooltipId: "span-panel-error-prompt",
 						className:
-							"ml-auto size-5 shrink-0 rounded text-severity-error/70 hover:bg-severity-error/10 hover:text-severity-error sm:size-5",
+							"ml-auto size-5 shrink-0 rounded-sm text-severity-error/70 hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
 					}),
 				],
 			),
@@ -92,8 +92,8 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 					h.AriaLabel("Copy error message"),
 					h.Class(
 						cn(
-							"mt-1.5 block w-full cursor-copy rounded text-left font-mono text-2xs text-foreground/90 leading-relaxed",
-							"transition-colors duration-150 hover:text-foreground motion-reduce:transition-none",
+							"mt-1.5 block w-full cursor-copy rounded-sm text-left font-mono text-2xs text-foreground-soft leading-relaxed",
+							"duration-150 hover:text-foreground active:text-foreground motion-reduce:transition-none",
 							"data-[copy-status=copied]:text-severity-info",
 						),
 					),
@@ -135,7 +135,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 							[
 								h.AriaExpanded(model.isErrorExpanded),
 								h.Class(
-									"mt-1 rounded text-2xs text-severity-error/70 hover:text-severity-error",
+									"mt-1 rounded-sm text-2xs text-severity-error/70 hover:text-severity-error active:text-severity-error",
 								),
 								h.Type("button"),
 								h.OnClick(Message.ToggledErrorExpanded()),

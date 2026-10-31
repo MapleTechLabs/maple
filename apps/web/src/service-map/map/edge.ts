@@ -123,7 +123,7 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 					...(hasSampling
 						? [
 								h.Title(
-									"Based on traced requests — actual rate may be higher with sampling enabled",
+									"Based on traced requests. Actual rate may be higher with sampling enabled",
 								),
 							]
 						: []),
@@ -132,7 +132,7 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 					h.span(
 						[
 							h.Class(
-								"rounded bg-card/90 backdrop-blur-sm px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border/50 whitespace-nowrap tabular-nums",
+								"rounded-sm bg-card/90 px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border-subtle whitespace-nowrap tabular-nums",
 							),
 						],
 						[

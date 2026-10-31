@@ -370,6 +370,9 @@ describe("V2 alerts wire format", () => {
 			},
 		],
 		window_minutes: 5,
+		evaluation_interval_minutes: null,
+		slowed_interval_minutes: null,
+		slowed_at: null,
 		minimum_sample_count: 50,
 		consecutive_breaches_required: 2,
 		breaches_out_of: null,
@@ -383,6 +386,7 @@ describe("V2 alerts wire format", () => {
 		no_data_behavior: "skip",
 		alert_on_no_data: false,
 		last_evaluation_error: null,
+		last_evaluation_error_kind: null,
 		last_evaluated_at: null,
 		last_scheduled_at: null,
 		created_at: "2026-07-15T00:00:00.000Z",
@@ -861,10 +865,15 @@ describe("timestamps", () => {
 
 describe("isScopeExemptRoute", () => {
 	it("exempts only sending and listing agent feedback", () => {
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/")).toBe(true)
-		expect(isScopeExemptRoute("GET", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback")).toBe(false)
-		expect(isScopeExemptRoute("POST", "/v2/api_keys")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/", "standard")).toBe(true)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback", "standard")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/api_keys", "standard")).toBe(false)
+	})
+
+	it("exempts nothing for a device credential", () => {
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "device")).toBe(false)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "device")).toBe(false)
 	})
 })

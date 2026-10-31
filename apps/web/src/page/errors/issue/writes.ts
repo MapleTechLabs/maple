@@ -25,11 +25,11 @@ const BUSY = {
 
 /** `useMutationAction`'s failure toast: the title, the error's user-facing message. */
 const ERROR_TITLE = {
-	Transition: "Failed to change state",
-	Claim: "Failed to claim issue",
-	Heartbeat: "Failed to extend lease",
-	Release: "Failed to release issue",
-	SetSeverity: "Failed to change severity",
+	Transition: "Couldn't change state",
+	Claim: "Couldn't claim issue",
+	Heartbeat: "Couldn't extend lease",
+	Release: "Couldn't release issue",
+	SetSeverity: "Couldn't change severity",
 } satisfies Readonly<Record<IssueWrite["_tag"], string>>
 
 const successTitle = (write: IssueWrite, severity: string | null): string => {

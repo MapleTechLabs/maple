@@ -2,13 +2,14 @@ import { GithubPrReviewSettingsResponse, PrReviewRepositoryConfig, VcsRepository
 import { Option, Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import * as Select from "../../../ui/select"
 import { emptyRetained } from "../kit/retained"
 import { context, githubStatusOf, names, NOW } from "../kit/test-fixtures"
 import * as RulesForm from "../rules-form/form"
 import { Message, type Model } from "./model"
-import { init, update } from "./update"
+import { init, retainedOf, update } from "./update"
 import { view as pageView } from "./view"
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -52,6 +53,78 @@ describe("code review settings", () => {
 		expect(picked.model.modelSelect.value).toBe("anthropic/claude-sonnet-5.5")
 	})
 
+	test("a rules save during a model save waits for it, then writes both changes", () => {
+		const settingsArgs = (result: {
+			readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
+		}) =>
+			(result.commands ?? [])
+				.filter((command) => command.name === "SaveCodeReviewSettings")
+				.map((command) => command.args)
+		const picked = pageUpdate(
+			loaded().model,
+			Message.GotModelSelectMessage({
+				message: Select.Message.SelectedItem({ index: 8, value: "anthropic/claude-haiku-5.5" }),
+			}),
+		)
+		const edited = pageUpdate(
+			picked.model,
+			Message.GotDefaultsFormMessage({
+				message: RulesForm.Message.ChangedText({ field: "instructions", value: "Be terse." }),
+			}),
+		).model
+		const queued = pageUpdate(
+			edited,
+			Message.GotDefaultsFormMessage({ message: RulesForm.Message.ClickedSave() }),
+		)
+		expect(settingsArgs(queued)).toEqual([])
+		const modelSaved = pageUpdate(
+			queued.model,
+			Message.CompletedSaveSettings({ purpose: "model", label: "Claude Haiku", result: Result.void }),
+		)
+		expect(settingsArgs(modelSaved)).toEqual([
+			{
+				purpose: "defaults",
+				label: "",
+				settings: expect.objectContaining({
+					model: "anthropic/claude-haiku-5.5",
+					defaults: expect.objectContaining({ instructions: "Be terse." }),
+				}),
+			},
+		])
+		expect(names(modelSaved.commands)).not.toContain("FetchCodeReviewSettings")
+		const rulesSaved = pageUpdate(
+			modelSaved.model,
+			Message.CompletedSaveSettings({ purpose: "defaults", label: "", result: Result.void }),
+		)
+		expect(names(rulesSaved.commands)).toEqual(["FetchCodeReviewSettings"])
+	})
+
+	test("a switch's re-read is sent even while the status read is still in flight", () => {
+		const model = loaded().model
+		const toggled = pageUpdate(
+			model,
+			Message.ToggledRepo({ repositoryId: INFRA, fullName: "acme-shop/infra", isEnabled: true }),
+		).model
+		const saved = pageUpdate(
+			toggled,
+			Message.CompletedSetPrReview({
+				repositoryId: INFRA,
+				fullName: "acme-shop/infra",
+				isEnabled: true,
+				result: Result.void,
+			}),
+		)
+		expect(names(saved.commands)).toEqual(["FetchCodeReviewSettingsStatus"])
+		const late = pageUpdate(
+			saved.model,
+			Message.CompletedFetchStatus({
+				key: model.githubStatus.key ?? "",
+				result: Result.succeed(githubStatusOf([{ name: "infra", reviewed: false }])),
+			}),
+		).model
+		expect(late.githubStatus).toEqual(saved.model.githubStatus)
+	})
+
 	test("a repository's switch sends one write while it is in flight", () => {
 		const model = pageUpdate(
 			loaded().model,
@@ -68,6 +141,50 @@ describe("code review settings", () => {
 		const first = pageUpdate(model, toggle)
 		expect(names(first.commands)).toEqual(["SetCodeReviewPrReview"])
 		expect(names(pageUpdate(first.model, toggle).commands)).toEqual([])
+	})
+
+	test("a failed save rolls back to the last confirmed value, not the stale read", () => {
+		const saves = (result: {
+			readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
+		}) =>
+			(result.commands ?? [])
+				.filter((command) => command.name === "SaveCodeReviewSettings")
+				.map((command) => command.args)
+		const form = (model: Model, message: RulesForm.Message) =>
+			pageUpdate(model, Message.GotDefaultsFormMessage({ message }))
+		const typed = (model: Model, value: string) =>
+			form(model, RulesForm.Message.ChangedText({ field: "instructions", value })).model
+		// A lands, then B goes out before the settings re-read answers, with a model pick queued behind it.
+		const savingA = form(typed(loaded().model, "Rules A."), RulesForm.Message.ClickedSave()).model
+		const savedA = pageUpdate(
+			savingA,
+			Message.CompletedSaveSettings({ purpose: "defaults", label: "", result: Result.void }),
+		)
+		const savingB = form(typed(savedA.model, "Rules B."), RulesForm.Message.ClickedSave()).model
+		const picked = pageUpdate(
+			savingB,
+			Message.GotModelSelectMessage({
+				message: Select.Message.SelectedItem({ index: 8, value: "anthropic/claude-haiku-5.5" }),
+			}),
+		).model
+		const failedB = pageUpdate(
+			picked,
+			Message.CompletedSaveSettings({
+				purpose: "defaults",
+				label: "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		)
+		expect(saves(failedB)).toEqual([
+			{
+				purpose: "model",
+				label: expect.any(String),
+				settings: expect.objectContaining({
+					model: "anthropic/claude-haiku-5.5",
+					defaults: expect.objectContaining({ instructions: "Rules A." }),
+				}),
+			},
+		])
 	})
 
 	test("repository A's late save neither re-keys nor settles repository B's open rules", () => {
@@ -89,7 +206,11 @@ describe("code review settings", () => {
 		).model
 		const late = pageUpdate(
 			onB,
-			Message.CompletedSaveRepoConfig({ repositoryId: INFRA, fullName: "acme-shop/infra", result: Result.void }),
+			Message.CompletedSaveRepoConfig({
+				repositoryId: INFRA,
+				fullName: "acme-shop/infra",
+				result: Result.void,
+			}),
 		)
 		expect(late.model.configuring).toBe(WEB)
 		expect(late.model.repoConfig.key).toBe(onB.repoConfig.key)
@@ -116,6 +237,30 @@ describe("code review settings, entered from another tab", () => {
 
 	test("the handed-over status pins the reviewed repositories on entry", () => {
 		expect(carried().model.repoList.pinned).toEqual([WEB])
+	})
+
+	test("a status re-read after a switch is still handed over to the next entry", () => {
+		const saved = pageUpdate(
+			loaded().model,
+			Message.CompletedSetPrReview({
+				repositoryId: INFRA,
+				fullName: "acme-shop/infra",
+				isEnabled: true,
+				result: Result.void,
+			}),
+		).model
+		const reread = pageUpdate(
+			saved,
+			Message.CompletedFetchStatus({
+				key: saved.githubStatus.key ?? "",
+				result: Result.succeed(status),
+			}),
+		).model
+		const entered = init({}, context, {
+			retained: { ...emptyRetained, ...retainedOf(reread, NOW) },
+			nowMs: NOW,
+		})
+		expect(entered.model.repoList.pinned).toEqual([WEB])
 	})
 })
 
@@ -169,6 +314,35 @@ describe("review rules form", () => {
 		const settled = RulesForm.completeSave(editing.model, Option.none())
 		const synced = RulesForm.syncConfig(settled, new PrReviewRepositoryConfig({ dailyLimit: 40 }))
 		expect(synced.state.dailyLimit).toBe("12")
+	})
+
+	test("outside contributors stay off until switched on, and a repository can opt out of the organization's yes", () => {
+		expect(form.state.reviewExternalContributors).toBe("off")
+		const on = RulesForm.update(
+			form,
+			RulesForm.Message.ToggledSwitch({ field: "reviewExternalContributors" }),
+		)
+		expect(RulesForm.update(on.model, RulesForm.Message.ClickedSave()).outMessage?.config).toEqual(
+			new PrReviewRepositoryConfig({ dailyLimit: 40, reviewExternalContributors: true }),
+		)
+
+		const repository = RulesForm.init(
+			"repo",
+			"repository",
+			new PrReviewRepositoryConfig({}),
+			new PrReviewRepositoryConfig({ reviewExternalContributors: true }),
+		)
+		expect(repository.state.reviewExternalContributors).toBe("inherit")
+		const optOut = RulesForm.update(
+			repository,
+			RulesForm.Message.GotSelectMessage({
+				field: "reviewExternalContributors",
+				message: Select.Message.SelectedItem({ index: 2, value: "off" }),
+			}),
+		)
+		expect(RulesForm.update(optOut.model, RulesForm.Message.ClickedSave()).outMessage?.config).toEqual(
+			new PrReviewRepositoryConfig({ reviewExternalContributors: false }),
+		)
 	})
 
 	test("Reset puts back what was saved", () => {

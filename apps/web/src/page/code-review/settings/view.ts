@@ -8,7 +8,6 @@ import * as DialogView from "../../../ui/dialog-view"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
 import type * as Select from "../../../ui/select"
 import { view as selectView } from "../../../ui/select-view"
 import { settingRow } from "../../../ui/setting-row"
@@ -26,38 +25,11 @@ import {
 	DEFAULT_MODEL_LABEL,
 	MODEL_OPTIONS,
 } from "./update"
+import { settingsSection, settingsSections } from "../../settings/kit/section"
 
 // `CodeReviewSettingsView`: the code review settings page.
 
 type H = HtmlBuilder<Message>
-
-/** `SettingsSection`: heading and description, then the content, framed in a padded Panel or not. */
-const settingsSection = (
-	h: H,
-	options: Readonly<{ id: string; title: string; description: string; isFramed: boolean }>,
-	children: ReadonlyArray<Html>,
-): Html =>
-	h.section(
-		[h.AriaLabelledBy(options.id), h.Class("flex scroll-mt-6 flex-col gap-3 w-full max-w-3xl")],
-		[
-			h.div(
-				[h.Class("space-y-1")],
-				[
-					h.div(
-						[h.Class("flex items-baseline gap-2.5")],
-						[
-							h.h2(
-								[h.Class("text-sm font-medium text-foreground"), h.Id(options.id)],
-								[options.title],
-							),
-						],
-					),
-					h.p([h.Class("text-sm text-muted-foreground")], [options.description]),
-				],
-			),
-			...(options.isFramed ? [panel(h, { padded: true }, children)] : children),
-		],
-	)
 
 const MODEL_ENTRIES = [
 	{ _tag: "Item" as const, item: { value: DEFAULT_MODEL, label: DEFAULT_MODEL_LABEL } },
@@ -149,7 +121,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load repositories",
+				title: "Couldn't load repositories",
 				onRetry: Message.ClickedRetryStatus(),
 			}),
 		onData: (status) => {
@@ -186,7 +158,7 @@ const repoConfigBody = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			h.p(
 				[h.Class("text-xs text-severity-error"), h.Role("alert")],
-				[isUnexpectedError(failure) ? "Failed to load the repository's rules." : failure.message],
+				[isUnexpectedError(failure) ? "Couldn't load the repository's rules." : failure.message],
 			),
 		onData: () =>
 			model.repoForm === null
@@ -234,64 +206,69 @@ const content = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load review settings",
+				title: "Couldn't load review settings",
 				onRetry: Message.ClickedRetrySettings(),
 			}),
 		onData: () =>
+			// The settings column width, like every settings page.
 			h.div(
-				[h.Class("flex flex-col gap-10 w-full max-w-3xl")],
+				[h.Class("max-w-4xl")],
 				[
-					settingsSection(
-						h,
-						{
-							id: "code-review-settings-reviewer",
-							title: "Reviewer",
-							description: "The model every review and reply in this organization runs on.",
-							isFramed: false,
-						},
-						[modelSetting(h, model)],
-					),
-					settingsSection(
-						h,
-						{
-							id: "code-review-settings-defaults",
-							title: "Default review rules",
-							description:
-								"Every repository starts from these. A repository can override any of them.",
-							isFramed: true,
-						},
-						Option.match(Option.fromNullishOr(model.defaultsForm), {
-							onNone: () => [],
-							onSome: (form) => [
-								formView(h, form, model.isAdmin, (message) =>
-									Message.GotDefaultsFormMessage({ message }),
-								),
-							],
-						}),
-					),
-					settingsSection(
-						h,
-						{
-							id: "code-review-settings-repositories",
-							title: "Repositories",
-							description:
-								"Pick which repositories get reviews, and tune any of them on its own.",
-							isFramed: false,
-						},
-						[repositoriesSection(h, model)],
-					),
+					settingsSections(h, [
+						settingsSection(
+							h,
+							{
+								id: "code-review-settings-reviewer",
+								title: "Reviewer",
+								description: [
+									"The model every review and reply in this organization runs on.",
+								],
+								framed: false,
+							},
+							[modelSetting(h, model)],
+						),
+						settingsSection(
+							h,
+							{
+								id: "code-review-settings-defaults",
+								title: "Default review rules",
+								description: [
+									"Every repository starts from these. A repository can override any of them.",
+								],
+								framed: true,
+							},
+							Option.match(Option.fromNullishOr(model.defaultsForm), {
+								onNone: () => [],
+								onSome: (form) => [
+									formView(h, form, model.isAdmin, (message) =>
+										Message.GotDefaultsFormMessage({ message }),
+									),
+								],
+							}),
+						),
+						settingsSection(
+							h,
+							{
+								id: "code-review-settings-repositories",
+								title: "Repositories",
+								description: [
+									"Pick which repositories get reviews, and tune any of them on its own.",
+								],
+								framed: false,
+							},
+							[repositoriesSection(h, model)],
+						),
+					]),
 				],
 			),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	codeReviewLayout(
 		{
 			h,
 			active: "settings",
 			search: {},
-			nowMs: 0,
-			timeZone: inputs.context.timeZone,
 			overlay: repoDialog(h, model),
 		},
 		[content(h, model)],

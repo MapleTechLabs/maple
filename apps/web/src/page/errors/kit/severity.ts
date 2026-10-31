@@ -8,10 +8,10 @@ import { statusDot } from "../../../ui/status-dot"
 // The severity badge's maps and marks.
 
 export const SEVERITY_TONE = {
-	critical: "bg-severity-fatal/12 text-severity-fatal",
-	high: "bg-severity-error/12 text-severity-error",
-	medium: "bg-severity-warn/12 text-severity-warn",
-	low: "bg-severity-debug/12 text-severity-debug",
+	critical: "bg-severity-fatal-a2 text-severity-fatal",
+	high: "bg-severity-error-a2 text-severity-error",
+	medium: "bg-severity-warn-a2 text-severity-warn",
+	low: "bg-severity-debug-a2 text-severity-debug",
 } satisfies Record<IssueSeverity, string>
 
 export const SEVERITY_FILL = {
@@ -54,7 +54,7 @@ export const severityDot = <M>(h: HtmlBuilder<M>, severity: IssueSeverity | null
 		tone: "custom",
 		size: "lg",
 		className: cn(
-			severity === null ? "border border-muted-foreground/50" : SEVERITY_FILL[severity],
+			severity === null ? "border border-foreground-subtle" : SEVERITY_FILL[severity],
 			className,
 		),
 	})

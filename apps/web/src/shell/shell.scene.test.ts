@@ -20,14 +20,16 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
-import { FocusElement, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
+import { FocusElement, SaveInfraSurfaces, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
 import {
+	LoadAwsStatus,
 	LoadCloudflareStatus,
 	LoadGcpStatus,
 	LoadInfraPresence,
 	LoadNamespaces,
 	LoadPlanetscaleStatus,
 	LoadRailwayStatus,
+	LoadSupabaseStatus,
 } from "./data"
 import { Menu, Message, OutMessage } from "./message"
 import { DashboardsData, init, type Model, NamespacesData } from "./model"
@@ -102,6 +104,23 @@ describe("sidebar collapse", () => {
 		)
 	})
 
+	test("⌘B snaps the rail without its width transition, and a click animates again", () => {
+		scene(
+			{ update, view },
+			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			Subscription.emit(Message.PressedSidebarShortcut()),
+			Command.expectExact(SaveSidebarState({ isOpen: false })),
+			Command.resolve(SaveSidebarState, Message.CompletedSaveSidebarState()),
+			expect(sidebar).toHaveAttr("data-state", "collapsed"),
+			expect(sidebar).toHaveAttr("data-instant", ""),
+			click(toggle),
+			Command.resolve(SaveSidebarState, Message.CompletedSaveSidebarState()),
+			expect(sidebar).toHaveAttr("data-state", "expanded"),
+			expect(sidebar).not.toHaveAttr("data-instant"),
+		)
+	})
+
 	test("on the collapsed rail a row shows its title as a tooltip after the open delay", () => {
 		const settings = role("link", { name: "Settings" })
 		scene(
@@ -124,6 +143,30 @@ describe("sidebar collapse", () => {
 		)
 	})
 
+	test.each(["Releases", "Security"])(
+		"the flagged %s row shows its tooltip on the collapsed rail",
+		(title) => {
+			const row = role("link", { name: title })
+			scene(
+				{ update, view },
+				given(signedIn({ isSidebarOpen: false })),
+				Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+				hover(row),
+				Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
+				Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
+				Command.resolve(
+					Animation.WaitForPaint,
+					Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+				),
+				Command.resolve(
+					Animation.WaitForAnimationSettled,
+					Animation.Message.EndedAnimation({ generation: 1 }),
+				),
+				expect(selector('[data-slot="tooltip-popup"]')).toHaveText(title),
+			)
+		},
+	)
+
 	test("below md the trigger opens the nav as a sheet, reading its data once, and the backdrop closes it", () => {
 		const open = () => [
 			click(toggle),
@@ -140,14 +183,71 @@ describe("sidebar collapse", () => {
 			given(signedIn({ isMobile: true })),
 			expect(sidebar).toBeAbsent(),
 			...open(),
-			Command.expectExact(LoadInfraPresence, LoadCloudflareStatus, LoadPlanetscaleStatus, LoadRailwayStatus, LoadGcpStatus),
-			Command.resolveAll(
-				[LoadInfraPresence, Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })],
-				[LoadCloudflareStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "cloudflare", isConnected: false })],
-				[LoadPlanetscaleStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "planetscale", isConnected: false })],
-				[LoadRailwayStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "railway", isConnected: false })],
-				[LoadGcpStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "gcp", isConnected: false })],
+			Command.expectExact(
+				LoadInfraPresence,
+				LoadCloudflareStatus,
+				LoadPlanetscaleStatus,
+				LoadRailwayStatus,
+				LoadGcpStatus,
+				LoadSupabaseStatus,
+				LoadAwsStatus,
 			),
+			Command.resolveAll(
+				[
+					LoadInfraPresence,
+					Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] }),
+				],
+				[
+					LoadCloudflareStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "cloudflare",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadPlanetscaleStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "planetscale",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadRailwayStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "railway",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadGcpStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "gcp",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadSupabaseStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "supabase",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadAwsStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "aws",
+						isConnected: false,
+					}),
+				],
+			),
+			Command.expectExact(SaveInfraSurfaces({ orgId: "org_parity", surfaces: [] })),
+			Command.resolve(SaveInfraSurfaces, Message.CompletedSaveInfraSurfaces()),
 			...close(),
 			...open(),
 			Command.expectNone(),
@@ -164,15 +264,17 @@ describe("sidebar collapse", () => {
 			"LoadPlanetscaleStatus",
 			"LoadRailwayStatus",
 			"LoadGcpStatus",
+			"LoadSupabaseStatus",
+			"LoadAwsStatus",
 		])
 		expectVitest(asked.model.hasRequestedSidebarData).toBe(false)
 		expectVitest(update(asked.model, Message.RequestedInfraSurfaces()).commands ?? []).toEqual([])
 	})
 
-	test("entering an org below md defers the sidebar's reads; on desktop they go with the tenant", () => {
+	test("entering an org below md defers the sidebar's reads; on desktop they go at once", () => {
 		const mobile = enter("org_parity")(init({ ...flags, isMobile: true }))
 		const desktop = enter("org_parity")(init(flags))
-		expectVitest((mobile.commands ?? []).map((command) => command.name)).toEqual(["LoadTenant"])
+		expectVitest((mobile.commands ?? []).map((command) => command.name)).toEqual([])
 		expectVitest(mobile.model.hasRequestedSidebarData).toBe(false)
 		expectVitest((desktop.commands ?? []).map((command) => command.name)).toContain("LoadInfraPresence")
 		expectVitest(desktop.model.hasRequestedSidebarData).toBe(true)
@@ -307,18 +409,39 @@ describe("in-place org change", () => {
 		const onA = {
 			...signedIn({ maybeOrgId: Option.some("org_a") }),
 			namespaces: NamespacesData.Success({ data: ["a-only"] }),
-			integrations: { cloudflare: true, railway: true, planetscale: false, gcp: false },
+			integrations: {
+				cloudflare: true,
+				railway: true,
+				planetscale: false,
+				gcp: false,
+				supabase: false,
+				aws: false,
+			},
 		}
 		const onB = enter("org_b")(onA).model
 		expectVitest(onB.namespaces._tag).toBe("Idle")
-		expectVitest(onB.integrations).toEqual({ cloudflare: false, railway: false, planetscale: false, gcp: false })
-		const lateNamespaces = update(onB, Message.SucceededLoadNamespaces({ orgId: "org_a", namespaces: ["a-only"] }))
+		expectVitest(onB.integrations).toEqual({
+			cloudflare: null,
+			railway: null,
+			planetscale: null,
+			gcp: null,
+			supabase: null,
+			aws: null,
+		})
+		const lateNamespaces = update(
+			onB,
+			Message.SucceededLoadNamespaces({ orgId: "org_a", namespaces: ["a-only"] }),
+		)
 		expectVitest(lateNamespaces.model.namespaces._tag).toBe("Idle")
 		const lateStatus = update(
 			onB,
-			Message.SucceededLoadIntegration({ orgId: "org_a", integration: "cloudflare", isConnected: true }),
+			Message.SucceededLoadIntegration({
+				orgId: "org_a",
+				integration: "cloudflare",
+				isConnected: true,
+			}),
 		)
-		expectVitest(lateStatus.model.integrations.cloudflare).toBe(false)
+		expectVitest(lateStatus.model.integrations.cloudflare).toBe(null)
 		const ownStatus = update(
 			onB,
 			Message.SucceededLoadIntegration({ orgId: "org_b", integration: "railway", isConnected: true }),
@@ -351,6 +474,38 @@ describe("app update banner", () => {
 			Command.resolve(ReloadPage, Message.CompletedReloadPage()),
 		)
 	})
+
+	test("a version check that finds the running build keeps the model, so nothing re-renders", () => {
+		const model = signedIn()
+		const checked = update(model, Message.CheckedDeployedCommit({ maybeCommit: Option.none() }))
+		expectVitest(checked.model).toBe(model)
+		const outdated = update(
+			model,
+			Message.CheckedDeployedCommit({ maybeCommit: Option.some("f00dfeed") }),
+		)
+		expectVitest(outdated.model.isAppOutdated).toBe(true)
+	})
+})
+
+describe("services section", () => {
+	test("on the service map, Services opens with the map row current", () => {
+		scene(
+			{ update, view: shellAt("/service-map") },
+			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Map" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "All services" })).toExist(),
+		)
+	})
+
+	test("elsewhere the map row stays hidden", () => {
+		scene(
+			{ update, view: shellAt("/logs") },
+			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Map" })).toBeAbsent(),
+		)
+	})
 })
 
 describe("infrastructure section", () => {
@@ -360,7 +515,14 @@ describe("infrastructure section", () => {
 			given(
 				signedIn({
 					infraPresence: { _tag: "Success", data: ["hosts"] },
-					integrations: { cloudflare: true, railway: false, planetscale: false, gcp: false },
+					integrations: {
+						cloudflare: true,
+						railway: false,
+						planetscale: false,
+						gcp: false,
+						supabase: false,
+						aws: false,
+					},
 				}),
 			),
 			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
@@ -369,5 +531,126 @@ describe("infrastructure section", () => {
 			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
 			expect(role("link", { name: "Railway" })).toBeAbsent(),
 		)
+	})
+
+	const answered = (model: Model, cloudflare: boolean) =>
+		[
+			Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: ["hosts"] }),
+			...(["railway", "planetscale", "gcp", "supabase", "aws"] as const).map((integration) =>
+				Message.SucceededLoadIntegration({ orgId: "org_parity", integration, isConnected: false }),
+			),
+			Message.SucceededLoadIntegration({
+				orgId: "org_parity",
+				integration: "cloudflare",
+				isConnected: cloudflare,
+			}),
+		].reduce<{ model: Model; commands: ReadonlyArray<{ readonly name: string }> }>(
+			(acc, message) => {
+				const next = update(acc.model, message)
+				return { model: next.model, commands: [...acc.commands, ...(next.commands ?? [])] }
+			},
+			{ model, commands: [] },
+		)
+
+	test("a first visit lists no optional source until the probe and every status answered", () => {
+		const probeOnly = update(
+			signedIn(),
+			Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: ["hosts"] }),
+		).model
+		scene(
+			{ update, view: shellAt("/infra") },
+			given(probeOnly),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Hosts" })).toBeAbsent(),
+			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
+		)
+		scene(
+			{ update, view: shellAt("/infra") },
+			given(answered(signedIn(), true).model),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Hosts" })).toExist(),
+			expect(role("link", { name: "Cloudflare" })).toExist(),
+			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
+		)
+	})
+
+	test("the surfaces remembered from the last visit lay the section out before anything answers", () => {
+		scene(
+			{ update, view: shellAt("/infra") },
+			given(signedIn({ rememberedSurfaces: { org_parity: ["cloudflare", "hosts"] } })),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Hosts" })).toExist(),
+			expect(role("link", { name: "Cloudflare" })).toExist(),
+			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
+		)
+	})
+
+	test("the last integration status to answer tells the pages, once, even when the probe failed", () => {
+		const settledBy = (model: Model, message: Message) => update(model, message).outMessage?._tag
+		const probeFailed = update(signedIn(), Message.FailedLoadInfraPresence({ orgId: "org_parity" })).model
+		expectVitest(
+			settledBy(signedIn(), Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })),
+		).toBe(undefined)
+		const answeredOnce = {
+			...probeFailed,
+			integrations: {
+				cloudflare: true,
+				railway: false,
+				planetscale: false,
+				gcp: false,
+				supabase: false,
+				aws: false,
+			},
+		}
+		const oneLeft = { ...answeredOnce, integrations: { ...answeredOnce.integrations, aws: null } }
+		expectVitest(
+			settledBy(
+				oneLeft,
+				Message.SucceededLoadIntegration({
+					orgId: "org_parity",
+					integration: "aws",
+					isConnected: false,
+				}),
+			),
+		).toBe("SettledInfraSurfaces")
+		expectVitest(
+			settledBy(
+				answeredOnce,
+				Message.SucceededLoadIntegration({
+					orgId: "org_parity",
+					integration: "aws",
+					isConnected: true,
+				}),
+			),
+		).toBe(undefined)
+		expectVitest(
+			settledBy(
+				oneLeft,
+				Message.SucceededLoadIntegration({ orgId: "org_b", integration: "aws", isConnected: true }),
+			),
+		).toBe(undefined)
+	})
+
+	test("a late answer for an org the shell has left remembers nothing", () => {
+		const onB = answered(signedIn({ maybeOrgId: Option.some("org_parity") }), true).model
+		const late = update(
+			onB,
+			Message.SucceededLoadIntegration({ orgId: "org_a", integration: "aws", isConnected: true }),
+		)
+		expectVitest(late.model.rememberedSurfaces).toEqual({ org_parity: ["cloudflare", "hosts"] })
+		expectVitest(late.commands ?? []).toEqual([])
+	})
+
+	test("a settled answer is remembered only when it differs from the remembered set", () => {
+		const first = answered(signedIn(), true)
+		expectVitest(first.model.rememberedSurfaces).toEqual({ org_parity: ["cloudflare", "hosts"] })
+		expectVitest(first.commands.map(({ name }) => name)).toEqual(["SaveInfraSurfaces"])
+		const same = answered(signedIn({ rememberedSurfaces: { org_parity: ["cloudflare", "hosts"] } }), true)
+		expectVitest(same.commands).toEqual([])
+		const dropped = answered(
+			signedIn({ rememberedSurfaces: { org_parity: ["cloudflare", "hosts"] } }),
+			false,
+		)
+		expectVitest(dropped.model.rememberedSurfaces).toEqual({ org_parity: ["hosts"] })
 	})
 })

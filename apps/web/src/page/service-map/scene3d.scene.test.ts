@@ -56,16 +56,19 @@ const BUNDLE: Bundle = {
 		},
 	],
 	dbEdges: [],
+	dbEdgesTimedOut: false,
 	overview: [overview("checkout"), overview("payments")],
 	platforms: [],
 	workloads: [],
+	runtimes: [],
 }
 
 /** `/service-map?view=3d` entered, windowed, with the prefs and the bundle in. */
 const loaded = (): Model => {
 	const entered = init({ search: { view: "3d" } }, context).model
 	const steps: ReadonlyArray<(model: Model) => Message> = [
-		() => Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
+		() =>
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
 		() => Message.CompletedReadStored({ stored: STORED }),
 		(model) =>
 			Message.CompletedFetchBundle({
@@ -106,12 +109,17 @@ describe("service map 3D: viewport state", () => {
 
 	test("the traffic button toggles, and every camera click is a new command", () => {
 		const model = run(loaded(), [
-			scene3d(Scene3d.Message.ClickedTraffic()),
+			scene3d(Scene3d.Message.ClickedTraffic({ isFlowing: true })),
 			scene3d(Scene3d.Message.ClickedCamera({ action: "in" })),
 			scene3d(Scene3d.Message.ClickedCamera({ action: "in" })),
 		])
 		expect(model.scene3d.traffic).toBe(false)
 		expect(model.scene3d.command).toEqual({ action: "in", serial: 2 })
+	})
+
+	test("under reduced motion the paused traffic can still be turned on", () => {
+		const model = run(loaded(), [scene3d(Scene3d.Message.ClickedTraffic({ isFlowing: false }))])
+		expect(model.scene3d.traffic).toBe(true)
 	})
 
 	test("WebGL failing shows the fallback; the theme resolves the palette", () => {

@@ -11,6 +11,7 @@ import { applyQueryChange } from "../../kit/query-builder/change"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { setBuiltinSignal, setChips, setSeverity } from "./form-steps"
+import { AUTO_INTERVAL, intervalRadioValue } from "./interval"
 import { Message } from "./message"
 import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
@@ -25,19 +26,29 @@ const decodeReducer = Schema.decodeUnknownOption(QueryEngineAlertReducer)
 const decodeSignal = Schema.decodeUnknownOption(AlertSignalType)
 const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
 
-/** The built-in signal and severity radio groups; their value is the form's. */
+/** The radio groups: built-in signal, severity and check interval; their value is the form's. */
 export const radioStep = (
 	model: Model,
 	context: PageContext,
-	group: "signal" | "severity",
+	group: "signal" | "severity" | "interval",
 	message: RadioGroup.Message,
 ): Return => {
-	const current = model.form === null ? null : group === "signal" ? model.form.signalType : model.form.severity
+	const current =
+		model.form === null
+			? null
+			: group === "signal"
+				? model.form.signalType
+				: group === "severity"
+					? model.form.severity
+					: intervalRadioValue(model.form.evaluationIntervalMinutes)
 	const next = RadioGroup.update(RadioGroup.init(current ?? undefined), message)
 	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotRadioMessage({ group, message: inner }))
 	const value = next.model.maybeValue
 	if (value._tag === "None" || value.value === current) return { model, commands }
 	const edited = editForm(model, context, (form) => {
+		if (group === "interval") {
+			return { ...form, evaluationIntervalMinutes: value.value === AUTO_INTERVAL ? "" : value.value }
+		}
 		if (group === "signal") {
 			const signal = decodeSignal(value.value)
 			return signal._tag === "Some" ? setBuiltinSignal(form, signal.value) : form

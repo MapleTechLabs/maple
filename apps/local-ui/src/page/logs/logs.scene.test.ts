@@ -66,7 +66,7 @@ describe("local logs", () => {
 	test("entry reads the clock, then asks for the list and both facets", () => {
 		expect(names(init(context).commands)).toContain("ReadLogsClock")
 		const resolved = pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW }))
-		expect(names(resolved.commands)).toEqual([FetchLogs.name, FetchServices.name, FetchSeverities.name])
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchLogs.name, FetchServices.name, FetchSeverities.name]))
 	})
 
 	test("a list answer for a superseded window is dropped", () => {

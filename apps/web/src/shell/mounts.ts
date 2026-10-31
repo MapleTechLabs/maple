@@ -48,13 +48,26 @@ export const MountNamespaceSearch = Mount.defineStream("MountNamespaceSearch", {
 	execute: ({ element }) =>
 		Stream.callback<typeof Message.CompletedMountNamespaceSearch.Type>((queue) =>
 			containSearchKeys(element).pipe(
-				Effect.andThen(Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch()))),
+				Effect.andThen(
+					Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch())),
+				),
 				Effect.andThen(Effect.never),
 			),
 		),
 })
 
 /** The sidebar nav's `ScrollArea` overflow (its bottom fade), kept current on scroll and resize. */
+/** Scrolls the nav so the active row clears the pinned footer on a deep-linked load. */
+const revealActiveRow = (viewport: HTMLElement): void => {
+	const rows = viewport.querySelectorAll<HTMLElement>('[data-active="true"]')
+	const row = rows.item(rows.length - 1)
+	if (row === null) return
+	const top = row.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+	const bottom = top + row.offsetHeight
+	if (bottom > viewport.scrollTop + viewport.clientHeight)
+		viewport.scrollTop = bottom - viewport.clientHeight + 8
+}
+
 export const MeasureSidebarOverflow = Mount.defineStream("MeasureSidebarOverflow", {
 	messages: [Message.MeasuredSidebarOverflow],
 	execute: ({ element }) =>
@@ -67,6 +80,7 @@ export const MeasureSidebarOverflow = Mount.defineStream("MeasureSidebarOverflow
 					observer.observe(element)
 					if (element.firstElementChild !== null) observer.observe(element.firstElementChild)
 					element.addEventListener("scroll", measure, { passive: true })
+					revealActiveRow(element)
 					measure()
 					Queue.offerUnsafe(queue, Message.MeasuredSidebarOverflow())
 					return { observer, measure }

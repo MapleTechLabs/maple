@@ -154,7 +154,7 @@ const valueInputs = (
 					{
 						placeholder: "Event name, e.g. signup_completed",
 						ariaLabel: `${label} event name`,
-						empty: "No events recorded in this window — type a name.",
+						empty: "No events recorded in this window. Type a name.",
 						isMono: false,
 					},
 				),
@@ -170,7 +170,7 @@ const valueInputs = (
 					{
 						placeholder: "Page path, e.g. /pricing",
 						ariaLabel: `${label} page path`,
-						empty: "No page paths in this window — type a path.",
+						empty: "No page paths in this window. Type a path.",
 						isMono: true,
 					},
 				),
@@ -256,7 +256,13 @@ const rowActions = (h: H, index: number, total: number): Html =>
 	)
 
 /** The event step's attribute filter line, its parse error under it. */
-const filterLine = (h: H, model: Model, scope: StepScope, step: StepDraft & { kind: "event" }, index: number): Html => {
+const filterLine = (
+	h: H,
+	model: Model,
+	scope: StepScope,
+	step: StepDraft & { kind: "event" },
+	index: number,
+): Html => {
 	const filterClause = step.filterClause ?? ""
 	const parsed = parseFunnelStepFilter(filterClause)
 	return h.div(

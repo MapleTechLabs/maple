@@ -470,9 +470,12 @@ const mcpTracerAnticipatedErrors = {
 	},
 }
 
+import { designRules } from "./design-rules.mjs"
+
 export default {
 	meta: { name: "maple" },
 	rules: {
+		...designRules,
 		"dialog-body-padding": dialogBodyPadding,
 		"mcp-tracer-anticipated-errors": mcpTracerAnticipatedErrors,
 		"no-date-parse": noDateParse,

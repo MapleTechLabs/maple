@@ -131,6 +131,19 @@ function grid() {
 
 type Grid = ReturnType<typeof grid>
 
+const isCard = (node: ProvenanceNode) => node.type === "spine" || node.type === "pendingVerdict"
+
+/** Spine cards sharing a row take the row's tallest height, so a row reads as one strip. */
+const evenRows = (nodes: ReadonlyArray<ProvenanceNode>): ReadonlyArray<ProvenanceNode> => {
+	const tallest = new Map<number, number>()
+	nodes.filter(isCard).forEach((node) => {
+		tallest.set(node.position.y, Math.max(tallest.get(node.position.y) ?? 0, node.height))
+	})
+	return nodes.map((node) =>
+		isCard(node) ? { ...node, height: tallest.get(node.position.y) ?? node.height } : node,
+	)
+}
+
 /* -------------------------------------------------------------------------------------------------
  * Cells
  * -----------------------------------------------------------------------------------------------*/
@@ -299,7 +312,7 @@ export function buildNodeCatalogue(): NodeCatalogue {
 		glyph: "investigation",
 		eyebrow: "INVESTIGATION",
 		title: "Checkout timeouts",
-		phase: "FANNING OUT · 2/4 REPORTED",
+		phase: "FANNING OUT · 2/4",
 		live: true,
 		at: AT,
 	})
@@ -308,7 +321,7 @@ export function buildNodeCatalogue(): NodeCatalogue {
 		eyebrow: "INVESTIGATION",
 		title: "Checkout timeouts",
 		note: "running",
-		phase: "VALIDATING · 4 CANDIDATES",
+		phase: "VALIDATING · 3/4",
 		current: true,
 		live: true,
 		at: AT,
@@ -386,7 +399,7 @@ export function buildNodeCatalogue(): NodeCatalogue {
 		actionCell(g, kind.toUpperCase(), {
 			kind,
 			ordinal: String(ordinal).padStart(2, "0"),
-			text: `${ACTION_KIND_LABEL[kind]} — what this kind of action reads like`,
+			text: `${ACTION_KIND_LABEL[kind]}: what this kind of action reads like`,
 		})
 	}
 
@@ -424,5 +437,5 @@ export function buildNodeCatalogue(): NodeCatalogue {
 	edgeCell(g, "ROADMAP · LIVE", { kind: "roadmap", label: "AUTOFIX", live: true })
 
 	const { y, rowHeight } = g.bounds()
-	return { nodes: g.nodes, edges: g.edges, width: ROW_MAX, height: y + rowHeight }
+	return { nodes: evenRows(g.nodes), edges: g.edges, width: ROW_MAX, height: y + rowHeight }
 }

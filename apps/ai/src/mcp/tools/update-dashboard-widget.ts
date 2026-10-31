@@ -80,7 +80,7 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 			"For small changes pass title, chart_id or patch_json (merged into the saved widget); widget_json replaces the whole widget, so leaving `timeRange` out of it removes an override. Read describe_dashboard_schema before editing. " +
 			"The result carries render warnings and a validation verdict; suspicious or broken means the chart will not render meaningfully as saved.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			widget_id: P.text("ID of the widget to edit (get_dashboard lists them)"),
 			widget_json: optionalWidgetJson(
 				"The whole replacement widget as JSON text, the shape of one entry in get_dashboard's widgets[]: { visualization, dataSource, display, layout, timeRange? }. " +

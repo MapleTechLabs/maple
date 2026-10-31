@@ -6,7 +6,7 @@
  * decision to run anything at all. Everything below crosses a service binding
  * as JSON, so it is data only.
  *
- * The `SandboxRun*` names are deliberate: `@yielded/agent/sandbox` has its own
+ * The `SandboxRun*` names are deliberate: `@maple/backend/sandbox/contract` has its own
  * `SandboxExited` and friends, and both sets meet in the api's port. Distinct
  * names keep a `switch` on one from silently reading like the other.
  */
@@ -42,9 +42,20 @@ export const SANDBOX_RUN_AS_USER = "maple-agent"
  */
 export const SANDBOX_COMMAND_ENV = {
 	PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-	HOME: "/tmp",
 	LANG: "C.UTF-8",
+	// No global git config, so one command cannot change what git shows the next. The
+	// system config stays: it is root-owned and holds the checkout's `safe.directory`.
+	GIT_CONFIG_GLOBAL: "/dev/null",
 } as const satisfies Readonly<Record<string, string>>
+
+/** Set by the wrapper per command: a fresh, empty directory removed once the command returns. */
+export const SANDBOX_COMMAND_HOME_VAR = "HOME"
+
+/** Every name an agent command's environment holds: the fixed ones above plus its own HOME. */
+export const SANDBOX_COMMAND_ENV_NAMES: ReadonlyArray<string> = [
+	...Object.keys(SANDBOX_COMMAND_ENV),
+	SANDBOX_COMMAND_HOME_VAR,
+].sort()
 
 /**
  * Trailer the wrapper prints after the command's own output, carrying the real

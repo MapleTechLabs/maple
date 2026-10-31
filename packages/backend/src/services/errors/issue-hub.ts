@@ -67,6 +67,10 @@ export interface UpsertAlertIssueResult {
 }
 
 const describeIncident = (input: UpsertAlertIssueInput): string => {
+	// An uptime rule's 1 >= 1 says nothing; its monitor being down does.
+	if (input.signalType === "uptime") {
+		return `Uptime monitor ${input.ruleName} is down${input.groupKey === "__total__" ? "" : ` (service ${input.groupKey})`}`
+	}
 	const observed = input.observedValue == null ? "no data" : `observed ${input.observedValue}`
 	const bound =
 		input.thresholdUpper == null ? `${input.threshold}` : `${input.threshold}..${input.thresholdUpper}`

@@ -1,4 +1,5 @@
 import {
+	buildDeviceKeyRows,
 	buildKeyRows,
 	filterKeyRows,
 	type KeyTypeFilter,
@@ -13,15 +14,17 @@ import { panel } from "../../../ui/panel"
 import { searchInput } from "../../../ui/search-input"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import * as SelectView from "../../../ui/select-view"
-import { skeletonList } from "../../../ui/skeleton"
-import { settingsSection, settingsSections } from "../kit/section"
+import { skeletonList, skeletonSlowNote } from "../../../ui/skeleton"
+import { errorState } from "../../../ui/error-state"
+import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
+import { sectionNote, settingsSection, settingsSections } from "../kit/section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import * as RollDialog from "./roll-dialog"
 import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
-import { keysEmpty, keysTable } from "./view-table"
+import { devicesTable, keysEmpty, keysTable } from "./view-table"
 
 // `ApiKeysSection`.
 
@@ -32,11 +35,23 @@ type H = HtmlBuilder<Message>
 const TYPE_FILTER_LABELS = { all: "All", api: "API", mcp: "MCP" } as const
 const STATUS_LABELS = { active: "Active", expired: "Expired", revoked: "Revoked" } as const
 
-/** Members may create MCP keys only. */
-const createKeyButton = (h: H, model: Model): Html => {
+/** Shown on the disabled create button when the session read failed. */
+const ROLE_UNKNOWN_REASON =
+	"Couldn't confirm your role, so creating keys is off. Reload the page to try again."
+
+/** Members may create MCP keys only; an unconfirmed role creates none. */
+const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
+	if (isRoleUnknown)
+		return h.span(
+			[h.Class("inline-flex"), h.Title(ROLE_UNKNOWN_REASON)],
+			[button(h, { size: "sm", isDisabled: true }, [plus, "Create MCP key"])],
+		)
 	if (!model.isAdmin)
-		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [plus, "Create MCP key"])
+		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [
+			plus,
+			"Create MCP key",
+		])
 	return h.div(
 		[h.Class("flex")],
 		[
@@ -94,7 +109,11 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 				onChange: (type) => Message.ClickedTypeFilter({ type }),
 				options: (["all", "api", "mcp"] as const).map((type) => ({
 					value: type,
-					label: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}`,
+					// Counts only once the keys are in: a loading "· 0" reads as an empty org.
+					label:
+						model.apiKeys === null
+							? TYPE_FILTER_LABELS[type]
+							: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}`,
 				})),
 			}),
 			h.submodel({
@@ -103,18 +122,26 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 				view: SelectView.view,
 				toParentMessage: (message) => Message.GotStatusSelectMessage({ message }),
 				viewInputs: {
-					entries: STATUS_VALUES.map(
-						(status): SelectView.SelectEntry => ({ _tag: "Item", item: { value: status, label: STATUS_LABELS[status] } }),
-					),
+					entries: STATUS_VALUES.map((status): SelectView.SelectEntry => ({
+						_tag: "Item",
+						item: { value: status, label: STATUS_LABELS[status] },
+					})),
 					ariaLabel: "Key status",
 					size: "sm",
 					className: "w-36",
 					renderValue: () => [STATUS_LABELS[model.statusFilter]],
-					renderItem: (option) => [
-						option.label,
-						" · ",
-						String(new Map<string, number>(Object.entries(counts.statusCounts)).get(option.value) ?? 0),
-					],
+					renderItem: (option) =>
+						model.apiKeys === null
+							? [option.label]
+							: [
+									option.label,
+									" · ",
+									String(
+										new Map<string, number>(Object.entries(counts.statusCounts)).get(
+											option.value,
+										) ?? 0,
+									),
+								],
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
 			}),
@@ -130,34 +157,133 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 		],
 	)
 
+/** `SyncUnavailable`: the `api_keys` stream stopped before its first answer. */
+const SYNC_UNAVAILABLE = makeClientErrorBody({
+	_tag: "@maple/web/errors/SyncUnavailable",
+	code: "sync_unavailable",
+	title: "Couldn't load keys",
+	message: "Live sync is unavailable.",
+	retryable: false,
+	recovery: "retry",
+})
+
+/** Revoking a phone's key: what stops, and what can bring it back. */
+const revokeDescription = (h: H, model: Model): ReadonlyArray<Html | string> | string => {
+	if (model.revoking === null)
+		return "Any integrations using this key will stop working immediately. This action cannot be undone."
+	const subject = [
+		h.span([h.Class("text-foreground font-medium")], [model.revoking.name]),
+		" (",
+		h.span([h.Class("font-mono text-xs")], [model.revoking.key_prefix]),
+		")",
+	]
+	return model.revoking.kind === "device"
+		? [
+				...subject,
+				" stop refreshing on that phone immediately. The app mints a new key only while it stays signed in there.",
+			]
+		: [...subject, " will stop working immediately. This action cannot be undone."]
+}
+
+/** `MobileDevicesSection`: the widget keys phones minted, revocable here when a phone is lost. */
+const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
+	const rows = buildDeviceKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
+	return settingsSection(
+		h,
+		{
+			id: "keys-devices-heading",
+			title: "Mobile devices",
+			description: [
+				"Each phone with Maple Home Screen widgets holds a read-only key for them. Revoke one when a phone is lost or no longer yours.",
+			],
+			framed: false,
+		},
+		[
+			// The row error draws its own dashed frame, so it skips the solid panel.
+			model.isLoadFailed && model.apiKeys === null
+				? errorState(h, {
+						variant: "row",
+						failure: SYNC_UNAVAILABLE,
+						title: "Couldn't load devices",
+						onRetry: Message.ClickedRetryLoad(),
+					})
+				: panel(h, {}, [
+						model.apiKeys === null
+							? h.div(
+									[],
+									[
+										skeletonList(h, {
+											rows: 1,
+											rowClassName: "h-[44px]",
+											gap: "2",
+											className: "p-4",
+										}),
+										skeletonSlowNote(h, "px-4 pb-3"),
+									],
+								)
+							: rows.length === 0
+								? sectionNote(h, "No phones have Home Screen widgets for this organization.")
+								: devicesTable(h, model, rows, inputs),
+					]),
+		],
+	)
+}
+
+export const description = "Keys for the Maple API and MCP clients. Ingest keys live in Ingestion."
+
+/** The tab's primary action, drawn in the settings page header beside the `<h1>`. */
+export const headerActions = Submodel.defineView<Model, Message, Readonly<{ isRoleUnknown: boolean }>>(
+	(model, inputs, h) => createKeyButton(h, model, inputs.isRoleUnknown),
+)
+
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
-	const counts = filterKeyRows(rows, { type: model.typeFilter, status: model.statusFilter, search: model.search })
-	const isLoading = model.apiKeys === null
-	return settingsSections(h, "wide", [
+	const counts = filterKeyRows(rows, {
+		type: model.typeFilter,
+		status: model.statusFilter,
+		search: model.search,
+	})
+	const isLoading = model.apiKeys === null && !model.isLoadFailed
+	const isFailed = model.apiKeys === null && model.isLoadFailed
+	return settingsSections(h, [
 		settingsSection(
 			h,
 			{
 				id: "keys-heading",
 				title: "Keys",
-				description: ["Keys for the Maple API and MCP clients. Ingest keys live in Ingestion."],
+				isLead: true,
 				framed: false,
-				width: "wide",
-				actions: createKeyButton(h, model),
 			},
 			[
 				toolbar(h, model, counts),
-				// TODO(settings-keys): `SyncUnavailable` needs the collection load-failure signal
-				// (`useCollectionLoadFailed`), not wired in Foldkit yet.
 				panel(h, {}, [
-					isLoading
-						? skeletonList(h, { rows: 3, rowClassName: "h-[52px]", gap: "2", className: "p-4" })
-						: counts.visible.length === 0
-							? keysEmpty(h, model)
-							: keysTable(h, model, counts.visible, inputs),
+					isFailed
+						? errorState(h, {
+								failure: SYNC_UNAVAILABLE,
+								title: "Couldn't load keys",
+								onRetry: Message.ClickedRetryLoad(),
+								className: "py-12",
+							})
+						: isLoading
+							? h.div(
+									[],
+									[
+										skeletonList(h, {
+											rows: 3,
+											rowClassName: "h-[52px]",
+											gap: "2",
+											className: "p-4",
+										}),
+										skeletonSlowNote(h, "px-4 pb-3"),
+									],
+								)
+							: counts.visible.length === 0
+								? keysEmpty(h, model)
+								: keysTable(h, model, counts.visible, inputs),
 				]),
 			],
 		),
+		mobileDevicesSection(h, model, inputs),
 		oauthPointer(h),
 		apiReference(h, model),
 		h.submodel({
@@ -178,16 +304,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			slotId: "keys-revoke-dialog",
 			model: model.revokeDialog,
 			toParentMessage: (message) => Message.GotRevokeDialogMessage({ message }),
-			title: "Revoke key?",
-			description:
-				model.revoking === null
-					? "Any integrations using this key will stop working immediately. This action cannot be undone."
-					: [
-							h.span([h.Class("text-foreground font-medium")], [model.revoking.name]),
-							" (",
-							h.span([h.Class("font-mono text-xs")], [model.revoking.key_prefix]),
-							") will stop working immediately. This action cannot be undone.",
-						],
+			title: model.revoking?.kind === "device" ? "Revoke device key?" : "Revoke key?",
+			description: revokeDescription(h, model),
 			confirmLabel: "Revoke key",
 			onConfirm: Message.ClickedConfirmRevoke(),
 			isPending: model.isRevoking,

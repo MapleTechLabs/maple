@@ -9,10 +9,6 @@ import { agoOf, connectorOf } from "../gcp-host"
 // The connect lab's fixtures: minutes old against the lab's clock.
 
 export const STATES = {
-	new: {
-		label: "New connection",
-		note: "Interactive. Continue on the Data step calls the API and fails here.",
-	},
 	configure: { label: "Configure", note: "An existing connection's Data step." },
 	waiting: { label: "Run · waiting", note: "Just created, nothing reported yet." },
 	reporting: { label: "Run · reporting", note: "Log forwarding reported, metrics still running." },
@@ -23,7 +19,10 @@ export const STATES = {
 	applied: { label: "Applied", note: "A reconfigured organization, receiving." },
 	method: { label: "Method", note: "The Method step, on the script." },
 	"method-code": { label: "Method · code", note: "Infrastructure as code picked, Terraform." },
-	"manual-project": { label: "Manual · project", note: "A project with logs and metrics, nothing confirmed." },
+	"manual-project": {
+		label: "Manual · project",
+		note: "A project with logs and metrics, nothing confirmed.",
+	},
 	"manual-org": { label: "Manual · org logs", note: "An organization forwarding logs only." },
 	"manual-failed": {
 		label: "Manual · metrics failing",
@@ -31,7 +30,10 @@ export const STATES = {
 	},
 	"manual-removal": { label: "Manual · removal", note: "Log forwarding switched off: what to delete." },
 	terraform: { label: "Terraform", note: "Click Copy prompt for coding agent for the prompt." },
-	"terraform-removal": { label: "Terraform · removal", note: "The regenerated file without log forwarding." },
+	"terraform-removal": {
+		label: "Terraform · removal",
+		note: "The regenerated file without log forwarding.",
+	},
 	alchemy: { label: "Alchemy", note: "The same project as an Alchemy stack." },
 	"alchemy-org": {
 		label: "Alchemy · org metrics",
@@ -44,7 +46,6 @@ export const STATES = {
 } as const
 
 export const LAB_STATES = [
-	"new",
 	"configure",
 	"waiting",
 	"reporting",
@@ -67,8 +68,15 @@ export const LAB_STATES = [
 ] as const satisfies ReadonlyArray<keyof typeof STATES>
 export type LabState = (typeof LAB_STATES)[number]
 export type MethodState = "method" | "method-code"
-export type MethodApplyState = Exclude<LabState, "new" | "configure" | MethodState | ScriptState>
-export type ScriptState = "waiting" | "reporting" | "overdue" | "removing" | "failed" | "connected" | "applied"
+export type MethodApplyState = Exclude<LabState, "configure" | MethodState | ScriptState>
+export type ScriptState =
+	| "waiting"
+	| "reporting"
+	| "overdue"
+	| "removing"
+	| "failed"
+	| "connected"
+	| "applied"
 
 export const SCRIPT = `#!/usr/bin/env bash
 # Maple setup for Google Cloud project acme-prod
@@ -122,7 +130,10 @@ const REPLACED_PLATFORM_LOGS: LogFilterDraft = { keep: false, runtimes: null }
 
 type SetupFields = (typeof GCP_SETUP_FIXTURES)[keyof typeof GCP_SETUP_FIXTURES]
 
-const script = (text: string, setup: SetupFields = GCP_SETUP_FIXTURES.project): Keyed<V2GcpSetupScripts, LoadFailure> => ({
+const script = (
+	text: string,
+	setup: SetupFields = GCP_SETUP_FIXTURES.project,
+): Keyed<V2GcpSetupScripts, LoadFailure> => ({
 	key: null,
 	data: AsyncData.Success({
 		data: { object: "gcp_connector.setup_scripts", setup_script: text, cleanup_script: "", ...setup },
@@ -176,16 +187,31 @@ const methodApplyFixtures = (
 			GCP_SETUP_FIXTURES.organization,
 		),
 		"manual-failed": fixture(
-			connector({ created_at: ago(20), applied_logs_enabled: true, last_log_received_at: ago(0.2), last_metrics_error: failing }),
+			connector({
+				created_at: ago(20),
+				applied_logs_enabled: true,
+				last_log_received_at: ago(0.2),
+				last_metrics_error: failing,
+			}),
 			"manual",
 			GCP_SETUP_FIXTURES.project,
 		),
 		"manual-removal": fixture(removingLogs, "manual", GCP_SETUP_FIXTURES.organizationMetrics, false),
 		terraform: fixture(connector(), "terraform", GCP_SETUP_FIXTURES.project),
-		"terraform-removal": fixture(removingLogs, "terraform", GCP_SETUP_FIXTURES.organizationMetrics, false),
+		"terraform-removal": fixture(
+			removingLogs,
+			"terraform",
+			GCP_SETUP_FIXTURES.organizationMetrics,
+			false,
+		),
 		alchemy: fixture(connector(), "alchemy", GCP_SETUP_FIXTURES.project),
 		"alchemy-org": fixture(
-			connector({ ...organization, created_at: ago(1), logs_enabled: false, applied_logs_enabled: false }),
+			connector({
+				...organization,
+				created_at: ago(1),
+				logs_enabled: false,
+				applied_logs_enabled: false,
+			}),
 			"alchemy",
 			GCP_SETUP_FIXTURES.organizationMetrics,
 		),

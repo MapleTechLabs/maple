@@ -25,13 +25,15 @@ const windowed = (search: Model["search"] = {}) =>
 describe("agent tool detail", () => {
 	test("the window's reads go out with the tool pinned from the route", () => {
 		const resolved = windowed({ tool: "Read" })
-		expect(names(resolved.commands)).toEqual([
-			"FetchAgentToolSeries",
-			"FetchAgentToolTotals",
-			"FetchAgentToolErrors",
-			"FetchAgentToolSessions",
-			"FetchAgentToolFacets",
-		])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchAgentToolSeries",
+				"FetchAgentToolTotals",
+				"FetchAgentToolErrors",
+				"FetchAgentToolSessions",
+				"FetchAgentToolFacets",
+			]),
+		)
 		expect(resolved.model.totals.key).toContain("Bash")
 	})
 

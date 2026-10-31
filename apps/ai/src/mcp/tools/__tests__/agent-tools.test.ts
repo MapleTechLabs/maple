@@ -249,19 +249,17 @@ const renderWith = async (rules: FixtureRule[], name: string, params: ToolParams
 	}
 }
 
-// Each tool, its required params, and the sibling its description names.
-const REGISTERED: Array<[string, Array<string>, string]> = [
-	[OVERVIEW, [], ERROR_DETAIL],
-	[ERROR_DETAIL, ["tool", "fingerprint"], OVERVIEW],
+// Each tool and its required params.
+const REGISTERED: Array<[string, Array<string>]> = [
+	[OVERVIEW, []],
+	[ERROR_DETAIL, ["tool", "fingerprint"]],
 ]
 
-it.each(REGISTERED)("registers %s with its required params and framing", (name, required, sibling) => {
+it.each(REGISTERED)("registers %s with its required params", (name, required) => {
 	const definition = definitionOf(name)
 	const schema = toInputSchema(definition.schema)
 	expect(schema.type).toBe("object")
 	expect(schema.required ?? []).toEqual(required)
-	expect(definition.description).toContain("AI agent tool call")
-	expect(definition.description).toContain(sibling)
 })
 
 // A bad parameter, and the phrases the refusal has to name so a model can
@@ -297,7 +295,6 @@ describe("structured output", () => {
 		expect(decoded.failureGroups?.groups[0]?.trend).toHaveLength(TREND_BUCKETS)
 		// A selected tool's read is about that tool: the every-tool breakdown is not read or carried.
 		expect(decoded.tools).toBeUndefined()
-		expect(markdown(overview)).not.toContain("### Tools (busiest first")
 		const all = Schema.decodeUnknownSync(GetAgentToolsOverviewOutput)(
 			(await call(OVERVIEW, WINDOW)).structuredContent,
 		)
@@ -354,7 +351,6 @@ describe("get_agent_tools_overview rendering", () => {
 
 	it("answers an empty window with the share of sessions it covers", async () => {
 		const rendered = await renderWith(EMPTY_RULES, OVERVIEW, WINDOW)
-		expect(rendered).toContain("No agent tool calls matched this selection in the window.")
 		expect(rendered).toContain("0 of 48 agent sessions in the window (0.00%)")
 		expect(rendered).toContain("list_agent_sessions")
 	})

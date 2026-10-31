@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
+import { pageTitle } from "../../ui/page-layout"
 import { statusDot } from "../../ui/status-dot"
 import { catalogEntry, type IntegrationId } from "./catalog"
 import { cardStatusOf, HEALTH_TONE, overviewOf } from "./derive"
@@ -29,7 +30,7 @@ export const integrationHeader = (
 	slots: HeaderSlots,
 ): Html => {
 	const entry = catalogEntry(integration)
-	const status = cardStatusOf(model.statuses, integration)
+	const status = cardStatusOf(model.statuses, integration, model.nowMs)
 	const overview = overviewOf(model.statuses, model.nowMs, integration)
 	const connected = overview?.kind === "connected" ? overview : null
 	const statusLine =
@@ -54,9 +55,9 @@ export const integrationHeader = (
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 				[
 					h.div(
-						[h.Class("flex items-center gap-2")],
+						[h.Class("flex min-w-0 items-center gap-2")],
 						[
-							h.h1([h.Class("font-display text-lg/6 font-semibold")], [entry.name]),
+							pageTitle(h, { title: entry.name, className: "min-w-0" }, [entry.name]),
 							...(connected === null && status !== null
 								? [badge(h, { variant: status.variant }, [status.label])]
 								: []),
@@ -94,7 +95,7 @@ export const integrationHeader = (
 										h.Target("_blank"),
 										h.Rel("noreferrer"),
 										h.Class(
-											"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground",
+											"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 										),
 									],
 									["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],

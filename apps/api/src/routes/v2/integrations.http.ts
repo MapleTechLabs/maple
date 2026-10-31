@@ -59,51 +59,52 @@ export const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): 
 	})
 }
 
-const hostnameOf = (url: string): string | null =>
-	Option.match(Option.liftThrowable(() => new URL(url))(), {
-		onNone: () => null,
-		onSome: (parsed) => parsed.hostname.toLowerCase(),
-	})
+const parseUrl = (url: string): Option.Option<URL> => Option.liftThrowable(() => new URL(url))()
 
-/** `app.maple.dev` → `maple.dev`; a single-label host is its own parent. */
-const parentDomain = (hostname: string): string => {
-	const dot = hostname.indexOf(".")
-	return dot === -1 ? hostname : hostname.slice(dot + 1)
+const isLocalHostname = (hostname: string) =>
+	hostname === "localhost" ||
+	hostname.endsWith(".localhost") ||
+	hostname.startsWith("127.") ||
+	hostname === "[::1]"
+
+/** The deploy's own origins, from Env; never from request headers. */
+export interface CallbackOriginConfig {
+	readonly MAPLE_APP_BASE_URL: string
+	readonly MAPLE_API_BASE_URL: string
+	/** `production`, `pr-<n>` or `development`. */
+	readonly MAPLE_ENVIRONMENT: string
 }
 
 /**
- * Whether an origin may be used as an OAuth callback origin.
+ * Whether an origin may be used as an OAuth callback origin. The callback is persisted
+ * and replayed as `redirect_uri`, and `resolveRequestOrigin` reads client-set headers, so
+ * only an explicit allow list passes:
  *
- * The callback URL is embedded in the authorize URL *and* persisted as
- * `oauth_auth_states.redirectUri`, then replayed as `redirect_uri` in the token
- * exchange — so an attacker-chosen origin mints an authorize URL pointing at a
- * host they control. `resolveRequestOrigin` reads `x-forwarded-host`, which any
- * client can set, so it is only accepted when it belongs to the same host family
- * as the trusted `MAPLE_APP_BASE_URL`:
- *
- *   - every deployed stage puts the web app and the API on sibling hosts under
- *     one registrable domain (`app.maple.dev` / `api.maple.dev`,
- *     `app-pr-<n>` / `api-pr-<n>`), and
- *   - local dev puts them on sibling `*.localhost` hosts (portless proxy) or on
- *     loopback ports.
- *
- * Anything else fails closed; the provider's registered-redirect allowlist is
- * then a second line of defense rather than the only one.
+ *   - the configured app and API origins (scheme, host and port all match);
+ *   - on a PR preview (`pr-<n>`), that PR's own `app-pr-<n>` / `api-pr-<n>.maple.dev`;
+ *   - in development with a local app origin, local hosts (`*.localhost`, loopback).
  */
-export const isTrustedCallbackOrigin = (origin: string, appBaseUrl: string): boolean => {
-	const host = hostnameOf(origin)
-	const appHost = hostnameOf(appBaseUrl)
-	if (host === null || appHost === null) return false
-	if (host === appHost) return true
-	// Local dev is one family: `*.localhost` (portless proxy) plus loopback IPs
-	// (raw-port dev servers with no portless proxy, where web and api sit on
-	// different loopback ports).
-	const isLocal = (value: string) =>
-		value === "localhost" || value.endsWith(".localhost") || value.startsWith("127.") || value === "[::1]"
-	if (isLocal(host) || isLocal(appHost)) return isLocal(host) && isLocal(appHost)
-	const parent = parentDomain(host)
-	// Require a dot so a bare TLD (`evil.dev` vs `app.maple.dev`) never matches.
-	return parent.includes(".") && parent === parentDomain(appHost)
+export const isTrustedCallbackOrigin = (origin: string, config: CallbackOriginConfig): boolean => {
+	const parsed = parseUrl(origin)
+	if (Option.isNone(parsed)) return false
+	const candidate = parsed.value
+	if (candidate.protocol !== "https:" && candidate.protocol !== "http:") return false
+	const configured = [config.MAPLE_APP_BASE_URL, config.MAPLE_API_BASE_URL].flatMap((url) =>
+		Option.toArray(parseUrl(url)),
+	)
+	if (configured.some((url) => url.origin === candidate.origin)) return true
+	const pr = /^pr-(\d+)$/.exec(config.MAPLE_ENVIRONMENT)
+	if (pr !== null) {
+		return [`https://app-pr-${pr[1]}.maple.dev`, `https://api-pr-${pr[1]}.maple.dev`].includes(
+			candidate.origin,
+		)
+	}
+	const appIsLocal = configured.some((url) => isLocalHostname(url.hostname))
+	return (
+		config.MAPLE_ENVIRONMENT === "development" &&
+		appIsLocal &&
+		isLocalHostname(candidate.hostname.toLowerCase())
+	)
 }
 
 const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScaleIntegration => ({
@@ -114,6 +115,13 @@ const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScal
 	connected_by_user_id: status.connectedByUserId,
 	detected_permissions: status.detectedPermissions,
 	metrics_auth: status.metricsAuth,
+	api_metrics:
+		status.apiMetrics === null
+			? null
+			: {
+					last_polled_at: isoTimestampOrNull(status.apiMetrics.lastPolledAt),
+					last_error: status.apiMetrics.lastError,
+				},
 	scrape_target:
 		status.scrapeTarget === null
 			? null
@@ -126,6 +134,15 @@ const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScal
 					exclude_branches: status.scrapeTarget.excludeBranches,
 					last_scrape_at: isoTimestampOrNull(status.scrapeTarget.lastScrapeAt),
 					last_scrape_error: status.scrapeTarget.lastScrapeError,
+				},
+	webhooks:
+		status.webhooks === null
+			? null
+			: {
+					state: status.webhooks.state,
+					registered_databases: status.webhooks.registeredDatabases,
+					databases: status.webhooks.databases,
+					last_error: status.webhooks.lastError,
 				},
 	last_inventory_at: isoTimestampOrNull(status.lastInventoryAt),
 	last_inventory_error: status.lastInventoryError,
@@ -233,7 +250,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							// the token exchange, and `resolveRequestOrigin` reads the
 							// client-settable `x-forwarded-host` — so an untrusted origin mints
 							// an authorize URL pointing at a host the caller controls.
-							if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+							if (!isTrustedCallbackOrigin(origin, env)) {
 								yield* Effect.logError(
 									"Rejected PlanetScale connect: untrusted callback origin",
 									{
@@ -370,7 +387,6 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 									"Only org admins can read the PlanetScale webhook configuration",
 								),
 							)
-							const req = yield* HttpServerRequest.HttpServerRequest
 							const config = yield* planetscale
 								.webhookConfig(tenant.orgId)
 								.pipe(tapHttpErrors("PlanetScale webhook config failed"))
@@ -383,7 +399,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 								url:
 									config.path === null
 										? null
-										: `${resolveRequestOrigin(req)}${config.path}`,
+										: `${env.MAPLE_API_BASE_URL.replace(/\/+$/, "")}${config.path}`,
 								secret: config.secret,
 							} satisfies V2PlanetScaleWebhookConfig
 						}),

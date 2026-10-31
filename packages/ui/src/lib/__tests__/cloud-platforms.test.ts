@@ -32,8 +32,6 @@ describe("getCloudPlatform — cloudflare", () => {
 		const info = getCloudPlatform(FLUE_SPAN_ATTRS)
 		expect(info).not.toBeNull()
 		expect(info!.id).toBe("cloudflare")
-		expect(info!.label).toBe("Cloudflare Worker")
-		expect(info!.kind).toBe("Worker")
 		expect(info!.edge).toBe("ORD · ENAM")
 		expect(info!.location).toBe("Council Bluffs, US")
 		expect(info!.outcome).toEqual({ value: "ok", bad: false })

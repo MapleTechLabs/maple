@@ -49,6 +49,7 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
+import { rawBreakdownSpanVerdict, spanBudgetApplies } from "./breakdown-span-budget"
 import {
 	attributeIndexMode,
 	hasWarehouseTable,
@@ -98,6 +99,7 @@ export {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 	maxRangeSecondsForKind,
+	timeWindowViolation,
 	validateRelativeRange,
 } from "../limits"
 export { relativeRangeSeconds, resolveRelativeRange, resolveRelativeRangeToWarehouse } from "../datetime"
@@ -117,7 +119,11 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 	readonly rawSqlQuery: (
 		tenant: T,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<
 		ReadonlyArray<Record<string, unknown>>,
 		WarehouseQueryPathError | RawSqlValidationError
@@ -244,7 +250,6 @@ export const msToTinybirdDateTime = (ms: number): string => {
 }
 
 const CACHE_SNAP_S = 15
-const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 
 // Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
 // the definition is in the driver-free `../group-key` because the query-set merge
@@ -252,12 +257,10 @@ const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 
 /**
- * Bound the service-enrichment lookup to the daily partitions surrounding the
- * rows already selected for this page. A one-day cushion covers traces that
- * cross the requested range boundary without probing the full 30-day
- * retention window of `service_map_spans`.
+ * The time span of the rows already selected for this page. The services lookup
+ * pads it ±1h itself, as for every trace-id read.
  */
-function traceServicePartitionWindow(
+function pageTimeWindow(
 	rows: ReadonlyArray<{ readonly timestamp: DateTime.Utc }>,
 	fallback: { readonly startTime: string; readonly endTime: string },
 ): { readonly startTime: string; readonly endTime: string } {
@@ -266,8 +269,8 @@ function traceServicePartitionWindow(
 	if (pageTimes.length === 0) return fallback
 
 	return {
-		startTime: formatWarehouseDateTime(Math.min(...pageTimes) - TRACE_SERVICE_PARTITION_BUFFER_MS),
-		endTime: formatWarehouseDateTime(Math.max(...pageTimes) + TRACE_SERVICE_PARTITION_BUFFER_MS),
+		startTime: formatWarehouseDateTime(Math.min(...pageTimes)),
+		endTime: formatWarehouseDateTime(Math.max(...pageTimes)),
 	}
 }
 
@@ -321,8 +324,6 @@ export function snapToWindow(dateStr: string, windowSeconds: number): string {
 	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
 }
 
-const snapSeconds = (dateStr: string): string => snapToWindow(dateStr, CACHE_SNAP_S)
-
 /**
  * Discovery queries (attribute keys/values, facets) change slowly because
  * they're driven by what's been ingested. Use a wider snap window so
@@ -371,16 +372,6 @@ export function cacheTtlForQueryKind(kind: string): number {
 export function buildCacheKey(orgId: string, request: QueryEngineExecuteRequest): string {
 	const snap = snapWindowForQueryKind(request.query.kind)
 	return `${orgId}:${snapToWindow(request.startTime, snap)}:${snapToWindow(request.endTime, snap)}:${canonicalJSON(request.query)}`
-}
-
-export function buildEvaluateCacheKey(orgId: string, request: AlertEvaluateRequest): string {
-	// `source.kind` is part of the key so a spec plan and a raw-SQL plan can
-	// never share an entry.
-	const source =
-		request.source.kind === "spec"
-			? `spec:${canonicalJSON(request.source.query)}`
-			: `raw:${request.source.windowMinutes}:${request.source.sql}`
-	return `eval:${orgId}:${snapSeconds(request.startTime)}:${snapSeconds(request.endTime)}:${request.reducer}:${request.sampleCountStrategy}:${source}`
 }
 
 const DIRECT_CACHE_SNAP_KEYS = new Set(["startTime", "endTime"])
@@ -961,6 +952,49 @@ const executeCHQuery = Effect.fnUntraced(function* <
 	const compiled = CH.compile(query, params)
 	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, options), context)
 })
+
+/**
+ * Refuse a raw-`traces` breakdown whose window holds more spans than one query can
+ * aggregate in time: a 400 naming a window that fits, not a 30s timeout. Fails open.
+ */
+const enforceRawBreakdownSpanBudget = Effect.fn("QueryEngineService.enforceRawBreakdownSpanBudget")(
+	function* <T extends QueryTenant>(
+		warehouse: QueryEngineWarehouse<T>,
+		tenant: T,
+		request: QueryEngineExecuteRequest,
+		range: TimeRangeBounds,
+		filter: Parameters<typeof rawBreakdownSpanVerdict>[1],
+	) {
+		const compiled = CH.compile(
+			CH.traceSpanVolumeByServiceQuery(),
+			{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+			{ rowSchema: CH.traceSpanVolumeRowSchema },
+		)
+		const rows = yield* warehouse
+			.compiledQuery(tenant, compiled, { profile: "list", context: "breakdownSpanEstimate" })
+			.pipe(
+				Effect.catch((error) =>
+					Effect.as(
+						Effect.annotateCurrentSpan("maple.query_engine.span_estimate_error", error._tag),
+						undefined,
+					),
+				),
+			)
+		if (rows === undefined) return
+
+		const verdict = rawBreakdownSpanVerdict(rows, filter, range)
+		yield* Effect.annotateCurrentSpan({
+			"maple.query_engine.estimated_spans": verdict.estimatedSpans,
+			"maple.query_engine.span_budget_exceeded": verdict.exceeded !== undefined,
+		})
+		if (verdict.exceeded) {
+			return yield* new QueryEngineValidationError({
+				message: verdict.exceeded.message,
+				details: [...verdict.exceeded.details],
+			})
+		}
+	},
+)
 
 // A whole-range counter needs each series' last sample before the window. Two
 // widths reach at least as far back as the epoch-aligned grid (and its hourly rollup) did.
@@ -1774,6 +1808,16 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		if (request.query.source === "traces" && request.query.kind === "breakdown") {
 			const tracesQuery = request.query
 			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			if (
+				spanBudgetApplies(opts, range.rangeSeconds) &&
+				CH.tracesBreakdownReadsRaw({
+					...opts,
+					metric: tracesQuery.metric,
+					groupBy: tracesQuery.groupBy,
+				})
+			) {
+				yield* enforceRawBreakdownSpanBudget(warehouse, tenant, request, range, opts)
+			}
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,
@@ -1971,7 +2015,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							CH.traceServicesByTraceIdsQuery({ traceIds }),
 							{
 								orgId: tenant.orgId,
-								...traceServicePartitionWindow(rows, {
+								...pageTimeWindow(rows, {
 									startTime: request.startTime,
 									endTime: request.endTime,
 								}),
@@ -2453,7 +2497,13 @@ const RawSqlAlertRowSchema = Schema.Struct({
  */
 export type AlertBucketSource =
 	| { readonly kind: "spec"; readonly query: QuerySpec }
-	| { readonly kind: "raw_sql"; readonly sql: string; readonly windowMinutes: number }
+	| {
+			readonly kind: "raw_sql"
+			readonly sql: string
+			readonly windowMinutes: number
+			/** The rule's check interval, which sets the query's time and memory limits. */
+			readonly intervalMinutes: number
+	  }
 
 /** Structural request slice that {@link computeAlertBuckets} needs for one range. */
 export interface AlertBucketRequest {
@@ -2723,6 +2773,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		granularitySeconds,
 		workload: "alert",
 		context: "alertRawQuery",
+		alertIntervalMinutes: source.intervalMinutes,
 		wholeRange: range.wholeRange,
 	}).pipe(
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>
@@ -2853,8 +2904,8 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 			wholeRange: true,
 		}
 		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
-		// Raw SQL may contain volatile functions. Keep its existing whole-result
-		// cache policy; only structured queries share buckets across reducers.
+		// Raw SQL may contain volatile functions, so it always runs; only
+		// structured queries share buckets across reducers.
 		const obs = yield* request.source.kind === "spec"
 			? memoizeAlertBuckets(
 					warehouse,

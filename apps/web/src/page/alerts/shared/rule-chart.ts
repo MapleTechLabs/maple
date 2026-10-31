@@ -44,7 +44,6 @@ import { isoMs } from "./time"
 /** The tokens the chart and its chrome read off the theme (`PAINT_COLORS` plus the frame). */
 export const RULE_CHART_TOKENS: ReadonlyArray<string> = [
 	"--chart-1",
-	"--destructive",
 	"--severity-warn",
 	"--severity-info",
 	"--severity-error",
@@ -66,9 +65,9 @@ type RailStatus = "breached" | "error" | "skipped" | "healthy" | "empty"
 const RAIL_COLOR = new Map<RailStatus, string>([
 	["breached", TONE_FILL.crit],
 	["error", TONE_FILL.warn],
-	["skipped", "bg-muted-foreground/30"],
+	["skipped", "bg-foreground-faint"],
 	["healthy", "bg-chart-apdex/70"],
-	["empty", "bg-muted/50"],
+	["empty", "bg-surface-sunken"],
 ])
 
 const clamp01 = (value: number): number => (value < 0 ? 0 : value > 1 ? 1 : value)
@@ -201,7 +200,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		hasGhost,
 		colors: {
 			signal: resolved(SIGNAL_TOKEN),
-			destructive: resolved("--destructive"),
+			destructive: resolved("--severity-error"),
 			warn: resolved("--severity-warn"),
 			muted: resolved("--muted-foreground"),
 			border: resolved("--border"),
@@ -294,7 +293,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						h.Class(
 							cn(
 								"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed",
-								criticalThreshold != null ? "border-severity-warn" : "border-destructive",
+								criticalThreshold != null ? "border-severity-warn" : "border-severity-error",
 							),
 						),
 					]),
@@ -332,7 +331,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 								h.span([
 									h.AriaHidden(true),
 									h.Class(
-										"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive",
+										"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-severity-error",
 									),
 								]),
 								h.span(
@@ -611,7 +610,7 @@ const rail = <M>(
 										: [h.OnClick(onSelect(isSelected ? null : i))]),
 									h.Class(
 										cn(
-											"h-full flex-1 rounded-[1px] p-0",
+											"h-full flex-1 rounded-2xs p-0",
 											RAIL_COLOR.get(cell.status),
 											onSelect !== undefined && "cursor-pointer",
 											cell.opened && "ring-1 ring-inset ring-severity-error",
@@ -630,12 +629,12 @@ const rail = <M>(
 				[
 					gutter("Incident"),
 					h.div(
-						[h.Class("relative h-1 flex-1 rounded-[1px] bg-muted/60")],
+						[h.Class("relative h-1 flex-1 rounded-2xs bg-surface-strong")],
 						spans.map((span) =>
 							h.div([
 								h.Class(
 									cn(
-										"absolute inset-y-0 rounded-[1px] bg-severity-error",
+										"absolute inset-y-0 rounded-2xs bg-severity-error",
 										!span.open && "opacity-60",
 									),
 								),
@@ -654,7 +653,6 @@ const rail = <M>(
 				],
 				[
 					seriesLegend(h, {
-						swatch: "square",
 						className: "justify-start",
 						items: [
 							{

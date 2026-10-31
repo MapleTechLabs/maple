@@ -460,6 +460,20 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 		}),
 	)
 
+	it.effect("exports a transport failure as Unset when the unload is noted just after it", () =>
+		Effect.gen(function* () {
+			// The browser rejected the request before the `pagehide` listener noting it ran.
+			const reasons: Array<string> = []
+			const buffer = makeSpanBuffer({ watchConnection: () => () => reasons[0] })
+			yield* request(buffer, failToFetch)
+			reasons.push("page_unload")
+			const spans = buffer.drain()
+			assert.strictEqual(clientSpan(spans)?.status.code, 0 /* Unset */)
+			assert.strictEqual(callerSpan(spans)?.status.code, 0 /* Unset */)
+			assert.isFalse(hasException(callerSpan(spans)))
+		}),
+	)
+
 	it.effect("keeps a transport failure an Error while the connection held", () =>
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer({ watchConnection: () => () => undefined })
@@ -467,6 +481,23 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			const span = clientSpan(buffer.drain())
 			assert.strictEqual(span?.status.code, 2 /* Error */)
 			assert.isTrue(hasException(span))
+			assert.deepStrictEqual(
+				span?.attributes.find((attribute) => attribute.key === "error.type")?.value,
+				{ stringValue: "TransportError" },
+			)
+		}),
+	)
+
+	it.effect("names a failed span's error.type after the error it failed with", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* runSpan(buffer, Effect.fail(new ReportableError()))
+			const [span] = buffer.drain()
+			assert.strictEqual(span?.status.code, 2 /* Error */)
+			assert.deepStrictEqual(
+				span?.attributes.find((attribute) => attribute.key === "error.type")?.value,
+				{ stringValue: "ReportableError" },
+			)
 		}),
 	)
 })

@@ -62,10 +62,21 @@ export const ChartSpec = defineTaggedUnion({
 	 */
 	ToolSeries: {
 		rows: Schema.Array(FixedMetricRow),
-		series: Schema.Array(Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String })),
+		series: Schema.Array(
+			Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String }),
+		),
 		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
 		/** The tick and tooltip format: a tool metric (overview), or one of the detail grid's formatters. */
-		format: Schema.Literals(["calls", "sessions", "error_rate", "duration", "number", "errorRate", "durationNs", "oneDecimal"]),
+		format: Schema.Literals([
+			"calls",
+			"sessions",
+			"error_rate",
+			"duration",
+			"number",
+			"errorRate",
+			"durationNs",
+			"oneDecimal",
+		]),
 		tickCount: Schema.NullOr(Schema.Number),
 		marginTop: Schema.Number,
 		timeZone: Schema.String,
@@ -230,12 +241,27 @@ export const ChartSpec = defineTaggedUnion({
 		/** Resolved series colours by series key; `border`/`background` are the chrome. */
 		colors: Schema.Record(Schema.String, Schema.String),
 		gradientId: Schema.String,
+		/** A fixed y-axis gutter, so charts stacked on one time axis start their plots at one x. */
+		marginLeft: Schema.optionalKey(Schema.Number),
 	},
 	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `ApdexAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
 	FixedMetric: {
 		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency", "Apdex"]),
 		/** `yAxisWidth`: a left-margin lock that aligns plot rects across a grid. */
 		marginLeft: Schema.optionalKey(Schema.Number),
+		/** A right-margin lock, else sized to the end tick label. */
+		marginRight: Schema.optionalKey(Schema.Number),
+		/** `Latency`: the percentile lines to draw and their labels, else P99, P95 and P50. */
+		latencySeries: Schema.optionalKey(
+			Schema.Array(
+				Schema.Struct({
+					key: Schema.Literals(["p99LatencyMs", "p95LatencyMs", "p50LatencyMs"]),
+					label: Schema.String,
+				}),
+			),
+		),
+		/** `[start, end]` epoch ms the x axis spans, so charts over one window line up; else the rows' extent. */
+		xDomainMs: Schema.optionalKey(Schema.Tuple([Schema.Number, Schema.Number])),
 		rows: Schema.Array(FixedMetricRow),
 		/** Resolved series colours by series key; `border`/`background` are the chrome. */
 		colors: Schema.Record(Schema.String, Schema.String),
@@ -300,6 +326,18 @@ export const ChartSpec = defineTaggedUnion({
 		colors: Schema.Record(Schema.String, Schema.String),
 		timeZone: Schema.String,
 		gradientPrefix: Schema.String,
+		/** Ticks and tooltip values in this unit (`formatValueByUnit`); plain numbers without it. */
+		unit: Schema.optionalKey(Schema.Literal("duration_ms")),
+		/** The tooltip closes with the bucket's sum across the series. */
+		showTotal: Schema.optionalKey(Schema.Boolean),
+		/** `[start, end]` epoch ms the x axis spans, so charts over one window line up; else the rows' extent. */
+		xDomainMs: Schema.optionalKey(Schema.Tuple([Schema.Number, Schema.Number])),
+		/** A left-margin lock that aligns the plot with its siblings. */
+		marginLeft: Schema.optionalKey(Schema.Number),
+		/** Buckets where nothing was measured: the bands and their edges break there instead of bridging. */
+		breaks: Schema.optionalKey(Schema.Array(Schema.String)),
+		/** Room above the plot, for marker labels that sit in a header gutter. */
+		marginTop: Schema.optionalKey(Schema.Number),
 	},
 	/**
 	 * The analytics traffic chart: the selected metric
@@ -314,7 +352,9 @@ export const ChartSpec = defineTaggedUnion({
 			}),
 		),
 		/** The metric keys behind `primary` and (when paired) `companion`, in paint order. */
-		series: Schema.Array(Schema.Struct({ key: Schema.Literals(["primary", "companion"]), metric: Schema.String })),
+		series: Schema.Array(
+			Schema.Struct({ key: Schema.Literals(["primary", "companion"]), metric: Schema.String }),
+		),
 		/** The metric whose format the y ticks use. */
 		tickMetric: Schema.String,
 		/** Resolved `primary` / `companion` colours plus `border` / `background` chrome. */
@@ -367,7 +407,9 @@ export const ChartSpec = defineTaggedUnion({
 				future: Schema.Boolean,
 			}),
 		),
-		bands: Schema.Array(Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String })),
+		bands: Schema.Array(
+			Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String }),
+		),
 		primary: Schema.String,
 		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
 		projected: Schema.Number,
@@ -383,7 +425,12 @@ export const ChartSpec = defineTaggedUnion({
 		/** The y tick text per category, already shortened and truncated into the gutter. */
 		yLabels: Schema.Record(Schema.String, Schema.String),
 		margin: Nullable(
-			Schema.Struct({ top: Schema.Number, right: Schema.Number, bottom: Schema.Number, left: Schema.Number }),
+			Schema.Struct({
+				top: Schema.Number,
+				right: Schema.Number,
+				bottom: Schema.Number,
+				left: Schema.Number,
+			}),
 		),
 		paddingInnerX: Schema.Number,
 		paddingInnerY: Schema.Number,

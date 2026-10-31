@@ -1,4 +1,5 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type Elapsed, splitDuration } from "@maple/web-data/investigations/display"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -33,13 +34,14 @@ export const servicesTouched = (investigation: V2Investigation): ReadonlyArray<s
 	return [...seen]
 }
 
-/** `elapsedBetween`: the run's elapsed time. */
+/** `elapsedBetween`: the run's elapsed time; from a minute up, the shared "4m 12s" form. */
 export const elapsedBetween = (from: string, to: string | null): Elapsed | null => {
 	if (!to) return null
 	const start = toEpochMs(from)
 	const end = toEpochMs(to)
 	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
-	return splitDuration(end - start)
+	const ms = end - start
+	return ms < 60_000 ? splitDuration(ms) : { value: formatDuration(ms), unit: "" }
 }
 
 const BUCKETS = 32
@@ -74,7 +76,9 @@ export const signalWindowOf = (investigation: V2Investigation): SignalWindow | n
 /** `resolveService`: the one service the signals card can speak for. */
 /** The overview is per service and environment; the busiest row for the service is the incident's. */
 export const busiestRowOf = (rows: ReadonlyArray<OverviewRow>, service: string): OverviewRow | null =>
-	rows.filter((row) => row.serviceName === service).toSorted((left, right) => right.spanCount - left.spanCount)[0] ?? null
+	rows
+		.filter((row) => row.serviceName === service)
+		.toSorted((left, right) => right.spanCount - left.spanCount)[0] ?? null
 
 export const signalServiceOf = (investigation: V2Investigation): string | null => {
 	const named = investigation.snapshot.serviceName?.trim()
@@ -92,7 +96,9 @@ export const traceTips = (investigation: V2Investigation): ReadonlyMap<string, s
 	new Map(
 		(investigation.report?.evidence ?? []).flatMap((evidence) =>
 			evidence.traceIds.flatMap((traceId) =>
-				(["sheet", "evidence", "card"] as const).map((place) => [traceTipId(place, traceId), traceId] as const),
+				(["sheet", "evidence", "card"] as const).map(
+					(place) => [traceTipId(place, traceId), traceId] as const,
+				),
 			),
 		),
 	)

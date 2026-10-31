@@ -21,7 +21,7 @@ const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
 			h.Key(`${chip.kind}:${chip.value}`),
 			h.AriaLabel(`Remove ${chip.kind} ${chip.value}`),
 			h.Class(
-				"inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20",
+				"inline-flex h-[22px] max-w-64 items-center gap-1.5 rounded-sm border border-primary-a4 bg-primary-a2 px-2 hover:bg-primary-a3 active:bg-primary-a3",
 			),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
@@ -54,7 +54,7 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 				[
 					eyebrow(h, { variant: "mono" }, ["Scope"]),
 					...(config.chips.length === 0
-						? [h.span([h.Class("text-2xs text-muted-foreground/60")], ["all tools · all models"])]
+						? [h.span([h.Class("text-2xs text-foreground-subtle")], ["all tools · all models"])]
 						: [
 								...config.chips.map((chip) => chipButton(h, chip, config.onRemove(chip))),
 								button(

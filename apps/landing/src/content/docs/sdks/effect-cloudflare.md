@@ -7,13 +7,7 @@ navLabel: "Cloudflare Workers"
 sdk: "effect"
 ---
 
-The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate and sends it when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Cloudflare Workers</span>
-</div>
-
-> Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
+The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. [Install the SDK](/docs/sdks/effect#install) first. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate and sends it when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
 
 ## Why Workers are different
 
@@ -48,7 +42,9 @@ Runtimes that own a per-request scope can use `telemetry.requestLayer` instead o
 
 ## No-op mode
 
-When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`), the SDK runs in no-op mode. Each `flush()` still empties the buffers so they do not grow for the life of the isolate, but nothing is sent. The first flush logs one `console.info` line starting with `[MapleCloudflareSDK] no ingest key configured`. The same code can therefore run in preview environments that have no key.
+When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`) and the endpoint is Maple's hosted ingest, the SDK runs in no-op mode. Each `flush()` still empties the buffers so they do not grow for the life of the isolate, but nothing is sent. The first flush logs one `console.info` line starting with `[MapleCloudflareSDK] no ingest key configured`. The same code can therefore run in preview environments that have no key.
+
+Against any other endpoint, such as a local `maple start` or your own collector, a keyless Worker exports without an `Authorization` header.
 
 ## Failure handling
 

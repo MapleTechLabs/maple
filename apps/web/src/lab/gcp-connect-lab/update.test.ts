@@ -18,10 +18,10 @@ const pick = (model: ReturnType<typeof opened>, state: (typeof LAB_STATES)[numbe
 	).model
 
 describe("gcp connect lab", () => {
-	test("opens on a new connection's first step, with the dialog open", () => {
+	test("opens on a connection's Data step, with the dialog open", () => {
 		const model = opened()
-		expect(model.state).toBe("new")
-		expect(model.hub.gcpCard.configure?.target._tag).toBe("New")
+		expect(model.state).toBe("configure")
+		expect(model.hub.gcpCard.configure?.target).toMatchObject({ _tag: "Connection", stage: "choose" })
 		expect(model.hub.gcpCard.configure?.dialog.isOpen).toBe(true)
 	})
 
@@ -36,8 +36,8 @@ describe("gcp connect lab", () => {
 	})
 
 	test("pressing the current state again keeps it pressed", () => {
-		const model = pick(opened(), "new")
-		expect([model.state, model.stateGroup.values]).toEqual(["new", ["new"]])
+		const model = pick(opened(), "configure")
+		expect([model.state, model.stateGroup.values]).toEqual(["configure", ["configure"]])
 	})
 
 	test("Close unmounts the wizard and Reopen brings it back from its first step", () => {
@@ -49,14 +49,5 @@ describe("gcp connect lab", () => {
 		expect(closed.hub.gcpCard.configure).toBeNull()
 		const reopened = update(closed, Message.ClickedReopen()).model
 		expect(reopened.hub.gcpCard.configure?.opened?.rerun).toBe(false)
-	})
-
-	test("a run fixture's Back and Try again do nothing, as legacy's no-ops", () => {
-		const failed = pick(opened(), "failed")
-		const retried = update(
-			failed,
-			Message.GotHubMessage({ message: IntegrationsMessage.ClickedGcpConfigureScriptRetry() }),
-		)
-		expect(retried.model).toBe(failed)
 	})
 })

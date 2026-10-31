@@ -153,7 +153,7 @@ describe("whatsWrong", () => {
 		const args = { claim: "c", evidence: '[{"note": "disk full"}]' }
 		expect(whatsWrong(EXPECTED_ARRAY, args)).toEqual({
 			subject: "evidence",
-			text: "is a string that contains a JSON array. The schema expects the array itself — it was sent quoted.",
+			text: "is a string that contains a JSON array. The schema expects the array itself. It was sent quoted.",
 		})
 		expect(
 			whatsWrong('Expected object | null\n  at ["report"]', { report: '{"scope": 1}' })?.subject,

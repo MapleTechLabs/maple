@@ -29,7 +29,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 		description:
 			"Change a dashboard's name, description or time_range. For widgets use add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets, or replace_dashboard_widgets for a validated rewrite of the whole list. `dashboard_json` replaces everything unvalidated; use it only to restore a saved document.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			name: P.optionalText("New dashboard name"),
 			description: P.optionalText("New dashboard description"),
 			time_range: P.optionalText(

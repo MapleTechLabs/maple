@@ -55,7 +55,7 @@ export const toolTableHead = <M>(
 	className?: string,
 ): Html =>
 	h.div(
-		[h.Class(cn("flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-2.5", className))],
+		[h.Class(cn("flex h-8 shrink-0 items-center gap-3 border-y border-border px-2.5", className))],
 		children,
 	)
 
@@ -94,7 +94,7 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 								cn(
 									"inline-flex items-center gap-1",
 									text,
-									isActive ? "text-foreground" : "hover:text-foreground",
+									isActive ? "text-foreground" : "hover:text-foreground active:text-foreground",
 								),
 							),
 							h.Type("button"),
@@ -116,33 +116,32 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 	)
 }
 
-/** `ToolTableBody`: rows scroll inside once a list outgrows it. */
+/** `ToolTableBody`: the rows, at full height; the page scrolls, not the table. */
 export const toolTableBody = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
-	options: Readonly<{ maxHeight?: number; isWaiting?: boolean }> = {},
+	options: Readonly<{ isWaiting?: boolean }> = {},
 ): Html =>
 	h.div(
 		[
-			h.Class(cn("overflow-y-auto", refreshingClass(options.isWaiting ?? false))),
+			h.Class(refreshingClass(options.isWaiting ?? false)),
 			...(options.isWaiting === true ? [h.AriaBusy(true)] : []),
-			h.Style({ "max-height": `${options.maxHeight ?? 460}px` }),
 		],
 		children,
 	)
 
 const ROW =
-	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border/50 px-2.5 text-left transition-colors last:border-0 focus-visible:outline-none"
+	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border-subtle px-2.5 text-left transition-colors last:border-0 focus-visible:outline-none"
 
 export const toolRowClass = (isSelected: boolean): string =>
-	cn(ROW, rowSelectedClass(isSelected), !isSelected && "hover:bg-muted/30 focus-visible:bg-muted/30")
+	cn(ROW, rowSelectedClass(isSelected), !isSelected && "hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken")
 
 export const toolTableFooter = <M>(h: HtmlBuilder<M>, subject: string, detail: string): Html =>
 	h.div(
-		[h.Class("flex h-9 items-center gap-[9px] px-2.5 font-mono text-xs")],
+		[h.Class("flex h-9 items-center gap-2 px-2.5 font-mono text-xs")],
 		[
 			h.span([h.Class("text-muted-foreground")], [subject]),
-			h.span([h.Class("text-muted-foreground/60")], [detail]),
+			h.span([h.Class("text-foreground-subtle")], [detail]),
 		],
 	)
 
@@ -165,7 +164,7 @@ export const shareCell = <M>(
 	}>,
 ): Html =>
 	h.span(
-		[h.Class("flex w-[150px] shrink-0 items-center justify-end gap-2.5")],
+		[h.Class("flex w-36 shrink-0 items-center justify-end gap-2.5")],
 		[
 			meter(h, {
 				value: options.ratio,

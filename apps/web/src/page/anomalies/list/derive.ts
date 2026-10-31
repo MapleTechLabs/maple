@@ -42,7 +42,12 @@ export const allIncidentsOf = (model: Model): ReadonlyArray<AnomalyIncidentDocum
 	return [...byId.values()]
 }
 
+/**
+ * The cursor "Load more" continues from: none while a tab switch keeps the previous tab's first
+ * page on screen (`retained`), so a load-more never pairs the new tab with the old tab's cursor.
+ */
 export const nextCursorOf = (model: Model): string | null => {
+	if (model.firstPage.retained === true) return null
 	const pages = model.loadedPages?.key === statusOf(model.search) ? model.loadedPages : null
 	if (pages !== null) return pages.nextCursor
 	return AsyncData.getOrElse(model.firstPage.data, () => null)?.nextCursor ?? null

@@ -96,6 +96,27 @@ export const paramTraceWindow = (start = "startTime", end = "endTime"): TraceWin
 	end: T.param.dateTime(end),
 })
 
+/** A {@link TraceWindow} from two known instants, such as a session's own span. */
+export const utcTraceWindow = (start: DateTime.Utc, end: DateTime.Utc): TraceWindow => ({
+	start: utcDateTime64Literal(start),
+	end: utcDateTime64Literal(end),
+})
+
+const utcDateTime64Literal = (value: DateTime.Utc): CH.Expr<DateTime.Utc> =>
+	CH.makeExpr(
+		CH.toFragment(CH.lit(DateTime.formatIso(value).replace("T", " ").replace("Z", ""))),
+		T.dateTime64.schema,
+	)
+
+// A span's bucket floors its start, so the lower bound floors too.
+const traceIndexBucketBounds = (bucket: CH.Expr<DateTime.Utc>, window: TraceWindow | undefined) => [
+	window &&
+		bucket.gte(
+			CH.compileTypedFnCall(Datasources.TRACE_BUCKET_FN, T.dateTime.schema, asDateTime64(window.start)),
+		),
+	window && bucket.lte(asDateTime64(window.end)),
+]
+
 /**
  * Selects the spans of the traces `match` picks from `trace_index`, for a query
  * reading `traces`. The index names every `(ServiceName, bucket, TraceId)` sort-key
@@ -115,19 +136,30 @@ export const inTraces = <Q>(
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
 				match($.TraceId),
-				// A span's bucket floors its start, so the lower bound floors too.
-				window &&
-					$.Bucket.gte(
-						CH.compileTypedFnCall(
-							Datasources.TRACE_BUCKET_FN,
-							T.dateTime.schema,
-							asDateTime64(window.start),
-						),
-					),
-				window && $.Bucket.lte(asDateTime64(window.end)),
+				...traceIndexBucketBounds($.Bucket, window),
 			]),
 		(sql) =>
 			`(traces.ServiceName, ${Datasources.TRACE_BUCKET_FN}(traces.Timestamp), traces.TraceId) IN (${sql})`,
+	)
+
+/**
+ * {@link inTraces} for `service_map_spans`, sorted `(OrgId, <trace bucket>, TraceId, SpanId)`:
+ * the index's `(bucket, TraceId)` pairs seek the matched traces' granules.
+ */
+export const inServiceMapSpans = <Q>(
+	match: (traceId: T.ColumnRef<"TraceId", T.CHString>) => CH.Condition<Q>,
+	window: TraceWindow,
+) =>
+	T.subqueryCond(
+		T.from(TraceIndex)
+			.select(($) => ({ Bucket: $.Bucket, TraceId: $.TraceId }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				match($.TraceId),
+				...traceIndexBucketBounds($.Bucket, window),
+			]),
+		(sql) =>
+			`(${Datasources.TRACE_BUCKET_FN}(service_map_spans.Timestamp), service_map_spans.TraceId) IN (${sql})`,
 	)
 
 /**
@@ -151,6 +183,12 @@ export const AiTraceIndex = Datasources.aiTraceIndex
  * request has several spans in one trace, so requests are `uniq(TraceId)`.
  */
 export const AiCrawlerRequests = Datasources.aiCrawlerRequests
+
+/** CI workflow runs (migration 0047): the root span of each `github-actions` trace. */
+export const CiRuns = Datasources.ciRuns
+
+/** CI jobs (migration 0047): a run's children that name a task but not a step. */
+export const CiJobs = Datasources.ciJobs
 
 export const TraceListMv = Datasources.traceListMv
 
@@ -199,6 +237,8 @@ export const AttributeValuesHourly = Datasources.attributeValuesHourly
 
 export const ServiceUsage = Datasources.serviceUsage
 
+export const SourceUsageHourly = Datasources.sourceUsageHourly
+
 export const ServiceMapSpans = Datasources.serviceMapSpans
 
 export const ServiceMapChildren = Datasources.serviceMapChildren
@@ -220,12 +260,16 @@ export const ServiceExternalEdgesHourly = Datasources.serviceExternalEdgesHourly
 export const ServiceAddressResolutionsHourly = Datasources.serviceAddressResolutionsHourly
 
 export const ServiceMapDbEdgesHourly = Datasources.serviceMapDbEdgesHourly
+export const ServiceMapDbEdgesMinutely = Datasources.serviceMapDbEdgesMinutely
 
 export const ServiceMapDbQuerySignaturesHourly = Datasources.serviceMapDbQuerySignaturesHourly
 
 export const ServicePlatformsHourly = Datasources.servicePlatformsHourly
 
 export const ServiceOperationsHourly = Datasources.serviceOperationsHourly
+
+/** HTTP server endpoint detail per status code and `error.type`, hourly (migration 0048). */
+export const ServiceEndpointDetailsHourly = Datasources.serviceEndpointDetailsHourly
 
 export const AlertChecks = Datasources.alertChecks
 

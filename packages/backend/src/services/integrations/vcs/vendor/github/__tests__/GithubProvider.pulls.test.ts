@@ -770,3 +770,77 @@ describe("GithubProvider reading a CI job's log", () => {
 		}).pipe(Effect.provide(layer))
 	})
 })
+
+describe("GithubProvider hiding earlier review comments", () => {
+	const comment = (id: number, body: string, appId: number | null) => ({
+		id,
+		node_id: `IC_${id}`,
+		html_url: `https://github.com/octo/shop/pull/612#issuecomment-${id}`,
+		body,
+		performed_via_github_app: appId === null ? null : { id: appId },
+	})
+
+	it.effect(
+		"hides this App's earlier reviews as outdated, keeping the newest and anything already hidden",
+		() => {
+			const requests: Array<string> = []
+			const bodies: Array<string> = []
+			const layer = providerLayer(
+				[
+					tokenResponse(),
+					jsonResponse([
+						comment(1, "<!-- maple-pr-review r1 0 -->\n## Maple review", 123456),
+						comment(2, "<!-- maple-pr-review r2 0 -->\n## Maple review", 123456),
+						// Another App quoting the marker, a person, and this App's merge reminder stay.
+						comment(3, "<!-- maple-pr-review r1 0 -->", 999),
+						comment(4, "<!-- maple-pr-review r1 0 --> quoted", null),
+						comment(5, "<!-- maple-pr-merge-steps -->", 123456),
+						comment(6, "<!-- maple-pr-review r3 0 -->\n## Maple review", 123456),
+					]),
+					jsonResponse({
+						data: {
+							nodes: [
+								{ id: "IC_1", isMinimized: true },
+								{ id: "IC_2", isMinimized: false },
+							],
+						},
+					}),
+					jsonResponse({ data: { minimizeComment: { minimizedComment: { isMinimized: true } } } }),
+				],
+				requests,
+				bodies,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const hidden = yield* provider.hideEarlierComments(INSTALLATION, REPO, {
+					number: 612,
+					prefix: "<!-- maple-pr-review ",
+					keep: "<!-- maple-pr-review r3 0 -->",
+				})
+				assert.equal(hidden, 1)
+				assert.deepEqual(JSON.parse(bodies[2]!).variables, { ids: ["IC_1", "IC_2"] })
+				assert.include(bodies[3]!, "classifier: OUTDATED")
+				assert.deepEqual(JSON.parse(bodies[3]!).variables, { id: "IC_2" })
+				assert.lengthOf(requests, 4)
+			}).pipe(Effect.provide(layer))
+		},
+	)
+
+	it.effect("reads nothing more when no earlier review is shown", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[tokenResponse(), jsonResponse([comment(6, "<!-- maple-pr-review r3 0 -->", 123456)])],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const hidden = yield* provider.hideEarlierComments(INSTALLATION, REPO, {
+				number: 612,
+				prefix: "<!-- maple-pr-review ",
+				keep: "<!-- maple-pr-review r3 0 -->",
+			})
+			assert.equal(hidden, 0)
+			assert.lengthOf(requests, 2)
+		}).pipe(Effect.provide(layer))
+	})
+})

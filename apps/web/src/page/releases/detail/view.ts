@@ -64,9 +64,9 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
 		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Issues could not be loaded", variant: "row" }),
+			errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
 		onStale: ({ error }) =>
-			errorState(h, { failure: error, title: "Issues could not be loaded", variant: "row" }),
+			errorState(h, { failure: error, title: "Couldn't load issues", variant: "row" }),
 		onSuccess: (issues) => lists(issues),
 		onRefreshing: (issues) => lists(issues),
 	})
@@ -103,11 +103,11 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 		onIdle: () => loading(h),
 		onLoading: () => loading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load release", onRetry: Message.ClickedRetry() }),
+			errorState(h, { failure, title: "Couldn't load release", onRetry: Message.ClickedRetry() }),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load release",
+				title: "Couldn't load release",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onSuccess: () => loaded(),

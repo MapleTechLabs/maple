@@ -2,7 +2,7 @@ import { Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Dialog from "../ui/dialog"
 import type { Resources } from "../platform/resources"
-import { OpenGlobalChat, SaveTheme } from "./command"
+import { SaveTheme } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
 import { DelayClose, ReleasePaletteServices } from "./palette/command"
@@ -89,15 +89,6 @@ export const paletteStep = (model: Model, message: PaletteModel.Message): Update
 			return { ...closed, outMessage: OutMessage.RequestedNavigation({ url: out.href }) }
 		case "RanAction":
 			switch (out.action) {
-				case "AskMapleAi":
-					return {
-						model: closing,
-						commands: [
-							...commands,
-							OpenGlobalChat({ isFocusVisible: true }),
-							toPalette(DelayClose()),
-						],
-					}
 				case "ToggleTheme":
 					return withCommands(toggleTheme(closed.model), closed.commands)
 				case "ShowShortcuts":

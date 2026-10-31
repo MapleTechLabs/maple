@@ -153,8 +153,8 @@ export const cameraRig = (
 
 type Memo = ReturnType<typeof derive>
 
-/** Declutter labels in screen space. The selected service wins every collision;
- * the full keyboard-accessible inventory stays available in the inspector. */
+/** Declutter labels in screen space. The selected service wins every collision, namespace
+ * signs outrank rate tags; the full keyboard-accessible inventory stays in the inspector. */
 const projectLabels = ({
 	camera,
 	probe,
@@ -196,9 +196,11 @@ const projectLabels = ({
 					? nodesById.get(id)?.dimmed
 						? 1
 						: 2
-					: linksById.has(id)
-						? 0.5
-						: 0
+					: id.startsWith("district:")
+						? 1.5
+						: linksById.has(id)
+							? 0.5
+							: 0
 	const entries = labels
 		.toSorted(
 			([a], [b]) =>
@@ -232,8 +234,8 @@ const projectLabels = ({
 			y > sizeHeight - 25 ||
 			occupied.some(
 				(other) =>
-					Math.abs(other.x - x) < (other.width + width) / 2 + 3 &&
-					Math.abs(other.y - (y + height / 2)) < (other.height + height) / 2 + 2,
+					Math.abs(other.x - x) < (other.width + width) / 2 + 6 &&
+					Math.abs(other.y - (y + height / 2)) < (other.height + height) / 2 + 4,
 			)
 		element.style.cssText = `transform:translate3d(${x}px,${y}px,0) translateX(-50%);visibility:${hidden ? "hidden" : "visible"};opacity:${element.style.opacity};background-color:${element.style.backgroundColor};color:${element.style.color}`
 		if (!hidden) occupied.push({ x, y: y + height / 2, width, height })

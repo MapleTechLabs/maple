@@ -9,8 +9,9 @@ import {
 	ProjectionActivationConflict,
 	SourceOccurrenceCollision,
 } from "../src/server/eventing/runtime"
+import { InsertBatcher } from "../src/server/insert-batcher"
 import { __testables } from "../src/server/serve"
-import { run, serveCheckpointWith, serveWith } from "./eventing-test-support"
+import { run, serveCheckpointWith, serveWith, stubEventing } from "./eventing-test-support"
 
 describe("Local eventing ingest seam", () => {
 	it("requires maintenance authorization and exposes staged records only when requested", async () => {
@@ -286,9 +287,9 @@ describe("Local eventing ingest seam", () => {
 
 	it("rejects fractional consumer limits before calling the store", async () => {
 		const response = await serveWith(
-			{
+			stubEventing({
 				claimReady: () => Effect.die(new Error("invalid input reached the store")),
-			},
+			}),
 			__testables.handleConsumerClaim(
 				new __testables.RequestQuiescenceGate(),
 				"secret",
@@ -366,7 +367,7 @@ describe("Local eventing ingest seam", () => {
 
 		const result = await serveWith(
 			eventing as never,
-			__testables.ingest(db as never, authority as never, "logs", request),
+			__testables.ingest(new InsertBatcher(db), authority as never, "logs", request),
 		)
 		strictEqual(result.response.status, 200)
 		strictEqual(result.accepted, 1)
@@ -407,11 +408,11 @@ describe("Local eventing ingest seam", () => {
 					}),
 			} as never,
 			__testables.ingest(
-				{
+				new InsertBatcher({
 					exec: () => {
 						throw new Error("write failed")
 					},
-				} as never,
+				}),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({
@@ -464,7 +465,7 @@ describe("Local eventing ingest seam", () => {
 					}),
 			} as never,
 			__testables.ingest(
-				{ exec: () => undefined } as never,
+				new InsertBatcher({ exec: () => undefined }),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({
@@ -572,7 +573,7 @@ describe("Local eventing ingest seam", () => {
 				markReady: () => Effect.void,
 			} as never,
 			__testables.ingest(
-				{ exec: () => (inserted = true) } as never,
+				new InsertBatcher({ exec: () => (inserted = true) }),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({
@@ -602,7 +603,7 @@ describe("Local eventing ingest seam", () => {
 					evaluateOtlp: () => failure,
 				} as never,
 				__testables.ingest(
-					{ exec: () => undefined } as never,
+					new InsertBatcher({ exec: () => undefined }),
 					{ isRetired: () => false } as never,
 					"logs",
 					new Request("http://127.0.0.1/v1/logs", {
@@ -642,7 +643,7 @@ describe("Local eventing ingest seam", () => {
 					stage: () => failure,
 				} as never,
 				__testables.ingest(
-					{ exec: () => undefined } as never,
+					new InsertBatcher({ exec: () => undefined }),
 					{ isRetired: () => false } as never,
 					"logs",
 					new Request("http://127.0.0.1/v1/logs", {
@@ -686,7 +687,7 @@ describe("Local eventing ingest seam", () => {
 					Effect.fail(new EventingControlStoreError({ message: "database is locked" })),
 			} as never,
 			__testables.ingest(
-				{ exec: () => undefined } as never,
+				new InsertBatcher({ exec: () => undefined }),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({

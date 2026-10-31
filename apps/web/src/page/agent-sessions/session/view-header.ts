@@ -8,6 +8,7 @@ import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
 import { pageTitle } from "../../../ui/page-layout"
+import { moreChip } from "../kit/more-chip"
 import { sessionIdentity } from "../kit/session-name"
 import { vendorColor, vendorIcon } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
@@ -20,11 +21,16 @@ type H = HtmlBuilder<Message>
 
 const ID_PREFIX_LENGTH = 32
 
-/** "claude-sonnet-5 +1": the first name, the rest as a count. */
-const firstPlusRest = (names: ReadonlyArray<string>): string => {
+/** "agent-runner +9": the first name, the rest as a chip that names them on hover. */
+const firstPlusRest = (h: H, names: ReadonlyArray<string>): Html => {
 	const [first, ...rest] = names
-	if (first === undefined) return ""
-	return rest.length > 0 ? `${first} +${rest.length}` : first
+	return h.span(
+		[h.Class("inline-flex min-w-0 items-baseline gap-1.5")],
+		[
+			h.span([h.Class("min-w-0 truncate")], [first ?? ""]),
+			...(rest.length > 0 ? [moreChip(h, { count: rest.length, names: rest })] : []),
+		],
+	)
 }
 
 /** `CopyableValue`: the id that copies itself, tinted by the copy's outcome. */
@@ -40,10 +46,10 @@ const copyableId = (
 			h.AriaLabel(`Copy ${label}`),
 			h.Class(
 				cn(
-					"-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors",
-					model.copy.status === "idle" && "hover:bg-muted/50",
-					model.copy.status === "copied" && "bg-severity-info/20",
-					model.copy.status === "error" && "bg-severity-error/20",
+					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+					model.copy.status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+					model.copy.status === "copied" && "bg-severity-info-a3",
+					model.copy.status === "error" && "bg-severity-error-a3",
 					"inline-flex min-w-0 max-w-full items-center gap-1 font-mono",
 				),
 			),
@@ -89,11 +95,9 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 				]),
 				...(summary.serviceNames.length > 0
 					? [
-							keyValue(
-								h,
-								{ label: "Service", title: summary.serviceNames.join(", "), mono: true },
-								[firstPlusRest(summary.serviceNames)],
-							),
+							keyValue(h, { label: "Service", mono: true }, [
+								firstPlusRest(h, summary.serviceNames),
+							]),
 						]
 					: []),
 				keyValue(h, { label: idLabel, title: id }, [
@@ -103,7 +107,7 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 							[shortId(id, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true })],
 						),
 						icon(h, "CopyIcon", {
-							size: 11,
+							size: 12,
 							className: "shrink-0 text-muted-foreground",
 							attributes: [h.AriaHidden(true)],
 						}),

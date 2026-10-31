@@ -14,7 +14,7 @@ import {
 	BillingRequestError,
 	BillingUpstreamError,
 } from "@maple/domain/http"
-import type { AutumnFailure } from "@maple/domain/http"
+import type { AutumnFailure, BillingCustomerId } from "@maple/domain/http"
 import type { AutumnResult, AutumnTransportFailure } from "./autumn-http"
 
 /**
@@ -134,14 +134,14 @@ class UncacheableAutumnResult extends Schema.TaggedError<UncacheableAutumnResult
  */
 export const readCustomerCached = (
 	edgeCache: Pick<EdgeCacheServiceApi, "getOrCompute">,
-	orgId: string,
+	customerId: BillingCustomerId,
 	runAutumn: Effect.Effect<AutumnResult, AutumnTransportFailure>,
 ): Effect.Effect<{ readonly result: AutumnResult; readonly hit: boolean }, AutumnTransportFailure> =>
 	edgeCache
 		.getOrCompute(
 			{
 				bucket: CUSTOMER_CACHE_BUCKET,
-				key: orgId,
+				key: customerId,
 				ttlSeconds: (result: AutumnResult) => customerCacheTtl(result.response),
 			},
 			runAutumn.pipe(

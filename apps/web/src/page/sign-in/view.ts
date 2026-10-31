@@ -38,7 +38,7 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 	return field(h, { className: "items-stretch", state }, [
 		fieldLabel(
 			h,
-			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-[0.02em]", state },
+			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-wide", state },
 			"Root password",
 		),
 		input(h, {
@@ -78,7 +78,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					[h.Class("space-y-2")],
 					[
 						h.h1(
-							[h.Class("font-display font-[650] text-[30px] leading-[1.1] tracking-[-0.03em]")],
+							[h.Class("font-display font-semibold text-3xl leading-[1.1] tracking-tight")],
 							["Sign in to Maple"],
 						),
 						h.p(

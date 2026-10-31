@@ -44,10 +44,8 @@ export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (
 
 export const HttpAuthLive = HttpApiBuilder.group(MapleApi, "auth", (handlers) =>
 	Effect.gen(function* () {
-		const cliAuth = yield* CliDeviceAuthService
 		const auth = yield* AuthService
 		const apiKeys = yield* ApiKeysService
-		const mcpOAuth = yield* McpOAuthService
 		return handlers
 			.handle("session", () => CurrentTenant.Context)
 			.handle("sessionRefresh", () =>
@@ -65,20 +63,6 @@ export const HttpAuthLive = HttpApiBuilder.group(MapleApi, "auth", (handlers) =>
 					return yield* auth.refreshSelfHostedSession(token)
 				}),
 			)
-			.handle("cliDeviceInspect", ({ params }) => cliAuth.inspect(params.userCode))
-			.handle("cliDeviceApprove", ({ params }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const userEmail = yield* auth.getUserEmail(tenant.userId)
-					return yield* cliAuth.approve(params.userCode, {
-						orgId: tenant.orgId,
-						userId: tenant.userId,
-						roles: tenant.roles,
-						userEmail,
-					})
-				}),
-			)
-			.handle("cliDeviceDeny", ({ params }) => cliAuth.deny(params.userCode))
 			.handle("cliSessionRevoke", () =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
@@ -104,6 +88,29 @@ export const HttpAuthLive = HttpApiBuilder.group(MapleApi, "auth", (handlers) =>
 					return new CliDeviceActionResponse({ status: "revoked" })
 				}),
 			)
+	}),
+)
+
+export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession", (handlers) =>
+	Effect.gen(function* () {
+		const cliAuth = yield* CliDeviceAuthService
+		const auth = yield* AuthService
+		const mcpOAuth = yield* McpOAuthService
+		return handlers
+			.handle("cliDeviceInspect", ({ params }) => cliAuth.inspect(params.userCode))
+			.handle("cliDeviceApprove", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const userEmail = yield* auth.getUserEmail(tenant.userId)
+					return yield* cliAuth.approve(params.userCode, {
+						orgId: tenant.orgId,
+						userId: tenant.userId,
+						roles: tenant.roles,
+						userEmail,
+					})
+				}),
+			)
+			.handle("cliDeviceDeny", ({ params }) => cliAuth.deny(params.userCode))
 			.handle("mcpOAuthAuthorizationInspect", ({ params }) => mcpOAuth.inspect(params.requestId))
 			.handle("mcpOAuthAuthorizationApprove", ({ params }) =>
 				Effect.gen(function* () {

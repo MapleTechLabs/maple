@@ -29,12 +29,9 @@ jobs:
         # Restoring a backup provisions a fresh cluster (~10 min) before the
         # checks run, and the branch delete is awaited at the end.
         timeout-minutes: 45
-        # Same STOPGAP as cleanup-preview-orphans.yml: the job borrows
-        # `pr-preview` only to shape the Infisical OIDC subject
-        # (repo:<org>/<repo>:environment:<name> is the allowlisted form). It
-        # deploys nothing. Remove once the `ref:refs/heads/main` subject is
-        # allowlisted on the machine identity.
-        environment: pr-preview
+        # `maintenance` (main only) carries this job's own Infisical identity,
+        # limited to `dev` and trusting only `environment:maintenance`.
+        environment: maintenance
         env:
             INFISICAL_ENV_SLUG: dev
         steps:

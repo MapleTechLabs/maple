@@ -23,6 +23,9 @@ export const Model = Schema.Struct({
 	/** `useState(PAGE)`: Load more adds a page; a filter change starts over. */
 	limit: Schema.Number,
 	statusSelect: Select.Model,
+	/** The search box's input and its debounce generation. */
+	searchDraft: Schema.String,
+	searchGeneration: Schema.Number,
 	sheet: ReviewSheet,
 })
 export type Model = typeof Model.Type
@@ -42,6 +45,8 @@ export const Message = defineMessageUnion({
 	ClickedLoadMore: {},
 	TickedPoll: {},
 	GotStatusSelectMessage: { message: Select.Message },
+	ChangedSearchDraft: { value: Schema.String },
+	ElapsedSearchDebounce: { generation: Schema.Number },
 	GotSheetMessage: { message: SheetMessage },
 })
 export type Message = typeof Message.Type

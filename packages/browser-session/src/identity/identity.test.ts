@@ -71,4 +71,39 @@ describe("normalizeIdentity", () => {
 			groupId: "org_1",
 		})
 	})
+
+	it("keeps numeric ids from untyped callers and ignores other non-strings", () => {
+		// `identify({ id: 42 })` used to throw "trim is not a function" into the host app.
+		expect(normalizeIdentity({ id: 42 } as never)).toEqual({ id: "42", traits: {} })
+		expect(normalizeIdentity({ id: 9007199254740993n, email: { at: "x" } } as never)).toEqual({
+			id: "9007199254740993",
+			traits: {},
+		})
+		expect(normalizeIdentity(42 as never)).toEqual({ id: "42", traits: {} })
+		expect(normalizeIdentity({ id: Number.NaN, username: ["x"] } as never)).toBeUndefined()
+	})
+
+	it("caps id lengths without splitting a surrogate pair", () => {
+		const resolved = normalizeIdentity({ id: `${"a".repeat(255)}😀tail` })
+		expect(resolved?.id).toBe("a".repeat(255))
+	})
+
+	it("keeps a __proto__ trait as data, leaving every prototype alone", () => {
+		const traits = JSON.parse('{"__proto__": "admin", "plan": "pro"}')
+		const resolved = normalizeIdentity({ id: "u", traits })
+		expect(Object.entries(resolved?.traits ?? {})).toEqual([
+			["__proto__", "admin"],
+			["plan", "pro"],
+		])
+		expect(Object.getPrototypeOf(resolved?.traits)).toBe(Object.prototype)
+	})
+
+	it("keeps the first of two trait keys that collide once truncated", () => {
+		const prefix = "k".repeat(64)
+		const resolved = normalizeIdentity({
+			id: "u",
+			traits: { [`${prefix}1`]: "first", [`${prefix}2`]: "second" },
+		})
+		expect(resolved?.traits).toEqual({ [prefix]: "first" })
+	})
 })

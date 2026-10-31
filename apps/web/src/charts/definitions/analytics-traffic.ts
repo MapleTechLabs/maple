@@ -46,7 +46,7 @@ export const buildAnalyticsTraffic = (
 	const focus = tooltipFocusCapture()
 	const definition = defineChart({
 		gradients: spec.series.map((entry) =>
-			verticalGradient(`${spec.gradientPrefix}-${entry.key}`, colorOf(entry.key), 0.35, 0.02),
+			verticalGradient(`${spec.gradientPrefix}-${entry.key}`, colorOf(entry.key)),
 		),
 		marks: [
 			...spec.series.flatMap((entry) => [
@@ -56,6 +56,7 @@ export const buildAnalyticsTraffic = (
 					y: valueOf(entry.key),
 					y1: () => 0,
 					fill: `url(#${spec.gradientPrefix}-${entry.key})`,
+					fillOpacity: 1,
 					stroke: "none",
 					curve,
 				}),

@@ -48,6 +48,8 @@ export const toPreviewForm = (form: RuleFormState): RuleFormState => ({
 			: { ...form.escalation, destinationIds: [] },
 	notificationTitle: "",
 	notificationBody: "",
+	// Raw SQL previews chart under the longest limit, so picking an interval never re-queries.
+	evaluationIntervalMinutes: "",
 })
 
 const toIso = (warehouseTime: string) =>
@@ -83,6 +85,12 @@ export interface PreviewState {
 	readonly error: string | null
 }
 
+/** A raw query too heavy to chart the range still answers, with its timing and no series. */
+const seriesFailureMessage = (preview: AlertRulePreviewResponse): string | null =>
+	preview.seriesFailure === undefined
+		? null
+		: `The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this range. Pick a shorter preview range.`
+
 /** The hook's result, read off the slot (`hasPayload` false is the no-payload branch). */
 export const previewStateOf = (slot: PreviewSlot, hasPayload: boolean, issue: string | null): PreviewState =>
 	!hasPayload
@@ -90,8 +98,8 @@ export const previewStateOf = (slot: PreviewSlot, hasPayload: boolean, issue: st
 		: AsyncData.match(slot.data, {
 				onIdle: () => ({ preview: null, isLoading: true, error: null }),
 				onLoading: () => ({ preview: null, isLoading: true, error: null }),
-				onRefreshing: (preview) => ({ preview, isLoading: false, error: null }),
-				onSuccess: (preview) => ({ preview, isLoading: false, error: null }),
+				onRefreshing: (preview) => ({ preview, isLoading: false, error: seriesFailureMessage(preview) }),
+				onSuccess: (preview) => ({ preview, isLoading: false, error: seriesFailureMessage(preview) }),
 				onFailure: (failure) => ({ preview: null, isLoading: false, error: failure.message }),
 				onStale: ({ error }) => ({ preview: null, isLoading: false, error: error.message }),
 			})

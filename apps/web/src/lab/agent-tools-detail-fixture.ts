@@ -131,7 +131,7 @@ interface ErrorGroupSpec {
 const envelope = (text: string) => JSON.stringify({ result: text })
 
 const FINDINGS_CLAIM =
-	'Confirmed: the incident\'s failure is a disk-capacity exhaustion — the embedded chDB store on the local filesystem hit its "no space left on device" ceiling, and at least one trace ingest (POST /v1/traces) was rejected with HTTP 500 as a result.'
+	'Confirmed: the incident\'s failure is a disk-capacity exhaustion: the embedded chDB store on the local filesystem hit its "no space left on device" ceiling, and at least one trace ingest (POST /v1/traces) was rejected with HTTP 500 as a result.'
 const LOG_PATTERN =
 	'chDB insert (traces): Code: 1001. DB::Exception: filesystem error: in create_directories: No space left on device ["/var/lib/maple/store/traces"]'
 
@@ -369,7 +369,7 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 			},
 			{
 				message:
-					'Tool failed: Invalid parameters: SchemaError(`2026-09-04 00:00` is not a timestamp — expected `YYYY-MM-DD HH:mm:ss` (UTC) or an ISO-8601 timestamp at ["start_time"]). Check the "query_data" tool schema for valid parameter names and types.',
+					'Tool failed: Invalid parameters: SchemaError(`2026-09-04 00:00` is not a timestamp: expected `YYYY-MM-DD HH:mm:ss` (UTC) or an ISO-8601 timestamp at ["start_time"]). Check the "query_data" tool schema for valid parameter names and types.',
 				errorType: "tool_error",
 				calls: 1,
 				sessions: 1,

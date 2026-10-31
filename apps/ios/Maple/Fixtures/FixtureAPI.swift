@@ -158,7 +158,7 @@ struct FixtureAPI: MapleAPI {
 
 	// MARK: Issues
 
-	private var issues: [ErrorIssue] {
+	var issues: [ErrorIssue] {
 		[
 			issue(
 				id: "iss_checkout_timeout", service: "checkout-api", type: "PaymentGatewayTimeout",
@@ -225,6 +225,10 @@ struct FixtureAPI: MapleAPI {
 		try await pause()
 		var items = issues
 		if let service = query.serviceName { items = items.filter { $0.serviceName == service } }
+		if let state = query.workflowState { items = items.filter { $0.workflowState == state } }
+		if query.actionableOnly {
+			items = items.filter { [.triage, .regressed, .todo, .inProgress, .inReview].contains($0.workflowState) }
+		}
 		if let window {
 			items = items.filter { issue in
 				guard let last = ResolvedTimeWindow.parse(issue.lastSeenAt) else { return false }
@@ -265,7 +269,16 @@ struct FixtureAPI: MapleAPI {
 			priority: issue.priority,
 			regressionCount: issue.regressionCount,
 			resolvedVersions: issue.resolvedVersions,
-			sampleTraces: [],
+			sampleTraces: [(-40.0, 842_000.0), (-95, 1_120_000), (-260, 211_000)].enumerated().map { index, sample in
+				ErrorIssueSampleTrace(
+					durationMicros: sample.1,
+					exceptionMessage: issue.exceptionMessage,
+					serviceName: issue.serviceName,
+					spanId: "span\(index)00000000000",
+					timestamp: stamp(sample.0),
+					traceId: "\(index)4bf92f3577b34da6a3ce929d0e0e4736"
+				)
+			},
 			serviceName: issue.serviceName,
 			severity: issue.severity,
 			severitySource: issue.severitySource,
@@ -337,7 +350,7 @@ struct FixtureAPI: MapleAPI {
 		)
 	}
 
-	private var incidents: [AlertIncident] {
+	var incidents: [AlertIncident] {
 		[
 			AlertIncident(
 				comparator: .gt,
@@ -619,12 +632,41 @@ struct FixtureAPI: MapleAPI {
 			organizationId: FixtureSession.organizationId,
 			secret: "maple_ak_fixture",
 			apiBaseURL: URL(string: "https://fixtures.maple.invalid")!,
-			expiresAt: now.addingTimeInterval(30 * 24 * 60 * 60),
+			expiresAt: now.addingTimeInterval(14 * 24 * 60 * 60),
 			mintedAt: now
 		)
 	}
 
 	func revokeWidgetCredential(installationId: String) async throws {
+		try await pause()
+	}
+
+	func deviceAttestationChallenge(installationId: String) async throws -> String {
+		try await pause()
+		return "fixture-challenge"
+	}
+
+	/// A well-formed registration for the key it was given, so the register path
+	/// runs without a server. No widget fetches with it.
+	func registerDeviceCredential(
+		installationId: String,
+		key: DeviceKey,
+		attestation: DeviceAttestationPayload?
+	) async throws -> DeviceCredential {
+		try await pause()
+		return DeviceCredential(
+			organizationId: FixtureSession.organizationId,
+			credentialId: "dcred_fixture",
+			jkt: key.thumbprint,
+			apiBaseURL: URL(string: "https://fixtures.maple.invalid")!,
+			attested: false,
+			expiresAt: now.addingTimeInterval(30 * 24 * 60 * 60),
+			hardExpiresAt: now.addingTimeInterval(90 * 24 * 60 * 60),
+			registeredAt: now
+		)
+	}
+
+	func revokeDeviceCredential(installationId: String) async throws {
 		try await pause()
 	}
 
@@ -827,11 +869,11 @@ struct FixtureAPI: MapleAPI {
 
 	// MARK: Helpers
 
-	private func stamp(_ offset: TimeInterval) -> String {
+	func stamp(_ offset: TimeInterval) -> String {
 		ResolvedTimeWindow.format(now.addingTimeInterval(offset))
 	}
 
-	private func pause() async throws {
+	func pause() async throws {
 		try await Task.sleep(for: latency)
 		try Self.failureInjector.throwIfDue()
 	}

@@ -72,10 +72,10 @@ Click a node to open its side panel. Click the canvas to close it. Click a colla
 
 A service panel has two tabs:
 
-- **Service**: **Throughput**, **Error Rate**, **Avg Latency**, and **P95 Latency**, plus **Dependencies** and **Called By** lists. **View service** opens the [service page](/docs/explore/services).
+- **Service**: **Throughput**, **Error rate**, **P50 latency**, and **P95 latency**, plus **Dependencies** and **Called by** lists. **View service** opens the [service page](/docs/explore/services).
 - **Infrastructure**: the Kubernetes workloads running the service. See [Kubernetes](/docs/infrastructure/kubernetes) to set it up.
 
-A database panel shows **Queries**, **Throughput**, **Error Rate**, **P50 Latency**, **P95 Latency**, and **Avg Latency**.
+A database panel shows **Queries**, **Throughput**, **Error rate**, **P50 latency**, **P95 latency**, and **Avg latency**.
 
 ## Query the map from an assistant
 
@@ -83,7 +83,7 @@ The [MCP server](/docs/reference/mcp) tool `service_map` returns the edges with 
 
 ## Troubleshooting
 
-- **"No service map yet".** Maple has not seen a cross-service call or a database call. Instrument at least two services that call each other, or a service with database instrumentation. If your services are active, widen the time range.
+- **"No service calls in this window".** Traces are arriving, but no service calls another one yet. Propagate trace context on outgoing HTTP calls so both sides share a trace, or add database instrumentation. If your services are active, widen the time range.
 - **Two services are not connected.** The callee is not instrumented, or the caller drops the `traceparent` header (common across proxies, queues, and custom HTTP clients). Open a trace for the call and check that the callee's `Server` span has the client span as its parent.
 - **Every database collapses into one node.** Set `db.namespace` on database spans, or at least `server.address`.
 - **The same database appears twice.** Services spell `db.system.name` differently (for example `postgresql` and `PostgreSQL`). Use the OpenTelemetry well-known values.

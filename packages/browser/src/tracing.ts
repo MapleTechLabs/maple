@@ -25,7 +25,14 @@ import { resourceFromAttributes } from "@opentelemetry/resources"
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { WebTracerProvider } from "@opentelemetry/sdk-trace-web"
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions"
+import {
+	ATTR_SERVICE_NAME,
+	ATTR_SERVICE_VERSION,
+	ATTR_TELEMETRY_SDK_LANGUAGE,
+	ATTR_TELEMETRY_SDK_NAME,
+	ATTR_TELEMETRY_SDK_VERSION,
+	TELEMETRY_SDK_LANGUAGE_VALUE_WEBJS,
+} from "@opentelemetry/semantic-conventions"
 import type { ResolvedConfig } from "./config"
 import { responseHeaders, setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
@@ -47,10 +54,13 @@ export class TraceIdCollector implements SpanProcessor {
 
 	onStart(span: Span): void {
 		// The fetch instrumentation sets `url.full` once, at creation, so this is
-		// the one place it has to be rewritten.
-		for (const key of URL_ATTRIBUTES) {
-			const value = span.attributes[key]
-			if (typeof value === "string") span.setAttribute(key, scrubUrl(value))
+		// the one place it has to be rewritten. Maple's own spans scrub their URLs
+		// as they make them: a host `sanitizeUrl` must run once per value.
+		if (span.instrumentationScope?.name !== SDK_NAME) {
+			for (const key of URL_ATTRIBUTES) {
+				const value = span.attributes[key]
+				if (typeof value === "string") span.setAttribute(key, scrubUrl(value))
+			}
 		}
 		if (!hasConsent()) return
 		recordTraceId(span.spanContext().traceId)
@@ -133,8 +143,13 @@ export function setMapleProviderForTests(provider: TracerProvider | undefined): 
 
 /** Resource attributes shared by every signal this SDK exports. */
 export function resourceAttributes(config: ResolvedConfig): Record<string, string> {
+	// The provider does not merge OTel's default resource in, so the required
+	// `telemetry.sdk.*` attributes are stated here.
 	const attributes: Record<string, string> = {
 		[ATTR_SERVICE_NAME]: config.serviceName,
+		[ATTR_TELEMETRY_SDK_NAME]: "@maple-dev/browser",
+		[ATTR_TELEMETRY_SDK_LANGUAGE]: TELEMETRY_SDK_LANGUAGE_VALUE_WEBJS,
+		[ATTR_TELEMETRY_SDK_VERSION]: SDK_VERSION,
 		"maple.sdk.type": "browser",
 	} satisfies Record<string, string>
 	if (config.serviceNamespace) {
@@ -143,8 +158,8 @@ export function resourceAttributes(config: ResolvedConfig): Record<string, strin
 	if (config.serviceVersion) {
 		attributes[ATTR_SERVICE_VERSION] = config.serviceVersion
 		// A semver release string belongs in `service.version` but not in
-		// `vcs.*` — only a SHA-shaped value is stamped as the head revision.
-		if (/^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+		// `vcs.*`: only a SHA-shaped value is stamped as the head revision.
+		if (isCommitSha(config.serviceVersion)) {
 			attributes["vcs.ref.head.revision"] = config.serviceVersion
 		}
 	}
@@ -155,6 +170,14 @@ export function resourceAttributes(config: ResolvedConfig): Record<string, strin
 		attributes["deployment.environment.name"] = config.environment
 	}
 	return attributes
+}
+
+/**
+ * A full 40-hex SHA, or an abbreviated one (7 to 39 hex) with at least one
+ * letter: an all-digit version like a date build number is not a commit.
+ */
+export function isCommitSha(value: string): boolean {
+	return /^[0-9a-f]{40}$/i.test(value) || (/^[0-9a-f]{7,39}$/i.test(value) && /[a-f]/i.test(value))
 }
 
 /**
@@ -190,6 +213,39 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		),
 	)
 
+	// Each time the page goes away, is hidden or goes offline. A request in flight across
+	// one was cancelled by the browser (or lost its network), so its failure is not the
+	// app's. Counted per request from its start: a tab that polls while already hidden
+	// still reports its real DNS and CORS failures.
+	let connectionLosses = 0
+	let lastLossReason = ""
+	const lossesAtStart = new WeakMap<ApiSpan, number>()
+	const noteLost = (reason: string): void => {
+		connectionLosses += 1
+		lastLossReason = reason
+	}
+	const connectionLost = (span: ApiSpan): string | undefined => {
+		if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline"
+		const atStart = lossesAtStart.get(span)
+		return atStart !== undefined && atStart !== connectionLosses ? lastLossReason : undefined
+	}
+	// XHR spans the instrumentation marks failed after our hook runs; reset before they end.
+	const lostXhrSpans = new WeakSet<ApiSpan>()
+	const connectionTracker: SpanProcessor = {
+		onStart: (span) => {
+			lossesAtStart.set(span, connectionLosses)
+		},
+		onEnding: (span) => {
+			if (!lostXhrSpans.has(span)) return
+			span.status.code = SpanStatusCode.UNSET
+			delete span.status.message
+			delete span.attributes["error.type"]
+		},
+		onEnd: () => {},
+		forceFlush: () => Promise.resolve(),
+		shutdown: () => Promise.resolve(),
+	}
+
 	const provider = new WebTracerProvider({
 		resource: resourceFromAttributes(resourceAttributes(config)),
 		sampler: new SessionSampler(config.tracingSampleRate),
@@ -197,6 +253,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		// session row, not stamped onto every span on the hot path.
 		spanProcessors: [
 			new TraceIdCollector(() => config.identity?.id),
+			connectionTracker,
 			new BatchSpanProcessor(exporter, { scheduledDelayMillis: EXPORT_INTERVAL_MS }),
 		],
 	})
@@ -226,21 +283,6 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		void provider.forceFlush().catch(() => {
 			// Best-effort on the way out; never throw into the host app.
 		})
-	}
-	// Each time the page goes away or offline. A fetch in flight across one was cancelled
-	// by the browser (or never had a network), so its rejection is not the app's failure.
-	let connectionLosses = 0
-	let lastLossReason = ""
-	const lossesAtStart = new WeakMap<ApiSpan, number>()
-	const noteLost = (reason: string): void => {
-		connectionLosses += 1
-		lastLossReason = reason
-	}
-	const connectionLost = (span: ApiSpan): string | undefined => {
-		if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline"
-		if (typeof document !== "undefined" && document.visibilityState === "hidden") return "page_hidden"
-		const atStart = lossesAtStart.get(span)
-		return atStart !== undefined && atStart !== connectionLosses ? lastLossReason : undefined
 	}
 	const onOffline = (): void => noteLost("offline")
 	const onVisibilityChange = (): void => {
@@ -297,9 +339,6 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			? [
 					new FetchInstrumentation({
 						...requestOptions,
-						requestHook: (span) => {
-							lossesAtStart.set(span, connectionLosses)
-						},
 						applyCustomAttributesOnSpan: (span, request, result) => {
 							noteSettled(span)
 							const sent =
@@ -336,6 +375,13 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 						...requestOptions,
 						applyCustomAttributesOnSpan: (span, xhr) => {
 							noteSettled(span)
+							// Status 0 is no response: an error, timeout or abort. One the page went away
+							// or offline under stays Unset with the reason, as for fetch.
+							const lost = xhr.status === 0 ? connectionLost(span) : undefined
+							if (lost !== undefined) {
+								span.setAttribute("maple.connection_lost", lost)
+								lostXhrSpans.add(span)
+							}
 							if (headers.response.length === 0) return
 							// One read of the exposed headers: asking for an unexposed one by name logs a console error.
 							const exposed = responseHeaders(xhr.getAllResponseHeaders())
@@ -365,16 +411,16 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		}
 		unregisterInstrumentations?.()
 		if (mapleProvider === provider) mapleProvider = undefined
-		await provider.shutdown()
 		// Release the globals so a later init() can register a live provider.
 		// The global proxy keeps delegating to this now-shut-down provider
-		// otherwise, and the documented init → shutdown → init lifecycle would
-		// silently export nothing on the second session.
+		// otherwise. Synchronous, before the flush: an init() made while it runs
+		// registers its own provider, which a later disable would take down.
 		if (ownsGlobals) {
 			trace.disable()
 			context.disable()
 			propagation.disable()
 		}
+		await provider.shutdown()
 	}
 }
 

@@ -1,7 +1,7 @@
 import { getMetricSparklines, getMetricsSummary, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Clock, Duration, Effect, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -107,19 +107,9 @@ export const CompleteReloadSpin = Command.define("CompleteMetricsReloadSpin", {
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
 })
 
-/** The empty state is on screen: `useSignalPresence` mounts with it, after it painted. */
-export const MountEmptyState = Mount.define("MountMetricsEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 export const LoadSignalPresence = Command.define("LoadMetricsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })

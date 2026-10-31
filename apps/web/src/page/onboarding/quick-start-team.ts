@@ -2,7 +2,7 @@ import { makeOnboardingTeamActions } from "../../components/onboarding/team-acti
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { clerkTeamOrganization } from "../../platform/clerk"
+import { clerkTeamOrganization, clerkTry } from "../../platform/clerk"
 
 // `StepTeamConnected` / `StepTeam` (apps/web/src/components/onboarding): rename the workspace and
 // invite teammates through the Clerk organization, or the self-hosted notice.
@@ -63,7 +63,7 @@ export const LoadTeam = Command.define("LoadOnboardingTeam", {
 			return TeamMessage.LoadedTeam({ name: "My workspace", canManage: false, invitations: [] })
 		const organization = maybeOrganization.value
 		const invitations = organization.isAdmin
-			? yield* Effect.promise(organization.pendingInvitations).pipe(Effect.orElseSucceed(() => []))
+			? yield* clerkTry("Couldn't load invitations", organization.pendingInvitations).pipe(Effect.orElseSucceed(() => []))
 			: []
 		return TeamMessage.LoadedTeam({ name: organization.name, canManage: organization.isAdmin, invitations })
 	}),

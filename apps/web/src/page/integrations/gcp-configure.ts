@@ -40,12 +40,10 @@ export const initConfigure = (
 	return {
 		target,
 		dialog: Dialog.init(CONFIGURE_DIALOG_ID, "dialog"),
-		newTitle: connectors.length === 0 ? "Connect Google Cloud" : "Add connection",
 		filter: { keep: null, runtimes: null },
 		isFilterOpen: false,
 		filterMode: Select.init("gcp-filter-mode", { value: "keep", selectedIndex: 0 }),
 		created: null,
-		step: "scope",
 		scopeType: "project",
 		scopeGroup: ToggleGroup.init({ label: "What should Maple watch?", values: ["project"] }),
 		scopeId: Field.init(),
@@ -153,5 +151,7 @@ export const CopyPrompt = Command.define("CopyGcpPrompt", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedGcpPromptCopy],
 	execute: ({ text }) =>
-		Effect.map(CopyButton.writeClipboard(text), (isCopied) => Message.CompletedGcpPromptCopy({ isCopied })),
+		Effect.map(CopyButton.writeClipboard(text), (isCopied) =>
+			Message.CompletedGcpPromptCopy({ isCopied }),
+		),
 })

@@ -45,6 +45,7 @@ import { IncidentsData, type Model, RulesData } from "./model"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
+import { Message as SetupMessage } from "./setup-checklist"
 import * as Setup from "./setup-checklist-update"
 
 export type Return = PageReturn<Model, Message>
@@ -309,49 +310,58 @@ const navigate = (model: Model, search: Search): Return => ({
 
 // ENTRY POINTS
 
+const loadChartRuntime = () =>
+	Command.mapMessage(LoadChartRuntime(), (message) =>
+		message._tag === "CompletedLoadChartRuntime"
+			? Message.CompletedLoadChartRuntime()
+			: Message.FailedLoadChartRuntime({ reason: message.reason }),
+	)
+
 /** `init`, with the Clerk gate as an input (`{isClerkAuthEnabled && <SetupChecklist />}`). */
 export const initWith =
 	(isClerk: boolean) =>
 	(route: { readonly search: Search }, context: PageContext): Return => {
-	const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
-	const model: Model = {
-		search: route.search,
-		nowMs: null,
-		hint: DEFAULT_HINT,
-		facetsWindow: null,
-		window: null,
-		facets: Keyed.idle(),
-		snapshot: Keyed.idle(),
-		anomalies: Keyed.idle(),
-		usage: Keyed.idle(),
-		overviewSeries: Keyed.idle(),
-		logSeries: Keyed.idle(),
-		refinement: Keyed.idle(),
-		incidents: IncidentsData.Loading(),
-		rules: RulesData.Loading(),
-		presence: SignalPresenceData.Idle(),
-		environmentSelect: Select.init("overview-environment", { value: ALL_ENVIRONMENTS, selectedIndex: 0 }),
-		timePicker: TimeRangePicker.init("overview-time-range"),
-		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
-		chartRuntime: { _tag: "Loading" },
-		themeColors: null,
-		refreshVersion: 0,
-		isReloading: false,
-		setup: setup?.model ?? null,
+		const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
+		const model: Model = {
+			search: route.search,
+			nowMs: null,
+			hint: DEFAULT_HINT,
+			facetsWindow: null,
+			window: null,
+			facets: Keyed.idle(),
+			snapshot: Keyed.idle(),
+			anomalies: Keyed.idle(),
+			usage: Keyed.idle(),
+			overviewSeries: Keyed.idle(),
+			logSeries: Keyed.idle(),
+			refinement: Keyed.idle(),
+			incidents: IncidentsData.Loading(),
+			rules: RulesData.Loading(),
+			presence: SignalPresenceData.Loading(),
+			environmentSelect: Select.init("overview-environment", {
+				value: ALL_ENVIRONMENTS,
+				selectedIndex: 0,
+			}),
+			timePicker: TimeRangePicker.init("overview-time-range"),
+			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+			chartRuntime: { _tag: "Loading" },
+			themeColors: null,
+			refreshVersion: 0,
+			isReloading: false,
+			setup: setup?.model ?? null,
+		}
+		return {
+			model,
+			commands: [
+				ReadEntry({ orgId: context.orgId }),
+				LoadSignalPresence({ orgId: context.orgId }),
+				...Command.mapMessages(setup?.commands ?? [], (message) =>
+					Message.GotSetupMessage({ message }),
+				),
+				loadChartRuntime(),
+			],
+		}
 	}
-	return {
-		model,
-		commands: [
-			ReadEntry({ orgId: context.orgId }),
-			...Command.mapMessages(setup?.commands ?? [], (message) => Message.GotSetupMessage({ message })),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
-	}
-}
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Home({ search }))
 
@@ -367,6 +377,39 @@ export const routeChanged = (
 
 export const init = initWith(isClerkAuthEnabled)
 
+/** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
+export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	// The open-anomalies key never changes, so entry alone would keep the parked counts.
+	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
+	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	// A runtime that failed before parking is asked for again, as entry does.
+	const isRuntimeFailed = model.chartRuntime._tag === "Failed"
+	const revived: Return = {
+		model: {
+			...model,
+			search: route.search,
+			refreshVersion: 0,
+			isReloading: false,
+			facets: Keyed.forgetFailure(model.facets),
+			snapshot: Keyed.forgetFailure(model.snapshot),
+			anomalies: Option.getOrElse(anomalies, () => model.anomalies),
+			usage: Keyed.forgetFailure(model.usage),
+			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
+			logSeries: Keyed.forgetFailure(model.logSeries),
+			refinement: Keyed.forgetFailure(model.refinement),
+			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+			chartRuntime: isRuntimeFailed ? { _tag: "Loading" } : model.chartRuntime,
+		},
+		commands: [
+			ReadEntry({ orgId: context.orgId }),
+			LoadSignalPresence({ orgId: context.orgId }),
+			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey, refresh: false })] : []),
+			...(isRuntimeFailed ? [loadChartRuntime()] : []),
+		],
+	}
+	return withSetup(revived, Setup.revived)
+}
+
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	resolveSetupWindow(sync(model, context, "Load"), context)
 
@@ -379,6 +422,9 @@ const RETRY_SLOT = {
 } as const satisfies Record<RetryTarget, keyof Model>
 
 const retry = (model: Model, context: PageContext, target: RetryTarget): Return => {
+	// Cards sharing a target each offer a retry: one request in flight answers them all.
+	const slot: Keyed.Keyed<unknown, unknown> = model[RETRY_SLOT[target]]
+	if (AsyncData.isPending(slot.data)) return { model }
 	const { facetsWindow } = model
 	// Facets are shared with the shell through the probe, which keeps a failure until refreshed.
 	return target === "Facets" && facetsWindow !== null && model.facets.key !== null
@@ -393,6 +439,30 @@ const retry = (model: Model, context: PageContext, target: RetryTarget): Return 
 					),
 			])
 		: sync({ ...model, [RETRY_SLOT[target]]: Keyed.idle() }, context, "Load")
+}
+
+/** Forget every failed card read so the next sync requests them, then retry the facets read. */
+const retryPage = (model: Model, context: PageContext): Return => {
+	const synced = sync(
+		{
+			...model,
+			snapshot: Keyed.forgetFailure(model.snapshot),
+			anomalies: Keyed.forgetFailure(model.anomalies),
+			usage: Keyed.forgetFailure(model.usage),
+			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
+			logSeries: Keyed.forgetFailure(model.logSeries),
+			refinement: Keyed.forgetFailure(model.refinement),
+		},
+		context,
+		"Load",
+	)
+	const facets = retry(synced.model, context, "Facets")
+	const retried: Return = { model: facets.model, commands: [...(synced.commands ?? []), ...(facets.commands ?? [])] }
+	// One strip can stand for a setup failure too; its own poll is the setup card's retry.
+	const setup = facets.model.setup
+	return setup !== null && AsyncData.isFailure(setup.services)
+		? withSetup(retried, (current) => Setup.update(current, SetupMessage.TickedPoll(), context))
+		: retried
 }
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
@@ -486,19 +556,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId
 				? { model: { ...model, incidents: IncidentsData.Success({ data: incidents }) } }
 				: { model },
+		FailedLoadIncidents: ({ orgId }) =>
+			orgId === context.orgId && AsyncData.isLoading(model.incidents)
+				? { model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) } }
+				: { model },
+		FailedLoadRules: ({ orgId }) =>
+			orgId === context.orgId && AsyncData.isLoading(model.rules)
+				? { model: { ...model, rules: RulesData.Failure({ error: "Unavailable" }) } }
+				: { model },
 		UpdatedRules: ({ orgId, enabled }) =>
 			orgId === context.orgId
 				? { model: { ...model, rules: RulesData.Success({ data: enabled }) } }
 				: { model },
 		UpdatedRuleStates: () => ({ model }),
-		// `useSignalPresence` mounts with the empty state, so the "unknown" copy paints first.
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
@@ -517,6 +587,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedRetry: ({ target }) => retry(model, context, target),
+		ClickedRetryPage: () => retryPage(model, context),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,
@@ -528,5 +599,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTimePickerMessage: ({ message: inner }) => withPicker(model, inner),
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
 		GotSetupMessage: ({ message: inner }) =>
-			withSetup({ model }, (setup) => Setup.update(setup, inner, context.pinnedNamespace)),
+			withSetup({ model }, (setup) => Setup.update(setup, inner, context)),
 	})

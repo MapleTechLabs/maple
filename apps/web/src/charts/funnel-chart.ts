@@ -31,7 +31,7 @@ const GROUP_BAR_H = 8
 export const PERCENT_FLOOR = { floor: 0.0005 }
 const LEGEND_H = 18
 
-const sep = (h: H, glyph: string): Html => h.span([h.Class("px-1 text-muted-foreground/50")], [glyph])
+const sep = (h: H, glyph: string): Html => h.span([h.Class("px-1 text-foreground-faint")], [glyph])
 
 const swatch = (h: H, className: string, color: string): Html =>
 	h.span([h.Class(className), h.Style({ "background-color": color })])
@@ -79,13 +79,13 @@ const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flag
 	if (hovered !== undefined)
 		return [
 			swatch(h, "mr-1 inline-block size-2 rounded-xs align-middle", hovered.color),
-			h.span([h.Class("text-foreground/90")], [fmtValue(hovered.value, flags.unit)]),
+			h.span([h.Class("text-foreground-soft")], [fmtValue(hovered.value, flags.unit)]),
 			...(flags.showShareOfFirst
 				? [sep(h, "·"), h.span([], [formatPercent(hovered.pctOfFirst, PERCENT_FLOOR)])]
 				: []),
 		]
 	return [
-		h.span([h.Class("text-foreground/90")], [fmtValue(stage.value, flags.unit)]),
+		h.span([h.Class("text-foreground-soft")], [fmtValue(stage.value, flags.unit)]),
 		...(flags.showShareOfFirst
 			? [sep(h, "·"), h.span([], [formatPercent(stage.pctOfFirst, PERCENT_FLOOR)])]
 			: []),
@@ -176,7 +176,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 										h.Class(
 											cn(
 												"truncate",
-												stage.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
+												stage.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
 											),
 										),
 										h.Title(stage.name),
@@ -202,10 +202,10 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 
 const stageBar = (h: H, stage: Stage, fade: number): Html =>
 	h.div(
-		[h.Class("relative h-2.5 w-full overflow-hidden rounded-[3px] bg-foreground/5")],
+		[h.Class("relative h-2.5 w-full overflow-hidden rounded-xs bg-foreground/5")],
 		[
 			h.div([
-				h.Class("absolute inset-y-0 left-0 rounded-[3px]"),
+				h.Class("absolute inset-y-0 left-0 rounded-xs"),
 				h.Style({
 					width: `${stage.widthPct * 100}%`,
 					"background-color": stage.color,

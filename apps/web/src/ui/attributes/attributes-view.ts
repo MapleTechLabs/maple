@@ -102,7 +102,7 @@ const filterEntries = (
 }
 
 const title4 = (h: H, title: string) =>
-	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground/70")], [title])
+	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground-soft")], [title])
 
 const noMatches = (h: H, title: string, query: string) =>
 	h.div(
@@ -145,20 +145,20 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 			[
 				title4(h, options.title),
 				h.div(
-					[h.Class("divide-y divide-border/60 overflow-hidden rounded-md border")],
+					[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
 					groups.map((group) =>
 						collapsible(h, model, {
 							key: `${options.section}:${group.namespace}`,
 							defaultOpen: group.entries.length <= 8 || query !== "",
 							triggerClassName:
-								"group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground",
+								"group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 							trigger: [
 								icon(h, "ChevronRightIcon", {
-									size: 11,
+									size: 12,
 									className: "transition-transform group-data-[panel-open]:rotate-90",
 								}),
 								h.span(
-									[h.Class("font-mono font-semibold text-foreground/80")],
+									[h.Class("font-mono font-semibold text-foreground-soft")],
 									[group.namespace],
 								),
 								badge(h, { variant: "muted", size: "xs", mono: true, className: "ml-auto" }, [
@@ -169,7 +169,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 								h.div(
 									[
 										h.Class(
-											"divide-y divide-border/40 border-t border-border/60 bg-muted/15",
+											"divide-y divide-border-subtle border-t border-border-subtle bg-surface-faint",
 										),
 									],
 									group.entries.map(([key, value]) =>
@@ -196,7 +196,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 		[
 			title4(h, options.title),
 			h.div(
-				[h.Class("divide-y divide-border/60 overflow-hidden rounded-md border")],
+				[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
 				filtered.map(([key, value]) => attributeRow(h, rowContext, key, value)),
 			),
 		],
@@ -224,7 +224,7 @@ export const attributesSection = (h: H, context: RowContext, options: TableOptio
 							key: `${options.section}:internal`,
 							defaultOpen: false,
 							triggerClassName:
-								"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground transition-colors group",
+								"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground group",
 							trigger: [
 								icon(h, "ChevronRightIcon", {
 									size: 10,
@@ -269,7 +269,7 @@ const attributesSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: `${model.id}-search`,
 		size: "sm",
-		placeholder: "Search attributes...",
+		placeholder: "Search attributes…",
 		value: model.search,
 		onInput: (text) => Message.ChangedSearch({ text }),
 		onClear: Message.ChangedSearch({ text: "" }),
@@ -278,7 +278,13 @@ const attributesSearch = (h: H, model: Model): Html =>
 const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSource, title: string) =>
 	attributesSection(
 		h,
-		{ model, source, canFilter: inputs.canFilter, idPrefix: source, hasCommitShaValues: inputs.hasCommitShaValues },
+		{
+			model,
+			source,
+			canFilter: inputs.canFilter,
+			idPrefix: source,
+			hasCommitShaValues: inputs.hasCommitShaValues,
+		},
 		{
 			attributes: source === "log" ? inputs.logAttributes : inputs.resourceAttributes,
 			title,

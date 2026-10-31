@@ -38,7 +38,7 @@ import type {
 import { connectors } from "@maple/chat-platform/connectors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"

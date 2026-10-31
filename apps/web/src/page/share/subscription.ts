@@ -5,6 +5,7 @@ import type { PageSubscriptionInput } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { refreshSecondsOf } from "./update"
+import { pollTicks } from "../../data/poll"
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
 	/** `useIntervalRefresh`: the URL's or the board's cadence, once the window resolved. */
@@ -15,9 +16,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			dependenciesToStream: ({ seconds }) =>
 				seconds <= 0
 					? Stream.empty
-					: Stream.tick(Duration.seconds(seconds)).pipe(
-							Stream.drop(1),
-							Stream.filter(() => !document.hidden),
+					: pollTicks(Duration.seconds(seconds)).pipe(
 							Stream.map(() => Message.TickedAutoRefresh()),
 						),
 		},

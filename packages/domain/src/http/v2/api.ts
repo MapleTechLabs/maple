@@ -8,9 +8,12 @@ import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
 import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
+import { V2DeviceCredentialsApiGroup, V2DeviceTokensApiGroup } from "./device-credentials"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
+import { V2IngestRulesApiGroup } from "./ingest-rules"
 import { V2SourcesApiGroup } from "./sources"
 import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
+import { V2AwsIntegrationsApiGroup } from "./integrations-aws"
 import { V2GcpIntegrationsApiGroup } from "./integrations-gcp"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
 import { V2ErrorIssuesApiGroup } from "./error-issues"
@@ -23,6 +26,8 @@ import { V2OrganizationApiGroup } from "./organization"
 import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
+import { V2UptimeMonitorsApiGroup } from "./uptime-monitors"
+import { V2StatusPageIncidentsApiGroup, V2StatusPagesApiGroup } from "./status-pages"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
 import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
@@ -102,10 +107,15 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2ChatIntegrationsApiGroup)
 	.add(V2PlanetScaleIntegrationsApiGroup)
 	.add(V2GcpIntegrationsApiGroup)
+	.add(V2AwsIntegrationsApiGroup)
 	.add(V2ErrorIssuesApiGroup)
 	.add(V2AttributeMappingsApiGroup)
+	.add(V2IngestRulesApiGroup)
 	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
+	.add(V2UptimeMonitorsApiGroup)
+	.add(V2StatusPagesApiGroup)
+	.add(V2StatusPageIncidentsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
 	.add(V2InstrumentationAuditApiGroup)
 	.add(V2TelemetrySignalsApiGroup)
@@ -127,6 +137,8 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2SharePublicApiGroup)
 	.add(V2WidgetSummaryApiGroup)
 	.add(V2WidgetCredentialsApiGroup)
+	.add(V2DeviceCredentialsApiGroup)
+	.add(V2DeviceTokensApiGroup)
 	.middleware(V2SchemaErrors)
 	.middleware(V2UnexpectedErrors)
 	.annotateMerge(

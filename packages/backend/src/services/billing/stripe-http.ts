@@ -4,7 +4,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import type { AutumnResult, AutumnTransportFailure } from "./autumn-http"
-import { camelizeKeys } from "./autumn-http"
+import { camelizeKeys, withBillingTimeout } from "./autumn-http"
 import { STRIPE_API_VERSION } from "./stripe-api"
 
 /**
@@ -158,7 +158,10 @@ const callStripe = (
 					yield* Effect.annotateCurrentSpan({ "maple.stripe.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("stripe.request", { attributes: { "maple.stripe.route": route } }))
+			}).pipe(
+				withBillingTimeout("Stripe", route),
+				Effect.withSpan("stripe.request", { attributes: { "maple.stripe.route": route } }),
+			)
 
 const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURIComponent(stripeCustomerId)}`
 
@@ -167,7 +170,7 @@ const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURICom
  * `HttpClient`. As with `AutumnClient`, every returned effect is `R = never`.
  */
 export class StripeClient extends Context.Service<StripeClient, StripeClientApi>()(
-	"@maple/api/services/billing/StripeClient",
+	"@maple/backend/services/billing/StripeClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

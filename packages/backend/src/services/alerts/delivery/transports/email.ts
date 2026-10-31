@@ -20,11 +20,7 @@ export const emailTransport: EffectTransport<Config> = {
 	providerLabel: "Email",
 	send: (input: RenderInput<Config>, deps: EffectTransportDeps) =>
 		Effect.gen(function* () {
-			const { subject, html } = yield* buildAlertEmailContent(
-				input.context,
-				input.linkUrl,
-				input.chatUrl,
-			)
+			const { subject, html } = yield* buildAlertEmailContent(input.context, input.linkUrl)
 			const members = input.config.members
 			const outcomes = yield* Effect.forEach(members, (member) =>
 				deps.sendEmail(member.email, subject, html).pipe(

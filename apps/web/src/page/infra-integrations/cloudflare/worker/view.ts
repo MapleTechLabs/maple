@@ -1,4 +1,4 @@
-import { type WorkerHealth, workerHealth } from "../../../../components/infra/cloudflare/list-model"
+import { WORKER_HEALTH_TONE, workerHealth } from "../../../../components/infra/cloudflare/list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -17,6 +17,7 @@ import {
 	formatNumber,
 	formatPercent,
 } from "@maple/ui/lib/format"
+import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -30,11 +31,12 @@ import { errorState } from "../../../../ui/error-state"
 import { segmentedBar } from "../../../../ui/meter"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { skeleton } from "../../../../ui/skeleton"
+import { statusDot } from "../../../../ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { WorkerDetail } from "../data"
@@ -50,28 +52,17 @@ type H = HtmlBuilder<Message>
 /** The failure and Durable Object strips name `--severity-fatal` and `--chart-2` too. */
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--severity-fatal", "--chart-2"]
 
-const HEALTH_DOT = {
-	erroring: "bg-severity-error",
-	slow: "bg-severity-warn",
-	ok: "bg-severity-info",
-} as const satisfies Record<WorkerHealth, string>
-
 /** `CloudflareWorkerHeader`. */
-const header = (h: H, model: Model, data: PageData): Html => {
+const header = (h: H, model: Model, data: PageData) => {
 	const { row, accountName, traced, currentVersion } = data
 	const tracedService = traced?.service ?? null
-	return pageHero(h, {
+	return pageHeroParts(h, {
 		title: h.span(
 			[h.Class("flex items-center gap-3")],
 			[
 				...(row === null
 					? []
-					: [
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-2 shrink-0 rounded-full", HEALTH_DOT[workerHealth(row)])),
-							]),
-						]),
+					: [statusDot(h, { tone: WORKER_HEALTH_TONE[workerHealth(row)], size: "lg" })]),
 				model.scriptName,
 			],
 		),
@@ -84,7 +75,7 @@ const header = (h: H, model: Model, data: PageData): Html => {
 						[h.Href(hrefOf(AppRoute.Service({ serviceName: tracedService, search: {} })))],
 						[heroChip(h, ["traced as ", tracedService])],
 					),
-			...(currentVersion === null ? [] : [heroChip(h, ["version ", currentVersion.slice(0, 7)])]),
+			...(currentVersion === null ? [] : [heroChip(h, ["version ", shortId(currentVersion, "sha")])]),
 		],
 	})
 }
@@ -104,7 +95,7 @@ const figure = (h: H, value: string, caption: string, className?: string): Html 
 /** `CloudflareTraceGapCallout`: failures Cloudflare saw that the Worker's spans never recorded. */
 const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedService: string): Html =>
 	h.div(
-		[h.Class("@container rounded-lg border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -144,7 +135,7 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							h.a(
 								[
 									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
+										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
 									),
 									h.Href(hrefOf(AppRoute.Logs({ search: { services: [tracedService] } }))),
 								],
@@ -298,7 +289,7 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 	return panel(h, {}, [
 		panelHeader(h, { title: "Outcomes" }),
 		h.div(
-			[h.Class("divide-y divide-border/40")],
+			[h.Class("divide-y divide-border-subtle")],
 			totals.byStatus.map(({ status, count }) => {
 				const success = status === "success"
 				const share = totals.invocations > 0 ? count / totals.invocations : 0
@@ -341,12 +332,12 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 								{
 									key: status,
 									value: count,
-									className: success ? "bg-muted-foreground/60" : "bg-severity-error",
+									className: success ? "bg-foreground-subtle" : "bg-severity-error",
 								},
 							],
 						}),
 						h.span(
-							[h.Class("w-20 text-right font-mono text-xs tabular-nums text-foreground/80")],
+							[h.Class("w-20 text-right font-mono text-xs tabular-nums text-foreground-soft")],
 							[formatNumber(count)],
 						),
 						h.span(
@@ -406,7 +397,7 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 							deploys.map((deploy) =>
 								detailRailMetaRow(h, {
 									icon: "CodeIcon",
-									label: deploy.commitSha.slice(0, 7),
+									label: shortId(deploy.commitSha, "sha"),
 									value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
 								}),
 							),
@@ -440,7 +431,7 @@ const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 				].filter((node): node is Html => node !== null),
 				h.a(
 					[
-						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80"),
+						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80"),
 						h.Href(hrefOf(AppRoute.Service({ serviceName: traced.service, search: {} }))),
 					],
 					["Open ", traced.service],
@@ -484,13 +475,15 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 	const data = pageOf(model)
 	const theme = model.themeColors
 	const ctx = theme === null || model.chartRuntime._tag === "Loading" ? null : { theme, timeZone }
+	const hero = header(h, model, data)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
+					gap: "lg",
+					titleContent: hero.title,
 					actions: !isTimed
 						? undefined
 						: pageTime(h, {
@@ -505,7 +498,7 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 							}),
 					rightPanel: rail(h, data, timeZone),
 				},
-				[header(h, model, data), body(h, model, data, ctx)],
+				[hero.body, body(h, model, data, ctx)],
 			),
 		],
 	)
