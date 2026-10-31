@@ -119,7 +119,15 @@ export interface BuildMapleToolsOptions {
 	/** Sees every successful answer this build dispatches; a review pass tracks what it read here. */
 	readonly onAnswer?: (tool: string, answer: string) => void
 	/** Receives each successful call's UI payload, keyed by the call it belongs to. */
-	readonly onUi?: (toolCallId: string, ui: ToolUiPayload) => void
+	readonly onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void
+}
+
+/** The call a UI payload came from: what a reader needs to draw a call no event announced. */
+export interface UiSource {
+	readonly name: string
+	readonly input: unknown
+	/** The answer the caller got, already bounded. */
+	readonly text: string
 }
 
 /**
@@ -241,7 +249,12 @@ export const buildMapleToolkit = (
 						const { text, ui } = splitToolResult(definition.name, result)
 						const bounded = truncateToolOutput(text).text
 						if (result.isError) return fail(bounded)
-						if (ui !== undefined && toolCallId !== undefined) options.onUi?.(toolCallId, ui)
+						if (ui !== undefined && toolCallId !== undefined)
+							options.onUi?.(toolCallId, ui, {
+								name: definition.name,
+								input: params,
+								text: bounded,
+							})
 						return Effect.succeed(bounded)
 					}),
 					Effect.tap((answer) => Effect.sync(() => options.onAnswer?.(definition.name, answer))),

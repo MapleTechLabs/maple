@@ -36,15 +36,30 @@ const IOS_OPERATIONS = [
 	"listEnvironments",
 	"getService",
 	"getServiceOverview",
+	"queryServiceHealth",
 	"queryTraceTimeseries",
 	"queryTraceBreakdown",
 	"listErrorIssues",
 	"listErrorIssueServiceCounts",
 	"getErrorIssue",
+	"transitionErrorIssue",
+	"claimErrorIssue",
+	"releaseErrorIssue",
+	"setErrorIssueSeverity",
+	"searchTraces",
+	"getTrace",
+	"getSpan",
+	"searchLogs",
+	"queryLogTimeseries",
+	"getLog",
+	"listDashboards",
+	"getDashboard",
+	"queryDashboardWidgetData",
 	"listAlertIncidents",
 	"getAlertIncident",
 	"listAlertRules",
 	"getAlertRule",
+	"previewAlertRule",
 	"listAlertRuleChecks",
 	"listAlertDeliveries",
 	"listAnomalyIncidents",
@@ -57,8 +72,15 @@ const IOS_OPERATIONS = [
 	"endLiveActivity",
 	"mintWidgetCredential",
 	"revokeWidgetCredential",
+	"registerDeviceCredential",
+	"revokeDeviceCredential",
+	"getDeviceAttestationChallenge",
+	"issueDeviceToken",
 	"getWidgetSummary",
 ] as const
+
+/** The DPoP token endpoint: its credential is the `DPoP` proof header, not a bearer. */
+const UNAUTHENTICATED_OPERATIONS: ReadonlySet<string> = new Set(["issueDeviceToken"])
 
 /**
  * Unions that are *real* — discriminated request shapes, not Effect's
@@ -66,7 +88,32 @@ const IOS_OPERATIONS = [
  * one case per branch, which is the right thing. Anything else carrying an
  * `anyOf` is a normalization regression.
  */
-const GENUINE_UNIONS = ["AttributeFilter"] as const
+const GENUINE_UNIONS = [
+	"/components/schemas/AttributeFilter",
+	// Dashboards: relative or absolute range, the data-source arms, variable kinds.
+	"/components/schemas/DashboardTimeRange",
+	"/components/schemas/DashboardWidgetDataSource",
+	"/components/schemas/Dashboard/properties/variables/items",
+	"/components/schemas/Dashboard/properties/variables/items/anyOf/0/properties/source",
+	// `fill_nulls` is a number or `false`; funnel steps and path anchors are event-or-page.
+	"/components/schemas/Dashboard/properties/widgets/items/properties/display/properties/chart_presentation/properties/fill_nulls",
+	"/components/schemas/Dashboard/properties/widgets/items/properties/display/properties/funnel/properties/steps/items",
+	"/components/schemas/Dashboard/properties/widgets/items/properties/display/properties/paths/properties/anchor",
+] as const
+
+/** JSON-pointer locations of every `anyOf` in the document. */
+const unionLocations = (): ReadonlyArray<string> => {
+	const found: Array<string> = []
+	const walk = (node: unknown, path: string): void => {
+		if (Array.isArray(node)) return node.forEach((entry, index) => walk(entry, `${path}/${index}`))
+		if (node === null || typeof node !== "object") return
+		const object = node as JsonObject
+		if (object.anyOf !== undefined) found.push(path)
+		for (const [key, value] of Object.entries(object)) walk(value, `${path}/${key}`)
+	}
+	walk(spec, "")
+	return found
+}
 
 const operations = (): ReadonlyArray<JsonObject> =>
 	Object.values(spec.paths as JsonObject).flatMap((item) =>
@@ -126,14 +173,8 @@ describe("iOS OpenAPI spec", () => {
 	 * `notes` as `.value1: String?`, `error_rate` as a wrapper around a Double.
 	 */
 	it("collapses every synthetic union", () => {
-		const withoutGenuine = JSON.stringify(
-			Object.fromEntries(
-				Object.entries(schemas).filter(([name]) => !GENUINE_UNIONS.includes(name as never)),
-			),
-		)
-		expect(withoutGenuine).not.toContain('"anyOf"')
-		expect(withoutGenuine).not.toContain('"allOf"')
-		expect(JSON.stringify(spec.paths)).not.toContain('"anyOf"')
+		expect([...unionLocations()].sort()).toEqual([...GENUINE_UNIONS].sort())
+		expect(specText).not.toContain('"allOf"')
 		expect(specText).not.toContain('"type":"null"')
 		expect(Object.keys(schemas).filter((name) => name.startsWith("Union_"))).toEqual([])
 	})
@@ -208,7 +249,8 @@ describe("iOS OpenAPI spec", () => {
 		expect(spec.servers).toEqual([{ url: "https://api.maple.dev", description: "Production" }])
 		expect(Object.keys(spec.components.securitySchemes)).toEqual(["bearer"])
 		for (const operation of operations()) {
-			expect(operation.security, operation.operationId as string).toEqual([{ bearer: [] }])
+			const id = operation.operationId as string
+			expect(operation.security, id).toEqual(UNAUTHENTICATED_OPERATIONS.has(id) ? [] : [{ bearer: [] }])
 		}
 	})
 })

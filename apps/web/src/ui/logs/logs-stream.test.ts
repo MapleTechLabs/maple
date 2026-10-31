@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest"
 import { logTimeFormat, toLogRowView } from "./log-row-view"
 import { init, update } from "./logs-stream"
 import { Message } from "./logs-stream-message"
+import { pinnedColumnParts } from "./logs-stream-view"
 
 const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 30).map((log) => toLogRowView(log, [], logTimeFormat("UTC")))
 
@@ -35,5 +36,28 @@ describe("logs stream: chip delays", () => {
 		]
 		const moved = steps.reduce((model, message) => update(model, message).model, init("stream", ROWS))
 		expect(moved.visibleChip).toEqual(Option.some(second))
+	})
+})
+
+describe("logs stream: pinned column labels", () => {
+	const label = (key: string) => pinnedColumnParts(key).label
+	const whole = (key: string) => {
+		const parts = pinnedColumnParts(key)
+		return `${parts.prefix}${parts.label}${parts.suffix}`
+	}
+
+	test("names the attribute by its last specific segment", () => {
+		expect(label("deployment.environment.name")).toBe("environment")
+		expect(label("service.name")).toBe("service")
+		expect(label("k8s.pod.id")).toBe("pod")
+		expect(label("cloud.region")).toBe("region")
+		expect(label("name")).toBe("name")
+		expect(label("http.response.status_code")).toBe("status_code")
+	})
+
+	test("the parts still spell the full key", () => {
+		for (const key of ["deployment.environment.name", "cloud.region", "name", "k8s.pod.id"]) {
+			expect(whole(key)).toBe(key)
+		}
 	})
 })

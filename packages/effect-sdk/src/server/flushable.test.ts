@@ -31,6 +31,12 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 
+// The keyless tests resolve the key and endpoint from env. Effect snapshots
+// `process.env` on first read, so ambient values are cleared before any test runs.
+for (const name of ["MAPLE_INGEST_KEY", "MAPLE_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"]) {
+	vi.stubEnv(name, undefined)
+}
+
 // Deterministic config that doesn't depend on ambient env, with the auto-flush
 // timer off so tests flush explicitly.
 const baseConfig = {
@@ -157,8 +163,8 @@ describe("MapleFlush.make (server)", () => {
 			const span = body.resourceSpans[0].scopeSpans[0].spans.find((s) => s.name === "slow-op")
 			expect(span, "slow-op span should be present in the export").toBeDefined()
 			assert.strictEqual(span!.status.code, 1)
-			assert.strictEqual(span!.status.message, "Interrupted")
-			const interrupted = span!.attributes.find((a) => a.key === "status.interrupted")
+			assert.strictEqual(span!.status.message, undefined)
+			const interrupted = span!.attributes.find((a) => a.key === "maple.interrupted")
 			assert.strictEqual(interrupted?.value.boolValue, true)
 		}),
 	)
@@ -203,6 +209,27 @@ describe("MapleFlush.make (server)", () => {
 		await telemetry.flush()
 		expect(calls.length).toBe(0)
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("exports without Authorization to a custom endpoint when no ingest key is configured", async () => {
+		const consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+		const { calls, restore: r } = setupFetch()
+		restore = () => {
+			r()
+			consoleInfoSpy.mockRestore()
+		}
+		const { ingestKey: _ingestKey, ...keyless } = baseConfig
+		const telemetry = make({ ...keyless, endpoint: "http://localhost:4318" })
+
+		await Effect.runPromise(
+			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
+		)
+		await telemetry.flush()
+
+		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
+		expect(tracesCall?.body).toBeDefined()
+		expect(tracesCall?.headers).not.toHaveProperty("authorization")
+		expect(consoleInfoSpy).not.toHaveBeenCalled()
 	})
 
 	it("survives a failing collector — disables the signal for a cooldown", async () => {

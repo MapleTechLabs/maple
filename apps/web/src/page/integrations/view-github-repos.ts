@@ -21,7 +21,7 @@ import { githubStatusOf, trackedBranchOf } from "./update-github"
 
 type H = HtmlBuilder<Message>
 
-const SYNC_PRESENTATION = {
+export const SYNC_PRESENTATION = {
 	ready: { label: "Synced", tone: "text-severity-info", icon: "CircleCheckIcon", spin: false },
 	backfilling: { label: "Syncing", tone: "text-severity-info", icon: "LoaderIcon", spin: true },
 	pending: { label: "Queued", tone: "text-muted-foreground", icon: "ClockIcon", spin: false },
@@ -40,7 +40,7 @@ const repoLink = (h: H, repo: GithubRepoSummary): Html =>
 					h.Target("_blank"),
 					h.Rel("noreferrer"),
 					h.Class(
-						"group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline",
+						"group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline active:underline",
 					),
 				],
 				[
@@ -104,7 +104,7 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 								h.Type("button"),
 								h.OnClick(Message.ClickedBranch({ repoId: repo.id, branch: branch.name })),
 								h.Class(
-									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted/50",
+									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 								),
 							],
 							[
@@ -134,7 +134,7 @@ const repoRow = (h: H, model: Model, repo: GithubRepoSummary, timeZone: string):
 	return item(h, { variant: "flush", size: "lg", tag: "li" }, [
 		itemMedia(h, {}, [
 			icon(h, presentation.icon, {
-				size: 17,
+				size: 16,
 				className: `${presentation.tone} ${presentation.spin === true ? "animate-spin" : ""}`,
 			}),
 		]),
@@ -199,7 +199,7 @@ const syncCount = (h: H, glyph: Html, count: number, label: string): Html =>
 
 const removedRow = (h: H, model: Model, repo: GithubRepoSummary): Html =>
 	item(h, { variant: "flush", size: "lg", tag: "li" }, [
-		itemMedia(h, {}, [icon(h, "CircleWarningIcon", { size: 17, className: "text-severity-warn" })]),
+		itemMedia(h, {}, [icon(h, "CircleWarningIcon", { size: 16, className: "text-severity-warn" })]),
 		itemContent(
 			h,
 			[
@@ -245,7 +245,7 @@ export const repositoriesPanels = (
 				? [
 						syncCount(
 							h,
-							icon(h, "CircleCheckIcon", { size: 13, className: "text-severity-info" }),
+							icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
 							synced,
 							"synced",
 						),
@@ -256,7 +256,7 @@ export const repositoriesPanels = (
 				? [
 						syncCount(
 							h,
-							icon(h, "CircleWarningIcon", { size: 13, className: "text-severity-error" }),
+							icon(h, "CircleWarningIcon", { size: 14, className: "text-severity-error" }),
 							failed,
 							"failed",
 						),
@@ -300,7 +300,7 @@ export const repositoriesPanels = (
 									[h.Class("flex items-center gap-1.5 text-sm font-medium")],
 									[
 										icon(h, "CircleWarningIcon", {
-											size: 15,
+											size: 16,
 											className: "text-severity-warn",
 										}),
 										"Needs attention",
@@ -323,7 +323,7 @@ export const repositoriesPanels = (
 										h.Target("_blank"),
 										h.Rel("noreferrer"),
 										h.Class(
-											"font-medium underline underline-offset-2 hover:text-foreground",
+											"font-medium underline underline-offset-2 hover:text-foreground active:text-foreground",
 										),
 									],
 									["Maple GitHub App"],

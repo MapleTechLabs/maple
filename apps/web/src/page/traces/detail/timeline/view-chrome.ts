@@ -20,12 +20,12 @@ type H = HtmlBuilder<Message>
 
 export const searchBar = (h: H, model: Model, matchCount: number, totalCount: number): Html =>
 	h.div(
-		[h.Class("flex items-center gap-2 border-b border-border bg-muted/20 px-3 py-1.5")],
+		[h.Class("flex items-center gap-2 border-b border-border bg-surface-faint px-3 py-1.5")],
 		[
-			icon(h, "MagnifierIcon", { size: 13, className: "text-muted-foreground shrink-0" }),
+			icon(h, "MagnifierIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 			h.input([
 				h.Class(
-					"min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/50 pointer-coarse:text-base",
+					"min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-foreground-faint pointer-coarse:text-base",
 				),
 				h.Placeholder("Search spans…"),
 				h.Type("text"),
@@ -51,7 +51,7 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 						h.button(
 							[
 								h.AriaLabel("Clear search"),
-								h.Class("-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground"),
+								h.Class("-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground active:text-foreground"),
 								h.Type("button"),
 								h.OnClick(Message.ClickedClearSearch()),
 							],
@@ -168,7 +168,7 @@ export type ToolbarIds = Readonly<{
 
 export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: ToolbarIds): Html =>
 	h.div(
-		[h.Class("flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5 shrink-0")],
+		[h.Class("flex items-center gap-2 border-b border-border bg-surface-sunken px-3 py-1.5 shrink-0")],
 		[
 			depthControls(h, {
 				onCollapseOneLevel: Message.ClickedCollapseOneLevel(),
@@ -222,7 +222,7 @@ export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: Toolb
 										h.Id(ids.skew),
 									],
 									[
-										icon(h, "AlertWarningIcon", { size: 11 }),
+										icon(h, "AlertWarningIcon", { size: 12 }),
 										h.span([h.Class("hidden @min-[400px]/timeline:inline")], ["skew"]),
 									],
 								),
@@ -255,7 +255,7 @@ export const minimap = (h: H, model: Model): Html => {
 	return h.div(
 		[
 			h.Class(
-				"relative overflow-hidden border-b border-border bg-muted/10 cursor-crosshair select-none touch-none",
+				"relative overflow-hidden border-b border-border bg-surface-faint cursor-crosshair select-none touch-none",
 			),
 			h.Style({ height: `${MINIMAP_HEIGHT}px` }),
 			h.Title(
@@ -302,7 +302,7 @@ export const minimap = (h: H, model: Model): Html => {
 			h.div(
 				[
 					h.Class(
-						"pointer-events-none absolute inset-y-0 border-x border-primary/70 bg-primary/15",
+						"pointer-events-none absolute inset-y-0 border-x border-primary/70 bg-primary-a2",
 					),
 					h.Style({ display: "none" }),
 				],

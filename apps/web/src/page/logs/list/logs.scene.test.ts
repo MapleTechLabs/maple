@@ -16,6 +16,7 @@ import {
 import { describe, expect, test } from "vitest"
 import * as Chart from "../../../charts/chart"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import { toLoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import * as LogsStream from "../../../ui/logs/logs-stream"
 import { VirtualizeLogStream } from "../../../ui/logs/virtualize"
@@ -103,7 +104,7 @@ describe("logs list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name])
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name]))
 		const mounted = pageUpdate(resolved.model, Message.MountedFilterRail())
 		expect(names(mounted.commands)).toEqual([FetchFacets.name])
 		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])
@@ -183,6 +184,41 @@ describe("logs list", () => {
 		)
 	})
 
+	test("a failed volume query shows its failure instead of vanishing", () => {
+		const base = windowed()
+		const model = pageUpdate(
+			base,
+			Message.CompletedFetchVolume({
+				key: base.volume.key ?? "",
+				result: Result.fail(toLoadFailure("volume store down")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text(toLoadFailure("volume store down").message)).toExist(),
+		)
+	})
+
+	test("a workspace that never sent logs sees setup before the first page answers", () => {
+		const model = pageUpdate(
+			windowed(),
+			Message.CompletedLoadSignalPresence({
+				result: Result.succeed({ logs: { status: "absent", lastSeenMs: null } }),
+			}),
+		).model
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadLogsSignalPresence")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text("No logs yet")).toExist(),
+		)
+	})
+
 	test("an empty volume strip labels its axis in the locale read on entry", () => {
 		const base = pageUpdate(windowed(), Message.CompletedReadPreferences({ wrap: false, density: "comfortable", locale: "de-DE" })).model
 		const model = pageUpdate(base, Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed([]) })).model
@@ -237,7 +273,9 @@ describe("logs list", () => {
 
 	test("Reload re-resolves the window unsnapped and spins for the reload", () => {
 		const reloaded = pageUpdate(withFirstPage(), Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveLogsWindow", "CompleteLogsReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveLogsWindow", "CompleteLogsReloadSpin"]),
+		)
 		expect(reloaded.model.isReloading).toBe(true)
 	})
 

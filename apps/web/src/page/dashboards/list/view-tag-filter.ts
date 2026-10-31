@@ -25,7 +25,7 @@ export const tagFilterView = Submodel.defineView<Combobox.Model, Combobox.Messag
 				h,
 				{
 					variant: "outline",
-					size: "default",
+					size: "sm",
 					className: "shrink-0 gap-1.5",
 					slot: "combobox-trigger",
 					attributes: [

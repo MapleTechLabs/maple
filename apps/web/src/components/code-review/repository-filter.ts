@@ -28,6 +28,7 @@ export function visibleRepositories<R extends FilterableRepository>(
 		)
 		.toSorted(
 			(a, b) =>
-				Number(pinned.has(b.id)) - Number(pinned.has(a.id)) || a.fullName.localeCompare(b.fullName),
+				Number(pinned.has(b.id)) - Number(pinned.has(a.id)) ||
+				a.fullName.localeCompare(b.fullName, undefined, { numeric: true, sensitivity: "base" }),
 		)
 }

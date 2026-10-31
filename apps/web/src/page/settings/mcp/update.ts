@@ -140,7 +140,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isRevoking: false },
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to revoke the client",
+						title: "Couldn't revoke the client",
 						description: error.message,
 					}),
 				}),

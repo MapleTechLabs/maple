@@ -53,12 +53,14 @@ struct AnomalyDetailView: View {
 				AnomalyDetailContent(detail: detail)
 			}
 		}
-		.navigationTitle("Anomaly")
+		.navigationTitle("")
 		.navigationBarTitleDisplayMode(.inline)
 		.mapleScreen(Screen.anomalyDetail)
 		.task(id: session.dataGeneration) {
-			let model = model?.generation == session.dataGeneration
-				? model! : AnomalyDetailModel(anomalyID: anomalyID, api: session.api, session: session)
+			let model =
+				if let model, model.generation == session.dataGeneration { model } else {
+					AnomalyDetailModel(anomalyID: anomalyID, api: session.api, session: session)
+				}
 			self.model = model
 			await model.loader.loadIfNeeded()
 		}
@@ -73,189 +75,208 @@ private struct AnomalyDetailContent: View {
 	private var unit: SignalUnit { anomaly.signalType.unit }
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 28) {
+		VStack(alignment: .leading, spacing: 24) {
 			header
-			chart
-			facts
+			TitledSection(
+				SectionHeader(
+					title: "What the detector saw",
+					note: detail.timeseries.map { "\(Int($0.bucketSeconds / 60))m buckets" }
+				)
+			) {
+				AnomalySignalChart(series: detail.timeseries, unit: unit, tint: isOpen ? anomaly.severity.tint : Token.mutedForeground)
+			}
+			.padding(.horizontal, 16)
 			if let issue = detail.linkedIssue {
-				VStack(alignment: .leading, spacing: 10) {
-					SectionLabel("Linked issue").padding(.horizontal, 16)
+				TitledSection(SectionHeader(title: "Linked issue")) {
 					NavigationLink(value: Route.issue(id: issue.id)) {
-						HStack(alignment: .top, spacing: 10) {
-							SeverityBadge(severity: issue.severity).frame(width: 56, alignment: .leading)
-							VStack(alignment: .leading, spacing: 4) {
-								Text(issue.exceptionType.isEmpty ? issue.errorLabel : issue.exceptionType)
-									.font(Typo.bodyMedium)
-									.foregroundStyle(Token.foreground)
-									.lineLimit(1)
-								Text(issue.exceptionMessage)
-									.font(Typo.small)
+						VStack(alignment: .leading, spacing: 4) {
+							Text(issue.displayTitle)
+								.font(Typo.bodyMedium)
+								.foregroundStyle(Token.foreground)
+								.lineLimit(1)
+							if let message = issue.displaySubtitle {
+								Text(message)
+									.font(Typo.tiny)
 									.foregroundStyle(Token.mutedForeground)
 									.lineLimit(2)
 							}
-							Spacer(minLength: 0)
+							HStack(spacing: 6) {
+								Text("\(Format.count(issue.occurrenceCount)) events").foregroundStyle(Token.severityError)
+								Text("· first seen \(Format.ago(issue.firstSeenAt))").foregroundStyle(Token.mutedForeground)
+							}
+							.font(Typo.tiny)
+							.tabularNumbers()
+							.padding(.top, 2)
 						}
-						.padding(.horizontal, 16)
-						.padding(.vertical, 12)
+						.padding(12)
+						.frame(maxWidth: .infinity, alignment: .leading)
 						.contentShape(.rect)
 					}
 					.buttonStyle(RowButtonStyle())
-					Hairline()
+					.hairlineCard()
 				}
+				.padding(.horizontal, 16)
 			}
+			facts
 		}
-		.padding(.vertical, 16)
+		.padding(.top, 4)
+		.padding(.bottom, 24)
 	}
 
 	private var header: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			HStack(spacing: 6) {
-				MapleBadge(text: anomaly.severity.label, tint: anomaly.severity.tint)
-				MapleBadge(text: isOpen ? "Open" : "Resolved", tint: isOpen ? Token.destructive : Token.success)
-				Spacer()
-				Text(
-					isOpen
-						? "open \(Format.duration(from: anomaly.firstTriggeredAt))"
-						: "lasted \(Format.duration(from: anomaly.firstTriggeredAt, to: anomaly.resolvedAt))"
-				)
-				.font(Typo.tiny)
-				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground)
-			}
+		VStack(alignment: .leading, spacing: 8) {
 			Text("\(anomaly.signalType.label) on \(anomaly.serviceName)")
-				.font(Typo.monoTitle)
+				.font(Typo.pageTitle)
+				.tracking(-0.6)
 				.foregroundStyle(Token.foreground)
 				.fixedSize(horizontal: false, vertical: true)
-			HStack(alignment: .firstTextBaseline, spacing: 8) {
-				Text(unit.format(anomaly.lastObservedValue))
+				.accessibilityAddTraits(.isHeader)
+			HStack(spacing: 8) {
+				Text("\(unit.format(anomaly.lastObservedValue)) vs \(unit.format(anomaly.baselineMedian))")
 					.font(Typo.smallSemibold)
-					.tabularNumbers()
 					.foregroundStyle(isOpen ? anomaly.severity.tint : Token.mutedForeground)
-				Text("vs baseline \(unit.format(anomaly.baselineMedian))")
-					.font(Typo.small)
-					.foregroundStyle(Token.mutedForeground)
+				Text(
+					isOpen
+						? "· open \(Format.duration(from: anomaly.firstTriggeredAt))"
+						: "· lasted \(Format.duration(from: anomaly.firstTriggeredAt, to: anomaly.resolvedAt))"
+				)
+				.font(Typo.small)
+				.foregroundStyle(Token.mutedForeground)
+				.lineLimit(1)
+				MapleBadge(text: anomaly.severity.label, tint: isOpen ? anomaly.severity.tint : Token.mutedForeground, outlined: true)
+				if !isOpen {
+					MapleBadge(text: "Resolved", tint: Token.success, outlined: true)
+				}
 			}
+			.tabularNumbers()
 			NavigationLink(value: Route.service(name: anomaly.serviceName, window: .lastHour)) {
 				HStack(spacing: 6) {
-					ServiceDot(serviceName: anomaly.serviceName, size: 7)
+					ServiceDot(serviceName: anomaly.serviceName)
 					Text(anomaly.serviceName)
-						.font(Typo.smallMedium)
-						.foregroundStyle(Token.foreground)
-					Image(systemName: "chevron.right")
-						.font(.system(size: 9, weight: .semibold))
-						.foregroundStyle(Token.mutedForeground.opacity(0.6))
+					if !anomaly.deploymentEnv.isEmpty {
+						Text("· \(anomaly.deploymentEnv)")
+					}
 				}
+				.font(Typo.small)
+				.foregroundStyle(Token.mutedForeground)
+				.lineLimit(1)
 			}
 			.buttonStyle(.plain)
 		}
 		.padding(.horizontal, 16)
 	}
 
+	private var facts: some View {
+		TitledSection(SectionHeader(title: "Detector")) {
+			VStack(spacing: 0) {
+				row("Opened at", unit.format(anomaly.openedValue))
+				row("Threshold", unit.format(anomaly.thresholdValue))
+				row("Baseline", "\(unit.format(anomaly.baselineMedian)) ± \(unit.format(anomaly.baselineSigma))")
+				if anomaly.reopenCount > 0 {
+					row("Reopened", "\(Int(anomaly.reopenCount))×")
+				}
+				if let reason = anomaly.resolveReason {
+					row("Resolved by", reason.rawValue.replacingOccurrences(of: "_", with: " "))
+				}
+			}
+			.padding(.horizontal, 12)
+			.hairlineCard()
+		}
+		.padding(.horizontal, 16)
+	}
+
+	@ViewBuilder
+	private func row(_ label: String, _ value: String) -> some View {
+		if label != "Opened at" { Hairline() }
+		DetailRow(label, value).tabularNumbers().frame(minHeight: 40)
+	}
+}
+
+/// The detector's series in a card: the observed line, its baseline (dotted)
+/// and threshold (dashed), with a legend.
+private struct AnomalySignalChart: View {
+	let series: AnomalyIncidentTimeseries?
+	let unit: SignalUnit
+	let tint: Color
+
 	private struct Bucket: Identifiable {
-		let id: String
+		var id: Date { date }
 		let date: Date
 		let value: Double
 	}
 
-	@ViewBuilder
-	private var chart: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			SectionLabel("Signal").padding(.horizontal, 16)
-			if let series = detail.timeseries {
-				let buckets = series.buckets.compactMap { bucket -> Bucket? in
-					guard let date = ResolvedTimeWindow.parse(bucket.bucket) else { return nil }
-					return Bucket(id: bucket.bucket, date: date, value: bucket.value)
-				}
-				if buckets.count < 2 {
-					Text("Not enough data to chart.")
-						.font(Typo.small)
-						.foregroundStyle(Token.mutedForeground)
-						.padding(.horizontal, 16)
-				} else {
-					Chart {
-						ForEach(buckets) { bucket in
-							AreaMark(x: .value("Time", bucket.date), y: .value("Value", bucket.value))
-								.foregroundStyle(
-									.linearGradient(
-										colors: [anomaly.severity.tint.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom
-									)
-								)
-								.interpolationMethod(.monotone)
-							LineMark(x: .value("Time", bucket.date), y: .value("Value", bucket.value))
-								.foregroundStyle(anomaly.severity.tint)
-								.lineStyle(StrokeStyle(lineWidth: 1.25))
-								.interpolationMethod(.monotone)
-						}
-						RuleMark(y: .value("Baseline", series.baselineMedian))
-							.foregroundStyle(Token.mutedForeground.opacity(0.6))
-							.lineStyle(StrokeStyle(lineWidth: 1, dash: [1, 3]))
-						RuleMark(y: .value("Threshold", series.thresholdValue))
-							.foregroundStyle(Token.mutedForeground.opacity(0.9))
-							.lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-							.annotation(position: .top, alignment: .trailing) {
-								Text(unit.format(series.thresholdValue))
-									.font(Typo.micro)
-									.tabularNumbers()
-									.foregroundStyle(Token.mutedForeground)
-							}
+	var body: some View {
+		let buckets = (series?.buckets ?? []).compactMap { bucket -> Bucket? in
+			ResolvedTimeWindow.parse(bucket.bucket).map { Bucket(date: $0, value: bucket.value) }
+		}
+		Group {
+			if let series, buckets.count >= 2 {
+				VStack(alignment: .leading, spacing: 12) {
+					chart(series, buckets)
+						.frame(height: 120)
+					HStack {
+						Text(Format.clock(buckets[0].date))
+						Spacer()
+						Text(Format.clock(buckets[buckets.count / 2].date))
+						Spacer()
+						Text(Format.clock(buckets[buckets.count - 1].date))
 					}
-					.chartXAxis {
-						AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-							AxisGridLine().foregroundStyle(Token.border)
-							AxisValueLabel(format: .dateTime.hour().minute())
-								.font(Typo.micro)
-								.foregroundStyle(Token.mutedForeground)
-						}
+					.font(Typo.micro)
+					.tabularNumbers()
+					.foregroundStyle(Token.mutedForeground)
+					HStack(spacing: 16) {
+						legend("Observed", dash: [], tint: tint)
+						legend("Baseline", dash: [1, 2], tint: Token.mutedForeground)
+						legend("Threshold", dash: [3, 2], tint: Token.mutedForeground)
 					}
-					.chartYAxis {
-						AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
-							AxisGridLine().foregroundStyle(Token.border)
-							AxisValueLabel {
-								if let number = value.as(Double.self) {
-									Text(unit.format(number))
-										.font(Typo.micro)
-										.tabularNumbers()
-										.foregroundStyle(Token.mutedForeground)
-								}
-							}
-						}
-					}
-					.frame(height: 150)
-					.padding(.horizontal, 16)
+					.font(Typo.tiny)
+					.foregroundStyle(Token.mutedForeground)
 				}
 			} else {
-				Text("Timeseries unavailable.")
+				Text(series == nil ? "Timeseries unavailable." : "Not enough data to chart.")
 					.font(Typo.small)
 					.foregroundStyle(Token.mutedForeground)
-					.padding(.horizontal, 16)
+					.frame(maxWidth: .infinity, alignment: .leading)
 			}
 		}
+		.hairlineCard(padding: 12)
 	}
 
-	private var facts: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			SectionLabel("Detector").padding(.horizontal, 16)
-			VStack(spacing: 0) {
-				DetailRow("Opened at", unit.format(anomaly.openedValue))
-				Hairline()
-				DetailRow("Threshold", unit.format(anomaly.thresholdValue))
-				Hairline()
-				DetailRow("Baseline σ", unit.format(anomaly.baselineSigma))
-				Hairline()
-				if !anomaly.deploymentEnv.isEmpty {
-					DetailRow("Environment", anomaly.deploymentEnv)
-					Hairline()
-				}
-				if anomaly.reopenCount > 0 {
-					DetailRow("Reopened", "\(Int(anomaly.reopenCount))×")
-					Hairline()
-				}
-				if let reason = anomaly.resolveReason {
-					DetailRow("Resolved by", reason.rawValue.replacingOccurrences(of: "_", with: " "))
-					Hairline()
-				}
+	private func chart(_ series: AnomalyIncidentTimeseries, _ buckets: [Bucket]) -> some View {
+		Chart {
+			ForEach(buckets) { bucket in
+				LineMark(x: .value("Time", bucket.date), y: .value("Value", bucket.value))
+					.foregroundStyle(tint)
+					.lineStyle(StrokeStyle(lineWidth: 1.5))
+					.interpolationMethod(.monotone)
 			}
-			.padding(.horizontal, 16)
+			RuleMark(y: .value("Baseline", series.baselineMedian))
+				.foregroundStyle(Token.mutedForeground.opacity(0.7))
+				.lineStyle(StrokeStyle(lineWidth: 1, dash: [1, 2]))
+			RuleMark(y: .value("Threshold", series.thresholdValue))
+				.foregroundStyle(Token.mutedForeground)
+				.lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+				.annotation(position: .top, alignment: .trailing) {
+					Text(unit.format(series.thresholdValue))
+						.font(Typo.micro)
+						.tabularNumbers()
+						.foregroundStyle(Token.mutedForeground)
+				}
+		}
+		.chartXAxis(.hidden)
+		.chartYAxis(.hidden)
+		.accessibilityLabel("Observed against baseline \(unit.format(series.baselineMedian)) and threshold \(unit.format(series.thresholdValue))")
+	}
+
+	private func legend(_ title: String, dash: [CGFloat], tint: Color) -> some View {
+		HStack(spacing: 6) {
+			Path { path in
+				path.move(to: CGPoint(x: 0, y: 0.5))
+				path.addLine(to: CGPoint(x: 12, y: 0.5))
+			}
+			.stroke(tint, style: StrokeStyle(lineWidth: 1.5, dash: dash))
+			.frame(width: 12, height: 1)
+			Text(title)
 		}
 	}
 }

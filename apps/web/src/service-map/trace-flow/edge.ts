@@ -23,7 +23,7 @@ const labelContent = <M>(
 ): ReadonlyArray<Html> | null => {
 	const { isError, isMissing, share, count } = data
 	if (!(hovered || isError || count > 1 || share >= LABEL_SHARE_THRESHOLD)) return null
-	if (isMissing) return hovered ? [h.span([h.Class("italic text-muted-foreground/60")], ["no data"])] : null
+	if (isMissing) return hovered ? [h.span([h.Class("italic text-foreground-subtle")], ["no data"])] : null
 	if (hovered) {
 		const sharePct = formatShare(share)
 		// Text runs stay split, so the DOM holds the same text nodes as the packages/ui flow edge.
@@ -114,7 +114,7 @@ export const traceFlowEdge = <M>(
 									h.span(
 										[
 											h.Class(
-												"whitespace-nowrap rounded border border-border/50 bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
+												"whitespace-nowrap rounded-sm border border-border-subtle bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
 											),
 										],
 										label,

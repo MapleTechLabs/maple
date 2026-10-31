@@ -1,11 +1,9 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import { FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "../../components/analytics/filters"
+import { activeFilterChips, FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "../../components/analytics/filters"
 import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { separator } from "../../ui/display"
-import { eyebrow } from "../../ui/eyebrow"
 import { type FilterOption, filterSection, singleCheckboxFilter } from "../../ui/filters/filter-section"
 import * as FilterSections from "../../ui/filters/filter-sections"
 import {
@@ -15,12 +13,15 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
+	filterSidebarDivider,
+	filterSidebarGroupLabel,
 } from "../../ui/filters/filter-sidebar"
 import { icon, type IconName } from "../../ui/icon"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { type FilterKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"
-import { filtersOf } from "./requests"
+import { filtersOf, tabOf } from "./requests"
+import { presenceOf } from "../kit/signal-presence"
 import { favicon, isHostLike } from "./view-icons"
 
 // `AnalyticsFilterSidebar`: the page's filter rail.
@@ -57,7 +58,7 @@ const section = (
 }
 
 const checkboxGroup = (h: H, title: string, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("py-1")], [eyebrow(h, { as: "h4", variant: "label", className: "py-1" }, [title]), ...children])
+	h.div([h.Class("pb-3")], [filterSidebarGroupLabel(h, title), ...children])
 
 const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 	const filters = filtersOf(model.search)
@@ -84,7 +85,7 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 						onToggle: Message.ToggledTraffic({ which: "bots", isOn: !trafficIncludes(filters.traffic, "bots") }),
 					}),
 				]),
-				separator(h, "horizontal", "my-1"),
+				filterSidebarDivider(h),
 				section(h, model, "host", breakdowns.hosts, { renderOptionIcon: hostIcon }),
 				section(h, model, "pagePath", breakdowns.entryPaths),
 				events.length > 0 || filters.eventName !== undefined
@@ -95,7 +96,7 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 							events.map((event) => ({ name: event.name, count: event.sessions })),
 						)
 					: null,
-				separator(h, "horizontal", "my-1"),
+				filterSidebarDivider(h),
 				section(h, model, "referrerHost", breakdowns.referrerHosts, {
 					getOptionLabel: referrerLabel,
 					renderOptionIcon: (name) =>
@@ -109,7 +110,7 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 				}),
 				section(h, model, "utmMedium", breakdowns.utmMediums, { isSearchable: false, getOptionLabel: utmLabel }),
 				section(h, model, "utmCampaign", breakdowns.utmCampaigns, { getOptionLabel: utmLabel }),
-				separator(h, "horizontal", "my-1"),
+				filterSidebarDivider(h),
 				checkboxGroup(h, FILTER_SECTION_LABEL.visitorType, [
 					singleCheckboxFilter(h, {
 						title: "New",
@@ -127,7 +128,7 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 				]),
 				section(h, model, "country", breakdowns.countries, { getOptionLabel: countryLabel }),
 				section(h, model, "language", breakdowns.languages, { getOptionLabel: languageLabel }),
-				separator(h, "horizontal", "my-1"),
+				filterSidebarDivider(h),
 				section(h, model, "deviceType", breakdowns.deviceTypes, { isSearchable: false, getOptionIcon: deviceIconFor }),
 				section(h, model, "browserName", breakdowns.browsers, { isSearchable: false, getOptionIcon: browserIconFor }),
 				section(h, model, "osName", breakdowns.operatingSystems, { isSearchable: false }),
@@ -136,9 +137,19 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 	])
 }
 
+/** The overview's breakdown cards render (not the AI tab, not the no-sessions setup state). */
+export const showsBreakdownCards = (model: Model): boolean =>
+	tabOf(model.search) === "overview" &&
+	!(
+		presenceOf(model.presence, "sessions").status === "absent" &&
+		activeFilterChips(filtersOf(model.search)).length === 0
+	)
+
+// The breakdown cards show this same read's failure in full; when they are not drawn, the rail explains it.
 export const filtersRail = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.breakdowns.data, {
 		onEmpty: () => filterSidebarLoading(h, 6),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(h, failure, undefined, showsBreakdownCards(model) ? failure : undefined),
 		onData: (breakdowns) => loadedRail(h, model, breakdowns),
 	})

@@ -91,11 +91,17 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 					dialogId: inputs.dialogId,
 					kind: "Trace",
 					title: [shortId(model.traceId, "trace")],
-					description: "Failed to load trace",
+					description: "Couldn't load trace",
 				}),
 				h.div(
 					[h.Class("flex-1 overflow-auto p-4")],
-					[errorState(h, { failure, title: "Failed to load trace details" })],
+					[
+						errorState(h, {
+							failure,
+							title: "Couldn't load trace details",
+							onRetry: Message.ClickedRetryHierarchy(),
+						}),
+					],
 				),
 			],
 			onData: (data) =>

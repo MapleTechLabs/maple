@@ -3,6 +3,7 @@ import { definePage } from "../../../contract"
 import { Message, Model } from "./model"
 import { contextChanged, init, keysOf, routeChanged, update } from "./update"
 import { view } from "./view"
+import { platformSource } from "../../../../shell/source-link"
 
 /** `/infra/gcp/$service/$name`: one workload, or a Cloud SQL instance; each is its own instance. */
 export const page = definePage(
@@ -16,6 +17,7 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
+		source: () => platformSource("gcp"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
 			// Back to the tab the workload is listed on.

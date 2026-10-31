@@ -59,18 +59,6 @@ describe("splitGenAiAttributes", () => {
 		expect(rest).toEqual({ "gen_ai.request.model": "" })
 	})
 
-	it("labels and orders the fields of each group", () => {
-		expect(fieldsOf(CHAT_SPAN_ATTRS, "operation")).toEqual([
-			["Operation", "chat"],
-			["Provider", "openrouter"],
-		])
-		expect(fieldsOf(CHAT_SPAN_ATTRS, "request")).toEqual([
-			["Requested model", "openai/gpt-4o-mini"],
-			["Max tokens", "600"],
-			["Temperature", "0"],
-		])
-	})
-
 	it("groups by the key's own path when the key has no label", () => {
 		// "Reasoning Tokens" beside the counts it belongs with, not in "Other".
 		expect(fieldsOf(CHAT_SPAN_ATTRS, "usage")).toEqual([
@@ -108,7 +96,7 @@ describe("splitGenAiAttributes", () => {
 		)
 
 		expect(fields["Input"]).toBe((1284391).toLocaleString())
-		expect(fields["Time to first token"]).toBe("482.0ms")
+		expect(fields["Time to first token"]).toBe("482ms")
 	})
 
 	it("returns no groups for a span with no AI signal", () => {

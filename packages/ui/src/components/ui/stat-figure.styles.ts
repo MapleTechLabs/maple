@@ -21,3 +21,10 @@ export const statFigureValueMonoStyles = "font-mono"
 export const statFigureValueDisplayStyles = "font-display"
 
 export const statFigureUnitStyles = "text-muted-foreground"
+
+// The KPI anatomy around a figure: label above, the value, then an optional caption.
+export const statFigureBlockStyles = "flex min-w-0 flex-col gap-2"
+
+export const statFigureLabelStyles = "truncate text-xs font-medium text-muted-foreground"
+
+export const statFigureCaptionStyles = "truncate text-xs text-muted-foreground"

@@ -164,12 +164,13 @@ export const MountEngine = Mount.defineStream("MountReplayEngine", {
 		events: Schema.Array(Schema.Unknown),
 		format: Schema.Literals(["rrweb", "video"]),
 		startAtMs: Schema.NullOr(Schema.Number),
+		shiftMs: Schema.Number,
 	},
 	messages: [Message.ReadiedEngine, Message.TickedEngine, Message.FinishedEngine],
-	execute: ({ element, seedVersion, events, format, startAtMs }) =>
+	execute: ({ element, seedVersion, events, format, startAtMs, shiftMs }) =>
 		runReplayEngine<EngineMessage>(
 			element,
-			{ events, format, startAtMs },
+			{ events, format, startAtMs, shiftMs },
 			{
 				ready: (totalMs) => Message.ReadiedEngine({ seedVersion, totalMs }),
 				ticked: (currentMs) => Message.TickedEngine({ seedVersion, currentMs }),

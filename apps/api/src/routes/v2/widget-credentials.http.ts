@@ -4,6 +4,7 @@ import { MapleApiV2, isoTimestamp } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
 
 /**
  * The widget credential's ceilings, all of them the server's.
@@ -13,12 +14,11 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
  * `kind`: a client that is compromised — or simply wrong — cannot widen any of
  * them.
  *
- * The TTL is long enough that a phone used weekly never sees a widget go quiet,
- * and short enough that a credential lifted off a lost device stops working
- * without anyone having to notice. The app re-mints a week ahead of it, on a
- * foreground it was making anyway.
+ * Two weeks: a credential lifted off a lost device dies on its own soon, and the
+ * app re-mints four days ahead (`WidgetCredential.renewalLead` on iOS), on a
+ * foreground it was making anyway. Older builds re-mint at seven days, still inside it.
  */
-const WIDGET_CREDENTIAL_TTL_SECONDS = 60 * 60 * 24 * 30
+const WIDGET_CREDENTIAL_TTL_SECONDS = 60 * 60 * 24 * 14
 /**
  * The fence. `requiredScopeForRoute` derives an API key's required scope from
  * the first path segment, so this reaches `/v2/widget_summary` and nothing
@@ -35,12 +35,16 @@ const WIDGET_CREDENTIAL_NAME = "Home Screen widgets"
 export const HttpV2WidgetCredentialsLive = HttpApiBuilder.group(MapleApiV2, "widgetCredentials", (handlers) =>
 	Effect.gen(function* () {
 		const apiKeys = yield* ApiKeysService
+		const auth = yield* AuthService
 
 		return handlers
 			.handle("mint", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					// The owner the dashboard's Mobile devices list shows, to pick a lost phone out.
+					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const credential = yield* apiKeys.replaceDeviceKey(tenant.orgId, tenant.userId, {
+						createdByEmail,
 						deviceId: params.installation_id,
 						name: WIDGET_CREDENTIAL_NAME,
 						scopes: WIDGET_CREDENTIAL_SCOPES,

@@ -8,7 +8,7 @@
 import { chatSessionClient, type ChatSessionRpc } from "@maple/domain/chat-session-stub"
 import { parseMapleDeploymentEffect, resolveWorkerName } from "@maple/infra/cloudflare"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Stage } from "alchemy/Stage"
 import { Config, Context, Effect, Layer, Option } from "effect"
 import { ChatSessions } from "./bindings"
@@ -61,7 +61,7 @@ export const bindChatSessions = Effect.flatMap(aiScriptName, (scriptName) =>
  * class is not a Context tag, so a bound client reaches an activation through this one).
  */
 export class BoundChatSessions extends Context.Service<BoundChatSessions, ChatSessionNamespace>()(
-	"@maple/api/platform/BoundChatSessions",
+	"@maple/backend/platform/BoundChatSessions",
 ) {
 	static readonly layer = Layer.effect(this, bindChatSessions)
 }

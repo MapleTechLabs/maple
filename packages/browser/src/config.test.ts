@@ -21,6 +21,20 @@ describe("resolveConfig", () => {
 		expect(warn).toHaveBeenCalledTimes(1)
 	})
 
+	it("warns once when serviceName is missing, since every span would go unattributed", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const named = resolveConfig({ ingestKey: "maple_pk_x", serviceName: "acme-web" })
+		expect(named.serviceName).toBe("acme-web")
+		expect(warn).not.toHaveBeenCalled()
+
+		resolveConfig({ ingestKey: "maple_pk_x", serviceName: " " })
+		// A plain-JS caller can leave it out entirely.
+		const missing = resolveConfig(JSON.parse('{"ingestKey":"maple_pk_x"}'))
+		expect(missing.serviceName).toBe("")
+		expect(warn).toHaveBeenCalledTimes(1)
+		expect(String(warn.mock.calls[0]?.[0])).toContain("serviceName")
+	})
+
 	it("applies defaults and strips the endpoint's trailing slash", () => {
 		const config = resolveConfig({
 			ingestKey: "maple_pk_x",

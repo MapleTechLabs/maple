@@ -35,7 +35,6 @@ export const Message = defineMessageUnion({
 	ReachedListEnd: {},
 	ChangedVirtualWindow: { window: VirtualWindow },
 	ClickedLoadMore: {},
-	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },

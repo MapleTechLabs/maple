@@ -86,17 +86,22 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 					example: '{"service":"checkout"}',
 				})
 			}
-			for (const [name, sha] of [
-				["base", params.base],
-				["head", params.head],
-			] as const) {
-				if (sha !== undefined && !FULL_SHA.test(sha.toLowerCase())) {
-					return yield* new McpInvalidInputError({
-						message: `\`${name}\` must be a full 40-character commit SHA. ci_runs hands full SHAs to compare_commits in its next calls; or pass \`service\` alone to compare its two newest deployed versions.`,
-						parameter: name,
-					})
-				}
-			}
+			yield* Effect.forEach(
+				[
+					["base", params.base],
+					["head", params.head],
+				] as const,
+				([name, sha]) =>
+					sha === undefined || FULL_SHA.test(sha.toLowerCase())
+						? Effect.void
+						: Effect.fail(
+								new McpInvalidInputError({
+									message: `\`${name}\` must be a full 40-character commit SHA. ci_runs hands full SHAs to compare_commits in its next calls; or pass \`service\` alone to compare its two newest deployed versions.`,
+									parameter: name,
+								}),
+							),
+				{ discard: true },
+			)
 
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const ends = given

@@ -4,28 +4,22 @@ import { deepEqual, isResolved } from "alchemy/Diff"
 import * as Provider from "alchemy/Provider"
 import { Resource } from "alchemy/Resource"
 import { listAll, MapleApi } from "./MapleApi"
-import { MapleErrorTags } from "./errors"
+import { MapleDashboardIdentityError, MapleErrorTags } from "./errors"
+import type { DashboardData } from "./DashboardData"
 import type { Providers } from "./Providers"
 
 /**
  * Dashboard props, authored in the v2 wire shape (snake_case, exactly as
- * documented at `/v2/docs`). `widgets`, `sections`, `variables`, and
- * `time_range` are passed through verbatim.
+ * documented at `/v2/docs`) and typed by the API's own dashboard schemas
+ * (see `DashboardData`).
  */
-export interface DashboardProps {
-	/** Dashboard name (unique-ish label shown in the UI). */
-	name: string
-	description?: string | null
-	tags?: string[]
-	/** e.g. `{ type: "relative", value: "12h" }`. */
-	time_range?: Record<string, unknown>
-	widgets?: Array<Record<string, unknown>>
+export interface DashboardProps extends DashboardData {
 	/**
-	 * Collapsible widget groups. Widgets join one by setting `section_id` and
-	 * `tab_id`, and their `layout` is relative to that group's own grid.
+	 * Adopt this existing `dash_…` public ID instead of creating a dashboard.
+	 * It must exist, and cannot be changed after this resource is deployed.
+	 * Omit it to let Alchemy create and remember a new dashboard.
 	 */
-	sections?: Array<Record<string, unknown>>
-	variables?: Array<Record<string, unknown>>
+	dashboardId?: string
 }
 
 export type Dashboard = Resource<
@@ -70,6 +64,7 @@ const WireDashboard = Schema.Struct({
 	// which is what such an API means anyway.
 	sections: Schema.optionalKey(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
 	variables: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	refresh_interval_seconds: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 })
 const decodeWireDashboard = Schema.decodeUnknownEffect(WireDashboard)
 
@@ -82,6 +77,9 @@ const desiredBody = (props: DashboardProps) => ({
 	...(props.widgets !== undefined ? { widgets: props.widgets } : undefined),
 	...(props.sections !== undefined ? { sections: props.sections } : undefined),
 	...(props.variables !== undefined ? { variables: props.variables } : undefined),
+	...(props.refresh_interval_seconds !== undefined
+		? { refresh_interval_seconds: props.refresh_interval_seconds }
+		: undefined),
 })
 
 /** Compare only the fields the user declared against the observed wire object. */
@@ -127,13 +125,28 @@ export const DashboardProvider = () =>
 					return undefined
 				}),
 				reconcile: Effect.fn(function* ({ news, output }) {
+					if (
+						news.dashboardId !== undefined &&
+						output !== undefined &&
+						news.dashboardId !== output.dashboardId
+					) {
+						return yield* new MapleDashboardIdentityError({
+							message:
+								"A managed dashboard's ID cannot be changed; declare a separate resource.",
+							dashboardId: output.dashboardId,
+							requestedId: news.dashboardId,
+						})
+					}
 					let observed: Schema.Schema.Type<typeof WireDashboard> | undefined
-					if (output?.dashboardId) {
+					const dashboardId = news.dashboardId ?? output?.dashboardId
+					if (dashboardId !== undefined) {
 						const fetched = yield* api
-							.get(`/v2/dashboards/${output.dashboardId}`)
+							.get(`/v2/dashboards/${encodeURIComponent(dashboardId)}`)
 							.pipe(
-								Effect.catchTag(MapleErrorTags.dashboardNotFound, () =>
-									Effect.succeed(undefined),
+								Effect.catchTag(MapleErrorTags.dashboardNotFound, (error) =>
+									news.dashboardId !== undefined
+										? Effect.fail(error)
+										: Effect.succeed(undefined),
 								),
 							)
 						if (fetched !== undefined) observed = yield* decodeWireDashboard(fetched)
@@ -155,12 +168,15 @@ export const DashboardProvider = () =>
 						.pipe(Effect.catchTag(MapleErrorTags.dashboardNotFound, () => Effect.void))
 				}),
 				read: Effect.fn(function* ({ output, olds }) {
-					if (!output?.dashboardId) return undefined
+					const dashboardId = olds.dashboardId ?? output?.dashboardId
+					if (dashboardId === undefined) return undefined
 					const fetched = yield* api
-						.get(`/v2/dashboards/${output.dashboardId}`)
+						.get(`/v2/dashboards/${encodeURIComponent(dashboardId)}`)
 						.pipe(
-							Effect.catchTag(MapleErrorTags.dashboardNotFound, () =>
-								Effect.succeed(undefined),
+							Effect.catchTag(MapleErrorTags.dashboardNotFound, (error) =>
+								olds.dashboardId !== undefined
+									? Effect.fail(error)
+									: Effect.succeed(undefined),
 							),
 						)
 					if (fetched === undefined) return undefined

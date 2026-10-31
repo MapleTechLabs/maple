@@ -88,3 +88,15 @@ export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: str
 }
 
 export type BucketAxis = ReturnType<typeof makeBucketAxis>
+
+/**
+ * A time x axis pinned to `[start, end]` epoch ms instead of the drawn buckets'
+ * extent, for charts stacked over one window that must put an instant at one x.
+ */
+export function pinnedTimeXAxis(context: TimeseriesAxisContext, domainMs: readonly [number, number]) {
+	const pinned = { ...context, domainMs, rangeMs: domainMs[1] - domainMs[0] }
+	return {
+		...timeseriesXAxis(pinned),
+		scale: bucketTimeScale([new Date(domainMs[0]), new Date(domainMs[1])], context.timeZone),
+	}
+}

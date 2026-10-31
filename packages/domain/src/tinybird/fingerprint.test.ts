@@ -603,6 +603,7 @@ describe("SQL parity", () => {
 	})
 
 	it("hashes the version salt, so a FINGERPRINT_VERSION bump rotates every issue", () => {
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the salt is semantic: it rotates every issue
 		expect(sql).toContain(`_msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}) AS FingerprintHash`)
 	})
 

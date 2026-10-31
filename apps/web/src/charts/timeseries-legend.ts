@@ -52,7 +52,7 @@ const compactLegend = (
 					h.Type("button"),
 					h.Class(
 						cn(
-							"hover:bg-muted/50 flex min-w-0 max-w-full items-center gap-1.5 rounded px-1 py-0.5 select-none",
+							"hover:bg-surface-sunken active:bg-surface-sunken flex min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1 py-0.5 select-none",
 							hidden.includes(entry.key) && "opacity-40",
 						),
 					),
@@ -132,7 +132,7 @@ const statsTable = (
 									h.OnClick(Message.ToggledLegendSeries({ key: entry.key, keys })),
 									h.Class(
 										cn(
-											"hover:bg-muted/50 cursor-pointer select-none",
+											"hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer select-none",
 											hidden.includes(entry.key) && "opacity-40",
 										),
 									),
@@ -170,7 +170,7 @@ const statsTable = (
 													[
 														h.Class(
 															cn(
-																"px-2 text-right font-mono tabular-nums text-muted-foreground/60 last:pr-0",
+																"px-2 text-right font-mono tabular-nums text-foreground-subtle last:pr-0",
 																column.className,
 															),
 														),

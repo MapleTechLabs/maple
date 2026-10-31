@@ -1,3 +1,4 @@
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "../../../ui/filters/filter-sections"
@@ -109,6 +110,12 @@ export const filtersRail = (
 ): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 3),
-		onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
+		onFailure: (failure) =>
+			filterSidebarError(
+				h,
+				failure,
+				Message.ClickedRetryFacets(),
+				Option.getOrUndefined(AsyncData.getError(model.overview.data)),
+			),
 		onData: (facets) => loadedRail(h, model, facets, summary, pinnedNamespace),
 	})

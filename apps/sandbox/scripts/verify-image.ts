@@ -16,7 +16,7 @@
  */
 import { execFileSync, spawnSync } from "node:child_process"
 import {
-	SANDBOX_COMMAND_ENV,
+	SANDBOX_COMMAND_ENV_NAMES,
 	SANDBOX_MIRROR_DIR,
 	SANDBOX_RUN_AS_USER,
 	SANDBOX_SEED_DIR,
@@ -361,8 +361,7 @@ console.log("\nthe command wrapper")
 		.sort()
 	check(
 		"the environment is exactly the contract's allowlist",
-		ISOLATION_EXPECTED === "unavailable" ||
-			names.join(",") === Object.keys(SANDBOX_COMMAND_ENV).sort().join(","),
+		ISOLATION_EXPECTED === "unavailable" || names.join(",") === SANDBOX_COMMAND_ENV_NAMES.join(","),
 		names.join(",") || environment,
 	)
 

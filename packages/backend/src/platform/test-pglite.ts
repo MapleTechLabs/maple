@@ -147,6 +147,23 @@ export const executeSql = async (db: TestDb, sql: string, params: unknown[] = []
 	await db.pglite.query(sql, params)
 }
 
+/**
+ * An integration source for a fixture row to point at through `source_id`, as the integration's
+ * connect flow creates it. Resolves to its id.
+ */
+export const insertTestSource = async (
+	db: TestDb,
+	source: { readonly orgId: string; readonly platform: string; readonly name?: string; readonly id?: string },
+): Promise<string> => {
+	const id = source.id ?? crypto.randomUUID()
+	await db.pglite.query(
+		`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 'integration', now(), now())`,
+		[id, source.orgId, source.name ?? source.platform, source.platform],
+	)
+	return id
+}
+
 export const queryFirstRow = async <T>(
 	db: TestDb,
 	sql: string,

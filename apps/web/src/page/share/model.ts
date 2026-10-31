@@ -114,6 +114,8 @@ export const Model = Schema.Struct({
 	isFlushScheduled: Schema.Boolean,
 	/** Batches after the one in flight; each is awaited before the next is sent. */
 	queuedBatches: Schema.Array(QueuedBatch),
+	/** The id of the batch sent last; an older batch's answer settles its tiles but sends nothing. */
+	sentBatchId: Schema.Number,
 	states: Schema.Record(Schema.String, WidgetState),
 	gridWidth: Schema.Number,
 	charts: Schema.Record(Schema.String, Chart.Model),

@@ -31,3 +31,11 @@ export function claudeCodeCommand(endpoint: string, apiKey?: string): string {
 	const base = `claude mcp add --transport http maple ${endpoint}`
 	return apiKey ? `${base} \\\n  --header "Authorization: Bearer ${apiKey}"` : base
 }
+
+/** Cursor's one-click install deeplink: the server entry, base64 JSON. */
+export const cursorInstallUrl = (endpoint: string): string =>
+	`cursor://anysphere.cursor-deeplink/mcp/install?name=maple&config=${encodeURIComponent(btoa(JSON.stringify({ url: endpoint })))}`
+
+/** VS Code's one-click install link: the named server entry, URL-encoded JSON. */
+export const vscodeInstallUrl = (endpoint: string): string =>
+	`vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: "maple", type: "http", url: endpoint }))}`

@@ -26,7 +26,7 @@ export interface EmailServiceApi {
 const EMAIL_TIMEOUT = Duration.seconds(15)
 
 export class EmailService extends Context.Service<EmailService, EmailServiceApi>()(
-	"@maple/api/lib/EmailService",
+	"@maple/backend/lib/EmailService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

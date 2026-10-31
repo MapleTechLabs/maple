@@ -2,11 +2,11 @@
 title: "Maple MCP server"
 description: "Connect Claude, Cursor and other AI agents to your Maple telemetry over the Model Context Protocol: endpoints, authentication, and every tool the server exposes."
 group: "Reference"
-order: 2
+order: 5
 navLabel: "MCP server"
 ---
 
-Maple runs a hosted **Model Context Protocol (MCP)** server. An AI agent connected to it can list services, search traces and logs, triage error issues, read and edit dashboards, and manage alert rules in your organization.
+Maple runs a Model Context Protocol (MCP) server. Each connection works inside one organization. From there an agent can query services, traces, logs and infrastructure, triage error issues, edit dashboards and manage alert rules.
 
 |                          |                                                                                                                                            |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -48,31 +48,36 @@ Requests are scoped to the organization the key belongs to, or the one chosen at
 
 The server exposes the tools below. Read-only tools are marked **read**; the rest change data in your organization. `tools/list` returns the current set with full parameter schemas.
 
+Tools that take an alert rule, alert destination, dashboard or error issue ID accept either its UUID or its [REST API](/docs/reference/api) ID (`alrt_…`, `dest_…`, `dash_…`, `iss_…`). `list_alert_destinations`, `list_dashboards`, `get_dashboard` and `create_dashboard` return both. The REST API also accepts the UUID in place of its prefixed ID.
+
 ### Services and discovery
 
-| Tool                         | Access | What it does                                                                                         |
-| ---------------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| `list_services`              | read   | Active services with throughput, error rate and P95 latency                                          |
-| `diagnose_service`           | read   | One service's health, top errors, recent traces and logs, and the platform resources behind it       |
-| `get_service_top_operations` | read   | A service's top operations (endpoints or spans), ranked by a chosen metric                           |
-| `service_map`                | read   | Service-to-service dependencies with call counts, error rates and latency per edge                   |
-| `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged |
-| `explore_attributes`         | read   | Attribute keys and their values for filtering; `source=services` lists environments and commit SHAs  |
-| `list_metrics`               | read   | Custom metrics with type, unit, monotonicity and data volume                                         |
-| `describe_warehouse_tables`  | read   | Tables and columns available to raw SQL, with sorting keys and notes on units and casing             |
+| Tool                         | Access | What it does                                                                                          |
+| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| `list_services`              | read   | Active services with throughput, error rate and P95 latency                                           |
+| `diagnose_service`           | read   | One service's health, top errors, recent traces and logs, and the platform resources behind it        |
+| `get_service_top_operations` | read   | A service's top operations (endpoints or spans), ranked by a chosen metric                            |
+| `service_map`                | read   | Service-to-service dependencies with call counts, error rates and latency per edge                    |
+| `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged  |
+| `explore_attributes`         | read   | Attribute keys and their values for filtering; `source=services` lists environments and commit SHAs   |
+| `list_metrics`               | read   | Custom metrics with type, unit, monotonicity and data volume                                          |
+| `describe_warehouse_tables`  | read   | Tables and columns available to raw SQL, with sorting keys and notes on units and casing              |
+| `service_deployments`        | read   | Versions (commit SHAs) each service ran, with traffic, error rate and P95 per version                 |
+| `route_usage`                | read   | HTTP endpoints per service with request count, error rate, P95 and first and last seen, up to 90 days |
+| `db_query_volume`            | read   | Database query shapes ranked by call volume per service and database, with errors and latency         |
 
 ### Traces, logs and queries
 
-| Tool                | Access | What it does                                                                                 |
-| ------------------- | ------ | -------------------------------------------------------------------------------------------- |
-| `search_traces`     | read   | Find traces by service, duration, error status, HTTP method, span name or one span attribute |
-| `find_slow_traces`  | read   | The slowest traces with p50, p95, min and max for context                                    |
-| `inspect_trace`     | read   | Span tree and logs for one trace                                                             |
-| `inspect_span`      | read   | Full attribute set for one span; decodes messages and tool calls on AI agent spans           |
-| `search_logs`       | read   | Log entries, newest first, filtered by service, severity, body text, trace or span           |
-| `mine_log_patterns` | read   | Cluster log messages into templates with counts and a severity and service breakdown         |
-| `query_data`        | read   | Aggregate traces, logs, metrics or product events into a time series or top-N breakdown      |
-| `run_sql`           | read   | Run one read-only ClickHouse `SELECT`; see the [SQL reference](/docs/reference/sql)          |
+| Tool                | Access | What it does                                                                                                                                  |
+| ------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_traces`     | read   | Find traces by service, duration, error status, HTTP method, span name or one span attribute                                                  |
+| `find_slow_traces`  | read   | The slowest traces with p50, p95, min and max for context                                                                                     |
+| `inspect_trace`     | read   | Span tree and logs for one trace                                                                                                              |
+| `inspect_span`      | read   | Full attribute set for one span; decodes messages and tool calls on AI agent spans                                                            |
+| `search_logs`       | read   | Log entries, newest first, filtered by service, severity, body text, trace or span                                                            |
+| `mine_log_patterns` | read   | Cluster log messages into templates with counts and a severity and service breakdown                                                          |
+| `query_data`        | read   | Aggregate traces, logs, metrics or product events into a time series or top-N breakdown                                                       |
+| `run_sql`           | read   | Run one read-only ClickHouse `SELECT`. The model sees the first 100 rows and the full row count; see the [SQL reference](/docs/reference/sql) |
 
 ### Errors
 
@@ -86,11 +91,13 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `claim_error_issue`                | write  | Take a lease on an issue so other agents do not duplicate the work                                  |
 | `release_error_issue`              | write  | Give up your lease, optionally moving the issue to another state                                    |
 | `transition_error_issue`           | write  | Move an issue to another workflow state                                                             |
+| `transition_error_issues`          | write  | Move up to 200 issues to one workflow state, with a note on each                                    |
 | `set_issue_severity`               | write  | Set or clear an issue's triage severity                                                             |
 | `comment_on_error_issue`           | write  | Add a comment or agent note to an issue's timeline                                                  |
 | `propose_fix`                      | write  | Record a proposed fix and move the issue to `in_review`                                             |
 | `link_pull_request`                | write  | Attach a GitHub pull request to an issue; Maple verifies the fix after it merges                    |
 | `register_agent`                   | write  | Register an LLM agent so it can claim and transition issues. Needs a signed-in user, not an API key |
+| `get_error_notification_policy`    | read   | The error notification policy: destinations, toggles, and when the first notification goes out      |
 | `update_error_notification_policy` | write  | Choose whether error incidents notify alert destinations, and which ones. Org admins only           |
 
 ### Alerting
@@ -151,6 +158,9 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `audit_setup`                         | read   | Check the whole organization setup: alert routing, error notifications and per-service ingest coverage |
 | `get_instrumentation_recommendations` | read   | Span and resource attribute problems found in your live data                                           |
 | `list_integrations`                   | read   | Connected integrations, what each one feeds, and which resources are failing or stale                  |
+| `list_sources`                        | read   | Everything that sends data to the organization, worst health first, and when each last sent data       |
+| `ingest_freshness`                    | read   | Newest received timestamp per signal, with its lag                                                     |
+| `ingest_usage`                        | read   | Spans, log records and metric data points ingested per service, with org totals                        |
 | `list_source_repositories`            | read   | Repositories connected through the [GitHub integration](/docs/integrations/github)                     |
 | `search_source_code`                  | read   | Search one connected repository through GitHub code search                                             |
 | `read_source_file`                    | read   | Read a line range from a file in a connected repository                                                |
@@ -158,6 +168,13 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `compare_commits`                     | read   | The commits between two deployed versions of a service, from the synced repository                     |
 
 The source-code tools only return results for repositories the organization's GitHub App installation can access.
+
+### Infrastructure
+
+| Tool            | Access | What it does                                                                             |
+| --------------- | ------ | ---------------------------------------------------------------------------------------- |
+| `list_infra`    | read   | Hosts, Kubernetes, Docker containers and integration resources, closest to a limit first |
+| `inspect_infra` | read   | One host, pod, node, workload, container or integration resource in depth                |
 
 ### Integrations
 

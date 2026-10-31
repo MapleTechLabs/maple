@@ -7,6 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { detailRailField, detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
 import { icon, type IconName } from "../../../../ui/icon"
+import { inlineCode } from "../../../../ui/inline-code"
 import { serviceDot } from "../../../../ui/values"
 import type { Message } from "./model"
 
@@ -32,14 +33,14 @@ const FACT_TONE = {
 } as const
 
 const RAIL_LINK =
-	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground/85 transition-colors hover:bg-muted/60 hover:text-foreground"
+	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground-soft hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground"
 
 const label = (h: H, text: string): Html => h.span([h.Class("min-w-0 flex-1 truncate")], [text])
 
 const chevron = (h: H): Html =>
 	icon(h, "ChevronRightIcon", {
 		size: 12,
-		className: "shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground",
+		className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
 	})
 
 const linkBody = (h: H, name: IconName, text: string): ReadonlyArray<Html> => [
@@ -59,14 +60,21 @@ const externalLink = (h: H, href: string, name: IconName, text: string): Html =>
 			label(h, text),
 			icon(h, "ExternalLinkIcon", {
 				size: 12,
-				className: "shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground",
+				className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
 			}),
 		],
 	)
 
+/** Rail keys in sentence case; the signal modules keep lowercase keys for their own prose. */
+const railKey = (label: string): string => {
+	const [first = "", ...rest] = label.split(" ")
+	const lead = first === "cpu" ? "CPU" : first.charAt(0).toUpperCase() + first.slice(1)
+	return [lead, ...rest].join(" ")
+}
+
 const factRow = (h: H, fact: GcpRailFact): Html | null =>
 	detailRailMetaRow(h, {
-		label: fact.label,
+		label: railKey(fact.label),
 		value: fact.value,
 		valueClassName: fact.tone === undefined ? undefined : FACT_TONE[fact.tone],
 	})
@@ -101,10 +109,10 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 		[
 			detailRailGroup(h, RAIL_TITLE[options.service], [
 				...present([
-					detailRailMetaRow(h, { label: "location", value: options.location }),
-					detailRailMetaRow(h, { label: "project", value: options.project }),
+					detailRailMetaRow(h, { label: "Location", value: options.location }),
+					detailRailMetaRow(h, { label: "Project", value: options.project }),
 					detailRailMetaRow(h, {
-						label: "state",
+						label: "State",
 						value:
 							inventory === undefined || inventory.state === null
 								? null
@@ -115,18 +123,17 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 				...(labels.length === 0
 					? []
 					: [
-							detailRailField(h, { label: "labels" }, [
+							detailRailField(h, { label: "Labels" }, [
 								h.div(
 									[h.Class("flex flex-wrap gap-1")],
 									labels.map((text) =>
 										h.span(
+											[h.Class("flex min-w-0 max-w-full"), h.Title(text)],
 											[
-												h.Class(
-													"max-w-full truncate rounded-sm bg-muted px-1.5 font-mono text-2xs/[18px]",
-												),
-												h.Title(text),
+												inlineCode(h, { className: "truncate text-2xs/[18px]" }, [
+													text,
+												]),
 											],
-											[text],
 										),
 									),
 								),

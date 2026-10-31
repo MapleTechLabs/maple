@@ -17,10 +17,12 @@ import {
 } from "./fingerprint"
 import {
 	serviceUsage,
+	sourceUsageHourly,
 	serviceMapEdgesHourly,
 	serviceMapSpans,
 	serviceMapChildren,
 	serviceMapDbEdgesHourly,
+	serviceMapDbEdgesMinutely,
 	serviceMapDbQuerySignaturesHourly,
 	serviceExternalEdgesHourly,
 	servicePlatformsHourly,
@@ -32,6 +34,9 @@ import {
 	errorFingerprintsMinutely,
 	aiTraceIndex,
 	aiCrawlerRequests,
+	CI_SERVICE_NAME,
+	ciJobs,
+	ciRuns,
 	TRACE_BUCKET_EXPR,
 	traceIndex,
 	traceListMv,
@@ -44,6 +49,7 @@ import {
 	spanMetricsCallsHourly,
 	serviceOperationsMinutely,
 	serviceOperationsHourly,
+	serviceEndpointDetailsHourly,
 	productEvents,
 	identityLinks,
 } from "./datasources"
@@ -57,6 +63,13 @@ import {
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERSION_ATTR } from "../gen-ai"
 import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
+import {
+	HTTP_SERVER_SPAN_SQL,
+	HTTP_STATUS_CODE_SQL,
+	REQUEST_BODY_SIZE_SQL,
+	SERVICE_OPERATIONS_HTTP_MEASURES as HTTP,
+	USER_AGENT_SQL,
+} from "./http-endpoint-sql"
 import {
 	AI_CRAWLER_INDEX_SQL,
 	AI_CRAWLER_NAME_SQL,
@@ -287,6 +300,96 @@ export const serviceUsageMetricsExpHistogramMv = defineMaterializedView(
 			}),
 		],
 	},
+)
+
+/**
+ * One `source_usage_hourly` row per (org, source, hour) from a signal table.
+ * Consumed by `sourceUsageHourlyQuery` and `sourceUsageTotalsQuery`; byte
+ * estimates match the `service_usage_*_mv` views.
+ */
+const sourceUsageSql = (opts: {
+	readonly table: string
+	readonly hour: string
+	readonly spans?: readonly [string, string]
+	readonly logs?: readonly [string, string]
+	readonly metrics?: readonly [string, string]
+}) => `
+        SELECT
+          OrgId,
+          ResourceAttributes['maple_source_id'] AS SourceId,
+          toStartOfHour(${opts.hour}) AS Hour,
+          ${opts.spans?.[0] ?? "0"} AS SpanCount,
+          ${opts.spans?.[1] ?? "0"} AS SpanSizeBytes,
+          ${opts.logs?.[0] ?? "0"} AS LogCount,
+          ${opts.logs?.[1] ?? "0"} AS LogSizeBytes,
+          ${opts.metrics?.[0] ?? "0"} AS MetricCount,
+          ${opts.metrics?.[1] ?? "0"} AS MetricSizeBytes
+        FROM ${opts.table}
+        WHERE ResourceAttributes['maple_source_id'] != ''
+        GROUP BY OrgId, SourceId, Hour
+      `
+
+const sourceUsageMv = (name: string, signal: string, sql: string) =>
+	defineMaterializedView(name, {
+		description: `Materialized view to aggregate ${signal} usage per source per hour`,
+		datasource: sourceUsageHourly,
+		nodes: [node({ name: `${name}_node`, sql })],
+	})
+
+export const sourceUsageLogsMv = sourceUsageMv(
+	"source_usage_logs_mv",
+	"log",
+	sourceUsageSql({ table: "logs", hour: "TimestampTime", logs: ["count()", "sum(length(Body) + 200)"] }),
+)
+
+export const sourceUsageTracesMv = sourceUsageMv(
+	"source_usage_traces_mv",
+	"span",
+	sourceUsageSql({
+		table: "traces",
+		hour: "toDateTime(Timestamp)",
+		spans: ["count()", "sum(length(SpanName) + 300)"],
+	}),
+)
+
+export const sourceUsageMetricsSumMv = sourceUsageMv(
+	"source_usage_metrics_sum_mv",
+	"sum metric",
+	sourceUsageSql({
+		table: "metrics_sum",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 150"],
+	}),
+)
+
+export const sourceUsageMetricsGaugeMv = sourceUsageMv(
+	"source_usage_metrics_gauge_mv",
+	"gauge metric",
+	sourceUsageSql({
+		table: "metrics_gauge",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 150"],
+	}),
+)
+
+export const sourceUsageMetricsHistogramMv = sourceUsageMv(
+	"source_usage_metrics_histogram_mv",
+	"histogram metric",
+	sourceUsageSql({
+		table: "metrics_histogram",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 250"],
+	}),
+)
+
+export const sourceUsageMetricsExpHistogramMv = sourceUsageMv(
+	"source_usage_metrics_exp_histogram_mv",
+	"exponential histogram metric",
+	sourceUsageSql({
+		table: "metrics_exponential_histogram",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 300"],
+	}),
 )
 
 /**
@@ -561,6 +664,44 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
           AND ${DB_SYSTEM_ATTR_SQL} != ''
           AND ServiceName != ''
         GROUP BY OrgId, Hour, ServiceName, DbSystem, DbNamespace, DeploymentEnv
+      `,
+		}),
+	],
+})
+
+/**
+ * Minute twin of `service_map_db_edges_hourly_mv`, read by `serviceDbEdges` for
+ * the partial hours at the ends of a window (see `serviceMapDbEdgesMinutely`).
+ * Same filter, keys and derivation as the hourly view, so the two tiers merge; keep
+ * them in step. It omits the hourly view's sampled/unsampled counts, which no read uses.
+ */
+export const serviceMapDbEdgesMinutelyMv = defineMaterializedView("service_map_db_edges_minutely_mv", {
+	description:
+		"Pre-aggregates Client/Producer spans with db.system.name into per-minute service-to-database edge buckets for the edges of a service map window.",
+	datasource: serviceMapDbEdgesMinutely,
+	nodes: [
+		node({
+			name: "service_map_db_edges_minutely_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          toStartOfMinute(toDateTime(Timestamp)) AS Minute,
+          ServiceName,
+          ${DB_SYSTEM_ATTR_SQL} AS DbSystem,
+          ${DB_NAMESPACE_ATTR_SQL} AS DbNamespace,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          count() AS CallCount,
+          countIf(StatusCode = 'Error') AS ErrorCount,
+          sum(Duration / 1000000) AS DurationSumMs,
+          max(Duration / 1000000) AS MaxDurationMs,
+          sum(SampleRate) AS SampleRateSum,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS DurationQuantiles,
+          now() AS FirstInsertedAt
+        FROM traces
+        WHERE SpanKind IN ('Client', 'Producer')
+          AND ${DB_SYSTEM_ATTR_SQL} != ''
+          AND ServiceName != ''
+        GROUP BY OrgId, Minute, ServiceName, DbSystem, DbNamespace, DeploymentEnv
       `,
 		}),
 	],
@@ -1145,6 +1286,81 @@ export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_m
 	],
 })
 
+/** Populates `ci_runs` with the root span of each CI trace: one row per workflow run attempt. */
+export const ciRunsMv = defineMaterializedView("ci_runs_mv", {
+	description:
+		"Populates ci_runs with the root span of every github-actions trace, pre-extracting repository, workflow, result, branch, revision and pull request.",
+	datasource: ciRuns,
+	nodes: [
+		node({
+			name: "ci_runs_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          SpanId,
+          ResourceAttributes['vcs.owner.name'] AS Owner,
+          ResourceAttributes['vcs.repository.name'] AS Repository,
+          SpanAttributes['cicd.pipeline.name'] AS Pipeline,
+          SpanAttributes['cicd.pipeline.run.id'] AS RunId,
+          toUInt64OrZero(SpanAttributes['maple.cicd.run_number']) AS RunNumber,
+          toUInt16OrZero(SpanAttributes['maple.cicd.run_attempt']) AS Attempt,
+          SpanAttributes['cicd.pipeline.result'] AS Result,
+          Duration,
+          SpanAttributes['cicd.pipeline.run.url.full'] AS Url,
+          SpanAttributes['vcs.ref.head.name'] AS Branch,
+          SpanAttributes['vcs.ref.head.revision'] AS Revision,
+          SpanAttributes['maple.cicd.trigger_event'] AS TriggerEvent,
+          SpanAttributes['maple.cicd.actor'] AS Actor,
+          toUInt32OrZero(SpanAttributes['vcs.change.id']) AS PullRequest,
+          SpanAttributes['maple.cicd.workflow_path'] AS WorkflowPath
+        FROM traces
+        WHERE ServiceName = '${CI_SERVICE_NAME}'
+          AND ParentSpanId = ''
+      `,
+		}),
+	],
+})
+
+/** Populates `ci_jobs` with each run's jobs: children that name a task but not a step. */
+export const ciJobsMv = defineMaterializedView("ci_jobs_mv", {
+	description:
+		"Populates ci_jobs with the job spans of every github-actions trace, pre-extracting workflow, job, result, queue time, runner and failure reason.",
+	datasource: ciJobs,
+	nodes: [
+		node({
+			name: "ci_jobs_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          SpanId,
+          ResourceAttributes['vcs.owner.name'] AS Owner,
+          ResourceAttributes['vcs.repository.name'] AS Repository,
+          SpanAttributes['cicd.pipeline.name'] AS Pipeline,
+          SpanAttributes['cicd.pipeline.run.id'] AS RunId,
+          toUInt16OrZero(SpanAttributes['maple.cicd.run_attempt']) AS Attempt,
+          SpanAttributes['cicd.pipeline.task.name'] AS Job,
+          SpanAttributes['cicd.pipeline.task.run.result'] AS Result,
+          StatusCode,
+          Duration,
+          toUInt32OrZero(SpanAttributes['maple.cicd.queue_duration_ms']) AS QueueMs,
+          SpanAttributes['cicd.pipeline.task.run.url.full'] AS Url,
+          SpanAttributes['maple.cicd.failure.reason'] AS FailureReason,
+          SpanAttributes['cicd.worker.name'] AS RunnerName,
+          SpanAttributes['maple.cicd.runner_labels'] AS RunnerLabels
+        FROM traces
+        WHERE ServiceName = '${CI_SERVICE_NAME}'
+          AND ParentSpanId != ''
+          AND SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND SpanAttributes['maple.cicd.step.number'] = ''
+      `,
+		}),
+	],
+})
+
 export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
 	description:
 		"Populates trace_list_mv from root spans with pre-extracted HTTP attributes and normalized span names.",
@@ -1173,7 +1389,7 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
           StatusCode,
           if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS HttpMethod,
           if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], if(SpanAttributes['url.path'] != '', SpanAttributes['url.path'], SpanAttributes['http.target'])) AS HttpRoute,
-          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS HttpStatusCode,
+          ${HTTP_STATUS_CODE_SQL} AS HttpStatusCode,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           toUInt8(
             StatusCode = 'Error'
@@ -1650,6 +1866,7 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
 	// with no data movement at promotion, which is what an additive change
 	// actually needs, and is also why these rollups need no FORWARD_QUERY (a
 	// leftover one makes every later deploy fail — see the note in datasources).
+	// Migration 0048's six HTTP measures rely on the same directive.
 	deploymentMethod: "alter",
 	nodes: [
 		node({
@@ -1669,7 +1886,13 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
           quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles,
           count() AS ClassifiedSpanCount,
           countIf(SpanKind IN ('Server', 'Consumer')) AS ServerSpanCount,
-          countIf(SpanAttributes['http.route'] != '') AS RoutedSpanCount
+          countIf(SpanAttributes['http.route'] != '') AS RoutedSpanCount,
+          ${HTTP.HttpClassifiedSpanCount} AS HttpClassifiedSpanCount,
+          ${HTTP.HttpStatusCount} AS HttpStatusCount,
+          ${HTTP.Http4xxCount} AS Http4xxCount,
+          ${HTTP.Http5xxCount} AS Http5xxCount,
+          ${HTTP.RequestBodyBytes} AS RequestBodyBytes,
+          ${HTTP.RequestBodyCount} AS RequestBodyCount
         FROM traces
         GROUP BY OrgId, Minute, ServiceName, DeploymentEnv, SpanName
       `,
@@ -1707,9 +1930,62 @@ export const serviceOperationsHourlyMv = defineMaterializedView("service_operati
           quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS DurationQuantiles,
           sum(ClassifiedSpanCount) AS ClassifiedSpanCount,
           sum(ServerSpanCount) AS ServerSpanCount,
-          sum(RoutedSpanCount) AS RoutedSpanCount
+          sum(RoutedSpanCount) AS RoutedSpanCount,
+          sum(HttpClassifiedSpanCount) AS HttpClassifiedSpanCount,
+          sum(HttpStatusCount) AS HttpStatusCount,
+          sum(Http4xxCount) AS Http4xxCount,
+          sum(Http5xxCount) AS Http5xxCount,
+          sum(RequestBodyBytes) AS RequestBodyBytes,
+          sum(RequestBodyCount) AS RequestBodyCount
         FROM service_operations_minutely
         GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, SpanName
+      `,
+		}),
+	],
+})
+
+/** Request body bytes as Int64 with -1 for none, so `argMax` keeps the slowest row either way. */
+const SLOWEST_BODY_SIZE_SQL = `ifNull(toInt64(${REQUEST_BODY_SIZE_SQL}), -1)`
+
+/**
+ * Hourly HTTP endpoint detail off raw `traces`, for the service API tab. Reads Server
+ * spans with a response status; the SpanName expression is the operations rollup's so
+ * the two tables join on it.
+ */
+export const serviceEndpointDetailsHourlyMv = defineMaterializedView("service_endpoint_details_hourly_mv", {
+	description:
+		"Pre-aggregates HTTP server spans hourly per normalized endpoint, status code and error.type: counts, latency and body-size t-digests, top user agents and the slowest request.",
+	datasource: serviceEndpointDetailsHourly,
+	// The target keeps 90 days and `traces` 30, so a rebuild at promotion would cut it to a
+	// month. `alter` keeps every later change in place (live in US and EU since 2026-10-24).
+	deploymentMethod: "alter",
+	nodes: [
+		node({
+			name: "service_endpoint_details_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ServiceName,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          ${NORMALIZED_SPAN_NAME_SQL} AS SpanName,
+          ${HTTP_STATUS_CODE_SQL} AS HttpStatusCode,
+          SpanAttributes['error.type'] AS ErrorType,
+          count() AS SpanCount,
+          sum(SampleRate) AS EstimatedSpanCount,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles,
+          quantilesTDigestIfState(0.5, 0.95, 0.99)(ifNull(${REQUEST_BODY_SIZE_SQL}, 0), ${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodySizeQuantiles,
+          maxIf(ifNull(${REQUEST_BODY_SIZE_SQL}, 0), ${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodySizeMax,
+          countIf(${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodyCount,
+          approx_top_kState(10)(${USER_AGENT_SQL}) AS UserAgents,
+          max(Duration) AS SlowestDuration,
+          argMaxState(TraceId, Duration) AS SlowestTraceId,
+          argMaxState(Timestamp, Duration) AS SlowestTimestamp,
+          argMaxState(${SLOWEST_BODY_SIZE_SQL}, Duration) AS SlowestBodySize
+        FROM traces
+        WHERE ${HTTP_SERVER_SPAN_SQL}
+          AND ${HTTP_STATUS_CODE_SQL} != ''
+        GROUP BY OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType
       `,
 		}),
 	],

@@ -44,17 +44,36 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"listEnvironments",
 	"getService",
 	"getServiceOverview",
+	"queryServiceHealth",
 	"queryTraceTimeseries",
 	"queryTraceBreakdown",
 	// Errors
 	"listErrorIssues",
 	"listErrorIssueServiceCounts",
 	"getErrorIssue",
+	// Error triage, as the signed-in user.
+	"transitionErrorIssue",
+	"claimErrorIssue",
+	"releaseErrorIssue",
+	"setErrorIssueSeverity",
+	// Traces and logs
+	"searchTraces",
+	"getTrace",
+	"getSpan",
+	"searchLogs",
+	"queryLogTimeseries",
+	"getLog",
+	// Dashboards
+	"listDashboards",
+	"getDashboard",
+	"queryDashboardWidgetData",
 	// Alerts
 	"listAlertIncidents",
 	"getAlertIncident",
 	"listAlertRules",
 	"getAlertRule",
+	// Charts an incident's own signal, the read the dashboard's incident page draws from.
+	"previewAlertRule",
 	"listAlertRuleChecks",
 	"listAlertDeliveries",
 	// Anomalies
@@ -69,6 +88,11 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"endLiveActivity",
 	"mintWidgetCredential",
 	"revokeWidgetCredential",
+	// Device-bound widget credentials (DPoP): register a key, then trade proofs for tokens.
+	"registerDeviceCredential",
+	"revokeDeviceCredential",
+	"getDeviceAttestationChallenge",
+	"issueDeviceToken",
 	// Home Screen widgets — one read, and the only one a device credential reaches.
 	"getWidgetSummary",
 ]
@@ -151,9 +175,11 @@ function render(): { text: string; doc: JsonObject } {
 	const doc = structuredClone(OpenApi.fromApi(MapleApiV2)) as unknown as JsonObject
 
 	prunePaths(doc)
+	dropPropertyNames(doc)
 	collapseNullableUnions(doc)
 	collapseErrorResponses(doc)
 	mergeDuplicateComponents(doc)
+	renameEncodedComponents(doc)
 	sweepUnreachableSchemas(doc)
 
 	const sorted = sortKeysDeep(doc)
@@ -203,6 +229,20 @@ function prunePaths(doc: JsonObject): void {
 }
 
 /**
+ * Pass 1b: drop `propertyNames`. Effect emits it beside `additionalProperties: false` for a
+ * struct that rejects extra members (`DevicePublicJwk`); it restates the declared keys as a
+ * union Swift cannot use, and `additionalProperties: false` already says the same thing.
+ */
+function dropPropertyNames(node: JsonValue | undefined): void {
+	const array = asArray(node)
+	if (array !== undefined) return array.forEach(dropPropertyNames)
+	const object = asObject(node)
+	if (object === undefined) return
+	delete object.propertyNames
+	Object.values(object).forEach(dropPropertyNames)
+}
+
+/**
  * Pass 2 — rewrite `anyOf: [S, { type: "null" }]` to `S`, and mark the owning
  * property/parameter optional so the generator emits `decodeIfPresent`.
  * Also collapses Effect's non-finite-number union (see `NON_FINITE_NUMBER_ENUM`).
@@ -245,6 +285,7 @@ function collapseNullableUnions(doc: JsonObject): void {
 			const next =
 				finiteNumberSchema(current, deref) ??
 				mergedStringEnum(current, deref) ??
+				widenedStringUnion(current, deref) ??
 				flattenedConstraintAllOf(current) ??
 				singleBranchUnion(current)
 			if (next === undefined) break
@@ -354,20 +395,20 @@ function collapseNullableUnions(doc: JsonObject): void {
 type Collapsed = { schema: JsonObject; nullable: boolean }
 
 /**
- * `{ anyOf: [S, { type: "null" }] }` → `S`, in either branch order.
- * Returns undefined for anything that is not exactly that shape.
+ * `{ anyOf: [S, { type: "null" }] }` → `S`, in any branch order. Effect flattens
+ * nested unions, so a nullable union arrives as `anyOf: [A, B, null]`; that
+ * becomes `anyOf: [A, B]`, which the later passes collapse further.
  */
 function nullableInnerSchema(schema: JsonObject): JsonObject | undefined {
 	const branches = asObjectArray(schema.anyOf)
-	if (branches === undefined || branches.length !== 2) return undefined
+	if (branches === undefined || branches.length < 2) return undefined
 
-	const nullIndex = branches.findIndex((branch) => branch.type === "null")
-	if (nullIndex === -1) return undefined
+	const rest = branches.filter((branch) => branch.type !== "null")
+	if (rest.length !== branches.length - 1) return undefined
 
-	const inner = branches[nullIndex === 0 ? 1 : 0]
-	if (inner === undefined || inner.type === "null") return undefined
-
-	return mergeAnnotations(schema, inner)
+	const [inner] = rest
+	if (rest.length === 1 && inner !== undefined) return mergeAnnotations(schema, inner)
+	return { ...schema, anyOf: rest }
 }
 
 /**
@@ -386,7 +427,7 @@ function finiteNumberSchema(
 	deref: (schema: JsonObject) => JsonObject,
 ): JsonObject | undefined {
 	const branches = asObjectArray(schema.anyOf)
-	if (branches === undefined || branches.length !== 2) return undefined
+	if (branches === undefined || branches.length < 2) return undefined
 
 	const isNonFiniteEnum = (branch: JsonObject): boolean => {
 		const values = asStringArray(deref(branch).enum)
@@ -397,13 +438,19 @@ function finiteNumberSchema(
 		)
 	}
 
-	const enumIndex = branches.findIndex(isNonFiniteEnum)
-	if (enumIndex === -1) return undefined
+	const isNumeric = (branch: JsonObject): boolean => {
+		const type = deref(branch).type
+		return type === "number" || type === "integer"
+	}
 
-	const numeric = deref(branches[enumIndex === 0 ? 1 : 0] as JsonObject)
-	if (numeric.type !== "number" && numeric.type !== "integer") return undefined
+	// Flattened unions carry the enum beside other members (`[number, nonFinite, false]`);
+	// drop it wherever a numeric branch sits next to it.
+	const rest = branches.filter((branch) => !isNonFiniteEnum(branch))
+	if (rest.length === branches.length || !rest.some(isNumeric)) return undefined
 
-	return mergeAnnotations(schema, numeric)
+	const [numeric] = rest
+	if (rest.length === 1 && numeric !== undefined) return mergeAnnotations(schema, deref(numeric))
+	return { ...schema, anyOf: rest }
 }
 
 /**
@@ -431,6 +478,31 @@ function mergedStringEnum(
 	}
 
 	return mergeAnnotations(schema, { type: "string", enum: values })
+}
+
+/**
+ * `{ anyOf: [enum, { type: "string", pattern }] }` → `{ type: "string" }`.
+ *
+ * A string that is one of a few names or matches a pattern (a funnel's
+ * `breakdown_by`: `"country"` or `"attribute:…"`) is just a `String` to the
+ * app; as a union it becomes a struct-of-optionals. The server validates.
+ */
+function widenedStringUnion(
+	schema: JsonObject,
+	deref: (schema: JsonObject) => JsonObject,
+): JsonObject | undefined {
+	const branches = asObjectArray(schema.anyOf)
+	if (branches === undefined || branches.length < 2) return undefined
+
+	const structural = ["$ref", "properties", "items", "allOf", "anyOf", "oneOf", "additionalProperties"]
+	const resolved = branches.map(deref)
+	if (resolved.some((branch) => branch.type !== "string" || structural.some((key) => key in branch))) {
+		return undefined
+	}
+	// All-enum unions are `mergedStringEnum`'s, which keeps the values.
+	if (resolved.every((branch) => asStringArray(branch.enum) !== undefined)) return undefined
+
+	return mergeAnnotations(schema, { type: "string" })
 }
 
 /**
@@ -653,6 +725,43 @@ function mergeDuplicateComponents(doc: JsonObject): void {
 		delete schemas[from]
 	}
 	for (const name of aliases.keys()) delete schemas[name]
+}
+
+/**
+ * Pass 3c: `DashboardEncoded` becomes `Dashboard`.
+ *
+ * Effect names a schema's encoded side `<Identifier>Encoded` when it renames
+ * keys (`Schema.encodeKeys`), which is the only side this document has. The
+ * app should see the resource name, so the suffix is dropped unless that
+ * would collide with an existing component.
+ */
+function renameEncodedComponents(doc: JsonObject): void {
+	const schemas = asObject(asObject(doc.components)?.schemas) ?? {}
+	const renames = new Map<string, string>()
+	for (const name of Object.keys(schemas)) {
+		const base = /^(.+)Encoded$/.exec(name)?.[1]
+		if (base !== undefined && schemas[base] === undefined) renames.set(name, base)
+	}
+
+	const rewrite = (node: JsonValue | undefined): void => {
+		if (Array.isArray(node)) {
+			for (const entry of node) rewrite(entry)
+			return
+		}
+		const object = asObject(node)
+		if (object === undefined) return
+		const ref = asString(object.$ref)
+		const name = ref === undefined ? undefined : componentNameFromRef(ref)
+		const target = name === undefined ? undefined : renames.get(name)
+		if (target !== undefined) object.$ref = `#/components/schemas/${target}`
+		for (const value of Object.values(object)) rewrite(value)
+	}
+
+	rewrite(doc)
+	for (const [from, to] of renames) {
+		schemas[to] = schemas[from]
+		delete schemas[from]
+	}
 }
 
 function sweepUnreachableSchemas(doc: JsonObject): void {

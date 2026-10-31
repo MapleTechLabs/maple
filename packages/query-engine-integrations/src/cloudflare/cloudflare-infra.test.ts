@@ -35,7 +35,6 @@ describe("cloudflareZoneCountersSQL", () => {
 		// Worker analytics live in their own queries.
 		expect(sql).not.toContain("cloudflare.worker")
 		expect(sql).toContain("GROUP BY serviceName")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -52,7 +51,6 @@ describe("cloudflareZoneLatencySQL", () => {
 		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).not.toContain("cloudflare.worker")
 		expect(sql).toContain("GROUP BY serviceName")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -63,7 +61,6 @@ describe("cloudflareZoneTimeseriesSQL", () => {
 		expect(sql).toContain("http.status_class'] = '5xx'")
 		expect(sql).toContain("GROUP BY serviceName, bucket")
 		expect(sql).toContain("ORDER BY serviceName ASC, bucket ASC")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -74,9 +71,9 @@ describe("cloudflareZoneStatusTimeseriesSQL", () => {
 		const { sql } = compileUnsafe(cloudflareZoneStatusTimeseriesSQL(), detailParams)
 		expect(sql).toContain("ServiceName = 'cloudflare/example.com'")
 		expect(sql).toContain("MetricName = 'cloudflare.http.requests'")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the attribute the chart groups by
 		expect(sql).toContain("http.status_class'] AS statusClass")
 		expect(sql).toContain("GROUP BY bucket, statusClass")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -84,9 +81,9 @@ describe("cloudflareZoneCacheTimeseriesSQL", () => {
 	it("groups one zone's requests by bucket and raw cache status", () => {
 		const { sql } = compileUnsafe(cloudflareZoneCacheTimeseriesSQL(), detailParams)
 		expect(sql).toContain("ServiceName = 'cloudflare/example.com'")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the attribute the chart groups by
 		expect(sql).toContain("cache.status'] AS cacheStatus")
 		expect(sql).toContain("GROUP BY bucket, cacheStatus")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -98,7 +95,6 @@ describe("cloudflareZoneLatencyTimeseriesSQL", () => {
 		expect(sql).toContain("quantile'] = '0.95'")
 		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).toContain("GROUP BY bucket")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -114,7 +110,6 @@ describe("cloudflareWorkerCountersSQL", () => {
 		)
 		expect(sql).not.toContain("cloudflare.http")
 		expect(sql).toContain("GROUP BY serviceName")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -127,6 +122,5 @@ describe("cloudflareWorkerLatencySQL", () => {
 		expect(sql).toContain("quantile'] = '0.99'")
 		expect(sql).not.toContain("'0.95'")
 		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })

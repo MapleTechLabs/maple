@@ -3,7 +3,7 @@ import { callMetaLine, type SpanMessage, type SpanMessagePart } from "@maple/age
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { tryParseJson } from "../../../ui/attributes/attribute-row"
+import { tryParseJson } from "../../../lib/display-text"
 import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
@@ -41,7 +41,7 @@ const collapsedText = (parts: ReadonlyArray<SpanMessagePart>): string =>
 		.map((part) => {
 			if (part.kind === "text") return part.text
 			if (part.kind === "reasoning")
-				return part.text === undefined ? "[thinking — no text captured]" : `THINKING\n${part.text}`
+				return part.text === undefined ? "[thinking, no text captured]" : `THINKING\n${part.text}`
 			return ""
 		})
 		.filter((text) => text !== "")
@@ -72,27 +72,38 @@ export const payloadCard = (
 	options: Readonly<{ label: string; name?: string; meta?: string; body?: string; key: string }>,
 ): Html =>
 	h.div(
-		[h.Class("min-w-0 overflow-hidden rounded-md border border-border/70")],
+		[h.Class("min-w-0 overflow-hidden rounded-md border border-border-subtle")],
 		[
 			h.div(
-				[h.Class("flex items-center gap-2 bg-muted/40 px-2.5 py-1.5")],
+				[h.Class("flex items-center gap-2 bg-surface-sunken px-2.5 py-1.5")],
 				[
 					h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-xs bg-chart-4")], []),
 					h.span([h.Class("shrink-0 font-medium font-mono text-chart-4 text-xs")], [options.label]),
 					...(options.name === undefined
 						? []
-						: [h.span([h.Class("min-w-0 truncate font-mono text-foreground text-xs")], [options.name])]),
+						: [
+								h.span(
+									[h.Class("min-w-0 truncate font-mono text-foreground text-xs")],
+									[options.name],
+								),
+							]),
 					...(options.meta === undefined
 						? []
 						: [
 								h.span(
-									[h.Class("ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground/80")],
+									[
+										h.Class(
+											"ml-auto min-w-0 truncate font-mono text-2xs text-foreground-subtle",
+										),
+									],
 									[options.meta],
 								),
 							]),
 				],
 			),
-			...(options.body === undefined ? [] : [payloadBody(h, model, options.body, options.label, options.key)]),
+			...(options.body === undefined
+				? []
+				: [payloadBody(h, model, options.body, options.label, options.key)]),
 		],
 	)
 
@@ -100,7 +111,7 @@ const payloadBody = (h: H, model: Model, text: string, copyLabel: string, key: s
 	const { formatted, isJson } = jsonPayload(text)
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	return h.div(
-		[h.Class("flex items-start gap-1.5 border-border/60 border-t bg-background/50 px-2.5 py-2")],
+		[h.Class("flex items-start gap-1.5 border-border-subtle border-t bg-background/50 px-2.5 py-2")],
 		[
 			h.div(
 				[h.Class("min-w-0 grow")],
@@ -114,7 +125,9 @@ const payloadBody = (h: H, model: Model, text: string, copyLabel: string, key: s
 					}),
 				],
 			),
-			...(isJson ? [viewSwitch(h, { rendered: "json", isRaw, rawKey: `${key}:raw`, className: "self-start" })] : []),
+			...(isJson
+				? [viewSwitch(h, { rendered: "json", isRaw, rawKey: `${key}:raw`, className: "self-start" })]
+				: []),
 			payloadCopyButton(h, model, {
 				key: `${key}:copy`,
 				value: isRaw ? text : formatted,
@@ -127,7 +140,12 @@ const payloadBody = (h: H, model: Model, text: string, copyLabel: string, key: s
 }
 
 /** Reasoning is the model thinking, set apart from the reply it precedes. */
-const reasoningPart = (h: H, model: Model, part: Extract<SpanMessagePart, { kind: "reasoning" }>, key: string) =>
+const reasoningPart = (
+	h: H,
+	model: Model,
+	part: Extract<SpanMessagePart, { kind: "reasoning" }>,
+	key: string,
+) =>
 	h.div(
 		[h.Class("min-w-0 border-chart-5/50 border-l-2 pl-2.5")],
 		[
@@ -137,7 +155,7 @@ const reasoningPart = (h: H, model: Model, part: Extract<SpanMessagePart, { kind
 						[h.Class("text-muted-foreground text-xs italic")],
 						[
 							part.redacted
-								? "Redacted by the provider — the reasoning was returned sealed."
+								? "Redacted by the provider. The reasoning was returned sealed."
 								: "No reasoning text was captured.",
 						],
 					)
@@ -152,7 +170,13 @@ const messagePart = (h: H, model: Model, part: SpanMessagePart, isRaw: boolean, 
 		case "reasoning":
 			return reasoningPart(h, model, part, key)
 		case "tool_call":
-			return payloadCard(h, model, { label: "tool_call", name: part.name, meta: part.id, body: part.argumentsText, key })
+			return payloadCard(h, model, {
+				label: "tool_call",
+				name: part.name,
+				meta: part.id,
+				body: part.argumentsText,
+				key,
+			})
 		default:
 			return payloadCard(h, model, { label: "tool_result", meta: part.id, body: part.resultText, key })
 	}
@@ -161,7 +185,9 @@ const messagePart = (h: H, model: Model, part: SpanMessagePart, isRaw: boolean, 
 const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionSpan, key: string): Html => {
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	const hasText = message.parts.some((part) => part.kind === "text")
-	const rendered = message.parts.some((part) => part.kind === "text" && Option.isNone(tryParseJson(part.text)))
+	const rendered = message.parts.some(
+		(part) => part.kind === "text" && Option.isNone(tryParseJson(part.text)),
+	)
 		? "md"
 		: "json"
 	return h.div(
@@ -170,16 +196,18 @@ const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionS
 			h.div(
 				[h.Class("flex items-center gap-2.5")],
 				[
-					eyebrow(h, { variant: "mono", className: cn("shrink-0", roleColor(message.role)) }, [message.role]),
+					eyebrow(h, { variant: "mono", className: cn("shrink-0", roleColor(message.role)) }, [
+						message.role,
+					]),
 					...(message.origin === "output"
 						? [
 								h.span(
-									[h.Class("min-w-0 truncate font-mono text-2xs text-muted-foreground/80")],
+									[h.Class("min-w-0 truncate font-mono text-2xs text-foreground-subtle")],
 									[callMetaLine(span)],
 								),
 							]
 						: []),
-					h.span([h.AriaHidden(true), h.Class("h-px min-w-4 flex-1 bg-border/60")], []),
+					h.span([h.AriaHidden(true), h.Class("h-px min-w-4 flex-1 bg-border-subtle")], []),
 					...(hasText ? [viewSwitch(h, { rendered, isRaw, rawKey: `${key}:raw` })] : []),
 				],
 			),
@@ -200,7 +228,9 @@ export const popoverMarkdown = (
 	messages.flatMap((message, index) => {
 		const key = `${keyPrefix}:msg${index}`
 		if (message.role.toLowerCase() === "system")
-			return disclosed(model.openRows, key, false) ? shownMarkdown(model, key, collapsedText(message.parts)) : []
+			return disclosed(model.openRows, key, false)
+				? shownMarkdown(model, key, collapsedText(message.parts))
+				: []
 		if (disclosed(model.openRows, `${key}:raw`, false)) return []
 		return message.parts.flatMap((part, partIndex) => {
 			if (part.kind !== "text" || messageBody(part.text).rendered !== "md") return []
@@ -219,7 +249,7 @@ export const messagesSection = (
 ): Html =>
 	messages.length === 0
 		? emptyMessage(h, {}, [
-				"No messages were captured on this span — message capture is opt-in and off by default.",
+				"No messages were captured on this span. Message capture is opt-in and off by default.",
 			])
 		: h.div(
 				[h.Class("flex flex-col gap-4 pb-1")],
@@ -235,7 +265,7 @@ const systemMessageRow = (h: H, model: Model, message: SpanMessage, key: string)
 	const isOpen = disclosed(model.openRows, key, false)
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	const text = collapsedText(message.parts)
-	return panel(h, { tone: "muted", className: "border-border/60" }, [
+	return panel(h, { tone: "muted", className: "border-border-subtle" }, [
 		h.button(
 			[
 				h.AriaExpanded(isOpen),
@@ -245,13 +275,18 @@ const systemMessageRow = (h: H, model: Model, message: SpanMessage, key: string)
 			],
 			[
 				icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", {
-					size: 11,
+					size: 12,
 					className: "shrink-0 text-muted-foreground",
 				}),
 				eyebrow(h, { variant: "mono", className: "shrink-0" }, [message.role]),
 				...(isOpen
 					? []
-					: [h.span([h.Class("min-w-0 truncate text-muted-foreground text-xs")], [firstLine(text)])]),
+					: [
+							h.span(
+								[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
+								[firstLine(text)],
+							),
+						]),
 			],
 		),
 		...(isOpen

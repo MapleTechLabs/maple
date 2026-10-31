@@ -74,6 +74,7 @@ export const copyIndicatorErrorStyles = "text-destructive-foreground"
 
 export const copyLabelStyles = "relative grid"
 
-export const copyButtonStyles = "group/copy text-muted-foreground hover:text-foreground"
+export const copyButtonStyles =
+	"group/copy text-muted-foreground hover:text-foreground active:text-foreground"
 
 export const copyButtonStatusStyles = "sr-only"

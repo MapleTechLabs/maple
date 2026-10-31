@@ -35,5 +35,7 @@ export const Message = defineMessageUnion({
 	GotAutomationMessage: { message: AutomationMessage },
 	/** The `api_keys` shape (Keys and the audit log's actor names), for the org it was read for. */
 	UpdatedApiKeys: { orgId: Schema.String, rows: Schema.Array(ApiKeyRowSchema) },
+	/** The `api_keys` shape gave up (or timed out) before its first answer. */
+	FailedLoadApiKeys: { orgId: Schema.String },
 })
 export type Message = typeof Message.Type

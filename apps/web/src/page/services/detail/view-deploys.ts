@@ -4,7 +4,9 @@ import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
+import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
+import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { badge } from "../../../ui/display"
@@ -13,6 +15,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { emptyMessage } from "../../../ui/empty"
 import { listRow } from "../../../ui/list-row"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { textLink } from "../../../ui/text-link"
 import { truncatedText } from "../../../ui/truncated-text"
 import { type DeployEntry, deriveDeploys, firstLine, isResolvableSha } from "./derive-panels"
 import { Message } from "./message"
@@ -20,6 +23,7 @@ import type { Issue, Model } from "./model"
 import { DEPLOYS_EXPANDED, DEPLOYS_RAIL } from "./update"
 import { sectionCard } from "./view-panels"
 import { relativeTime } from "../../kit/relative-time"
+import { severityBadge } from "../../errors/kit/severity"
 
 // `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys` (components/services/).
 
@@ -27,29 +31,21 @@ type H = HtmlBuilder<Message>
 
 export type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-// Issue severity tones and labels (as in page/errors/kit/severity.ts).
-const SEVERITY = new Map([
-	["critical", { tone: "bg-severity-fatal/12 text-severity-fatal", label: "Critical" }],
-	["high", { tone: "bg-severity-error/12 text-severity-error", label: "High" }],
-	["medium", { tone: "bg-severity-warn/12 text-severity-warn", label: "Medium" }],
-	["low", { tone: "bg-severity-debug/12 text-severity-debug", label: "Low" }],
-])
+const isIssueSeverity = Schema.is(IssueSeverity)
 
-const severityBadge = (h: H, severity: string | null): Html => {
-	const known = severity === null ? undefined : SEVERITY.get(severity)
-	return known === undefined
-		? h.span([h.Class(cn("inline-flex h-5", "w-[60px] justify-center")), h.Title("Severity not set")])
-		: badge(h, { variant: "outline", className: cn(known.tone, "w-[60px] justify-center") }, [
-				known.label,
-			])
-}
+const issueSeverityBadge = (h: H, severity: string | null): Html =>
+	severityBadge(
+		h,
+		severity !== null && isIssueSeverity(severity) ? severity : null,
+		"w-[60px] justify-center",
+	)
 
 const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 	listRow(h, {
 		density: "compact",
 		className: "gap-2.5 rounded-sm px-2 text-sm",
 		href: `/errors/issues/${issue.id}`,
-		leading: severityBadge(h, issue.severity),
+		leading: issueSeverityBadge(h, issue.severity),
 		title: truncatedText(h, { text: issue.title, className: "font-normal" }),
 		trailing: h.span(
 			[h.Class("contents")],
@@ -58,7 +54,14 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 					[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
 					[formatNumber(issue.occurrenceCount), "×"],
 				),
-				relativeTime(h, { value: issue.lastSeenAt, ...clock, variant: "orDate", mono: true, tooltip: "title", className: "w-14 text-right text-xs text-muted-foreground/70" }),
+				relativeTime(h, {
+					value: issue.lastSeenAt,
+					...clock,
+					variant: "orDate",
+					mono: true,
+					tooltip: "title",
+					className: "w-14 text-right text-xs text-foreground-subtle",
+				}),
 			],
 		),
 	})
@@ -74,20 +77,20 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 					...(isLimited
 						? [h.span([h.Class("text-2xs text-muted-foreground")], ["Latest 90 days"])]
 						: []),
-					h.a([h.Class("text-xs text-primary hover:underline"), h.Href("/errors")], ["View all →"]),
+					textLink(h, { href: "/errors", className: "text-xs" }, ["View all →"]),
 				],
 			),
 		},
 		children,
 	)
 
-/** `ServiceErrorsPanel`: skeleton, the "could not be loaded" line, or up to five issue rows. */
+/** `ServiceErrorsPanel`: skeleton, the "Couldn't load" line, or up to five issue rows. */
 export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean): Html =>
 	AsyncData.match(model.issues.data, {
 		onIdle: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onLoading: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
-		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Issues could not be loaded."])]),
-		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Issues could not be loaded."])]),
+		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
+		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
 		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited),
 		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited),
 	})
@@ -114,7 +117,7 @@ const errorRateChip = (h: H, deploy: DeployEntry): Html => {
 			mono: true,
 			className: cn(
 				"cursor-default",
-				level === "neutral" ? "bg-transparent text-muted-foreground/60" : TONE_SOFT[level],
+				level === "neutral" ? "bg-transparent text-foreground-subtle" : TONE_SOFT[level],
 			),
 			attributes: [
 				h.Title(
@@ -153,7 +156,14 @@ const rowMeta = (
 ): ReadonlyArray<Html> => [
 	...prefix,
 	h.span([h.Class("shrink-0 tabular-nums")], [formatNumber(deploy.spanCount), " spans"]),
-	relativeTime(h, { value: deploy.firstSeen, ...clock, variant: "orDate", mono: true, tooltip: "title", className: "ml-auto shrink-0 cursor-default text-muted-foreground/70" }),
+	relativeTime(h, {
+		value: deploy.firstSeen,
+		...clock,
+		variant: "orDate",
+		mono: true,
+		tooltip: "title",
+		className: "ml-auto shrink-0 cursor-default text-foreground-subtle",
+	}),
 ]
 
 const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full bg-muted")])
@@ -162,7 +172,7 @@ const deploysEmpty = (h: H): Html =>
 	emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
 		h.span([], ["No deploys detected in this window."]),
 		h.span(
-			[h.Class("text-muted-foreground/70")],
+			[h.Class("text-foreground-subtle")],
 			[
 				"Deploy tracking needs spans to carry the",
 				" ",
@@ -186,15 +196,10 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 				h.div(
 					[h.Class("border-t px-4 py-2 text-xs")],
 					[
-						h.a(
-							[
-								h.Href("/sources/new?integration=github"),
-								h.Class(
-									"inline-flex items-center gap-1 font-medium text-primary hover:underline",
-								),
-							],
-							["Connect a repository to resolve commits", h.span([h.AriaHidden(true)], ["→"])],
-						),
+						textLink(h, { href: "/sources/new?integration=github" }, [
+							"Connect a repository to resolve commits",
+							h.span([h.AriaHidden(true)], ["→"]),
+						]),
 					],
 				),
 			]
@@ -231,7 +236,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 				deploys.length === 0
 					? undefined
 					: h.span(
-							[h.Class("text-xs text-muted-foreground/70")],
+							[h.Class("text-xs text-foreground-subtle")],
 							[countLabel(deploys.length, "version"), " in window"],
 						),
 		},
@@ -247,7 +252,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 										h.div(
 											[
 												h.Class(
-													"px-2 py-1.5 text-center text-2xs text-muted-foreground/70",
+													"px-2 py-1.5 text-center text-2xs text-foreground-subtle",
 												),
 											],
 											[
@@ -269,7 +274,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 												variant: "ghost",
 												size: "sm",
 												className:
-													"w-full text-xs text-muted-foreground hover:text-foreground",
+													"w-full text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 												attributes: [h.OnClick(Message.ClickedToggleDeploys())],
 											},
 											[

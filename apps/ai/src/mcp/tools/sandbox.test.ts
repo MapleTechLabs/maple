@@ -6,7 +6,7 @@ import {
 	SandboxImplementation,
 	SandboxSpawnError,
 	type SandboxError,
-} from "@yielded/agent/sandbox"
+} from "@maple/backend/sandbox/contract"
 import {
 	SandboxExecOutput,
 	SandboxGrepOutput,
@@ -58,7 +58,6 @@ type Run = (
 /** Decode, handle, encode and render, as the registry does; failures stay typed for the assertions. */
 const tools = new Map<string, Run>()
 registerSandboxTools({
-	tool: () => undefined,
 	define: (spec) => {
 		const run = (params: SandboxToolParams) =>
 			Schema.decodeUnknownEffect(spec.parameters)(params).pipe(

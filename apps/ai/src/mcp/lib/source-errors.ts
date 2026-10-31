@@ -10,7 +10,7 @@ import {
 	IntegrationsUpstreamError,
 } from "@maple/domain/http"
 import { SandboxRunCheckoutPending, SandboxRunUnavailable } from "@maple/domain/sandbox"
-import type { SandboxError } from "@yielded/agent/sandbox"
+import type { SandboxError } from "@maple/backend/sandbox/contract"
 import {
 	VcsSourceFileNotFoundError,
 	VcsSourceRefNotFoundError,
@@ -90,20 +90,20 @@ export const fromSandboxError =
 	(operation: string) =>
 	(error: SandboxError): SourceToolError => {
 		switch (error._tag) {
-			case "SandboxTimeoutError":
+			case "@maple/backend/sandbox/SandboxTimeoutError":
 				return new McpInvalidInputError({
 					message:
 						"The command exceeded its wall-clock limit. Narrow the search (path, glob, a tighter pattern) or the command.",
 				})
-			case "SandboxOutputLimitError":
+			case "@maple/backend/sandbox/SandboxOutputLimitError":
 				return new McpInvalidInputError({
 					message: `${error.stream} exceeded ${Math.round(error.limit / 1024)} KiB. Narrow the pattern, add a glob or path, or read a smaller range.`,
 				})
-			case "SandboxUnsupportedRequestError":
+			case "@maple/backend/sandbox/SandboxUnsupportedRequestError":
 				return error.feature === "runtime"
 					? new McpUnavailableError({ message: error.message, capability: "repository_sandbox" })
 					: new McpInvalidInputError({ message: error.message })
-			case "SandboxSpawnError": {
+			case "@maple/backend/sandbox/SandboxSpawnError": {
 				const cause = error.cause
 				if (isCheckoutPending(cause))
 					return new McpNotReadyError({
@@ -118,7 +118,7 @@ export const fromSandboxError =
 				if (isVcsLookupError(cause)) return fromVcsLookupError(operation)(cause)
 				return new McpQueryError({ message: error.message, pipeName: operation, cause: error })
 			}
-			case "SandboxExitError":
+			case "@maple/backend/sandbox/SandboxExitError":
 				return new McpQueryError({ message: error.message, pipeName: operation, cause: error })
 		}
 	}

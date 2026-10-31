@@ -24,6 +24,7 @@ describe("toInternalScrapeTarget", () => {
 		targetType: "prometheus",
 		scrapeIntervalSeconds: 15,
 		labelsJson: { env: "prod" },
+		sourceId: null,
 	}
 
 	const INGEST_KEY = "maple_pk_test_key"

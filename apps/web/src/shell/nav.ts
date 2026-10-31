@@ -13,7 +13,9 @@ export const NavSurface = Schema.Literals([
 	"cloudflare",
 	"planetscale",
 	"railway",
+	"supabase",
 	"gcp",
+	"aws",
 ])
 export type NavSurface = typeof NavSurface.Type
 
@@ -23,7 +25,13 @@ export interface NavSubItem {
 	readonly icon?: IconName
 	readonly iconColor?: string
 	readonly surfaces?: ReadonlyArray<NavSurface>
-	readonly views?: ReadonlyArray<{ readonly title: string; readonly href: string; readonly paletteTitle?: string }>
+	readonly views?: ReadonlyArray<{
+		readonly title: string
+		readonly href: string
+		readonly paletteTitle?: string
+		/** The palette's glyph for a view whose parent's icon misnames it (Containers under Hosts). */
+		readonly paletteIcon?: IconName
+	}>
 	/** The command palette's title, when the row's own reads ambiguously there. */
 	readonly paletteTitle?: string
 }
@@ -34,6 +42,8 @@ export interface NavItem {
 	readonly icon: IconName
 	readonly subItems?: ReadonlyArray<NavSubItem>
 	readonly badge?: string
+	/** Routes with no row of their own that this row stands in for (`/anomalies` under Alerts). */
+	readonly alsoActive?: ReadonlyArray<string>
 }
 
 export interface NavGroup {
@@ -45,7 +55,7 @@ export interface NavGroup {
 /** `PLANETSCALE_COLOR` (packages/ui/src/components/service-map/service-map-db.tsx). */
 const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 
-export const NAV_PREVIEW_MAX_GLYPHS = 6
+export const NAV_PREVIEW_MAX_GLYPHS = 7
 
 const infrastructureItem: NavItem = {
 	title: "Infrastructure",
@@ -58,7 +68,14 @@ const infrastructureItem: NavItem = {
 			href: "/infra/hosts",
 			icon: "ServerIcon",
 			surfaces: ["hosts", "containers"],
-			views: [{ title: "Containers", href: "/infra/containers", paletteTitle: "Containers" }],
+			views: [
+				{
+					title: "Containers",
+					href: "/infra/containers",
+					paletteTitle: "Containers",
+					paletteIcon: "DockerIcon",
+				},
+			],
 		},
 		{
 			title: "Kubernetes",
@@ -81,10 +98,22 @@ const infrastructureItem: NavItem = {
 			surfaces: ["planetscale"],
 		},
 		{ title: "Railway", href: "/infra/railway", icon: "RailwayIcon", surfaces: ["railway"] },
+		{ title: "Supabase", href: "/infra/supabase", icon: "SupabaseIcon", surfaces: ["supabase"] },
 		{ title: "Google Cloud", href: "/infra/gcp", icon: "GoogleCloudIcon", surfaces: ["gcp"] },
+		{ title: "AWS", href: "/infra/aws", icon: "AwsIcon", surfaces: ["aws"] },
 	],
 }
 // GROUPS
+
+const servicesItem: NavItem = {
+	title: "Services",
+	href: "/services",
+	icon: "ServerIcon",
+	subItems: [
+		{ title: "All services", href: "/services", icon: "UnorderedListIcon", paletteTitle: "Services" },
+		{ title: "Map", href: "/service-map", icon: "NetworkNodesIcon", paletteTitle: "Service Map" },
+	],
+}
 
 const exploreItem: NavItem = {
 	title: "Explore",
@@ -99,18 +128,29 @@ const exploreItem: NavItem = {
 	],
 }
 
-/** `navGroups(flags)`; only `releases` gates a row today. */
-export const navGroups = (flags: Readonly<{ releases: boolean }>): ReadonlyArray<NavGroup> => [
+/** The org rollout flags that gate a nav row each. */
+export type NavFlags = Readonly<{ releases: boolean; securityAudit: boolean; statusPages: boolean }>
+
+/** `navGroups(flags)`; `releases`, `securityAudit` and `statusPages` gate a row each. */
+export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
 		id: "monitor",
 		label: "Monitor",
 		items: [
-			{ title: "Services", href: "/services", icon: "ServerIcon" },
+			{
+				...servicesItem,
+				alsoActive: [
+					...(flags.releases ? [] : ["/releases"]),
+					...(flags.statusPages ? [] : ["/status-pages"]),
+				],
+			},
+			...(flags.statusPages
+				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
+				: []),
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
-			{ title: "Service Map", href: "/service-map", icon: "NetworkNodesIcon" },
 			infrastructureItem,
 		],
 	},
@@ -128,8 +168,17 @@ export const navGroups = (flags: Readonly<{ releases: boolean }>): ReadonlyArray
 		label: "Triage",
 		items: [
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			{ title: "Alerts", href: "/alerts", icon: "BellIcon" },
-			{ title: "Code Review", href: "/code-review", icon: "CodeIcon", badge: "Beta" },
+			{ title: "Alerts", href: "/alerts", icon: "BellIcon", alsoActive: ["/anomalies"] },
+			{
+				title: "Code Review",
+				href: "/code-review",
+				icon: "CodeIcon",
+				badge: "Beta",
+				alsoActive: flags.securityAudit ? [] : ["/security"],
+			},
+			...(flags.securityAudit
+				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
+				: []),
 		],
 	},
 ]
@@ -150,7 +199,33 @@ export const matchSubItem = (currentPath: string, sub: NavSubItem): string | und
 
 export const isNavItemActive = (currentPath: string, item: NavItem): boolean =>
 	isPathActive(currentPath, item.href) ||
+	(item.alsoActive?.some((href) => isPathActive(currentPath, href)) ?? false) ||
 	(item.subItems?.some((sub) => matchSubItem(currentPath, sub) !== undefined) ?? false)
+
+export interface NavPreview {
+	readonly glyphs: ReadonlyArray<NavSubItem>
+	/** Marks past the cap, drawn as `+N`. */
+	readonly overflow: number
+}
+
+/**
+ * Brand marks of a closed section: what the org reports (every mark when nothing does), deduplicated,
+ * the section's own page left out, capped at `NAV_PREVIEW_MAX_GLYPHS` with the rest as a count.
+ */
+export const navPreview = (item: NavItem, shown: ReadonlyArray<NavSubItem>): NavPreview | undefined => {
+	const subItems = item.subItems
+	if (subItems === undefined || !subItems.some((sub) => sub.iconColor !== undefined)) return undefined
+	const marked = (list: ReadonlyArray<NavSubItem>) =>
+		list.filter((sub) => sub.href !== item.href && sub.icon !== undefined)
+	const reporting = marked(shown)
+	const candidates = reporting.length > 0 ? reporting : marked(subItems)
+	const unique = candidates.filter(
+		(sub, index) => candidates.findIndex((other) => other.icon === sub.icon) === index,
+	)
+	if (unique.length <= NAV_PREVIEW_MAX_GLYPHS) return { glyphs: unique, overflow: 0 }
+	const glyphs = unique.slice(0, NAV_PREVIEW_MAX_GLYPHS - 1)
+	return { glyphs, overflow: unique.length - glyphs.length }
+}
 
 /** What the org reports shows; the rest only in the collapsed rail's menu. `null`: everything shows. */
 export const partitionSubItems = (

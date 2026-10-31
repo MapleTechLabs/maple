@@ -14,7 +14,7 @@ import {
 	MapleAiApi,
 	internalServiceBearer,
 } from "@maple/domain/http"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
 import { HttpApiClient } from "effect/http-api"
 import { AiWorkerFetcher } from "@maple/backend/platform/bindings"

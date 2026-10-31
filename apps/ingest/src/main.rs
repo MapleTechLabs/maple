@@ -11,10 +11,12 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod autumn;
+mod rules_gateway;
 mod sources;
 mod task_protection;
 
-use std::io::{Read, Write};
+use std::collections::HashSet;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -22,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
-use autumn::{AutumnEntitlements, AutumnTracker};
+use autumn::{AutumnEntitlements, AutumnTracker, BillingOrgLookup, BillingOrgResolver};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::MatchedPath;
@@ -40,15 +42,17 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::DateTime;
 use dashmap::DashMap;
-use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use hmac::{Hmac, Mac};
 use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
+use maple_ingest::aws_metric_stream;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
+use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
+use maple_ingest::ingest_rules::{self, IngestSignal, RuleStats};
 use maple_ingest::metrics;
 use maple_ingest::otel::{
     accept_internal_span, auth_internal_span, build_resource, decode_internal_span,
@@ -95,9 +99,10 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use sha2::Sha256;
+use rules_gateway::{IngestRuleResolver, IngestRuleRows, IngestRuleStatRow, IngestRuleStatsSink};
 use sources::{
-    OverrideMode, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef, SourceSignal,
-    MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
+    OverrideMode, PauseWindow, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef,
+    SourceSignal, MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
 };
 use tower_http::cors::{Any, CorsLayer};
 use tracing::Instrument;
@@ -165,6 +170,8 @@ struct AppConfig {
     write_mode: WriteMode,
     tinybird: TinybirdConfig,
     max_request_body_bytes: usize,
+    /// Ceiling on a gzip body after decompression; past it the request is a 413.
+    max_decoded_body_bytes: usize,
     org_max_in_flight: u64,
     /// Gateway instances sharing each source's requests/second limit.
     rate_limit_fleet_size: u32,
@@ -184,6 +191,10 @@ struct AppConfig {
     autumn_deny_ttl_secs: u64,
     ingest_key_cache_ttl_secs: u64,
     org_routing_cache_ttl_secs: u64,
+    /// `INGEST_RULES_ENABLED` (default on): apply customer drop/redact rules. Off reads nothing and costs nothing.
+    ingest_rules_enabled: bool,
+    /// `INGEST_RULES_CACHE_TTL_SECS`: how long an org's compiled rules are reused.
+    ingest_rules_cache_ttl_secs: u64,
     /// Ceiling on the total decompressed rrweb payload a single replay session
     /// may accumulate. 0 disables the cap. See `ReplaySessionBudget`.
     replay_max_session_bytes: u64,
@@ -215,6 +226,8 @@ struct AppConfig {
     /// The 401 body for a key this instance does not know. See
     /// `invalid_ingest_key_message`.
     invalid_key_message: &'static str,
+    /// `INGEST_BLOCKED_KEYS`: keys refused at origin whatever header spelling carries them.
+    blocked_ingest_keys: Arc<HashSet<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -418,6 +431,10 @@ impl AppConfig {
                     duration_millis(ClickHouseBreakerConfig::default().cooldown),
                 )?),
             },
+            clickhouse_allow_private_endpoints: clickhouse_allow_private_endpoints(
+                std::env::var("INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS").ok(),
+                std::env::var("MAPLE_SELF_HOSTED_MODE").ok(),
+            )?,
             datasources: DatasourceNames::from_env(),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_owned()),
@@ -441,6 +458,17 @@ impl AppConfig {
             std::env::var("INGEST_MAX_REQUEST_BODY_BYTES").ok(),
             20 * 1024 * 1024,
         )?;
+        let max_decoded_body_bytes = parse_usize(
+            "INGEST_MAX_DECODED_BODY_BYTES",
+            std::env::var("INGEST_MAX_DECODED_BODY_BYTES").ok(),
+            max_request_body_bytes.saturating_mul(8),
+        )?;
+        if max_decoded_body_bytes < max_request_body_bytes {
+            return Err(
+                "INGEST_MAX_DECODED_BODY_BYTES must be at least INGEST_MAX_REQUEST_BODY_BYTES"
+                    .to_owned(),
+            );
+        }
         let org_max_in_flight = parse_u64(
             "INGEST_ORG_MAX_IN_FLIGHT",
             std::env::var("INGEST_ORG_MAX_IN_FLIGHT").ok(),
@@ -553,6 +581,19 @@ impl AppConfig {
         let org_routing_cache_ttl_secs = parse_u64(
             "INGEST_ORG_ROUTING_CACHE_TTL_SECS",
             std::env::var("INGEST_ORG_ROUTING_CACHE_TTL_SECS").ok(),
+            30,
+        )?;
+
+        // On by default, so a self-hosted gateway applies the rules its dashboard lets admins save;
+        // the managed deploy sets it explicitly per stage.
+        let ingest_rules_enabled = parse_bool(
+            "INGEST_RULES_ENABLED",
+            std::env::var("INGEST_RULES_ENABLED").ok(),
+            true,
+        )?;
+        let ingest_rules_cache_ttl_secs = parse_u64(
+            "INGEST_RULES_CACHE_TTL_SECS",
+            std::env::var("INGEST_RULES_CACHE_TTL_SECS").ok(),
             30,
         )?;
 
@@ -692,6 +733,7 @@ impl AppConfig {
             write_mode,
             tinybird,
             max_request_body_bytes,
+            max_decoded_body_bytes,
             org_max_in_flight,
             rate_limit_fleet_size,
             gcp_org_max_in_flight,
@@ -707,6 +749,8 @@ impl AppConfig {
             autumn_deny_ttl_secs,
             ingest_key_cache_ttl_secs,
             org_routing_cache_ttl_secs,
+            ingest_rules_enabled,
+            ingest_rules_cache_ttl_secs,
             replay_max_session_bytes,
             replay_blob_store,
             internal_org_id,
@@ -714,6 +758,9 @@ impl AppConfig {
             shutdown_drain_secs,
             wal_store,
             invalid_key_message,
+            blocked_ingest_keys: Arc::new(parse_blocked_ingest_keys(
+                std::env::var("INGEST_BLOCKED_KEYS").ok().as_deref(),
+            )),
         })
     }
 }
@@ -796,7 +843,9 @@ struct IngestKeyResolver {
     recent_key_rejections: Cache<String, ()>,
     /// (org id, claim as received) to whether it names one of the org's pull sources,
     /// for `maple_source_id` values sent with the default keys.
-    source_claims: Cache<(String, String), bool>,
+    source_claims: Cache<(String, String), SourceClaim>,
+    /// Emergency block list, checked before any cache or store lookup.
+    blocked_keys: Arc<HashSet<String>>,
 }
 
 /// How often one token source's `last_used_at` is rewritten per gateway instance.
@@ -820,7 +869,22 @@ impl moka::Expiry<String, Duration> for SourceUseExpiry {
     }
 }
 
-fn source_claims_cache(ttl: Duration) -> Cache<(String, String), bool> {
+/// A cached answer for one `maple_source_id` claim. The pause window is kept
+/// rather than a verdict, so a timed pause ends at its deadline while cached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceClaim {
+    Unclaimable,
+    Claimable(PauseWindow),
+}
+
+/// Verified claims split by whether their source is paused right now.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct VerifiedClaims {
+    active: Vec<String>,
+    paused: Vec<String>,
+}
+
+fn source_claims_cache(ttl: Duration) -> Cache<(String, String), SourceClaim> {
     Cache::builder()
         .time_to_live(ttl)
         .max_capacity(50_000)
@@ -850,8 +914,6 @@ struct CloudflareConnectorResolver {
 
 const CLOUDFLARE_CONNECTORS_TABLE: &str = "cloudflare_logpush_connectors";
 const GCP_CONNECTORS_TABLE: &str = "gcp_connectors";
-/// `sources.platform` of a GCP connector's integration source.
-const GCP_SOURCE_PLATFORM: &str = "gcp";
 
 /// How often one connector's health columns are rewritten per outcome. Pub/Sub
 /// pushes one log entry per request, so an unthrottled write is one UPDATE per
@@ -881,6 +943,26 @@ struct GcpConnectorResolver {
     recent_setup_reports: Cache<String, Arc<AtomicU32>>,
     /// Verifies the ID tokens Pub/Sub signs pushes with.
     push_auth: GooglePushAuth,
+}
+
+const AWS_CONNECTIONS_TABLE: &str = "aws_connections";
+
+/// How often one AWS connection's stream health columns are rewritten per
+/// outcome. A busy stream delivers every few seconds.
+const AWS_STREAM_HEALTH_WRITE_INTERVAL: Duration = Duration::from_mins(1);
+
+struct AwsConnectionResolver {
+    store: Arc<dyn KeyStore>,
+    lookup_hmac_key: String,
+    /// Keyed on (connection id, stream secret hash).
+    cache: Cache<(String, String), AwsConnectionIdentity>,
+    // A deleted connection's Firehose keeps delivering and retrying each 401;
+    // this keeps that off Postgres.
+    negative_cache: Cache<(String, String), ()>,
+    routing: Arc<OrgRoutingResolver>,
+    /// (connection id, succeeded) pairs already written within
+    /// `AWS_STREAM_HEALTH_WRITE_INTERVAL`.
+    recent_health_writes: Cache<(String, bool), ()>,
 }
 
 struct OrgRoutingResolver {
@@ -915,6 +997,9 @@ struct ClickHouseTargetResolver {
     /// effect without a deploy.
     negative_cache: Cache<String, ()>,
 }
+
+/// How often per-rule ingest stats are written to `org_ingest_rule_stats`.
+const INGEST_RULE_STATS_FLUSH_INTERVAL: Duration = Duration::from_mins(1);
 
 /// How long a resolved ClickHouse target is reused.
 const CLICKHOUSE_TARGET_TTL: Duration = Duration::from_mins(1);
@@ -968,21 +1053,13 @@ trait KeyStore: Send + Sync {
         reason: &str,
     ) -> Result<(), String>;
 
-    /// The source created for one integration; `None` until the API creates it.
-    async fn fetch_integration_source_id(
-        &self,
-        org_id: &str,
-        platform: &'static str,
-        integration_id: &str,
-    ) -> Result<Option<String>, String>;
-
-    /// The subset of `source_ids` (uuids) that are the org's integration ("pull")
+    /// The subset of `source_ids` (uuids) that are the org's `kind = 'integration'`
     /// sources, the only ones a default-key sender may claim. One round trip.
     async fn claimable_source_ids(
         &self,
         org_id: &str,
         source_ids: &[String],
-    ) -> Result<Vec<String>, String>;
+    ) -> Result<Vec<PullSourceRow>, String>;
 
     async fn fetch_connector(
         &self,
@@ -1012,12 +1089,21 @@ trait KeyStore: Send + Sync {
         org_id: &str,
     ) -> Result<Vec<AttributeMappingRow>, String>;
 
+    /// The org's enabled ingest rules in `position` order, and its hash salt.
+    async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String>;
+
+    /// Adds per-rule counts into `org_ingest_rule_stats`, one statement for all `rows`.
+    async fn record_ingest_rule_stats(&self, rows: &[IngestRuleStatRow]) -> Result<(), String>;
+
     async fn fetch_clickhouse_target(
         &self,
         org_id: &str,
     ) -> Result<Option<ClickHouseTargetRow>, String>;
 
     async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String>;
+
+    /// The org that pays for `org_id` (`org_billing_links`); `None` bills as itself.
+    async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String>;
 
     /// `table` is one of the `*_CONNECTORS_TABLE` constants, never user input.
     async fn record_connector_success(
@@ -1042,6 +1128,22 @@ trait KeyStore: Send + Sync {
         report: gcp_logging::SetupReport,
         now_ms: i64,
     ) -> Result<(), String>;
+
+    /// An AWS connection by id and metric stream secret hash.
+    async fn fetch_aws_connection(
+        &self,
+        connection_id: &str,
+        secret_hash: &str,
+    ) -> Result<Option<AwsConnectionRow>, String>;
+
+    /// Stamps `stream_last_received_at` and clears `stream_last_error`
+    /// (`error == None`), or writes `stream_last_error`.
+    async fn record_aws_stream_health(
+        &self,
+        connection_id: &str,
+        error: Option<&str>,
+        now_ms: i64,
+    ) -> Result<(), String>;
 }
 
 #[derive(Clone, Debug)]
@@ -1056,6 +1158,24 @@ struct OrgKeyRow {
     key: KeyRow,
     /// `sources.id` of the org's default source; `None` if it has none.
     default_source_id: Option<String>,
+}
+
+/// An integration ("pull") source and its pause window.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PullSourceRow {
+    /// The `sources.id` uuid.
+    id: String,
+    pause: PauseWindow,
+}
+
+impl PullSourceRow {
+    /// A connector's source to stamp and its pause window; none is never paused.
+    fn stamped(row: Option<Self>) -> (Option<SourceRef>, PauseWindow) {
+        row.and_then(|row| Some((SourceRef::from_id(row.id)?, row.pause)))
+            .map_or((None, PauseWindow::default()), |(source, pause)| {
+                (Some(source), pause)
+            })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1073,6 +1193,8 @@ struct ConnectorRow {
     dataset: String,
     self_managed: bool,
     clickhouse_ready: bool,
+    /// The connector's `sources` row, joined through `source_id`.
+    source: Option<PullSourceRow>,
 }
 
 #[derive(Clone, Debug)]
@@ -1085,6 +1207,17 @@ struct GcpConnectorRow {
     applied_logs_enabled: Option<bool>,
     self_managed: bool,
     clickhouse_ready: bool,
+    /// The connector's `sources` row, joined through `source_id`.
+    source: Option<PullSourceRow>,
+}
+
+#[derive(Clone, Debug)]
+struct AwsConnectionRow {
+    org_id: String,
+    self_managed: bool,
+    clickhouse_ready: bool,
+    /// The connection's `sources` row, joined through `source_id`.
+    source: Option<PullSourceRow>,
 }
 
 #[derive(Clone, Debug)]
@@ -1133,6 +1266,10 @@ struct CloudflareConnectorIdentity {
     zone_name: String,
     dataset: String,
     secret_key_id: String,
+    /// The connector's source, stamped on its logs.
+    source: Option<SourceRef>,
+    /// That source's pause window, judged per push so a timed pause ends on time.
+    source_pause: PauseWindow,
 }
 
 impl CloudflareConnectorIdentity {
@@ -1146,6 +1283,8 @@ impl CloudflareConnectorIdentity {
             secret_key_id: self.secret_key_id,
             self_managed: routing.self_managed,
             clickhouse_ready: routing.clickhouse_ready,
+            source: self.source,
+            source_pause: self.source_pause,
         }
     }
 }
@@ -1158,6 +1297,8 @@ struct GcpConnectorIdentity {
     confirms_log_forwarding: bool,
     /// The connector's integration source, stamped on its logs.
     source: Option<SourceRef>,
+    /// That source's pause window, judged per push so a timed pause ends on time.
+    source_pause: PauseWindow,
 }
 
 impl GcpConnectorIdentity {
@@ -1165,6 +1306,34 @@ impl GcpConnectorIdentity {
         ResolvedGcpConnector {
             logs_enabled: self.logs_enabled,
             confirms_log_forwarding: self.confirms_log_forwarding,
+            source_pause: self.source_pause,
+            key: ResolvedIngestKey {
+                org_id: self.org_id,
+                key_type: IngestKeyType::Connector,
+                key_id: self.secret_key_id,
+                self_managed: routing.self_managed,
+                clickhouse_ready: routing.clickhouse_ready,
+                source: None,
+                default_source: self.source,
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AwsConnectionIdentity {
+    org_id: String,
+    secret_key_id: String,
+    /// The connection's integration source, stamped on its metrics.
+    source: Option<SourceRef>,
+    /// That source's pause window, judged per delivery so a timed pause ends on time.
+    source_pause: PauseWindow,
+}
+
+impl AwsConnectionIdentity {
+    fn into_resolved(self, routing: &OrgRouting) -> ResolvedAwsConnection {
+        ResolvedAwsConnection {
+            source_pause: self.source_pause,
             key: ResolvedIngestKey {
                 org_id: self.org_id,
                 key_type: IngestKeyType::Connector,
@@ -1344,8 +1513,13 @@ struct AppState {
     gcp_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
     attribute_mapping_resolver: AttributeMappingResolver,
+    /// Each org's compiled ingest rules; inert unless `INGEST_RULES_ENABLED`.
+    ingest_rule_resolver: IngestRuleResolver,
+    /// Per-rule counts awaiting the next flush to `org_ingest_rule_stats`.
+    ingest_rule_stats: Arc<IngestRuleStatsSink>,
     cloudflare_resolver: CloudflareConnectorResolver,
     gcp_resolver: GcpConnectorResolver,
+    aws_resolver: AwsConnectionResolver,
     autumn_tracker: Option<AutumnTracker>,
     autumn_entitlements: Option<AutumnEntitlements>,
     /// Per-org ingest volume, on its own delta-temporality provider. Recorded
@@ -1429,6 +1603,9 @@ struct ResolvedCloudflareConnector {
     // to the self-managed pool when the owning org has BYO Tinybird active.
     self_managed: bool,
     clickhouse_ready: bool,
+    source: Option<SourceRef>,
+    /// A paused source's batches are acked and dropped.
+    source_pause: PauseWindow,
 }
 
 struct ResolvedGcpConnector {
@@ -1438,7 +1615,36 @@ struct ResolvedGcpConnector {
     /// with Terraform, which sends no report. The push itself proves the sink,
     /// topic and subscription are in place.
     confirms_log_forwarding: bool,
+    /// The integration source's pause window: a paused source's entries are acked and dropped.
+    source_pause: PauseWindow,
     key: ResolvedIngestKey,
+}
+
+struct ResolvedAwsConnection {
+    /// The integration source's pause window: a paused source's deliveries are acked and dropped.
+    source_pause: PauseWindow,
+    key: ResolvedIngestKey,
+}
+
+/// What an acked Firehose delivery did.
+enum AwsStreamOutcome {
+    Accepted {
+        item_count: usize,
+    },
+    /// The body or a record can never decode, so a retry is pointless.
+    Undecodable,
+    /// The connection's integration source is paused.
+    SourcePaused,
+}
+
+/// What an accepted Cloudflare Logpush request did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LogpushOutcome {
+    Accepted,
+    /// Cloudflare's destination-validation ping when the job is created.
+    Validation,
+    /// The connector's source is paused: acked, nothing stored or billed.
+    SourcePaused,
 }
 
 /// What an acked GCP push did.
@@ -1451,6 +1657,8 @@ enum GcpPushOutcome {
     /// A setup script run saying what it applied: recorded on the connector,
     /// not a log.
     SetupReport,
+    /// The connector's integration source is paused.
+    SourcePaused,
 }
 
 #[derive(Clone, Copy)]
@@ -1495,6 +1703,14 @@ impl Signal {
             Self::Metrics => SourceSignal::Metrics,
         }
     }
+
+    fn ingest_signal(self) -> IngestSignal {
+        match self {
+            Self::Traces => IngestSignal::Traces,
+            Self::Logs => IngestSignal::Logs,
+            Self::Metrics => IngestSignal::Metrics,
+        }
+    }
 }
 
 enum DecodedPayload {
@@ -1504,6 +1720,30 @@ enum DecodedPayload {
 }
 
 impl DecodedPayload {
+    fn signal(&self) -> Signal {
+        match self {
+            Self::Traces(_) => Signal::Traces,
+            Self::Logs(_) => Signal::Logs,
+            Self::Metrics(_) => Signal::Metrics,
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        match self {
+            Self::Traces(request) => request.encoded_len(),
+            Self::Logs(request) => request.encoded_len(),
+            Self::Metrics(request) => request.encoded_len(),
+        }
+    }
+
+    fn resource_count(&self) -> usize {
+        match self {
+            Self::Traces(request) => request.resource_spans.len(),
+            Self::Logs(request) => request.resource_logs.len(),
+            Self::Metrics(request) => request.resource_metrics.len(),
+        }
+    }
+
     fn item_count(&self) -> usize {
         match self {
             Self::Traces(request) => count_trace_items(request),
@@ -1793,6 +2033,18 @@ static INGEST_SERVICE_UNAVAILABLE: FailureKind = FailureKind {
     recovery: "retry",
     retryable: true,
     error_kind: "unavailable",
+    retry_after_seconds: Some(5),
+};
+
+/// The org's ingest rules could not be loaded and none were before. Refused rather
+/// than stored unredacted; safe to resend once the rule store answers.
+static INGEST_RULES_UNAVAILABLE: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestRulesUnavailable",
+    code: "ingest_rules_unavailable",
+    title: "Ingest rules unavailable",
+    recovery: "retry",
+    retryable: true,
+    error_kind: "rules_unavailable",
     retry_after_seconds: Some(5),
 };
 
@@ -2698,13 +2950,22 @@ async fn main() {
         task_protection::spawn(pipeline);
     }
 
+    // Every Autumn call bills the org's billing parent when it has one.
+    let billing_orgs = BillingOrgResolver::new(
+        Arc::new(KeyStoreBillingLookup(Arc::clone(&store))),
+        BILLING_ORG_CACHE_TTL,
+    );
+
     let autumn_tracker = config.autumn_secret_key.as_ref().map(|key| {
         AutumnTracker::spawn(
             key.clone(),
             &config.autumn_api_url,
             config.autumn_flush_interval_secs,
+            billing_orgs.clone(),
         )
     });
+
+    let shutdown_tracker = autumn_tracker.clone();
 
     // A configured Autumn account is the billing authority. Native balance
     // checks and customer controls must not be bypassable by a second flag.
@@ -2715,6 +2976,7 @@ async fn main() {
             &config.autumn_api_url,
             config.autumn_allow_ttl_secs,
             config.autumn_deny_ttl_secs,
+            billing_orgs.clone(),
         )
     });
 
@@ -2752,6 +3014,18 @@ async fn main() {
         last_known: DashMap::new(),
     });
 
+    // Rule stats go to Postgres every minute; the static store's write is a no-op.
+    let ingest_rule_stats = Arc::new(IngestRuleStatsSink::default());
+    let ingest_rules_enabled = config.ingest_rules_enabled;
+    if ingest_rules_enabled {
+        tokio::spawn(rules_gateway::run_stats_flusher(
+            Arc::clone(&ingest_rule_stats),
+            Arc::clone(&store),
+            INGEST_RULE_STATS_FLUSH_INTERVAL,
+        ));
+    }
+    let stats_store = Arc::clone(&store);
+
     // Same pooled client as every other outbound call; `http_client` itself is
     // moved into the state below.
     let http_client_for_blobs = http_client.clone();
@@ -2769,6 +3043,7 @@ async fn main() {
             source_claims: source_claims_cache(Duration::from_secs(
                 config.ingest_key_cache_ttl_secs,
             )),
+            blocked_keys: Arc::clone(&config.blocked_ingest_keys),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
         key_rate_limiter: SourceRateLimiter::new(config.rate_limit_fleet_size),
@@ -2784,6 +3059,13 @@ async fn main() {
             store: Arc::clone(&store),
             cache: attribute_mapping_cache,
         },
+        ingest_rule_resolver: IngestRuleResolver::new(
+            Arc::clone(&store),
+            config.ingest_rules_enabled,
+            Duration::from_secs(config.ingest_rules_cache_ttl_secs),
+            10_000,
+        ),
+        ingest_rule_stats: Arc::clone(&ingest_rule_stats),
         cloudflare_resolver: CloudflareConnectorResolver {
             store: Arc::clone(&store),
             lookup_hmac_key: config.lookup_hmac_key.clone(),
@@ -2793,9 +3075,15 @@ async fn main() {
         gcp_resolver: GcpConnectorResolver::new(
             Arc::clone(&store),
             config.lookup_hmac_key.clone(),
-            org_routing_resolver,
+            Arc::clone(&org_routing_resolver),
             Duration::from_secs(config.ingest_key_cache_ttl_secs),
             GooglePushAuth::new(http_client.clone()),
+        ),
+        aws_resolver: AwsConnectionResolver::new(
+            Arc::clone(&store),
+            config.lookup_hmac_key.clone(),
+            org_routing_resolver,
+            Duration::from_secs(config.ingest_key_cache_ttl_secs),
         ),
         telemetry_pipeline,
         http_client,
@@ -2854,6 +3142,10 @@ async fn main() {
             post(handle_cloudflare_logpush_http_requests),
         )
         .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
+        .route(
+            "/v1/firehose/aws/{connection_id}",
+            post(handle_aws_firehose),
+        )
         .layer(cors)
         .layer(DefaultBodyLimit::max(config.max_request_body_bytes))
         .with_state(state);
@@ -2912,13 +3204,22 @@ async fn main() {
         );
     }
 
-    if let Some(grpc_port) = config.otlp_grpc_port {
-        tokio::spawn(run_grpc_server(grpc_state, grpc_port));
-    }
+    let grpc_server = config
+        .otlp_grpc_port
+        .map(|grpc_port| tokio::spawn(run_grpc_server(grpc_state, grpc_port)));
 
     let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await;
+    // Its exports must land in the WAL before the drain below reads it. It stops only
+    // on the shutdown signal, which a failed `axum::serve` never saw, so abort it then.
+    if let Some(grpc_server) = grpc_server {
+        if serve_result.is_err() {
+            grpc_server.abort();
+        } else {
+            drop(grpc_server.await);
+        }
+    }
 
     // Intake has stopped (graceful shutdown drained in-flight requests), but
     // the WAL sits on ephemeral storage that dies with the task — export what
@@ -2947,6 +3248,16 @@ async fn main() {
                 "Shipped the undrained WAL tail to the object store"
             );
         }
+    }
+
+    // Before telemetry shuts down, so a "dropped at shutdown" line still ships.
+    if let Some(tracker) = &shutdown_tracker {
+        tracker.shutdown(AUTUMN_SHUTDOWN_DEADLINE).await;
+    }
+
+    // Counts since the last periodic flush; best effort like the flusher itself.
+    if ingest_rules_enabled {
+        ingest_rule_stats.flush(stats_store.as_ref()).await;
     }
 
     if let Some(providers) = telemetry_providers {
@@ -3008,20 +3319,38 @@ async fn run_grpc_server(state: Arc<AppState>, port: u16) {
 }
 
 /// The three OTLP services behind `grpc_admission`.
+///
+/// gzip is the OTel Collector's default exporter compression. Admission caps the
+/// body at the HTTP path's raw limit; tonic's message limit (frame and
+/// decompressed) is its decoded ceiling. tonic's own default is 4 MiB.
 fn grpc_router(state: Arc<AppState>) -> Router {
     use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
     use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
     use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
+    use tonic::codec::CompressionEncoding;
 
-    tonic::service::Routes::new(TraceServiceServer::new(GrpcTraceService {
-        state: Arc::clone(&state),
-    }))
-    .add_service(LogsServiceServer::new(GrpcLogsService {
-        state: Arc::clone(&state),
-    }))
-    .add_service(MetricsServiceServer::new(GrpcMetricsService {
-        state: Arc::clone(&state),
-    }))
+    let max_message_bytes = state.config.max_decoded_body_bytes;
+    tonic::service::Routes::new(
+        TraceServiceServer::new(GrpcTraceService {
+            state: Arc::clone(&state),
+        })
+        .accept_compressed(CompressionEncoding::Gzip)
+        .max_decoding_message_size(max_message_bytes),
+    )
+    .add_service(
+        LogsServiceServer::new(GrpcLogsService {
+            state: Arc::clone(&state),
+        })
+        .accept_compressed(CompressionEncoding::Gzip)
+        .max_decoding_message_size(max_message_bytes),
+    )
+    .add_service(
+        MetricsServiceServer::new(GrpcMetricsService {
+            state: Arc::clone(&state),
+        })
+        .accept_compressed(CompressionEncoding::Gzip)
+        .max_decoding_message_size(max_message_bytes),
+    )
     .into_axum_router()
     .layer(axum::middleware::from_fn_with_state(state, grpc_admission))
 }
@@ -3047,7 +3376,9 @@ async fn grpc_admission(
     };
     let span = grpc_server_span(rpc_service, signal.path());
     let span_handle = span.clone();
-    let response = async move {
+    let request_timeout = state.config.request_timeout;
+    let path = request.uri().path().to_owned();
+    let admitted = async move {
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
             Ok((resolved, admission)) => {
@@ -3059,6 +3390,10 @@ async fn grpc_admission(
                     request
                         .headers_mut()
                         .remove(axum::http::header::CONTENT_LENGTH);
+                } else if let Err(status) =
+                    limit_grpc_body(&mut request, state.config.max_request_body_bytes)
+                {
+                    return status.into_http();
                 }
                 request.extensions_mut().insert(resolved);
                 request.extensions_mut().insert(admission);
@@ -3066,11 +3401,105 @@ async fn grpc_admission(
             }
             Err(status) => status.into_http(),
         }
-    }
-    .instrument(span)
-    .await;
+    };
+    // The HTTP path's deadline, enforced here so the span records it. `Unavailable`
+    // is that path's retryable 503. Zero disables it there too.
+    let response = if request_timeout.is_zero() {
+        admitted.instrument(span).await
+    } else if let Ok(response) = tokio::time::timeout(request_timeout, admitted)
+        .instrument(span)
+        .await
+    {
+        response
+    } else {
+        metrics::request_timed_out(&path);
+        warn!(
+            path,
+            timeout_secs = request_timeout.as_secs(),
+            "Abandoning gRPC export that exceeded the gateway timeout"
+        );
+        tonic::Status::unavailable("Ingest gateway timed out while accepting this request")
+            .into_http()
+    };
     record_grpc_outcome(&span_handle, &response);
     response
+}
+
+/// The HTTP path's raw body cap, and one message per export (`SingleGrpcFrame`).
+/// Both refusals are client errors OTLP exporters do not retry; tonic finds the
+/// `Status` in the body error.
+fn limit_grpc_body(request: &mut Request, max_bytes: usize) -> Result<(), tonic::Status> {
+    use http_body_util::BodyExt as _;
+
+    let too_large = move || {
+        tonic::Status::resource_exhausted(format!("Request body exceeds {max_bytes} bytes"))
+    };
+    let declared = request
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok());
+    if declared.is_some_and(|len| len > max_bytes) {
+        return Err(too_large());
+    }
+    let body = std::mem::take(request.body_mut());
+    let mut frame = SingleGrpcFrame::default();
+    let limited = http_body_util::Limited::new(body, max_bytes).map_err(move |error| {
+        if error.is::<http_body_util::LengthLimitError>() {
+            axum::BoxError::from(too_large())
+        } else {
+            error
+        }
+    });
+    let guarded = futures_util::StreamExt::map(limited.into_data_stream(), move |chunk| {
+        let chunk = chunk?;
+        frame.check(&chunk)?;
+        Ok::<_, axum::BoxError>(chunk)
+    });
+    *request.body_mut() = axum::body::Body::from_stream(guarded);
+    Ok(())
+}
+
+/// Tracks the gRPC framing of a unary export body. tonic's unary path decodes every
+/// frame, each up to the decoded limit, but an export is one message: a byte past
+/// the first frame is refused before tonic reads it.
+#[derive(Default)]
+struct SingleGrpcFrame {
+    header: [u8; 5],
+    header_len: usize,
+    body_left: usize,
+    complete: bool,
+}
+
+impl SingleGrpcFrame {
+    fn check(&mut self, mut chunk: &[u8]) -> Result<(), tonic::Status> {
+        while !chunk.is_empty() {
+            if self.complete {
+                return Err(tonic::Status::invalid_argument(
+                    "An OTLP export carries exactly one gRPC message",
+                ));
+            }
+            if self.header_len < self.header.len() {
+                let take = (self.header.len() - self.header_len).min(chunk.len());
+                self.header[self.header_len..self.header_len + take]
+                    .copy_from_slice(&chunk[..take]);
+                self.header_len += take;
+                chunk = &chunk[take..];
+                if self.header_len == self.header.len() {
+                    let [_, a, b, c, d] = self.header;
+                    self.body_left =
+                        usize::try_from(u32::from_be_bytes([a, b, c, d])).unwrap_or(usize::MAX);
+                    self.complete = self.body_left == 0;
+                }
+            } else {
+                let take = self.body_left.min(chunk.len());
+                self.body_left -= take;
+                chunk = &chunk[take..];
+                self.complete = self.body_left == 0;
+            }
+        }
+        Ok(())
+    }
 }
 
 async fn admit_grpc_export(
@@ -3163,9 +3592,8 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         // `decoded_payload.len()`.
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Traces(inner);
-        // A paused source's export reaches here empty (see `grpc_admission`).
-        let kept_claim = admission == KeyAdmission::Ingest
-            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        let (admission, claims) =
+            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Traces,
@@ -3173,7 +3601,7 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
             &resolved,
             admission,
             decoded_bytes,
-            kept_claim,
+            &claims,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3199,9 +3627,8 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Logs(inner);
-        // A paused source's export reaches here empty (see `grpc_admission`).
-        let kept_claim = admission == KeyAdmission::Ingest
-            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        let (admission, claims) =
+            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Logs,
@@ -3209,7 +3636,7 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
             &resolved,
             admission,
             decoded_bytes,
-            kept_claim,
+            &claims,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3237,9 +3664,8 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Metrics(inner);
-        // A paused source's export reaches here empty (see `grpc_admission`).
-        let kept_claim = admission == KeyAdmission::Ingest
-            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        let (admission, claims) =
+            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Metrics,
@@ -3247,7 +3673,7 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
             &resolved,
             admission,
             decoded_bytes,
-            kept_claim,
+            &claims,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3258,16 +3684,39 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
     }
 }
 
+/// Verifies a gRPC export's source claims; a batch of only paused pull sources
+/// becomes a `Drop`, so the client still gets an OK reply.
+async fn admit_grpc_claims(
+    state: &AppState,
+    admission: KeyAdmission,
+    decoded: &mut DecodedPayload,
+    resolved: &ResolvedIngestKey,
+) -> (KeyAdmission, ClaimOutcome) {
+    // A paused source's export reaches here empty (see `grpc_admission`).
+    if admission != KeyAdmission::Ingest {
+        return (admission, ClaimOutcome::default());
+    }
+    let claims = verify_claims_and_enrich(state, decoded, resolved).await;
+    let admission = if claims.all_paused {
+        KeyAdmission::Drop
+    } else {
+        admission
+    };
+    (admission, claims)
+}
+
 /// Accept a decoded export, already authenticated and entitlement-gated by
 /// `grpc_admission`.
+/// `decoded_bytes` is the export's size as received; only the share the claims and
+/// ingest rules leave is metered.
 async fn accept_grpc_decoded(
     state: &AppState,
     signal: Signal,
-    decoded: DecodedPayload,
+    mut decoded: DecodedPayload,
     resolved: &ResolvedIngestKey,
     admission: KeyAdmission,
     decoded_bytes: usize,
-    kept_claim: bool,
+    claims: &ClaimOutcome,
 ) -> Result<(), tonic::Status> {
     // The sentinel token is a PUBLIC constant, so anything it carries is
     // attacker-authored and must never be stored. Discarded here for the same
@@ -3289,27 +3738,33 @@ async fn accept_grpc_decoded(
         .try_acquire(&resolved.org_id)
         .ok_or_else(|| tonic::Status::resource_exhausted("Per-org ingest limit exceeded"))?;
     let item_count = decoded.item_count();
+    let mut retained = claims.retained;
 
     let result = process_decoded_payload(
         state,
         signal,
         PayloadFormat::Protobuf,
         None,
-        &decoded,
+        &mut decoded,
         resolved,
+        &mut retained,
     )
     .await;
 
     match result {
         Ok(_) => {
-            state.resolver.note_source_use(resolved, kept_claim);
-            if resolved.org_id != SENTINEL_ORG_ID {
+            state.resolver.note_source_use(resolved, claims.kept_claim);
+            state
+                .resolver
+                .note_claimed_source_use(&claims.claimed_sources);
+            let decoded_bytes = retained.metered_bytes(decoded_bytes);
+            if resolved.org_id != SENTINEL_ORG_ID && decoded_bytes > 0 {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
                         &resolved.org_id,
                         signal.path(),
                         decoded_bytes as u64,
-                        item_count as u64,
+                        retained.metered_items(item_count) as u64,
                     );
                 }
                 if let Some(tracker) = &state.autumn_tracker {
@@ -4309,15 +4764,16 @@ async fn handle_product_events_inner(
     Ok(count)
 }
 
-/// Decompressed length of a gzip payload, without materializing it.
-///
-/// Same number `read_to_string(...).len()` would produce, and the same
-/// rejection of malformed gzip — it just doesn't keep the bytes. Used on the
-/// blob-store path, where the decompressed text is never needed but `ByteSize`
-/// and the per-session budget are still denominated in decompressed bytes.
-fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
-    let mut decoder = GzDecoder::new(body);
-    std::io::copy(&mut decoder, &mut std::io::sink())
+/// Bounded gunzip of a replay chunk into text. Invalid UTF-8 reads as the
+/// same error `read_to_string` raised, so the rejection fingerprint holds.
+fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, GunzipError> {
+    let bytes = gunzip_bounded(body, max_decoded)?;
+    String::from_utf8(bytes).map_err(|_| {
+        GunzipError::Invalid(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        ))
+    })
 }
 
 async fn handle_replay_blob(
@@ -4470,18 +4926,17 @@ async fn handle_replay_blob_inner(
     // is denominated in *decompressed* bytes. So decode and discard, counting.
     // What that avoids is the part that actually cost: materializing a
     // multi-megabyte String, JSON-escaping it, and pushing it through the WAL.
+    // Both branches stop at the same decoded ceiling as the OTLP routes.
+    let max_decoded = state.config.max_decoded_body_bytes;
+    let gunzip_rejection = |e: GunzipError| match e {
+        GunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
+        GunzipError::TooLarge => ApiError::payload_too_large("decompressed replay chunk too large"),
+    };
     let (events_json, byte_size) = if state.replay_blob_store.is_some() {
-        (
-            None,
-            decompressed_len(&body).map_err(|e| replay_gunzip_rejection(headers, &body, &e))?,
-        )
+        let byte_size = gunzip_len_bounded(&body, max_decoded).map_err(gunzip_rejection)?;
+        (None, byte_size)
     } else {
-        use std::io::Read as _;
-        let mut decoder = GzDecoder::new(&body[..]);
-        let mut events_json = String::new();
-        decoder
-            .read_to_string(&mut events_json)
-            .map_err(|e| replay_gunzip_rejection(headers, &body, &e))?;
+        let events_json = gunzip_replay_text(&body, max_decoded).map_err(gunzip_rejection)?;
         let byte_size = events_json.len() as u64;
         (Some(events_json), byte_size)
     };
@@ -4679,6 +5134,9 @@ async fn handle_signal(
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.ingest.payload_format" = tracing::field::Empty,
         "maple.ingest.content_encoding" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
@@ -4760,6 +5218,9 @@ async fn handle_cloudflare_logpush(
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -4771,14 +5232,20 @@ async fn handle_cloudflare_logpush(
     let duration = start.elapsed();
 
     match result {
-        Ok((response, item_count, org_id, is_validation)) => {
+        Ok((response, item_count, org_id, outcome)) => {
             let status_code = response.status().as_u16();
+            let is_validation = outcome == LogpushOutcome::Validation;
             span_handle.record("http.response.status_code", status_code);
             span_handle.record("otel.status_code", "Ok");
             span_handle.record("maple.ingest.item_count", item_count);
             span_handle.record("maple.cloudflare.is_validation", is_validation);
+            if outcome == LogpushOutcome::SourcePaused {
+                span_handle.record("maple.ingest.reject_reason", "source_paused");
+            }
             metrics::request_completed("logs", "ok", "none", duration.as_secs_f64());
-            metrics::cloudflare_batch("http_requests", is_validation);
+            if outcome != LogpushOutcome::SourcePaused {
+                metrics::cloudflare_batch("http_requests", is_validation);
+            }
             debug!(
                 status = status_code,
                 duration_ms = duration_millis(duration),
@@ -4974,7 +5441,18 @@ async fn handle_signal_inner(
     let decoded_payload = {
         let decode_span = decode_internal_span(encoding_label, body.len());
         let _guard = decode_span.enter();
-        let decoded_payload = decode_payload(&body, content_encoding.as_deref()).map_err(|e| {
+        let decoded_payload = decode_payload(
+            &body,
+            content_encoding.as_deref(),
+            state.config.max_decoded_body_bytes,
+        )
+        .map_err(|e| {
+            // Over the decoded ceiling is the same refusal as an oversized body.
+            if e.status == StatusCode::PAYLOAD_TOO_LARGE {
+                warn!(body_bytes = body.len(), "Decoded payload too large");
+                record_stage_error(&decode_span, "payload_too_large", &e.message, false);
+                return (e, "payload_too_large");
+            }
             warn!(body_bytes = body.len(), "Failed to decode payload");
             record_stage_error(&decode_span, "decode", &e.message, false);
             metrics::org_data_loss(&resolved_key.org_id, signal.path(), "decode");
@@ -5015,28 +5493,43 @@ async fn handle_signal_inner(
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
-    let kept_claim = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
+    let mut claims = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
+    if claims.all_paused {
+        // Like a paused token source: success to the sender, nothing written or billed.
+        return Ok((
+            StatusCode::OK.into_response(),
+            0,
+            resolved_key.org_id.clone(),
+            0,
+        ));
+    }
+    let kept_claim = claims.kept_claim;
     let item_count = decoded.item_count();
 
     Span::current().record("maple.ingest.item_count", item_count);
     debug!(item_count, "Payload enriched");
     metrics::items_accepted(signal.path(), item_count as u64);
 
-    let decoded_bytes = decoded_payload.len();
-
     let response_result = process_decoded_payload(
         state,
         signal,
         payload_format,
         content_encoding.as_deref(),
-        &decoded,
+        &mut decoded,
         &resolved_key,
+        &mut claims.retained,
     )
     .await;
+    // Only the share left after paused-source drops and ingest rules is metered.
+    let decoded_bytes = claims.metered_bytes(decoded_payload.len());
+    let item_count = claims.retained.metered_items(item_count);
 
     let response = response_result.map_err(|error| (error, "forward"))?;
     if response.status().is_success() {
         state.resolver.note_source_use(&resolved_key, kept_claim);
+        state
+            .resolver
+            .note_claimed_source_use(&claims.claimed_sources);
     }
 
     Ok((
@@ -5059,7 +5552,7 @@ async fn handle_cloudflare_logpush_inner(
     secret: Option<&str>,
     headers: &HeaderMap,
     body: Bytes,
-) -> Result<(Response, usize, String, bool), (ApiError, &'static str)> {
+) -> Result<(Response, usize, String, LogpushOutcome), (ApiError, &'static str)> {
     let secret = secret
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -5100,6 +5593,21 @@ async fn handle_cloudflare_logpush_inner(
         key_id = %resolved.secret_key_id,
         "Authenticated Cloudflare Logpush connector"
     );
+    // A paused source: acked like a paused GCP connector, nothing stored or billed.
+    if resolved.source_pause.is_paused(current_time_millis()) {
+        metrics::source_paused_drop(&resolved.org_id, Signal::Logs.path());
+        debug!(
+            org_id = %resolved.org_id,
+            connector_id = %resolved.connector_id,
+            "Cloudflare Logpush source paused; batch acked and dropped"
+        );
+        return Ok((
+            StatusCode::OK.into_response(),
+            0,
+            resolved.org_id.clone(),
+            LogpushOutcome::SourcePaused,
+        ));
+    }
     let _org_inflight_permit = state
         .org_inflight_limiter
         .try_acquire(&resolved.org_id)
@@ -5168,14 +5676,23 @@ async fn handle_cloudflare_logpush_inner(
         }
     }
 
-    let decoded_payload = match decode_payload(&body, content_encoding.as_deref()) {
+    let decoded_payload = match decode_payload(
+        &body,
+        content_encoding.as_deref(),
+        state.config.max_decoded_body_bytes,
+    ) {
         Ok(decoded) => decoded,
         Err(error) => {
             state
                 .cloudflare_resolver
                 .record_failure(&resolved.connector_id, &error.message)
                 .await;
-            return Err((error, "decode"));
+            let reason = if error.status == StatusCode::PAYLOAD_TOO_LARGE {
+                "payload_too_large"
+            } else {
+                "decode"
+            };
+            return Err((error, reason));
         }
     };
 
@@ -5197,7 +5714,7 @@ async fn handle_cloudflare_logpush_inner(
                 StatusCode::OK.into_response(),
                 0,
                 resolved.org_id.clone(),
-                true,
+                LogpushOutcome::Validation,
             ))
         }
         ParsedCloudflarePayload::Records(records) => {
@@ -5212,16 +5729,18 @@ async fn handle_cloudflare_logpush_inner(
                 self_managed: resolved.self_managed,
                 clickhouse_ready: resolved.clickhouse_ready,
                 source: None,
-                default_source: None,
+                default_source: resolved.source.clone(),
             };
-            let decoded = DecodedPayload::Logs(request);
+            let mut decoded = DecodedPayload::Logs(request);
+            let mut retained = Retained::default();
             let response = match process_decoded_payload(
                 state,
                 Signal::Logs,
                 PayloadFormat::Protobuf,
                 None,
-                &decoded,
+                &mut decoded,
                 &resolved_key,
+                &mut retained,
             )
             .await
             {
@@ -5239,26 +5758,34 @@ async fn handle_cloudflare_logpush_inner(
                 .cloudflare_resolver
                 .record_success(&resolved.connector_id)
                 .await;
+            state.resolver.note_source_use(&resolved_key, false);
 
-            if resolved.org_id != SENTINEL_ORG_ID {
+            // Only the share the ingest rules left is metered.
+            let metered_bytes = retained.metered_bytes(decoded_payload.len());
+            if resolved.org_id != SENTINEL_ORG_ID && metered_bytes > 0 {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
                         &resolved.org_id,
                         Signal::Logs.path(),
-                        decoded_payload.len() as u64,
-                        item_count as u64,
+                        metered_bytes as u64,
+                        retained.metered_items(item_count) as u64,
                     );
                 }
                 if let Some(tracker) = &state.autumn_tracker {
                     tracker.track(
                         &resolved.org_id,
                         Signal::Logs.path(),
-                        billable_gb(decoded_payload.len() as u64),
+                        billable_gb(metered_bytes as u64),
                     );
                 }
             }
 
-            Ok((response, item_count, resolved.org_id.clone(), false))
+            Ok((
+                response,
+                item_count,
+                resolved.org_id.clone(),
+                LogpushOutcome::Accepted,
+            ))
         }
     }
 }
@@ -5298,6 +5825,9 @@ async fn handle_gcp_logpush(
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -5356,6 +5886,11 @@ async fn handle_gcp_logpush(
                 GcpPushOutcome::SetupReport => {
                     span_handle.record("otel.status_code", "Ok");
                     span_handle.record("maple.gcp.setup_report", true);
+                    metrics::request_completed("logs", "ok", "none", duration);
+                }
+                GcpPushOutcome::SourcePaused => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "source_paused");
                     metrics::request_completed("logs", "ok", "none", duration);
                 }
             }
@@ -5505,6 +6040,15 @@ async fn handle_gcp_logpush_inner(
         );
         return Ok((StatusCode::OK.into_response(), GcpPushOutcome::LogsDisabled));
     }
+    // A paused integration source: acked like a paused token source, nothing stored or billed.
+    if resolved.source_pause.is_paused(current_time_millis()) {
+        metrics::source_paused_drop(org_id, Signal::Logs.path());
+        debug!(
+            org_id,
+            connector_id, "GCP integration source paused; entry acked and dropped"
+        );
+        return Ok((StatusCode::OK.into_response(), GcpPushOutcome::SourcePaused));
+    }
 
     let _org_inflight_permit = state
         .org_inflight_limiter
@@ -5552,13 +6096,15 @@ async fn handle_gcp_logpush_inner(
         },
         current_time_unix_nano(),
     );
+    let mut retained = Retained::default();
     let response = match process_decoded_payload(
         state,
         Signal::Logs,
         PayloadFormat::Protobuf,
         None,
-        &DecodedPayload::Logs(request),
+        &mut DecodedPayload::Logs(request),
         &resolved.key,
+        &mut retained,
     )
     .await
     {
@@ -5574,11 +6120,20 @@ async fn handle_gcp_logpush_inner(
     state.gcp_resolver.record_health(connector_id, None).await;
     state.resolver.note_source_use(&resolved.key, false);
 
-    if let Some(usage) = &state.usage_metrics {
-        usage.record(org_id, Signal::Logs.path(), body.len() as u64, 1);
-    }
-    if let Some(tracker) = &state.autumn_tracker {
-        tracker.track(org_id, Signal::Logs.path(), billable_gb(body.len() as u64));
+    // Metered on the push body, scaled to what the ingest rules left; nothing when they dropped it.
+    let metered_bytes = retained.metered_bytes(body.len());
+    if metered_bytes > 0 {
+        if let Some(usage) = &state.usage_metrics {
+            usage.record(
+                org_id,
+                Signal::Logs.path(),
+                metered_bytes as u64,
+                retained.metered_items(1) as u64,
+            );
+        }
+        if let Some(tracker) = &state.autumn_tracker {
+            tracker.track(org_id, Signal::Logs.path(), billable_gb(metered_bytes as u64));
+        }
     }
 
     Ok((response, GcpPushOutcome::Accepted))
@@ -5602,6 +6157,379 @@ fn is_connector_id(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+/// The plaintext stream secret Firehose sends with every delivery.
+const FIREHOSE_ACCESS_KEY_HEADER: &str = "x-amz-firehose-access-key";
+const FIREHOSE_REQUEST_ID_HEADER: &str = "x-amz-firehose-request-id";
+
+/// What Firehose's HTTP endpoint destination expects back.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FirehoseResponseBody<'a> {
+    request_id: &'a str,
+    timestamp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<&'a str>,
+}
+
+fn firehose_response(status: StatusCode, request_id: &str, error: Option<&ApiError>) -> Response {
+    let body = FirehoseResponseBody {
+        request_id,
+        timestamp: current_time_millis(),
+        error_message: error.map(|error| error.message.as_str()),
+    };
+    let mut response = (status, axum::Json(body)).into_response();
+    let retry_after = error.and_then(|error| error.kind.retry_after_seconds);
+    if let Some(value) =
+        retry_after.and_then(|seconds| HeaderValue::from_str(&seconds.to_string()).ok())
+    {
+        response.headers_mut().insert(RETRY_AFTER, value);
+    }
+    response
+}
+
+/// Receives a CloudWatch metric stream through Amazon Data Firehose's HTTP
+/// endpoint destination. Firehose retries anything but a 200 until its retry
+/// window ends, so a delivery that can never decode is acked.
+async fn handle_aws_firehose(
+    State(state): State<Arc<AppState>>,
+    Path(connection_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let start = Instant::now();
+
+    metrics::request_started();
+    let _guard = InFlightGuard;
+
+    let span = tracing::info_span!(
+        "aws_firehose",
+        otel.name = "POST /v1/firehose/aws/{connection_id}",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+        "maple.ingest.reject_reason" = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = "/v1/firehose/aws/{connection_id}",
+        "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
+        "maple.signal" = "metrics",
+        "maple.org_id" = tracing::field::Empty,
+        "maple.aws.connection_id" = tracing::field::Empty,
+        "maple.ingest.self_managed" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.decoded_bytes" = tracing::field::Empty,
+        "maple.ingest.item_count" = tracing::field::Empty,
+    );
+    let span_handle = span.clone();
+
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    // The body's `requestId` replaces this once the body is read.
+    let mut request_id = header(FIREHOSE_REQUEST_ID_HEADER)
+        .unwrap_or_default()
+        .to_owned();
+    let content_encoding = header(CONTENT_ENCODING.as_str())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty() && value != "identity");
+    let result = handle_aws_firehose_inner(
+        &state,
+        &connection_id,
+        header(FIREHOSE_ACCESS_KEY_HEADER),
+        content_encoding.as_deref(),
+        &body,
+        &mut request_id,
+    )
+    .instrument(span)
+    .await;
+    let duration = start.elapsed().as_secs_f64();
+    let signal = Signal::Metrics.path();
+
+    match result {
+        Ok(outcome) => {
+            span_handle.record("http.response.status_code", StatusCode::OK.as_u16());
+            match outcome {
+                AwsStreamOutcome::Accepted { item_count } => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.item_count", item_count);
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+                AwsStreamOutcome::Undecodable => {
+                    // Acked, but the metrics are gone: an `Error` like every
+                    // other rejection that loses the sender's data.
+                    span_handle.record("error.type", "decode");
+                    record_rejection_reason(
+                        &span_handle,
+                        200,
+                        "decode",
+                        "Firehose delivery is not OpenTelemetry 1.0 metric stream records",
+                    );
+                    metrics::request_completed(signal, "error", "decode", duration);
+                }
+                AwsStreamOutcome::SourcePaused => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "source_paused");
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+            }
+            firehose_response(StatusCode::OK, &request_id, None)
+        }
+        Err((error, error_kind)) => {
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error_kind);
+            record_rejection_reason(&span_handle, status, error_kind, error.reason().as_str());
+            metrics::request_completed(signal, "error", error_kind, duration);
+            firehose_response(error.status, &request_id, Some(&error))
+        }
+    }
+}
+
+/// Returns what the ack means, or Err((ApiError, error_kind_label)).
+/// `request_id` takes the body's `requestId` once the body is read.
+async fn handle_aws_firehose_inner(
+    state: &AppState,
+    connection_id: &str,
+    access_key: Option<&str>,
+    content_encoding: Option<&str>,
+    body: &Bytes,
+    request_id: &mut String,
+) -> Result<AwsStreamOutcome, (ApiError, &'static str)> {
+    let unauthorized = || {
+        (
+            ApiError::unauthorized("Invalid connection credentials"),
+            "auth",
+        )
+    };
+    let access_key = access_key.map(str::trim).filter(|key| !key.is_empty());
+    let (Some(access_key), true) = (access_key, is_aws_connection_id(connection_id)) else {
+        warn!("Missing Firehose access key or malformed AWS connection id");
+        return Err(unauthorized());
+    };
+    Span::current().record("maple.aws.connection_id", connection_id);
+
+    let resolved = state
+        .aws_resolver
+        .resolve_connection(connection_id, access_key)
+        .await
+        .map_err(|error| {
+            error!(error = %error, connection_id, "AWS connection resolution failed");
+            (
+                ApiError::service_unavailable("Connection authentication unavailable"),
+                "auth",
+            )
+        })?
+        .ok_or_else(|| {
+            warn!(connection_id, "Invalid AWS metric stream credentials");
+            unauthorized()
+        })?;
+    let org_id = resolved.key.org_id.as_str();
+    let signal = Signal::Metrics.path();
+
+    Span::current().record("maple.org_id", org_id);
+    Span::current().record("maple.ingest.self_managed", resolved.key.self_managed);
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved.key.clickhouse_ready,
+    );
+
+    // A paused integration source: acked like a paused token source, nothing stored or billed.
+    if resolved.source_pause.is_paused(current_time_millis()) {
+        metrics::source_paused_drop(org_id, signal);
+        debug!(
+            org_id,
+            connection_id, "AWS integration source paused; delivery acked and dropped"
+        );
+        return Ok(AwsStreamOutcome::SourcePaused);
+    }
+
+    let _org_inflight_permit = state
+        .org_inflight_limiter
+        .try_acquire(org_id)
+        .ok_or_else(|| {
+            warn!(
+                org_id,
+                connection_id, "Per-org in-flight ingest limit exceeded"
+            );
+            (
+                ApiError::too_many_requests("Per-org ingest limit exceeded"),
+                "throttle",
+            )
+        })?;
+
+    // Before the body is decoded, so a denied org's delivery is not gunzipped.
+    if let Some(error) = entitlement_rejection(state, org_id, signal).await {
+        state
+            .aws_resolver
+            .record_health(connection_id, Some(aws_metric_stream::OVER_PLAN_LIMIT))
+            .await;
+        return Err((error, "billing_limit"));
+    }
+
+    let Some(requests) = read_delivery(
+        state,
+        connection_id,
+        org_id,
+        content_encoding,
+        body,
+        request_id,
+    )
+    .await?
+    else {
+        return Ok(AwsStreamOutcome::Undecodable);
+    };
+    let item_count = store_delivery(state, connection_id, &resolved.key, &requests).await?;
+    Ok(AwsStreamOutcome::Accepted { item_count })
+}
+
+/// The delivery's metric requests, or `None` for one that can never decode
+/// (already acked and recorded as lost). Sets `request_id` from the body.
+async fn read_delivery(
+    state: &AppState,
+    connection_id: &str,
+    org_id: &str,
+    content_encoding: Option<&str>,
+    body: &Bytes,
+    request_id: &mut String,
+) -> Result<Option<Vec<ExportMetricsServiceRequest>>, (ApiError, &'static str)> {
+    let max_decoded = state.config.max_decoded_body_bytes;
+    let payload = match decode_payload(body, content_encoding, max_decoded) {
+        Ok(payload) => payload,
+        Err(error) if error.status == StatusCode::PAYLOAD_TOO_LARGE => {
+            return Err(refuse_oversized_delivery(state, connection_id, org_id).await);
+        }
+        Err(_) => {
+            ack_undecodable_delivery(state, connection_id, org_id).await;
+            return Ok(None);
+        }
+    };
+    let Some(delivery) = aws_metric_stream::parse_delivery(&payload) else {
+        ack_undecodable_delivery(state, connection_id, org_id).await;
+        return Ok(None);
+    };
+    if let Some(body_request_id) = &delivery.request_id {
+        request_id.clone_from(body_request_id);
+    }
+    match delivery.metric_requests(max_decoded) {
+        Ok(requests) => Ok(Some(requests)),
+        Err(aws_metric_stream::RecordError::TooLarge) => {
+            Err(refuse_oversized_delivery(state, connection_id, org_id).await)
+        }
+        Err(aws_metric_stream::RecordError::Unreadable) => {
+            ack_undecodable_delivery(state, connection_id, org_id).await;
+            Ok(None)
+        }
+    }
+}
+
+/// Converts, stores and meters a delivery's metrics; returns the points stored.
+async fn store_delivery(
+    state: &AppState,
+    connection_id: &str,
+    key: &ResolvedIngestKey,
+    requests: &[ExportMetricsServiceRequest],
+) -> Result<usize, (ApiError, &'static str)> {
+    let org_id = key.org_id.as_str();
+    let signal = Signal::Metrics.path();
+    // Metered as CloudWatch sent it, not as the larger expansion Maple stores.
+    let received_bytes: usize = requests.iter().map(Message::encoded_len).sum();
+    Span::current().record("maple.ingest.decoded_bytes", received_bytes);
+
+    let mut decoded = DecodedPayload::Metrics(aws_metric_stream::build_metrics_request(
+        requests,
+        &aws_metric_stream::Connection {
+            id: connection_id,
+            org_id,
+            source_id: key.source_public_id(),
+        },
+    ));
+    let item_count = decoded.item_count();
+    let mut retained = Retained::default();
+    if item_count > 0 {
+        if let Err(error) = process_decoded_payload(
+            state,
+            Signal::Metrics,
+            PayloadFormat::Protobuf,
+            None,
+            &mut decoded,
+            key,
+            &mut retained,
+        )
+        .await
+        {
+            state
+                .aws_resolver
+                .record_health(connection_id, Some(aws_metric_stream::DELIVERY_NOT_STORED))
+                .await;
+            return Err((error, "forward"));
+        }
+    }
+    state.aws_resolver.record_health(connection_id, None).await;
+    state.resolver.note_source_use(key, false);
+
+    // Only the share the ingest rules left is metered.
+    let metered_bytes = retained.metered_bytes(received_bytes);
+    let stored = retained.metered_items(item_count);
+    if stored > 0 && metered_bytes > 0 {
+        if let Some(usage) = &state.usage_metrics {
+            usage.record(org_id, signal, metered_bytes as u64, stored as u64);
+        }
+        if let Some(tracker) = &state.autumn_tracker {
+            tracker.track(org_id, signal, billable_gb(metered_bytes as u64));
+        }
+    }
+    Ok(stored)
+}
+
+/// A delivery that can never decode: acked so Firehose does not retry it, and
+/// counted as lost.
+async fn ack_undecodable_delivery(state: &AppState, connection_id: &str, org_id: &str) {
+    // Not `warn!`: a stream in the wrong output format fails this way on every delivery.
+    debug!(
+        org_id,
+        connection_id, "AWS metric stream delivery cannot be decoded; acked and dropped"
+    );
+    metrics::org_data_loss(org_id, Signal::Metrics.path(), "decode");
+    state
+        .aws_resolver
+        .record_health(connection_id, Some(aws_metric_stream::UNREADABLE_DELIVERY))
+        .await;
+}
+
+/// Firehose does not retry a 413, so the delivery is lost.
+async fn refuse_oversized_delivery(
+    state: &AppState,
+    connection_id: &str,
+    org_id: &str,
+) -> (ApiError, &'static str) {
+    warn!(
+        org_id,
+        connection_id, "AWS metric stream delivery decodes past the size limit"
+    );
+    metrics::org_data_loss(org_id, Signal::Metrics.path(), "payload_too_large");
+    state
+        .aws_resolver
+        .record_health(connection_id, Some(aws_metric_stream::DELIVERY_TOO_LARGE))
+        .await;
+    (
+        ApiError::payload_too_large("Decoded delivery too large"),
+        "payload_too_large",
+    )
+}
+
+/// `aws_connections.id` is a lowercase UUID; anything else is refused before
+/// it reaches Postgres.
+fn is_aws_connection_id(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+        })
 }
 
 enum ParsedCloudflarePayload {
@@ -5745,7 +6673,7 @@ fn build_cloudflare_logs_request(
 }
 
 fn build_cloudflare_resource_attributes(resolved: &ResolvedCloudflareConnector) -> Vec<KeyValue> {
-    vec![
+    let mut attributes = vec![
         string_attribute("maple_org_id", &resolved.org_id),
         string_attribute("maple_ingest_source", CLOUDFLARE_LOGPUSH_SOURCE),
         string_attribute("maple_ingest_key_type", IngestKeyType::Connector.as_str()),
@@ -5754,7 +6682,11 @@ fn build_cloudflare_resource_attributes(resolved: &ResolvedCloudflareConnector) 
         string_attribute("cloudflare.zone_name", &resolved.zone_name),
         string_attribute("maple_cloudflare_connector_id", &resolved.connector_id),
         string_attribute("service.name", &resolved.service_name),
-    ]
+    ];
+    if let Some(source) = &resolved.source {
+        attributes.push(string_attribute(SOURCE_ID_ATTRIBUTE, &source.public_id));
+    }
+    attributes
 }
 
 fn build_cloudflare_log_record(
@@ -5950,17 +6882,19 @@ fn detect_payload_format(content_type: &str) -> Result<PayloadFormat, ApiError> 
 }
 
 #[hotpath::measure]
-fn decode_payload(body: &Bytes, content_encoding: Option<&str>) -> Result<Vec<u8>, ApiError> {
+fn decode_payload(
+    body: &Bytes,
+    content_encoding: Option<&str>,
+    max_decoded: usize,
+) -> Result<Vec<u8>, ApiError> {
     match content_encoding {
         None => Ok(body.to_vec()),
-        Some("gzip") => {
-            let mut decoder = GzDecoder::new(body.as_ref());
-            let mut decompressed = Vec::new();
-            decoder
-                .read_to_end(&mut decompressed)
-                .map_err(|_| ApiError::bad_request("Invalid gzip body"))?;
-            Ok(decompressed)
-        }
+        Some("gzip") => gunzip_bounded(body.as_ref(), max_decoded).map_err(|e| match e {
+            GunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
+            GunzipError::TooLarge => {
+                ApiError::payload_too_large("Decompressed request body too large")
+            }
+        }),
         Some(_) => Err(ApiError::unsupported_media_type(
             "Unsupported content-encoding",
         )),
@@ -6026,24 +6960,144 @@ fn decode_otlp_payload(
     }
 }
 
-/// Checks the sender's own `maple_source_id` values against the org, then enriches.
-/// True when a resource kept a verified claim of its own.
+/// What `verify_claims_and_enrich` found in a payload's `maple_source_id` claims.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ClaimOutcome {
+    /// `sources.id` of each verified, unpaused claim; their resources were kept.
+    claimed_sources: Vec<String>,
+    /// A resource carried a verified claim of its own (a poller's batch), paused or
+    /// not, so the batch never counts as default-source use.
+    kept_claim: bool,
+    /// Every resource named a paused source and was dropped: answer success, write nothing.
+    all_paused: bool,
+    /// What paused-source drops (and later the ingest rules) left of the payload.
+    retained: Retained,
+}
+
+/// The share of a payload still stored after paused-source drops and ingest rules,
+/// so only that share is metered. Never above what was received.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Retained {
+    /// (kept, received) as a product of each step's encoded sizes; `None` when nothing changed.
+    share: Option<(u128, u128)>,
+    /// Items left after the ingest rules dropped some, recounted from the payload.
+    kept_items: Option<usize>,
+}
+
+impl Retained {
+    /// Folds in one step that took the encoded payload from `before` to `after` bytes.
+    /// Capped at 1, so masking or hashing that grows a value never bills more.
+    fn retain(&mut self, before: usize, after: usize) {
+        if before == 0 {
+            return;
+        }
+        let after = after.min(before);
+        let (kept, received) = self.share.unwrap_or((1, 1));
+        self.share = Some((kept * after as u128, received * before as u128));
+    }
+
+    /// `original` bytes scaled to the retained share; unchanged when nothing changed.
+    fn metered_bytes(&self, original: usize) -> usize {
+        match self.share {
+            Some((kept, received)) if received > 0 => {
+                let scaled = original as u128 * kept / received;
+                usize::try_from(scaled).unwrap_or(original)
+            }
+            _ => original,
+        }
+    }
+
+    /// `items` as counted before the rules, or what is left when they dropped some.
+    fn metered_items(&self, items: usize) -> usize {
+        self.kept_items.unwrap_or(items)
+    }
+}
+
+impl ClaimOutcome {
+    /// `original` bytes scaled to the share left after the drops; unchanged when none was.
+    fn metered_bytes(&self, original: usize) -> usize {
+        self.retained.metered_bytes(original)
+    }
+}
+
+/// Checks the sender's own `maple_source_id` values against the org, drops the
+/// resources of paused pull sources, then enriches what is left.
 async fn verify_claims_and_enrich(
     state: &AppState,
     decoded: &mut DecodedPayload,
     resolved_key: &ResolvedIngestKey,
-) -> bool {
+) -> ClaimOutcome {
     let claims = claimed_source_ids(decoded, resolved_key);
-    let verified_claims = if claims.is_empty() {
-        Vec::new()
+    let overflow = overflow_source_claims(decoded, &claims);
+    let mut verified = if claims.is_empty() {
+        VerifiedClaims::default()
     } else {
         state
             .resolver
             .verify_source_claims(&resolved_key.org_id, claims)
             .await
     };
-    enrich_decoded_payload(decoded, resolved_key, &verified_claims);
-    !verified_claims.is_empty()
+    // Claims past the cap get no store lookup (it bounds the query), but one the
+    // cache knows as paused is still dropped, so the cap is no way around a pause.
+    if !overflow.is_empty() {
+        let paused = state
+            .resolver
+            .cached_paused_claims(&resolved_key.org_id, overflow)
+            .await;
+        verified.paused.extend(paused);
+    }
+    let before = (!verified.paused.is_empty()).then(|| decoded.encoded_len());
+    let dropped = drop_paused_resources(decoded, &verified.paused);
+    let all_paused = dropped && decoded.resource_count() == 0;
+    let mut retained = Retained::default();
+    if let Some(before) = before.filter(|_| dropped) {
+        retained.retain(before, decoded.encoded_len());
+    }
+    if dropped {
+        metrics::source_paused_drop(&resolved_key.org_id, decoded.signal().path());
+        if all_paused {
+            Span::current().record("maple.ingest.reject_reason", "source_paused");
+        }
+        debug!(org_id = %resolved_key.org_id, all_paused, "Paused pull source; resources dropped");
+    }
+    enrich_decoded_payload(decoded, resolved_key, &verified.active);
+    ClaimOutcome {
+        claimed_sources: verified
+            .active
+            .iter()
+            .filter_map(|claim| sources::source_uuid_from_public_id(claim))
+            .collect(),
+        kept_claim: !verified.active.is_empty() || dropped,
+        all_paused,
+        retained,
+    }
+}
+
+/// Removes every resource whose `maple_source_id` is one of `paused`. True when any was.
+fn drop_paused_resources(decoded: &mut DecodedPayload, paused: &[String]) -> bool {
+    if paused.is_empty() {
+        return false;
+    }
+    let keep = |resource: Option<&Resource>| {
+        resource
+            .and_then(|resource| source_id_claim(&resource.attributes))
+            .is_none_or(|claim| !paused.iter().any(|id| id == claim))
+    };
+    let before = decoded.resource_count();
+    match decoded {
+        DecodedPayload::Traces(request) => {
+            request.resource_spans.retain(|r| keep(r.resource.as_ref()));
+        }
+        DecodedPayload::Logs(request) => {
+            request.resource_logs.retain(|r| keep(r.resource.as_ref()));
+        }
+        DecodedPayload::Metrics(request) => {
+            request
+                .resource_metrics
+                .retain(|r| keep(r.resource.as_ref()));
+        }
+    }
+    decoded.resource_count() < before
 }
 
 /// Stamps the tenant and source onto a decoded payload. `verified_claims` are the
@@ -6186,6 +7240,35 @@ fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey
     if !resolved_key.accepts_source_claims() {
         return Vec::new();
     }
+    let mut claims: Vec<String> = Vec::new();
+    for claim in sized_source_claims(decoded) {
+        if !claims.iter().any(|seen| seen == claim) {
+            claims.push(claim.to_owned());
+            // Claims past the cap are never looked up, so they stay unverified.
+            if claims.len() == MAX_SOURCE_CLAIMS {
+                break;
+            }
+        }
+    }
+    claims
+}
+
+/// Distinct claims past the `MAX_SOURCE_CLAIMS` cap, i.e. not in `looked_up`.
+/// Empty unless the cap was reached.
+fn overflow_source_claims(decoded: &DecodedPayload, looked_up: &[String]) -> Vec<String> {
+    if looked_up.len() < MAX_SOURCE_CLAIMS {
+        return Vec::new();
+    }
+    let mut seen = std::collections::HashSet::new();
+    sized_source_claims(decoded)
+        .filter(|claim| !looked_up.iter().any(|known| known == claim) && seen.insert(*claim))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Each resource's `maple_source_id`, skipping any longer than a valid id:
+/// those are never decoded or cached, so they stay unverified.
+fn sized_source_claims(decoded: &DecodedPayload) -> impl Iterator<Item = &str> {
     let resources: Vec<Option<&Resource>> = match decoded {
         DecodedPayload::Traces(request) => request
             .resource_spans
@@ -6203,23 +7286,11 @@ fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey
             .map(|r| r.resource.as_ref())
             .collect(),
     };
-    let mut claims: Vec<String> = Vec::new();
-    for claim in resources
+    resources
         .into_iter()
         .flatten()
         .filter_map(|resource| source_id_claim(&resource.attributes))
-        // Longer than any valid id: never decoded or cached, so it stays unverified.
         .filter(|claim| claim.len() <= MAX_PUBLIC_ID_LEN)
-    {
-        if !claims.iter().any(|seen| seen == claim) {
-            claims.push(claim.to_owned());
-            // Claims past the cap are never looked up, so they stay unverified.
-            if claims.len() == MAX_SOURCE_CLAIMS {
-                break;
-            }
-        }
-    }
-    claims
 }
 
 fn enrich_resource_attributes(
@@ -6464,15 +7535,93 @@ async fn relay_collector_response(
         })
 }
 
+/// What one payload's rule pass did, recorded once the payload is written.
+struct RulesApplied {
+    rules: Arc<rules_gateway::OrgRules>,
+    stats: RuleStats,
+}
+
+/// Applies the org's ingest rules in place and folds what they removed into `retained`.
+/// `None` when the feature is off or no rule reads the signal, at no cost. A rule lookup
+/// with nothing to fall back on refuses the payload rather than storing it unredacted.
+async fn apply_ingest_rules(
+    state: &AppState,
+    decoded: &mut DecodedPayload,
+    org_id: &str,
+    retained: &mut Retained,
+) -> Result<Option<RulesApplied>, ApiError> {
+    let resolver = &state.ingest_rule_resolver;
+    if !resolver.enabled() || org_id == SENTINEL_ORG_ID {
+        return Ok(None);
+    }
+    let rules = resolver.resolve_rules(org_id).await.map_err(|_| {
+        ApiError::tagged(
+            StatusCode::SERVICE_UNAVAILABLE,
+            &INGEST_RULES_UNAVAILABLE,
+            "Ingest rules could not be loaded; retry shortly",
+        )
+    })?;
+    let signal = decoded.signal();
+    if !rules.compiled.covers(signal.ingest_signal()) {
+        return Ok(None);
+    }
+    let mut stats = RuleStats::default();
+    match decoded {
+        DecodedPayload::Traces(request) => {
+            ingest_rules::apply_traces(&rules.compiled, request, &mut stats);
+        }
+        DecodedPayload::Logs(request) => ingest_rules::apply_logs(&rules.compiled, request, &mut stats),
+        DecodedPayload::Metrics(request) => {
+            ingest_rules::apply_metrics(&rules.compiled, request, &mut stats);
+        }
+    }
+    let span = Span::current();
+    span.record("maple.ingest.rules.count", rules.compiled.len());
+    span.record("maple.ingest.rules.dropped_items", stats.total.dropped);
+    span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    if stats.total.dropped > 0 || stats.total.redacted_values > 0 {
+        // One walk, only when something changed. Redaction's size change is not tracked, so
+        // `before` is after plus the dropped bytes: drops are discounted, redaction never bills more.
+        let after = decoded.encoded_len();
+        let dropped_bytes = usize::try_from(stats.total.dropped_bytes).unwrap_or(usize::MAX);
+        retained.retain(after.saturating_add(dropped_bytes), after);
+        if stats.total.dropped > 0 {
+            retained.kept_items = Some(decoded.item_count());
+            metrics::ingest_rules_dropped_bytes(org_id, signal.path(), stats.total.dropped_bytes);
+        }
+    }
+    Ok(Some(RulesApplied { rules, stats }))
+}
+
+/// Adds a written payload's rule counts to the stats sink.
+fn record_rule_stats(state: &AppState, signal: Signal, applied: Option<&RulesApplied>) {
+    if let Some(applied) = applied {
+        state.ingest_rule_stats.record(
+            signal.path(),
+            &applied.rules,
+            &applied.stats,
+            current_time_millis(),
+        );
+    }
+}
+
 #[hotpath::measure]
 async fn process_decoded_payload(
     state: &AppState,
     signal: Signal,
     payload_format: PayloadFormat,
     content_encoding: Option<&str>,
-    decoded: &DecodedPayload,
+    decoded: &mut DecodedPayload,
     resolved_key: &ResolvedIngestKey,
+    retained: &mut Retained,
 ) -> Result<Response, ApiError> {
+    // Before the native/forward split: the WAL, S3 shipping and the collector never see raw values.
+    let applied = apply_ingest_rules(state, decoded, &resolved_key.org_id, retained).await?;
+    if applied.is_some() && decoded.resource_count() == 0 {
+        // Every record was dropped by a rule: success to the sender, nothing written.
+        record_rule_stats(state, signal, applied.as_ref());
+        return Ok(StatusCode::OK.into_response());
+    }
     let destination = native_destination_for(resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
@@ -6481,6 +7630,7 @@ async fn process_decoded_payload(
             .instrument(accept_internal_span(signal.path(), destination.as_str()))
             .await?;
         if destination == ExportDestination::ClickHouse {
+            record_rule_stats(state, signal, applied.as_ref());
             return Ok(StatusCode::OK.into_response());
         }
     }
@@ -6490,7 +7640,7 @@ async fn process_decoded_payload(
         let outbound_body = encode_payload(&outbound_payload, content_encoding)?;
         let outbound_bytes = outbound_body.len();
         let forward_span = forward_client_span("collector", outbound_bytes, signal.path());
-        return forward_to_collector(
+        let response = forward_to_collector(
             state,
             signal,
             payload_format.content_type(),
@@ -6499,9 +7649,15 @@ async fn process_decoded_payload(
             resolved_key,
         )
         .instrument(forward_span)
-        .await;
+        .await?;
+        // Counted once the collector took the batch, like the bytes it is billed for.
+        if response.status().is_success() {
+            record_rule_stats(state, signal, applied.as_ref());
+        }
+        return Ok(response);
     }
 
+    record_rule_stats(state, signal, applied.as_ref());
     Ok(StatusCode::OK.into_response())
 }
 
@@ -6632,8 +7788,17 @@ impl IngestKeyResolver {
     /// The claimed `src_` ids that name one of the org's pull sources. Only the
     /// first `MAX_SOURCE_CLAIMS` distinct claims count; uncached ones are checked in
     /// one query. Answers are cached; a store error leaves the rest unverified.
-    async fn verify_source_claims(&self, org_id: &str, claims: Vec<String>) -> Vec<String> {
-        let mut verified = Vec::new();
+    /// Pause is judged against the current clock, not when the answer was cached.
+    async fn verify_source_claims(&self, org_id: &str, claims: Vec<String>) -> VerifiedClaims {
+        let now_ms = current_time_millis();
+        let mut verified = VerifiedClaims::default();
+        let mut keep = |claim: String, pause: PauseWindow| {
+            if pause.is_paused(now_ms) {
+                verified.paused.push(claim);
+            } else {
+                verified.active.push(claim);
+            }
+        };
         // (claim as received, its uuid) for claims the cache has no answer for.
         let mut unknown: Vec<(String, String)> = Vec::new();
         let mut seen: Vec<String> = Vec::new();
@@ -6647,11 +7812,15 @@ impl IngestKeyResolver {
             seen.push(claim.clone());
             let cache_key = (org_id.to_owned(), claim);
             match self.source_claims.get(&cache_key).await {
-                Some(true) => verified.push(cache_key.1),
-                Some(false) => {}
+                Some(SourceClaim::Claimable(pause)) => keep(cache_key.1, pause),
+                Some(SourceClaim::Unclaimable) => {}
                 None => match sources::source_uuid_from_public_id(&cache_key.1) {
                     Some(uuid) => unknown.push((cache_key.1, uuid)),
-                    None => self.source_claims.insert(cache_key, false).await,
+                    None => {
+                        self.source_claims
+                            .insert(cache_key, SourceClaim::Unclaimable)
+                            .await;
+                    }
                 },
             }
         }
@@ -6670,19 +7839,40 @@ impl IngestKeyResolver {
             }
         };
         for (claim, uuid) in unknown {
-            let claimable = found.contains(&uuid);
-            if claimable {
-                verified.push(claim.clone());
+            let answer = found
+                .iter()
+                .find(|row| row.id == uuid)
+                .map_or(SourceClaim::Unclaimable, |row| {
+                    SourceClaim::Claimable(row.pause)
+                });
+            if let SourceClaim::Claimable(pause) = answer {
+                keep(claim.clone(), pause);
             }
             self.source_claims
-                .insert((org_id.to_owned(), claim), claimable)
+                .insert((org_id.to_owned(), claim), answer)
                 .await;
         }
         verified
     }
 
-    /// Stamps `last_used_at` for the source whose data was accepted (token or
-    /// default), at most once per write interval and off the request path. A batch
+    /// The `claims` the cache already knows as paused pull sources of the org. No
+    /// store lookup, so claims past the cap stay bounded yet cannot bypass a pause.
+    async fn cached_paused_claims(&self, org_id: &str, claims: Vec<String>) -> Vec<String> {
+        let now_ms = current_time_millis();
+        let mut paused = Vec::new();
+        for claim in claims {
+            let cache_key = (org_id.to_owned(), claim);
+            if let Some(SourceClaim::Claimable(pause)) = self.source_claims.get(&cache_key).await {
+                if pause.is_paused(now_ms) {
+                    paused.push(cache_key.1);
+                }
+            }
+        }
+        paused
+    }
+
+    /// Stamps `last_used_at` for the source whose data was accepted (token, default
+    /// or a connector's), at most once per write interval and off the request path. A batch
     /// that kept a verified claim (a poller) does not count as default-source use.
     fn note_source_use(&self, resolved: &ResolvedIngestKey, kept_claim: bool) {
         if kept_claim {
@@ -6696,6 +7886,18 @@ impl IngestKeyResolver {
         } else {
             SOURCE_USE_WRITE_INTERVAL
         };
+        self.record_source_use(source_id, interval);
+    }
+
+    /// Stamps `last_used_at` for each verified integration source a batch kept data for.
+    fn note_claimed_source_use(&self, source_ids: &[String]) {
+        for source_id in source_ids {
+            self.record_source_use(source_id, SOURCE_USE_WRITE_INTERVAL);
+        }
+    }
+
+    /// Writes `last_used_at` off the request path, at most once per `interval` per source.
+    fn record_source_use(&self, source_id: &str, interval: Duration) {
         // Most requests land inside the window; skip them without spawning.
         if self.recent_key_uses.contains_key(source_id) {
             return;
@@ -6759,6 +7961,11 @@ impl IngestKeyResolver {
 
     #[hotpath::measure]
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
+        // `raw_key` is already normalized by `extract_ingest_key`, so no header
+        // spelling the edge rule misses can carry a blocked key past this.
+        if self.blocked_keys.contains(raw_key) {
+            return Ok(None);
+        }
         // Recorded on `ingest.authenticate` when this runs under the HTTP path;
         // a no-op elsewhere (the field is only declared on that span).
         if let Some(identity) = self.cache.get(raw_key).await {
@@ -6855,6 +8062,7 @@ impl CloudflareConnectorResolver {
         };
 
         let routing = OrgRouting::from_connector_row(&row);
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
         let identity = CloudflareConnectorIdentity {
             connector_id: connector_id.to_owned(),
             org_id: row.org_id.clone(),
@@ -6862,6 +8070,8 @@ impl CloudflareConnectorResolver {
             zone_name: row.zone_name,
             dataset: row.dataset,
             secret_key_id: secret_hash.chars().take(16).collect(),
+            source,
+            source_pause,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -6938,25 +8148,6 @@ impl GcpConnectorResolver {
         }
     }
 
-    /// The connector's integration source, cached with the connector identity.
-    /// `None` until the API creates it, or if the lookup fails: that never fails auth.
-    async fn integration_source(&self, org_id: &str, connector_id: &str) -> Option<SourceRef> {
-        match self
-            .store
-            .fetch_integration_source_id(org_id, GCP_SOURCE_PLATFORM, connector_id)
-            .await
-        {
-            Ok(id) => id.and_then(SourceRef::from_id),
-            Err(error) => {
-                warn!(
-                    org_id,
-                    connector_id, error, "Integration source lookup failed; stamping none"
-                );
-                None
-            }
-        }
-    }
-
     /// Whether this connector may write another setup report in this window.
     async fn take_setup_report_slot(&self, connector_id: &str) -> bool {
         let count = self
@@ -6994,13 +8185,14 @@ impl GcpConnectorResolver {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
         };
-        let source = self.integration_source(&row.org_id, connector_id).await;
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
         let identity = GcpConnectorIdentity {
             org_id: row.org_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: false,
             source,
+            source_pause,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -7056,7 +8248,7 @@ impl GcpConnectorResolver {
             return Ok(None);
         };
 
-        let source = self.integration_source(&row.org_id, connector_id).await;
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
         let routing = OrgRouting {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
@@ -7068,6 +8260,7 @@ impl GcpConnectorResolver {
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: row.applied_logs_enabled.is_none(),
             source,
+            source_pause,
         };
         self.cache.insert(cache_key, identity.clone()).await;
         self.routing
@@ -7141,6 +8334,105 @@ impl GcpConnectorResolver {
         };
         if let Err(error) = written {
             debug!(connector_id, error, "Failed to record GCP connector health");
+        }
+    }
+}
+
+impl AwsConnectionResolver {
+    fn new(
+        store: Arc<dyn KeyStore>,
+        lookup_hmac_key: String,
+        routing: Arc<OrgRoutingResolver>,
+        cache_ttl: Duration,
+    ) -> Self {
+        Self {
+            store,
+            lookup_hmac_key,
+            cache: Cache::builder()
+                .time_to_live(cache_ttl)
+                .max_capacity(10_000)
+                .build(),
+            negative_cache: Cache::builder()
+                .time_to_live(Duration::from_secs(30))
+                .max_capacity(10_000)
+                .build(),
+            routing,
+            recent_health_writes: Cache::builder()
+                .time_to_live(AWS_STREAM_HEALTH_WRITE_INTERVAL)
+                .max_capacity(20_000)
+                .build(),
+        }
+    }
+
+    async fn resolve_connection(
+        &self,
+        connection_id: &str,
+        raw_secret: &str,
+    ) -> Result<Option<ResolvedAwsConnection>, String> {
+        let secret_hash = hash_ingest_key(raw_secret, &self.lookup_hmac_key)?;
+        let cache_key = (connection_id.to_owned(), secret_hash);
+        if let Some(identity) = self.cache.get(&cache_key).await {
+            let routing = self.routing.resolve_org_routing(&identity.org_id).await?;
+            return Ok(Some(identity.into_resolved(&routing)));
+        }
+        if self.negative_cache.contains_key(&cache_key) {
+            return Ok(None);
+        }
+
+        let Some(row) = self
+            .store
+            .fetch_aws_connection(connection_id, &cache_key.1)
+            .await?
+        else {
+            self.negative_cache.insert(cache_key, ()).await;
+            return Ok(None);
+        };
+
+        let routing = OrgRouting {
+            self_managed: row.self_managed,
+            clickhouse_ready: row.clickhouse_ready,
+        };
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
+        let identity = AwsConnectionIdentity {
+            org_id: row.org_id,
+            secret_key_id: cache_key.1.chars().take(16).collect(),
+            source,
+            source_pause,
+        };
+
+        self.cache.insert(cache_key, identity.clone()).await;
+        self.routing
+            .remember_org_routing(&identity.org_id, routing.clone())
+            .await;
+
+        Ok(Some(identity.into_resolved(&routing)))
+    }
+
+    /// Writes `stream_last_received_at` (`error == None`) or `stream_last_error`,
+    /// at most once per connection and outcome per interval. Best-effort, like
+    /// `GcpConnectorResolver::record_health`: a written failure lets the next
+    /// success through so the error does not outlive the retried delivery.
+    async fn record_health(&self, connection_id: &str, error: Option<&str>) {
+        let throttle_key = (connection_id.to_owned(), error.is_none());
+        let throttle = self.recent_health_writes.entry(throttle_key).or_insert(());
+        if !throttle.await.is_fresh() {
+            return;
+        }
+        if error.is_some() {
+            self.recent_health_writes
+                .invalidate(&(connection_id.to_owned(), true))
+                .await;
+        }
+        if let Err(write_error) = self
+            .store
+            .record_aws_stream_health(connection_id, error, current_time_millis())
+            .await
+        {
+            debug!(
+                connection_id,
+                error = write_error,
+                "Failed to record AWS stream health"
+            );
         }
     }
 }
@@ -7284,8 +8576,44 @@ fn gcp_connector_columns() -> String {
     format!(
         "c.org_id, c.project_id, c.logs_enabled, c.applied_logs_enabled, \
          COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-         COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready"
+         COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+         {CONNECTOR_SOURCE_COLUMNS}"
     )
+}
+
+/// A connector `c`'s own source, read in the connector's query: all null without one.
+const CONNECTOR_SOURCE_JOIN: &str =
+    "LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id";
+const CONNECTOR_SOURCE_COLUMNS: &str = "src.id AS source_id, \
+    (EXTRACT(EPOCH FROM src.paused_at) * 1000)::bigint AS source_paused_at_ms, \
+    (EXTRACT(EPOCH FROM src.paused_until) * 1000)::bigint AS source_paused_until_ms";
+
+fn connector_source(row: &tokio_postgres::Row) -> Option<PullSourceRow> {
+    let id: Option<String> = row.get("source_id");
+    id.map(|id| PullSourceRow {
+        id,
+        pause: PauseWindow {
+            paused_at_ms: row.get("source_paused_at_ms"),
+            paused_until_ms: row.get("source_paused_until_ms"),
+        },
+    })
+}
+
+/// A `PullSourceRow`'s columns over `sources`.
+const PULL_SOURCE_COLUMNS: &str = "id, \
+    (EXTRACT(EPOCH FROM paused_at) * 1000)::bigint AS paused_at_ms, \
+    (EXTRACT(EPOCH FROM paused_until) * 1000)::bigint AS paused_until_ms";
+
+fn pull_source_row(row: &tokio_postgres::Row) -> Result<PullSourceRow, String> {
+    let decode_error =
+        |error: tokio_postgres::Error| format!("postgres pull source row decode failed: {error}");
+    Ok(PullSourceRow {
+        id: row.try_get("id").map_err(decode_error)?,
+        pause: PauseWindow {
+            paused_at_ms: row.try_get("paused_at_ms").map_err(decode_error)?,
+            paused_until_ms: row.try_get("paused_until_ms").map_err(decode_error)?,
+        },
+    })
 }
 
 fn gcp_connector_row(row: &tokio_postgres::Row) -> GcpConnectorRow {
@@ -7296,6 +8624,7 @@ fn gcp_connector_row(row: &tokio_postgres::Row) -> GcpConnectorRow {
         applied_logs_enabled: row.get("applied_logs_enabled"),
         self_managed: row.get("self_managed"),
         clickhouse_ready: row.get("clickhouse_ready"),
+        source: connector_source(row),
     }
 }
 
@@ -7401,6 +8730,40 @@ impl PostgresTarget {
             port: config.get_ports().first().copied().unwrap_or_default(),
         }
     }
+}
+
+/// One multi-row upsert adding counts into `org_ingest_rule_stats`; 8 parameters per row.
+/// Rows must have distinct keys, or Postgres refuses to update a row twice.
+fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
+    let mut sql = String::from(
+        "INSERT INTO org_ingest_rule_stats \
+         (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values) VALUES ",
+    );
+    for row in 0..rows {
+        let p = row * 8;
+        if row > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(&format!(
+            "(${}, ${}, to_timestamp(${}::bigint / 1000.0), ${}, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint)",
+            p + 1,
+            p + 2,
+            p + 3,
+            p + 4,
+            p + 5,
+            p + 6,
+            p + 7,
+            p + 8
+        ));
+    }
+    sql.push_str(
+        " ON CONFLICT (org_id, rule_id, bucket, signal) DO UPDATE SET \
+         matched = org_ingest_rule_stats.matched + EXCLUDED.matched, \
+         dropped = org_ingest_rule_stats.dropped + EXCLUDED.dropped, \
+         dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes, \
+         redacted_values = org_ingest_rule_stats.redacted_values + EXCLUDED.redacted_values",
+    );
+    sql
 }
 
 /// One Postgres client span.
@@ -7533,7 +8896,7 @@ impl KeyStore for PostgresKeyStore {
                     ds.id AS default_source_id \
              FROM org_ingest_keys k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
-             LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.is_default \
+             LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.kind = 'default' \
              WHERE k.{hash_column} = $2 LIMIT 1"
         );
         let client = self.client().await?;
@@ -7635,9 +8998,11 @@ impl KeyStore for PostgresKeyStore {
         let sql = format!(
             "SELECT c.org_id, c.service_name, c.zone_name, c.dataset, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+                    {CONNECTOR_SOURCE_COLUMNS} \
              FROM cloudflare_logpush_connectors c \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
              WHERE c.id = $2 AND c.secret_hash = $3 AND c.enabled = true LIMIT 1"
         );
         let rows = client
@@ -7660,6 +9025,7 @@ impl KeyStore for PostgresKeyStore {
             dataset: row.get("dataset"),
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
+            source: connector_source(&row),
         }))
     }
 
@@ -7676,6 +9042,7 @@ impl KeyStore for PostgresKeyStore {
             "SELECT {columns} \
              FROM gcp_connectors c \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
              WHERE c.id = $2 AND c.secret_hash = $3 LIMIT 1"
         );
         let rows = client
@@ -7702,6 +9069,7 @@ impl KeyStore for PostgresKeyStore {
             "SELECT {columns} \
              FROM gcp_connectors c \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
              WHERE c.id = $2 LIMIT 1"
         );
         let rows = client
@@ -7777,6 +9145,80 @@ impl KeyStore for PostgresKeyStore {
             .collect())
     }
 
+    async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String> {
+        let client = self.client().await?;
+        // `spec_json::text`: tokio-postgres has no serde_json feature here, so it is parsed later.
+        let rows = client
+            .query(
+                "SELECT r.id, r.spec_json::text AS spec_json, s.hash_salt \
+                 FROM org_ingest_rules r \
+                 LEFT JOIN org_ingest_rule_settings s ON s.org_id = r.org_id \
+                 WHERE r.org_id = $1 AND r.enabled \
+                 ORDER BY r.position, r.created_at, r.id",
+                &[&org_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_ingest_rules",
+                "SELECT",
+                "org_ingest_rules",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_ingest_rules failed: {error}"))?;
+        // NULL until the org's first hash rule is created, so nothing can hash with it yet.
+        let hash_salt = rows
+            .first()
+            .and_then(|row| row.get::<_, Option<String>>("hash_salt"))
+            .unwrap_or_default();
+        Ok(IngestRuleRows {
+            rules: rows
+                .iter()
+                .map(|row| (row.get("id"), row.get("spec_json")))
+                .collect(),
+            hash_salt,
+        })
+    }
+
+    async fn record_ingest_rule_stats(&self, rows: &[IngestRuleStatRow]) -> Result<(), String> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let numbers: Vec<[i64; 5]> = rows
+            .iter()
+            .map(|row| {
+                let count = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
+                [
+                    row.bucket_ms,
+                    count(row.counts.matched),
+                    count(row.counts.dropped),
+                    count(row.counts.dropped_bytes),
+                    count(row.counts.redacted_values),
+                ]
+            })
+            .collect();
+        let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(rows.len() * 8);
+        for (row, values) in rows.iter().zip(&numbers) {
+            params.push(&row.org_id);
+            params.push(&row.rule_id);
+            params.push(&values[0]);
+            params.push(&row.signal);
+            params.extend(values[1..].iter().map(|value| value as &(dyn tokio_postgres::types::ToSql + Sync)));
+        }
+        let client = self.client().await?;
+        client
+            .execute(ingest_rule_stats_upsert_sql(rows.len()).as_str(), &params)
+            .instrument(postgres_client_span(
+                "record_ingest_rule_stats",
+                "INSERT",
+                "org_ingest_rule_stats",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres record_ingest_rule_stats failed: {error}"))?;
+        Ok(())
+    }
+
     async fn fetch_clickhouse_target(
         &self,
         org_id: &str,
@@ -7842,6 +9284,24 @@ impl KeyStore for PostgresKeyStore {
         }))
     }
 
+    async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String> {
+        let client = self.client().await?;
+        let row = client
+            .query_opt(
+                "SELECT billing_org_id FROM org_billing_links WHERE org_id = $1",
+                &[&org_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_billing_org_id",
+                "SELECT",
+                "org_billing_links",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_billing_org_id failed: {error}"))?;
+        Ok(row.map(|row| row.get("billing_org_id")))
+    }
+
     async fn record_source_used(&self, key_id: &str, now_ms: i64) -> Result<(), String> {
         let client = self.client().await?;
         client
@@ -7887,40 +9347,18 @@ impl KeyStore for PostgresKeyStore {
             .map_err(|error| format!("postgres record_source_rejected failed: {error}"))
     }
 
-    async fn fetch_integration_source_id(
-        &self,
-        org_id: &str,
-        platform: &'static str,
-        integration_id: &str,
-    ) -> Result<Option<String>, String> {
-        let client = self.client().await?;
-        let rows = client
-            .query(
-                "SELECT id FROM sources \
-                 WHERE org_id = $1 AND platform = $2 AND integration_id = $3 LIMIT 1",
-                &[&org_id, &platform, &integration_id],
-            )
-            .instrument(postgres_client_span(
-                "fetch_integration_source_id",
-                "SELECT",
-                "sources",
-                &self.target,
-            ))
-            .await
-            .map_err(|error| format!("postgres fetch_integration_source_id failed: {error}"))?;
-        Ok(rows.first().map(|row| row.get("id")))
-    }
-
     async fn claimable_source_ids(
         &self,
         org_id: &str,
         source_ids: &[String],
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<PullSourceRow>, String> {
         let client = self.client().await?;
         let rows = client
             .query(
-                "SELECT id FROM sources \
-                 WHERE org_id = $1 AND id = ANY($2) AND integration_id IS NOT NULL",
+                &format!(
+                    "SELECT {PULL_SOURCE_COLUMNS} FROM sources \
+                     WHERE org_id = $1 AND id = ANY($2) AND kind = 'integration'"
+                ),
                 &[&org_id, &source_ids],
             )
             .instrument(postgres_client_span(
@@ -7931,7 +9369,7 @@ impl KeyStore for PostgresKeyStore {
             ))
             .await
             .map_err(|error| format!("postgres claimable_source_ids failed: {error}"))?;
-        Ok(rows.iter().map(|row| row.get("id")).collect())
+        rows.iter().map(pull_source_row).collect()
     }
 
     async fn record_connector_success(
@@ -8021,6 +9459,102 @@ impl KeyStore for PostgresKeyStore {
             .map(|_| ())
             .map_err(|error| format!("postgres record_gcp_setup_report failed: {error}"))
     }
+
+    async fn fetch_aws_connection(
+        &self,
+        connection_id: &str,
+        secret_hash: &str,
+    ) -> Result<Option<AwsConnectionRow>, String> {
+        let revision = required_schema_revision();
+        let client = self.client().await?;
+        let sql = format!(
+            "SELECT c.org_id, \
+             COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+             COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+             {CONNECTOR_SOURCE_COLUMNS} \
+             FROM aws_connections c \
+             LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
+             WHERE c.id = $2 AND c.stream_secret_hash = $3 LIMIT 1"
+        );
+        let rows = client
+            .query(&sql, &[&revision, &connection_id, &secret_hash])
+            .instrument(postgres_client_span(
+                "fetch_aws_connection",
+                "SELECT",
+                AWS_CONNECTIONS_TABLE,
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_aws_connection failed: {error}"))?;
+        Ok(rows.first().map(|row| AwsConnectionRow {
+            org_id: row.get("org_id"),
+            self_managed: row.get("self_managed"),
+            clickhouse_ready: row.get("clickhouse_ready"),
+            source: connector_source(row),
+        }))
+    }
+
+    async fn record_aws_stream_health(
+        &self,
+        connection_id: &str,
+        error: Option<&str>,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let client = self.client().await?;
+        // `updated_at` is left alone: it tracks the connection's settings, not its traffic.
+        let written = match error {
+            None => {
+                client
+                    .execute(
+                        "UPDATE aws_connections \
+                         SET stream_last_received_at = to_timestamp($1::bigint / 1000.0), \
+                             stream_last_error = NULL \
+                         WHERE id = $2",
+                        &[&now_ms, &connection_id],
+                    )
+                    .instrument(postgres_client_span(
+                        "record_aws_stream_health",
+                        "UPDATE",
+                        AWS_CONNECTIONS_TABLE,
+                        &self.target,
+                    ))
+                    .await
+            }
+            Some(error) => {
+                client
+                    .execute(
+                        "UPDATE aws_connections SET stream_last_error = $1 WHERE id = $2",
+                        &[&error, &connection_id],
+                    )
+                    .instrument(postgres_client_span(
+                        "record_aws_stream_health",
+                        "UPDATE",
+                        AWS_CONNECTIONS_TABLE,
+                        &self.target,
+                    ))
+                    .await
+            }
+        };
+        written
+            .map(|_| ())
+            .map_err(|err| format!("postgres record_aws_stream_health failed: {err}"))
+    }
+}
+
+/// How long a resolved billing org is reused before `org_billing_links` is re-read.
+const BILLING_ORG_CACHE_TTL: Duration = Duration::from_secs(60);
+/// Long enough for one flush pass of lookups and sends; the task's stop timeout is longer.
+const AUTUMN_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(10);
+
+/// Feeds the Autumn billing resolver from the key store.
+struct KeyStoreBillingLookup(Arc<dyn KeyStore>);
+
+#[async_trait::async_trait]
+impl BillingOrgLookup for KeyStoreBillingLookup {
+    async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String> {
+        self.0.fetch_billing_org_id(org_id).await
+    }
 }
 
 // Local-dev / single-tenant KeyStore: every well-formed ingest key resolves to
@@ -8098,6 +9632,14 @@ impl KeyStore for StaticKeyStore {
         Ok(Vec::new())
     }
 
+    async fn fetch_ingest_rules(&self, _org_id: &str) -> Result<IngestRuleRows, String> {
+        Ok(IngestRuleRows::default())
+    }
+
+    async fn record_ingest_rule_stats(&self, _rows: &[IngestRuleStatRow]) -> Result<(), String> {
+        Ok(())
+    }
+
     async fn fetch_clickhouse_target(
         &self,
         _org_id: &str,
@@ -8106,6 +9648,10 @@ impl KeyStore for StaticKeyStore {
     }
 
     async fn fetch_org_routing(&self, _org_id: &str) -> Result<Option<OrgRouting>, String> {
+        Ok(None)
+    }
+
+    async fn fetch_billing_org_id(&self, _org_id: &str) -> Result<Option<String>, String> {
         Ok(None)
     }
 
@@ -8122,20 +9668,11 @@ impl KeyStore for StaticKeyStore {
         Ok(())
     }
 
-    async fn fetch_integration_source_id(
-        &self,
-        _org_id: &str,
-        _platform: &'static str,
-        _integration_id: &str,
-    ) -> Result<Option<String>, String> {
-        Ok(None)
-    }
-
     async fn claimable_source_ids(
         &self,
         _org_id: &str,
         _source_ids: &[String],
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<PullSourceRow>, String> {
         Ok(Vec::new())
     }
 
@@ -8166,6 +9703,33 @@ impl KeyStore for StaticKeyStore {
     ) -> Result<(), String> {
         Ok(())
     }
+
+    async fn fetch_aws_connection(
+        &self,
+        _connection_id: &str,
+        _secret_hash: &str,
+    ) -> Result<Option<AwsConnectionRow>, String> {
+        Ok(None)
+    }
+
+    async fn record_aws_stream_health(
+        &self,
+        _connection_id: &str,
+        _error: Option<&str>,
+        _now_ms: i64,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Same comma-separated `INGEST_BLOCKED_KEYS` the edge WAF rule is built from.
+fn parse_blocked_ingest_keys(raw: Option<&str>) -> HashSet<String> {
+    raw.unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn infer_ingest_key_type(raw_key: &str) -> Option<IngestKeyType> {
@@ -8368,6 +9932,22 @@ fn invalid_ingest_key_message(region: Option<&str>) -> Result<&'static str, Stri
     }
 }
 
+/// Whether BYO ClickHouse exports may reach private addresses. Off for the
+/// managed deployment, whose tenants share its network; on by default for a
+/// self-hosted install, where ClickHouse usually sits on an internal name.
+fn clickhouse_allow_private_endpoints(
+    raw: Option<String>,
+    self_hosted_mode: Option<String>,
+) -> Result<bool, String> {
+    // Same reading as the key store backend: only `single_tenant` is self-hosted.
+    let self_hosted = self_hosted_mode.as_deref() == Some("single_tenant");
+    parse_bool(
+        "INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS",
+        raw,
+        self_hosted,
+    )
+}
+
 fn parse_bool(name: &str, raw: Option<String>, default: bool) -> Result<bool, String> {
     let Some(raw) = raw else {
         return Ok(default);
@@ -8488,11 +10068,34 @@ fn parse_fleet_size(raw: Option<String>) -> Result<u32, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clickhouse_private_endpoints_are_opt_in_or_self_hosted() {
+        let allow = |raw: Option<&str>, mode: Option<&str>| {
+            clickhouse_allow_private_endpoints(raw.map(str::to_owned), mode.map(str::to_owned))
+        };
+        assert_eq!(allow(None, None), Ok(false));
+        assert_eq!(allow(Some("true"), None), Ok(true));
+        assert_eq!(allow(None, Some("single_tenant")), Ok(true));
+        assert_eq!(allow(Some("false"), Some("single_tenant")), Ok(false));
+        // Only the value the key store reads as self-hosted turns the opt-in on.
+        assert_eq!(allow(None, Some("false")), Ok(false));
+        assert_eq!(allow(None, Some("multi_tenant")), Ok(false));
+        assert!(allow(Some("maybe"), None).is_err());
+    }
+
     use super::*;
     // `AtomicBool` is only used by the test fakes below; keeping it out of the
     // top-level import avoids an unused-import warning in non-test bin builds.
     use opentelemetry_proto::tonic::metrics::v1::metric;
     use std::sync::atomic::AtomicBool;
+
+    /// The blob path's length count, unbounded and with its `io::Error`, for the rejection tests.
+    fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
+        gunzip_len_bounded(body, usize::MAX).map_err(|e| match e {
+            GunzipError::Invalid(e) => e,
+            GunzipError::TooLarge => std::io::Error::other("unreachable under usize::MAX"),
+        })
+    }
 
     #[test]
     fn self_trace_sample_ratio_must_be_in_the_unit_interval() {
@@ -9142,6 +10745,8 @@ mod tests {
             secret_key_id: "secret".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            source: None,
+            source_pause: PauseWindow::default(),
         };
         let record = serde_json::from_str::<JsonMap<String, JsonValue>>(
             r#"{
@@ -9280,12 +10885,16 @@ mod tests {
         source_uses: std::sync::Mutex<Vec<String>>,
         /// (key id, reason) of every `record_source_rejected` call.
         source_rejections: std::sync::Mutex<Vec<(String, String)>>,
-        /// `sources` rows that are not token sources: (org id, id, is_default, integration).
-        source_rows: std::sync::Mutex<Vec<(String, String, bool, Option<(&'static str, String)>)>>,
+        /// `sources` rows: (org id, id, kind).
+        source_rows: std::sync::Mutex<Vec<(String, String, &'static str)>>,
+        /// Connector id to its `source_id`, joined as the connector queries join it.
+        connector_sources: std::sync::Mutex<std::collections::HashMap<String, String>>,
         source_row_fetches: AtomicU64,
+        /// Pause windows of `source_rows`, by source id; absent means not paused.
+        source_pauses: std::sync::Mutex<std::collections::HashMap<String, PauseWindow>>,
         /// The source ids each `claimable_source_ids` call asked about.
         claim_lookups: std::sync::Mutex<Vec<Vec<String>>>,
-        /// Fails the source lookups (claims, integration sources).
+        /// Fails the source claim lookups.
         source_errors: AtomicBool,
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
         gcp_connectors:
@@ -9295,13 +10904,26 @@ mod tests {
         connector_failures: std::sync::Mutex<Vec<(&'static str, String)>>,
         /// (connector id, report) of every `record_gcp_setup_report` call.
         gcp_setup_reports: std::sync::Mutex<Vec<(String, gcp_logging::SetupReport)>>,
+        aws_connections:
+            std::sync::Mutex<std::collections::HashMap<(String, String), AwsConnectionRow>>,
+        /// (connection id, error) of every `record_aws_stream_health` call.
+        aws_stream_health: std::sync::Mutex<Vec<(String, Option<String>)>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
+        /// `org_billing_links`: sub-org to the org that pays for it.
+        billing_links: std::sync::Mutex<std::collections::HashMap<String, String>>,
         targets: std::sync::Mutex<std::collections::HashMap<String, ClickHouseTargetRow>>,
         ingest_key_fetches: AtomicU64,
         connector_fetches: AtomicU64,
         routing_fetches: AtomicU64,
         target_fetches: AtomicU64,
         routing_errors: AtomicBool,
+        /// Stored ingest rules by org, as `fetch_ingest_rules` returns them.
+        ingest_rules: std::sync::Mutex<std::collections::HashMap<String, IngestRuleRows>>,
+        ingest_rule_fetches: AtomicU64,
+        /// Fails `fetch_ingest_rules`.
+        ingest_rule_errors: AtomicBool,
+        /// Every row `record_ingest_rule_stats` was given.
+        ingest_rule_stats: std::sync::Mutex<Vec<IngestRuleStatRow>>,
     }
 
     impl FakeKeyStore {
@@ -9356,6 +10978,26 @@ mod tests {
                 .insert((connector_id.to_owned(), hash), row);
         }
 
+        fn insert_aws_connection(
+            &self,
+            connection_id: &str,
+            raw_secret: &str,
+            row: AwsConnectionRow,
+        ) {
+            let hash = hash_ingest_key(raw_secret, "test-hmac-key").unwrap();
+            self.set_org_routing(
+                &row.org_id,
+                OrgRouting {
+                    self_managed: row.self_managed,
+                    clickhouse_ready: row.clickhouse_ready,
+                },
+            );
+            self.aws_connections
+                .lock()
+                .unwrap()
+                .insert((connection_id.to_owned(), hash), row);
+        }
+
         fn set_org_routing(&self, org_id: &str, routing: OrgRouting) {
             self.routings
                 .lock()
@@ -9388,7 +11030,7 @@ mod tests {
                     .lock()
                     .unwrap()
                     .iter()
-                    .find(|row| row.0 == key.org_id && row.2)
+                    .find(|row| row.0 == key.org_id && row.2 == "default")
                     .map(|row| row.1.clone());
                 OrgKeyRow {
                     key,
@@ -9419,35 +11061,11 @@ mod tests {
                 .push((key_id.to_owned(), reason.to_owned()));
             Ok(())
         }
-        async fn fetch_integration_source_id(
-            &self,
-            org_id: &str,
-            platform: &'static str,
-            integration_id: &str,
-        ) -> Result<Option<String>, String> {
-            self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
-            if self.source_errors.load(Ordering::Relaxed) {
-                return Err("source lookup failed".to_owned());
-            }
-            Ok(self
-                .source_rows
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|row| {
-                    row.0 == org_id
-                        && row
-                            .3
-                            .as_ref()
-                            .is_some_and(|(p, id)| *p == platform && id == integration_id)
-                })
-                .map(|row| row.1.clone()))
-        }
         async fn claimable_source_ids(
             &self,
             org_id: &str,
             source_ids: &[String],
-        ) -> Result<Vec<String>, String> {
+        ) -> Result<Vec<PullSourceRow>, String> {
             self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
             self.claim_lookups.lock().unwrap().push(source_ids.to_vec());
             if self.source_errors.load(Ordering::Relaxed) {
@@ -9458,8 +11076,10 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|row| row.0 == org_id && row.3.is_some() && source_ids.contains(&row.1))
-                .map(|row| row.1.clone())
+                .filter(|row| {
+                    row.0 == org_id && row.2 == "integration" && source_ids.contains(&row.1)
+                })
+                .map(|row| self.pull_source_row(&row.1))
                 .collect())
         }
         async fn fetch_connector(
@@ -9468,36 +11088,42 @@ mod tests {
             secret_hash: &str,
         ) -> Result<Option<ConnectorRow>, String> {
             self.connector_fetches.fetch_add(1, Ordering::Relaxed);
-            Ok(self
+            let row = self
                 .connectors
                 .lock()
                 .unwrap()
                 .get(&(connector_id.to_owned(), secret_hash.to_owned()))
-                .cloned())
+                .cloned();
+            Ok(row.map(|row| ConnectorRow {
+                source: self.joined_source(connector_id, &row.org_id),
+                ..row
+            }))
         }
         async fn fetch_gcp_connector(
             &self,
             connector_id: &str,
             secret_hash: &str,
         ) -> Result<Option<GcpConnectorRow>, String> {
-            Ok(self
+            let row = self
                 .gcp_connectors
                 .lock()
                 .unwrap()
                 .get(&(connector_id.to_owned(), secret_hash.to_owned()))
-                .cloned())
+                .cloned();
+            Ok(row.map(|row| self.with_joined_source(connector_id, row)))
         }
         async fn fetch_gcp_connector_by_id(
             &self,
             connector_id: &str,
         ) -> Result<Option<GcpConnectorRow>, String> {
-            Ok(self
+            let row = self
                 .gcp_connectors
                 .lock()
                 .unwrap()
                 .iter()
                 .find(|((id, _), _)| id == connector_id)
-                .map(|(_, row)| row.clone()))
+                .map(|(_, row)| row.clone());
+            Ok(row.map(|row| self.with_joined_source(connector_id, row)))
         }
         async fn fetch_sampling_policy(
             &self,
@@ -9510,6 +11136,26 @@ mod tests {
             _org_id: &str,
         ) -> Result<Vec<AttributeMappingRow>, String> {
             Ok(Vec::new())
+        }
+        async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String> {
+            self.ingest_rule_fetches.fetch_add(1, Ordering::Relaxed);
+            if self.ingest_rule_errors.load(Ordering::Relaxed) {
+                return Err("fake ingest rule lookup failure".to_owned());
+            }
+            Ok(self
+                .ingest_rules
+                .lock()
+                .unwrap()
+                .get(org_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+        async fn record_ingest_rule_stats(
+            &self,
+            rows: &[IngestRuleStatRow],
+        ) -> Result<(), String> {
+            self.ingest_rule_stats.lock().unwrap().extend_from_slice(rows);
+            Ok(())
         }
         async fn fetch_clickhouse_target(
             &self,
@@ -9524,6 +11170,9 @@ mod tests {
                 return Err("simulated routing store outage".to_owned());
             }
             Ok(self.routings.lock().unwrap().get(org_id).cloned())
+        }
+        async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String> {
+            Ok(self.billing_links.lock().unwrap().get(org_id).cloned())
         }
         async fn record_connector_success(
             &self,
@@ -9557,6 +11206,35 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((connector_id.to_owned(), report));
+            Ok(())
+        }
+        async fn fetch_aws_connection(
+            &self,
+            connection_id: &str,
+            secret_hash: &str,
+        ) -> Result<Option<AwsConnectionRow>, String> {
+            self.connector_fetches.fetch_add(1, Ordering::Relaxed);
+            let row = self
+                .aws_connections
+                .lock()
+                .unwrap()
+                .get(&(connection_id.to_owned(), secret_hash.to_owned()))
+                .cloned();
+            Ok(row.map(|row| AwsConnectionRow {
+                source: self.joined_source(connection_id, &row.org_id),
+                ..row
+            }))
+        }
+        async fn record_aws_stream_health(
+            &self,
+            connection_id: &str,
+            error: Option<&str>,
+            _now_ms: i64,
+        ) -> Result<(), String> {
+            self.aws_stream_health
+                .lock()
+                .unwrap()
+                .push((connection_id.to_owned(), error.map(str::to_owned)));
             Ok(())
         }
     }
@@ -9595,6 +11273,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         }
     }
 
@@ -9620,10 +11299,10 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake ClickHouse should receive gzip NDJSON");
+        let decoded = String::from_utf8(
+            gunzip_bounded(&body, usize::MAX).expect("fake ClickHouse should receive gzip NDJSON"),
+        )
+        .expect("fake ClickHouse should receive UTF-8 NDJSON");
 
         drop(
             tx.send(FakeClickHouseImport {
@@ -9696,6 +11375,7 @@ mod tests {
             export_max_attempts: 1,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
+            clickhouse_allow_private_endpoints: true,
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_owned(),
             datasource_session_replay_events: "session_replay_events".to_owned(),
@@ -9793,6 +11473,7 @@ mod tests {
                 write_mode: WriteMode::Forward,
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
+                max_decoded_body_bytes: 8 * 1024 * 1024,
                 org_max_in_flight: 100,
                 rate_limit_fleet_size: 1,
                 gcp_org_max_in_flight: 100,
@@ -9810,12 +11491,15 @@ mod tests {
                 autumn_deny_ttl_secs: 5,
                 ingest_key_cache_ttl_secs: 60,
                 org_routing_cache_ttl_secs: 5,
+                ingest_rules_enabled: false,
+                ingest_rules_cache_ttl_secs: 30,
                 replay_max_session_bytes: 1024 * 1024 * 1024,
                 replay_blob_store: None,
                 trust_proxy_geo: false,
                 shutdown_drain_secs: 1,
                 wal_store: None,
                 invalid_key_message: "Invalid ingest key",
+                blocked_ingest_keys: Arc::default(),
             },
             #[expect(
                 clippy::useless_conversion,
@@ -9839,6 +11523,7 @@ mod tests {
                 recent_key_uses: recent_key_uses_cache(),
                 recent_key_rejections: recent_key_rejections_cache(),
                 source_claims: source_claims_cache(Duration::from_mins(1)),
+                blocked_keys: Arc::default(),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
             key_rate_limiter: SourceRateLimiter::new(1),
@@ -9857,6 +11542,13 @@ mod tests {
                     .max_capacity(16)
                     .build(),
             },
+            ingest_rule_resolver: IngestRuleResolver::new(
+                Arc::clone(&key_store),
+                false,
+                Duration::from_secs(30),
+                16,
+            ),
+            ingest_rule_stats: Arc::new(IngestRuleStatsSink::default()),
             cloudflare_resolver: CloudflareConnectorResolver {
                 store: Arc::clone(&key_store),
                 lookup_hmac_key: "test-hmac-key".to_owned(),
@@ -9867,11 +11559,17 @@ mod tests {
                 routing: Arc::clone(&routing),
             },
             gcp_resolver: GcpConnectorResolver::new(
+                Arc::clone(&key_store),
+                "test-hmac-key".to_owned(),
+                Arc::clone(&routing),
+                Duration::from_mins(1),
+                GooglePushAuth::with_keys(gcp_push_test_keys()),
+            ),
+            aws_resolver: AwsConnectionResolver::new(
                 key_store,
                 "test-hmac-key".to_owned(),
                 routing,
                 Duration::from_mins(1),
-                GooglePushAuth::with_keys(gcp_push_test_keys()),
             ),
             autumn_tracker: None,
             autumn_entitlements: None,
@@ -10187,15 +11885,21 @@ mod tests {
         let api_url = format!("http://{addr}");
         state.autumn_entitlements = Some(AutumnEntitlements::new(
             state.http_client.clone(),
-            "am_sk_test".to_string(),
+            "am_sk_test".to_owned(),
             &api_url,
             // A one-second allow TTL, so a test that wants a second gate can
             // have one without a long sleep; the decision cache itself is
             // tested in `autumn.rs`.
             1,
             1,
+            BillingOrgResolver::unlinked(),
         ));
-        state.autumn_tracker = Some(AutumnTracker::spawn("am_sk_test".to_string(), &api_url, 1));
+        state.autumn_tracker = Some(AutumnTracker::spawn(
+            "am_sk_test".to_owned(),
+            &api_url,
+            1,
+            BillingOrgResolver::unlinked(),
+        ));
         (state, rx)
     }
 
@@ -10222,6 +11926,7 @@ mod tests {
             &format!("http://{addr}"),
             60,
             60,
+            BillingOrgResolver::unlinked(),
         ));
         state
     }
@@ -10439,6 +12144,138 @@ mod tests {
         );
 
         drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn replay_blob_gzip_bomb_is_refused_before_upload_and_budget() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/{*path}", axum::routing::put(fake_r2_put))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (raw_key, org_id) = ("maple_sk_test_replay_bomb", "org_replay_bomb");
+        let queue_dir = unique_main_test_dir("replay-blob-bomb");
+        let state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        let mut state = with_replay_blob_store(state, format!("http://{addr}"));
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+
+        let bomb = gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+        assert!(bomb.len() < 64 * 1024, "fixture should compress well");
+        let error =
+            handle_replay_blob_inner(&state, &replay_blob_headers(raw_key, "sess_bomb", 0), bomb)
+                .await
+                .expect_err("a chunk inflating past the decoded limit must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(rx.try_recv().is_err(), "a refused chunk must not be stored");
+        assert_eq!(
+            state
+                .replay_session_budget
+                .add(org_id, "sess_bomb", 0)
+                .await,
+            0,
+            "a refused chunk must not be charged to the session"
+        );
+
+        handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 1),
+            gzip_bytes(r#"[{"type":2,"timestamp":1}]"#),
+        )
+        .await
+        .expect("a normal chunk is still accepted");
+        assert!(rx.recv().await.is_some(), "the normal chunk is stored");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn inline_replay_and_otlp_refuse_gzip_bombs() {
+        let queue_dir = unique_main_test_dir("inline-bomb");
+        let (raw_key, org_id) = ("maple_sk_test_inline_bomb", "org_inline_bomb");
+        let mut state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+        let bomb = || gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_inline_bomb", 0),
+            bomb(),
+        )
+        .await
+        .expect_err("inline replay must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+        let mut headers = test_headers(raw_key);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let (error, error_kind) = handle_signal_inner(&state, &headers, bomb(), Signal::Logs)
+            .await
+            .expect_err("OTLP must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error_kind, "payload_too_large");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn decode_payload_gunzips_within_the_decoded_limit() {
+        let payload = r#"{"resourceSpans":[]}"#;
+        let decoded = decode_payload(&gzip_bytes(payload), Some("gzip"), payload.len())
+            .expect("a body at exactly the limit decodes");
+        assert_eq!(decoded, payload.as_bytes());
+
+        let plain = Bytes::from_static(b"raw");
+        assert_eq!(decode_payload(&plain, None, 1).unwrap(), b"raw");
+
+        let error = decode_payload(&Bytes::from_static(b"not gzip"), Some("gzip"), 1024)
+            .expect_err("malformed gzip is rejected");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn decode_payload_rejects_gzip_that_inflates_past_the_limit() {
+        // 4 MiB of one byte compresses to a few KiB, far under the body limit.
+        let inflated = "a".repeat(4 * 1024 * 1024);
+        let body = gzip_bytes(&inflated);
+        assert!(body.len() < 64 * 1024, "fixture should compress well");
+
+        let error = decode_payload(&body, Some("gzip"), 1024 * 1024)
+            .expect_err("decoded size over the limit must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error.error_kind(), "payload_too_large");
+
+        let decoded = decode_payload(&body, Some("gzip"), inflated.len())
+            .expect("the same body decodes once the limit allows it");
+        assert_eq!(decoded.len(), inflated.len());
+    }
+
+    #[test]
+    fn replay_text_gunzip_is_bounded_and_keeps_utf8_rejection() {
+        let events = r#"[{"type":2,"timestamp":1}]"#;
+        assert_eq!(
+            gunzip_replay_text(&gzip_bytes(events), events.len()).unwrap(),
+            events
+        );
+        assert!(matches!(
+            gunzip_replay_text(&gzip_bytes(events), events.len() - 1),
+            Err(GunzipError::TooLarge)
+        ));
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&[0xff, 0xfe]).unwrap();
+        let not_utf8 = encoder.finish().unwrap();
+        match gunzip_replay_text(&not_utf8, 1024) {
+            Err(GunzipError::Invalid(error)) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+            }
+            other => panic!("expected an invalid-data error, got {other:?}"),
+        }
     }
 
     #[test]
@@ -10830,6 +12667,7 @@ mod tests {
                 dataset: "http_requests".to_owned(),
                 self_managed: false,
                 clickhouse_ready: false,
+                source: None,
             },
         );
         let routing = make_routing_resolver(Arc::clone(&store), Duration::from_millis(5));
@@ -10936,6 +12774,7 @@ mod tests {
                     applied_logs_enabled,
                     self_managed: true,
                     clickhouse_ready: true,
+                    source: None,
                 },
             );
         }
@@ -11117,6 +12956,330 @@ mod tests {
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{case}");
         }
         assert!(store.gcp_setup_reports.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    const AWS_CONNECTION: &str = "6f1c2b9e-1d3a-4c5b-9e8f-0a1b2c3d4e5f";
+    const AWS_STREAM_SECRET: &str = "aws-stream-secret";
+
+    async fn aws_firehose_state(
+        name: &str,
+        clickhouse_url: &str,
+        max_decoded_body_bytes: usize,
+    ) -> (Arc<AppState>, Arc<FakeKeyStore>, PathBuf) {
+        let queue_dir = unique_main_test_dir(name);
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_aws_connection(
+            AWS_CONNECTION,
+            AWS_STREAM_SECRET,
+            AwsConnectionRow {
+                org_id: "org_aws".to_owned(),
+                self_managed: true,
+                clickhouse_ready: true,
+                source: None,
+            },
+        );
+        store.insert_clickhouse_target(
+            "org_aws",
+            ClickHouseTargetRow {
+                ch_url: clickhouse_url.to_owned(),
+                ch_user: "ingest".to_owned(),
+                ch_password_ciphertext: None,
+                ch_password_iv: None,
+                ch_password_tag: None,
+                ch_database: "maple".to_owned(),
+                schema_version: CLICKHOUSE_SCHEMA_VERSION.to_owned(),
+            },
+        );
+        let mut state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_mins(1),
+        )
+        .await;
+        state.config.max_decoded_body_bytes = max_decoded_body_bytes;
+        (Arc::new(state), store, queue_dir)
+    }
+
+    /// One `AWS/ECS` `CPUUtilization` point as a CloudWatch metric stream writes it.
+    fn cloudwatch_cpu_request() -> ExportMetricsServiceRequest {
+        use opentelemetry_proto::tonic::common::v1::KeyValueList;
+        use opentelemetry_proto::tonic::metrics::v1::{
+            metric, summary_data_point::ValueAtQuantile, Metric, ResourceMetrics, ScopeMetrics,
+            Summary, SummaryDataPoint,
+        };
+        let string = |key: &str, value: &str| KeyValue {
+            key: key.to_owned(),
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValue(value.to_owned())),
+            }),
+            ..Default::default()
+        };
+        let point = SummaryDataPoint {
+            attributes: vec![
+                string("Namespace", "AWS/ECS"),
+                string("MetricName", "CPUUtilization"),
+                KeyValue {
+                    key: "Dimensions".to_owned(),
+                    value: Some(AnyValue {
+                        value: Some(any_value::Value::KvlistValue(KeyValueList {
+                            values: vec![
+                                string("ClusterName", "prod"),
+                                string("ServiceName", "checkout"),
+                            ],
+                        })),
+                    }),
+                    ..Default::default()
+                },
+            ],
+            start_time_unix_nano: 1_800_000_000_000_000_000,
+            time_unix_nano: 1_800_000_060_000_000_000,
+            count: 4,
+            sum: 100.0,
+            quantile_values: vec![
+                ValueAtQuantile {
+                    quantile: 0.0,
+                    value: 10.0,
+                },
+                ValueAtQuantile {
+                    quantile: 1.0,
+                    value: 40.0,
+                },
+            ],
+            flags: 0,
+        };
+        ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: Some(Resource {
+                    attributes: vec![
+                        string("cloud.provider", "aws"),
+                        string("cloud.account.id", "123456789012"),
+                        string("cloud.region", "us-east-1"),
+                    ],
+                    ..Default::default()
+                }),
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: "amazonaws.com/AWS/ECS/CPUUtilization".to_owned(),
+                        unit: "Percent".to_owned(),
+                        data: Some(metric::Data::Summary(Summary {
+                            data_points: vec![point],
+                        })),
+                        ..Default::default()
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        }
+    }
+
+    /// A Firehose delivery whose one record holds two length-delimited requests.
+    fn firehose_body(records: &[&str]) -> String {
+        let records: Vec<JsonValue> = records
+            .iter()
+            .map(|data| serde_json::json!({ "data": data }))
+            .collect();
+        serde_json::json!({
+            "requestId": "body-request-id",
+            "timestamp": 1_800_000_000_000_i64,
+            "records": records,
+        })
+        .to_string()
+    }
+
+    fn cloudwatch_record() -> String {
+        let mut data = cloudwatch_cpu_request().encode_length_delimited_to_vec();
+        data.extend(cloudwatch_cpu_request().encode_length_delimited_to_vec());
+        STANDARD.encode(data)
+    }
+
+    async fn aws_deliver(
+        state: &Arc<AppState>,
+        connection_id: &str,
+        secret: Option<&str>,
+        body: Bytes,
+        gzip: bool,
+    ) -> (StatusCode, JsonValue) {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            FIREHOSE_REQUEST_ID_HEADER,
+            HeaderValue::from_static("header-request-id"),
+        );
+        if let Some(secret) = secret {
+            headers.insert(
+                FIREHOSE_ACCESS_KEY_HEADER,
+                HeaderValue::from_str(secret).unwrap(),
+            );
+        }
+        if gzip {
+            headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+        }
+        let response = handle_aws_firehose(
+            State(Arc::clone(state)),
+            Path(connection_id.to_owned()),
+            headers,
+            body,
+        )
+        .await;
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_rejects_bad_credentials_without_a_lookup_for_malformed_ids() {
+        let (state, store, queue_dir) =
+            aws_firehose_state("aws-firehose-auth", "http://127.0.0.1:1", 8 * 1024 * 1024).await;
+        let body = || Bytes::from(firehose_body(&[]));
+
+        for (case, connection_id) in [
+            ("uppercase uuid", "6F1C2B9E-1D3A-4C5B-9E8F-0A1B2C3D4E5F"),
+            ("not a uuid", "aws_conn_1"),
+            ("path-like", "../6f1c2b9e-1d3a-4c5b-9e8f-0a1b2c3d4e"),
+        ] {
+            let (status, response) = aws_deliver(
+                &state,
+                connection_id,
+                Some(AWS_STREAM_SECRET),
+                body(),
+                false,
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{case}");
+            assert_eq!(response["requestId"], "header-request-id", "{case}");
+            assert!(response["errorMessage"].is_string(), "{case}");
+        }
+        assert_eq!(store.connector_fetches.load(Ordering::Relaxed), 0);
+
+        for (case, secret) in [("missing key", None), ("wrong key", Some("wrong-secret"))] {
+            let (status, _) = aws_deliver(&state, AWS_CONNECTION, secret, body(), false).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{case}");
+        }
+        let (status, _) = aws_deliver(
+            &state,
+            "00000000-0000-4000-8000-000000000000",
+            Some(AWS_STREAM_SECRET),
+            body(),
+            false,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(store.aws_stream_health.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_stores_a_gzipped_metric_stream_and_acks_an_unreadable_record() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) =
+            aws_firehose_state("aws-firehose-accept", &ch_url, 8 * 1024 * 1024).await;
+
+        let body = gzip_bytes(&firehose_body(&[
+            &cloudwatch_record(),
+            &cloudwatch_record(),
+        ]));
+        let (status, response) =
+            aws_deliver(&state, AWS_CONNECTION, Some(AWS_STREAM_SECRET), body, true).await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        assert_eq!(response["requestId"], "body-request-id");
+        assert!(response["timestamp"].is_i64());
+        assert!(response.get("errorMessage").is_none());
+
+        let mut stored = Vec::new();
+        while let Ok(Some(import)) =
+            tokio::time::timeout(Duration::from_secs(2), ch_rx.recv()).await
+        {
+            stored.push(import);
+            if stored.len() == 2 {
+                break;
+            }
+        }
+        let gauges = stored
+            .iter()
+            .find(|import| import.query.starts_with("INSERT INTO metrics_gauge"))
+            .expect("the average, min and max gauges should be stored");
+        assert!(
+            gauges.body.contains("aws.ecs.cpu_utilization.max"),
+            "{}",
+            gauges.body
+        );
+        assert!(gauges.body.contains("checkout"), "{}", gauges.body);
+        let sums = stored
+            .iter()
+            .find(|import| import.query.starts_with("INSERT INTO metrics_sum"))
+            .expect("the sum and count should be stored");
+        assert!(
+            sums.body.contains("aws.ecs.cpu_utilization.count"),
+            "{}",
+            sums.body
+        );
+        assert_eq!(
+            *store.aws_stream_health.lock().unwrap(),
+            [(AWS_CONNECTION.to_owned(), None)]
+        );
+
+        // Bad base64 never decodes, so it is acked rather than retried by Firehose.
+        // Sent twice: the `stream_last_error` write is throttled to one.
+        for _ in 0..2 {
+            let (status, _) = aws_deliver(
+                &state,
+                AWS_CONNECTION,
+                Some(AWS_STREAM_SECRET),
+                Bytes::from(firehose_body(&["!!not base64!!"])),
+                false,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        assert_eq!(
+            *store.aws_stream_health.lock().unwrap(),
+            [
+                (AWS_CONNECTION.to_owned(), None),
+                (
+                    AWS_CONNECTION.to_owned(),
+                    Some(aws_metric_stream::UNREADABLE_DELIVERY.to_owned())
+                ),
+            ]
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "an unreadable record must not be stored"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_refuses_a_delivery_that_decodes_past_the_limit() {
+        let (state, store, queue_dir) =
+            aws_firehose_state("aws-firehose-too-large", "http://127.0.0.1:1", 64).await;
+
+        let (status, response) = aws_deliver(
+            &state,
+            AWS_CONNECTION,
+            Some(AWS_STREAM_SECRET),
+            Bytes::from(firehose_body(&[&cloudwatch_record()])),
+            false,
+        )
+        .await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(response["errorMessage"].is_string());
+        assert_eq!(
+            *store.aws_stream_health.lock().unwrap(),
+            [(
+                AWS_CONNECTION.to_owned(),
+                Some(aws_metric_stream::DELIVERY_TOO_LARGE.to_owned())
+            )]
+        );
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
@@ -11547,7 +13710,7 @@ mod tests {
             &sentinel,
             KeyAdmission::Ingest,
             decoded_bytes,
-            false,
+            &ClaimOutcome::default(),
         )
         .await
         .expect("a sentinel export must look successful to the client");
@@ -11576,7 +13739,7 @@ mod tests {
             &resolved,
             KeyAdmission::Ingest,
             real_bytes,
-            false,
+            &ClaimOutcome::default(),
         )
         .await
         .expect("a real export is accepted");
@@ -11670,6 +13833,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn blocked_key_is_refused_in_every_header_spelling() {
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("blocked-key");
+        let store = Arc::new(FakeKeyStore::default());
+        let (blocked, allowed) = ("maple_sk_test_blocked", "maple_sk_test_allowed");
+        for raw_key in [blocked, allowed] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: "org_blocked_key".to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+        }
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.resolver.blocked_keys = Arc::new(parse_blocked_ingest_keys(Some(blocked)));
+
+        let body = || Bytes::from(test_log_request("blocked").encode_to_vec());
+        for (name, value) in [
+            ("authorization", format!("Bearer {blocked}")),
+            ("authorization", format!("bearer {blocked}")),
+            ("authorization", format!("BEARER {blocked}")),
+            ("authorization", format!("Bearer  {blocked}\t")),
+            ("x-maple-ingest-key", format!(" {blocked} ")),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, value.parse().unwrap());
+            headers.insert(CONTENT_TYPE, "application/x-protobuf".parse().unwrap());
+            let (error, _) = handle_signal_inner(&state, &headers, body(), Signal::Logs)
+                .await
+                .expect_err("a blocked key must be refused");
+            assert_eq!(error.status, StatusCode::UNAUTHORIZED, "{name}: {value:?}");
+            let grpc = resolve_grpc_ingest_key(&state, &headers).await;
+            assert!(
+                matches!(&grpc, Err(status) if status.code() == tonic::Code::Unauthenticated),
+                "gRPC must refuse a blocked key: {name}: {value:?}"
+            );
+        }
+
+        let (response, ..) =
+            handle_signal_inner(&state, &test_headers(allowed), body(), Signal::Logs)
+                .await
+                .expect("an unblocked key still ingests");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn blocked_keys_parse_like_the_edge_rule() {
+        let keys = parse_blocked_ingest_keys(Some(" maple_sk_a, ,maple_pk_b,"));
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains("maple_sk_a") && keys.contains("maple_pk_b"));
+        assert!(parse_blocked_ingest_keys(None).is_empty());
+    }
+
+    #[tokio::test]
     async fn logpush_gate_precedes_decode_and_admits_an_allowed_org() {
         let (forward_url, mut forward_rx) = spawn_forward_collector().await;
         let queue_dir = unique_main_test_dir("logpush-gate");
@@ -11688,6 +13915,7 @@ mod tests {
                     dataset: "http_requests".to_owned(),
                     self_managed: false,
                     clickhouse_ready: false,
+                    source: None,
                 },
             );
         }
@@ -11727,14 +13955,13 @@ mod tests {
         assert_eq!(error_kind, "billing_limit");
 
         // An allowed org's validation ping and log batch both pass the gate.
-        let (response, _, _, is_validation) =
-            push("connector_allowed", false, br#"{"content":"tests"}"#)
-                .await
-                .expect("a validation ping is accepted");
+        let (response, _, _, outcome) = push("connector_allowed", false, br#"{"content":"tests"}"#)
+            .await
+            .expect("a validation ping is accepted");
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(is_validation);
+        assert_eq!(outcome, LogpushOutcome::Validation);
 
-        let (response, item_count, org_id, is_validation) = push(
+        let (response, item_count, org_id, outcome) = push(
             "connector_allowed",
             false,
             b"{\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":200}\n\
@@ -11744,7 +13971,7 @@ mod tests {
         .expect("a log batch is accepted");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!((item_count, org_id.as_str()), (2, "org_logpush_allowed"));
-        assert!(!is_validation);
+        assert_eq!(outcome, LogpushOutcome::Accepted);
         tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
             .await
             .expect("an allowed batch is forwarded")
@@ -11869,6 +14096,147 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(grpc_header_status(&sentinel), None);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// A gzip-compressed gRPC frame, as the OTel Collector sends by default.
+    fn gzip_grpc_frame(message: &[u8]) -> Vec<u8> {
+        use flate2::write::GzEncoder;
+        use std::io::Write as _;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(message).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let mut frame = vec![1u8];
+        frame.extend_from_slice(&u32::try_from(compressed.len()).unwrap().to_be_bytes());
+        frame.extend_from_slice(&compressed);
+        frame
+    }
+
+    #[tokio::test]
+    async fn grpc_export_takes_gzip_within_the_http_body_limits() {
+        use tonic::codegen::Service as _;
+
+        let queue_dir = unique_main_test_dir("grpc-gzip-limit");
+        let state = test_app_state(
+            Arc::new(FakeKeyStore::default()),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let (raw_limit, decoded_limit) = (
+            state.config.max_request_body_bytes,
+            state.config.max_decoded_body_bytes,
+        );
+        let mut router = grpc_router(Arc::new(state));
+        let message = |len: usize| test_log_request(&"x".repeat(len)).encode_to_vec();
+        let gzip_request = |message: &[u8]| {
+            let mut request = grpc_export_request("MAPLE_TEST", gzip_grpc_frame(message));
+            request
+                .headers_mut()
+                .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+            request
+        };
+
+        // Past tonic's 4 MiB default, inside the decoded ceiling, compressed under the raw one.
+        let accepted = router
+            .call(gzip_request(&message(5 * 1024 * 1024)))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&accepted),
+            None,
+            "a gzip export is accepted"
+        );
+
+        let inflated = router
+            .call(gzip_request(&message(decoded_limit)))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&inflated),
+            Some("8"),
+            "gzip that inflates past the decoded limit is RESOURCE_EXHAUSTED"
+        );
+
+        // Each extra frame would be decompressed up to the decoded limit.
+        let mut two_frames = gzip_grpc_frame(&message(16));
+        two_frames.extend(gzip_grpc_frame(&message(16)));
+        let extra_frame = {
+            let mut request = grpc_export_request("MAPLE_TEST", two_frames);
+            request
+                .headers_mut()
+                .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+            router.call(request).await.unwrap()
+        };
+        assert_eq!(
+            grpc_header_status(&extra_frame),
+            Some("3"),
+            "a second message in one export is INVALID_ARGUMENT"
+        );
+
+        let oversized = grpc_frame(&message(2 * raw_limit));
+        let streamed = router
+            .call(grpc_export_request("MAPLE_TEST", oversized.clone()))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&streamed),
+            Some("8"),
+            "a body past the raw limit is RESOURCE_EXHAUSTED"
+        );
+        let declared = {
+            let mut request = grpc_export_request("MAPLE_TEST", oversized.clone());
+            request
+                .headers_mut()
+                .insert(axum::http::header::CONTENT_LENGTH, oversized.len().into());
+            router.call(request).await.unwrap()
+        };
+        assert_eq!(
+            grpc_header_status(&declared),
+            Some("8"),
+            "a declared length past the raw limit is refused before the body is read"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn grpc_export_past_the_deadline_is_unavailable() {
+        use tonic::codegen::Service as _;
+
+        let queue_dir = unique_main_test_dir("grpc-deadline");
+        let mut state = test_app_state(
+            Arc::new(FakeKeyStore::default()),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        state.config.request_timeout = Duration::from_millis(50);
+        let mut router = grpc_router(Arc::new(state));
+
+        // A client that sends half a frame and then stalls.
+        let frame = grpc_frame(&test_log_request("stalled").encode_to_vec());
+        let half = Bytes::copy_from_slice(&frame[..frame.len() / 2]);
+        let stalled = futures_util::StreamExt::chain(
+            futures_util::stream::once(async move { Ok::<_, std::io::Error>(half) }),
+            futures_util::stream::pending(),
+        );
+        let mut request = grpc_export_request("MAPLE_TEST", Vec::new());
+        *request.body_mut() = axum::body::Body::from_stream(stalled);
+
+        let response = tokio::time::timeout(Duration::from_secs(5), router.call(request))
+            .await
+            .expect("the gateway answers at its own deadline")
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&response),
+            Some("14"),
+            "a stalled export is UNAVAILABLE, which exporters retry"
+        );
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -12009,6 +14377,9 @@ mod tests {
             "org_wire_denied",
         )
         .await;
+        // Room for the 1 MiB exports below; the test config's raw limit is 1 MiB.
+        let mut state = state;
+        state.config.max_request_body_bytes = 4 * 1024 * 1024;
 
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -12057,6 +14428,17 @@ mod tests {
             .expect("an allowed export is forwarded")
             .expect("forward channel should stay open");
         assert!(forwarded.body_len > large.len());
+
+        // gzip is the OTel Collector's default exporter compression.
+        let mut gzip_client = client.send_compressed(tonic::codec::CompressionEncoding::Gzip);
+        gzip_client
+            .export(export("maple_sk_test_wire_allowed", &large))
+            .await
+            .expect("a gzip export succeeds");
+        tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("a gzip export is forwarded")
+            .expect("forward channel should stay open");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -12904,6 +15286,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         };
         let resolved = resolver
             .resolve_ingest_key("maple_src_static_backend_key_0000000000000")
@@ -13106,19 +15489,62 @@ mod tests {
     }
 
     impl FakeKeyStore {
-        fn insert_source_row(
-            &self,
-            org_id: &str,
-            id: &str,
-            is_default: bool,
-            integration: Option<(&'static str, &str)>,
-        ) {
-            self.source_rows.lock().unwrap().push((
-                org_id.to_owned(),
+        /// A `sources` row of `kind`: "default", "token" or "integration".
+        fn insert_source_row(&self, org_id: &str, id: &str, kind: &'static str) {
+            self.source_rows
+                .lock()
+                .unwrap()
+                .push((org_id.to_owned(), id.to_owned(), kind));
+        }
+
+        /// Sets a connector's `source_id`.
+        fn link_connector_source(&self, connector_id: &str, source_id: &str) {
+            self.connector_sources
+                .lock()
+                .unwrap()
+                .insert(connector_id.to_owned(), source_id.to_owned());
+        }
+
+        /// The connector's source as the `LEFT JOIN sources` reads it: same org only.
+        fn joined_source(&self, connector_id: &str, org_id: &str) -> Option<PullSourceRow> {
+            let source_id = self
+                .connector_sources
+                .lock()
+                .unwrap()
+                .get(connector_id)
+                .cloned()?;
+            let exists = self
+                .source_rows
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|row| row.0 == org_id && row.1 == source_id);
+            exists.then(|| self.pull_source_row(&source_id))
+        }
+
+        fn with_joined_source(&self, connector_id: &str, row: GcpConnectorRow) -> GcpConnectorRow {
+            GcpConnectorRow {
+                source: self.joined_source(connector_id, &row.org_id),
+                ..row
+            }
+        }
+
+        fn pause_source(&self, id: &str, paused_at_ms: i64, paused_until_ms: Option<i64>) {
+            self.source_pauses.lock().unwrap().insert(
                 id.to_owned(),
-                is_default,
-                integration.map(|(platform, id)| (platform, id.to_owned())),
-            ));
+                PauseWindow {
+                    paused_at_ms: Some(paused_at_ms),
+                    paused_until_ms,
+                },
+            );
+        }
+
+        fn pull_source_row(&self, id: &str) -> PullSourceRow {
+            let pauses = self.source_pauses.lock().unwrap();
+            PullSourceRow {
+                id: id.to_owned(),
+                pause: pauses.get(id).copied().unwrap_or_default(),
+            }
         }
     }
 
@@ -13138,8 +15564,8 @@ mod tests {
                 ..org_key
             },
         );
-        store.insert_source_row("org_with_default", DEFAULT_SOURCE_UUID, true, None);
-        store.insert_source_row("org_with_default", INTEGRATION_SOURCE_UUID, false, None);
+        store.insert_source_row("org_with_default", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_with_default", INTEGRATION_SOURCE_UUID, "token");
         let resolver = make_resolver(Arc::clone(&store));
 
         for _ in 0..3 {
@@ -13170,15 +15596,10 @@ mod tests {
     #[tokio::test]
     async fn source_claims_verify_pull_sources_of_the_org_and_cache_both_answers() {
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_source_row(
-            "org_a",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "rw_1")),
-        );
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
         // A push (token) source of the org itself is not claimable.
-        store.insert_source_row("org_a", SOURCE_UUID, false, None);
-        store.insert_source_row("org_b", DEFAULT_SOURCE_UUID, false, Some(("gcp", "g_1")));
+        store.insert_source_row("org_a", SOURCE_UUID, "token");
+        store.insert_source_row("org_b", DEFAULT_SOURCE_UUID, "integration");
         let resolver = make_resolver(Arc::clone(&store));
         let own = public_id(INTEGRATION_SOURCE_UUID);
         let claims = vec![
@@ -13191,7 +15612,10 @@ mod tests {
 
         for _ in 0..2 {
             assert_eq!(
-                resolver.verify_source_claims("org_a", claims.clone()).await,
+                resolver
+                    .verify_source_claims("org_a", claims.clone())
+                    .await
+                    .active,
                 vec![own.clone()]
             );
         }
@@ -13201,7 +15625,8 @@ mod tests {
         assert_eq!(
             resolver
                 .verify_source_claims("org_b", vec![public_id(DEFAULT_SOURCE_UUID)])
-                .await,
+                .await
+                .active,
             vec![public_id(DEFAULT_SOURCE_UUID)]
         );
     }
@@ -13209,19 +15634,17 @@ mod tests {
     #[tokio::test]
     async fn source_claims_are_deduped_and_capped_in_one_lookup() {
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_source_row(
-            "org_a",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "r")),
-        );
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
         let resolver = make_resolver(Arc::clone(&store));
         let own = public_id(INTEGRATION_SOURCE_UUID);
         let mut claims = vec![own.clone(), own.clone()];
         claims.extend((0..2_000).map(|_| public_id(&uuid::Uuid::new_v4().to_string())));
 
         assert_eq!(
-            resolver.verify_source_claims("org_a", claims.clone()).await,
+            resolver
+                .verify_source_claims("org_a", claims.clone())
+                .await
+                .active,
             vec![own.clone()]
         );
         let lookups = store.claim_lookups.lock().unwrap().clone();
@@ -13237,19 +15660,42 @@ mod tests {
         assert!(resolver
             .verify_source_claims("org_a", late)
             .await
+            .active
             .is_empty());
         assert_eq!(store.claim_lookups.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
+    async fn a_cached_claim_of_a_timed_pause_resumes_at_its_deadline() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
+        store.pause_source(
+            INTEGRATION_SOURCE_UUID,
+            1,
+            Some(current_time_millis() + 150),
+        );
+        let resolver = make_resolver(Arc::clone(&store));
+        let own = public_id(INTEGRATION_SOURCE_UUID);
+
+        let verified = resolver
+            .verify_source_claims("org_a", vec![own.clone()])
+            .await;
+        assert_eq!(verified.paused, vec![own.clone()]);
+        assert!(verified.active.is_empty());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let verified = resolver
+            .verify_source_claims("org_a", vec![own.clone()])
+            .await;
+        assert_eq!(verified.active, vec![own]);
+        assert!(verified.paused.is_empty());
+        // Judged from the cached window: no second lookup.
+        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
     async fn source_claim_lookup_errors_leave_claims_unverified_and_uncached() {
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_source_row(
-            "org_a",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "r")),
-        );
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
         let resolver = make_resolver(Arc::clone(&store));
         let own = public_id(INTEGRATION_SOURCE_UUID);
 
@@ -13257,12 +15703,14 @@ mod tests {
         assert!(resolver
             .verify_source_claims("org_a", vec![own.clone()])
             .await
+            .active
             .is_empty());
         store.source_errors.store(false, Ordering::Relaxed);
         assert_eq!(
             resolver
                 .verify_source_claims("org_a", vec![own.clone()])
-                .await,
+                .await
+                .active,
             vec![own]
         );
         assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 2);
@@ -13272,25 +15720,11 @@ mod tests {
     async fn gcp_connectors_carry_their_integration_source_when_it_exists() {
         let (state, store, queue_dir) =
             gcp_logpush_state("gcp-integration-source", "http://127.0.0.1:1").await;
-        store.insert_source_row(
-            "org_gcp",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("gcp", "gcp_conn_1")),
-        );
-        // Same integration id under another platform or org must not match.
-        store.insert_source_row(
-            "org_gcp",
-            SOURCE_UUID,
-            false,
-            Some(("railway", "gcp_conn_off")),
-        );
-        store.insert_source_row(
-            "org_other",
-            DEFAULT_SOURCE_UUID,
-            false,
-            Some(("gcp", "gcp_conn_off")),
-        );
+        store.insert_source_row("org_gcp", INTEGRATION_SOURCE_UUID, "integration");
+        store.link_connector_source("gcp_conn_1", INTEGRATION_SOURCE_UUID);
+        // A `source_id` naming another org's source joins nothing.
+        store.insert_source_row("org_other", DEFAULT_SOURCE_UUID, "integration");
+        store.link_connector_source("gcp_conn_off", DEFAULT_SOURCE_UUID);
 
         let with_source = state
             .gcp_resolver
@@ -13315,29 +15749,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failed_integration_source_lookup_does_not_fail_gcp_auth() {
-        let (state, store, queue_dir) =
-            gcp_logpush_state("gcp-integration-source-error", "http://127.0.0.1:1").await;
-        store.insert_source_row(
-            "org_gcp",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("gcp", "gcp_conn_1")),
-        );
-        store.source_errors.store(true, Ordering::Relaxed);
-
-        let resolved = state
-            .gcp_resolver
-            .resolve_connector("gcp_conn_1", "gcp-secret")
-            .await
-            .expect("a source lookup error is not an auth error")
-            .expect("connector resolves");
-        assert_eq!(resolved.key.source_public_id(), None);
-
-        drop(std::fs::remove_dir_all(&queue_dir));
-    }
-
-    #[tokio::test]
     async fn default_source_use_is_held_longer_and_skipped_for_claimed_batches() {
         let store = Arc::new(FakeKeyStore::default());
         store.insert_private(
@@ -13348,7 +15759,7 @@ mod tests {
                 clickhouse_ready: false,
             },
         );
-        store.insert_source_row("org_default_use", DEFAULT_SOURCE_UUID, true, None);
+        store.insert_source_row("org_default_use", DEFAULT_SOURCE_UUID, "default");
         let resolver = make_resolver(Arc::clone(&store));
         let resolved = resolver
             .resolve_ingest_key("maple_sk_default_use")
@@ -13393,14 +15804,9 @@ mod tests {
                 clickhouse_ready: false,
             },
         );
-        store.insert_source_row("org_default_e2e", DEFAULT_SOURCE_UUID, true, None);
-        store.insert_source_row(
-            "org_default_e2e",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "rw_1")),
-        );
-        store.insert_source_row("org_someone_else", SOURCE_UUID, false, None);
+        store.insert_source_row("org_default_e2e", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_default_e2e", INTEGRATION_SOURCE_UUID, "integration");
+        store.insert_source_row("org_someone_else", SOURCE_UUID, "token");
         let state = test_app_state(
             Arc::clone(&store),
             queue_dir.clone(),
@@ -13460,8 +15866,11 @@ mod tests {
                 default_id,
             ]
         );
-        // The batch kept a poller's claim, so it does not keep the default source fresh.
-        assert!(recorded_key_uses(&store).await.is_empty());
+        // The batch kept a poller's claim: its source is used, the default source is not.
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![INTEGRATION_SOURCE_UUID.to_owned()]
+        );
 
         let (response, ..) = handle_signal_inner(
             &state,
@@ -13474,8 +15883,446 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             recorded_key_uses(&store).await,
-            vec![DEFAULT_SOURCE_UUID.to_owned()]
+            vec![
+                INTEGRATION_SOURCE_UUID.to_owned(),
+                DEFAULT_SOURCE_UUID.to_owned()
+            ]
         );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn paused_pull_source_claims_drop_only_their_resources() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("paused-pull-source");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_paused_pull_source";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_paused".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_paused", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_paused", INTEGRATION_SOURCE_UUID, "integration");
+        store.insert_source_row("org_paused", SOURCE_UUID, "integration");
+        // One paused until resumed; one whose timed pause already ended.
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+        store.pause_source(SOURCE_UUID, 1, Some(2));
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let request_with = |claims: &[Option<String>]| {
+            let mut request = test_log_request("paused");
+            let template = request.resource_logs[0].clone();
+            request.resource_logs = claims
+                .iter()
+                .map(|claim| {
+                    let mut resource_logs = template.clone();
+                    if let Some(claim) = claim {
+                        let resource = resource_logs.resource.as_mut().expect("resource");
+                        resource
+                            .attributes
+                            .push(string_attribute("maple_source_id", claim));
+                    }
+                    resource_logs
+                })
+                .collect();
+            Bytes::from(request.encode_to_vec())
+        };
+        let paused = Some(public_id(INTEGRATION_SOURCE_UUID));
+
+        let (response, ..) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            request_with(&[paused.clone(), Some(public_id(SOURCE_UUID)), None]),
+            Signal::Logs,
+        )
+        .await
+        .expect("default key traffic is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("the kept resources are forwarded")
+            .expect("forward channel should stay open");
+        let forwarded = ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+        let stamped: Vec<String> = forwarded
+            .resource_logs
+            .iter()
+            .map(|resource_logs| {
+                let resource = resource_logs.resource.as_ref().expect("resource");
+                string_attributes(&resource.attributes)["maple_source_id"].clone()
+            })
+            .collect();
+        assert_eq!(
+            stamped,
+            vec![public_id(SOURCE_UUID), public_id(DEFAULT_SOURCE_UUID)]
+        );
+
+        // Only paused resources: success to the sender, nothing forwarded.
+        let (response, item_count, ..) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            request_with(&[paused.clone(), paused.clone()]),
+            Signal::Logs,
+        )
+        .await
+        .expect("a paused source's batch is acked");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(item_count, 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "a paused source's batch must not be forwarded"
+        );
+        // A poller's batch, even with unclaimed resources beside a paused claim, is not default use.
+        // Only the unpaused claim whose data was kept counts as used.
+        handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            request_with(&[paused, None]),
+            Signal::Logs,
+        )
+        .await
+        .expect("default key traffic is accepted");
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![SOURCE_UUID.to_owned()]
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn paused_drops_meter_only_the_rest_and_the_claim_cap_is_no_bypass() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("paused-pull-metering");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_paused_pull_metering";
+        let org = "org_paused_meter";
+        let key = KeyRow {
+            org_id: org.to_owned(),
+            self_managed: false,
+            clickhouse_ready: false,
+        };
+        store.insert_private(raw_key, key);
+        store.insert_source_row(org, DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row(org, INTEGRATION_SOURCE_UUID, "integration");
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+        let others: Vec<String> = (0..MAX_SOURCE_CLAIMS)
+            .map(|_| uuid::Uuid::new_v4().to_string())
+            .collect();
+        for id in &others {
+            store.insert_source_row(org, id, "integration");
+        }
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let paused = Some(public_id(INTEGRATION_SOURCE_UUID));
+        let send = |claims: Vec<Option<String>>| {
+            let mut request = test_log_request("metering");
+            let template = request.resource_logs[0].clone();
+            request.resource_logs = claims
+                .iter()
+                .map(|claim| {
+                    let mut resource_logs = template.clone();
+                    if let Some(claim) = claim {
+                        let resource = resource_logs.resource.as_mut().expect("resource");
+                        resource
+                            .attributes
+                            .push(string_attribute("maple_source_id", claim));
+                    }
+                    resource_logs
+                })
+                .collect();
+            let body = request.encode_to_vec();
+            let state = &state;
+            async move {
+                let len = body.len();
+                let (.., metered) = handle_signal_inner(
+                    state,
+                    &test_headers(raw_key),
+                    Bytes::from(body),
+                    Signal::Logs,
+                )
+                .await
+                .expect("default key traffic is accepted");
+                (len, metered)
+            }
+        };
+        async fn forwarded_resources(
+            rx: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+        ) -> usize {
+            let body = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("forwarded")
+                .expect("forward channel should stay open");
+            ExportLogsServiceRequest::decode(body)
+                .expect("protobuf")
+                .resource_logs
+                .len()
+        }
+
+        // Nothing dropped: metered exactly as received.
+        let (len, metered) = send(vec![None]).await;
+        assert_eq!(metered, len);
+        assert_eq!(forwarded_resources(&mut forward_rx).await, 1);
+        // Half dropped: only the retained share is metered.
+        let (len, metered) = send(vec![paused.clone(), None]).await;
+        assert!(metered > 0 && metered < len, "{metered} of {len}");
+        assert_eq!(forwarded_resources(&mut forward_rx).await, 1);
+
+        // The paused claim comes after the cap's worth of others: still dropped.
+        let mut claims: Vec<Option<String>> = others.iter().map(|id| Some(public_id(id))).collect();
+        claims.extend([paused, None]);
+        let (len, metered) = send(claims).await;
+        assert!(metered < len);
+        assert_eq!(
+            forwarded_resources(&mut forward_rx).await,
+            MAX_SOURCE_CLAIMS + 1
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_acks_and_drops_while_the_integration_source_is_paused() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-paused", &ch_url).await;
+        store.insert_source_row("org_gcp", INTEGRATION_SOURCE_UUID, "integration");
+        store.link_connector_source("gcp_conn_1", INTEGRATION_SOURCE_UUID);
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+
+        let dropped = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(dropped.status(), StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), ch_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be stored while the source is paused"
+        );
+        assert!(recorded_key_uses(&store).await.is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+    #[tokio::test]
+    async fn source_claims_are_accepted_only_for_integration_sources() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source_row("org_kinds", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_kinds", SOURCE_UUID, "token");
+        store.insert_source_row("org_kinds", INTEGRATION_SOURCE_UUID, "integration");
+        let resolver = make_resolver(Arc::clone(&store));
+
+        let verified = resolver
+            .verify_source_claims(
+                "org_kinds",
+                vec![
+                    public_id(DEFAULT_SOURCE_UUID),
+                    public_id(SOURCE_UUID),
+                    public_id(INTEGRATION_SOURCE_UUID),
+                ],
+            )
+            .await;
+        assert_eq!(verified.active, vec![public_id(INTEGRATION_SOURCE_UUID)]);
+        assert!(verified.paused.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_verified_claim_records_use_for_its_source_once_per_interval() {
+        let (forward_url, _forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("claimed-source-use");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_claimed_source_use";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_claimed_use".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_claimed_use", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_claimed_use", INTEGRATION_SOURCE_UUID, "integration");
+        // A token source claimed with the default key is not verified, so not used.
+        store.insert_source_row("org_claimed_use", SOURCE_UUID, "token");
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let mut request = test_log_request("claimed use");
+        let template = request.resource_logs[0].clone();
+        request.resource_logs = [INTEGRATION_SOURCE_UUID, SOURCE_UUID]
+            .iter()
+            .map(|id| {
+                let mut resource_logs = template.clone();
+                let resource = resource_logs.resource.as_mut().expect("resource");
+                resource
+                    .attributes
+                    .push(string_attribute("maple_source_id", &public_id(id)));
+                resource_logs
+            })
+            .collect();
+        let body = Bytes::from(request.encode_to_vec());
+
+        for _ in 0..2 {
+            let (response, ..) =
+                handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+                    .await
+                    .expect("default key traffic is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![INTEGRATION_SOURCE_UUID.to_owned()]
+        );
+        assert_eq!(
+            state
+                .resolver
+                .recent_key_uses
+                .get(INTEGRATION_SOURCE_UUID)
+                .await,
+            Some(SOURCE_USE_WRITE_INTERVAL)
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// Two Cloudflare Logpush connectors of one org: `cf_with_source`, linked to
+    /// `INTEGRATION_SOURCE_UUID`, and `cf_without_source`, whose org has no OAuth link.
+    async fn cloudflare_logpush_state(
+        name: &str,
+    ) -> (
+        AppState,
+        Arc<FakeKeyStore>,
+        PathBuf,
+        tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    ) {
+        let (forward_url, forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir(name);
+        let store = Arc::new(FakeKeyStore::default());
+        for connector_id in ["cf_with_source", "cf_without_source"] {
+            store.insert_connector(
+                connector_id,
+                "connector-secret",
+                ConnectorRow {
+                    org_id: "org_cf_source".to_owned(),
+                    service_name: "cloudflare/example.com".to_owned(),
+                    zone_name: "example.com".to_owned(),
+                    dataset: "http_requests".to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                    source: None,
+                },
+            );
+        }
+        store.insert_source_row("org_cf_source", INTEGRATION_SOURCE_UUID, "integration");
+        store.link_connector_source("cf_with_source", INTEGRATION_SOURCE_UUID);
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        (state, store, queue_dir, forward_rx)
+    }
+
+    const CLOUDFLARE_BATCH: &[u8] =
+        b"{\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":200}\n";
+
+    async fn cloudflare_push(
+        state: &AppState,
+        connector_id: &str,
+    ) -> Result<(Response, usize, String, LogpushOutcome), (ApiError, &'static str)> {
+        handle_cloudflare_logpush_inner(
+            state,
+            connector_id,
+            Some("connector-secret"),
+            &HeaderMap::new(),
+            Bytes::from_static(CLOUDFLARE_BATCH),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn cloudflare_logpush_stamps_and_uses_its_connector_source_only_when_it_has_one() {
+        let (state, store, queue_dir, mut forward_rx) =
+            cloudflare_logpush_state("cloudflare-logpush-source").await;
+
+        let mut stamped = Vec::new();
+        for connector_id in ["cf_with_source", "cf_without_source"] {
+            let (response, item_count, _, outcome) = cloudflare_push(&state, connector_id)
+                .await
+                .expect("a log batch is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!((item_count, outcome), (1, LogpushOutcome::Accepted));
+            let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+                .await
+                .expect("the batch is forwarded")
+                .expect("forward channel should stay open");
+            let forwarded =
+                ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+            let resource = forwarded.resource_logs[0]
+                .resource
+                .as_ref()
+                .expect("resource");
+            stamped.push(string_attributes(&resource.attributes).remove("maple_source_id"));
+        }
+        assert_eq!(
+            stamped,
+            vec![Some(public_id(INTEGRATION_SOURCE_UUID)), None]
+        );
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![INTEGRATION_SOURCE_UUID.to_owned()]
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn cloudflare_logpush_acks_and_drops_while_its_source_is_paused() {
+        let (state, store, queue_dir, mut forward_rx) =
+            cloudflare_logpush_state("cloudflare-logpush-paused").await;
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+
+        let (response, item_count, org_id, outcome) = cloudflare_push(&state, "cf_with_source")
+            .await
+            .expect("a paused source's batch is acked");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            (item_count, org_id.as_str(), outcome),
+            (0, "org_cf_source", LogpushOutcome::SourcePaused)
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be stored while the source is paused"
+        );
+        assert!(recorded_key_uses(&store).await.is_empty());
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 0);
+
+        // The org's other connector has no source, so it is not paused with it.
+        let (_, item_count, _, outcome) = cloudflare_push(&state, "cf_without_source")
+            .await
+            .expect("a log batch is accepted");
+        assert_eq!((item_count, outcome), (1, LogpushOutcome::Accepted));
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -13486,5 +16333,421 @@ mod tests {
         assert_eq!(parse_fleet_size(Some("4".to_owned())), Ok(4));
         assert!(parse_fleet_size(Some("0".to_owned())).is_err());
         assert!(parse_fleet_size(Some("many".to_owned())).is_err());
+    }
+
+    // Ingest rules in the gateway (docs/ingest-rules.md).
+
+    impl FakeKeyStore {
+        /// Stores `rules` (spec JSON, in position order) as the org's enabled rules.
+        fn set_ingest_rules(&self, org_id: &str, rules: &[serde_json::Value]) {
+            let rows = IngestRuleRows {
+                rules: rules
+                    .iter()
+                    .enumerate()
+                    .map(|(index, rule)| (format!("rule_{index}"), rule.to_string()))
+                    .collect(),
+                hash_salt: "test-salt".to_owned(),
+            };
+            self.ingest_rules
+                .lock()
+                .unwrap()
+                .insert(org_id.to_owned(), rows);
+        }
+    }
+
+    /// Turns ingest rules on for `state`, reading them from `store`.
+    fn with_ingest_rules(mut state: AppState, store: &Arc<FakeKeyStore>) -> AppState {
+        state.ingest_rule_resolver = IngestRuleResolver::new(
+            Arc::<FakeKeyStore>::clone(store),
+            true,
+            Duration::from_secs(30),
+            16,
+        );
+        state
+    }
+
+    fn mask_emails_rule() -> serde_json::Value {
+        serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                "scopes": ["attributes", "body"], "method": "mask" }
+        })
+    }
+
+    fn drop_debug_logs_rule() -> serde_json::Value {
+        serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [{ "field": "severity", "op": "lt", "value": "info" }],
+            "action": { "_tag": "drop", "keepPercent": 0 }
+        })
+    }
+
+    /// A one-record log request at `severity_number`.
+    fn log_request_at(message: &str, severity_number: i32) -> ExportLogsServiceRequest {
+        let mut request = test_log_request(message);
+        request.resource_logs[0].scope_logs[0].log_records[0].severity_number = severity_number;
+        request
+    }
+
+    fn forwarded_bodies(request: &ExportLogsServiceRequest) -> Vec<String> {
+        request
+            .resource_logs
+            .iter()
+            .flat_map(|resource| &resource.scope_logs)
+            .flat_map(|scope| &scope.log_records)
+            .filter_map(|record| match record.body.as_ref()?.value.as_ref()? {
+                any_value::Value::StringValue(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    async fn next_forwarded_logs(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    ) -> ExportLogsServiceRequest {
+        let body = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("forwarded")
+            .expect("forward channel should stay open");
+        ExportLogsServiceRequest::decode(body).expect("protobuf")
+    }
+
+    /// A forward-mode state for one private key whose org is `org`, plus its store.
+    async fn rules_forward_state(
+        name: &str,
+        raw_key: &str,
+        org: &str,
+        forward_url: String,
+    ) -> (AppState, Arc<FakeKeyStore>, PathBuf) {
+        let queue_dir = unique_main_test_dir(name);
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: org.to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        (state, store, queue_dir)
+    }
+
+    #[tokio::test]
+    async fn forwarded_logs_carry_redacted_values_only() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_forward";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-forward", raw_key, "org_rules_forward", forward_url).await;
+        store.set_ingest_rules("org_rules_forward", &[mask_emails_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let (response, ..) = handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+            .await
+            .expect("accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["login from [REDACTED:email]"]);
+
+        // The counts reach the stats table on the next flush.
+        state.ingest_rule_stats.flush(store.as_ref()).await;
+        let rows = store.ingest_rule_stats.lock().unwrap().clone();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!((rows[0].rule_id.as_str(), rows[0].signal), ("rule_0", "logs"));
+        assert_eq!((rows[0].counts.matched, rows[0].counts.redacted_values), (1, 1));
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_dropped_debug_log_is_not_forwarded_and_meters_nothing() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_drop";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-drop", raw_key, "org_rules_drop", forward_url).await;
+        store.set_ingest_rules("org_rules_drop", &[drop_debug_logs_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("noisy debug line", 5).encode_to_vec();
+        let (response, item_count, _, metered) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+                .await
+                .expect("a fully dropped batch is still acked");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!((item_count, metered), (0, 0));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "a dropped log must not be forwarded"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_partial_drop_meters_only_what_is_kept() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_partial";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-partial", raw_key, "org_rules_partial", forward_url).await;
+        store.set_ingest_rules("org_rules_partial", &[drop_debug_logs_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let mut request = log_request_at("kept info line", 9);
+        let mut debug = request.resource_logs[0].scope_logs[0].log_records[0].clone();
+        debug.severity_number = 5;
+        debug.body = Some(AnyValue {
+            value: Some(any_value::Value::StringValue("dropped debug line".to_owned())),
+        });
+        request.resource_logs[0].scope_logs[0].log_records.push(debug);
+        let body = request.encode_to_vec();
+        let received = body.len();
+        let (_, item_count, _, metered) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+                .await
+                .expect("accepted");
+        assert_eq!(item_count, 1);
+        assert!(metered > 0 && metered < received, "{metered} of {received}");
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["kept info line"]);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn disabled_ingest_rules_never_query_the_store() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_off";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-off", raw_key, "org_rules_off", forward_url).await;
+        store.set_ingest_rules("org_rules_off", &[mask_emails_rule()]);
+        // `test_app_state` builds its config with ingest rules turned off.
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let (_, _, _, metered) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body.clone()), Signal::Logs)
+                .await
+                .expect("accepted");
+        assert_eq!(metered, body.len());
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["login from jane@example.com"]);
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 0);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_failed_rule_lookup_keeps_serving_the_last_good_rules() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.set_ingest_rules("org_rules_lkg", &[mask_emails_rule(), drop_debug_logs_rule()]);
+        let resolver = IngestRuleResolver::new(
+            Arc::<FakeKeyStore>::clone(&store),
+            true,
+            Duration::from_secs(30),
+            16,
+        );
+        let loaded = |rules: Result<Arc<rules_gateway::OrgRules>, rules_gateway::RulesUnavailable>| {
+            rules.expect("rules resolve").compiled.len()
+        };
+        // Concurrent misses share one fetch.
+        let (a, b, c) = tokio::join!(
+            resolver.resolve_rules("org_rules_lkg"),
+            resolver.resolve_rules("org_rules_lkg"),
+            resolver.resolve_rules("org_rules_lkg"),
+        );
+        assert_eq!((loaded(a), loaded(b), loaded(c)), (2, 2, 2));
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 1);
+
+        store.ingest_rule_errors.store(true, Ordering::Relaxed);
+        resolver.expire("org_rules_lkg").await;
+        assert_eq!(loaded(resolver.resolve_rules("org_rules_lkg").await), 2);
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 2);
+        // Within the backoff the store is not asked again.
+        assert_eq!(loaded(resolver.resolve_rules("org_rules_lkg").await), 2);
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 2);
+
+        // An org never loaded has nothing safe to fall back on.
+        assert!(resolver.resolve_rules("org_never_loaded").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_rule_lookup_with_nothing_to_fall_back_on_refuses_with_a_retryable_503() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_closed";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-closed", raw_key, "org_rules_closed", forward_url).await;
+        store.set_ingest_rules("org_rules_closed", &[mask_emails_rule()]);
+        store.ingest_rule_errors.store(true, Ordering::Relaxed);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let Err((error, _)) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await
+        else {
+            panic!("an unredactable payload must not be accepted");
+        };
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            error.into_response().headers().get(RETRY_AFTER),
+            Some(&HeaderValue::from_static("5"))
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be forwarded unredacted"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn rule_stats_count_only_payloads_the_collector_took() {
+        let forward_url = spawn_refusing_logs_collector(StatusCode::SERVICE_UNAVAILABLE).await;
+        let raw_key = "maple_sk_rules_refused";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-refused", raw_key, "org_rules_refused", forward_url).await;
+        store.set_ingest_rules("org_rules_refused", &[mask_emails_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let accepted =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await;
+        assert!(
+            accepted.map_or(true, |(response, ..)| !response.status().is_success()),
+            "the collector refused the batch"
+        );
+        state.ingest_rule_stats.flush(store.as_ref()).await;
+        assert!(store.ingest_rule_stats.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    const GCP_EMAIL_LOG_ENTRY: &str = r#"{
+        "logName": "projects/my-project/logs/run.googleapis.com%2Fstdout",
+        "insertId": "insert-2",
+        "timestamp": "2025-03-07T12:34:56.123456789Z",
+        "severity": "WARNING",
+        "textPayload": "password reset for jane@example.com",
+        "resource": {
+            "type": "cloud_run_revision",
+            "labels": {
+                "project_id": "my-project",
+                "service_name": "checkout",
+                "revision_name": "checkout-00042-abc",
+                "location": "europe-west4"
+            }
+        }
+    }"#;
+
+    /// `gcp_logpush_state` with ingest rules on, before it is shared.
+    async fn gcp_rules_state(
+        name: &str,
+        clickhouse_url: &str,
+        rules: &[serde_json::Value],
+    ) -> (AppState, Arc<FakeKeyStore>, PathBuf) {
+        let (state, store, queue_dir) = gcp_logpush_state(name, clickhouse_url).await;
+        let Ok(state) = Arc::try_unwrap(state) else {
+            panic!("the GCP test state is not shared yet");
+        };
+        store.set_ingest_rules("org_gcp", rules);
+        let state = with_ingest_rules(state, &store);
+        (state, store, queue_dir)
+    }
+
+    #[tokio::test]
+    async fn stored_rows_hold_the_redacted_value_never_the_raw_one() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, _store, queue_dir) =
+            gcp_rules_state("rules-gcp-redact", &ch_url, &[mask_emails_rule()]).await;
+        let state = Arc::new(state);
+
+        let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_EMAIL_LOG_ENTRY).await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let stored = tokio::time::timeout(Duration::from_secs(2), ch_rx.recv())
+            .await
+            .expect("the entry should reach the org's ClickHouse")
+            .expect("ClickHouse channel should stay open");
+        assert!(stored.query.starts_with("INSERT INTO logs"));
+        assert!(stored.body.contains("password reset for [REDACTED:email]"), "{}", stored.body);
+        assert!(!stored.body.contains("jane@example.com"), "{}", stored.body);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn cloudflare_batches_meter_only_what_the_rules_leave() {
+        let (state, store, queue_dir, mut forward_rx) =
+            cloudflare_logpush_state("rules-cloudflare-meter").await;
+        // Drops the INFO (200) record and keeps the WARN (404) one.
+        store.set_ingest_rules(
+            "org_cf_source",
+            &[serde_json::json!({
+                "signals": ["logs"],
+                "conditions": [{ "field": "severity", "op": "lt", "value": "warn" }],
+                "action": { "_tag": "drop", "keepPercent": 0 }
+            })],
+        );
+        let state = with_ingest_rules(state, &store);
+        let (state, mut autumn_rx) = with_fake_autumn(state).await;
+        const BATCH: &[u8] = b"{\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":200}\n\
+            {\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":404}\n";
+
+        let (response, ..) = handle_cloudflare_logpush_inner(
+            &state,
+            "cf_without_source",
+            Some("connector-secret"),
+            &HeaderMap::new(),
+            Bytes::from_static(BATCH),
+        )
+        .await
+        .expect("accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded.resource_logs[0].scope_logs[0].log_records.len(), 1);
+        let calls = drain_autumn_calls(&mut autumn_rx).await;
+        let tracked = tracked(&calls);
+        let unscaled = billable_gb(BATCH.len() as u64);
+        assert_eq!(tracked.len(), 1, "{tracked:?}");
+        assert_eq!(tracked[0].0, "logs");
+        assert!(tracked[0].1 > 0.0 && tracked[0].1 < unscaled, "{} of {unscaled}", tracked[0].1);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn retained_share_composes_and_never_exceeds_what_was_received() {
+        let mut retained = Retained::default();
+        assert_eq!(retained.metered_bytes(1_000), 1_000);
+        // A paused-source drop keeps half, then the rules keep half of that.
+        retained.retain(200, 100);
+        retained.retain(80, 40);
+        assert_eq!(retained.metered_bytes(1_000), 250);
+        // Hashing that grows the payload bills no more than before it.
+        retained.retain(40, 60);
+        assert_eq!(retained.metered_bytes(1_000), 250);
+        // Items are what the rules left, recounted, not the count before them.
+        assert_eq!(retained.metered_items(3), 3);
+        retained.kept_items = Some(1);
+        assert_eq!(retained.metered_items(3), 1);
+    }
+
+    #[test]
+    fn rule_stats_upsert_numbers_every_row_and_adds_on_conflict() {
+        let sql = ingest_rule_stats_upsert_sql(2);
+        assert!(sql.contains(
+            "($1, $2, to_timestamp($3::bigint / 1000.0), $4, $5::bigint, $6::bigint, $7::bigint, $8::bigint), \
+             ($9, $10, to_timestamp($11::bigint / 1000.0), $12, $13::bigint, $14::bigint, $15::bigint, $16::bigint)"
+        ));
+        assert!(sql.contains("dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes"));
     }
 }

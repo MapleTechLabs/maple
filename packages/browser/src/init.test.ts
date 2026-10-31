@@ -1,5 +1,11 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-import { clearSessionSink, resetConsentForTests, setConsent, track } from "@maple/browser-session"
+import {
+	clearSessionSink,
+	configurePrivacy,
+	resetConsentForTests,
+	setConsent,
+	track,
+} from "@maple/browser-session"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 const tracing = vi.hoisted(() => ({ setup: vi.fn(), shutdown: vi.fn(async () => {}) }))
@@ -8,6 +14,7 @@ vi.mock("./tracing", () => ({
 		tracing.setup(...args)
 		return tracing.shutdown
 	},
+	liveMapleTracer: () => undefined,
 }))
 
 // Stands in for the lazily imported rrweb chunk: the point under test is that
@@ -155,6 +162,50 @@ describe("browser consent lifecycle", () => {
 		expect(eventBodies).not.toContain("discard-me")
 		expect(eventBodies).toContain("keep-me")
 		expect(tracing.shutdown).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("teardown", () => {
+	it("releases the SDK and stops everything even when a teardown step fails", async () => {
+		stubBrowser()
+		const options = {
+			ingestKey: "public-key",
+			serviceName: "test-web",
+			endpoint: "https://collector.test",
+			tracing: { enabled: true },
+			replay: { sampleRate: 1 },
+		}
+		const first = init(options)
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(1))
+		tracing.shutdown.mockRejectedValueOnce(new Error("provider flush failed"))
+		await expect(first.shutdown()).resolves.toBeUndefined()
+		expect(replay.shutdown).toHaveBeenCalledWith({ flush: true })
+
+		const second = init(options)
+		expect(second).not.toBe(first)
+		expect(tracing.setup).toHaveBeenCalledTimes(2)
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(2))
+		await second.shutdown()
+	})
+})
+
+describe("a consent gate turned on after init", () => {
+	it("stops capture when another SDK copy requires consent, and resumes on grant", async () => {
+		stubBrowser()
+		const handle = init({
+			ingestKey: "public-key",
+			serviceName: "test-web",
+			endpoint: "https://collector.test",
+			tracing: { enabled: false },
+			replay: { enabled: false },
+		})
+		expect(handle.sessionId).not.toBe("")
+		// What the Effect SDK's init does with `privacy.requireConsent`.
+		configurePrivacy({ requireConsent: true })
+		expect(handle.sessionId).toBe("")
+		setConsent(true)
+		expect(handle.sessionId).not.toBe("")
+		await handle.shutdown()
 	})
 })
 

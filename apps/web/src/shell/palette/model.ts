@@ -32,7 +32,7 @@ export const Message = defineMessageUnion({
 	/** A pick: a click on an entry or Enter on the highlighted one (`items` in list order). */
 	ClickedEntry: { id: Schema.String },
 	/** Enter in the input; the view knows whether the org shows Releases. */
-	PressedEnter: { isReleasesVisible: Schema.Boolean },
+	PressedEnter: { visibleFlagged: Schema.Array(Schema.String) },
 	SucceededLoadServices: { serviceNames: Schema.Array(Schema.String) },
 	FailedLoadServices: {},
 	CompletedReleaseServices: {},

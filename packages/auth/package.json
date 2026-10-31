@@ -11,12 +11,11 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@clerk/backend": "^3.23.0",
+		"@clerk/backend": "^3.26.4",
 		"@maple/domain": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",

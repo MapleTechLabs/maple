@@ -2,6 +2,7 @@ import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
 import {
+	OrgClickHouseSettingsPersistenceError,
 	OrgClickHouseSettingsUpstreamRejectedError,
 	OrgClickHouseSettingsUpstreamUnavailableError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
@@ -249,6 +250,52 @@ layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (i
 		}),
 	)
 
+	it.effect("rejects an endless response body without retrying instead of buffering it", () =>
+		Effect.gen(function* () {
+			const pulled = { count: 0 }
+			const chunk = new TextEncoder().encode("x".repeat(64 * 1024))
+			const { state, fetchImpl } = makeFetch(() =>
+				Promise.resolve(
+					new Response(
+						new ReadableStream<Uint8Array>({
+							pull: (controller) => {
+								pulled.count++
+								controller.enqueue(chunk)
+							},
+						}),
+						{ status: 200 },
+					),
+				),
+			)
+
+			const exit = yield* run("SELECT 1", fetchImpl).pipe(Effect.exit)
+
+			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsUpstreamRejectedError)
+			expect(state.calls).toBe(1)
+			expect(pulled.count).toBeLessThan(200)
+		}),
+	)
+
+	it.effect("reads a normal multi-chunk body in full", () =>
+		Effect.gen(function* () {
+			const parts = ['{"name":"a"}\n', '{"name":"b"}\n']
+			const { fetchImpl } = makeFetch(() =>
+				Promise.resolve(
+					new Response(
+						new ReadableStream<Uint8Array>({
+							start: (controller) => {
+								parts.forEach((part) => controller.enqueue(new TextEncoder().encode(part)))
+								controller.close()
+							},
+						}),
+						{ status: 200 },
+					),
+				),
+			)
+			expect(yield* run("SELECT name", fetchImpl)).toBe(parts.join(""))
+		}),
+	)
+
 	it.effect("does NOT retry a 4xx rejection", () =>
 		Effect.gen(function* () {
 			const { state, fetchImpl } = makeFetch(() => Promise.resolve(mockResponse("Syntax error", 400)))
@@ -433,6 +480,20 @@ describe("resolveRuntimeConfig caching", () => {
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
 			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
 			expect(error.cause).toBeInstanceOf(OrgClickHouseSettingsValidationError)
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
+	it.effect("the settings page still reports a settings database outage as its own error", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = asOrgId("org_ch_settings_db_down")
+		const admin = [asRole("org:admin")]
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			yield* Effect.promise(() => executeSql(testDb, "DROP TABLE org_clickhouse_settings CASCADE"))
+			const get = getError(yield* service.get(orgId, admin).pipe(Effect.exit))
+			const remove = getError(yield* service.delete(orgId, admin).pipe(Effect.exit))
+			expect(get).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
+			expect(remove).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 

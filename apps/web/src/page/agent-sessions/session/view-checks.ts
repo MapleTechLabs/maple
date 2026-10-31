@@ -18,6 +18,7 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 
 // The session checks: the verdict, what needs attention, the rest.
+// Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
 // TODO(tooltip): the coverage signals' explanations are drawn as their triggers.
 
 type H = HtmlBuilder<Message>
@@ -47,10 +48,7 @@ const openSpan = (model: Model, spanId: string) =>
 
 const verdict = (h: H, model: Model, report: SessionChecksReport): Html => {
 	const failed = report.verdict.status === "failed"
-	const { counts } = report
 	const failingSpanId = report.verdict.spanId
-	const tone: SessionCheckStatus =
-		failed || counts.failed > 0 ? "failed" : counts.warning > 0 ? "warning" : "passed"
 	return h.section(
 		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3")],
 		[
@@ -60,8 +58,16 @@ const verdict = (h: H, model: Model, report: SessionChecksReport): Html => {
 					h.p(
 						[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base")],
 						[
-							statusDot(h, { size: "lg", tone: STATUS_TONE[tone], className: "self-center" }),
-							h.span([h.Class(STATUS_TEXT[tone])], [failed ? "Failed" : "Completed"]),
+							// The outcome only: failing checks carry their own severity under Needs attention.
+							statusDot(h, {
+								size: "lg",
+								tone: failed ? "crit" : "ok",
+								className: "self-center",
+							}),
+							h.span(
+								[h.Class(failed ? TONE_TEXT.crit : "text-foreground")],
+								[failed ? "Failed" : "Completed"],
+							),
 						],
 					),
 				],
@@ -100,7 +106,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 		[
 			h.AriaHasPopup("dialog"),
 			h.Class(
-				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-accent/40",
+				"group flex w-full items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left font-mono text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			h.Type("button"),
 			h.OnClick(openSpan(model, finding.spanId)),
@@ -110,7 +116,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 				[h.Class(cn("shrink-0", STATUS_TEXT[status]))],
 				[finding.label, ...(finding.count > 1 ? [` ×${finding.count}`] : [])],
 			),
-			h.span([h.Class("shrink-0 text-muted-foreground/70")], [finding.turnText]),
+			h.span([h.Class("shrink-0 text-foreground-subtle")], [finding.turnText]),
 			...(finding.detail === undefined
 				? []
 				: [h.span([h.Class("min-w-0 truncate text-muted-foreground")], [finding.detail])]),
@@ -128,7 +134,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 	const actionLine = (children: ReadonlyArray<Html | string>) =>
 		h.p(
-			[h.Class("flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed")],
+			[h.Class("flex items-start gap-1.5 font-prose text-muted-foreground text-xs leading-relaxed")],
 			[
 				icon(h, "ArrowRightIcon", {
 					size: 12,
@@ -146,7 +152,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-1")],
 				[
-					h.p([h.Class("text-ui leading-relaxed")], withCode(h, check.headline)),
+					h.p([h.Class("font-prose text-ui leading-relaxed")], withCode(h, check.headline)),
 					...(check.id === "tool-errors"
 						? [
 								actionLine([
@@ -158,7 +164,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 											variant: "link",
 											size: "xs",
 											className:
-												"h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground",
+												"h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground active:decoration-muted-foreground",
 											attributes: [h.OnClick(Message.ClickedOpenTools())],
 										},
 										["Tools section"],
@@ -193,7 +199,7 @@ const checkFact = (h: H, check: SessionCheck): Html =>
 			checkDot(h, check.status),
 			h.span([h.Class("truncate text-ui")], [check.name]),
 			h.span(
-				[h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")],
+				[h.Class("min-w-0 font-prose text-muted-foreground text-xs leading-relaxed")],
 				withCode(h, check.headline),
 			),
 		],
@@ -243,8 +249,9 @@ const disclosure = (
 				),
 			],
 		),
+		// Wraps so every collapsed check name stays readable.
 		h.span(
-			[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
+			[h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")],
 			[
 				!isDisclosable
 					? options.emptySummary
@@ -261,7 +268,7 @@ const disclosure = (
 			h.button(
 				[
 					h.AriaExpanded(isExpanded),
-					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-accent/40")),
+					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken")),
 					h.Type("button"),
 					h.OnClick(Message.ToggledChecks({ which: options.which, isOpen: !isExpanded })),
 				],
@@ -282,7 +289,7 @@ const disclosure = (
 const SIGNAL_MARK = {
 	captured: { glyph: "✓", tone: "text-severity-info", says: "captured:" },
 	missing: { glyph: "✕", tone: "text-severity-error", says: "not captured:" },
-	absent: { glyph: "–", tone: "text-muted-foreground/60", says: "nothing to capture:" },
+	absent: { glyph: "–", tone: "text-foreground-subtle", says: "nothing to capture:" },
 } satisfies Record<SessionCoverageSignal, { glyph: string; tone: string; says: string }>
 
 /** `coverageSignals`, labels and states only (the explanations live in the tooltips). */
@@ -328,7 +335,7 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 									"flex cursor-default items-baseline gap-1.5",
 									signal.state === "captured"
 										? "text-muted-foreground"
-										: "text-muted-foreground/60",
+										: "text-foreground-subtle",
 									signal.state === "missing" && "line-through",
 								),
 							),
@@ -358,10 +365,15 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 			h.section(
 				[h.Class("flex flex-col gap-2")],
 				[
-					sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Needs attention", className: "mb-0" }),
+					sectionHeading(h, {
+						variant: "eyebrow",
+						as: "h3",
+						title: "Needs attention",
+						className: "mb-0",
+					}),
 					isClean
 						? h.p(
-								[h.Class("flex items-center gap-2 py-2 text-ui")],
+								[h.Class("flex items-center gap-2 py-2 font-prose text-ui")],
 								[
 									icon(h, "CheckIcon", {
 										size: 14,

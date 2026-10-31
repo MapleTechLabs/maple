@@ -45,11 +45,12 @@ interface Posted {
 
 const unreachable = () => Effect.die("the alert reached another transport method")
 
-/** `hang` is a platform that never answers the post. */
+/** `hang` is a platform that never answers the post; `rejects` says which messages it refuses. */
 const makeConnector = (
 	posted: Array<Posted>,
 	hang = false,
 	built: Array<true> = [],
+	rejects: (blocks: ReadonlyArray<ChatBlock>) => boolean = () => false,
 ): RegisteredChatConnector => ({
 	id: TESTCHAT,
 	manifest: {
@@ -86,10 +87,19 @@ const makeConnector = (
 										reason: "auth",
 									}),
 								)
-							: Effect.sync(() => {
-									posted.push({ target, blocks, config })
-									return { target, messageId: "message-1" }
-								}),
+							: rejects(blocks)
+								? Effect.fail(
+										new ChatOutboundError({
+											message: "Test Chat refused the call: invalid_attachments",
+											connectorId: TESTCHAT,
+											operation: "post",
+											reason: "rejected",
+										}),
+									)
+								: Effect.sync(() => {
+										posted.push({ target, blocks, config })
+										return { target, messageId: "message-1" }
+									}),
 				edit: unreachable,
 				whisper: unreachable,
 				typing: unreachable,
@@ -139,11 +149,14 @@ const makeLayer = (
 		readonly outboundConfig?: boolean
 		readonly hang?: boolean
 		readonly built?: Array<true>
+		readonly rejects?: (blocks: ReadonlyArray<ChatBlock>) => boolean
 	} = {},
 ) =>
 	ChatAlertPoster.layer.pipe(
 		Layer.provide(
-			Layer.succeed(ChatConnectorRegistry, [makeConnector(posted, options.hang, options.built)]),
+			Layer.succeed(ChatConnectorRegistry, [
+				makeConnector(posted, options.hang, options.built, options.rejects),
+			]),
 		),
 		Layer.provide("layer" in testDb ? testDb.layer : testDb),
 		Layer.provide(Env.layer),
@@ -343,4 +356,59 @@ describe("ChatAlertPoster", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, [])))
 		}),
 	)
+
+	describe("a message the platform rejects", () => {
+		const alertCard = (imageUrl: string | null): ChatBlock => ({
+			kind: "alert",
+			color: "#e5484d",
+			title: "Checkout error rate",
+			summary: "Triggered",
+			fields: [],
+			imageUrl,
+			imageAlt: "Checkout error rate over the alert window",
+			links: [],
+			footer: [],
+			sentAtMs: null,
+		})
+		// A platform refuses a message whose image it cannot fetch.
+		const hasImage = (blocks: ReadonlyArray<ChatBlock>) =>
+			blocks.some((block) => block.kind === "alert" && block.imageUrl !== null)
+		const postCard = (card: ChatBlock) =>
+			Effect.gen(function* () {
+				const poster = yield* ChatAlertPoster
+				return yield* poster.post({
+					orgId: ORG,
+					workspaceId: WORKSPACE,
+					channelId: "channel-1",
+					blocks: [card],
+				})
+			})
+
+		it.effect("still delivers the alert, without the chart image it could not show", () =>
+			Effect.gen(function* () {
+				const testDb = createTestDb(trackedDbs)
+				const posted: Array<Posted> = []
+				yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+				const result = yield* postCard(alertCard("https://app.maple.test/alerts/chart/x.png")).pipe(
+					Effect.provide(makeLayer(testDb, posted, { rejects: hasImage })),
+				)
+				assert.strictEqual(result.messageId, "message-1")
+				assert.lengthOf(posted, 1)
+				assert.deepInclude(posted[0]?.blocks[0], { kind: "alert", imageUrl: null })
+			}),
+		)
+
+		it.effect("is a terminal rejection when there was no image to drop", () =>
+			Effect.gen(function* () {
+				const testDb = createTestDb(trackedDbs)
+				yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+				const failure = yield* postCard({ kind: "prose", markdown: "x" }).pipe(
+					Effect.provide(makeLayer(testDb, [], { rejects: () => true })),
+					Effect.flip,
+				)
+				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryRejectedError")
+				assert.isFalse(failure.error.retryable)
+			}),
+		)
+	})
 })

@@ -33,7 +33,7 @@
  * arriving through a dynamic import inside the method that needs it, exactly as `worker.ts` does
  * for the route graph.
  */
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import {
 	ChatTurnOrigin as ChatTurnOriginSchema,
@@ -530,13 +530,15 @@ export class ChatSession {
 		// its result, and the in-memory half catches it while the first is still running the tool.
 		if (proposal.settled || this.settling.has(input.toolCallId)) return "settled"
 		this.settling.add(input.toolCallId)
+		// Only an explicit approve runs the tool. This arrives undecoded over RPC from other
+		// Workers, so a skewed or malformed decision declines rather than approving.
 		const decided: Effect.Effect<AppliedProposal> =
-			input.decision === "deny"
-				? Effect.succeed({
+			input.decision === "approve"
+				? this.applyProposal(input, proposal)
+				: Effect.succeed({
 						output: `Declined ${decidedBy(input.approver)}. The tool did not run.`,
 						isError: true,
 					})
-				: this.applyProposal(input, proposal)
 		return Effect.runPromise(
 			decided.pipe(
 				Effect.map((result): ChatProposalOutcome => {

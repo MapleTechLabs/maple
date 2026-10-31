@@ -255,6 +255,39 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 		}),
 	)
 
+	it.effect("refuses to ingest rows that belong to another org", () =>
+		Effect.gen(function* () {
+			const inserted: Array<ReadonlyArray<unknown>> = []
+			const executor = makeWarehouseExecutor({
+				...makeDeps([]),
+				createClient: () =>
+					Effect.succeed({
+						sql: () => Effect.succeed({ data: [] }),
+						insert: (_datasource, rows) => Effect.sync(() => void inserted.push(rows)),
+					}),
+			})
+
+			const error = yield* executor
+				.ingest(tenant, "service_map_edges_hourly_ingest", [
+					{ OrgId: "org_test" },
+					{ OrgId: "org_victim" },
+				])
+				.pipe(Effect.flip)
+			const missing = yield* executor
+				.ingest(tenant, "alert_checks", [{ CheckId: "x" }])
+				.pipe(Effect.flip)
+			const foreignResource = yield* executor
+				.ingest(tenant, "traces", [{ resource_attributes: { maple_org_id: "org_victim" } }])
+				.pipe(Effect.flip)
+			yield* executor.ingest(tenant, "traces", [{ resource_attributes: { maple_org_id: "org_test" } }])
+
+			assert.strictEqual(error._tag, "@maple/http/errors/WarehouseScopeError")
+			assert.strictEqual(missing._tag, "@maple/http/errors/WarehouseScopeError")
+			assert.strictEqual(foreignResource._tag, "@maple/http/errors/WarehouseScopeError")
+			assert.deepStrictEqual(inserted, [[{ resource_attributes: { maple_org_id: "org_test" } }]])
+		}),
+	)
+
 	it.effect("wraps capability metadata probes in an attributed Client span", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
@@ -322,6 +355,44 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 			assert.strictEqual(span.attributes.get("db.retry.attempts"), 2)
 		}),
 	)
+
+	const attemptsUntilFailure = (message: string) =>
+		Effect.gen(function* () {
+			const attempts = yield* Ref.make(0)
+			const executor = makeWarehouseExecutor({
+				...makeDeps([]),
+				createClient: () =>
+					Effect.succeed({
+						sql: () =>
+							Ref.update(attempts, (n) => n + 1).pipe(
+								Effect.andThen(Effect.fail(warehouseDriverFailure(new Error(message)))),
+							),
+						insert: () => Effect.void,
+					}),
+			})
+			const exit = yield* executor
+				.compiledQuery(tenant, scoped("SELECT 1 WHERE OrgId = 'org_test'"), { context: "limit429" })
+				.pipe(Effect.exit)
+			assert.strictEqual(exit._tag, "Failure")
+			return yield* Ref.get(attempts)
+		})
+
+	it.live("does not retry a 429 that names a plan limit", () =>
+		Effect.gen(function* () {
+			const daily = yield* attemptsUntilFailure(
+				"HTTP status 429: Organization daily request limit exceeded (1000/day)",
+			)
+			assert.strictEqual(daily, 1)
+		}),
+	)
+
+	it.live("still retries a 429 that is a plain rate limit", () =>
+		Effect.gen(function* () {
+			assert.strictEqual(yield* attemptsUntilFailure("HTTP status 429: Too many requests"), 3)
+			assert.strictEqual(yield* attemptsUntilFailure("HTTP status 429: vCPU usage limit exceeded"), 3)
+			assert.strictEqual(yield* attemptsUntilFailure("HTTP status 429: vCPU quota exceeded"), 3)
+		}),
+	)
 })
 
 // Capture the final SQL the executor hands to the client so a test can assert
@@ -376,6 +447,25 @@ describe("makeWarehouseExecutor compiled-query defaults", () => {
 			yield* executor.compiledQuery(tenant, untaggedCompiled, { context: "test", profile: "list" })
 			assert.isTrue(sqls[0]?.includes("max_execution_time=15"))
 			assert.isFalse(sqls[0]?.includes("max_execution_time=30"))
+		}),
+	)
+
+	it.effect("applies the profile budget after a statement's own SETTINGS", () =>
+		Effect.gen(function* () {
+			const sqls: Array<string> = []
+			const executor = makeWarehouseExecutor(
+				makeRecordingDeps({ config: clickhouseConfig, clientCacheKey: "read:org_test" }, sqls),
+			)
+			const withOwnSettings = rawCompiledQuery<{ readonly c: number }>({
+				reason: "test-fixture",
+				justification: "Synthetic SQL asserting executor/compile behaviour, not a product query.",
+				sql: "SELECT count() AS c FROM traces WHERE OrgId = 'org_test'\nSETTINGS max_execution_time=900",
+				tenantScope: "single-tenant",
+			})
+			yield* executor.compiledQuery(tenant, withOwnSettings, { context: "test", profile: "list" })
+			const sql = sqls[0] ?? ""
+			// ClickHouse applies the last occurrence, so the profile's value must follow.
+			assert.match(sql, /SETTINGS max_execution_time=900, .*max_execution_time=15/)
 		}),
 	)
 
@@ -1240,7 +1330,7 @@ describe("makeWarehouseExecutor client cache partitions", () => {
 
 			yield* executor.compiledQuery(tenant, scoped("SELECT 1 WHERE OrgId = 'org_test'"))
 			yield* executor.rawSqlQuery(tenant, "SELECT 1 WHERE OrgId = 'org_test'")
-			yield* executor.ingest(tenant, "traces", [{ TraceId: "trace" }])
+			yield* executor.ingest(tenant, "traces", [{ OrgId: "org_test", TraceId: "trace" }])
 			yield* executor.compiledQuery(tenant, scoped("SELECT 2 WHERE OrgId = 'org_test'"))
 
 			assert.strictEqual(nextClientId, 3)

@@ -8,6 +8,7 @@ import { view as issuesView } from "./issues/view"
 import { subscriptions as pullRequestsSubscriptions } from "./pull-requests/subscription"
 import { view as pullRequestsView } from "./pull-requests/view"
 import { view as settingsView } from "./settings/view"
+import { view as teamView } from "./team/view"
 import { Message, Model } from "./tabs"
 import { breadcrumbs, contextChanged, init, routeChanged, update } from "./tabs-update"
 
@@ -39,6 +40,14 @@ const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs,
 				viewInputs: inputs,
 				toParentMessage: (message) => Message.GotCiMessage({ message }),
 			})
+		case "Team":
+			return h.submodel({
+				slotId: "code-review-team",
+				model: tab.model,
+				view: teamView,
+				viewInputs: inputs,
+				toParentMessage: (message) => Message.GotTeamMessage({ message }),
+			})
 		case "Issues":
 			return h.submodel({
 				slotId: "code-review-issues",
@@ -66,7 +75,7 @@ const subscriptions = Subscription.lift(pullRequestsSubscriptions)<PageSubscript
 }) satisfies Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
 
 /**
- * `/code-review` and its tabs (Analytics, Pull requests, CI, Issues, Settings) as one instance per
+ * `/code-review` and its tabs (Analytics, Pull requests, CI, Team, Issues, Settings) as one instance per
  * org: a tab change keeps the instance, so what one tab read serves the next. Filters and windows
  * are search params; each tab's own update handles them.
  */
@@ -78,6 +87,7 @@ export const page = definePage(
 			"CodeReview",
 			"CodeReviewPullRequests",
 			"CodeReviewCi",
+			"CodeReviewTeam",
 			"CodeReviewIssues",
 			"CodeReviewSettings",
 		],

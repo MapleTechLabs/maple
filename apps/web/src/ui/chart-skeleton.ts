@@ -56,13 +56,11 @@ const trendLine = <M>(h: HtmlBuilder<M>): Html =>
 			["d", TREND],
 			["fill", "none"],
 			["stroke", STROKE],
-			["stroke-opacity", "0.55"],
+			["stroke-opacity", "0.5"],
 			["stroke-width", "2"],
 			["stroke-linecap", "round"],
 			["stroke-linejoin", "round"],
 			["vector-effect", "non-scaling-stroke"],
-			["pathLength", "100"],
-			["class", "skeleton-draw"],
 		]),
 	)
 
@@ -82,7 +80,7 @@ const trendGhost = <M>(h: HtmlBuilder<M>, variant: "line" | "area"): Html =>
 							attrs(h, [
 								["d", `${TREND} L 98 100 L 2 100 Z`],
 								["fill", STROKE],
-								["fill-opacity", "0.1"],
+								["fill-opacity", "0.12"],
 							]),
 						),
 					]
@@ -94,29 +92,16 @@ const trendGhost = <M>(h: HtmlBuilder<M>, variant: "line" | "area"): Html =>
 const BAR_HEIGHTS = [46, 70, 34, 86, 56, 96, 62]
 const HISTOGRAM_HEIGHTS = [14, 28, 46, 68, 86, 96, 84, 64, 42, 26, 13]
 
-/** `Bars`: ghost columns with staggered pulse delays. */
-const bars = <M>(h: HtmlBuilder<M>, heights: ReadonlyArray<number>, delay: (index: number) => number) =>
-	heights.map((height, index) =>
-		h.div([
-			h.Class("flex-1 rounded-xs bg-foreground/10 skeleton-bar"),
-			h.Style({ height: `${height}%`, "animation-delay": `${delay(index)}s` }),
-		]),
+/** `Bars`: ghost columns. */
+const bars = <M>(h: HtmlBuilder<M>, heights: ReadonlyArray<number>) =>
+	heights.map((height) =>
+		h.div([h.Class("flex-1 rounded-xs bg-foreground/15"), h.Style({ height: `${height}%` })]),
 	)
 
 const barGhost = <M>(h: HtmlBuilder<M>, variant: "bar" | "histogram"): Html =>
 	variant === "bar"
-		? h.div(
-				[h.Class("flex h-full w-full items-end gap-1.5 p-3")],
-				bars(h, BAR_HEIGHTS, (index) => -index * 0.13),
-			)
-		: h.div(
-				[h.Class("flex h-full w-full items-end gap-[3px] p-3")],
-				bars(
-					h,
-					HISTOGRAM_HEIGHTS,
-					(index) => -Math.abs(index - (HISTOGRAM_HEIGHTS.length - 1) / 2) * 0.11,
-				),
-			)
+		? h.div([h.Class("flex h-full w-full items-end gap-1.5 p-3")], bars(h, BAR_HEIGHTS))
+		: h.div([h.Class("flex h-full w-full items-end gap-[3px] p-3")], bars(h, HISTOGRAM_HEIGHTS))
 
 const ghostOf = <M>(h: HtmlBuilder<M>, variant: ChartSkeletonVariant): Html => {
 	switch (variant) {
@@ -145,7 +130,7 @@ const ghostOf = <M>(h: HtmlBuilder<M>, variant: ChartSkeletonVariant): Html => {
 	}
 }
 
-/** `ChartSkeleton`: the ghost shape matching what will replace it. */
+/** `ChartSkeleton`: the ghost shape matching what will replace it, under one shared sweep. */
 export const chartSkeleton = <M>(
 	h: HtmlBuilder<M>,
 	variant: ChartSkeletonVariant,
@@ -153,7 +138,12 @@ export const chartSkeleton = <M>(
 ): Html =>
 	h.div(
 		[
-			h.Class(cn("relative flex h-full w-full items-center justify-center overflow-hidden", className)),
+			h.Class(
+				cn(
+					"chart-skeleton relative flex h-full w-full items-center justify-center overflow-hidden",
+					className,
+				),
+			),
 			h.DataAttribute("slot", "chart-skeleton"),
 			h.AriaHidden(true),
 		],

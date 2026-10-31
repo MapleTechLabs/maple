@@ -43,7 +43,7 @@ const decodeFormattedRows = decodeJsonEachRow(FormattedRow)
 
 /** Inspect the physical definitions chDB reports, including the objects that
  * are easy to miss when relying on a bundled DDL fingerprint alone. */
-export const inspectPhysicalSchema = (db: Chdb): PhysicalSchema => {
+export const inspectPhysicalSchema = (db: Pick<Chdb, "query">): PhysicalSchema => {
 	const tables = decodeTableRows(
 		db.query(
 			"SELECT name, engine, partition_key, sorting_key, create_table_query FROM system.tables WHERE database = 'default'",
@@ -119,7 +119,7 @@ export const inspectPhysicalSchema = (db: Chdb): PhysicalSchema => {
  * comparable once both have been through the same formatter. Returns
  * `undefined` when the body does not parse, which the comparison reports as a
  * mismatch rather than silently passing. */
-const formatViewBody = (db: Chdb): ((sql: string) => string | undefined) => {
+const formatViewBody = (db: Pick<Chdb, "query">): ((sql: string) => string | undefined) => {
 	const cache = new Map<string, string | undefined>()
 	return (sql: string): string | undefined => {
 		const cached = cache.get(sql)
@@ -141,7 +141,10 @@ const formatViewBody = (db: Chdb): ((sql: string) => string | undefined) => {
 	}
 }
 
-export const assertPhysicalSchema = (db: Chdb, expected: typeof LOCAL_SCHEMA_MANIFEST): void => {
+export const assertPhysicalSchema = (
+	db: Pick<Chdb, "query">,
+	expected: typeof LOCAL_SCHEMA_MANIFEST,
+): void => {
 	const mismatches = comparePhysicalSchema(expected, inspectPhysicalSchema(db), formatViewBody(db))
 	if (mismatches.length > 0) {
 		throw new Error(
@@ -156,7 +159,7 @@ export const assertPhysicalSchema = (db: Chdb, expected: typeof LOCAL_SCHEMA_MAN
 /** Verify the opened store against the bundled schema. `retentionDays` is the
  * effective raw-telemetry retention floor, which raises those tables' TTLs on
  * the physical store and so must raise the expected manifest with them. */
-export const assertCurrentPhysicalSchema = (db: Chdb, retentionDays?: number): void =>
+export const assertCurrentPhysicalSchema = (db: Pick<Chdb, "query">, retentionDays?: number): void =>
 	assertPhysicalSchema(
 		db,
 		retentionDays === undefined

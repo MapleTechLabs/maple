@@ -84,7 +84,7 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model): Html =>
 							h.Class(
 								cn(
 									"shrink-0 space-y-4 p-4 transition-shadow",
-									model.isScrolledAway && "shadow-[0_2px_8px_rgba(0,0,0,0.08)]",
+									model.isScrolledAway && "shadow-popup",
 								),
 							),
 							h.DataAttribute("slot", "page-sticky-area"),

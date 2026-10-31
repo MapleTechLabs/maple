@@ -112,7 +112,7 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 		}
 		if (!model.isDashboardsLoadFailed) return { _tag: "Loading" }
 		return ready(`dashboard-load-failed:${search.dashboardId}:${search.widgetId}`, base, [
-			{ severity: "warning", message: "Dashboards could not be loaded. Starting from a blank alert." },
+			{ severity: "warning", message: "Couldn't load dashboards. Starting from a blank alert." },
 		])
 	}
 	const template = ALERT_TEMPLATES.find((candidate) => candidate.id === search.template)

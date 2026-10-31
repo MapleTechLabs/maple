@@ -8,6 +8,7 @@ import {
 	PRODUCT_EVENTS_TRACE_BACKFILL,
 	PRODUCT_EVENTS_TRACE_FILTER,
 	errorRollupBackfill,
+	serviceMapSpansTraceKeyRekey,
 	tracesTraceKeyRekey,
 } from "./backfills"
 import {
@@ -87,6 +88,22 @@ const ALIGNED_TTLS = [
 	["metric_catalog", "toDate(Hour) + INTERVAL 90 DAY"],
 	["attribute_keys_hourly", "toDate(Hour) + INTERVAL 90 DAY"],
 	["attribute_values_hourly", "toDate(Hour) + INTERVAL 90 DAY"],
+] as const
+
+/** v39: rolls up every retained HTTP server span; the truncate makes a resumed step converge. */
+const SERVICE_ENDPOINT_DETAILS_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS service_endpoint_details_hourly",
+	"INSERT INTO service_endpoint_details_hourly (OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType, SpanCount, EstimatedSpanCount, DurationQuantiles, BodySizeQuantiles, BodySizeMax, BodyCount, UserAgents, SlowestDuration, SlowestTraceId, SlowestTimestamp, SlowestBodySize) SELECT OrgId, ServiceName, toStartOfHour(toDateTime(Timestamp)) AS Hour, coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS DeploymentEnv, if(((SpanName LIKE 'http.server %' OR SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (SpanAttributes['http.route'] != '' OR SpanAttributes['url.path'] != '')), concat(if(SpanName LIKE 'http.server %', replaceOne(SpanName, 'http.server ', ''), SpanName), ' ', if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], SpanAttributes['url.path'])), SpanName) AS SpanName, if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS HttpStatusCode, SpanAttributes['error.type'] AS ErrorType, count() AS SpanCount, sum(SampleRate) AS EstimatedSpanCount, quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles, quantilesTDigestIfState(0.5, 0.95, 0.99)(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeQuantiles, maxIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeMax, countIf(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodyCount, approx_top_kState(10)(coalesce(nullIf(SpanAttributes['user_agent.original'], ''), nullIf(SpanAttributes['http.user_agent'], ''), '')) AS UserAgents, max(Duration) AS SlowestDuration, argMaxState(TraceId, Duration) AS SlowestTraceId, argMaxState(Timestamp, Duration) AS SlowestTimestamp, argMaxState(ifNull(toInt64(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length']))), -1), Duration) AS SlowestBodySize FROM traces WHERE SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '' GROUP BY OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType",
+] as const
+
+/** The six HTTP measures v39 adds to both service-operations rollups. */
+const SERVICE_OPERATIONS_HTTP_COLUMNS = [
+	["HttpClassifiedSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["HttpStatusCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["Http4xxCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["Http5xxCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["RequestBodyBytes", "SimpleAggregateFunction(sum, UInt64)"],
+	["RequestBodyCount", "SimpleAggregateFunction(sum, UInt64)"],
 ] as const
 
 export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
@@ -1423,6 +1440,193 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			guarantee:
 				"Only the TTL expression changes. A row now expires at the start of its day, up to a day earlier than before.",
 		})),
+	},
+	{
+		// Purely additive and filled forward only: the sources view reads 24 hours,
+		// and local OTLP ingest stamps no maple_source_id, so there is nothing to backfill.
+		id: "local-0036-to-0037-source-usage-hourly",
+		from: 36,
+		to: 37,
+		description: "source_usage_hourly + its six views: hourly volume and bytes per source",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-source-usage-hourly",
+				"Install the source_usage_hourly rollup and its six materialized views via the v37 bootstrap",
+			],
+		],
+		verifies: "Verify the v37 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "source_usage_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Filled forward from traces, logs and metrics writes that carry a source id; complete once the 24-hour read window passes.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
+		// Purely additive and filled forward only: CI traces come from the GitHub App's
+		// webhooks, which never reach a local store, so there is nothing to backfill.
+		id: "local-0037-to-0038-ci-runs-jobs",
+		from: 37,
+		to: 38,
+		description: "ci_runs + ci_jobs and their views: CI runs and jobs off github-actions traces",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-ci-runs-jobs",
+				"Install the ci_runs and ci_jobs projections and their materialized views via the v38 bootstrap",
+			],
+		],
+		verifies: "Verify the v38 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "ci_runs",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Filled forward from github-actions root spans written after the migration.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+			{
+				name: "ci_jobs",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Filled forward from github-actions job spans written after the migration.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+		],
+	},
+	{
+		// Six additive counters on both service-operations rollups (zeros on old rows, which
+		// HttpClassifiedSpanCount = 0 marks unknown) plus the new endpoint-details rollup,
+		// backfilled from retained traces like trace_facets_hourly at v24.
+		id: "local-0038-to-0039-service-api-http-details",
+		from: 38,
+		to: 39,
+		description: "HTTP measures on service_operations_* and the service_endpoint_details_hourly rollup",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_operations_minutely", SERVICE_OPERATIONS_HTTP_COLUMNS),
+			addColumns("service_operations_hourly", SERVICE_OPERATIONS_HTTP_COLUMNS),
+			dropViews("service_operations_minutely_mv", "service_operations_hourly_mv"),
+		],
+		afterBootstrap: [backfill(...SERVICE_ENDPOINT_DETAILS_BACKFILL)],
+		counts: {
+			group: "rollupRows",
+			measure: [
+				["minutely", "SELECT toString(count()) AS count FROM service_operations_minutely"],
+				["hourly", "SELECT toString(count()) AS count FROM service_operations_hourly"],
+			],
+			checks: [unchangedRowCount("minutely"), unchangedRowCount("hourly")],
+		},
+		plan: [
+			[
+				"add-operation-http-measures",
+				"Add the six HTTP status and request-body counters to both service-operations rollups and recreate their views",
+			],
+			[
+				"create-service-endpoint-details",
+				"Create service_endpoint_details_hourly and its view via the v39 bootstrap and backfill it from retained traces",
+			],
+		],
+		verifies: "Verify the v39 physical schema, retained raw telemetry counts, and the rollup row counts",
+		dispositions: [
+			{
+				name: "service_operations_minutely",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Six counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read back as zero, which HttpClassifiedSpanCount marks as unknown.",
+			},
+			{
+				name: "service_operations_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Six counter columns are added as metadata-only defaults; no part is rewritten and the row count is verified unchanged.",
+			},
+			{
+				name: "service_endpoint_details_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Rebuilt from every HTTP server span traces retains, then filled forward by its view.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
+		// Like v34: the bootstrap keeps the v39 tables (IF NOT EXISTS); the custom step swaps in
+		// re-keyed copies. Their view writes TO them by name, so it follows the swap.
+		id: "local-0039-to-0040-service-map-spans-trace-key",
+		from: 39,
+		to: 40,
+		description: "Re-sort service_map_spans and service_map_children by 5-minute bucket and trace id",
+		clonedBefore: "any DDL runs",
+		custom: serviceMapSpansTraceKeyRekey,
+		plan: [
+			[
+				"resort-service-map-spans",
+				"Copy service_map_spans and service_map_children into view-free tables keyed by 5-minute bucket and trace id, then exchange them in",
+			],
+		],
+		verifies:
+			"Verify the v40 physical schema, the retained raw telemetry counts, and that no staging table is left",
+		dispositions: [
+			{
+				name: "service_map_spans",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Every row inside its TTL is copied as written into the re-sorted table, keeping the store's TTL. No view fires on the copy.",
+			},
+			{
+				name: "service_map_children",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Every row inside its TTL is copied as written into the re-sorted table, keeping the store's TTL. No view fires on the copy.",
+			},
+		],
+	},
+	{
+		// Purely additive and filled forward only: the read path keeps raw traces for any
+		// minute before the view's first write, so nothing needs backfilling.
+		id: "local-0040-to-0041-service-map-db-edges-minutely",
+		from: 40,
+		to: 41,
+		description: "service_map_db_edges_minutely + its view: per-minute service-to-database edges",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-service-map-db-edges-minutely",
+				"Install the service_map_db_edges_minutely rollup and its materialized view via the v41 bootstrap",
+			],
+		],
+		verifies: "Verify the v41 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "service_map_db_edges_minutely",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Filled forward from traces writes; the service map reads raw traces for minutes before the view's first write.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
 	},
 	// local-schema:bump appends the next step above this line.
 ]

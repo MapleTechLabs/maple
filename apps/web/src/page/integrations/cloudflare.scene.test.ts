@@ -23,7 +23,9 @@ describe("cloudflare card", () => {
 
 	test("the ingest poll re-reads the clock, so a discovering connection can turn stalled", () => {
 		const model = init({ search: { integration: "cloudflare" } }, context).model
-		expect(names(pageUpdate(model, Message.TickedCloudflareIngest()).commands)).toContain("ReadIntegrationsClock")
+		expect(names(pageUpdate(model, Message.TickedCloudflareIngest()).commands)).toContain(
+			"ReadIntegrationsClock",
+		)
 	})
 
 	test("zone sort flips the active column; a new column starts by its natural order", () => {
@@ -53,7 +55,14 @@ describe("cloudflare card", () => {
 	})
 
 	test("an account-wide error pauses a zone; a zone error stays on the row", () => {
-		const entry = { key: "z", name: "acme.test", enabled: true, lastSyncedAt: 1, usage: null }
+		const entry = {
+			key: "z",
+			name: "acme.test",
+			enabled: true,
+			watched: true,
+			lastSyncedAt: 1,
+			usage: null,
+		}
 		expect(zoneStatus({ ...entry, lastError: "token revoked" }, true, 10).kind).toBe("paused")
 		expect(zoneStatus({ ...entry, lastError: "zone is no longer present" }, true, 10).kind).toBe("issue")
 		expect(describeCloudflareError("something odd").summary).toBe("something odd")

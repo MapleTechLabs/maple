@@ -5,15 +5,18 @@ import { requestKey } from "../../data/request-key"
 import type { Resources } from "../../platform/resources"
 import type { PageContext, PageReturn } from "../contract"
 import {
+	LoadAws,
 	LoadChat,
 	LoadCloudflare,
 	LoadGcp,
 	LoadGithub,
 	LoadHazel,
+	LoadLinear,
 	LoadPlanetscale,
 	LoadPlanetscaleDatabases,
 	LoadRailway,
 	LoadScrapeTargets,
+	LoadSupabase,
 } from "./command"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
@@ -29,7 +32,10 @@ const OPERATIONS = {
 	planetscale: "planetscaleIntegration.status",
 	planetscaleDatabases: "planetscaleIntegration.databases",
 	gcp: "gcpIntegration.status",
+	aws: "awsIntegration.status",
+	supabase: "integrations.supabaseStatus",
 	hazel: "integrations.hazelStatus",
+	linear: "integrations.linearStatus",
 	github: "integrations.githubStatus",
 	chat: "chatIntegration.connectors",
 	scrapeTargets: "scrapeTargets.list",
@@ -38,34 +44,28 @@ const OPERATIONS = {
 export const statusKey = (context: PageContext, name: keyof Statuses) =>
 	requestKey(context.orgId, OPERATIONS[name], {})
 
-/**
- * `Refresh` is a write's `reactivityKeys`: it asks again even while a read is in flight, since that
- * read may predate the write. `Poll` is a timer's refresh and joins a read in flight.
- */
-export type StatusMode = Keyed.RequestMode | "Poll"
-
 const step = <A, E>(
 	model: Model,
 	slot: Keyed.Keyed<A, E>,
 	key: string,
-	mode: StatusMode,
+	mode: Keyed.ReadMode,
 	set: (statuses: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
-	command: () => AnyCommand,
+	command: (slotKey: string) => AnyCommand,
 ): Return =>
-	Option.match(Keyed.request(slot, key, mode === "Load" ? "Load" : "Refresh"), {
-		onNone: () => (mode === "Refresh" ? { model, commands: [command()] } : { model }),
-		onSome: (next) => ({
-			model: { ...model, statuses: set(model.statuses, next) },
-			commands: [command()],
+	Option.match(Keyed.requestFor(slot, key, mode), {
+		onNone: () => ({ model }),
+		onSome: (requested) => ({
+			model: { ...model, statuses: set(model.statuses, requested) },
+			commands: [command(requested.key)],
 		}),
 	})
 
-/** Requests one status read; a write's `reactivityKeys` refresh it with `Refresh`. */
+/** Requests one status read; a write's `reactivityKeys` re-read it with `Supersede`, a timer with `Refresh`. */
 export const requestStatus = (
 	model: Model,
 	context: PageContext,
 	name: keyof Statuses,
-	mode: StatusMode,
+	mode: Keyed.ReadMode,
 ): Return => {
 	const key = statusKey(context, name)
 	const refresh = mode !== "Load"
@@ -73,62 +73,80 @@ export const requestStatus = (
 	const go = <A, E>(
 		slot: Keyed.Keyed<A, E>,
 		set: (all: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
-		command: () => AnyCommand,
+		command: (slotKey: string) => AnyCommand,
 	) => step(model, slot, key, mode, set, command)
 	switch (name) {
 		case "cloudflare":
 			return go(
 				s.cloudflare,
 				(all, cloudflare) => ({ ...all, cloudflare }),
-				() => LoadCloudflare({ key, refresh }),
+				(slotKey) => LoadCloudflare({ key: slotKey, refresh }),
 			)
 		case "railway":
 			return go(
 				s.railway,
 				(all, railway) => ({ ...all, railway }),
-				() => LoadRailway({ key, refresh }),
+				(slotKey) => LoadRailway({ key: slotKey, refresh }),
 			)
 		case "planetscale":
 			return go(
 				s.planetscale,
 				(all, planetscale) => ({ ...all, planetscale }),
-				() => LoadPlanetscale({ key, refresh }),
+				(slotKey) => LoadPlanetscale({ key: slotKey, refresh }),
 			)
 		case "planetscaleDatabases":
 			return go(
 				s.planetscaleDatabases,
 				(all, planetscaleDatabases) => ({ ...all, planetscaleDatabases }),
-				() => LoadPlanetscaleDatabases({ key }),
+				(slotKey) => LoadPlanetscaleDatabases({ key: slotKey }),
 			)
 		case "gcp":
 			return go(
 				s.gcp,
 				(all, gcp) => ({ ...all, gcp }),
-				() => LoadGcp({ key, refresh }),
+				(slotKey) => LoadGcp({ key: slotKey, refresh }),
+			)
+		case "aws":
+			return go(
+				s.aws,
+				(all, aws) => ({ ...all, aws }),
+				(slotKey) => LoadAws({ key: slotKey }),
+			)
+		case "supabase":
+			return go(
+				s.supabase,
+				(all, supabase) => ({ ...all, supabase }),
+				(slotKey) => LoadSupabase({ key: slotKey, refresh }),
 			)
 		case "hazel":
 			return go(
 				s.hazel,
 				(all, hazel) => ({ ...all, hazel }),
-				() => LoadHazel({ key }),
+				(slotKey) => LoadHazel({ key: slotKey }),
+			)
+		case "linear":
+			return go(
+				s.linear,
+				(all, linear) => ({ ...all, linear }),
+				(slotKey) => LoadLinear({ key: slotKey }),
 			)
 		case "github":
 			return go(
 				s.github,
 				(all, github) => ({ ...all, github }),
-				() => LoadGithub({ key }),
+				(slotKey) => LoadGithub({ key: slotKey }),
 			)
 		case "chat":
 			return go(
 				s.chat,
 				(all, chat) => ({ ...all, chat }),
-				() => LoadChat({ key }),
+				(slotKey) => LoadChat({ key: slotKey }),
 			)
 		case "scrapeTargets":
 			return go(
 				s.scrapeTargets,
 				(all, scrapeTargets) => ({ ...all, scrapeTargets }),
-				() => LoadScrapeTargets({ key }),
+				(slotKey) => LoadScrapeTargets({ key: slotKey }),
 			)
 	}
 }
@@ -153,7 +171,10 @@ export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",
+	"aws",
+	"supabase",
 	"hazel",
+	"linear",
 	"github",
 	"chat",
 	"scrapeTargets",

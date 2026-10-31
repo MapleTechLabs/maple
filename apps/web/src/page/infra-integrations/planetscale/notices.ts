@@ -1,13 +1,17 @@
-import type { SetupStep } from "../../../components/integrations/planetscale-setup-steps"
+import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
+import {
+	type LiveCheck,
+	metricsAuthOf,
+	metricsLastError,
+} from "../../../components/integrations/planetscale-setup-steps"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
 import { linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
-import { spinner } from "../../../ui/spinner"
 import {
+	integrationConnectCta,
 	integrationEmpty,
 	integrationEmptyCard,
 	integrationEmptyFeatures,
@@ -15,12 +19,11 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 } from "../kit/integration-empty"
+import { liveChecklist } from "../../kit/connect-flow"
 import { relativeTime } from "../../kit/relative-time"
 
-// PlanetScale absence notices, setup state and the setup checklist.
+// PlanetScale absence notices and the setup state.
 
-export const METRICS_PAUSED_MESSAGE = "Branch metrics are paused. Add a metrics token to collect them."
-export const METRICS_PAUSED_SHORT = "metrics paused"
 export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 export const BRANCH_ABSENCE_COPY = {
 	excluded: "Excluded from metrics collection by this connection's branch filters.",
@@ -29,19 +32,22 @@ export const BRANCH_ABSENCE_COPY = {
 
 const INTEGRATION_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } }))
 
-export const metricsNotice = <M>(h: HtmlBuilder<M>): Html =>
-	alert(h, { variant: "warn" }, [
+/** `PlanetScaleMetricsNotice`: metrics arrived before and have stopped. */
+export const metricsNotice = <M>(h: HtmlBuilder<M>, status: V2PlanetScaleIntegration): Html => {
+	const error = metricsLastError(status)
+	const source = metricsAuthOf(status) === "api" ? "poll" : "scrape"
+	return alert(h, { variant: "warn" }, [
 		icon(h, "AlertWarningIcon"),
-		alertTitle(h, ["Branch metrics aren't being collected"]),
+		alertTitle(h, ["Branch metrics stopped arriving"]),
 		alertDescription(h, [
-			"Databases and branches are up to date, and query insights still work. Connections, CPU, memory, storage, and replica lag need a PlanetScale service token with the read_metrics_endpoints permission.",
+			"Databases and branches are up to date, and query insights still work. Connections, CPU, memory, storage, and replica lag are not updating.",
+			...(error === null ? [] : [` The last ${source} failed: ${error}`]),
 		]),
 		alertAction(h, [
-			linkButton(h, { size: "sm", variant: "outline", href: INTEGRATION_HREF }, [
-				"Add a metrics token",
-			]),
+			linkButton(h, { size: "sm", variant: "outline", href: INTEGRATION_HREF }, ["View integration"]),
 		]),
 	])
+}
 
 export const revokedNotice = <M>(h: HtmlBuilder<M>): Html =>
 	alert(h, { variant: "crit" }, [
@@ -75,7 +81,8 @@ export const inventoryNotice = <M>(
 						" ",
 						options.lastInventoryAt === null
 							? "never"
-							: relativeTime(h, { tooltip: "title",
+							: relativeTime(h, {
+									tooltip: "title",
 									value: options.lastInventoryAt,
 									nowMs: options.nowMs,
 									timeZone: options.timeZone,
@@ -91,93 +98,16 @@ const INVENTORY_STALE_MS = 90 * 60 * 1000
 export const inventoryIsStale = (lastInventoryAt: string | null, nowMs: number): boolean =>
 	lastInventoryAt !== null && nowMs - toEpochMs(lastInventoryAt) > INVENTORY_STALE_MS
 
-const stepMarker = <M>(h: HtmlBuilder<M>, step: SetupStep, number: number): Html => {
-	if (step.state === "done")
-		return icon(h, "CircleCheckIcon", {
-			size: 14,
-			className: "mt-0.5 shrink-0 text-severity-info",
-			attributes: [h.AriaHidden(true)],
-		})
-	if (step.state === "blocked")
-		return icon(h, "CircleWarningIcon", {
-			size: 14,
-			className: "mt-0.5 shrink-0 text-severity-error",
-			attributes: [h.AriaHidden(true)],
-		})
-	if (step.state === "current" && step.waitingOnMaple)
-		return spinner(h, "mt-0.5 shrink-0 text-muted-foreground")
-	return h.span(
-		[
-			h.AriaHidden(true),
-			h.Class(
-				step.state === "current"
-					? "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full bg-primary text-4xs font-medium text-primary-foreground"
-					: "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border border-border text-4xs font-medium text-muted-foreground",
-			),
-		],
-		[String(number)],
-	)
-}
-
-const setupChecklist = <M>(h: HtmlBuilder<M>, steps: ReadonlyArray<SetupStep>, className: string): Html =>
-	h.ol(
-		[h.Class(cn("flex flex-col", className))],
-		steps.map((step, index) =>
-			h.li(
-				[h.Class("flex gap-3 border-b border-border/60 py-2.5 last:border-b-0 last:pb-0 first:pt-0")],
-				[
-					stepMarker(h, step, index + 1),
-					h.div(
-						[h.Class("min-w-0 flex-1")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-x-2")],
-								[
-									h.span(
-										[
-											h.Class(
-												cn(
-													"text-xs font-medium",
-													step.state === "pending"
-														? "text-muted-foreground"
-														: "text-foreground",
-												),
-											),
-										],
-										[step.title],
-									),
-									h.span(
-										[
-											h.Class(
-												cn(
-													"text-xs",
-													step.state === "blocked"
-														? "text-severity-error"
-														: "text-muted-foreground",
-												),
-											),
-										],
-										[step.detail],
-									),
-								],
-							),
-						],
-					),
-				],
-			),
-		),
-	)
-
 const BRAND = { icon: "PlanetScaleIcon", accent: PLANETSCALE_COLOR } as const
 
 /** `PlanetScaleSetupState`: metrics have never arrived for this connection. */
-export const setupState = <M>(h: HtmlBuilder<M>, steps: ReadonlyArray<SetupStep>): Html =>
+export const setupState = <M>(h: HtmlBuilder<M>, checks: ReadonlyArray<LiveCheck>): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, [
 			{
 				label: "Utilization",
 				title: "CPU, memory, connections",
-				description: "Per branch, scraped from PlanetScale on a schedule.",
+				description: "Per branch, collected from PlanetScale every 5 minutes.",
 			},
 			{
 				label: "Storage",
@@ -193,12 +123,39 @@ export const setupState = <M>(h: HtmlBuilder<M>, steps: ReadonlyArray<SetupStep>
 		integrationEmptyCard(h, [
 			integrationEmptyMedia(h, BRAND),
 			integrationEmptyHint(h, [
-				"Branch metrics need one more step. PlanetScale only serves them to service tokens, so the OAuth authorization alone can't collect them.",
+				"Branch metrics start arriving within minutes of connecting. Maple collects them on your PlanetScale authorization.",
 			]),
-			setupChecklist(h, steps, "w-full max-w-md text-left"),
-			linkButton(h, { href: INTEGRATION_HREF }, ["Finish setup"]),
-			integrationEmptyFooter(h, [
-				"One read-only permission · takes about a minute · your databases below are already live.",
-			]),
+			h.div(
+				[h.Class("w-full max-w-md text-left")],
+				[liveChecklist(h, { title: "Checking the connection", rows: checks })],
+			),
+			linkButton(h, { href: INTEGRATION_HREF }, ["View integration"]),
+			integrationEmptyFooter(h, ["Nothing to install · your databases below are already live."]),
 		]),
 	])
+
+/** Nothing connected: what the page will show, and the way into the connect flow. */
+export const planetscaleConnectCta = <M>(h: HtmlBuilder<M>): Html =>
+	integrationConnectCta(h, {
+		brand: BRAND,
+		features: [
+			{
+				label: "Utilization",
+				title: "CPU, memory, connections",
+				description: "Per branch, collected from PlanetScale every 5 minutes.",
+			},
+			{
+				label: "Storage",
+				title: "Disk headroom over time",
+				description: "The slow-moving number nothing else in Maple reveals.",
+			},
+			{
+				label: "Replication",
+				title: "Replica lag per branch",
+				description: "Catch a replica falling behind before your reads go stale.",
+			},
+		],
+		hint: "Authorize your PlanetScale organization and Maple tracks every branch's health, with nothing to install.",
+		label: "Connect PlanetScale",
+		href: INTEGRATION_HREF,
+	})

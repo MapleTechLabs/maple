@@ -47,7 +47,9 @@ import {
 	checkpointRoot,
 	checkpointSnapshotDir,
 	checkpointStatePath,
+	newCheckpointId,
 	withMaintenanceLock,
+	type CheckpointId,
 } from "../src/server/checkpoints"
 import { assertCatalogExact, rebuildCatalog } from "../src/server/archives/listing"
 import { RetiredDayAuthority } from "../src/server/archives/retention"
@@ -68,7 +70,7 @@ const withArchive = async (run: (archiveDir: string) => Promise<void> | void): P
 	}
 }
 
-const seedCheckpoint = (dataDir: string, checkpointId: string, backupBytes = 6): void => {
+const seedCheckpoint = (dataDir: string, checkpointId: CheckpointId, backupBytes = 6): void => {
 	const createdAt = "2026-01-01T00:00:00.000Z"
 	const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
 	mkdirSync(join(snapshot, "backup"), { recursive: true })
@@ -351,7 +353,7 @@ describe("archive generation promotion", () => {
 			const scratchRoot = join(parent, "scratch")
 			mkdirSync(dataDir, { recursive: true })
 			mkdirSync(scratchRoot, { recursive: true })
-			seedCheckpoint(dataDir, randomUUID())
+			seedCheckpoint(dataDir, newCheckpointId())
 			await rejects(
 				createArchiveGeneration(dataDir, archiveDir, "traces", "2026-06-01", {
 					writerThreads: 1,

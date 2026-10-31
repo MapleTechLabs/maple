@@ -55,7 +55,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 							}),
 						),
 					),
-					h.Class("hover:text-foreground"),
+					h.Class("hover:text-foreground active:text-foreground"),
 				],
 				[workload.workloadKind, " ", workload.workloadName],
 			),
@@ -64,7 +64,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Service({ serviceName, search: model.search }))),
-					h.Class("text-primary hover:underline"),
+					h.Class("text-primary hover:underline active:underline"),
 				],
 				["Open the service"],
 			),
@@ -101,7 +101,7 @@ const podsSection = (h: H, model: Model, inputs: PageViewInputs, pods: ReadonlyA
 			}),
 			AsyncData.matchData(model.pods.data, {
 				onEmpty: () => podTableLoading(h),
-				onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods", onRetry: Message.ClickedRetryPods() }),
+				onFailure: (failure) => errorState(h, { failure, title: "Couldn't load pods", onRetry: Message.ClickedRetryPods() }),
 				onData: (page) =>
 					page.data.length === 0
 						? emptyMessage(h, { dashed: true, className: "py-12" }, [
@@ -127,7 +127,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			onEmpty: () => null,
 			onData: () => null,
 			onFailure: (failure) =>
-				errorState(h, { failure, title: "Failed to load this service", onRetry: Message.ClickedRetryOverview() }),
+				errorState(h, { failure, title: "Couldn't load this service", onRetry: Message.ClickedRetryOverview() }),
 		})
 	const workload = linkedWorkload(model)
 	const points = AsyncData.getOrElse(model.overview.data, () => [])
@@ -254,7 +254,7 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 							h.Key(node),
 							h.Href(hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} }))),
 							h.Class(
-								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs transition-colors hover:bg-accent/50",
+								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs hover:bg-surface-sunken active:bg-surface-sunken",
 							),
 						],
 						[
@@ -312,6 +312,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 					tabs: kubernetesViewTabs(h, "services", model.search),
+					filtersLabel: "Services",
 					filters: lensRail(h, model.rail, model.serviceName ?? undefined, model.search),
 					filtersWidth: "w-72",
 				},
