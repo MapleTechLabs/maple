@@ -1,6 +1,8 @@
 receivers:
     file_log/app:
-        include: [/var/log/app/app.json.log]
+        include: [/var/log/app/app.log]
+        resource:
+            service.name: app
         operators:
             - type: json_parser
               timestamp:
@@ -12,3 +14,21 @@ receivers:
             - type: move
               from: attributes.msg
               to: body
+              on_error: send_quiet
+
+processors:
+    batch: {}
+
+exporters:
+    otlp_http/maple:
+        endpoint: https://ingest.maple.dev
+        compression: gzip
+        headers:
+            x-maple-ingest-key: ${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        logs:
+            receivers: [file_log/app]
+            processors: [batch]
+            exporters: [otlp_http/maple]

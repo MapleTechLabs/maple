@@ -1,7 +1,0 @@
-processors:
-    transform/parse:
-        error_mode: ignore
-        log_statements:
-            - merge_maps(log.attributes, ParseJSON(log.body), "upsert") where IsMatch(log.body, "^\\{")
-            - merge_maps(log.attributes, ParseKeyValue(log.body), "upsert") where IsMatch(log.body, "^time=")
-            - merge_maps(log.attributes, ExtractGrokPatterns(log.body, "%{HTTPD_COMBINEDLOG}", true), "upsert") where log.attributes["log.file.name"] == "access.log"

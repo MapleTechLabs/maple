@@ -1,6 +1,8 @@
 receivers:
     file_log/nginx:
         include: [/var/log/nginx/access.log]
+        resource:
+            service.name: nginx
         operators:
             - type: regex_parser
               regex: '^(?P<client_address>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^ "]* HTTP/[0-9.]+" (?P<status>\d{3}) (?P<body_bytes>\d+|-) "[^"]*" "(?P<user_agent>[^"]*)"$'
@@ -16,6 +18,8 @@ receivers:
                             max: 399
                       warn: 4xx
                       error: 5xx
+            # Operators run top to bottom, so the renames come after the parser
+            # that creates the fields. Dots are not allowed in group names.
             - type: move
               from: attributes.client_address
               to: attributes["client.address"]
@@ -48,14 +52,13 @@ processors:
     transform/nginx:
         error_mode: ignore
         log_statements:
-            - set(resource.attributes["service.name"], "nginx")
             - delete_key(log.attributes, "http.response.body.size") where log.attributes["http.response.body.size"] == "-"
             - set(log.attributes["http.response.status_code"], Int(log.attributes["http.response.status_code"])) where log.attributes["http.response.status_code"] != nil
             - set(log.attributes["http.response.body.size"], Int(log.attributes["http.response.body.size"])) where log.attributes["http.response.body.size"] != nil
     batch: {}
 
 exporters:
-    otlphttp/maple:
+    otlp_http/maple:
         endpoint: https://ingest.maple.dev
         compression: gzip
         headers:
@@ -66,4 +69,4 @@ service:
         logs:
             receivers: [file_log/nginx]
             processors: [transform/nginx, batch]
-            exporters: [otlphttp/maple]
+            exporters: [otlp_http/maple]
