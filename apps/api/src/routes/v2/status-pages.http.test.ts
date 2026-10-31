@@ -7,7 +7,7 @@ import { MapleApiV2 } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
-import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -17,7 +17,7 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
+	allV2GroupLayersWithAudit,
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
 	Phase1ResourceStubsLayer,
@@ -54,6 +54,7 @@ const testConfig = () =>
 
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
+	const audit = makeMemoryAuditLog()
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -65,7 +66,7 @@ const makeHarness = () => {
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+		Layer.provide(allV2GroupLayersWithAudit(Layer.succeed(AuditLogService, audit))),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
@@ -73,7 +74,7 @@ const makeHarness = () => {
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
-		Layer.provideMerge(AuditLogService.layerMemory),
+		Layer.provideMerge(Layer.succeed(AuditLogService, audit)),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)
@@ -104,9 +105,13 @@ const makeHarness = () => {
 			}),
 		)
 
+	const auditEntries = (action: string) =>
+		Effect.runPromise(audit.list(ORG, { action, limit: 100, offset: 0 }))
+
 	return {
 		request,
 		bootstrapKey,
+		auditEntries,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -503,8 +508,9 @@ describe("v2 status pages", () => {
 				expect(applied.status).toBe(200)
 				expect(applied.body).toEqual(read.body)
 				const after = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
-				// Nothing changed, so nothing republishes.
+				// Nothing changed, so nothing republishes and nothing is audited.
 				expect(after).toBe(before)
+				expect(await harness.auditEntries("status_page.config_applied")).toEqual([])
 			}))
 
 		it("applies created, updated, deleted and reordered components with the page fields", () =>
@@ -540,6 +546,15 @@ describe("v2 status pages", () => {
 					[apiId, 1],
 				])
 				expect(listed.body.data.some((c: { id: string }) => c.id === webId)).toBe(false)
+				const [entry, ...rest] = await harness.auditEntries("status_page.config_applied")
+				expect(rest).toEqual([])
+				expect(entry?.resourceId).toBe(id)
+				expect(entry?.metadata).toMatchObject({
+					name: "Acme Inc",
+					components_created: 1,
+					components_updated: 1,
+					components_deleted: 1,
+				})
 			}))
 
 		it("refuses an invalid document with a 400 naming the problem and changes nothing", () =>
