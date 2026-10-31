@@ -51,11 +51,37 @@ interface Opener {
 const isOpener = (value: unknown): value is Opener =>
 	typeof value === "object" && value !== null && "postMessage" in value && "closed" in value
 
-/** Post the outcome to the opening tab, on this origin only. False when there is none to tell. */
+/** Same-origin tabs hear a return here when a provider page's COOP severed `window.opener`. */
+export const RELAY_CHANNEL = "maple:integration-return"
+/** This document's relays, so its own listener skips them: it reports its outcome itself. */
+const RELAY_SENDER = crypto.randomUUID()
+
+export const RelayMessage = Schema.Struct({
+	sender: Schema.String,
+	provider: ConnectProvider,
+	status: Schema.String,
+	message: Schema.String,
+})
+const decodeRelay = Schema.decodeUnknownOption(RelayMessage)
+
+/** A relay from another tab; `None` for this document's own or anything else on the channel. */
+export const relayOf = (data: unknown): Option.Option<typeof RelayMessage.Type> =>
+	Option.filter(decodeRelay(data), (relay) => relay.sender !== RELAY_SENDER)
+
+/**
+ * Post the outcome to the opening tab, on this origin only. Without one (a provider page that
+ * sends COOP, like Cloudflare's dashboard, severs it) the outcome is relayed to the other tabs.
+ * True only when the opener took it.
+ */
 const handOff = (provider: ConnectProvider, status: string, message: string) =>
 	Effect.sync(() => {
 		const opener: unknown = window.opener
-		if (!isOpener(opener) || opener.closed) return false
+		if (!isOpener(opener) || opener.closed) {
+			const channel = new BroadcastChannel(RELAY_CHANNEL)
+			channel.postMessage({ sender: RELAY_SENDER, provider, status, message })
+			channel.close()
+			return false
+		}
 		opener.postMessage({ type: `maple:integration:${provider}`, status, message }, window.location.origin)
 		if (status === "success") setTimeout(() => window.close(), 600)
 		return true

@@ -64,6 +64,14 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			dependenciesToStream: ({ orgId }) =>
 				destinationRows(orgId, (rows) => Message.UpdatedDestinations({ orgId, rows })),
 		}),
+		/** The destination dialog's Linear connect popup coming back. */
+		destinationConnectReturn: entry(DestinationDialog.ConnectReturnDependencies, {
+			modelToDependencies: ({ model }) => DestinationDialog.connectReturnDependencies(model.destinationDialog),
+			dependenciesToStream: (dependencies) =>
+				Stream.map(DestinationDialog.connectReturnStream(dependencies), (message) =>
+					Message.GotDestinationDialogMessage({ message }),
+				),
+		}),
 		/** The destination dialog's workspace connect popup (`useChatWorkspaceConnect`). */
 		destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
 			modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
