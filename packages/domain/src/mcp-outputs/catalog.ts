@@ -6,7 +6,13 @@ import { SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { ListSourcesOutput } from "./sources"
 import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutationOutput } from "./uptime"
-import { GetStatusPageOutput, ListStatusPagesOutput, StatusPageIncidentMutationOutput } from "./status-pages"
+import {
+	ApplyStatusPageConfigOutput,
+	GetStatusPageConfigOutput,
+	GetStatusPageOutput,
+	ListStatusPagesOutput,
+	StatusPageIncidentMutationOutput,
+} from "./status-pages"
 import {
 	DeleteIngestRuleOutput,
 	IngestRuleMutationOutput,
@@ -177,6 +183,8 @@ export const McpToolOutputs = {
 	list_status_pages: ListStatusPagesOutput,
 	list_uptime_monitors: ListUptimeMonitorsOutput,
 	get_status_page: GetStatusPageOutput,
+	get_status_page_config: GetStatusPageConfigOutput,
+	apply_status_page_config: ApplyStatusPageConfigOutput,
 	post_status_page_update: StatusPageIncidentMutationOutput,
 	resolve_status_page_incident: StatusPageIncidentMutationOutput,
 	schedule_status_page_maintenance: StatusPageIncidentMutationOutput,

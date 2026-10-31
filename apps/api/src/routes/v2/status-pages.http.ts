@@ -18,6 +18,7 @@ import {
 	type V2StatusPage,
 	type V2StatusPageComponent,
 	type V2StatusPageIncident,
+	hasStatusPageConfigChanges,
 } from "@maple/domain/http/v2"
 import type {
 	OrgId,
@@ -29,7 +30,7 @@ import type {
 } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
 import { Effect, Option } from "effect"
-import { auditDiff } from "@/routes/v2/audit-changes"
+import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { timestampMs } from "@maple/backend/platform/time"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
@@ -332,6 +333,40 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					yield* service.revokeBreakGlassToken(tenant.orgId, params.id)
 					yield* recordHttpAudit("status_page.break_glass_revoked", { resourceId: params.id })
 					return toV2StatusPage(yield* service.get(tenant.orgId, params.id))
+				}),
+			)
+			.handle("getConfig", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					return yield* service.getConfig(tenant.orgId, params.id)
+				}),
+			)
+			.handle("applyConfig", ({ params, query, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles, adminOnly("update"))
+					const { previous, config, changes } = yield* service.applyConfig(
+						tenant.orgId,
+						params.id,
+						payload,
+						tenant.userId,
+						{ ifVersion: query.if_version },
+					)
+					const { components: _before, version: _beforeVersion, ...pageBefore } = previous
+					const { components: _after, version: _afterVersion, ...pageAfter } = config
+					if (!hasStatusPageConfigChanges(changes)) return config
+					yield* recordHttpAudit("status_page.config_applied", {
+						resourceId: params.id,
+						changes: diffAuditChanges(pageBefore, pageAfter),
+						metadata: {
+							name: config.name,
+							components_created: changes.created.length,
+							components_updated: changes.updated.length,
+							components_deleted: changes.deleted.length,
+							components_reordered: changes.reordered,
+						},
+					})
+					return config
 				}),
 			)
 			.handle("listComponents", ({ params, query }) =>

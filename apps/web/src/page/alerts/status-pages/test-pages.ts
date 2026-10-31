@@ -5,7 +5,13 @@ import {
 	StatusPageIncidentUpdateId,
 } from "@maple/domain"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
-import type { V2StatusPage, V2StatusPageComponent, V2StatusPageIncident } from "@maple/domain/http/v2"
+import {
+	type StatusPageConfig,
+	statusPageConfigVersion,
+	type V2StatusPage,
+	type V2StatusPageComponent,
+	type V2StatusPageIncident,
+} from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { NOW } from "../shared/test-rows"
 
@@ -87,3 +93,30 @@ export const incident = (n: number, fields: Partial<V2StatusPageIncident> = {}):
 	updated_at: iso(10 * MINUTE),
 	...fields,
 })
+
+/** The document `GET …/config` returns for a page and its components. */
+export const statusPageConfig = (
+	page: V2StatusPage,
+	components: ReadonlyArray<V2StatusPageComponent>,
+): StatusPageConfig => {
+	const content: StatusPageConfig = {
+		name: page.name,
+		slug: page.slug,
+		description: page.description,
+		website_url: page.website_url,
+		logo_url: page.logo_url,
+		show_powered_by: page.show_powered_by,
+		auto_incidents: page.auto_incidents,
+		theme: page.theme,
+		components: components.map((row) => ({
+			id: row.id,
+			name: row.name,
+			description: row.description,
+			group: row.group,
+			monitor_id: row.monitor_id,
+			manual_status: row.manual_status,
+			show_uptime: row.show_uptime,
+		})),
+	}
+	return { version: statusPageConfigVersion(content), ...content }
+}

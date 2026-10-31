@@ -2,6 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
+import { StatusPageComponentPublicId, type StatusPageConfig } from "@maple/domain/http/v2"
 import { StatusPageComponentId, StatusPageId, UptimeMonitorId } from "@maple/domain/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
@@ -538,5 +539,337 @@ describe("StatusPagesService", () => {
 			)
 			assert.strictEqual(yield* revision(testDb, page.id), before)
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	describe("config", () => {
+		const NO_CHANGES = { fields: [], created: [], updated: [], deleted: [], reordered: false }
+		const cleanupSlugs = (testDb: TestDb) =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ slug: string }>(
+					`SELECT slug FROM status_page_cleanups WHERE delete_snapshot = false`,
+				),
+			).pipe(Effect.map((result) => result.rows.map((row) => row.slug)))
+
+		const seeded = (testDb: TestDb) =>
+			Effect.gen(function* () {
+				const service = yield* StatusPagesService
+				yield* seedMonitor(testDb, ORG, MONITOR)
+				yield* seedMonitor(testDb, OTHER_ORG, OTHER_MONITOR)
+				const page = yield* createPage("config")
+				const api = yield* service.createComponent(ORG, page.id, { name: "API", monitorId: MONITOR })
+				const web = yield* service.createComponent(ORG, page.id, { name: "Web" })
+				const docs = yield* service.createComponent(ORG, page.id, { name: "Docs" })
+				return { service, page, api, web, docs, config: yield* service.getConfig(ORG, page.id) }
+			})
+
+		it.effect("reads the page and its components in order as one document", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { page, api, web, docs, config } = yield* seeded(testDb)
+				assert.match(config.version ?? "", /^[0-9a-z]+$/u)
+				assert.deepStrictEqual(config, {
+					version: config.version,
+					name: page.name,
+					slug: "config",
+					description: null,
+					website_url: null,
+					logo_url: null,
+					show_powered_by: true,
+					auto_incidents: "off",
+					theme: DEFAULT_STATUS_PAGE_THEME,
+					components: [api, web, docs].map((component) => ({
+						id: component.id,
+						name: component.name,
+						description: null,
+						group: null,
+						monitor_id: component.monitorId,
+						manual_status: null,
+						show_uptime: true,
+					})),
+				})
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect(
+			"creates, updates, deletes and reorders components, with defaults for omitted fields",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				return Effect.gen(function* () {
+					const { service, page, api, web, docs } = yield* seeded(testDb)
+					yield* service.update(ORG, page.id, { description: "Old", showPoweredBy: false })
+					const before = yield* revision(testDb, page.id)
+					const { config: applied, changes } = yield* service.applyConfig(
+						ORG,
+						page.id,
+						{
+							name: "Acme",
+							slug: "config",
+							theme: { preset: "paper" },
+							components: [
+								{ id: docs.id, name: "Docs site", group: "Web" },
+								{ name: "Status API", monitor_id: MONITOR, show_uptime: false },
+								{ id: api.id, name: "API", monitor_id: MONITOR },
+							],
+						},
+						USER,
+					)
+					assert.strictEqual(yield* revision(testDb, page.id), before + 1)
+					const pageNow = yield* service.get(ORG, page.id)
+					assert.strictEqual(pageNow.name, "Acme")
+					assert.isNull(pageNow.description)
+					assert.isTrue(pageNow.showPoweredBy)
+					assert.deepStrictEqual(pageNow.theme, { ...DEFAULT_STATUS_PAGE_THEME, preset: "paper" })
+
+					const listed = yield* service.listComponents(ORG, page.id)
+					assert.deepStrictEqual(
+						listed.map((row) => [
+							row.name,
+							row.position,
+							row.groupName,
+							row.monitorId,
+							row.showUptime,
+						]),
+						[
+							["Docs site", 0, "Web", null, true],
+							["Status API", 1, null, MONITOR, false],
+							["API", 2, null, MONITOR, true],
+						],
+					)
+					assert.strictEqual(listed[0]?.id, docs.id)
+					assert.strictEqual(listed[2]?.id, api.id)
+					assert.isFalse(listed.some((row) => row.id === web.id))
+					assert.deepStrictEqual(
+						applied.components.map((component) => component.id),
+						listed.map((row) => row.id),
+					)
+					assert.deepStrictEqual(applied, yield* service.getConfig(ORG, page.id))
+					assert.deepStrictEqual(changes, {
+						fields: ["name", "description", "show_powered_by", "theme"],
+						created: ["Status API"],
+						updated: ["Docs site"],
+						deleted: ["Web"],
+						reordered: true,
+					})
+				}).pipe(Effect.provide(makeLayer(testDb)))
+			},
+		)
+
+		it.effect("re-applying the current document changes nothing and leaves the revision alone", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const before = yield* revision(testDb, page.id)
+				const applied = yield* service.applyConfig(ORG, page.id, config, USER)
+				assert.deepStrictEqual(applied.config, config)
+				assert.deepStrictEqual(applied.changes, NO_CHANGES)
+				assert.strictEqual(yield* revision(testDb, page.id), before)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect(
+			"refuses ids of another page, duplicates, foreign monitors and bad themes, changing nothing",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				return Effect.gen(function* () {
+					const { service, page, config } = yield* seeded(testDb)
+					const other = yield* createPage("config-other")
+					const elsewhere = yield* service.createComponent(ORG, other.id, { name: "Elsewhere" })
+					const foreignOrgPage = yield* createPage("config-foreign", OTHER_ORG)
+					const foreignOrg = yield* service.createComponent(OTHER_ORG, foreignOrgPage.id, {
+						name: "X",
+					})
+					const before = yield* revision(testDb, page.id)
+					const first = config.components[0]
+					assert.isDefined(first)
+					const withRenamedPage = { ...config, name: "Renamed" }
+					const cases: ReadonlyArray<readonly [StatusPageConfig, string]> = [
+						[
+							{
+								...withRenamedPage,
+								components: [...config.components, { id: elsewhere.id, name: "E" }],
+							},
+							`Component ${Schema.encodeSync(StatusPageComponentPublicId)(elsewhere.id)} is not on this page`,
+						],
+						[
+							{ ...withRenamedPage, components: [{ id: foreignOrg.id, name: "X" }] },
+							`Component ${Schema.encodeSync(StatusPageComponentPublicId)(foreignOrg.id)} is not on this page`,
+						],
+						[
+							{
+								...withRenamedPage,
+								components: [...config.components, { ...first, name: "Twice" }],
+							},
+							"is listed more than once",
+						],
+						[
+							{
+								...withRenamedPage,
+								components: [{ name: "Foreign", monitor_id: OTHER_MONITOR }],
+							},
+							"Unknown uptime monitor upm_",
+						],
+						[{ ...withRenamedPage, theme: { appearance: "light", text: "#777777" } }, "4.48:1"],
+						[
+							{ ...withRenamedPage, components: [{ name: " " }] },
+							"components[0].name is required",
+						],
+					]
+					yield* Effect.forEach(cases, ([input, message]) =>
+						Effect.flip(service.applyConfig(ORG, page.id, input, USER)).pipe(
+							Effect.map((error) => {
+								assert.strictEqual(error._tag, "@maple/http/errors/StatusPageValidationError")
+								assert.include(error.message, message)
+							}),
+						),
+					)
+					assert.strictEqual(yield* revision(testDb, page.id), before)
+					assert.deepStrictEqual(yield* service.getConfig(ORG, page.id), config)
+					assert.strictEqual((yield* service.listComponents(ORG, other.id)).length, 1)
+				}).pipe(Effect.provide(makeLayer(testDb)))
+			},
+		)
+
+		it.effect("queues the old slug for cleanup on a rename and refuses a taken slug", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				yield* createPage("taken-elsewhere", OTHER_ORG)
+				const taken = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, { ...config, slug: "taken-elsewhere" }, USER),
+				)
+				assert.strictEqual(taken._tag, "@maple/http/errors/StatusPageSlugTakenError")
+				assert.deepStrictEqual(yield* cleanupSlugs(testDb), [])
+
+				const renamed = yield* service.applyConfig(
+					ORG,
+					page.id,
+					{ ...config, slug: "config-new" },
+					USER,
+				)
+				assert.strictEqual(renamed.config.slug, "config-new")
+				assert.deepStrictEqual(yield* cleanupSlugs(testDb), ["config"])
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("reports no change for values that differ only until stored", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				yield* service.update(ORG, page.id, {
+					theme: { ...DEFAULT_STATUS_PAGE_THEME, appearance: "light", accent: "#1a2b3c" },
+				})
+				const current = yield* service.getConfig(ORG, page.id)
+				const [first, ...rest] = current.components
+				assert.isDefined(first)
+				const padded: StatusPageConfig = {
+					...current,
+					name: ` ${current.name} `,
+					description: "   ",
+					theme: { ...current.theme, accent: "#1A2B3C" },
+					components: [{ ...first, name: ` ${first.name} `, group: " " }, ...rest],
+				}
+				const applied = yield* service.applyConfig(ORG, page.id, padded, USER)
+				assert.deepStrictEqual(applied.changes, NO_CHANGES)
+				assert.deepStrictEqual(applied.config.components, config.components)
+				assert.strictEqual(applied.config.theme?.accent, "#1a2b3c")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("with if_version, an edited config is a conflict and nothing is written", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config, web } = yield* seeded(testDb)
+				yield* service.createComponent(ORG, page.id, { name: "Added meanwhile" })
+				const moved = yield* service.getConfig(ORG, page.id)
+				assert.notStrictEqual(moved.version, config.version)
+				const conflict = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, config, USER, { ifVersion: config.version }),
+				)
+				assert.strictEqual(conflict._tag, "@maple/http/errors/StatusPageConflictError")
+				assert.include(conflict.message, "changed since it was read")
+				assert.deepStrictEqual(yield* service.getConfig(ORG, page.id), moved)
+
+				const applied = yield* service.applyConfig(ORG, page.id, { ...moved, name: "Fresh" }, USER, {
+					ifVersion: moved.version,
+				})
+				assert.strictEqual(applied.config.name, "Fresh")
+				assert.notStrictEqual(applied.config.version, moved.version)
+				assert.isTrue(applied.config.components.some((c) => c.id === web.id))
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("a status flip between read and apply is no conflict; a rename by someone else is", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config, web } = yield* seeded(testDb)
+				const before = yield* revision(testDb, page.id)
+				// What a monitor flip does to the page (`bumpPagesForMonitors`), and a reconcile's bump.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`UPDATE status_pages SET revision = revision + 1 WHERE id IN (
+							SELECT page_id FROM status_page_components WHERE monitor_id = $1)`,
+						[MONITOR],
+					),
+				)
+				yield* Effect.promise(() =>
+					executeSql(testDb, `UPDATE status_pages SET revision = revision + 1 WHERE id = $1`, [
+						page.id,
+					]),
+				)
+				assert.strictEqual(yield* revision(testDb, page.id), before + 2)
+				const applied = yield* service.applyConfig(
+					ORG,
+					page.id,
+					{ ...config, description: "Edited during an outage." },
+					USER,
+					{ ifVersion: config.version },
+				)
+				assert.deepStrictEqual(applied.changes.fields, ["description"])
+
+				const read = yield* service.getConfig(ORG, page.id)
+				yield* service.updateComponent(ORG, web.id, { name: "Web app" })
+				const conflict = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, { ...read, name: "Mine" }, USER, {
+						ifVersion: read.version,
+					}),
+				)
+				assert.strictEqual(conflict._tag, "@maple/http/errors/StatusPageConflictError")
+				assert.strictEqual((yield* service.get(ORG, page.id)).name, read.name)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("caps a page at 200 components, for an apply and for a single create", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page } = yield* seeded(testDb)
+				const document = (count: number): StatusPageConfig => ({
+					name: "Big",
+					slug: "config",
+					components: Array.from({ length: count }, (_, index) => ({ name: `C${index}` })),
+				})
+				const tooMany = yield* Effect.flip(service.applyConfig(ORG, page.id, document(201), USER))
+				assert.strictEqual(tooMany._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.include(tooMany.message, "at most 200 components")
+				assert.lengthOf(yield* service.listComponents(ORG, page.id), 3)
+
+				yield* service.applyConfig(ORG, page.id, document(200), USER)
+				const extra = yield* Effect.flip(service.createComponent(ORG, page.id, { name: "201st" }))
+				assert.strictEqual(extra._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.include(extra.message, "at most 200 components")
+				assert.lengthOf(yield* service.listComponents(ORG, page.id), 200)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("a missing or cross-org page is not found", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const read = yield* Effect.flip(service.getConfig(OTHER_ORG, page.id))
+				assert.strictEqual(read._tag, "@maple/http/errors/StatusPageNotFoundError")
+				const write = yield* Effect.flip(service.applyConfig(OTHER_ORG, page.id, config, USER))
+				assert.strictEqual(write._tag, "@maple/http/errors/StatusPageNotFoundError")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
 	})
 })

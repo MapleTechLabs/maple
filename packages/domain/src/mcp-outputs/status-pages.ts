@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { StatusPageConfig } from "../http/v2/status-pages"
 import {
 	StatusPageAutoIncidents,
 	StatusPageComponentStatus,
@@ -89,4 +90,29 @@ export const GetStatusPageOutput = Schema.Struct({
 export const StatusPageIncidentMutationOutput = Schema.Struct({
 	action: Schema.Literals(["created", "updated", "resolved", "scheduled"]),
 	incident: StatusPageIncidentRow,
+})
+
+// ---------------------------------------------------------------------------------------------
+// get_status_page_config / apply_status_page_config
+
+export const GetStatusPageConfigOutput = Schema.Struct({
+	page: StatusPageRow,
+	/** The document `PUT /v2/status_pages/{id}/config` and apply_status_page_config take. */
+	config: StatusPageConfig,
+})
+
+const StatusPageConfigChangesRow = Schema.Struct({
+	/** Page fields whose value changed. */
+	fields: Schema.Array(Schema.String),
+	/** Component names, as listed in the applied config. */
+	created: Schema.Array(Schema.String),
+	updated: Schema.Array(Schema.String),
+	deleted: Schema.Array(Schema.String),
+	reordered: Schema.Boolean,
+})
+
+export const ApplyStatusPageConfigOutput = Schema.Struct({
+	page: StatusPageRow,
+	config: StatusPageConfig,
+	changes: StatusPageConfigChangesRow,
 })

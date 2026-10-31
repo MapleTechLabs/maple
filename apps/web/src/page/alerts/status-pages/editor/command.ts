@@ -1,5 +1,6 @@
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
+	StatusPageConfig,
 	V2StatusPageComponentCreateParams,
 	V2StatusPageIncidentCreateParams,
 	V2StatusPageIncidentPostUpdateParams,
@@ -9,6 +10,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readIsAdmin } from "../../shared/commands"
 import {
+	applyPageConfig,
 	createIncident,
 	deleteComponent,
 	deletePage,
@@ -18,6 +20,7 @@ import {
 	publishPage,
 	reorderComponents,
 	retrievePage,
+	retrievePageConfig,
 	revokeBreakGlass,
 	rotateBreakGlass,
 	saveComponent,
@@ -180,6 +183,26 @@ export const RevokeToken = Command.define("RevokeStatusPageBreakGlassToken", {
 		revokeBreakGlass(pageId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedRevokeToken({ result })),
+		),
+})
+
+export const FetchConfig = Command.define("FetchStatusPageConfig", {
+	args: { key: Schema.String, pageId: StatusPageId },
+	messages: [Message.CompletedFetchConfig],
+	execute: ({ key, pageId }) =>
+		retrievePageConfig(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchConfig({ key, result })),
+		),
+})
+
+export const ApplyConfig = Command.define("ApplyStatusPageConfig", {
+	args: { pageId: StatusPageId, config: StatusPageConfig, ifVersion: Schema.UndefinedOr(Schema.String) },
+	messages: [Message.CompletedApplyJson],
+	execute: ({ pageId, config, ifVersion }) =>
+		applyPageConfig(pageId, config, ifVersion).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedApplyJson({ result })),
 		),
 })
 

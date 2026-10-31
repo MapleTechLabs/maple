@@ -48,6 +48,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"post_status_page_update",
 	"resolve_status_page_incident",
 	"schedule_status_page_maintenance",
+	"apply_status_page_config",
 	// feedback
 	"send_maple_feedback",
 ])

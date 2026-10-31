@@ -35,6 +35,7 @@ import { componentsOf, incidentsOf, monitorsOf, pageOf } from "./reads"
 import { resolveTab } from "./update"
 import { componentDialog, componentsTab, deleteComponentDialog } from "./view-components"
 import { incidentDialog, incidentsTab, updateDialog } from "./view-incidents"
+import { jsonTab } from "./view-json"
 import { breakGlassDialog, deletePageDialog, settingsTab } from "./view-settings"
 
 // `/alerts/status-pages/$pageId`: the header, the tabs, and the dialogs every tab opens.
@@ -45,6 +46,7 @@ const TABS: ReadonlyArray<{ value: EditorTab; label: string }> = [
 	{ value: "components", label: "Components" },
 	{ value: "incidents", label: "Incidents" },
 	{ value: "settings", label: "Settings" },
+	{ value: "json", label: "JSON" },
 ]
 
 const tabBar = (h: H, page: V2StatusPage, active: EditorTab, openIncidents: number): Html =>
@@ -129,6 +131,12 @@ const tabRead = (model: Model, tab: EditorTab): { failure: Option.Option<LoadFai
 	switch (tab) {
 		case "settings":
 			return { failure: Option.none(), isReady: true }
+		// The document is its own read: the components list stops at a page of them.
+		case "json":
+			return {
+				failure: AsyncData.getError(model.config.data),
+				isReady: AsyncData.hasData(model.config.data),
+			}
 		// Incidents name components and the composer picks them, so a failed components read shows too.
 		case "incidents":
 			return {
@@ -158,7 +166,12 @@ const tabBody = (h: H, model: Model, page: V2StatusPage, tab: EditorTab, timeZon
 	if (Option.isSome(read.failure))
 		return errorState(h, {
 			failure: read.failure.value,
-			title: tab === "incidents" ? "Couldn't load incidents" : "Couldn't load components",
+			title:
+				tab === "incidents"
+					? "Couldn't load incidents"
+					: tab === "json"
+						? "Couldn't load the config"
+						: "Couldn't load components",
 			onRetry: Message.ClickedRetry(),
 			className: "py-12",
 		})
@@ -170,6 +183,8 @@ const tabBody = (h: H, model: Model, page: V2StatusPage, tab: EditorTab, timeZon
 			return incidentsTab(h, model, { nowMs: model.nowMs ?? 0, timeZone })
 		case "settings":
 			return settingsTab(h, model, page)
+		case "json":
+			return jsonTab(h, model)
 	}
 }
 

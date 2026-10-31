@@ -1,5 +1,6 @@
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
+	StatusPageConfig,
 	V2StatusPage,
 	V2StatusPageComponent,
 	V2StatusPageIncident,
@@ -72,5 +73,17 @@ export const Model = Schema.Struct({
 	tokenCopy: CopyButton.Model,
 	deletePageDialog: Dialog.Model,
 	isDeletingPage: Schema.Boolean,
+	// JSON
+	/** The page as `GET …/config` returns it: every component, and the revision to apply against. */
+	config: KeyedSchema(StatusPageConfig, LoadFailure),
+	/** The edited document; `null` while the tab shows the page as saved. */
+	jsonDraft: Schema.NullOr(Schema.String),
+	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
+	jsonBase: Schema.NullOr(StatusPageConfig),
+	/** After a conflict: the next config read becomes the draft's base, keeping the typed draft. */
+	isRebasingJson: Schema.Boolean,
+	isApplyingJson: Schema.Boolean,
+	jsonFailure: Schema.NullOr(LoadFailure),
+	jsonCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type

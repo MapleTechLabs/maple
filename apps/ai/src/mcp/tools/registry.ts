@@ -1,7 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, type SchemaAST } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
@@ -122,6 +122,8 @@ export interface MapleToolCatalogEntry {
 	readonly title: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
+	/** How arguments decode; `rejectUnknownKeys` tools refuse nested keys the schema lacks. */
+	readonly parseOptions: SchemaAST.ParseOptions
 	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
 	readonly hints: McpToolHints
 	readonly aliases: Readonly<Record<string, string>>
@@ -343,6 +345,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
+			parseOptions: { onExcessProperty: spec.rejectUnknownKeys === true ? "error" : "ignore" },
 			outputSchema: spec.output,
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
@@ -511,7 +514,9 @@ export const readToolCall = (
 	return {
 		args: isArgumentRecord(normalized.args) ? normalized.args : {},
 		unknown: normalized.unknown.map((entry) => entry.key),
-		decodes: Schema.decodeUnknownOption(definition.schema)(normalized.args)._tag === "Some",
+		decodes:
+			Schema.decodeUnknownOption(definition.schema)(normalized.args, definition.parseOptions)._tag ===
+			"Some",
 	}
 }
 
@@ -550,7 +555,7 @@ const isValidNextCall = (call: NextCall, surface: McpToolSurface): boolean => {
 	const normalized = normalizeFor(target, call.args)
 	return (
 		normalized.unknown.length === 0 &&
-		Schema.decodeUnknownOption(target.schema)(normalized.args)._tag === "Some"
+		Schema.decodeUnknownOption(target.schema)(normalized.args, target.parseOptions)._tag === "Some"
 	)
 }
 
@@ -619,7 +624,10 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 			? undefined
 			: { "maple.mcp.tool.aliased_arguments": normalized.renamed.map(([from]) => from).join(",") }),
 	})
-	const decoded = yield* Schema.decodeUnknownEffect(definition.schema)(normalized.args).pipe(
+	const decoded = yield* Schema.decodeUnknownEffect(definition.schema)(
+		normalized.args,
+		definition.parseOptions,
+	).pipe(
 		Effect.mapError(
 			(error) =>
 				new McpDecodeError({

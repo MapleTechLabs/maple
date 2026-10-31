@@ -1,5 +1,6 @@
 import { type StatusPageComponentId, StatusPageId, type StatusPageIncidentId } from "@maple/domain"
 import {
+	type StatusPageConfig,
 	StatusPagePublicId,
 	type V2StatusPageComponentCreateParams,
 	type V2StatusPageCreateParams,
@@ -149,6 +150,28 @@ export const reorderComponents = (id: StatusPageId, componentIds: ReadonlyArray<
 		return response.data
 	}).pipe(Effect.mapError(toLoadFailure))
 
+/** The page as one document, with the revision it was read at. */
+export const retrievePageConfig = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.getConfig({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+/**
+ * Replaces the page with `config` in one write and returns the applied document. A page past
+ * `ifVersion` refuses it if the config changed since, so a stale document never deletes what
+ * someone else added.
+ */
+export const applyPageConfig = (id: StatusPageId, config: StatusPageConfig, ifVersion: string | undefined) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.applyConfig({
+			params: { id },
+			query: { if_version: ifVersion },
+			payload: config,
+		})
+	}).pipe(Effect.mapError(toLoadFailure))
+
 export const createIncident = (payload: V2StatusPageIncidentCreateParams) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -177,7 +200,7 @@ const decodeInternalId = Schema.decodeUnknownOption(StatusPageId)
 export const pageIdFromUrl = (raw: string): Option.Option<StatusPageId> =>
 	Option.orElse(decodePublicId(raw), () => decodeInternalId(raw))
 
-export type EditorTab = "components" | "incidents" | "settings"
+export type EditorTab = "components" | "incidents" | "settings" | "json"
 
 export const statusPageHref = (id: StatusPageId, tab?: EditorTab): string =>
 	hrefOf(
