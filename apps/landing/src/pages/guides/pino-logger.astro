@@ -398,13 +398,26 @@ const articleJsonLd = {
             </aside>
 
             <article class="pino-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        Most Node.js apps start logging with <code>console.log</code>. It has no levels you can turn down in production, and it writes plain text that a log tool can only match as strings. <strong>Pino</strong> is a logger for Node.js that writes each log entry as one line of JSON, built to add as little work as possible to the code that serves your requests. Levels and JSON fields let you switch debug output off in production and find one failed checkout by its order ID instead of grepping text. By the end, every line your service writes is JSON with secrets redacted, and carries the trace ID of the request that wrote it.
+                    </p>
+
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Pass data as an object first: <code>logger.info(&#123; orderId &#125;, "order created")</code> gives you a field to search.</li>
+                            <li>A child logger adds a request ID or tenant to every line it writes.</li>
+                            <li>List secret paths in <code>redact</code>; a token under an unlisted key still goes out in clear text.</li>
+                            <li>Use <code>pino-pretty</code> in development only and keep production output as JSON.</li>
+                            <li>With the OpenTelemetry Pino instrumentation, each line carries the trace ID of the request that wrote it.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="what-is-pino" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>Pino, the JSON logger for Node.js</h2>
-
-                    <div class="guide-answer">
-                        <p><strong>Pino</strong> is a logger for Node.js that writes each log entry as one line of JSON. It is built to add as little work as possible to the code that serves your requests.</p>
-                    </div>
 
                     <p>
                         JSON lines suit services that run in containers or on platforms that collect stdout: whatever reads the output can filter on fields instead of matching text. Pino is MIT-licensed, Fastify uses it as its built-in logger, and <code>pino-http</code> adds request logging to Express and plain <code>http</code> servers.
@@ -708,7 +721,10 @@ const articleJsonLd = {
                         </table>
                     </div>
                     <p>
-                        Choose Pino when logs are JSON headed for a collector and per-call cost matters; Pino publishes its own benchmarks against other loggers. Choose Winston when the process itself must write several formats to several destinations, or an existing codebase depends on its format pipeline. Moving between them is mostly mechanical: both take a metadata object and a message, and Pino puts the object first.
+                        In <a href="https://github.com/pinojs/pino/blob/main/docs/benchmarks.md" target="_blank" rel="noopener noreferrer">Pino's own benchmark</a>, a run of <code>logger.info('hello world')</code> calls averaged 114.8 ms with Pino and 270.2 ms with Winston.
+                    </p>
+                    <p>
+                        Choose Pino when logs are JSON headed for a collector and per-call cost matters. Choose Winston when the process itself must write several formats to several destinations, or an existing codebase depends on its format pipeline. Moving between them is mostly mechanical: both take a metadata object and a message, and Pino puts the object first.
                     </p>
                 </section>
 
@@ -745,16 +761,17 @@ const articleJsonLd = {
     .pino-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .pino-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .pino-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .pino-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .pino-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .pino-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .pino-guide strong { font-weight: 600; color: var(--foreground); }
     .pino-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .pino-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .pino-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .pino-guide a:not(.guide-button):hover { color: var(--foreground); }
     .pino-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .pino-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .pino-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .pino-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pino-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pino-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .pino-guide .guide-takeaways li::marker { color: var(--primary); }
     .pino-guide .guide-list { display: grid; gap: 0.6rem; margin: 1.25rem 0 1.5rem; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.65; color: color-mix(in oklab, var(--foreground) 80%, var(--background)); }
     .pino-guide .guide-list li::marker { color: var(--primary); }
 
