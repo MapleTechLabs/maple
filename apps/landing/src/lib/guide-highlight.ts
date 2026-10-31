@@ -1,7 +1,7 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp" | "markdown";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -92,6 +92,16 @@ const braces = (keywords: string) => {
         ]);
 };
 
+// Markdown documents such as templates: headings as names, <placeholders> to fill
+// in as labels, table pipes and rules as comments.
+const markdown = (code: string) =>
+    tokenize(code, [
+        [/(?<=^|\n)#{1,6} [^\n]*/y, (m) => span("name", m[0])],
+        [/<[^>\n]+>/y, (m) => span("labels", m[0])],
+        [/(?<=^|\n)- /y, (m) => span("comment", m[0])],
+        [/\||-{3,}/y, (m) => span("comment", m[0])],
+    ]);
+
 const typescript = braces("import|from|const|let|new|async|await|return|if");
 const go = braces("package|import|var|func|defer|return|if");
 const rust = braces("use|fn|let|mut|for|in");
@@ -99,4 +109,4 @@ const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp, markdown })[lang](code);
