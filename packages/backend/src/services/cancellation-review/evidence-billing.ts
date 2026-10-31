@@ -105,10 +105,12 @@ const reviewedOf = (sub: StripeSubscription, atMs: number): CancellationReviewed
 	const interval = sub.items.data.find((item) => item.price.recurring != null)?.price.recurring?.interval
 	// Usage-billed prices carry a per-unit amount, not what the interval costs.
 	const fixed = sub.items.data.filter((item) => item.price.recurring?.usageType !== "metered")
-	// A tiered price has no flat amount: the interval's cost is unknown, not 0.
-	const fixedCents = fixed.every((item) => item.price.unitAmount != null)
-		? fixed.reduce((sum, item) => sum + (item.price.unitAmount ?? 0) * (item.quantity ?? 1), 0)
-		: null
+	// A tiered price has no flat amount, and an all-metered plan has no fixed part:
+	// either way the interval's cost is unknown, not 0.
+	const fixedCents =
+		fixed.length > 0 && fixed.every((item) => item.price.unitAmount != null)
+			? fixed.reduce((sum, item) => sum + (item.price.unitAmount ?? 0) * (item.quantity ?? 1), 0)
+			: null
 	const discount = sub.discounts?.[0]
 	return {
 		stripeCancellationReason: isStripeReason(reason) ? reason : null,

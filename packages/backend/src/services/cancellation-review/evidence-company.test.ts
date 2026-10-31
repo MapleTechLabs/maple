@@ -194,12 +194,20 @@ describe("isFetchableHost", () => {
 		expect(isFetchableHost(host)).toBe(true)
 	})
 
-	it.each(["localhost", "intranet", "10.0.0.1", "[::1]", "app.localhost", "acme.internal", "example.com"])(
-		"refuses %s",
-		(host) => {
-			expect(isFetchableHost(host)).toBe(false)
-		},
-	)
+	it.each([
+		"localhost",
+		"intranet",
+		"10.0.0.1",
+		"[::1]",
+		"app.localhost",
+		"acme.internal",
+		"example.com",
+		// Wildcard DNS: the name spells the address it resolves to, a private one here.
+		"10.0.0.1.nip.io",
+		"acme.127.0.0.1.sslip.io",
+	])("refuses %s", (host) => {
+		expect(isFetchableHost(host)).toBe(false)
+	})
 })
 
 describe("homepageOf", () => {

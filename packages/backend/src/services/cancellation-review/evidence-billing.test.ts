@@ -216,6 +216,25 @@ describe("subscriptionsEvidenceOf", () => {
 		expect(result.reviewed?.interval).toBe("month")
 	})
 
+	it("has no price for a plan billed entirely by usage rather than a price of 0", () => {
+		const result = subscriptions([
+			stripeSubscription({
+				canceled_at: CANCELLED_S,
+				items: {
+					data: [
+						{
+							price: {
+								unit_amount: 2,
+								recurring: { interval: "month", usage_type: "metered" },
+							},
+						},
+					],
+				},
+			}),
+		])
+		expect(result.reviewed?.pricePerIntervalDollars).toBeNull()
+	})
+
 	it("drops a reason Stripe may add later rather than passing it on unnamed", () => {
 		const result = subscriptions([
 			stripeSubscription({

@@ -143,5 +143,21 @@ export const RESERVED_SUFFIXES: ReadonlyArray<string> = [
 	".internal",
 ]
 
+/**
+ * Wildcard DNS services: any name under them resolves to an address spelled in
+ * the name, private ones included. Workers refuse to connect to a private
+ * address anyway (Cloudflare error 1000); these are refused before asking.
+ */
+export const WILDCARD_DNS_DOMAINS: ReadonlySet<string> = new Set([
+	"nip.io",
+	"sslip.io",
+	"xip.io",
+	"localtest.me",
+	"lvh.me",
+	"traefik.me",
+	"local.gd",
+	"vcap.me",
+])
+
 /** Maple's own staff, invited into a customer's org to help: never the customer. */
 export const MAPLE_DOMAINS: ReadonlySet<string> = new Set(["maple.dev"])

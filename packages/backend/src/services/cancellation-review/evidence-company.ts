@@ -20,6 +20,7 @@ import {
 	FREE_MAIL_PROVIDERS,
 	MAPLE_DOMAINS,
 	RESERVED_SUFFIXES,
+	WILDCARD_DNS_DOMAINS,
 } from "./free-mail-domains"
 
 type Billing = NonNullable<Section["billing"]>
@@ -76,6 +77,7 @@ const inDomains = (domains: ReadonlySet<string>, domain: string): boolean => {
 const isReserved = (domain: string): boolean =>
 	inDomains(DISPOSABLE_DOMAINS, domain) ||
 	inDomains(MAPLE_DOMAINS, domain) ||
+	inDomains(WILDCARD_DNS_DOMAINS, domain) ||
 	RESERVED_SUFFIXES.some((suffix) => domain.endsWith(suffix)) ||
 	domain.split(".").includes("clerk")
 
