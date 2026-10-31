@@ -124,6 +124,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Loguru for Python](${url("/guides/loguru")})`,
 		`- [Python logging levels and how to set them](${url("/guides/python-logging-levels")})`,
 		`- [Incident response, step by step](${url("/guides/incident-response")})`,
+		`- [Windows server monitoring tools and what to watch](${url("/guides/windows-server-monitoring")})`,
 		"",
 
 		"## Maple API",

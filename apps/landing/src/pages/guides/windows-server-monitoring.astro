@@ -1,0 +1,655 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
+import collectorConfig from "./_windows-server-monitoring/config.yaml?raw";
+import installScript from "./_windows-server-monitoring/install.ps1?raw";
+import startScript from "./_windows-server-monitoring/start.ps1?raw";
+
+const pageTitle = "Windows server monitoring tools and what to watch | Maple";
+const pageDescription =
+    "Compare Windows server monitoring tools, from Performance Monitor to Zabbix and OpenTelemetry, and set up alerts for stopped services, full disks and errors.";
+const published = "2026-10-19";
+const updatedLabel = "October 31, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const toc = [
+    { depth: 2, slug: "overview", text: "Monitoring a Windows server" },
+    { depth: 2, slug: "signals", text: "Signals to watch" },
+    { depth: 2, slug: "tools", text: "Tools compared" },
+    { depth: 3, slug: "picking", text: "Picking one" },
+    { depth: 2, slug: "setup", text: "Set it up" },
+    { depth: 3, slug: "install", text: "Install the Collector" },
+    { depth: 3, slug: "config", text: "Write the config" },
+    { depth: 3, slug: "start", text: "Add the key and start" },
+    { depth: 2, slug: "alerts", text: "Alerts to set up first" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
+
+// One color per signal. The same color marks the signal's card, the receiver
+// that collects it in the config, and the alert that watches it.
+const signals = [
+    {
+        id: "services",
+        name: "Services",
+        color: "oklch(0.8 0.14 95)",
+        why: "A stopped IIS or SQL Server service is an outage, even while CPU and memory look fine.",
+        alert: "A service you depend on is not running for 5 minutes",
+    },
+    {
+        id: "disk",
+        name: "Disk space",
+        color: "var(--chart-3)",
+        why: "A full C: drive stops databases from writing and breaks Windows Update. It also fills slowly enough to fix ahead of time.",
+        alert: "Any drive above 85% full, critical at 95%",
+    },
+    {
+        id: "cpu",
+        name: "CPU",
+        color: "var(--chart-2)",
+        why: "Short spikes are normal. CPU pinned for a quarter of an hour means a runaway process or a server that is too small.",
+        alert: "Above 90% for 15 minutes",
+    },
+    {
+        id: "memory",
+        name: "Memory",
+        color: "var(--chart-5)",
+        why: "When memory runs out, Windows moves pages to disk and every request slows down.",
+        alert: "Above 90% for 15 minutes",
+    },
+    {
+        id: "events",
+        name: "Event Log errors",
+        color: "var(--chart-error)",
+        why: "Crashed applications and failing services write Error events to the System and Application logs, often before anyone notices.",
+        alert: "More than 10 Error events in 15 minutes, tuned to your normal",
+    },
+    {
+        id: "logins",
+        name: "Failed logins",
+        color: "oklch(0.72 0.15 350)",
+        why: "A burst of failed logins, Security event 4625, usually means someone is guessing passwords over RDP.",
+        alert: "More than 20 failed logins in 5 minutes",
+    },
+] as const;
+type SignalId = (typeof signals)[number]["id"];
+const color = Object.fromEntries(signals.map((s) => [s.id, s.color])) as Record<SignalId, string>;
+
+// Config keys take the color of the signal they collect.
+const yamlKeys: [string, SignalId][] = [
+    ["cpu", "cpu"],
+    ["memory", "memory"],
+    ["filesystem", "disk"],
+    ["windows_service", "services"],
+    ["windows_event_log/errors", "events"],
+    ["windows_event_log/security", "logins"],
+];
+const configHtml = highlight(collectorConfig.trimEnd(), "yaml").replace(/<span class="tok-name">([\w/]+)<\/span>:/g, (match, key: string) => {
+    const id = yamlKeys.find(([name]) => name === key)?.[1];
+    return id ? `<span class="tok-name" style="--type: ${color[id]}">${key}</span>:` : match;
+});
+
+const tools: { group: string; rows: { name: string; href: string; goodFor: string; alerts: string; cost: string }[] }[] = [
+    {
+        group: "Built into Windows",
+        rows: [
+            {
+                name: "Performance Monitor",
+                href: "https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/create-performance-counter-alert-send-email",
+                goodFor: "Live charts of any counter on one server, and logging counters to a file",
+                alerts: "A counter alert can write an event or start a task. Email needs a script.",
+                cost: "Included",
+            },
+            {
+                name: "Event Viewer",
+                href: "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2008-r2-and-2008/cc766042(v=ws.10)",
+                goodFor: "Finding out why a service crashed or a login failed",
+                alerts: "Can run a task when a chosen event appears",
+                cost: "Included",
+            },
+            {
+                name: "Windows Admin Center",
+                href: "https://learn.microsoft.com/en-us/windows-server/manage/windows-admin-center/overview",
+                goodFor: "Managing a handful of servers from a browser",
+                alerts: "None. Microsoft describes it as a complement to monitoring tools.",
+                cost: "Free download",
+            },
+        ],
+    },
+    {
+        group: "Open source",
+        rows: [
+            {
+                name: "Zabbix",
+                href: "https://www.zabbix.com/license",
+                goodFor: "One self-hosted tool for servers and network gear, with a Windows agent",
+                alerts: "Built in, with history",
+                cost: "Free (AGPLv3). You run the server.",
+            },
+            {
+                name: "Prometheus + windows_exporter",
+                href: "https://github.com/prometheus-community/windows_exporter",
+                goodFor: "Teams that already run Prometheus",
+                alerts: "Through Alertmanager. Metrics only, no Event Log.",
+                cost: "Free (MIT). You run Prometheus.",
+            },
+            {
+                name: "OpenTelemetry Collector",
+                href: "https://github.com/open-telemetry/opentelemetry-collector-releases",
+                goodFor: "Sending Windows metrics and events to the backend your apps already use",
+                alerts: "In the backend it sends to",
+                cost: "Free (Apache 2.0). The backend is priced separately.",
+            },
+        ],
+    },
+    {
+        group: "Commercial",
+        rows: [
+            {
+                name: "PRTG",
+                href: "https://www.paessler.com/prtg/pricing",
+                goodFor: "A Windows-hosted console with ready-made sensors",
+                alerts: "Built in",
+                cost: "Freeware up to 100 sensors. PRTG 500: $200/month, billed annually.",
+            },
+            {
+                name: "Datadog",
+                href: "https://www.datadoghq.com/pricing/",
+                goodFor: "Hosted metrics, logs and APM with a Windows agent",
+                alerts: "Built in",
+                cost: "Free for 5 hosts with 1-day retention. Pro from $15/host/month, billed annually.",
+            },
+        ],
+    },
+];
+
+const picks = [
+    ["One server you log in to every day", "Performance Monitor and Event Viewer. An alert that reaches you still needs one of the other tools."],
+    ["Your apps already send OpenTelemetry data", "The OpenTelemetry Collector on each server, sending to the same backend, so one set of alert rules covers apps and servers"],
+    ["A Prometheus server you already run", "windows_exporter for metrics, plus something else for the Event Log"],
+    ["One self-hosted tool for servers and network gear", "Zabbix"],
+    ["No monitoring servers of your own to run", "A hosted product. Compare what a hundred more hosts or sensors would cost."],
+];
+
+const flow = [
+    { name: "Windows Server", detail: "counters, services, Event Log", kind: "source" },
+    { name: "otelcol-contrib", detail: "the Collector, as a Windows service", kind: "stage" },
+    { name: "OTLP over HTTPS", detail: "the OpenTelemetry protocol", kind: "stage" },
+    { name: "Your backend", detail: "Maple in this example", kind: "backend" },
+];
+
+const receivers: { key: string; signals: SignalId[]; body: string }[] = [
+    { key: "host_metrics", signals: ["cpu", "memory", "disk"], body: "CPU, memory, disk space and network every 30 seconds. The <code>*.utilization</code> metrics are off by default; they report each one as a share from 0 to 1, which is what the alerts compare." },
+    { key: "windows_service", signals: ["services"], body: "The state of each service in <code>include_services</code>, once a minute, as <code>windows.service.status</code>. 4 means running." },
+    { key: "windows_event_log/errors", signals: ["events"], body: "Critical, Error and Warning events from the System and Application logs. Information events stay on the server." },
+    { key: "windows_event_log/security", signals: ["logins"], body: "Only failed logins (4625) and account lockouts (4740). The full Security log is large on a busy server." },
+];
+
+const faqs = [
+    {
+        question: "What are the best Windows server monitoring tools?",
+        answer:
+            "It depends on how many servers you run and what else you monitor. For one server you log in to, Performance Monitor and Event Viewer ship with Windows. For a few servers, pick a central tool that keeps history and sends alerts: Zabbix if you want to host it yourself, PRTG or Datadog as commercial options, or the OpenTelemetry Collector if your applications already send OpenTelemetry data to a backend.",
+    },
+    {
+        question: "Are there free Windows server monitoring tools?",
+        answer:
+            "Yes. Performance Monitor and Event Viewer are part of Windows, and Windows Admin Center is a free download. Zabbix, Prometheus with windows_exporter and the OpenTelemetry Collector are open source. PRTG has a freeware edition for up to 100 sensors, and Datadog's free tier covers 5 hosts with 1-day metric retention.",
+    },
+    {
+        question: "What should I monitor on a Windows server?",
+        answer:
+            "Start with the services your applications depend on, free disk space on every drive, CPU and memory over 15-minute windows, Error events in the System and Application logs, and failed logins (Security event 4625). Those signals catch most outages before users report them.",
+    },
+    {
+        question: "How do I monitor Windows services?",
+        answer:
+            "On one server, Get-Service shows each service's state. To get an alert, collect the state on a schedule: the OpenTelemetry Collector's windows_service receiver reports windows.service.status once a minute, where 4 means running. Alert when the minimum value for a service drops below 4.",
+    },
+    {
+        question: "Can I monitor a Windows server without installing an agent?",
+        answer:
+            "Partly. Performance Monitor and PowerShell's Get-Counter -ComputerName read counters from another server over the network, which works for a quick look. For history, Event Log collection and alerts that keep working when the network between servers is flaky, an agent on each server is simpler.",
+    },
+    {
+        question: "Does the OpenTelemetry Collector run on Windows Server?",
+        answer:
+            "Yes. The opentelemetry-collector-releases project publishes an MSI for the otelcol-contrib distribution. It registers an automatic-start Windows service named otelcol-contrib that runs as LocalSystem and reads config.yaml from C:\\Program Files\\OpenTelemetry Collector.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Windows server monitoring tools and what to watch",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: "2026-10-31",
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/windows-server-monitoring`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Windows server monitoring" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Infrastructure</span>
+                    <span>9 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Windows server monitoring
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    What to watch, which tool fits, and the alerts that catch a full disk or a stopped service before your users do.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime="2026-10-31">Updated {updatedLabel}</time>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={toc} class="sticky top-28" />
+            </aside>
+
+            <article class="win-guide min-w-0">
+                <section id="overview" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Overview</p>
+                    <h2>Monitoring a Windows server</h2>
+
+                    <div class="guide-answer">
+                        <p><strong>Windows server monitoring</strong> means collecting a server's health data around the clock and getting an alert when something breaks: a service that stopped, a disk filling up, CPU or memory running out, or errors and failed logins piling up in the Event Log.</p>
+                    </div>
+
+                    <p>
+                        Most of these failures give you warning. A drive that is 97% full today was 94% full last week, and a service that crashed at 3 a.m. wrote an event when it did. Without monitoring, the first sign is a user who can't reach the app. With it, those early signs become an alert while there is still time to act.
+                    </p>
+                    <p>
+                        The goal of this guide: know what to watch, pick a tool that fits how many servers you run, and have alerts on the things that break.
+                    </p>
+
+                    <div class="guide-callout guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Watch services, disk space, CPU, memory, Event Log errors and failed logins first.</li>
+                            <li>Alert when a drive passes 85% full, and again at 95%.</li>
+                            <li>Performance Monitor and Event Viewer cover one server, but keep no history across servers and send no alerts.</li>
+                            <li>The OpenTelemetry Collector, installed as a Windows service, collects counters, service status and the Event Log in one place.</li>
+                            <li>A switched-off server sends nothing, so page on it with an HTTP check from another machine.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="signals" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Signals</p>
+                    <h2>Signals to watch on a Windows server</h2>
+                    <p>
+                        Windows keeps hundreds of performance counters, but a short list catches most real problems on a web, database or file server. The alert values are starting points: raise one if it fires on a normal day.
+                    </p>
+
+                    <div class="signal-grid">
+                        {signals.map((s) => (
+                            <div class="signal-card" style={`--type: ${s.color}`}>
+                                <span class="type-badge">{s.name}</span>
+                                <p>{s.why}</p>
+                                <p class="signal-card__alert"><span>Alert when</span>{s.alert}</p>
+                            </div>
+                        ))}
+                    </div>
+                    <p class="guide-caption">Each color marks the same signal in the config and the alerts further down.</p>
+                </section>
+
+                <section id="tools" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Tools</p>
+                    <h2>Windows server monitoring tools compared</h2>
+                    <p>
+                        Windows ships with tools that show every signal above for the server you are logged in to. They don't keep history across servers or send an alert to your phone. Built-in tools are fine for one server; once you have a few, you need something central that keeps history and alerts.
+                    </p>
+
+                    <div class="guide-table guide-table--tools">
+                        <table>
+                            <thead>
+                                <tr><th>Tool</th><th>Good for</th><th>Alerts</th><th>Cost</th></tr>
+                            </thead>
+                            {tools.map((g) => (
+                                <tbody>
+                                    <tr class="guide-table__group"><td colspan="4">{g.group}</td></tr>
+                                    {g.rows.map((t) => (
+                                        <tr>
+                                            <td class="guide-table__key"><a href={t.href} target="_blank" rel="noopener noreferrer">{t.name}</a></td>
+                                            <td data-label="Good for">{t.goodFor}</td>
+                                            <td data-label="Alerts">{t.alerts}</td>
+                                            <td data-label="Cost">{t.cost}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            ))}
+                        </table>
+                    </div>
+                    <p class="guide-caption">Prices and licenses from each vendor's own pages, verified October 31, 2026.</p>
+
+                    <h3 id="picking" class="scroll-mt-24">Picking one</h3>
+                    <div class="guide-table guide-table--pick">
+                        <table>
+                            <thead>
+                                <tr><th>Your setup</th><th>Start with</th></tr>
+                            </thead>
+                            <tbody>
+                                {picks.map(([setup, pick]) => (
+                                    <tr><td>{setup}</td><td>{pick}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="setup" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Setup</p>
+                    <h2>Monitor Windows Server with OpenTelemetry</h2>
+                    <p>
+                        The <strong>OpenTelemetry Collector</strong> is a free, open-source agent. On Windows it runs as a service, reads host metrics, service states and the Event Log, and sends them over OTLP, the OpenTelemetry protocol most monitoring backends accept. The steps use Maple as the backend; for another one, change the exporter at the end of the config.
+                    </p>
+                    <ol class="flow" aria-label="The Windows server's counters, services and Event Log are read by otelcol-contrib, the Collector running as a Windows service, which sends them over OTLP and HTTPS to your backend, Maple in this example.">
+                        {flow.map((f) => (
+                            <li class={`flow__step flow__step--${f.kind}`}><strong>{f.name}</strong><span>{f.detail}</span></li>
+                        ))}
+                    </ol>
+
+                    <h3 id="install" class="scroll-mt-24">1. Install the Collector</h3>
+                    <p>
+                        The OpenTelemetry project publishes an MSI for <code>otelcol-contrib</code>, the Collector build that includes the Windows receivers. It installs to <code>C:\Program Files\OpenTelemetry Collector</code> and registers an automatic-start service named <code>otelcol-contrib</code>. The service runs as LocalSystem, an account that can read the Security log. In PowerShell, run as Administrator:
+                    </p>
+                    <pre><code set:html={highlight(installScript.trimEnd(), "powershell")} /></pre>
+
+                    <h3 id="config" class="scroll-mt-24">2. Write the config</h3>
+                    <p>
+                        Replace <code>config.yaml</code> in the install folder with this file. Set <code>include_services</code> to the services this server must keep running: <code>W3SVC</code> is IIS and <code>MSSQLSERVER</code> is SQL Server's default instance. <code>Get-Service</code> lists the names of the rest.
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">C:\Program Files\OpenTelemetry Collector\config.yaml</p>
+                        <pre><code set:html={configHtml} /></pre>
+                    </div>
+
+                    <div class="receiver-list">
+                        {receivers.map((r) => (
+                            <div>
+                                <p class="receiver-list__name"><code>{r.key}</code>{r.signals.map((id) => <span class="type-dot" style={`--type: ${color[id]}`}></span>)}</p>
+                                <p set:html={r.body} />
+                            </div>
+                        ))}
+                    </div>
+                    <p>
+                        <code>resource_detection</code> adds the server's <code>host.name</code> to every metric and event, so data from many servers stays apart. <code>file_storage</code> remembers the last event each receiver read, so a restart neither skips nor resends events.
+                    </p>
+
+                    <h3 id="start" class="scroll-mt-24">3. Add the key and start</h3>
+                    <p>
+                        The config reads the ingest key from <code>MAPLE_INGEST_KEY</code>. For Maple, that is the private key (<code>maple_sk_...</code>) under <strong>Settings → Ingestion</strong>, and EU organizations use <code>https://ingest.eu.maple.dev</code> as the endpoint. Set the key on the service, check the config and restart:
+                    </p>
+                    <pre><code set:html={highlight(startScript.trimEnd(), "powershell")} /></pre>
+                    <p>
+                        If the service stops right after it starts, Event Viewer has the reason under <strong>Windows Logs → Application</strong>, source <code>otelcol-contrib</code>. Otherwise the server appears under <strong>Infrastructure → Hosts</strong> within a minute, and its events on the <strong>Logs</strong> page under the service <code>windows-eventlog</code>:
+                    </p>
+                    <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/windows-server-monitoring-03-event-logs.webp" data-zoomable alt="An ERROR record from the windows-eventlog service in Maple, from the computer WIN-IIS01: System log event 7031, the World Wide Web Publishing Service terminated unexpectedly and will restart in 60000 milliseconds." width="1344" height="1040" loading="lazy" /></figure>
+                </section>
+
+                <section id="alerts" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Alerts</p>
+                    <h2>Alerts to set up first</h2>
+                    <p>
+                        Start with the failures that take an app down. Each rule below covers every server that runs the Collector, so ten servers need the same rules as one. In Maple, rules live under <strong>Alerts</strong> and need a notification destination such as Slack or email. Set <strong>Minimum samples</strong> to 1 on each: the default of 50 is sized for request traffic, and a Windows server sends far fewer data points.
+                    </p>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4><span class="type-dot" style={`--type: ${color.services}`}></span>A service stopped</h4><p>Open <strong>Metrics</strong> and search for <code>windows.service.status</code>. Set <strong>Aggregate</strong> to <code>min</code> and <strong>Group by</strong> to <code>attr.name</code>, then click <strong>Create alert</strong>. Alert when the value is below <code>4</code> over a 5-minute window. With <code>min</code>, one stopped copy on any server pulls the value down, and the grouping opens one incident per service.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-02-service-status.webp" data-zoomable alt="The Metrics page for windows.service.status with the min aggregation, grouped by attr.name: W3SVC and WinRM flat at 4, meaning running, over the last hour, with the Create alert button above the chart." width="2340" height="1340" loading="lazy" /></figure></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4><span class="type-dot" style={`--type: ${color.disk}`}></span>A disk filling up</h4><p>Open <code>system.filesystem.utilization</code>, set <strong>Aggregate</strong> to <code>max</code> and <strong>Group by</strong> to <code>attr.mountpoint</code>, and click <strong>Create alert</strong>. Alert above <code>0.85</code> as a Warning over a 15-minute window, then click <strong>Add critical tier</strong> and set it to <code>0.95</code>. The value is a share, so 0.85 is 85% full, and <code>max</code> picks the fullest server for each drive letter.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h4><span class="type-dot" style={`--type: ${color.events}`}></span>Errors in the Event Log</h4><p>Under <strong>Alerts</strong>, click <strong>New rule</strong>, then <strong>Start blank</strong>. In <strong>Query builder</strong>, count <strong>Logs</strong> where <code>service.name = "windows-eventlog"</code> and <code>severity = "ERROR"</code>. Alert above <code>10</code> over a 15-minute window. The chart replays the rule over past data: if it would have fired on a quiet day, raise the threshold.</p>
+                                <p><span class="type-dot" style={`--type: ${color.logins}`}></span> For failed logins, make a copy with <code>service.name = "windows-security"</code>, no severity filter, and above <code>20</code> over 5 minutes.</p></div>
+                        </li>
+                    </ol>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">A server that is switched off</p>
+                        <p>
+                            A server that is off or offline sends nothing, and a rule without data stays quiet. The Hosts page lists it under <strong>Stopped reporting</strong> after 5 minutes. To get paged for it, point an HTTP check at the server from a Collector on another machine, as in <a href="/docs/alerting/uptime-monitoring">Uptime monitoring</a>.
+                        </p>
+                    </div>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Send your Windows servers to Maple</h3>
+                        <p>The Hosts docs list the metrics behind each column of the Hosts page, and the alert rule docs cover thresholds, tiers and destinations.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/infrastructure/hosts" class="guide-button guide-button--primary">Set up host monitoring</a>
+                            <a href="/docs/alerting/alert-rules" class="guide-button">Alert rules</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-releases/releases" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector releases (MSI installers)</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/hostmetricsreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: host metrics receiver</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/windowsservicereceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: Windows service receiver</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/windowseventlogreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: Windows Event Log receiver</a></li>
+                        <li><a href="https://learn.microsoft.com/en-us/windows/win32/wes/queryschema-schema" target="_blank" rel="noopener noreferrer">Microsoft Learn: Event Log query schema</a></li>
+                        <li><a href="https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/create-performance-counter-alert-send-email" target="_blank" rel="noopener noreferrer">Microsoft Learn: Create a performance counter alert and send email</a></li>
+                        <li><a href="https://learn.microsoft.com/en-us/windows-server/manage/windows-admin-center/overview" target="_blank" rel="noopener noreferrer">Microsoft Learn: Windows Admin Center</a></li>
+                        <li><a href="https://www.zabbix.com/license" target="_blank" rel="noopener noreferrer">Zabbix license</a> · <a href="https://github.com/prometheus-community/windows_exporter" target="_blank" rel="noopener noreferrer">windows_exporter</a> · <a href="https://www.paessler.com/prtg/pricing" target="_blank" rel="noopener noreferrer">PRTG pricing</a> · <a href="https://www.datadoghq.com/pricing/" target="_blank" rel="noopener noreferrer">Datadog pricing</a> (verified October 31, 2026)</li>
+                        <li><a href="/docs/infrastructure/hosts">Maple docs: Hosts</a></li>
+                        <li><a href="/docs/explore/metrics">Maple docs: Metrics</a></li>
+                        <li><a href="/docs/alerting/alert-rules">Maple docs: Alert rules</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<script>
+    import { bindCopyButtons } from "../../lib/copy-to-clipboard";
+
+    // A copy button on every code block, as on the docs pages.
+    const article = document.querySelector(".win-guide");
+    if (article) {
+        for (const pre of article.querySelectorAll<HTMLPreElement>("pre")) {
+            pre.dataset.copy = pre.textContent ?? "";
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "code-copy";
+            button.textContent = "copy";
+            button.setAttribute("aria-label", "Copy code");
+            pre.appendChild(button);
+        }
+        bindCopyButtons({
+            root: article,
+            hostSelector: "pre[data-copy]",
+            buttonSelector: ".code-copy",
+            track: { event: "docs_snippet_copied", key: "snippet" },
+        });
+    }
+</script>
+
+<style is:global>
+    .win-guide { max-width: 46rem; font-family: var(--font-display); }
+    .win-guide section + section { margin-top: 5.5rem; }
+    .win-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .win-guide .guide-eyebrow span { color: var(--primary); }
+    .win-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .win-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .win-guide h4 { display: flex; align-items: center; gap: 0.55rem; margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .win-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .win-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .win-guide strong { font-weight: 600; color: var(--foreground); }
+    .win-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); overflow-wrap: anywhere; }
+    .win-guide pre { position: relative; margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .win-guide pre[data-copy] { padding-right: 4.5rem; }
+    .win-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .win-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .win-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .win-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .win-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .win-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .win-guide .guide-table--pick { margin-bottom: 0; }
+    .win-guide .guide-table--pick table { min-width: 0; }
+    .win-guide .guide-table--pick td:first-child { width: 40%; color: var(--foreground); }
+    @media (max-width: 639px) {
+        .win-guide .guide-table--tools table { min-width: 0; }
+        .win-guide .guide-table--tools thead { display: none; }
+        .win-guide .guide-table--tools tr, .win-guide .guide-table--tools td { display: block; }
+        .win-guide .guide-table--tools td { width: auto; border-bottom: 0; padding: 0.15rem 0.9rem; }
+        .win-guide .guide-table--tools td + td { border-left: 0; }
+        .win-guide .guide-table--tools td[data-label]::before { content: attr(data-label); display: block; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-foreground); }
+        .win-guide .guide-table--tools tr { border-bottom: 1px solid var(--border); padding: 0.6rem 0; }
+        .win-guide .guide-table--tools tr.guide-table__group { padding: 0; }
+        .win-guide .guide-table--tools tr.guide-table__group td { padding: 0.45rem 0.9rem; }
+    }
+
+    /* One color per signal: set --type on the element. */
+    .win-guide .type-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--type) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--type) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--type) 70%, var(--foreground)); white-space: nowrap; }
+    .win-guide .type-dot { display: inline-block; width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--type); box-shadow: 0 0 0 4px color-mix(in oklab, var(--type) 18%, transparent); }
+
+    .signal-grid { display: grid; gap: 0.75rem; margin: 2rem 0 0; }
+    .signal-card { display: flex; flex-direction: column; gap: 0.7rem; border: 1px solid color-mix(in oklab, var(--type) 30%, var(--border)); border-radius: 0.75rem; background: linear-gradient(180deg, color-mix(in oklab, var(--type) 9%, var(--bg-deep)), var(--bg-deep)); padding: 1rem 1.1rem 1.1rem; }
+    .signal-card .type-badge { align-self: flex-start; }
+    .signal-card p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--muted-foreground); }
+    .signal-card .signal-card__alert { margin-top: auto; border-top: 1px solid color-mix(in oklab, var(--type) 22%, var(--border)); padding-top: 0.7rem; color: var(--foreground); }
+    .signal-card__alert span { display: block; margin-bottom: 0.2rem; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: color-mix(in oklab, var(--type) 70%, var(--foreground)); }
+
+    .win-guide .guide-table { margin: 1.75rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .win-guide table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; line-height: 1.55; color: var(--muted-foreground); }
+    .win-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .win-guide td { border-bottom: 1px solid var(--border); padding: 0.75rem 0.9rem; vertical-align: top; }
+    .win-guide td + td { border-left: 1px solid var(--border); }
+    .win-guide tbody:last-child tr:last-child td { border-bottom: 0; }
+    .win-guide .guide-table__key { width: 11rem; font-weight: 550; }
+    .win-guide .guide-table__group td { background: color-mix(in oklab, var(--bg-elevated) 60%, var(--bg-deep)); padding: 0.45rem 0.9rem; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+
+    .flow { display: grid; gap: 0.5rem; margin: 1.75rem 0; padding: 0; list-style: none; }
+    .flow__step { position: relative; display: grid; gap: 0.15rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.7rem 0.85rem; }
+    .flow__step strong { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; }
+    .flow__step span { font-size: 12px; color: var(--muted-foreground); }
+    .flow__step--backend { border-color: color-mix(in oklab, var(--primary) 60%, transparent); }
+    .flow__step--backend strong { color: var(--primary); }
+    .flow__step:not(:last-child)::after { content: ""; position: absolute; left: 1.1rem; bottom: -0.45rem; z-index: 1; border: 0.3rem solid transparent; border-top: 0.35rem solid var(--primary); border-bottom: 0; }
+
+    .win-guide .code-file { margin: 1.25rem 0; }
+    .win-guide .code-file__name { margin: 0; width: fit-content; max-width: 100%; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); overflow-wrap: anywhere; }
+    .win-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    .win-guide .tok-comment { color: var(--muted-foreground); }
+    .win-guide .tok-name { color: color-mix(in oklab, var(--primary) 70%, var(--foreground)); }
+    .win-guide .tok-fn { color: var(--primary); }
+    .win-guide .tok-labels { color: color-mix(in oklab, var(--foreground) 82%, var(--muted-foreground)); }
+    .win-guide .tok-value { color: var(--foreground); }
+    .win-guide .tok-name[style] { color: color-mix(in oklab, var(--type) 80%, var(--foreground)); font-weight: 600; }
+
+    .receiver-list { display: grid; gap: 1px; margin: 1.75rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .receiver-list > div { background: var(--background); padding: 0.9rem 1.15rem; }
+    .receiver-list p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--muted-foreground); }
+    .receiver-list .receiver-list__name { display: flex; align-items: center; gap: 0.55rem; margin-bottom: 0.35rem; }
+
+    .win-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .win-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .win-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .win-guide .guide-takeaways { border-left-color: var(--primary); background: color-mix(in oklab, var(--primary) 6%, var(--bg-deep)); }
+    .win-guide .guide-takeaways .guide-kicker { color: var(--primary); }
+    .win-guide .guide-takeaways ul { margin: 0.7rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 14px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .win-guide .guide-takeaways li + li { margin-top: 0.35rem; }
+    .win-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .win-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .win-guide .guide-steps li > div { min-width: 0; }
+    .win-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .win-guide .guide-steps p { margin: 0.5rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
+    .win-guide .guide-steps p .type-dot { margin-right: 0.35rem; vertical-align: 0.05em; }
+    .win-guide .guide-figure { margin: 1rem 0 0; }
+    .win-guide .guide-figure--narrow { max-width: 32rem; }
+    .win-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .win-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .win-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .win-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .win-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .win-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .win-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .win-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .win-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .win-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .win-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    /* Copy buttons, injected by the script above; same look as the docs code blocks. */
+    .win-guide .code-copy { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; border: 1px solid var(--border); border-radius: 5px; background: color-mix(in oklab, var(--bg-elevated) 85%, var(--background)); padding: 3px 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); opacity: 0; transition: color 150ms ease, border-color 150ms ease; }
+    .win-guide pre:hover .code-copy, .win-guide .code-copy:focus-visible, .win-guide .code-copy.is-done { opacity: 1; }
+    .win-guide .code-copy:hover { border-color: color-mix(in oklab, var(--primary) 50%, var(--border)); color: var(--primary); }
+    .win-guide .code-copy.is-done { border-color: color-mix(in oklab, var(--chart-3) 55%, var(--border)); color: var(--chart-3); }
+    @media (hover: none) {
+        .win-guide .code-copy { opacity: 1; }
+    }
+    @media (min-width: 640px) {
+        .signal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .win-guide .guide-maple { padding: 2rem; }
+    }
+    @media (min-width: 900px) {
+        .flow { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .flow__step:not(:last-child)::after { left: auto; right: -0.45rem; bottom: auto; top: 50%; translate: 0 -50%; border: 0.3rem solid transparent; border-left: 0.35rem solid var(--primary); border-right: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .win-guide a, .win-guide .guide-button { transition: none; }
+    }
+</style>
