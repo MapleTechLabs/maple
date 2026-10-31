@@ -393,15 +393,22 @@ describe("confidencePrReview", () => {
 		assert.equal(score(many, { tests: "missing", risk: "high" }), 5)
 	})
 
-	// A re-review reads what changed since; on a pull request that has had defects it can miss more.
-	it("holds a pull request whose earlier reviews found defects at 8", () => {
+	// A re-review reads what changed since; around a fix nobody re-read it can miss more.
+	it("holds fixes not yet re-checked against the whole diff at 8", () => {
 		const clean = reportWith([], { tests: "covered", risk: "low" })
 		assert.equal(confidencePrReview(clean)?.confidence, 10)
 		const held = confidencePrReview(clean, [], false, 2)
 		assert.equal(held?.confidence, 8)
 		assert.equal(held?.cappedBy, "history")
-		assert.equal(held?.reason, "Held at 8 because earlier reviews of this pull request found 2 defects.")
-		assert.include(held?.factors ?? [], "2 defects fixed in earlier rounds")
+		assert.equal(
+			held?.reason,
+			"Held at 8 because 2 fixes have not been re-checked against the whole diff yet.",
+		)
+		assert.include(held?.factors ?? [], "2 fixes not yet re-checked against the whole diff")
+		assert.equal(
+			confidencePrReview(clean, [], false, 1)?.reason,
+			"Held at 8 because a fix has not been re-checked against the whole diff yet.",
+		)
 		// A tighter cap still binds.
 		assert.equal(confidencePrReview(reportWith([finding("warn")]), [], false, 1)?.confidence, 6)
 	})

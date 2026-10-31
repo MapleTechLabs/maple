@@ -453,6 +453,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	findings: Schema.Array(PrReviewFinding),
 	/** Reviewed files whose diff the pass never read; set by the runner, never by the model. */
 	unreviewed: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** The pass read every file of the diff, not only what changed since the last review; set by the runner. */
+	wholeDiff: Schema.optionalKey(Schema.Boolean),
 	/** What production telemetry says about the change; set by the service, never by the model. */
 	telemetry: Schema.optionalKey(PrReviewTelemetry),
 	/** What has to happen outside the diff before merge; diff steps are set by the service. */
@@ -928,8 +930,9 @@ export const isPrReviewDefectHistory = (finding: { readonly category?: string })
  * high-risk area and new work that cannot be observed. Caps hold it down: a critical at 4 (2 with
  * more than one), a security warning at 4, a correctness or performance warning at 6, any other
  * warning at 8, a review that ended early at 6, reviewed files left unread at 8 (6 from three
- * files), and a pull request whose earlier reviews found defects at 8: a re-review reads only what
- * changed, and on such pull requests the next pass found another defect about a quarter of the time.
+ * files), and defects fixed since the last pass that read the whole diff at 8: a re-review reads
+ * only what changed, and after a fix the next pass found another defect about a quarter of the time.
+ * The pass after a fix is due the whole diff, so a clean one lifts this cap.
  * Without a critical, a security warning, an early end or three unread files it never reads under
  * 5. The reviewer's own number is not an input: a concern that should move it is a finding.
  * `undefined` for a pull request with nothing to review.
@@ -938,8 +941,8 @@ export const confidencePrReview = (
 	report: PrReviewReport,
 	carriedOpen: ReadonlyArray<{ readonly severity: PrReviewSeverity; readonly category?: string }> = [],
 	partial = false,
-	/** Defects ({@link isPrReviewDefectHistory}) earlier reviews of this pull request found and saw fixed. */
-	priorDefects = 0,
+	/** Defects ({@link isPrReviewDefectHistory}) fixed since the last pass that read the whole diff. */
+	uncheckedFixes = 0,
 ): PrReviewConfidenceResult | undefined => {
 	if (report.verdict === "not_applicable" && report.findings.length === 0 && carriedOpen.length === 0) {
 		return undefined
@@ -980,7 +983,11 @@ export const confidencePrReview = (
 	const factors = [
 		...deductions.map(([label, points]) => factor(label, points)),
 		...(unread > 0 ? [`${unread} ${unread === 1 ? "file" : "files"} not read`] : []),
-		...(priorDefects > 0 ? [`${findingPhrase(priorDefects, "defect")} fixed in earlier rounds`] : []),
+		...(uncheckedFixes > 0
+			? [
+					`${uncheckedFixes} ${uncheckedFixes === 1 ? "fix" : "fixes"} not yet re-checked against the whole diff`,
+				]
+			: []),
 	]
 	const total = deductions.reduce((sum, [, points]) => sum + points, 0)
 
@@ -1025,12 +1032,12 @@ export const confidencePrReview = (
 				]
 			: []),
 		...(warns > 0 ? [{ at: 8, by: "warn" as const, why: "a warning is open" }] : []),
-		...(priorDefects > 0
+		...(uncheckedFixes > 0
 			? [
 					{
 						at: 8,
 						by: "history" as const,
-						why: `earlier reviews of this pull request found ${findingPhrase(priorDefects, "defect")}`,
+						why: `${uncheckedFixes === 1 ? "a fix has" : `${uncheckedFixes} fixes have`} not been re-checked against the whole diff yet`,
 					},
 				]
 			: []),

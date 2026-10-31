@@ -33,6 +33,7 @@ import { PrReviewFindingEmbeddings, PrReviewFindings, PrReviewMergeSteps, PrRevi
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -73,6 +74,8 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const sha = Schema.decodeUnknownSync(GitCommitSha)
 const HEAD = sha("1111111111111111111111111111111111111111")
 const HEAD_2 = sha("2222222222222222222222222222222222222222")
+const HEAD_3 = sha("3333333333333333333333333333333333333333")
+const HEAD_4 = sha("4444444444444444444444444444444444444444")
 const BASE = sha("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 const orgId = asOrgId("org_review")
@@ -1071,6 +1074,79 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published, comments })))
 	})
 
+	// A re-review reads only what changed, so a fix holds confidence at 8 until a pass re-reads every file.
+	it.effect("re-reads the whole diff after a fix, and a clean whole-diff pass lifts the cap", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const begun: Array<Begun> = []
+		const bug = {
+			path: "a.ts",
+			line: 10,
+			category: "correctness" as const,
+			severity: "warn" as const,
+			title: "off by one",
+			body: "b",
+		}
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			// Each review finishes a minute after the last, so "newest" is well defined.
+			const push = (headSha: GitCommitSha) =>
+				TestClock.adjust("1 minute").pipe(
+					Effect.andThen(
+						reviews.onPullRequestEvent(orgId, job({ action: "synchronize", headSha })),
+					),
+				)
+			const confidenceOf = (reviewId: PrReviewId) =>
+				reviews
+					.getReview(orgId, reviewId)
+					.pipe(Effect.map((stored) => Option.getOrThrow(stored).report?.confidenceReason))
+
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: new PrReviewReport({ ...report([bug]), wholeDiff: true }),
+				}),
+			)
+
+			// Fixed in a pass that read only what changed: held at 8.
+			const fixed = yield* push(HEAD_2)
+			assert.notInclude(begun.at(-1)!.text, "review the whole diff")
+			yield* reviews.submitReview(
+				orgId,
+				fixed.reviewId!,
+				new SubmitPrReviewRequest({ resolved: ["F1"], report: report([]) }),
+			)
+			assert.equal(
+				yield* confidenceOf(fixed.reviewId!),
+				"Held at 8 because a fix has not been re-checked against the whole diff yet.",
+			)
+
+			// The next push re-reads every file; read clean, the cap is gone.
+			const recheck = yield* push(HEAD_3)
+			assert.include(begun.at(-1)!.text, "review the whole diff")
+			assert.notInclude(begun.at(-1)!.text, "Files changed since then")
+			yield* reviews.submitReview(
+				orgId,
+				recheck.reviewId!,
+				new SubmitPrReviewRequest({ report: new PrReviewReport({ ...report([]), wholeDiff: true }) }),
+			)
+			assert.notInclude((yield* confidenceOf(recheck.reviewId!)) ?? "", "Held at")
+
+			// After that, a push is reviewed incrementally again and nothing holds it.
+			const later = yield* push(HEAD_4)
+			assert.include(begun.at(-1)!.text, "Files changed since then")
+			yield* reviews.submitReview(
+				orgId,
+				later.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			assert.notInclude((yield* confidenceOf(later.reviewId!)) ?? "", "Held at")
+		}).pipe(Effect.provide(layerFor(testDb, { published, begun })))
+	})
+
 	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
@@ -1143,7 +1219,7 @@ describe("PrReviewService.submitReview", () => {
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
 			// Two open correctness warnings hold it at "needs attention", and F1, fixed, counts as history.
 			assert.equal(publication.title, "Confidence 6/10 · 2 issues to address")
-			assert.include(publication.summary, "1 defect fixed in earlier rounds")
+			assert.include(publication.summary, "1 fix not yet re-checked against the whole diff")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
 			// Every published review folds away the summaries before it and keeps its own.
 			assert.deepEqual(

@@ -470,7 +470,8 @@ export const scoreCase = (
 			...review.report.findings.flatMap((finding) => finding.handle ?? []),
 		])
 		// Defects earlier reviews filed that are no longer open here: fixed (or dismissed) before this head.
-		const priorDefects = earlier.filter(
+		// The corpus predates whole-diff passes, so no fix in it was re-checked.
+		const uncheckedFixes = earlier.filter(
 			(finding) => isPrReviewDefectHistory(finding) && !openHandles.has(finding.handle ?? ""),
 		).length
 		const resolved = review.resolved.flatMap((handle) => {
@@ -484,7 +485,7 @@ export const scoreCase = (
 			report: review.report,
 			partial: review.partial,
 			repositoryUrl: `https://github.com/${item.repo}`,
-			carried: { open, resolved, priorDefects },
+			carried: { open, resolved, uncheckedFixes },
 		})
 		const next = parsed[index + 1]
 		return {
@@ -492,7 +493,7 @@ export const scoreCase = (
 			published,
 			parsed: review,
 			open,
-			confidence: confidencePrReview(review.report, open, review.partial, priorDefects)?.confidence,
+			confidence: confidencePrReview(review.report, open, review.partial, uncheckedFixes)?.confidence,
 			confidenceWithoutHistory: confidencePrReview(review.report, open, review.partial)?.confidence,
 			openDefect: [...review.report.findings, ...open].some(isPrReviewDefect),
 			nextFound:
