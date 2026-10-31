@@ -15,6 +15,39 @@ export const SAMPLE_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 export const emptyExposureOf = (): Exposure => ({ signatures: [], exposed: [], sources: [], timeline: [] })
 
 /** Scanner traffic over a week: one SPA answering `/.env`, one live actuator, WordPress noise. */
+/** A single-page app that answers every probe path with its index page. */
+export const catchAllExposureOf = (nowMs: number): Exposure => {
+	const base = exposureOf(nowMs)
+	const paths = ["/.env", "/.git/", "/actuator/env", "phpinfo"]
+	return {
+		...base,
+		signatures: [
+			...base.signatures,
+			...paths.map((signature) => ({
+				signature,
+				service: "web-app",
+				requests: 30,
+				answered: 30,
+				sources: 3,
+				lastSeen: at(nowMs, 20 * MINUTE),
+			})),
+		],
+		exposed: [
+			...base.exposed,
+			{
+				service: "web-app",
+				host: "app.example.com",
+				path: "/.env",
+				signature: "/.env",
+				httpStatus: 200,
+				requests: 30,
+				lastSeen: at(nowMs, 20 * MINUTE),
+				sampleTraceId: SAMPLE_TRACE_ID,
+			},
+		],
+	}
+}
+
 export const exposureOf = (nowMs: number): Exposure => ({
 	signatures: [
 		{

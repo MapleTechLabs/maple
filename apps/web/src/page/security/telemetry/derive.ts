@@ -45,6 +45,44 @@ export const exposureTotals = (exposure: Exposure): ExposureTotals => {
 export const isExposureEmpty = (exposure: Exposure): boolean =>
 	exposure.signatures.length === 0 && exposure.sources.length === 0
 
+const isCriticalSignature = (signature: string): boolean => {
+	const category = probeCategoryOf(signature)
+	return PROBE_CATEGORIES.some((info) => info.id === category && info.critical)
+}
+
+/** A service answering this share of distinct probes, and at least this many, serves every path. */
+const CATCH_ALL_SHARE = 0.8
+const CATCH_ALL_MIN_ANSWERED = 3
+
+export interface CatchAllService {
+	readonly service: string
+	readonly answered: number
+	readonly probed: number
+}
+
+/**
+ * Services that answer most critical probe paths with a success. A single-page app or a soft-404 route serves
+ * its index page for `/.env` too, so their answered probes are a warning, not an exposure.
+ */
+export const catchAllServices = (exposure: Exposure): ReadonlyArray<CatchAllService> => {
+	// Critical paths only: a WordPress site answers its own WordPress paths for real.
+	const probes = exposure.signatures.filter((row) => isCriticalSignature(row.signature))
+	return [...new Set(probes.map((row) => row.service))].flatMap((service) => {
+		const own = probes.filter((row) => row.service === service)
+		const probed = distinct(own.map((row) => row.signature))
+		const answered = distinct(own.filter((row) => row.answered > 0).map((row) => row.signature))
+		return answered >= CATCH_ALL_MIN_ANSWERED && answered / probed >= CATCH_ALL_SHARE
+			? [{ service, answered, probed }]
+			: []
+	})
+}
+
+/** Answered critical probes on services that do not answer every path. */
+export const exposedRows = (exposure: Exposure): Exposure["exposed"] => {
+	const catchAll = new Set(catchAllServices(exposure).map((entry) => entry.service))
+	return exposure.exposed.filter((row) => !catchAll.has(row.service))
+}
+
 export interface SignatureCount {
 	readonly signature: string
 	readonly requests: number

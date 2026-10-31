@@ -18,9 +18,12 @@ import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import { placeholder } from "../kit/parts"
 import { TIMELINE_BUCKET_SECONDS } from "./command"
 import {
+	type CatchAllService,
 	type CategoryRow,
+	catchAllServices,
 	categoryLabelOf,
 	categoryRows,
+	exposedRows,
 	exposureTotals,
 	isExposureEmpty,
 	SOURCES_SHOWN,
@@ -132,6 +135,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"]): Html =>
 
 const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	const totals = exposureTotals(exposure)
+	const exposedCount = exposedRows(exposure).length
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Probe requests",
@@ -158,12 +162,40 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 			value: String(totals.servicesProbed),
 			compact: true,
 			subline:
-				exposure.exposed.length === 0
+				exposedCount === 0
 					? "none answered a sensitive probe"
-					: `${exposure.exposed.length} answered ${exposure.exposed.length === 1 ? "path" : "paths"}`,
+					: `${exposedCount} answered ${exposedCount === 1 ? "path" : "paths"}`,
 		}),
 	])
 }
+
+// CATCH-ALL ROUTES
+
+const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
+	panel(h, {}, [
+		panelHeader(h, { title: "Likely catch-all routes" }),
+		h.p(
+			[h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")],
+			[
+				"These services answer almost every probe path with a success, which usually means they serve the same page for any path. Their answered probes are left out above. Open one sample to confirm nothing real is served.",
+			],
+		),
+		h.ul(
+			[h.Class("divide-y divide-border px-4 pb-2 text-sm")],
+			services.map((entry) =>
+				h.li(
+					[h.Class("flex items-center justify-between gap-4 py-2")],
+					[
+						h.span([h.Class("font-medium")], [entry.service]),
+						h.span(
+							[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+							[`${entry.answered} of ${entry.probed} sensitive probe paths answered`],
+						),
+					],
+				),
+			),
+		),
+	])
 
 // CATEGORIES
 
@@ -323,8 +355,11 @@ export const exposureBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 			if (isExposureEmpty(exposure)) return [exposureEmpty(h)]
 			const clock = { nowMs: model.nowMs, timeZone }
 			const categories = categoryRows(exposure)
+			const exposed = exposedRows(exposure)
+			const catchAll = catchAllServices(exposure)
 			return [
-				...(exposure.exposed.length === 0 ? [] : [exposedPanel(h, clock, exposure.exposed)]),
+				...(exposed.length === 0 ? [] : [exposedPanel(h, clock, exposed)]),
+				...(catchAll.length === 0 ? [] : [catchAllPanel(h, catchAll)]),
 				totalsRail(h, clock, exposure),
 				...(categories.length === 0 ? [] : [categoriesPanel(h, categories)]),
 				...(exposure.sources.length === 0 ? [] : [sourcesPanel(h, clock, exposure.sources)]),

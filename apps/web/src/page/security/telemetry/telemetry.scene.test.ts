@@ -4,6 +4,7 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import {
+	catchAllExposureOf,
 	emptyExposureOf,
 	exposureOf,
 	runtimesOf,
@@ -94,6 +95,16 @@ describe("security telemetry tabs", () => {
 			expectView(text("WordPress")).toExist(),
 			expectView(text("Named scanners on ordinary paths")).toExist(),
 			expectView(text("ZGrab")).toExist(),
+		)
+	})
+
+	test("a service that answers every probe path is a likely catch-all, not an exposure", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withExposure(catchAllExposureOf(NOW))),
+			expectView(text("2 probe paths answered with a success")).toExist(),
+			expectView(text("Likely catch-all routes")).toExist(),
+			expectView(text("4 of 4 sensitive probe paths answered")).toExist(),
 		)
 	})
 
