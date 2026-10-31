@@ -15,25 +15,32 @@ import { serviceDot } from "./values"
 /** The root's HTTP status toned by class (3xx keeps its own blue), else OK / Error. */
 export const traceStatusBadge = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ hasError: boolean; httpStatusCode?: number | null }>,
+	options: Readonly<{ hasError: boolean; httpStatusCode?: number | null; className?: string }>,
 ): Html => {
 	const code = options.httpStatusCode
 	if (code === undefined || code === null) {
-		return badge(h, { variant: "secondary", className: TONE_SOFT[options.hasError ? "crit" : "ok"] }, [
-			options.hasError ? "Error" : "OK",
-		])
+		return badge(
+			h,
+			{
+				variant: "secondary",
+				className: cn(TONE_SOFT[options.hasError ? "crit" : "ok"], options.className),
+			},
+			[options.hasError ? "Error" : "OK"],
+		)
 	}
 	const tone = httpStatusTone(code)
 	return badge(
 		h,
 		{
 			variant: "secondary",
-			className:
+			className: cn(
 				tone !== "neutral"
 					? TONE_SOFT[tone]
 					: code >= 300
 						? "bg-chart-p50/15 text-chart-p50"
 						: TONE_SOFT.ok,
+				options.className,
+			),
 		},
 		[String(code)],
 	)
