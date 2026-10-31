@@ -123,6 +123,13 @@ before comparing variants.
   positive.
 - **Holdout:** PR #972 (Postgres URL parsing) and #685 (empty S3 PUT). Keep them out of prompt
   iteration.
+- **Interface code (development):** PR #2015 (an `aria-label` hiding a card's finding, a preview
+  clipped at `lg`, a long org name overflowing a row, plus a post-fix control) and PR #1950
+  (Escape closing a panel without saving, a draft labelled live, a client listing rule diverging
+  from the publisher's). All were another reviewer's findings the production review missed; the prompt's
+  "Interface code" section was written from them.
+- **Interface code (holdout):** PR #1972 (a flag-gated page still fetching during its redirect,
+  connector origin missing from new audit entries). Not used to write the prompt.
 - **Disabled:** three mined cases, pending attribution review. Mining finds candidates, not
   ground truth: blame may point at refactors or unrelated later edits.
 
