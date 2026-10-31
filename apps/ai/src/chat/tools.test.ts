@@ -168,16 +168,22 @@ describe("buildReviewCompletion", () => {
 	})
 
 	describe("with files unread", () => {
-		const coverage = (unread: ReadonlyArray<string>): ReviewCoverage => ({
+		const coverage = (unread: ReadonlyArray<string>, wholeDiff = true): ReviewCoverage => ({
 			observe: () => {},
 			unread: () => unread,
+			wholeDiff,
 		})
 		const recording = () => {
 			const filed: Array<unknown> = []
 			const submit: SubmitReview = (_org, _id, request) => Effect.sync(() => filed.push(request))
 			return { filed, submit }
 		}
-		const submitWith = (submit: SubmitReview, unread: ReadonlyArray<string>, partial = false) => {
+		const submitWith = (
+			submit: SubmitReview,
+			unread: ReadonlyArray<string>,
+			partial = false,
+			wholeDiff = true,
+		) => {
 			const completion = buildReviewCompletion(
 				REVIEW_SESSION,
 				tenantFor(human),
@@ -187,7 +193,7 @@ describe("buildReviewCompletion", () => {
 				MODEL_NAME,
 				partial,
 				undefined,
-				coverage(unread),
+				coverage(unread, wholeDiff),
 			)
 			assert.isDefined(completion)
 			return {
@@ -218,6 +224,32 @@ describe("buildReviewCompletion", () => {
 			const { filed, submit } = recording()
 			assert.isTrue(Result.isSuccess(await submitWith(submit, []).call(CLEAN)))
 			assert.lengthOf(filed, 1)
+		})
+
+		// Only a pass that read every file re-checks the fixes since the last one; the service lifts its cap on it.
+		it("marks the report a whole-diff read only when every file was due and read", async () => {
+			const filedWholeDiff = async (
+				unread: ReadonlyArray<string>,
+				partial: boolean,
+				wholeDiff: boolean,
+			) => {
+				const filed: Array<SubmitPrReviewRequest> = []
+				const { call } = submitWith(
+					(_org, _id, request) => Effect.sync(() => filed.push(request)),
+					unread,
+					partial,
+					wholeDiff,
+				)
+				// Unread files are refused once; the second call records.
+				await call(CLEAN)
+				if (filed.length === 0) await call(CLEAN)
+				assert.lengthOf(filed, 1)
+				return filed[0]?.report.wholeDiff
+			}
+			assert.isTrue(await filedWholeDiff([], false, true))
+			assert.isUndefined(await filedWholeDiff([], false, false))
+			assert.isUndefined(await filedWholeDiff(["src/b.ts"], false, true))
+			assert.isUndefined(await filedWholeDiff([], true, true))
 		})
 
 		it("never holds a close-out or a not_applicable verdict", async () => {
@@ -425,7 +457,7 @@ describe("record_finding", () => {
 			MODEL_NAME,
 			partial,
 			undefined,
-			{ observe: () => {}, unread: () => unread },
+			{ observe: () => {}, unread: () => unread, wholeDiff: true },
 			ledger,
 		)
 		assert.isDefined(completion)

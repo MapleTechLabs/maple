@@ -13,6 +13,8 @@ export interface ReviewCoverage {
 	readonly observe: (tool: string, answer: string) => void
 	/** Reviewed files with a patch whose diff no `pr_file_diff` answer has shown yet, in listing order. */
 	readonly unread: () => ReadonlyArray<string>
+	/** The kickoff names no narrower scope: every reviewed file is due, not only what changed since. */
+	readonly wholeDiff: boolean
 }
 
 /**
@@ -35,6 +37,7 @@ export const makeReviewCoverage = (kickoff: string): ReviewCoverage => {
 			}
 		},
 		unread: () => [...due].filter((path) => !read.has(path)),
+		wholeDiff: scope === undefined,
 	}
 }
 

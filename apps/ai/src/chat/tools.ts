@@ -513,7 +513,12 @@ export const buildReviewCompletion = (
 			const saved = [...ledger.findings(), ...childFiled]
 			const unreviewed =
 				normalized.report.verdict === "not_applicable" ? [] : (coverage?.unread() ?? [])
-			const report = withSavedFindings(normalized.report, saved, unreviewed)
+			const merged = withSavedFindings(normalized.report, saved, unreviewed)
+			// A close-out files what a stopped pass saved, so it never counts as a whole-diff read.
+			const report =
+				coverage?.wholeDiff === true && !partial && unreviewed.length === 0
+					? new PrReviewReport({ ...merged, wholeDiff: true })
+					: merged
 			const childPosted = childFiled.filter((child) =>
 				report.findings.some(
 					(finding) =>

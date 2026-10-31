@@ -128,6 +128,7 @@ import {
 	renderFollowUp,
 	renderIgnoredPaths,
 	resolvedByHandle,
+	uncheckedFixes,
 	SEVERITY_RANK,
 	threadForFinding,
 	type TrackedFinding,
@@ -451,8 +452,8 @@ const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckA
 export interface CarriedFindings {
 	readonly open: ReadonlyArray<TrackedFinding>
 	readonly resolved: ReadonlyArray<TrackedFinding>
-	/** Defects earlier reviews of the pull request found and saw fixed; they hold confidence at 8. */
-	readonly priorDefects?: number
+	/** Defects fixed since the last whole-diff pass; they hold confidence at 8. */
+	readonly uncheckedFixes?: number
 }
 
 const NO_CARRIED: CarriedFindings = { open: [], resolved: [] }
@@ -752,7 +753,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			.join("/")}${line === undefined ? "" : `#L${line}`}`
 	const observable = report.coverage.filter((unit) => unit.instrumented).length
 
-	const confidence = confidencePrReview(report, carried.open, input.partial, carried.priorDefects ?? 0)
+	const confidence = confidencePrReview(report, carried.open, input.partial, carried.uncheckedFixes ?? 0)
 	// The comment is what people read on every push; inventories and evidence stay on the check run.
 	const comment = input.heading
 
@@ -1000,7 +1001,7 @@ export const buildPublication = (input: {
 	const { report } = input
 	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
 	const carried = input.carried ?? NO_CARRIED
-	const confidence = confidencePrReview(report, carried.open, input.partial, carried.priorDefects ?? 0)
+	const confidence = confidencePrReview(report, carried.open, input.partial, carried.uncheckedFixes ?? 0)
 	const threshold = SEVERITY_RANK[input.minInlineSeverity ?? "warn"]
 	const annotations: Array<PullRequestCheckAnnotation> = report.findings.map((finding) => ({
 		path: finding.path,
@@ -1125,6 +1126,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				title: row.title,
 				status: row.status,
 				commentId: row.commentId ?? null,
+				resolvedSha: row.resolvedSha ?? null,
 			})
 
 			/** Every finding this pull request has had, in handle order. */
@@ -1140,6 +1142,29 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							]),
 					),
 				).pipe(Effect.map((rows) => rows.map(toTracked)))
+
+			/** The pull request's completed reviews, newest first, and whether each read the whole diff. */
+			const loadReviewHistory = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(PrReviews)
+							.select("headSha", "reportJson")
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.repositoryId.eq(repositoryId),
+								$.number.eq(number),
+								$.status.eq("completed"),
+							])
+							.orderBy(($) => [[$.finishedAt, "desc"]]),
+					),
+				).pipe(
+					Effect.map((rows) =>
+						rows.map((row) => ({
+							headSha: row.headSha,
+							wholeDiff: row.reportJson?.wholeDiff === true,
+						})),
+					),
+				)
 
 			const setFindingStatus = (
 				orgId: OrgId,
@@ -1598,23 +1623,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				baseSha: GitCommitSha | undefined,
 				nowMs: number,
 			) {
-				const previous = yield* dbExecute((db) =>
-					db.run(
-						PG.from(PrReviews)
-							.select("headSha")
-							.where(($) => [
-								$.repositoryId.eq(repo.id),
-								$.number.eq(number),
-								$.status.eq("completed"),
-								$.headSha.neq(headSha),
-							])
-							.orderBy(($) => [[$.finishedAt, "desc"]])
-							.limit(1),
-					),
-				)
-				const previousSha = previous[0]?.headSha
+				const history = yield* loadReviewHistory(orgId, repo.id, number)
+				const previousSha = history.find((review) => review.headSha !== headSha)?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
+				// A defect fixed since the last whole-diff pass: this pass re-reads every file.
+				const recheck = uncheckedFixes(history, tracked) > 0
 				const upstream = yield* providerFor(orgId, repo)
 				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
@@ -1638,8 +1652,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
 					"maple.pr_review.history_rewritten": changes?.rewritten ?? false,
+					"maple.pr_review.recheck": recheck,
 				})
-				return renderFollowUp({ previousSha, changes, open })
+				return renderFollowUp({ previousSha, changes, open, recheck })
 			})
 
 			/** A review of the same pull request still running, whose head this delivery replaces. */
@@ -2622,17 +2637,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							: request.report.verdict,
 				})
 				// Stored capped, so every reader of the row sees the confidence the comment shows.
-				// Defects earlier rounds found and saw fixed: a re-review only reads what changed since.
-				const priorDefects =
-					tracked.filter(
-						(finding) => finding.status === "resolved" && isPrReviewDefectHistory(finding),
-					).length + resolved.filter(isPrReviewDefectHistory).length
-				const confidence = confidencePrReview(
-					settled,
-					stillOpen,
-					request.partial === true,
-					priorDefects,
-				)
+				// Defects fixed since the last whole-diff pass: nothing has re-read the pull request
+				// around them. A pass that read the whole diff checked every fix up to this head.
+				const unchecked =
+					settled.wholeDiff === true
+						? 0
+						: uncheckedFixes(
+								yield* loadReviewHistory(orgId, review.repositoryId, review.number),
+								tracked,
+							) + resolved.filter(isPrReviewDefectHistory).length
+				const confidence = confidencePrReview(settled, stillOpen, request.partial === true, unchecked)
 				const { confidenceReason: _reason, ...rest } = settled
 				const report =
 					confidence === undefined
@@ -2645,7 +2659,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									? undefined
 									: { confidenceReason: confidence.reason }),
 							})
-				const carried = { open: stillOpen, resolved, priorDefects }
+				const carried = { open: stillOpen, resolved, uncheckedFixes: unchecked }
 				const score = scorePrReview(report, stillOpen).score
 				yield* Effect.annotateCurrentSpan({
 					orgId,
@@ -2664,6 +2678,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.carried_open": stillOpen.length,
 					"maple.pr_review.coverage": report.coverage.length,
 					"maple.pr_review.partial": request.partial === true,
+					"maple.pr_review.whole_diff": settled.wholeDiff === true,
+					"maple.pr_review.unchecked_fixes": unchecked,
 				})
 				// From an active state only. A review superseded while its completion call was in
 				// flight stays `skipped`, and its stale findings never reach the pull request.

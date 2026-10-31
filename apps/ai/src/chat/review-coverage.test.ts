@@ -69,6 +69,24 @@ describe("makeReviewCoverage", () => {
 		)
 		nothing.observe("pr_changed_files", listing)
 		assert.deepEqual(nothing.unread(), [])
+		assert.isFalse(coverage.wholeDiff)
+	})
+
+	it("owes the pass after an unchecked fix every file, whatever changed since", () => {
+		const coverage = makeReviewCoverage(
+			[
+				"Review pull request #7.",
+				...renderFollowUp({
+					previousSha: "abcdef1234",
+					changes: { paths: ["src/b.ts"], rewritten: false },
+					open: [],
+					recheck: true,
+				}),
+			].join("\n"),
+		)
+		coverage.observe("pr_changed_files", listing)
+		assert.lengthOf(coverage.unread(), 3)
+		assert.isTrue(coverage.wholeDiff)
 	})
 })
 
