@@ -1,6 +1,6 @@
 ---
 title: "Use Maple with AI agents"
-description: "Connect Claude Code, Cursor, Windsurf or any MCP client to Maple, then let the agent debug production errors, chase latency, build dashboards, set up alerts and instrument your code."
+description: "Connect Claude Code, Cursor, Windsurf or any MCP client to Maple to debug errors, chase latency, build dashboards and alerts, instrument code and check which Maple Cloud revision is deployed."
 group: "Getting Started"
 order: 2
 navLabel: "AI agents"
@@ -8,11 +8,12 @@ navLabel: "AI agents"
 
 Your coding agent can work with Maple directly. Connected to the [Maple MCP server](/docs/reference/mcp), it reads the same traces, logs, metrics and error issues you see in the dashboard, and it can act on them: triage an issue, build a dashboard, create an alert rule. Paired with the [GitHub integration](/docs/integrations/github), it can go from an exception to the line of code that raised it.
 
-There are three ways agents fit in:
+There are four ways agents fit in:
 
 - **Query and operate Maple** through the MCP server. This page covers it.
 - **Instrument your code** with the `maple-onboard` and `maple-audit` skills. See [Instrument with a coding agent](#instrument-with-a-coding-agent).
 - **Monitor your own AI agents** in [Agent Sessions](/docs/agent-sessions/overview).
+- **Check what Maple Cloud runs** in your region. See [Check whether a Maple Cloud fix is deployed](#check-whether-a-maple-cloud-fix-is-deployed).
 
 ## Connect your agent
 
@@ -110,6 +111,45 @@ For heavier dashboard work, give your agent the [maple-dashboard-widgets](https:
 ### Answer anything else with SQL
 
 When no tool fits, `describe_warehouse_tables` lists the tables and columns, and `run_sql` runs a read-only query scoped to your organization. See [SQL](/docs/reference/sql).
+
+## Check whether a Maple Cloud fix is deployed
+
+To check whether a fix is serving your organization, query its region's deployed revisions. These are public HTTP requests; no sign-in or browser is needed.
+
+| Region | Dashboard build                         | API Worker                        |
+| ------ | --------------------------------------- | --------------------------------- |
+| US     | `https://app.maple.dev/version.json`    | `https://api.maple.dev/health`    |
+| EU     | `https://app.eu.maple.dev/version.json` | `https://api.eu.maple.dev/health` |
+
+Send `GET` to both endpoints:
+
+- The dashboard returns JSON with a `commit` field identifying its asset build. When polling, append a fresh query value, such as `?t=<current-timestamp>`, to avoid reusing a cached response.
+- The API returns `OK` with its running commit in the `x-maple-revision` response header. A `200` without that header leaves the API revision unknown. Use `GET`, not `HEAD`.
+
+For the US region, these requests print the dashboard commit and the API response headers:
+
+```bash
+curl -fsS "https://app.maple.dev/version.json?t=$(date +%s)"
+curl -fsS -D - -o /dev/null https://api.maple.dev/health
+```
+
+Read `x-maple-revision` from the second response. Use the EU hosts from the table for an EU organization.
+
+After the PR merges, use its actual upstream merge commit. Do not assume the PR branch's commits reached `main`: GitHub can squash-merge them. Replace the placeholders below with the PR number, that merge SHA and each relevant serving SHA:
+
+```bash
+repo=https://api.github.com/repos/MapleTechLabs/maple
+curl -fsS "$repo/pulls/<pr-number>" \
+  | jq -r 'select(.merged) | .merge_commit_sha'
+curl -fsS "$repo/compare/<merge-sha>...<serving-sha>" \
+  | jq -r '.status'
+```
+
+For a successful PR response, empty `jq` output means it is not merged. Never use an open PR's `merge_commit_sha`: it describes a test merge. A comparison status of `identical` or `ahead` means the serving revision includes the merge; `behind` or `diverged` means it does not. Other responses or request failures leave inclusion unknown. Report the dashboard and API separately if only one has updated. These public GitHub requests need no sign-in; unauthenticated requests share a 60-per-hour limit per IP address. See [GitHub's rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+
+These signals identify the dashboard and API. They do not identify separately deployed services such as ingest or the AI Worker behind MCP. Once the affected code is deployed, check the expected behavior against the organization's real data.
+
+The [changelog](/changelog) provides product announcements, also available as [Markdown](/changelog.md) and [RSS](/changelog/rss.xml). A changelog entry, GitHub release or merged PR alone does not establish which revision a Maple Cloud service is running.
 
 ## Instrument with a coding agent
 
