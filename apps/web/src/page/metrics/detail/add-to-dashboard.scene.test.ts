@@ -58,6 +58,6 @@ describe("add to dashboard", () => {
 			context,
 		)
 		expect(failed.outMessage).toBeUndefined()
-		expect(failed.model.error?.title).toBe("Failed to create dashboard")
+		expect(failed.model.error?.title).toBe("Couldn't create dashboard")
 	})
 })

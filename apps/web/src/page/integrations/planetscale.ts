@@ -1,45 +1,46 @@
 import {
+	type V2PlanetScaleIntegration,
 	V2PlanetScaleMetricsTokenRequest,
 	V2PlanetScaleOrganizationList,
 	V2PlanetScaleSelectOrganizationRequest,
-	V2PlanetScaleWebhookConfig,
 } from "@maple/domain/http/v2"
-import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { KeyedSchema } from "../../data/keyed"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import * as Field from "../../ui/field"
+import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { Message } from "./message"
 
-// `PlanetScaleIntegrationCard` and its parts: state and IO.
+// `PlanetScaleIntegrationCard` and its connect flow: state and IO.
+
+/** Where branch metrics come from: the OAuth grant's metrics API, or a Prometheus service token. */
+export const PlanetscaleMetricsMethod = Schema.Literals(["api", "service_token"])
+export type PlanetscaleMetricsMethod = typeof PlanetscaleMetricsMethod.Type
 
 export const PlanetscaleCardModel = Schema.Struct({
-	/** `PlanetScaleOrgPicker`, inline while the org is pending, in a dialog to change it. */
+	/** `PlanetScaleOrgPicker`: inline on the flow's Choose data step, in a dialog for Edit data. */
 	pickerDialog: Dialog.Model,
 	organizations: KeyedSchema(V2PlanetScaleOrganizationList, LoadFailure),
 	selectedOrg: Schema.NullOr(Schema.String),
 	includeBranches: Field.Model,
 	excludeBranches: Field.Model,
 	isSelecting: Schema.Boolean,
-	/** `PlanetScaleMetricsTokenForm` (setup or rotate). */
-	isRotating: Schema.Boolean,
+	/** `PlanetScaleMetricsHealth`'s "Show details". */
+	isDetailsOpen: Schema.Boolean,
+	/** The Connect step's metrics choice; null follows the connection's current `metrics_auth`. */
+	metricsMethod: Schema.NullOr(PlanetscaleMetricsMethod),
 	tokenId: Field.Model,
 	tokenSecret: Field.Model,
 	isSavingToken: Schema.Boolean,
+	/** PlanetScale rejected the token; nothing was saved. */
 	tokenError: Schema.NullOr(Schema.String),
-	/** `PlanetScaleMetricsHealth`'s "Show details". */
-	isDetailsOpen: Schema.Boolean,
-	/** `PlanetScaleWebhookSetup`: revealed, then the config read. */
-	isWebhookRevealed: Schema.Boolean,
-	webhookConfig: KeyedSchema(V2PlanetScaleWebhookConfig, LoadFailure),
-	/** When the card started watching for the first scrape (`watchStartedAt`). */
+	/** A token is attached and the form is open to replace it. */
+	isReplacingToken: Schema.Boolean,
+	/** The first clock read while awaiting first metrics; null while not awaiting. */
 	watchStartedAt: Schema.NullOr(Schema.Number),
-	urlCopy: CopyButton.Model,
-	secretCopy: CopyButton.Model,
 })
 export type PlanetscaleCardModel = typeof PlanetscaleCardModel.Type
 
@@ -50,44 +51,27 @@ export const initPlanetscaleCard = (): PlanetscaleCardModel => ({
 	includeBranches: Field.init(),
 	excludeBranches: Field.init(),
 	isSelecting: false,
-	isRotating: false,
+	isDetailsOpen: false,
+	metricsMethod: null,
 	tokenId: Field.init(),
 	tokenSecret: Field.init(),
 	isSavingToken: false,
 	tokenError: null,
-	isDetailsOpen: false,
-	isWebhookRevealed: false,
-	webhookConfig: { key: null, data: AsyncData.Idle() },
+	isReplacingToken: false,
 	watchStartedAt: null,
-	urlCopy: CopyButton.init(),
-	secretCopy: CopyButton.init(),
 })
 
+/** The card stops watching for first metrics after this long and offers "Check again". */
+export const WATCH_LIMIT_MS = 30 * 60 * 1000
+
+/** Connected, nothing collected yet and the grant works: the card watches the status. */
+export const isAwaitingFirstMetrics = (status: V2PlanetScaleIntegration | null, nowMs: number): boolean =>
+	status !== null && status.connected && derivePlanetScaleSetup(status, nowMs).awaitingFirstScrape
+
+export const isWatchExpired = (card: PlanetscaleCardModel, nowMs: number): boolean =>
+	card.watchStartedAt !== null && nowMs - card.watchStartedAt >= WATCH_LIMIT_MS
+
 /** Comma or newline separated globs, trimmed. */
-/** PlanetScale prints service token secrets with this prefix. Advisory, not a contract. */
-export const SECRET_PREFIX = "pscale_tkn_"
-
-/**
- * `normalizeTokenPaste`: an `id:secret` line fills both fields, and a bare secret pasted into the id
- * field goes to the secret.
- */
-export const normalizeTokenPaste = (
-	field: "id" | "secret",
-	pasted: string,
-	current: Readonly<{ id: string; secret: string }>,
-): Readonly<{ id: string; secret: string }> => {
-	const value = pasted.trim()
-	if (value === "") return current
-	const separator = value.indexOf(":")
-	if (separator > 0) {
-		const id = value.slice(0, separator).trim()
-		const secret = value.slice(separator + 1).trim()
-		if (id !== "" && secret !== "") return { id, secret }
-	}
-	if (field === "id" && value.startsWith(SECRET_PREFIX)) return { id: current.id, secret: value }
-	return field === "id" ? { id: value, secret: current.secret } : { id: current.id, secret: value }
-}
-
 export const parsePatternList = (value: string): ReadonlyArray<string> =>
 	value
 		.split(/[\n,]/)
@@ -105,20 +89,6 @@ export const FetchOrganizations = Command.define("FetchPlanetscaleOrganizations"
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOrganizations({ key, result })),
-		),
-})
-
-export const FetchWebhookConfig = Command.define("FetchPlanetscaleWebhookConfig", {
-	args: { key: Schema.String },
-	messages: [Message.CompletedFetchWebhookConfig],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			return yield* client.planetscaleIntegration.webhookConfig()
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchWebhookConfig({ key, result })),
 		),
 })
 
@@ -151,7 +121,7 @@ export const SelectOrganization = Command.define("SelectPlanetscaleOrganization"
 
 export const SetMetricsToken = Command.define("SetPlanetscaleMetricsToken", {
 	args: { tokenId: Schema.String, tokenSecret: Schema.String },
-	messages: [Message.CompletedSetMetricsToken],
+	messages: [Message.CompletedPlanetscaleToken],
 	execute: ({ tokenId, tokenSecret }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
@@ -162,15 +132,8 @@ export const SetMetricsToken = Command.define("SetPlanetscaleMetricsToken", {
 			yield* client.planetscaleIntegration.setMetricsToken({ payload })
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => {
-					const presentation = displayError(error)
-					return Message.CompletedSetMetricsToken({
-						error: isUnexpectedError(presentation)
-							? "Failed to save the metrics service token."
-							: presentation.message,
-					})
-				},
-				onSuccess: () => Message.CompletedSetMetricsToken({ error: null }),
+				onFailure: (error) => Message.CompletedPlanetscaleToken({ failure: toLoadFailure(error) }),
+				onSuccess: () => Message.CompletedPlanetscaleToken({ failure: null }),
 			}),
 		),
 })

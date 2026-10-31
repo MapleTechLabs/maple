@@ -1,24 +1,33 @@
 ---
-import { INSTRUMENTATION_SLUG } from "../../lib/docs-nav";
+// Docs / group, plus the parent row for nested pages (Effect / Server, Deploy /
+// Render). The H1 right below names the page, so the trail stops above it.
+// The group links to its overview page when it opens with one.
+import { getNavTree, locate } from "../../lib/docs-order";
 
 interface Props {
+    slug: string;
     group: string;
-    title: string;
 }
 
-const { group, title } = Astro.props;
-// Only the instrumentation group has a landing page of its own to link to.
-const groupHref = group === "Instrumentation" ? `/docs/${INSTRUMENTATION_SLUG}` : null;
+const { slug, group: ownGroup } = Astro.props;
+const tree = await getNavTree();
+const here = locate(tree, slug);
+const group = here?.group ?? ownGroup;
+const first = tree.find((g) => g.group === group)?.rows[0]?.doc;
+const groupHref = first && first.id !== slug && first.data.navLabel === "Overview" ? `/docs/${first.id}` : null;
+const parent = here?.parent ?? null;
+
+const linkClass = "whitespace-nowrap transition-colors hover:text-fg";
 ---
 
-<nav aria-label="Breadcrumb" class="mb-5 flex min-w-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-    <a href="/docs" class="hover:text-fg transition-colors">Docs</a>
-    <span class="text-border">/</span>
-    {groupHref ? (
-        <a href={groupHref} class="hover:text-fg transition-colors">{group}</a>
-    ) : (
-        <span>{group}</span>
+<nav aria-label="Breadcrumb" class="mb-5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
+    <a href="/docs" class={linkClass}>Docs</a>
+    <span class="text-border" aria-hidden="true">/</span>
+    {groupHref ? <a href={groupHref} class={linkClass}>{group}</a> : <span class="whitespace-nowrap">{group}</span>}
+    {parent && (
+        <>
+            <span class="text-border" aria-hidden="true">/</span>
+            <a href={`/docs/${parent.id}`} class={linkClass}>{parent.data.navLabel ?? parent.data.title}</a>
+        </>
     )}
-    <span class="text-border">/</span>
-    <span class="truncate font-display text-[12.5px] normal-case tracking-normal text-fg-muted/80">{title}</span>
 </nav>

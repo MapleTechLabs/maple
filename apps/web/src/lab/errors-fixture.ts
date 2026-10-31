@@ -244,7 +244,7 @@ const SEEDS: ReadonlyArray<SignalSeed> = [
 	{
 		n: 9,
 		title: "RateLimitExceeded",
-		detail: "429 from api.stripe.com — retry after 4s",
+		detail: "429 from api.stripe.com: retry after 4s",
 		service: "billing",
 		severity: null,
 		state: "wontfix",

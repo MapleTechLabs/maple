@@ -14,6 +14,10 @@ export async function getStaticPaths() {
 
 const { doc } = Astro.props;
 const { Content, headings } = await render(doc);
+// Frontmatter descriptions may carry `code` spans; render just those, escaped.
+const escapeHtml = (text: string) =>
+    text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const ledeHtml = escapeHtml(doc.data.description).replace(/`([^`]+)`/g, "<code>$1</code>");
 const author = doc.data.author ? CONTRIBUTORS[doc.data.author] : undefined;
 
 // The glob loader records the source path relative to the landing app.
@@ -32,10 +36,10 @@ const editHref = doc.filePath
     editHref={editHref}
 >
     {/* Outside the article so the prose link rules don't turn the trail amber. */}
-    <Breadcrumb group={doc.data.group} title={doc.data.title} />
+    <Breadcrumb slug={doc.id} group={doc.data.group} />
     <article class="docs-content docs-prose max-w-none">
         <h1 class="text-[30px] font-semibold leading-[1.15] tracking-[-0.025em] text-balance text-fg md:text-[34px]">{doc.data.title}</h1>
-        <p class="mt-3 max-w-[62ch] text-[16px] leading-[1.6] text-pretty text-fg-muted">{doc.data.description}</p>
+        <p class="docs-lede mt-3 max-w-[62ch] text-[16px] leading-[1.6] text-pretty text-fg-muted" set:html={ledeHtml} />
         {author && (
             <div class="docs-byline mt-4 flex items-center gap-2 text-[13px] text-fg-muted">
                 <img src={author.avatar} alt="" width="20" height="20" loading="lazy" />
@@ -47,3 +51,10 @@ const editHref = doc.filePath
         </div>
     </article>
 </DocsLayout>
+
+<style>
+    /* Code spans in the lede scale with its 16px text, not the 13px body token. */
+    .docs-lede :global(code) {
+        font-size: 14px;
+    }
+</style>

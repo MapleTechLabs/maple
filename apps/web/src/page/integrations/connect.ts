@@ -3,6 +3,8 @@ import {
 	GithubStartConnectRequest,
 	HazelStartConnectRequest,
 	IntegrationReturnPath,
+	LinearStartConnectRequest,
+	SupabaseConnectRequest,
 } from "@maple/domain/http"
 import { Effect, Result, Schema } from "effect"
 import { toLoadFailure } from "../../data/load-failure"
@@ -10,7 +12,14 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-cli
 
 // `IntegrationConnectProvider` and `useOAuthPopupFlow`.
 
-export const ConnectProvider = Schema.Literals(["cloudflare", "hazel", "github", "planetscale"])
+export const ConnectProvider = Schema.Literals([
+	"cloudflare",
+	"hazel",
+	"linear",
+	"github",
+	"planetscale",
+	"supabase",
+])
 export type ConnectProvider = typeof ConnectProvider.Type
 
 /** One attempt: the popup is out while this is set; a new attempt restarts the flow. */
@@ -50,7 +59,7 @@ export const PROVIDERS = {
 		label: "Cloudflare",
 		windowName: "maple-cloudflare-connect",
 		windowFeatures: "popup,width=520,height=680",
-		startErrorTitle: "Failed to start Cloudflare connect flow",
+		startErrorTitle: "Couldn't start Cloudflare connect flow",
 		closeGraceMs: 15_000,
 		polls: true,
 	},
@@ -58,7 +67,15 @@ export const PROVIDERS = {
 		label: "Hazel",
 		windowName: "maple-hazel-connect",
 		windowFeatures: "popup,width=520,height=640",
-		startErrorTitle: "Failed to start Hazel connect flow",
+		startErrorTitle: "Couldn't start Hazel connect flow",
+		closeGraceMs: 0,
+		polls: false,
+	},
+	linear: {
+		label: "Linear",
+		windowName: "maple-linear-connect",
+		windowFeatures: "popup,width=520,height=680",
+		startErrorTitle: "Couldn't start Linear connect flow",
 		closeGraceMs: 0,
 		polls: false,
 	},
@@ -66,7 +83,7 @@ export const PROVIDERS = {
 		label: "GitHub",
 		windowName: "maple-github-connect",
 		windowFeatures: "popup,width=600,height=720",
-		startErrorTitle: "Failed to start GitHub connect flow",
+		startErrorTitle: "Couldn't start GitHub connect flow",
 		closeGraceMs: 10_000,
 		polls: false,
 	},
@@ -74,7 +91,15 @@ export const PROVIDERS = {
 		label: "PlanetScale",
 		windowName: "maple-planetscale-connect",
 		windowFeatures: "popup,width=520,height=680",
-		startErrorTitle: "Failed to start PlanetScale connect flow",
+		startErrorTitle: "Couldn't start PlanetScale connect flow",
+		closeGraceMs: 0,
+		polls: false,
+	},
+	supabase: {
+		label: "Supabase",
+		windowName: "maple-supabase-connect",
+		windowFeatures: "popup,width=560,height=720",
+		startErrorTitle: "Couldn't start Supabase connect flow",
 		closeGraceMs: 0,
 		polls: false,
 	},
@@ -105,6 +130,10 @@ export const startConnect = (provider: ConnectProvider, returnTo: IntegrationRet
 				return yield* internal.integrations.hazelStart({
 					payload: new HazelStartConnectRequest({ returnTo }),
 				})
+			case "linear":
+				return yield* internal.integrations.linearStart({
+					payload: new LinearStartConnectRequest({ returnTo }),
+				})
 			case "github":
 				return yield* internal.integrations.githubStart({
 					payload: new GithubStartConnectRequest({ returnTo }),
@@ -115,5 +144,9 @@ export const startConnect = (provider: ConnectProvider, returnTo: IntegrationRet
 				})
 				return { redirectUrl: response.redirect_url }
 			}
+			case "supabase":
+				return yield* internal.integrations.supabaseConnect({
+					payload: new SupabaseConnectRequest({ returnTo }),
+				})
 		}
 	}).pipe(Effect.mapError(toLoadFailure))

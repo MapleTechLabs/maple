@@ -55,6 +55,26 @@
 		"require-yield": "off"
 	},
 	"overrides": [
+		// The dashboard's design rules (docs/design-rules.md), on the app and its kit.
+		{
+			"files": ["apps/web/src/**", "packages/ui/src/**"],
+			"rules": {
+				"maple/couldnt-copy": "error",
+				"maple/hover-needs-active": "error",
+				"maple/instant-state": "error",
+				"maple/no-arbitrary-radius": "error",
+				"maple/no-dimmed-icon": "error",
+				"maple/no-raw-shadow": "error",
+				"maple/no-transition-all": "error",
+				"maple/single-tooltip-delay": "error",
+				"maple/tone-alpha-steps": "error"
+			}
+		},
+		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
+		{
+			"files": ["apps/web/src/lab/**"],
+			"rules": { "maple/couldnt-copy": "off" }
+		},
 		// Existing API burndown entries, relocated with their implementation.
 		{
 			"files": [
@@ -198,14 +218,17 @@
 			}
 		},
 		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
-		// Tailwind class pins, and source greps. Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
+		// Tailwind class pins, source greps, exact command lists and SQL projection pins.
+		// Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
 		{
 			"files": ["**/*.test.ts", "**/*.test.tsx"],
 			"plugins": ["vitest"],
 			"rules": {
 				"test-slop/no-classname-assertions": "error",
 				"test-slop/no-constant-pin": "error",
+				"test-slop/no-exact-name-list": "error",
 				"test-slop/no-source-text-assertions": "error",
+				"test-slop/no-sql-text-pin": "error",
 				"test-slop/no-weak-only-assertions": "error",
 				"vitest/expect-expect": [
 					"error",
@@ -232,7 +255,8 @@
 							"match",
 							"doesNotMatch",
 							"fail",
-							"expectTypeOf"
+							"expectTypeOf",
+							"Lazy.expectAllReused"
 						]
 					}
 				],
@@ -245,6 +269,13 @@
 				"vitest/require-to-throw-message": "off",
 				"vitest/valid-expect": "off",
 				"vitest/valid-title": "off"
+			}
+		},
+		// The raw-SQL preparer is a text rewriter: its output SQL text is the behavior under test.
+		{
+			"files": ["packages/query-engine/src/runtime/raw-sql*.test.ts"],
+			"rules": {
+				"test-slop/no-sql-text-pin": "off"
 			}
 		},
 		// "shape" is Electric's own protocol noun — `/v1/shape` is the endpoint this
@@ -274,7 +305,7 @@
 				"apps/api/src/runtime/service-graph.ts",
 				"packages/backend/src/services/integrations/vcs/VcsProviderRegistry.ts",
 				"apps/api/src/routes/internal/integrations.http.ts",
-				"apps/api/src/routes/integrations-callback.http.ts",
+				"apps/api/src/routes/oauth-complete.ts",
 				"packages/backend/src/services/integrations/vcs/vendor/**",
 				"packages/backend/src/services/integrations/vcs/__tests__/**"
 			],
@@ -297,6 +328,23 @@
 			"files": ["apps/ai/src/**/*.ts"],
 			"excludeFiles": ["**/*.test.ts"],
 			"rules": { "maple/mcp-tracer-anticipated-errors": "error" }
+		},
+		// The status Worker must keep serving while Maple is down: no Postgres, auth or backend services.
+		{
+			"files": ["apps/status/**/*.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^(?:@maple/backend|@maple/db|@maple-dev/effect-orm|@maple/auth|@clerk/)",
+								"message": "apps/status serves pages while Maple is down; it reads only KV, R2 and the colo cache. Share pure code through @maple/domain or @maple/status-page."
+							}
+						]
+					}
+				]
+			}
 		},
 		// Customer SDK bundle boundaries (were source-grepping architecture tests). Later overrides
 		// replace earlier rule options, so the narrower tiers repeat the broader patterns.
@@ -377,6 +425,25 @@
 					"location",
 					"localStorage",
 					"indexedDB"
+				]
+			}
+		},
+		// Code views highlight through lib/highlight, whose output falls back to plain text past the
+		// display cap; a span per token of a megabyte log body froze the log sheet.
+		{
+			"files": ["apps/web/src/**/*.ts", "apps/local-ui/src/**/*.ts"],
+			"excludeFiles": ["apps/web/src/lib/highlight.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@pierre/highlights",
+								"message": "Use highlightCode from lib/highlight (or cappedCode from ui/logs/log-message): they bound what a view renders."
+							}
+						]
+					}
 				]
 			}
 		},
@@ -645,10 +712,10 @@
 	// Vendored third-party source is read as a unit and re-pulled wholesale from its upstream,
 	// so house rules that would be rewrites are not applied to it.
 	"ignorePatterns": [
+		"packages/security-audit/skill/**",
 		".agents/**",
 		".codex/**",
 		".context/**",
-		".deepsec/**",
 		".factory/**",
 		".impeccable/**",
 		".superset/**",

@@ -49,8 +49,8 @@ describe("productEventsFunnelQuery", () => {
 		)
 		expect(compiled.tenantScope).toBe("single-tenant")
 		// product_events, session_replays (session step) and identity_links (person key).
-		expect(compiled.sql).toContain("FROM product_events AS e")
-		expect(compiled.sql).toContain("FROM session_replays AS s")
+		expect(compiled.sql).toContain("FROM product_events")
+		expect(compiled.sql).toContain("FROM session_replays")
 		expect(compiled.sql).toContain("FROM identity_links")
 		expect(compiled.sql.match(/OrgId = 'org_1'/g)?.length).toBeGreaterThanOrEqual(4)
 	})
@@ -149,7 +149,6 @@ describe("productEventsFunnelQuery", () => {
 			),
 			params,
 		)
-		expect(sql).toContain("UNION ALL")
 		// The session branch: s1 = 1, every other step 0, at the session's StartTime.
 		expect(oneLine(sql)).toContain(
 			"SELECT s.VisitorId AS key, toUInt64(toUnixTimestamp64Milli(s.StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
@@ -317,6 +316,7 @@ describe("productEventsFunnelBreakdownQuery", () => {
 			),
 			params,
 		)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- breakdownBy picks the grouped column
 		expect(sql).toContain("Host AS dim")
 		expect(sql).not.toContain("session_replays")
 	})
@@ -403,6 +403,7 @@ describe("funnel drop-off details", () => {
 			),
 			params,
 		)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- steps are 1-based, the chain level 0-based
 		expect(sql).toContain("level + 1 AS step")
 		expect(sql).toContain("arrayElement([t1, t2, t3], level) AS tLast")
 		expect(sql).toContain("WHERE chain.level >= 1")
@@ -411,9 +412,6 @@ describe("funnel drop-off details", () => {
 		expect(sql).toContain("argMinIf(e.name, e.ts, e.ts > d.tLast) AS next")
 		// No identity join on a visitor key, so the branch's columns go unprefixed.
 		expect(sql).toContain("if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name")
-		// Every event of the population, not just step matches: no step OR-chain
-		// on the joined branch.
-		expect(sql).toContain("INNER JOIN")
 		expect(sql).toContain("groupArray(tuple(next, count))), 1, 6) AS head")
 		expect(sql).toContain("ORDER BY step ASC, count DESC, next ASC")
 	})

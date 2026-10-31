@@ -8,6 +8,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isInspectingOf } from "./derive"
 import { DEFAULT_PRESET } from "./update"
+import { pollTicks } from "../../../data/poll"
 
 type Input = PageSubscriptionInput<Model>
 
@@ -27,7 +28,7 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 	),
 	/**
 	 * `PageRefreshProvider`'s `useIntervalRefresh`: the `?refresh=` cadence, held while the reader
-	 * inspects, skipped in a hidden tab and off for a custom range (a fixed window has nothing new to tail).
+	 * inspects, paused while hidden or offline and off for a custom range (a fixed window has nothing new to tail).
 	 */
 	autoRefresh: entry(
 		{ intervalSeconds: Schema.Number },
@@ -41,9 +42,7 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 			}),
 			dependenciesToStream: ({ intervalSeconds }) =>
 				intervalSeconds > 0
-					? Stream.tick(Duration.seconds(intervalSeconds)).pipe(
-							Stream.drop(1),
-							Stream.filter(() => typeof document === "undefined" || !document.hidden),
+					? pollTicks(Duration.seconds(intervalSeconds)).pipe(
 							Stream.map(() => Message.TickedAutoRefresh()),
 						)
 					: Stream.empty,

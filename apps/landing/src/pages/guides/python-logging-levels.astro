@@ -1,0 +1,623 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight, type GuideLang } from "../../lib/guide-highlight";
+import LanguageTabs from "../../components/docs/LanguageTabs.astro";
+import LanguageTab from "../../components/docs/LanguageTab.astro";
+
+const pageTitle = "Python logging levels: how to set the log level | Maple";
+const pageDescription =
+    "The five Python logging levels, which one to use, and how to set the log level with basicConfig, setLevel, a command-line flag or LOG_LEVEL.";
+const published = "2026-10-19";
+const updatedLabel = "October 22, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const toc = [
+    { depth: 2, slug: "levels", text: "The logging levels" },
+    { depth: 3, slug: "basicconfig", text: "Set the level" },
+    { depth: 3, slug: "choosing", text: "Choosing a level" },
+    { depth: 2, slug: "set-level", text: "From a flag or variable" },
+    { depth: 3, slug: "per-module", text: "Quiet noisy libraries" },
+    { depth: 2, slug: "handler-levels", text: "Handler levels" },
+    { depth: 2, slug: "opentelemetry", text: "OpenTelemetry" },
+    { depth: 3, slug: "otel-setup", text: "Install and configure" },
+    { depth: 3, slug: "otel-run", text: "Run it" },
+    { depth: 3, slug: "maple", text: "See the levels in Maple" },
+    { depth: 2, slug: "mistakes", text: "Common mistakes" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
+
+// One color per level, the same severity colors Maple's Logs page uses. Code
+// blocks, badges and tables all read them.
+const levels = [
+    { name: "DEBUG", color: "var(--severity-debug)", use: "Details you only need while tracking down a bug.", example: `log.debug("cache miss for user 42")` },
+    { name: "INFO", color: "var(--severity-info)", use: "Normal events that show the program is doing its job.", example: `log.info("order 1042 placed")` },
+    { name: "WARNING", color: "var(--severity-warn)", use: "Something unexpected happened, and the program handled it.", example: `log.warning("payment API slow, retrying")` },
+    { name: "ERROR", color: "var(--severity-error)", use: "An operation failed.", example: `log.error("charge failed for order 1042")` },
+    { name: "CRITICAL", color: "var(--severity-fatal)", use: "The program can't keep running.", example: `log.critical("database unreachable, exiting")` },
+] as const;
+const levelColor = Object.fromEntries(levels.map((l) => [l.name, l.color]));
+
+// Shared highlighter, plus the level names in their level color.
+const code = (src: string, lang: GuideLang = "python") =>
+    highlight(src, lang).replace(/\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b/g, (name) => `<span class="lvl" style="--lvl: ${levelColor[name]}">${name}</span>`);
+
+const decide = [
+    ["Can the program no longer keep running?", "CRITICAL"],
+    ["Did an operation fail?", "ERROR"],
+    ["Did something go wrong that the program recovered from?", "WARNING"],
+    ["Would you want this line in production logs every day?", "INFO"],
+    ["Is it only useful while debugging?", "DEBUG"],
+] as const;
+
+const basicCode = String.raw`import logging
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("app")
+
+log.debug("cache miss for user 42")
+log.info("order 1042 placed")
+log.warning("payment API slow, retrying")`;
+
+const basicRun = String.raw`$ python app.py
+INFO:app:order 1042 placed
+WARNING:app:payment API slow, retrying`;
+
+const setLevelCode = String.raw`logging.getLogger("app.db").setLevel(logging.DEBUG)`;
+
+const flagCode = String.raw`import argparse
+import logging
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--log-level",
+    default="WARNING",
+    type=str.upper,
+    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+)
+args = parser.parse_args()
+
+logging.basicConfig(level=args.log_level)
+log = logging.getLogger("app")
+log.debug("parsed %s", args)
+log.info("starting")`;
+
+const flagRun = String.raw`$ python app.py --log-level debug
+DEBUG:app:parsed Namespace(log_level='DEBUG')
+INFO:app:starting
+$ python app.py --log-level loud
+usage: app.py [-h] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+app.py: error: argument --log-level: invalid choice: 'LOUD' (choose from 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')`;
+
+const envCode = String.raw`import logging
+import os
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
+log = logging.getLogger("worker")
+log.debug("polling queue")
+log.info("job 7 done")`;
+
+const envRun = String.raw`$ LOG_LEVEL=debug python worker.py
+DEBUG:worker:polling queue
+INFO:worker:job 7 done
+$ python worker.py
+INFO:worker:job 7 done`;
+
+const noisyCode = String.raw`for name in ("urllib3", "botocore", "httpx", "httpcore"):
+    logging.getLogger(name).setLevel(logging.WARNING)`;
+
+const handlersCode = String.raw`import logging
+
+root = logging.getLogger()
+root.setLevel(logging.DEBUG)
+
+console = logging.StreamHandler()
+console.setLevel(logging.WARNING)
+root.addHandler(console)
+
+logfile = logging.FileHandler("app.log")
+logfile.setLevel(logging.DEBUG)
+root.addHandler(logfile)
+
+log = logging.getLogger("app")
+log.debug("cache miss for user 42")
+log.warning("payment API slow, retrying")`;
+
+const handlersRun = String.raw`$ python app.py
+payment API slow, retrying
+$ cat app.log
+cache miss for user 42
+payment API slow, retrying`;
+
+const otelInstall = String.raw`pip install opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-http \
+    opentelemetry-instrumentation-logging`;
+
+const otelCode = String.raw`import logging
+
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.instrumentation.logging.handler import LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.resources import Resource
+
+ENDPOINT = "https://ingest.maple.dev/v1/logs"
+HEADERS = {"authorization": "Bearer YOUR_INGEST_KEY"}
+
+logger_provider = LoggerProvider(resource=Resource.create({"service.name": "my-python-app"}))
+logger_provider.add_log_record_processor(
+    BatchLogRecordProcessor(OTLPLogExporter(endpoint=ENDPOINT, headers=HEADERS))
+)
+set_logger_provider(logger_provider)
+
+root = logging.getLogger()
+root.setLevel(logging.DEBUG)
+root.addHandler(logging.StreamHandler())  # terminal: every level
+
+otel = LoggingHandler(logger_provider=logger_provider)
+otel.setLevel(logging.INFO)  # backend: INFO and above
+root.addHandler(otel)
+
+# The exporter's HTTP client logs each request at DEBUG.
+logging.getLogger("urllib3").setLevel(logging.WARNING)`;
+
+const otelAppCode = String.raw`import logging
+
+import telemetry  # noqa: F401
+
+log = logging.getLogger("app")
+log.debug("cart has 3 items")
+log.info("order 1042 placed")
+log.warning("payment API slow, retrying")`;
+
+const otelRun = String.raw`$ python app.py
+cart has 3 items
+order 1042 placed
+payment API slow, retrying`;
+
+const basicConfigFix = "logging.getLogger().setLevel(logging.INFO)";
+
+const setTabs = [
+    { id: "log-level-flag", label: "--log-level flag", file: "app.py", src: flagCode, run: flagRun,
+      note: `<code>type=str.upper</code> makes <code>--log-level debug</code> work, and <code>choices</code> rejects a typo before the program starts.` },
+    { id: "log-level-env", label: "LOG_LEVEL variable", file: "worker.py", src: envCode, run: envRun,
+      note: `<code>LOG_LEVEL</code> is a common name, not a variable Python knows about. Keep the <code>.upper()</code>: <code>basicConfig</code> accepts <code>"DEBUG"</code> but raises <code>ValueError</code> for <code>"debug"</code>, and for an unknown name such as <code>LOG_LEVEL=loud</code>.` },
+];
+
+const mistakes = [
+    ["Lower-case level names", "<code>setLevel(\"debug\")</code> and <code>basicConfig(level=\"debug\")</code> raise <code>ValueError: Unknown level: 'debug'</code>. Call <code>.upper()</code> on any name that comes from a user or a variable."],
+    ["Losing the traceback", "<code>log.error(e)</code> in an <code>except</code> block logs the message without the traceback. <code>log.exception(\"charge failed\")</code> logs at ERROR and adds the traceback."],
+    ["Configuring logging in a library", "A library that calls <code>basicConfig</code> or sets the root level overrides the application's choice. A library only creates its logger with <code>logging.getLogger(__name__)</code>, and the application sets the levels."],
+    ["Formatting the message yourself", "<code>log.debug(f\"payload {data}\")</code> builds the string even when DEBUG is off. <code>log.debug(\"payload %s\", data)</code> only builds it for messages that pass the level."],
+];
+
+const faqs = [
+    {
+        question: "What are the Python logging levels?",
+        answer:
+            "Python's logging module has five levels, from least to most serious: DEBUG, INFO, WARNING, ERROR and CRITICAL. Each has a constant (logging.DEBUG, logging.INFO, ...) and a method (log.debug(), log.info(), ...). Python drops every message below the level you set.",
+    },
+    {
+        question: "What is the default logging level in Python?",
+        answer:
+            "WARNING. Until you set a level, Python drops DEBUG and INFO messages, which is why log.info() prints nothing in a new script. Call logging.basicConfig(level=logging.INFO) at startup to change it.",
+    },
+    {
+        question: "How do I set the logging level in Python?",
+        answer:
+            "Call logging.basicConfig(level=logging.INFO) once at startup. To change the level of one logger, call setLevel on it: logging.getLogger(\"app.db\").setLevel(logging.DEBUG). Both accept the constant or its upper-case name, such as \"DEBUG\".",
+    },
+    {
+        question: "How do I set the Python log level from an environment variable?",
+        answer:
+            "Read the variable yourself and pass it on: logging.basicConfig(level=os.environ.get(\"LOG_LEVEL\", \"INFO\").upper()). Python does not read any log level variable on its own; LOG_LEVEL is a naming convention. An unknown name raises ValueError at startup.",
+    },
+    {
+        question: "How do I set the Python logging level from the command line?",
+        answer:
+            "Add a --log-level option with argparse, using type=str.upper so lower-case input works and choices to reject typos, then pass args.log_level to logging.basicConfig(level=...).",
+    },
+    {
+        question: "Why doesn't my Python debug log print?",
+        answer:
+            "The level is still above DEBUG, usually at the default WARNING. Call logging.basicConfig(level=logging.DEBUG) at startup. If that has no effect, a framework or library already set up logging, and basicConfig does nothing in that case; call logging.getLogger().setLevel(logging.DEBUG) instead.",
+    },
+    {
+        question: "What is the difference between logger level and handler level?",
+        answer:
+            "The logger level decides whether a message is logged at all. Each handler's level then decides whether that handler writes it, so one logger can send DEBUG to a file and only WARNING to the terminal.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Python logging levels",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: "2026-10-22",
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/python-logging-levels`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Python logging levels" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Python</span>
+                    <span>6 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Python logging levels
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    What each level means, which one to use, and how to set it from code, a flag or an environment variable.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime="2026-10-22">Updated {updatedLabel}</time>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={toc} class="sticky top-28" />
+            </aside>
+
+            <article class="pylog-guide min-w-0">
+                <section id="levels" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Basics</p>
+                    <h2>The Python logging levels</h2>
+
+                    <div class="guide-answer">
+                        <p>A <strong>log level</strong> is a label on each log message that says how serious it is. You choose a level for your program, and Python drops every message below it.</p>
+                    </div>
+
+                    <p>
+                        The method you call sets a message's level: <code>log.debug()</code>, <code>log.info()</code>, <code>log.warning()</code>, <code>log.error()</code> or <code>log.critical()</code>. These are the five levels, from least to most serious:
+                    </p>
+
+                    <div class="guide-table">
+                        <table class="is-compact">
+                            <thead>
+                                <tr><th>Level</th><th>Use it when</th></tr>
+                            </thead>
+                            <tbody>
+                                {levels.map((l) => (
+                                    <tr>
+                                        <td><span class="lvl-badge" style={`--lvl: ${l.color}`}>{l.name}</span></td>
+                                        <td>{l.use}<code class="level-example">{l.example}</code></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 id="basicconfig" class="scroll-mt-24">Set the level</h3>
+                    <p>
+                        Set the level once, when the program starts, with <code>logging.basicConfig</code>. Messages at that level or above are printed, and messages below it are dropped:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">app.py</p>
+                        <pre><code set:html={code(basicCode)} /></pre>
+                    </div>
+                    <pre class="pre-output"><code set:html={code(basicRun, "console")} /></pre>
+                    <p>
+                        <code>logging.getLogger("app")</code> returns a <strong>logger</strong> named <code>app</code>, the object you log through. The DEBUG message is dropped because DEBUG is below INFO.
+                    </p>
+                    <p>
+                        Without the <code>basicConfig</code> line, the script prints only <code>payment API slow, retrying</code>. Python's default level is WARNING, which is why <code>log.info()</code> and <code>log.debug()</code> print nothing until you set a level.
+                    </p>
+                    <p>
+                        To change the level for one part of your program, call <code>setLevel</code> on its logger. This line turns on DEBUG messages for the <code>app.db</code> logger while everything else stays at INFO:
+                    </p>
+                    <pre><code set:html={code(setLevelCode)} /></pre>
+
+                    <h3 id="choosing" class="scroll-mt-24">Choosing a level</h3>
+                    <p>Ask these questions in order and use the first level that fits:</p>
+                    <ol class="guide-decide">
+                        {decide.map(([question, level]) => (
+                            <li><span>{question}</span><span class="lvl-badge" style={`--lvl: ${levelColor[level]}`}>{level}</span></li>
+                        ))}
+                    </ol>
+                    <p>
+                        Run production at INFO and switch to DEBUG while you investigate a problem.
+                    </p>
+                </section>
+
+                <section id="set-level" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Configure</p>
+                    <h2>Set the level from a flag or environment variable</h2>
+                    <p>
+                        With <code>logging.INFO</code> in the code, seeing DEBUG messages means editing the code. Read the level from outside instead: a command-line tool takes a flag, and a service in a container reads an environment variable. Python reads neither on its own, so the program passes the value to <code>basicConfig</code>, which accepts a level name such as <code>"DEBUG"</code> as well as the constant:
+                    </p>
+                    <LanguageTabs tabs={setTabs.map(({ id, label }) => ({ id, label }))} label="Where the level comes from" group="maple-guide-log-level-source">
+                        {setTabs.map((t) => (
+                            <LanguageTab id={t.id}>
+                                <p class="code-tab__file">{t.file}</p>
+                                <pre><code set:html={code(t.src)} /></pre>
+                                <pre class="code-tab__run pre-output"><code set:html={code(t.run, "console")} /></pre>
+                                <p class="code-tab__note" set:html={t.note} />
+                            </LanguageTab>
+                        ))}
+                    </LanguageTabs>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">basicConfig runs once</p>
+                        <p>If a framework or library already set up logging, <code>basicConfig</code> silently does nothing. Set the level directly instead:</p>
+                        <pre><code set:html={code(basicConfigFix)} /></pre>
+                    </div>
+
+                    <h3 id="per-module" class="scroll-mt-24">Quiet noisy libraries</h3>
+                    <p>
+                        Libraries log through their own loggers, named after the package. Raise the level on those loggers to hide their DEBUG and INFO messages when you run your own code at DEBUG:
+                    </p>
+                    <pre><code set:html={code(noisyCode)} /></pre>
+                    <p>
+                        A level on <code>urllib3</code> also covers <code>urllib3.connectionpool</code> and every other logger whose name starts with <code>urllib3.</code>. The default <code>basicConfig</code> output shows each logger's name between the colons, as in <code>DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): example.com:443</code>.
+                    </p>
+                </section>
+
+                <section id="handler-levels" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Going further</p>
+                    <h2>Logger and handler levels</h2>
+                    <p>
+                        A <strong>handler</strong> is the object that writes messages somewhere: <code>StreamHandler</code> to the terminal, <code>FileHandler</code> to a file. <code>basicConfig</code> adds a terminal handler for you. Each handler can have its own level, so this script prints warnings to the terminal and keeps every message in a file:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">app.py</p>
+                        <pre><code set:html={code(handlersCode)} /></pre>
+                    </div>
+                    <pre class="pre-output"><code set:html={code(handlersRun, "console")} /></pre>
+                    <p>
+                        A message passes the logger's level first, then each handler's level. A message the logger drops never reaches a handler, so set the logger to the lowest level any of its handlers needs.
+                    </p>
+                </section>
+
+                <section id="opentelemetry" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · OpenTelemetry</p>
+                    <h2>Python log levels in OpenTelemetry</h2>
+                    <p>
+                        OpenTelemetry can send your <code>logging</code> messages, each with its level, to any backend that accepts OTLP, the OpenTelemetry protocol. The setup is one more handler on the root logger, so the levels on this page decide what gets sent. The example sends to Maple.
+                    </p>
+
+                    <h3 id="otel-setup" class="scroll-mt-24">Install and configure</h3>
+                    <pre><code>{otelInstall}</code></pre>
+                    <p>
+                        Create <code>telemetry.py</code>. It names your service, points the exporter at your backend's OTLP logs endpoint, and adds two handlers to the root logger: the terminal gets every level, the backend gets INFO and above.
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">telemetry.py</p>
+                        <pre><code set:html={code(otelCode)} /></pre>
+                    </div>
+                    <p>
+                        For Maple, replace <code>YOUR_INGEST_KEY</code> with an ingest key from the Ingestion page in Maple's settings; organizations in the EU region send to <code>https://ingest.eu.maple.dev/v1/logs</code>. For another backend, change <code>ENDPOINT</code> and <code>HEADERS</code>: a local OpenTelemetry Collector, for example, listens on <code>http://localhost:4318/v1/logs</code> and needs no header.
+                    </p>
+
+                    <h3 id="otel-run" class="scroll-mt-24">Run it</h3>
+                    <p>Import <code>telemetry</code> once, before the first log call:</p>
+                    <div class="code-file">
+                        <p class="code-file__name">app.py</p>
+                        <pre><code set:html={code(otelAppCode)} /></pre>
+                    </div>
+                    <pre class="pre-output"><code set:html={code(otelRun, "console")} /></pre>
+                    <p>
+                        All three lines print in the terminal. The backend receives <code>order 1042 placed</code> and <code>payment API slow, retrying</code>, and the DEBUG line stays local. The SDK sends records in batches about once a second and sends the rest when the program exits.
+                    </p>
+
+                    <h3 id="maple" class="scroll-mt-24">See the levels in Maple</h3>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Open Logs and pick a level</h4><p>Pick your app under <strong>Service</strong> in the sidebar, then include or exclude levels under <strong>Severity</strong>. The volume chart stacks log counts by level, in the colors this page uses.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/python-logging-levels-01-severity-filter.webp" data-zoomable alt="The Logs page for the my-python-app service with the WARN and ERROR severities selected: the volume chart stacked by severity and the matching rows, such as slow query warnings and charge failed errors." width="2362" height="1330" loading="lazy" /></figure></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Open a record</h4><p>Click a row, then <strong>Open detail</strong> to see the message and its attributes. A record logged with <code>log.exception()</code> carries the exception type, message and stack trace.</p>
+                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/python-logging-levels-02-log-detail.webp" data-zoomable alt="The detail sheet of an ERROR record from a Python service: the Error banner with the TimeoutError, the meta strip with the trace link and span ID, and the exception message, stack trace and type under Log Attributes." width="1342" height="1086" loading="lazy" /></figure></div>
+                        </li>
+                    </ol>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Python logs in Maple</p>
+                        <h3>Send your logging records to Maple</h3>
+                        <p>For traces and metrics from the same app, see the Python guide. Using Loguru instead of <code>logging</code>? See the <a href="/guides/loguru">Loguru guide</a>.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/guides/instrumentation-python" class="guide-button guide-button--primary">Set up Python with Maple</a>
+                            <a href="/docs/explore/logs" class="guide-button">Logs docs</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="mistakes" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Mistakes</p>
+                    <h2>Common Python logging level mistakes</h2>
+                    <div class="guide-checklist">
+                        {mistakes.map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{title}</h4><p set:html={body} /></div></div>
+                        ))}
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://docs.python.org/3/library/logging.html" target="_blank" rel="noopener noreferrer">Python docs: logging (levels, basicConfig, setLevel)</a></li>
+                        <li><a href="https://docs.python.org/3/howto/logging.html" target="_blank" rel="noopener noreferrer">Python docs: Logging HOWTO</a></li>
+                        <li><a href="https://opentelemetry.io/docs/specs/otlp/" target="_blank" rel="noopener noreferrer">OpenTelemetry: OTLP specification</a></li>
+                        <li><a href="https://pypi.org/project/opentelemetry-instrumentation-logging/" target="_blank" rel="noopener noreferrer">PyPI: opentelemetry-instrumentation-logging</a></li>
+                        <li><a href="/docs/explore/logs">Maple docs: Logs</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<script>
+    import { bindCopyButtons } from "../../lib/copy-to-clipboard";
+
+    // A copy button on every code block, as on the docs pages. Output blocks get none.
+    const article = document.querySelector(".pylog-guide");
+    if (article) {
+        for (const pre of article.querySelectorAll<HTMLPreElement>("pre:not(.pre-output)")) {
+            pre.dataset.copy = pre.textContent ?? "";
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "code-copy";
+            button.textContent = "copy";
+            button.setAttribute("aria-label", "Copy code");
+            pre.appendChild(button);
+        }
+        bindCopyButtons({
+            root: article,
+            hostSelector: "pre[data-copy]",
+            buttonSelector: ".code-copy",
+            track: { event: "docs_snippet_copied", key: "snippet" },
+        });
+    }
+</script>
+
+<style is:global>
+    .pylog-guide { max-width: 46rem; font-family: var(--font-display); }
+    .pylog-guide section + section { margin-top: 5.5rem; }
+    .pylog-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .pylog-guide .guide-eyebrow span { color: var(--primary); }
+    .pylog-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .pylog-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .pylog-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .pylog-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .pylog-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .pylog-guide strong { font-weight: 600; color: var(--foreground); }
+    .pylog-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .pylog-guide pre { position: relative; margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .pylog-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .pylog-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .pylog-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .pylog-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pylog-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .pylog-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
+    /* One color per level: set --lvl on the element. */
+    .pylog-guide .lvl { color: color-mix(in oklab, var(--lvl) 85%, var(--foreground)); }
+    .pylog-guide .lvl-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--lvl) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--lvl) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--lvl) 75%, var(--foreground)); white-space: nowrap; }
+    .pylog-guide .tok-comment { color: var(--muted-foreground); }
+    .pylog-guide .tok-fn { color: color-mix(in oklab, var(--chart-5) 80%, var(--foreground)); }
+    .pylog-guide .tok-labels { color: color-mix(in oklab, var(--foreground) 62%, var(--background)); }
+    .pylog-guide .tok-value { color: var(--foreground); }
+
+    .pylog-guide pre[data-copy] { padding-right: 4.5rem; }
+    /* Copy buttons, injected by the page script; same look as the docs code blocks. */
+    .pylog-guide .code-copy { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; border: 1px solid var(--border); border-radius: 5px; background: color-mix(in oklab, var(--bg-elevated) 85%, var(--background)); padding: 3px 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); opacity: 0; transition: color 150ms ease, border-color 150ms ease; }
+    .pylog-guide pre:hover .code-copy, .pylog-guide .code-copy:focus-visible, .pylog-guide .code-copy.is-done { opacity: 1; }
+    .pylog-guide .code-copy:hover { border-color: color-mix(in oklab, var(--primary) 50%, var(--border)); color: var(--primary); }
+    .pylog-guide .code-copy.is-done { border-color: color-mix(in oklab, var(--chart-3) 55%, var(--border)); color: var(--chart-3); }
+    .pylog-guide .guide-callout pre { margin: 0.8rem 0 0; }
+    .pylog-guide .code-file { margin: 1.25rem 0 0; }
+    .pylog-guide .code-file__name, .pylog-guide .code-tab__file { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .pylog-guide .code-file pre { margin: 0 0 1rem; border-top-left-radius: 0; }
+    .pylog-guide .lt { margin: 1.5rem 0; }
+    .pylog-guide .lt .code-tab__file { width: auto; border-radius: 0; }
+    .pylog-guide .lt pre { margin: 0; border-radius: 0; }
+    .pylog-guide .lt .code-tab__run { border-top: 0; border-radius: 0 0 0.5rem 0.5rem; background: var(--background); }
+    .pylog-guide .lt .code-tab__note { margin: 0.9rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
+
+
+    .pylog-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .pylog-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .pylog-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pylog-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: middle; }
+    .pylog-guide td + td { border-left: 1px solid var(--border); }
+    .pylog-guide tbody tr:last-child td { border-bottom: 0; }
+    .pylog-guide table.is-compact { min-width: 0; }
+    .pylog-guide td:first-child { width: 1%; }
+    .pylog-guide td .level-example { display: block; width: fit-content; margin-top: 0.45rem; overflow-wrap: anywhere; }
+
+    .pylog-guide .guide-decide { margin: 1.25rem 0 1.5rem; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: 0.75rem; overflow: hidden; }
+    .pylog-guide .guide-decide li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--border); padding: 0.75rem 1rem; font-size: 15px; line-height: 1.5; color: var(--foreground); }
+    .pylog-guide .guide-decide li:last-child { border-bottom: 0; }
+
+    .pylog-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pylog-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .pylog-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .pylog-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .pylog-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .pylog-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .pylog-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .pylog-guide .guide-figure { margin: 1rem 0 0; }
+    .pylog-guide .guide-figure--narrow { max-width: 22rem; }
+    .pylog-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .pylog-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .pylog-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .pylog-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--destructive); }
+    .pylog-guide .guide-checklist p { margin: 0.35rem 0 0; font-size: 12.5px; line-height: 1.6; color: var(--muted-foreground); }
+    .pylog-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .pylog-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .pylog-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .pylog-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .pylog-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .pylog-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .pylog-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .pylog-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .pylog-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .pylog-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .pylog-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .pylog-guide .guide-maple { padding: 2rem; }
+    }
+    @media (hover: none) {
+        .pylog-guide .code-copy { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .pylog-guide a, .pylog-guide .guide-button { transition: none; }
+    }
+</style>

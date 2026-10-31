@@ -337,7 +337,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		detections: {},
 		hasPaintedTable: false,
 		isFilterRailMounted: false,
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		filterSections: FilterSections.init(),
 		rangeDrafts: draftsOf(route.search),
 		rangeDraftVersion: 0,
@@ -353,6 +353,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			ResolveWindow({ mode: "Load", timeZone: context.timeZone }),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -486,13 +487,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: followRail({ model: { ...model, isFilterRailMounted: true } }),
 		PaintedTable: () =>
 			model.hasPaintedTable ? { model } : follow({ model: { ...model, hasPaintedTable: true } }),
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

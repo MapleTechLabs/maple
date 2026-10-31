@@ -40,7 +40,7 @@ const ACCENTS = {
 	function: { rail: "bg-chart-5", text: "text-chart-5", soft: "bg-chart-5/15" },
 	messaging: { rail: "bg-chart-throughput", text: "text-chart-throughput", soft: "bg-chart-throughput/15" },
 	platform: { rail: "bg-chart-p95", text: "text-chart-p95", soft: "bg-chart-p95/15" },
-	internal: { rail: "bg-severity-trace", text: "text-severity-trace", soft: "bg-severity-trace/15" },
+	internal: { rail: "bg-severity-trace", text: "text-severity-trace", soft: "bg-severity-trace-a2" },
 } satisfies Record<SpanCategoryId, SpanCategoryAccent>
 
 /** Ordered legend entries: default label and icon per category. */

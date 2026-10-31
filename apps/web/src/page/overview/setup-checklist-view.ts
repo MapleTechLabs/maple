@@ -1,7 +1,8 @@
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { getOnboardingSetupHint } from "../../lib/onboarding-intent"
-import { Submodel } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { LoadFailure } from "../../data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
 import { card, cardPanel } from "../../ui/card"
@@ -20,13 +21,17 @@ type H = HtmlBuilder<Message>
 /** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
-		[h.Class("rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground")],
+		[
+			h.Class(
+				"rounded-md border border-dashed bg-surface-sunken px-3 py-2 font-prose text-xs text-muted-foreground",
+			),
+		],
 		[
 			"Ask an org admin for your ingest keys, or open ",
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.Class("font-medium text-foreground underline underline-offset-2 hover:no-underline"),
+					h.Class("font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline"),
 				],
 				["Settings → Ingestion"],
 			),
@@ -49,18 +54,25 @@ const credentials = (h: H, model: Model): Html =>
 			}),
 			model.keys._tag === "Failed"
 				? keysUnavailable(h)
-				: model.keys._tag === "Loading" || model.keys.privateKey === ""
+				: model.keys._tag === "Pending" || model.keys.privateKey === ""
 					? h.div(
 							[h.Class("space-y-1")],
-							[h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]), skeleton(h, "h-8 w-full")],
+							[
+								h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]),
+								skeleton(h, "h-8 w-full"),
+							],
 						)
 					: copyableField(h, {
 							id: "setup-private-key",
 							label: "Private ingest key",
 							value: model.keys.privateKey,
 							copy: model.copies.privateKey,
-							toCopyMessage: (message) => Message.GotCopyMessage({ field: "privateKey", message }),
-							masked: { isVisible: model.isPrivateKeyVisible, onToggle: Message.ClickedRevealPrivateKey() },
+							toCopyMessage: (message) =>
+								Message.GotCopyMessage({ field: "privateKey", message }),
+							masked: {
+								isVisible: model.isPrivateKeyVisible,
+								onToggle: Message.ClickedRevealPrivateKey(),
+							},
 						}),
 		],
 	)
@@ -88,7 +100,8 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 						snippetCopies: model.snippetCopies,
 						toSetupTabs: (message) => Message.GotSetupTabsMessage({ message }),
 						toPackageTabs: (message) => Message.GotPackageTabsMessage({ message }),
-						toSnippetCopy: (snippet, message) => Message.GotSnippetCopyMessage({ snippet, message }),
+						toSnippetCopy: (snippet, message) =>
+							Message.GotSnippetCopyMessage({ snippet, message }),
 						variant: "boxed",
 					}),
 				],
@@ -96,40 +109,17 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 		],
 	)
 
-/** `SendTestEventStrip`: "Watching for your first trace…" and the test-event fallback. */
-const sendTestEventStrip = (h: H, model: Model): Html =>
+/** "Watching for your first trace…" while the card waits for data. */
+const watchingStrip = (h: H): Html =>
 	h.div(
 		[
 			h.Class(
-				"flex flex-col gap-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+				"flex items-center gap-2.5 rounded-md border border-dashed border-primary-a3 bg-primary-a1 p-4",
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
-				[
-					icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
-					h.span([h.Class("text-xs text-muted-foreground")], ["Watching for your first trace…"]),
-				],
-			),
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span([h.Class("hidden text-2xs text-muted-foreground sm:inline")], ["Not ready to instrument?"]),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isLoading: model.isSendingTest,
-							isDisabled: model.keys._tag !== "Ready" || model.keys.publicKey === "",
-							className: "gap-2 shrink-0",
-							attributes: [h.OnClick(Message.ClickedSendTestEvent())],
-						},
-						[icon(h, "PaperPlaneIcon", {}), "Send a test event"],
-					),
-				],
-			),
+			icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
+			h.span([h.Class("font-prose text-xs text-muted-foreground")], ["Watching for your first trace…"]),
 		],
 	)
 
@@ -142,15 +132,22 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 				h,
 				[
 					h.div(
-						[h.Class("flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary")],
+						[
+							h.Class(
+								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-a2 text-primary",
+							),
+						],
 						[icon(h, "CircleCheckIcon", { size: 20 })],
 					),
 					h.div(
 						[h.Class("min-w-0 flex-1 basis-40")],
 						[
-							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received — you're live"]),
 							h.p(
-								[h.Class("text-xs text-muted-foreground mt-0.5")],
+								[h.Class("text-sm font-semibold tracking-tight")],
+								["First trace received. You're live"],
+							),
+							h.p(
+								[h.Class("mt-0.5 font-prose text-xs text-muted-foreground")],
 								[
 									serviceName === undefined
 										? "We're seeing your telemetry. Jump in to explore."
@@ -174,7 +171,10 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 							variant: "ghost",
 							size: "sm",
 							className: "size-8 p-0 shrink-0",
-							attributes: [h.AriaLabel("Dismiss"), h.OnClick(Message.ClickedDismissCelebration())],
+							attributes: [
+								h.AriaLabel("Dismiss"),
+								h.OnClick(Message.ClickedDismissCelebration()),
+							],
 						},
 						[icon(h, "XmarkIcon", {})],
 					),
@@ -182,11 +182,17 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 				"flex flex-wrap items-center gap-4 p-5",
 			),
 		],
-		"mb-4 shrink-0 border-primary/40 bg-primary/[0.04] overflow-hidden",
+		"mb-4 shrink-0 border-primary-a4 bg-primary/[0.04] overflow-hidden",
 	)
 
 /** `SetupChecklistCard` while waiting: the collapsible "Connect your app" card. */
-const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string, intents: Parameters<typeof getOnboardingSetupHint>[0]): Html =>
+const waitingCard = (
+	h: H,
+	model: Model,
+	isExpanded: boolean,
+	framework: string,
+	intents: Parameters<typeof getOnboardingSetupHint>[0],
+): Html =>
 	card(
 		h,
 		[
@@ -195,13 +201,17 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 				[
 					listRow(h, {
 						onClick: Message.ClickedToggleExpanded(),
-						className: "flex-1 px-5 py-4 hover:bg-muted/30",
+						className: "flex-1 px-5 py-4 hover:bg-surface-sunken active:bg-surface-sunken",
 						leading: h.span(
-							[h.Class("flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary")],
+							[
+								h.Class(
+									"flex size-9 items-center justify-center rounded-lg bg-primary-a2 text-primary",
+								),
+							],
 							[icon(h, "CodeIcon", { size: 16 })],
 						),
 						title: "Connect your app to see real data",
-						meta: getOnboardingSetupHint(intents),
+						meta: h.span([h.Class("font-prose")], [getOnboardingSetupHint(intents)]),
 					}),
 					h.div(
 						[h.Class("flex items-center gap-1 shrink-0")],
@@ -239,21 +249,29 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 						[
 							cardPanel(
 								h,
-								[guidedSetup(h, model, framework), sendTestEventStrip(h, model)],
-								"border-t border-primary/20 p-5 space-y-5",
+								[guidedSetup(h, model, framework), watchingStrip(h)],
+								"border-t border-primary-a3 p-5 space-y-5",
 							),
 						],
 					),
 				],
 			),
 		],
-		"mb-4 shrink-0 border-primary/30 bg-primary/[0.02] overflow-hidden",
+		"mb-4 shrink-0 border-primary-a3 bg-primary/[0.02] overflow-hidden",
 	)
 
-/** `SetupChecklist`: nothing once dismissed, the celebration once connected, else the card. */
+/** The first read's failure while the card is mounted; the page's error strip shows it. */
+export const setupFailure = (model: Model): LoadFailure | undefined =>
+	isMounted(model) && AsyncData.isFailure(model.services) ? model.services.error : undefined
+
+/**
+ * `SetupChecklist`: nothing once dismissed, until the first read says whether data arrived, or
+ * when it failed (the page's strip says so), the celebration once connected, else the card.
+ */
 const setupChecklist = (h: H, model: Model): Html => {
 	const state = model.state
 	if (state === null || !isMounted(model)) return h.empty
+	if (!AsyncData.hasData(model.services)) return h.empty
 	const first = realServices(model)[0]
 	if (first !== undefined) return celebration(h, first.serviceName)
 	return waitingCard(h, model, state.checklistExpanded, frameworkOf(state), state.qualifyAnswers.intents)

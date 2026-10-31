@@ -73,7 +73,7 @@ export const serviceOperationsSummaryRowSchema = Schema.Struct({
 	p99DurationMs: CHNumber,
 })
 
-const displaySpanName = ($: ColumnAccessor<typeof Traces.columns>) =>
+export const displaySpanName = ($: ColumnAccessor<typeof Traces.columns>) =>
 	httpDisplaySpanName($.SpanName, $.SpanAttributes.get("http.route"), $.SpanAttributes.get("url.path"))
 
 // p50/p95/p99 off states that `service_operations_minutely/_hourly` wrote with
@@ -116,15 +116,15 @@ const matchRegex = defineCondFn<[CH.Expr<string>, string]>("match")
  */
 
 /** Undefined when `httpOnly` is unset, so the Operations tab's SQL is unchanged. */
-const httpEndpointCondition = (name: CH.Expr<string>, httpOnly: boolean | undefined) =>
+export const httpEndpointCondition = (name: CH.Expr<string>, httpOnly: boolean | undefined) =>
 	httpOnly ? matchRegex(name, HTTP_ENDPOINT_NAME_RE) : undefined
 
-const RAW_DURATION_STATE = "quantilesTDigestState(0.5, 0.95, 0.99)(Duration)"
-const ROLLUP_DURATION_STATE = "quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)"
+export const RAW_DURATION_STATE = "quantilesTDigestState(0.5, 0.95, 0.99)(Duration)"
+export const ROLLUP_DURATION_STATE = "quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)"
 
 /** The t-digest type both branches above produce — opaque, merged by the outer
  *  level, never decoded as a row. */
-const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99)", "UInt64")
+export const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99)", "UInt64")
 
 function rollupEnvironmentCondition(
 	$: ColumnAccessor<typeof ServiceOperationsMinutely.columns>,
@@ -140,7 +140,7 @@ function hourlyEnvironmentCondition(
 	return environments?.length ? CH.inList($.DeploymentEnv, environments) : undefined
 }
 
-const mergedDurationQuantile = (index: 1 | 2 | 3) =>
+export const mergedDurationQuantile = (index: 1 | 2 | 3) =>
 	CH.rawExpr(
 		`if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), ${index}) / 1000000, 0)`,
 		T.float64,

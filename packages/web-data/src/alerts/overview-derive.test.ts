@@ -6,6 +6,10 @@ import { defaultRuleForm } from "./form-utils"
 import {
 	blindSpots,
 	fireLanes,
+	incidentScope,
+	incidentSubline,
+	incidentTitle,
+	incidentValues,
 	ruleBucket,
 	ruleConditionSummary,
 	ruleHeadroom,
@@ -43,6 +47,7 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 1,
 		breachesOutOf: null,
+		evaluationIntervalMinutes: null,
 		thresholds: [
 			{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
 		],
@@ -55,6 +60,9 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		destinationIds: [],
 		noDataBehavior: "skip",
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
 		lastEvaluatedAt: iso(60_000),
 		lastScheduledAt: iso(60_000),
 		createdAt: "2026-01-01T00:00:00.000Z",
@@ -95,21 +103,73 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 
 const derived = (overrides: Partial<DerivedRuleStatus> = {}): DerivedRuleStatus => ({
 	status: "healthy",
-	attention: { noDestinations: false, recentDeliveryFailure: false },
+	attention: { noDestinations: false, recentDeliveryFailure: false, slowedDown: false },
 	reason: null,
 	...overrides,
+})
+
+describe("incident lines", () => {
+	const uptime = (overrides: Record<string, unknown> = {}) =>
+		makeIncident({
+			ruleName: "checkout-api",
+			signalType: "uptime",
+			comparator: "gte",
+			threshold: 1,
+			lastObservedValue: 1,
+			status: "open",
+			resolvedAt: null,
+			groupKey: "__total__",
+			...overrides,
+		})
+
+	it("names an uptime incident by its monitor, down or back up, with no threshold", () => {
+		expect(incidentTitle(uptime())).toBe("checkout-api is down")
+		expect(incidentTitle(uptime({ status: "resolved", resolvedAt: iso(HOUR) }))).toBe(
+			"checkout-api is back up",
+		)
+		expect(incidentValues(uptime())).toEqual({ now: "Down", threshold: "–" })
+	})
+
+	it("shows an uptime incident's group only when it is a service", () => {
+		expect(incidentScope(uptime())).toBeNull()
+		expect(incidentScope(uptime({ groupKey: "checkout" }))).toBe("checkout")
+	})
+
+	it("keeps a telemetry incident's signal, value, group and threshold", () => {
+		const incident = makeIncident({ groupKey: "checkout", status: "open", resolvedAt: null })
+		expect(incidentTitle(incident)).toBe("Error rate 8.0% on checkout")
+		expect(incidentScope(incident)).toBe("checkout")
+		expect(incidentValues(incident)).toEqual({ now: "8.0%", threshold: "5.0%" })
+		expect(incidentSubline(incident)).toBe("High error rate · checkout")
+	})
+
+	it("names a raw SQL incident by its rule, with the group under it", () => {
+		const incident = makeIncident({
+			signalType: "raw_query",
+			ruleName: "Org telemetry newly refused",
+			groupKey: "org_a",
+			threshold: 0.9,
+			lastObservedValue: 1,
+		})
+		expect(incidentTitle(incident)).toBe("Org telemetry newly refused")
+		expect(incidentSubline(incident)).toBe("Raw SQL · org_a")
+	})
 })
 
 describe("ruleBucket", () => {
 	it("puts an unrouted healthy rule in blind and a firing one in firing", () => {
 		expect(
-			ruleBucket(derived({ attention: { noDestinations: true, recentDeliveryFailure: false } })),
+			ruleBucket(
+				derived({
+					attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
+				}),
+			),
 		).toBe("blind")
 		expect(
 			ruleBucket(
 				derived({
 					status: "firing",
-					attention: { noDestinations: true, recentDeliveryFailure: false },
+					attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
 				}),
 			),
 		).toBe("firing")
@@ -174,7 +234,12 @@ describe("blindSpots", () => {
 			[unrouted, erroring, disabled],
 			new Map([
 				[erroring.id, derived({ status: "error", reason: "boom" })],
-				[unrouted.id, derived({ attention: { noDestinations: true, recentDeliveryFailure: false } })],
+				[
+					unrouted.id,
+					derived({
+						attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
+					}),
+				],
 				[disabled.id, derived({ status: "disabled" })],
 			]),
 		)
@@ -182,6 +247,48 @@ describe("blindSpots", () => {
 			[erroring.id, "error"],
 			[unrouted.id, "unrouted"],
 		])
+	})
+	it("lists a slowed-down rule after the ones that reach nobody, and as unrouted when it reaches nobody", () => {
+		const slowed = makeRule({
+			id: "00000000-0000-4000-8000-000000000004",
+			slowedIntervalMinutes: 5,
+			slowedAt: iso(HOUR),
+		})
+		const slowedUnrouted = makeRule({
+			id: "00000000-0000-4000-8000-000000000005",
+			slowedIntervalMinutes: 5,
+			slowedAt: iso(HOUR),
+		})
+		const unrouted = makeRule({ id: "00000000-0000-4000-8000-000000000002" })
+		const spots = blindSpots(
+			[slowed, slowedUnrouted, unrouted],
+			new Map([
+				[
+					slowed.id,
+					derived({
+						attention: { noDestinations: false, recentDeliveryFailure: false, slowedDown: true },
+					}),
+				],
+				[
+					slowedUnrouted.id,
+					derived({
+						attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: true },
+					}),
+				],
+				[
+					unrouted.id,
+					derived({
+						attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
+					}),
+				],
+			]),
+		)
+		expect(spots.map((s) => [s.rule.id, s.kind])).toEqual([
+			[slowedUnrouted.id, "unrouted"],
+			[unrouted.id, "unrouted"],
+			[slowed.id, "slowed"],
+		])
+		expect(spots[2]?.detail).toBe("Checked every 5 min because its query kept hitting its limit")
 	})
 })
 

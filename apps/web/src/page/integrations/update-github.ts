@@ -32,7 +32,7 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 })
 
 const refresh = (model: Model, context: PageContext): Return =>
-	requestStatus(model, context, "github", "Refresh")
+	requestStatus(model, context, "github", "Supersede")
 
 export const githubStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.github.data))
@@ -81,7 +81,7 @@ export const completedCiTraces = (
 		return toast(
 			withCard(settled, { ciTraces: !enabled }),
 			"error",
-			"Failed to change CI traces and logs.",
+			"Couldn't change CI traces and logs.",
 			failure.message,
 		)
 	return chain(settled, [
@@ -138,7 +138,7 @@ export const completedRepoDelete = (
 				(next) => toast(next, "success", `Deleted ${fullName} from Maple`),
 				(next) => refresh(next, context),
 			])
-		: toast(settled, "error", `Failed to delete ${fullName}`, failure.message)
+		: toast(settled, "error", `Couldn't delete ${fullName}`, failure.message)
 }
 
 // BRANCH SELECTOR
@@ -222,7 +222,7 @@ export const completedTrackedBranch = (
 	const settled = withCard(model, {
 		savingBranches: model.githubCard.savingBranches.filter((entry) => entry.repoId !== repoId),
 	})
-	if (failure !== null) return toast(settled, "error", "Failed to change tracked branch", failure.message)
+	if (failure !== null) return toast(settled, "error", "Couldn't change tracked branch", failure.message)
 	if (!backfillQueued) return refresh(settled, context)
 	const version = model.githubCard.forcePollVersion + 1
 	return chain(withCard(settled, { isForcePolling: true, forcePollVersion: version }), [

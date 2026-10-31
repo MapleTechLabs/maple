@@ -1,16 +1,15 @@
-import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { button, linkButton } from "../../../ui/button"
+import { button } from "../../../ui/button"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
+
 import { inlineCode } from "../../../ui/inline-code"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { resourceNotFound } from "../../kit/resource-not-found"
 import { presetLabel } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { dataStateOf } from "../kit/data-state"
@@ -68,21 +67,15 @@ const editorSkeleton = (h: H): Html =>
 
 /** `ResourceNotFound`: no such widget on this board. */
 const notFound = (h: H, widgetId: string, dashboardHref: string): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
-				emptyTitle(h, ["Widget not found"]),
-				emptyDescription(h, [
-					"No widget with id ",
-					inlineCode(h, { className: "break-all px-1.5 py-0.5" }, [widgetId]),
-				]),
-			]),
-			linkButton(h, { variant: "outline", size: "sm", href: dashboardHref }, ["Back to dashboard"]),
+	resourceNotFound(h, {
+		title: "Widget not found",
+		description: [
+			"No widget with id ",
+			inlineCode(h, { className: "break-all px-1.5 py-0.5" }, [widgetId]),
 		],
-		cn("md:py-12", "py-24"),
-	)
+		back: { href: dashboardHref, label: "Back to dashboard" },
+		className: "py-24",
+	})
 
 const timeLabel = (model: Model): string =>
 	model.timeRange === null
@@ -103,7 +96,7 @@ const sparklineState = (model: Model, widget: Widget) => {
 const preview = (h: H, model: Model, timeZone: string): Html => {
 	const widget = previewWidgetOf(model)
 	return h.div(
-		[h.Class("border-b bg-muted/30 p-6")],
+		[h.Class("border-b bg-surface-sunken p-6")],
 		[
 			h.div(
 				[h.Class("flex justify-end mb-3")],
@@ -149,7 +142,8 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 									onSort: (field, isText) => Message.ClickedSortColumn({ field, isText }),
 									sparkline: sparklineState(model, widget),
 									sparklineChart: model.sparklineChart,
-									onSparklineChart: (message) => Message.GotSparklineChartMessage({ message }),
+									onSparklineChart: (message) =>
+										Message.GotSparklineChartMessage({ message }),
 								},
 								widget,
 							),
@@ -168,7 +162,7 @@ const editor = (h: H, model: Model, timeZone: string): Html =>
 				[preview(h, model, timeZone), queryEditor(h, model, timeZone)],
 			),
 			h.aside(
-				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-muted/20")],
+				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-surface-faint")],
 				[settingsRail(h, model, timeZone)],
 			),
 		],

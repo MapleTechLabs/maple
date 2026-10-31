@@ -9,6 +9,7 @@ import type { Resources } from "../../platform/resources"
 import { Message, Model } from "../logs-lab/model"
 import { init, update } from "../logs-lab/update"
 import { view } from "../logs-lab/view"
+import { pollTicks } from "../../data/poll"
 
 /**
  * `/lab/logs`: the logs stream over a production-like fixture, with the lab's toggles for
@@ -38,8 +39,7 @@ const own = Subscription.make<Model, Message, Resources>()((entry) => ({
 			}),
 			dependenciesToStream: ({ intervalSeconds }) =>
 				intervalSeconds > 0
-					? Stream.tick(Duration.seconds(intervalSeconds)).pipe(
-							Stream.drop(1),
+					? pollTicks(Duration.seconds(intervalSeconds)).pipe(
 							Stream.map(() => Message.TickedAutoRefresh()),
 						)
 					: Stream.empty,

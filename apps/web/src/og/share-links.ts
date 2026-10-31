@@ -8,7 +8,7 @@
  */
 
 const SHARE_PATH_PREFIX = "/share/"
-const OG_IMAGE_PREFIX = "/share/og/"
+export const OG_IMAGE_PREFIX = "/share/og/"
 const OG_IMAGE_SUFFIX = ".png"
 
 export const OG_IMAGE_WIDTH = 1200
@@ -36,9 +36,15 @@ export const shareTokenFromPath = (pathname: string): string | undefined => {
 /** The image id in a `/share/og/<ogId>.png` path, or `undefined`. */
 export const ogIdFromPath = (pathname: string): string | undefined => {
 	if (!pathname.startsWith(OG_IMAGE_PREFIX) || !pathname.endsWith(OG_IMAGE_SUFFIX)) return undefined
-	const ogId = decodeURIComponent(
-		pathname.slice(OG_IMAGE_PREFIX.length, pathname.length - OG_IMAGE_SUFFIX.length),
-	)
+	let ogId: string
+	try {
+		ogId = decodeURIComponent(
+			pathname.slice(OG_IMAGE_PREFIX.length, pathname.length - OG_IMAGE_SUFFIX.length),
+		)
+	} catch {
+		// A lone `%` is a `URIError`; routed worker-first, letting it out is a 500 instead of a 404.
+		return undefined
+	}
 	return ogId.length === 0 || ogId.includes("/") ? undefined : ogId
 }
 

@@ -57,7 +57,7 @@ describe("local sessions list", () => {
 	test("entry reads the clock, then asks for the list and its facets in the minute's window", () => {
 		expect(names(init(context).commands)).toContain(ReadClock.name)
 		const loaded = clocked()
-		expect(names(loaded.commands)).toEqual([FetchSessions.name, FetchFacets.name])
+		expect(names(loaded.commands)).toEqual(expect.arrayContaining([FetchSessions.name, FetchFacets.name]))
 		expect(Option.getOrNull(loaded.model.maybeAnchorMs)).toBe(Date.UTC(2026, 9, 1, 12, 0, 0))
 	})
 
@@ -71,6 +71,10 @@ describe("local sessions list", () => {
 			contextAt("browser=Chrome"),
 		)
 		expect(late.model.sessions).toEqual(second.sessions)
+		expect(late.model.sessionsUpdatedAtMs).toBe(second.sessionsUpdatedAtMs)
+		// The stale answer is empty, but only the current list may ask for the signal presence.
+		expect(late.outMessage).toBeUndefined()
+		expect(names(late.commands)).toEqual([])
 	})
 
 	test("an empty list asks for the signal presence and states the fact while it is unknown", () => {

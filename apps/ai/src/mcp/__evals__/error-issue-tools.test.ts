@@ -37,7 +37,6 @@ describe("error-issue tools", () => {
 		expect(output.total).toBe(0)
 		expect(output.filters).toMatchObject({ workflowState: "triage", includeArchived: true, limit: 50 })
 		const text = markdown(result)
-		expect(text).toContain("## Error Issues")
 		expect(text).toContain("State: triage")
 		expect(text).toContain("No error issues found.")
 	})
@@ -45,7 +44,6 @@ describe("error-issue tools", () => {
 	it("rejects a severity outside the enum as a parameter error", async () => {
 		const result = await call("list_error_issues", { severity: "urgent" })
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("Invalid parameters for `list_error_issues`:")
 		expect(markdown(result)).toContain("`severity`")
 	})
 

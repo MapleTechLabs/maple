@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
 	type AttributeRecommendation,
 	type ExistingIssueLike,
+	canonicalKeysToProbe,
 	detectAttributeRecommendations,
 	planReconcileIssues,
 } from "./recommendations"
@@ -119,6 +120,33 @@ describe("detectAttributeRecommendations", () => {
 			[],
 		)
 		expect(withTarget.every((r) => r.kind === "double-emission")).toBe(true)
+	})
+
+	it("never asks to rename SampleRate, which Maple reads as the sampling weight", () => {
+		const recs = detectAttributeRecommendations([key("SampleRate", 9_000), key("customerId", 3)], [])
+		expect(recs.map((r) => r.id)).toEqual(["naming:customerId"])
+	})
+
+	it("offers no applyable rename when a rare canonical key outside the top list is present", () => {
+		// 250 busy keys push the canonical key out of a 200-key top list.
+		const busy = Array.from({ length: 250 }, (_, i) => key(`app.key_${i}`, 1_000))
+		const topKeys = [...busy.slice(0, 199), key("messaging.destination", 500)]
+		const probe = canonicalKeysToProbe(topKeys, [])
+		expect(probe).toEqual(["messaging.destination.name"])
+		// The service queries exactly the probed keys and appends what it finds.
+		const recs = detectAttributeRecommendations([...topKeys, key("messaging.destination.name", 2)], [])
+		expect(recs).toEqual([
+			expect.objectContaining({
+				id: "dual:messaging.destination",
+				kind: "double-emission",
+				canonical: "messaging.destination.name",
+				applyable: false,
+			}),
+		])
+	})
+
+	it("probes no canonical key for a deprecated key a mapping already covers", () => {
+		expect(canonicalKeysToProbe([key("messaging.destination")], ["messaging.destination"])).toEqual([])
 	})
 })
 

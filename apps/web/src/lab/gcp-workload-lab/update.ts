@@ -1,4 +1,5 @@
-import { type LabWorkload, PAGES, RANGE, WORKLOADS } from "../gcp-workload-fixture"
+import { gcpMatchStatements } from "../../components/infra/gcp/cloud-sql-signals"
+import { labStatementSpans, type LabWorkload, PAGES, RANGE, WORKLOADS } from "../gcp-workload-fixture"
 import { Effect } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Chart from "../../charts/chart"
@@ -7,8 +8,18 @@ import { stepTimePicker } from "../../page/infra-integrations/kit/page-time"
 import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/workload/command"
 import * as Workload from "../../page/infra-integrations/gcp/workload/model"
 import { initialModel } from "../../page/infra-integrations/gcp/workload/update"
+import { toLoadFailure } from "../../data/load-failure"
 import type { Resources } from "../../platform/resources"
-import { type GcpWorkloadLabFlags, type LabPage, Message, type Model } from "./model"
+import * as CopyButton from "../../ui/copy-button"
+import * as Dialog from "../../ui/dialog"
+import {
+	type GcpWorkloadLabFlags,
+	type LabPage,
+	Message,
+	type Model,
+	SPAN_STATES,
+	type SpanState,
+} from "./model"
 
 type Return = Update.Return<Model, Message, Resources>
 type Carry = Pick<Workload.Model, "chartRuntime" | "themeColors">
@@ -32,9 +43,53 @@ export const workloadModel = (page: LabPage, carry: Carry): Workload.Model => {
 	}
 }
 
+/** The peeked statement's spans as the lab's span state says: the fixture, still loading, or failed. */
+const spansSlot = (page: LabPage, queryHash: string, state: SpanState): Workload.Model["statementSpans"] => {
+	if (state === "loading") return { key: queryHash, data: AsyncData.Loading() }
+	if (state === "failed")
+		return {
+			key: queryHash,
+			data: AsyncData.Failure({ error: toLoadFailure("The warehouse query timed out") }),
+		}
+	const sql = workloadOf(page).cloudSql
+	const traced =
+		sql === undefined ? undefined : gcpMatchStatements(sql.statements, sql.tracedQueries).get(queryHash)
+	return {
+		key: queryHash,
+		data: AsyncData.Success({
+			data: traced === undefined ? [] : labStatementSpans(queryHash, traced.appP95Ms, traced.services),
+		}),
+	}
+}
+
+/** The peek on `queryHash` (or closed): the URL's part done in the Model, since the lab has no URL. */
+const peekAt = (model: Model, queryHash: string | undefined): Return => {
+	const workload = model.workload
+	const dialog =
+		queryHash === undefined ? Dialog.close(workload.queryPeek) : Dialog.open(workload.queryPeek)
+	return {
+		model: {
+			...model,
+			workload: {
+				...workload,
+				search: { ...workload.search, peek: queryHash },
+				queryPeek: dialog.model,
+				statementSpans:
+					queryHash === undefined
+						? workload.statementSpans
+						: spansSlot(model.page, queryHash, model.spanState),
+			},
+		},
+		commands: Command.mapMessages(dialog.commands ?? [], (inner) =>
+			Message.GotWorkloadMessage({ message: Workload.Message.GotQueryPeekMessage({ message: inner }) }),
+		),
+	}
+}
+
 export const init = (flags: GcpWorkloadLabFlags): Return => ({
 	model: {
 		page: "run",
+		spanState: "data",
 		timeZone: flags.timeZone,
 		workload: workloadModel("run", { chartRuntime: { _tag: "Loading" }, themeColors: null }),
 	},
@@ -74,6 +129,31 @@ const stepWorkload = (model: Model, message: Workload.Message): Return => {
 			return set({ ...workload, themeColors: message.colors })
 		case "ClickedShowAllQueries":
 			return set({ ...workload, showAllQueries: !workload.showAllQueries })
+		case "ClickedStatement":
+			return peekAt(model, message.queryHash)
+		case "GotQueryPeekMessage": {
+			const result = Dialog.update(workload.queryPeek, message.message)
+			const next = { ...workload, queryPeek: result.model }
+			const commands = Command.mapMessages(result.commands ?? [], (inner) =>
+				Message.GotWorkloadMessage({
+					message: Workload.Message.GotQueryPeekMessage({ message: inner }),
+				}),
+			)
+			return result.outMessage?._tag === "Closed"
+				? set({ ...next, search: { ...next.search, peek: undefined } }, commands)
+				: set(next, commands)
+		}
+		case "GotCopyStatementMessage": {
+			const result = CopyButton.update(workload.copyStatement, message.message)
+			return set(
+				{ ...workload, copyStatement: result.model },
+				Command.mapMessages(result.commands ?? [], (inner) =>
+					Message.GotWorkloadMessage({
+						message: Workload.Message.GotCopyStatementMessage({ message: inner }),
+					}),
+				),
+			)
+		}
 		case "GotChartMessage": {
 			const { chartId } = message
 			const next = Chart.update(workload.charts[chartId] ?? Chart.init(), message.message)
@@ -120,6 +200,11 @@ export const update = (model: Model, message: Message): Return =>
 			return {
 				model: { ...model, page: next, workload: workloadModel(next, { chartRuntime, themeColors }) },
 			}
+		},
+		ClickedSpanState: ({ state }) => {
+			const next = SPAN_STATES.find((candidate) => candidate === state)
+			if (next === undefined) return { model }
+			return peekAt({ ...model, spanState: next }, model.workload.search.peek)
 		},
 		GotWorkloadMessage: ({ message: inner }) => stepWorkload(model, inner),
 	})

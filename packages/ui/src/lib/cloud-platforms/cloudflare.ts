@@ -1,6 +1,7 @@
 import { CloudflareIcon } from "../../components/icons"
 import type { CloudPlatformAdapter, CloudPlatformField } from "./types"
 import { joinEdge, pickAttr } from "./types"
+import { CLOUDFLARE_ACCENT_CLASS } from "./accents"
 
 // Cloudflare Workers Observability annotations. Worker traces come from CF's
 // native pipeline (`scope.name: workers-observability`), so they carry a
@@ -52,7 +53,7 @@ export const cloudflareAdapter: CloudPlatformAdapter = {
 			label: "Cloudflare Worker",
 			kind: "Worker",
 			Icon: CloudflareIcon,
-			accentClassName: "text-[#F38020]",
+			accentClassName: CLOUDFLARE_ACCENT_CLASS,
 			edge: joinEdge(pickAttr(attrs, "cloudflare.colo"), pickAttr(attrs, "faas.invoked_region")),
 			location: [city, country].filter(Boolean).join(", ") || null,
 			outcome: outcome ? { value: outcome, bad: outcome.toLowerCase() !== "ok" } : null,

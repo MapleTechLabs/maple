@@ -44,6 +44,10 @@ import { migration_0042_trace_index } from "./0042_trace_index"
 import { migration_0043_traces_span_name_index } from "./0043_traces_span_name_index"
 import { migration_0044_drop_trace_detail_spans } from "./0044_drop_trace_detail_spans"
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
+import { migration_0046_source_usage_hourly } from "./0046_source_usage_hourly"
+import { migration_0047_ci_runs_jobs } from "./0047_ci_runs_jobs"
+import { migration_0048_service_api_http_details } from "./0048_service_api_http_details"
+import { migration_0049_service_map_db_edges_minutely } from "./0049_service_map_db_edges_minutely"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -120,6 +124,10 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0043_traces_span_name_index,
 	migration_0044_drop_trace_detail_spans,
 	migration_0045_ttl_only_drop_parts,
+	migration_0046_source_usage_hourly,
+	migration_0047_ci_runs_jobs,
+	migration_0048_service_api_http_details,
+	migration_0049_service_map_db_edges_minutely,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

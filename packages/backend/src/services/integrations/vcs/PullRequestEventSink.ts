@@ -1,4 +1,9 @@
-import type { PullRequestChecklistJob, PullRequestCommentJob, PullRequestEventJob } from "@maple/domain/http"
+import type {
+	PullRequestChecklistJob,
+	PullRequestCiApprovedJob,
+	PullRequestCommentJob,
+	PullRequestEventJob,
+} from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { Context, Effect, Layer } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -24,7 +29,7 @@ export interface PullRequestEventSinkApi {
 }
 
 export class PullRequestEventSink extends Context.Service<PullRequestEventSink, PullRequestEventSinkApi>()(
-	"@maple/api/services/integrations/vcs/PullRequestEventSink",
+	"@maple/backend/services/integrations/vcs/PullRequestEventSink",
 ) {}
 
 /** One consumer of the port, built in whatever services it needs. */
@@ -82,7 +87,7 @@ export interface PullRequestCommentSinkApi {
 export class PullRequestCommentSink extends Context.Service<
 	PullRequestCommentSink,
 	PullRequestCommentSinkApi
->()("@maple/api/services/integrations/vcs/PullRequestCommentSink") {}
+>()("@maple/backend/services/integrations/vcs/PullRequestCommentSink") {}
 
 /**
  * Where a ticked "Before merge" step goes. Optional in `VcsSyncService`, like the comment sink: a
@@ -95,4 +100,17 @@ export interface PullRequestChecklistSinkApi {
 export class PullRequestChecklistSink extends Context.Service<
 	PullRequestChecklistSink,
 	PullRequestChecklistSinkApi
->()("@maple/api/services/integrations/vcs/PullRequestChecklistSink") {}
+>()("@maple/backend/services/integrations/vcs/PullRequestChecklistSink") {}
+
+/**
+ * Where a pull request's CI, let go by someone other than its author, goes. Optional in
+ * `VcsSyncService`, like the comment sink: a root without reviews drops it.
+ */
+export interface PullRequestCiApprovalSinkApi {
+	readonly onCiApproved: (orgId: OrgId, job: PullRequestCiApprovedJob) => Effect.Effect<void>
+}
+
+export class PullRequestCiApprovalSink extends Context.Service<
+	PullRequestCiApprovalSink,
+	PullRequestCiApprovalSinkApi
+>()("@maple/backend/services/integrations/vcs/PullRequestCiApprovalSink") {}

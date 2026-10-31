@@ -52,7 +52,7 @@ const emailSentStamp = (field: OnboardingEmailField, now: number) => {
 }
 
 export class OnboardingService extends Context.Service<OnboardingService>()(
-	"@maple/api/services/OnboardingService",
+	"@maple/backend/services/OnboardingService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

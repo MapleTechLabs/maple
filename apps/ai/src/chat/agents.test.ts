@@ -15,6 +15,7 @@ import { ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -37,10 +38,8 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 
 describe("AGENTS", () => {
 	it("names an agent for every wire mode", () => {
-		// `chatModeFromSessionId` is on the wire and the client derives from it, so a mode without a
-		// matching agent is a runtime `undefined` in the middle of a turn.
-		// `AGENTS` is keyed by `ChatMode`, so this is now a belt to the compiler's braces: it also
-		// pins that the record's key IS the agent's name, which `agentForSession` relies on.
+		// `AGENTS` is keyed by `ChatMode`, so the compiler covers the keys; this pins that the record's
+		// key IS the agent's name, which `agentForSession` relies on.
 		for (const mode of ChatMode.literals) {
 			assert.equal(AGENTS[mode].name, mode)
 		}
@@ -50,7 +49,7 @@ describe("AGENTS", () => {
 describe("agentForSession", () => {
 	it("maps a session id to its mode's agent", () => {
 		assert.equal(agentForSession(makeChatSessionId("org_1", "tab")).name, "default")
-		assert.equal(agentForSession(makeChatSessionId("org_1", "alert-123")).name, "alert")
+		assert.equal(agentForSession(makeChatSessionId("org_1", "pr-123")).name, "pr-review")
 		assert.equal(agentForSession(makeChatSessionId("org_1", "inv-abc")).name, "investigate")
 		// A connector thread is an ordinary chat conversation; its ORIGIN is what differs.
 		assert.equal(
@@ -77,6 +76,7 @@ describe("profileForTurn", () => {
 		authMode: "self_hosted",
 	}
 	const executor: McpToolExecutorApi = {
+		...noRepositoryWarmup,
 		execute: (_tenant, name) => Effect.succeed({ content: [{ type: "text" as const, text: name }] }),
 	}
 	/** Exactly what `runChatTurn` builds, through the same policy. */

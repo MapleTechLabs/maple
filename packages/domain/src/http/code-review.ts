@@ -35,6 +35,8 @@ const PageLimit = Schema.NumberFromString.check(
 /** `<createdAtMs>_<id>` of the last row on the previous page. */
 const PageCursor = Schema.String.check(Schema.isPattern(/^\d+_[0-9a-zA-Z-]+$/u))
 const AuthorLogin = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100))
+/** Free text over a list's titles, paths, repositories and authors; `#123` or `123` also matches the number. */
+const SearchTerm = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
 
 const filterFields = {
 	startTime: EpochMs,
@@ -50,6 +52,7 @@ export const CodeReviewListQuery = Schema.Struct({
 	...filterFields,
 	status: Schema.optional(PrReviewStatus),
 	verdict: Schema.optional(PrReviewVerdict),
+	q: Schema.optional(SearchTerm),
 	limit: Schema.optional(PageLimit),
 	cursor: Schema.optional(PageCursor),
 })
@@ -60,6 +63,7 @@ export const CodeReviewFindingsQuery = Schema.Struct({
 	severity: Schema.optional(PrReviewSeverity),
 	category: Schema.optional(PrReviewCategory),
 	status: Schema.optional(PrReviewFindingStatus),
+	q: Schema.optional(SearchTerm),
 	limit: Schema.optional(PageLimit),
 	cursor: Schema.optional(PageCursor),
 })

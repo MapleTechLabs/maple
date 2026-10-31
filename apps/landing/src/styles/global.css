@@ -4,8 +4,7 @@
    here (enforced by `bun run check:tokens`). Must come after tailwindcss.
    Landing is dark-only: Layout.astro pins class="dark" on <html>. */
 @import "@maple/ui/styles/tokens.css";
-@import "@fontsource-variable/geist-mono";
-@import "@fontsource-variable/geist";
+@import "./fonts.generated.css";
 
 @source "../../../../packages/ui/src";
 
@@ -415,9 +414,6 @@
 }
 .pair-cell > :not([aria-hidden="true"]) {
 	position: relative;
-}
-.pair-cell canvas {
-	display: block;
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -1469,6 +1465,52 @@
 	@apply w-full h-auto aspect-[1280/660] object-cover bg-bg-deep border border-border rounded-xl my-8;
 }
 
+.docs-content .deploy-button {
+	@apply mt-2 mb-6 inline-flex h-10 items-center gap-2.5 rounded-lg border border-border bg-bg-elevated px-4 text-sm font-medium text-fg no-underline transition-colors hover:border-fg-muted/40 hover:text-fg;
+}
+
+.docs-content .deploy-button svg {
+	@apply h-4 w-4 shrink-0;
+}
+
+.docs-content .deploy-button .deploy-button__arrow {
+	@apply h-3.5 w-3.5 text-fg-muted transition-transform;
+}
+
+.docs-content .deploy-button:hover .deploy-button__arrow {
+	@apply translate-x-0.5 -translate-y-0.5 text-fg;
+}
+
+.docs-content .spec-list {
+	@apply mt-4 mb-8 rounded-lg border border-border divide-y divide-border;
+}
+
+.docs-content .spec-list > div {
+	@apply grid grid-cols-[7.5rem_1fr] items-baseline gap-4 px-4 py-2.5;
+}
+
+/* Labels are small sans caps, like table headers, so values carry the weight. */
+.docs-content .spec-list dt {
+	@apply text-[10.5px] font-medium uppercase tracking-[0.08em] text-fg-muted;
+	font-family: var(--font-display);
+}
+
+.docs-content .spec-list dd {
+	@apply m-0 flex flex-wrap items-baseline gap-x-2 text-sm text-fg;
+}
+
+.docs-content .spec-list dd code {
+	@apply py-0;
+}
+
+.docs-content .spec-list dd span {
+	@apply text-[13px] text-fg-muted;
+}
+
+.docs-content .spec-list dd span::before {
+	content: "· ";
+}
+
 .docs-content .docs-byline img {
 	@apply w-5 h-5 aspect-square my-0 border-0 rounded-full;
 }
@@ -1514,19 +1556,257 @@
 	@apply text-[14px];
 }
 
+/* Headers are labels, so they take the sans eyebrow voice; code in them stays
+   mono but drops the chip and the caps. Up to three words stay on one line. */
 .docs-prose th {
 	@apply font-mono p-2.5;
+}
+
+.docs-prose:where(#docs-main *) th {
+	@apply px-2 py-2.5 tracking-[0.08em] whitespace-nowrap;
+	font-family: var(--font-display);
+}
+
+.docs-prose:where(#docs-main *) th.is-wrap {
+	white-space: normal;
+}
+
+.docs-prose:where(#docs-main *) th code:not(pre code) {
+	@apply bg-transparent p-0 text-inherit normal-case tracking-normal;
+	font-size: 1.1em;
 }
 
 .docs-prose td {
 	@apply p-2.5 align-top;
 }
 
+.docs-prose:where(#docs-main *) td {
+	@apply px-2 py-2.5 align-top text-fg/80;
+}
+
+.docs-prose:where(#docs-main *) .table-wrap {
+	margin-inline: 0;
+	padding-inline: 0;
+}
+
+/* Inline code: a tight chip, so "(`maple start`)" does not read spaced out.
+   rehype-table-wrap marks code up to 30 characters `nw` and splits longer
+   code into nowrap pieces, so flags and names never fold at a hyphen. */
+.docs-prose:where(#docs-main *) code:not(pre code) {
+	@apply px-1;
+	overflow-wrap: break-word;
+	box-decoration-break: clone;
+}
+
+.docs-prose:where(#docs-main *) code.nw:not(pre code),
+.docs-prose:where(#docs-main *) code:not(pre code) > .nw {
+	white-space: nowrap;
+}
+
+.docs-prose:where(#docs-main *) td code:not(pre code) {
+	font-size: 12px;
+	/* Undo the nowrap .docs-content gives cell code; the .nw pieces hold. */
+	white-space: normal;
+}
+
+/* The prose column of a 3+ column table takes about half the width; names,
+   types and defaults size to their content. */
+.docs-prose:where(#docs-main *) th.is-prose {
+	min-width: 11rem;
+}
+
+@media (min-width: 640px) {
+	.docs-prose:where(#docs-main *) th.is-prose {
+		width: 48%;
+	}
+}
+
+/* Phones: a 4+ column table scrolls rather than fold its description to a
+   few words per line. */
+@media (max-width: 639px) {
+	.docs-prose:where(#docs-main *) table:has(th:nth-child(4)) {
+		min-width: 36rem;
+	}
+}
+
+/* Cells with a short value ("365 days", "0.85 - 0.94"). */
+.docs-prose:where(#docs-main *) td.is-short {
+	white-space: nowrap;
+}
+
+/* Edge fades only while the table actually scrolls: the scroll timeline is
+   inactive without overflow, so the mask falls back to its 0 fade. */
+@property --docs-fade-l {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+
+@property --docs-fade-r {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+
+@keyframes docs-edge-fade {
+	from {
+		--docs-fade-l: 0px;
+		--docs-fade-r: 2.5rem;
+	}
+	1% {
+		--docs-fade-l: 2.5rem;
+	}
+	99% {
+		--docs-fade-r: 2.5rem;
+	}
+	to {
+		--docs-fade-l: 2.5rem;
+		--docs-fade-r: 0px;
+	}
+}
+
+.docs-prose:where(#docs-main *) .table-wrap,
+.docs-prose:where(#docs-main *) .lt__rail,
+.docs-prose:where(#docs-main *) pre.astro-code > code {
+	mask-image: linear-gradient(
+		to right,
+		transparent,
+		#000 var(--docs-fade-l),
+		#000 calc(100% - var(--docs-fade-r)),
+		transparent
+	);
+}
+
+/* Longhands, timeline last: a minifier folding these into the `animation`
+   shorthand produces a declaration browsers drop. */
+@supports (animation-timeline: scroll()) {
+	.docs-prose:where(#docs-main *) .table-wrap,
+	.docs-prose:where(#docs-main *) .lt__rail,
+	.docs-prose:where(#docs-main *) pre.astro-code > code {
+		animation-name: docs-edge-fade;
+		animation-duration: auto;
+		animation-timing-function: linear;
+		animation-fill-mode: both;
+	}
+
+	.docs-prose:where(#docs-main *) .table-wrap,
+	.docs-prose:where(#docs-main *) .lt__rail,
+	.docs-prose:where(#docs-main *) pre.astro-code > code {
+		animation-timeline: scroll(self inline);
+	}
+}
+
+/* Tab groups stay one row; extra tabs scroll sideways under the edge fade. */
+.docs-prose:where(#docs-main *) .lt__rail {
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	scrollbar-width: none;
+	/* Room for the focus ring inside the scroller. */
+	margin-inline: -3px;
+	padding: 3px;
+}
+
+.docs-prose:where(#docs-main *) .lt__rail::-webkit-scrollbar {
+	display: none;
+}
+
+.docs-prose:where(#docs-main *) .lt__tab {
+	flex: none;
+	white-space: nowrap;
+}
+
+/* Desktop: compact enough that a ten-stack picker fits the reading column. */
+@media (min-width: 640px) {
+	.docs-prose:where(#docs-main *) .lt__rail {
+		gap: 4px;
+	}
+
+	.docs-prose:where(#docs-main *) .lt__tab {
+		gap: 6px;
+		padding: 0 9px 0 7px;
+	}
+}
+
+/* Code in a heading is part of the heading: its size, no chip. */
+.docs-prose:where(#docs-main *) :is(h2, h3, h4) code:not(pre code) {
+	@apply bg-transparent p-0 font-medium text-inherit;
+	font-size: 0.92em;
+}
+
 /* Shiki wraps lines inline (`wrap: true`, for the blog column). Guides are
-   read for their commands, so code scrolls sideways instead of folding. */
-.docs-prose pre {
+   read for their commands, so code scrolls sideways instead of folding. The
+   <code> is the scroller, so the label and copy button in the top band stay put. */
+/* Outside the docs (changelog), code blocks keep their original spacing. */
+.docs-prose:not(:where(#docs-main *)) pre {
 	white-space: pre !important;
 	@apply my-6;
+}
+
+.docs-prose:where(#docs-main *) pre.astro-code {
+	white-space: pre !important;
+	overflow: visible !important;
+	padding: 2.25rem 0 0;
+	@apply my-6;
+}
+
+.docs-prose:where(#docs-main *) pre.astro-code > code {
+	display: block;
+	overflow-x: auto;
+	padding: 0 1rem 1rem;
+}
+
+/* Text fences carry no label, so no band: a float beside the first line keeps
+   the copy button clear. Prompts (rehype-table-wrap marks them .is-folded) fold
+   only at whitespace, one .tok per word; a word longer than the line breaks
+   anywhere. File trees and aligned columns keep scrolling. */
+.docs-prose:where(#docs-main *)
+	pre.astro-code:is([data-language="text"], [data-language="plaintext"], [data-language="txt"]) {
+	padding-top: 1rem;
+}
+
+.docs-prose:where(#docs-main *) pre.astro-code.is-folded {
+	white-space: pre-wrap !important;
+}
+
+.docs-prose:where(#docs-main *) pre.astro-code .tok .nw {
+	white-space: nowrap;
+}
+
+.docs-prose:where(#docs-main *) pre.astro-code .tok {
+	display: inline-block;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+
+.docs-prose
+	pre.astro-code:is([data-language="text"], [data-language="plaintext"], [data-language="txt"])
+	> code::before {
+	content: "";
+	float: right;
+	width: 3.25rem;
+	height: 1lh;
+}
+
+.docs-prose:where(#docs-main *) pre.astro-code[data-language]::before {
+	display: block;
+	top: 0.75rem;
+	left: 1rem;
+	right: auto;
+	padding: 0;
+	border: 0;
+	background: none;
+	font-family: var(--font-display);
+	font-size: 10.5px;
+	letter-spacing: 0.08em;
+	line-height: 1;
+	opacity: 1;
+}
+
+.docs-content.docs-prose:where(#docs-main *) .code-copy {
+	top: 0.375rem;
+	right: 0.5rem;
+	font-family: var(--font-display);
+	letter-spacing: 0.06em;
 }
 
 /* ──────────────────────────────────────────────────────────────

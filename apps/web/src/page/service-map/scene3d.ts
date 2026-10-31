@@ -20,7 +20,8 @@ export type CameraCommand = typeof CameraCommand.Type
 export const Model = Schema.Struct({
 	perspective: Perspective,
 	perspectiveGroup: ToggleGroup.Model,
-	traffic: Schema.Boolean,
+	/** The traffic toggle; `null` until clicked, so it follows the system's reduced-motion setting. */
+	traffic: Schema.NullOr(Schema.Boolean),
 	command: CameraCommand,
 	/** `useTheme()`: read from `<html>` by a Mount, `null` until it ran. */
 	isDark: Schema.NullOr(Schema.Boolean),
@@ -31,7 +32,8 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	GotPerspectiveMessage: { message: ToggleGroup.Message },
-	ClickedTraffic: {},
+	/** `isFlowing`: what the button showed, since the default depends on reduced motion. */
+	ClickedTraffic: { isFlowing: Schema.Boolean },
 	ClickedCamera: { action: Schema.Literals(["reset", "in", "out"]) },
 	/** A machine, sign or belt tag picked (already toggled), or `null` for empty paper. */
 	PickedNode: { nodeId: Schema.NullOr(Schema.String) },
@@ -99,7 +101,7 @@ const readInput = (element: Element): Option.Option<SceneInput> =>
 export const init = (): Model => ({
 	perspective: "atlas",
 	perspectiveGroup: ToggleGroup.init({ label: "Map perspective", values: ["atlas"] }),
-	traffic: true,
+	traffic: null,
 	command: { action: "reset", serial: 0 },
 	isDark: null,
 	isFailed: false,
@@ -132,7 +134,7 @@ export const update = (
 				),
 			}
 		},
-		ClickedTraffic: () => ({ model: { ...model, traffic: !model.traffic } }),
+		ClickedTraffic: ({ isFlowing }) => ({ model: { ...model, traffic: !isFlowing } }),
 		ClickedCamera: ({ action }) => ({
 			model: { ...model, command: { action, serial: model.command.serial + 1 } },
 		}),

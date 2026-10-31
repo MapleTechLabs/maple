@@ -22,6 +22,7 @@ import { ConfigProvider, Effect, Logger, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import { meterTurn } from "./turn-runner"
 
 const ORG = "org_test"
@@ -29,8 +30,8 @@ const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 
-/** An ordinary signed-in caller. Who drives a turn is its origin, never its user id. */
-const tenant = { orgId }
+/** The customer the turn bills to; the org itself, as for every unlinked org. */
+const customerId = ownBillingCustomer(orgId)
 
 const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
 const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
@@ -124,7 +125,7 @@ const meter = (
 	charges: Array<AiModelSpend> = [],
 ) =>
 	Effect.runPromise(
-		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output, charges }).pipe(
+		meterTurn(turn(sessionId, messageId), customerId, origin, { input, output, charges }).pipe(
 			Effect.provide(configLayer),
 			// Read the global per call: the tests swap `globalThis.fetch`, and the default reference caches it.
 			Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
@@ -138,7 +139,7 @@ describe("meterTurn", () => {
 		await Effect.runPromise(
 			meterTurn(
 				turn(`${ORG}:inv-${INVESTIGATION}`, "msg-1"),
-				tenant,
+				customerId,
 				{ kind: "app" },
 				{
 					input: 1200,
@@ -401,7 +402,7 @@ describe("meterTurn AI credits", () => {
 			await Effect.runPromise(
 				meterTurn(
 					turn(`${ORG}:default`, "msg-1"),
-					tenant,
+					customerId,
 					{ kind: "app" },
 					{
 						input: 1000,

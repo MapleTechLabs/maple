@@ -9,6 +9,7 @@ import { SandboxExecRequest, SandboxExecResponse, SandboxRunUnavailable } from "
 import { DurableObject } from "cloudflare:workers"
 import { Duration, Effect, Option, Schema } from "effect"
 import { SandboxCallError, type SandboxContainer, commandArgv, execute, isTimedOut } from "./checkout"
+import { type ExecutorEnv, runExecutorProbe } from "./executor"
 import { handle } from "./handle"
 import {
 	MIRROR_BACKUP_KEY,
@@ -20,18 +21,20 @@ import {
 
 // Moves each mirror archive between the container and R2; reached through `ctx.exports`.
 export { DirectoryBackupGateway } from "@cloudflare/sandbox"
+// The execution sandbox's container and the gateway its intercepted hosts reach.
+export { Executor, RegistryGateway } from "./executor"
 
 // Types `ctx.exports` from this module's own exports, as `wrangler types` would.
 declare global {
 	namespace Cloudflare {
 		interface GlobalProps {
 			mainModule: typeof import("./worker")
-			durableNamespaces: "Sandbox"
+			durableNamespaces: "Sandbox" | "Executor"
 		}
 	}
 }
 
-interface SandboxWorkerEnv {
+interface SandboxWorkerEnv extends ExecutorEnv {
 	readonly Sandbox: DurableObjectNamespace<Sandbox>
 	readonly SANDBOX_INTERNAL_SERVICE_TOKEN?: string
 	/** Mirror archives. Without it backups are off and every cold container clones in full. */
@@ -255,4 +258,7 @@ export default {
 				),
 			),
 		),
+	// The execution sandbox's platform probe; a no-op once this probe version has a report.
+	scheduled: (_controller: ScheduledController, env: SandboxWorkerEnv, ctx: ExecutionContext): void =>
+		ctx.waitUntil(Effect.runPromise(runExecutorProbe(env))),
 }

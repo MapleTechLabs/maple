@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
+import {
+	buildIntegrationInventory,
+	type IntegrationInventoryInputs,
+	withSourceHealth,
+} from "./integration-inventory"
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0)
 const MINUTE = 60_000
@@ -160,21 +164,25 @@ describe("buildIntegrationInventory", () => {
 		expect(planetscale?.problem).toContain("no PlanetScale organization is selected")
 	})
 
-	it("flags a PlanetScale grant missing a permission", () => {
-		const planetscale = providerOf(
-			{
-				planetscaleConnection: {
-					psOrganization: "acme",
-					detectedPermissions: { readDatabases: true, readMetricsEndpoints: false },
-					lastInventoryAt: NOW - MINUTE,
-					lastInventoryError: null,
-					createdAt: NOW - 24 * 60 * MINUTE,
+	it("flags a PlanetScale grant missing a permission, and ignores ones nothing uses anymore", () => {
+		const withPermissions = (detectedPermissions: Record<string, boolean>) =>
+			providerOf(
+				{
+					planetscaleConnection: {
+						psOrganization: "acme",
+						detectedPermissions,
+						lastInventoryAt: NOW - MINUTE,
+						lastInventoryError: null,
+						createdAt: NOW - 24 * 60 * MINUTE,
+					},
 				},
-			},
-			"planetscale",
-		)
-		expect(planetscale?.status).toBe("failing")
-		expect(planetscale?.problem).toContain("readMetricsEndpoints (database metrics)")
+				"planetscale",
+			)
+		const missing = withPermissions({ readDatabases: false })
+		expect(missing?.status).toBe("failing")
+		expect(missing?.problem).toContain("readDatabases (the database inventory and deploy requests)")
+		// Bindings from before the metrics API stored this one; metrics no longer need it.
+		expect(withPermissions({ readDatabases: true, readMetricsEndpoints: false })?.status).toBe("healthy")
 	})
 
 	it("splits managed PlanetScale scrape targets from user Prometheus targets", () => {
@@ -258,5 +266,68 @@ describe("buildIntegrationInventory", () => {
 			lastError: "Not Found",
 			note: "tracks main, PR review on",
 		})
+	})
+})
+
+describe("scrape targets", () => {
+	it("lists a switched-off target as paused instead of dropping the provider", () => {
+		const prometheus = providerOf(
+			{
+				scrapeTargets: [
+					{
+						name: "node",
+						url: "http://node/metrics",
+						serviceName: null,
+						managedBy: null,
+						scrapeIntervalSeconds: 15,
+						lastScrapeAt: null,
+						lastScrapeError: null,
+						enabled: false,
+					},
+				],
+			},
+			"prometheus",
+		)
+		expect(prometheus?.status).toBe("paused")
+		expect(prometheus?.resources.map((resource) => [resource.status, resource.note])).toEqual([
+			["paused", "Scraping is turned off"],
+		])
+	})
+})
+
+describe("withSourceHealth", () => {
+	const inventory = build({ oauthConnections: [cloudflareGrant] })
+
+	it("reads a provider as the worst of its sources, with that source's problem", () => {
+		const cloudflare = withSourceHealth(inventory, [
+			{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
+			{
+				platform: "cloudflare",
+				health: { status: "failing", lastDataAt: NOW, problem: "Zone analytics need a permission" },
+			},
+			{ platform: "railway", health: { status: "disconnected", lastDataAt: null, problem: "Revoked" } },
+		]).integrations.find((entry) => entry.provider === "cloudflare")
+		expect(cloudflare).toMatchObject({ status: "failing", problem: "Zone analytics need a permission" })
+	})
+
+	it("never reads a provider better than its own resources", () => {
+		const failingZone = build({
+			oauthConnections: [cloudflareGrant],
+			cloudflareStates: [
+				zone("shop.example.com", {
+					lastSuccessAt: null,
+					lastErrorAt: NOW - MINUTE,
+					lastError: "denied",
+				}),
+			],
+		})
+		const cloudflare = withSourceHealth(failingZone, [
+			{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
+		]).integrations.find((entry) => entry.provider === "cloudflare")
+		expect(cloudflare?.status).toBe("failing")
+	})
+
+	it("leaves a provider without sources as its resources say", () => {
+		expect(withSourceHealth(inventory, [])).toEqual(inventory)
 	})
 })

@@ -1,7 +1,7 @@
 import { getAiSessionsFacets } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Duration, Effect, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -88,21 +88,11 @@ export const DebounceSearch = Command.define("DebounceAgentToolsSearch", {
 		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
 })
 
-/** The empty state is on screen: `useSignalPresence` mounts with it. */
-export const MountEmptyState = Mount.define("MountAgentToolsEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 export const LoadSignalPresence = Command.define("LoadAgentToolsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 export const CompleteReloadSpin = Command.define("CompleteAgentToolsReloadSpin", {

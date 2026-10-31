@@ -206,7 +206,7 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 						h.span(
 							[
 								h.Class(
-									"w-3 shrink-0 text-right text-2xs tabular-nums text-muted-foreground/70",
+									"w-3 shrink-0 text-right text-2xs tabular-nums text-foreground-subtle",
 								),
 							],
 							[item.shortcut],
@@ -232,7 +232,7 @@ const content = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>): ReadonlyArray<H
 			: []
 	return [
 		h.div(
-			[h.Class("flex items-center gap-2 border-b border-border/60 px-3")],
+			[h.Class("flex items-center gap-2 border-b border-border-subtle px-3")],
 			[
 				h.input([
 					...activeDescendant,
@@ -304,8 +304,8 @@ export const view = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>): Html =>
 			bare: {
 				positionerClassName: "isolate z-55 outline-none",
 				popupClassName: cn(
-					"w-60 origin-(--transform-origin) overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none",
-					"duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+					"w-60 origin-(--transform-origin) overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-popup ring-1 ring-foreground/10 outline-none",
+					"duration-100 transition-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
 				),
 			},
 			toContent: () => content(h, options),

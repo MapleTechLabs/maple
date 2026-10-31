@@ -86,6 +86,7 @@ export const signalSpark = (
 }
 
 /** `SignalActivity`: a live investigation, then comment and PR marks; nothing on an untouched row. */
+// The message takes the free width; the chips follow it at their natural size.
 export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 	const prCount = signal.openPullRequestCount + signal.mergedPullRequestCount
 	if (signal.investigation === null && signal.commentCount === 0 && prCount === 0) return null
@@ -110,7 +111,7 @@ export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 								),
 								h.Title(`${countLabel(signal.commentCount, "comment")} on the timeline`),
 							],
-							[icon(h, "ChatBubbleIcon", { size: 11 }), String(signal.commentCount)],
+							[icon(h, "ChatBubbleIcon", { size: 12 }), String(signal.commentCount)],
 						),
 					]
 				: []),
@@ -122,7 +123,7 @@ export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 									cn(
 										"flex items-center gap-1 text-2xs tabular-nums",
 										signal.mergedPullRequestCount > 0
-											? "text-foreground/70"
+											? "text-foreground-soft"
 											: "text-muted-foreground",
 									),
 								),
@@ -132,7 +133,7 @@ export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 										: countLabel(prCount, "open pull request"),
 								),
 							],
-							[icon(h, "BranchForkIcon", { size: 11 }), String(prCount)],
+							[icon(h, "PullRequestIcon", { size: 12 }), String(prCount)],
 						),
 					]
 				: []),

@@ -12,6 +12,8 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
+import type { SourceId } from "@maple/domain/primitives"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -55,11 +57,12 @@ const testConfig = () =>
 	)
 
 // 64-bit counts arrive as strings, as ClickHouse returns them.
-const usageRows = [
-	{ signal: "spans", hour: "2026-07-15 09:00:00", count: "51234" },
-	{ signal: "logs", hour: "2026-07-15 09:00:00", count: "12873" },
-	{ signal: "spans", hour: "2026-07-15 08:00:00", count: "7" },
+const hourlyRows = [
+	{ hour: "2026-07-15 08:00:00", spans: "7", logs: "0", metrics: "0", bytes: "2100" },
+	{ hour: "2026-07-15 09:00:00", spans: "51234", logs: "12873", metrics: "8400", bytes: "23891200" },
 ]
+// Filled per test with the created source's id; a row that names no decodable source is dropped.
+const totalsRows: Array<Record<string, string>> = []
 const recordedUsageSql: string[] = []
 
 const makeHarness = () => {
@@ -74,16 +77,32 @@ const makeHarness = () => {
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 	// Provided first so it shadows the inert stub in ConfigResourceServiceStubsLayer.
+	const realSources = SourcesService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 	const sourcesLive = Layer.mergeAll(
-		SourcesService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer))),
+		realSources,
+		// Token and default sources only: SourceRemovalService.test.ts covers integration sources.
+		Layer.effect(
+			SourceRemovalService,
+			Effect.gen(function* () {
+				const sources = yield* SourcesService
+				return {
+					remove: (orgId: OrgId, sourceId: SourceId) =>
+						Effect.map(sources.delete(orgId, sourceId), (source) => ({
+							source,
+							cleanupScript: null,
+						})),
+				}
+			}),
+		).pipe(Layer.provide(realSources)),
 		Layer.effect(SourceUsageService, SourceUsageService.make).pipe(
 			Layer.provide(
 				Layer.succeed(
 					WarehouseQueryService,
 					makeWarehouseServiceStub({
-						compiledQuery: (_tenant, compiled) => {
+						compiledQuery: (_tenant, compiled, options) => {
 							recordedUsageSql.push(compiledQueryOf(compiled).sql)
-							return compiledQueryOf(compiled).decodeRows(usageRows).pipe(Effect.orDie)
+							const rows = options?.context === "sourceUsageTotals" ? totalsRows : hourlyRows
+							return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
 						},
 					}),
 				),
@@ -207,10 +226,32 @@ describe("v2 sources", () => {
 			const usage = await harness.request("GET", `/v2/sources/${id}/usage`, token)
 			expect(usage.status).toBe(200)
 			expect(usage.body.buckets).toEqual([
-				{ hour: "2026-07-15T08:00:00.000Z", spans: 7, logs: 0 },
-				{ hour: "2026-07-15T09:00:00.000Z", spans: 51234, logs: 12873 },
+				{ hour: "2026-07-15T08:00:00.000Z", spans: 7, logs: 0, metrics: 0, bytes: 2100 },
+				{
+					hour: "2026-07-15T09:00:00.000Z",
+					spans: 51234,
+					logs: 12873,
+					metrics: 8400,
+					bytes: 23891200,
+				},
 			])
 			expect(recordedUsageSql.at(-1)).toContain(`'${id}'`)
+
+			// `/usage` is the all-sources summary, not a source id that fails to decode.
+			totalsRows.splice(0, totalsRows.length, {
+				sourceId: id,
+				spans: "51241",
+				logs: "12873",
+				metrics: "8400",
+				bytes: "23893300",
+			})
+			totalsRows.push({ sourceId: "not-a-source", spans: "1", logs: "0", metrics: "0", bytes: "300" })
+			const summary = await harness.request("GET", "/v2/sources/usage", token)
+			expect(summary.status).toBe(200)
+			expect(summary.body.object).toBe("source_usage_summary")
+			expect(summary.body.data).toEqual([
+				{ source_id: id, spans: 51241, logs: 12873, metrics: 8400, bytes: 23893300 },
+			])
 
 			const rolled = await harness.request("POST", `/v2/sources/${id}/roll`, token)
 			expect(rolled.status).toBe(200)

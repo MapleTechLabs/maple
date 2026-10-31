@@ -16,9 +16,10 @@ import { card, cardHeader, cardPanel } from "../../ui/card"
 import * as Checkbox from "../../ui/checkbox"
 import { icon } from "../../ui/icon"
 import { label } from "../../ui/label"
+import { toggle } from "../../ui/toggle"
 import { metricOptionsOf } from "./derive"
 import { Message, type Model } from "./model"
-import { fieldEyebrow, labSelect, nameBadge } from "./view-controls"
+import { fieldEyebrow, labSelect } from "./view-controls"
 import { addOnSections } from "./view-add-ons"
 
 // One query card of `QueryBuilderLabInner`.
@@ -37,9 +38,9 @@ const SIGNAL_SOURCES = [
 ]
 
 const ADD_ONS: ReadonlyArray<{ key: AddOnKey; label: string }> = [
-	{ key: "groupBy", label: "Group By" },
+	{ key: "groupBy", label: "Group by" },
 	{ key: "having", label: "Having" },
-	{ key: "orderBy", label: "Order By" },
+	{ key: "orderBy", label: "Order by" },
 	{ key: "limit", label: "Limit" },
 	{ key: "legend", label: "Legend" },
 ]
@@ -56,7 +57,7 @@ const header = (h: H, model: Model, query: QueryDraft): Html => {
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
 					labSelect(h, model, `source:${query.id}`, query.dataSource, DATA_SOURCES, {
-						className: "w-[120px]",
+						className: "w-32",
 						toView: (parts) =>
 							h.div(
 								[h.Class("flex items-center gap-2")],
@@ -87,7 +88,7 @@ const header = (h: H, model: Model, query: QueryDraft): Html => {
 											className: "text-2xs text-muted-foreground",
 											attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId))],
 										},
-										["enabled"],
+										["Enabled"],
 									),
 								],
 							),
@@ -98,7 +99,7 @@ const header = (h: H, model: Model, query: QueryDraft): Html => {
 									size: "xs",
 									attributes: [h.OnClick(Message.ClickedCloneQuery({ queryId: query.id }))],
 								},
-								["Clone"],
+								[icon(h, "CopyIcon"), "Clone"],
 							),
 							button(
 								h,
@@ -148,7 +149,7 @@ const metricFields = (h: H, model: Model, query: QueryDraft): ReadonlyArray<Html
 						},
 					),
 				),
-				field("Signal Source", (toView) =>
+				field("Signal source", (toView) =>
 					labSelect(h, model, `signal:${query.id}`, query.signalSource, SIGNAL_SOURCES, {
 						className: "w-full",
 						toView,
@@ -169,7 +170,7 @@ const whereSection = (h: H, query: QueryDraft): Html => {
 	return h.div(
 		[h.Class("space-y-1")],
 		[
-			fieldEyebrow(h, "Where Clause (MVP supports key = value joined by AND)"),
+			fieldEyebrow(h, "Where (key = value, joined by AND)"),
 			h.div(
 				[h.Class("relative")],
 				[
@@ -237,29 +238,30 @@ const addOnToggles = (h: H, query: QueryDraft): Html =>
 			fieldEyebrow(h, "Add-ons"),
 			h.div(
 				[h.Class("flex flex-wrap gap-1.5")],
-				ADD_ONS.map((addOn) =>
-					button(
+				ADD_ONS.map((addOn) => {
+					const isOn = query.addOns[addOn.key]
+					// A pressed toggle with a check, so an add-on in use reads as on at a glance.
+					return toggle(
 						h,
 						{
-							variant: query.addOns[addOn.key] ? "secondary" : "outline",
+							variant: "outline",
 							size: "xs",
-							attributes: [
-								h.OnClick(changed(query, QueryChange.ToggledAddOn({ key: addOn.key }))),
-							],
+							isPressed: isOn,
+							onClick: changed(query, QueryChange.ToggledAddOn({ key: addOn.key })),
+							className: isOn ? "border-primary-a4 text-foreground" : "text-muted-foreground",
 						},
-						[addOn.label],
-					),
-				),
+						[...(isOn ? [icon(h, "CheckIcon", { size: 12 })] : []), addOn.label],
+					)
+				}),
 			),
 		],
 	)
 
-/** One query row: its name badge and its card. */
+/** One query row: its card, named in its own header. */
 export const queryRow = (h: H, model: Model, query: QueryDraft): Html =>
 	h.div(
-		[h.Key(query.id), h.Class("grid grid-cols-[44px_1fr] gap-2")],
+		[h.Key(query.id)],
 		[
-			nameBadge(h, query.name),
 			card(
 				h,
 				[

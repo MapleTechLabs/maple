@@ -10,12 +10,16 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import {
+	formatLag,
+	formatStoragePercent,
+	lagClass,
+	utilizationClass,
+} from "../../components/infra/planetscale/metrics"
 import type { LoadFailure } from "../../data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { alert, alertDescription, alertTitle } from "../../ui/alert"
@@ -37,24 +41,6 @@ import { queryActivityCharts } from "./view-db-charts"
 // PlanetScale health and branches, query activity and the top query shapes.
 
 type H = HtmlBuilder<Message>
-
-// PlanetScale tone classes and formats (see components/infra/planetscale/metrics.ts).
-const utilizationClass = (percent: number): string | undefined => {
-	const level = utilizationLevel(percent / 100)
-	return level === "ok" ? undefined : TONE_TEXT[level]
-}
-const lagClass = (seconds: number): string | undefined =>
-	!Number.isFinite(seconds)
-		? undefined
-		: seconds > 10
-			? TONE_TEXT.crit
-			: seconds > 1
-				? TONE_TEXT.warn
-				: undefined
-const formatLag = (seconds: number) =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
-const formatStoragePercent = (percent: number) =>
-	`${percent >= 99.5 || percent < 10 ? percent.toFixed(1) : percent.toFixed(0)}%`
 
 /** A failed read as the panels show it: a small critical Alert with `displayError`'s copy. */
 export const failureAlert = <A>(h: H, data: AsyncData.AsyncData<A, LoadFailure>): Option.Option<Html> =>
@@ -79,13 +65,13 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 	if (config.matched !== undefined)
 		return h.a(
 			[
-				h.Class("flex min-w-0 items-center gap-1.5 text-foreground hover:underline"),
+				h.Class("flex min-w-0 items-center gap-1.5 text-foreground hover:underline active:underline"),
 				h.Href(
 					hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: config.matched.name, search: {} })),
 				),
 			],
 			[
-				icon(h, "PlanetScaleIcon", { size: 11, className: "shrink-0 text-muted-foreground" }),
+				icon(h, "PlanetScaleIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
 				h.span([h.Class("truncate font-mono")], [config.matched.name]),
 				h.span(
 					[h.Class("shrink-0 text-3xs text-muted-foreground")],
@@ -97,7 +83,7 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 		return h.span(
 			[h.Class("flex min-w-0 items-center gap-1.5 text-muted-foreground")],
 			[
-				icon(h, "PlanetScaleIcon", { size: 11, className: "shrink-0" }),
+				icon(h, "PlanetScaleIcon", { size: 12, className: "shrink-0" }),
 				h.span([h.Class("truncate font-mono")], [config.originDatabase]),
 				h.span([h.Class("shrink-0 text-3xs")], ["PlanetScale (not in inventory)"]),
 			],
@@ -107,8 +93,8 @@ const hyperdriveOrigin = (h: H, config: HyperdriveNodeInfo): Html => {
 		[
 			h.span([h.Class("truncate font-mono")], [config.originDatabase]),
 			config.originHost
-				? h.span([h.Class("truncate text-3xs text-muted-foreground/60")], [config.originHost])
-				: h.span([h.Class("shrink-0 text-3xs text-muted-foreground/60")], ["private origin"]),
+				? h.span([h.Class("truncate text-3xs text-foreground-subtle")], [config.originHost])
+				: h.span([h.Class("shrink-0 text-3xs text-foreground-subtle")], ["private origin"]),
 		],
 	)
 }
@@ -145,7 +131,7 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 								truncatedId(h, {
 									value: config.id,
 									length: 8,
-									className: "shrink-0 text-3xs text-muted-foreground/60",
+									className: "shrink-0 text-3xs text-foreground-subtle",
 								}),
 							],
 						),
@@ -153,8 +139,8 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 							[h.Class("mt-1.5 flex items-center gap-1.5 text-2xs")],
 							[
 								icon(h, "ArrowRightIcon", {
-									size: 10,
-									className: "shrink-0 text-muted-foreground/60",
+									size: 12,
+									className: "shrink-0 text-foreground-subtle",
 								}),
 								hyperdriveOrigin(h, config),
 							],
@@ -267,7 +253,7 @@ const branchRows = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): Re
 						h,
 						{
 							className:
-								"flex-row items-center justify-between gap-2 border-border/60 px-2.5 py-2 text-xs opacity-70",
+								"flex-row items-center justify-between gap-2 border-border-subtle px-2.5 py-2 text-xs opacity-70",
 						},
 						[
 							h.div(
@@ -344,7 +330,7 @@ export const queryActivity = (
 			{
 				dashed: true,
 				className:
-					"flex h-44 flex-col items-center justify-center gap-1.5 border-border/60 bg-muted/10 text-xs",
+					"flex h-44 flex-col items-center justify-center gap-1.5 border-border-subtle bg-surface-faint text-xs",
 			},
 			[
 				"No database query spans in this window",

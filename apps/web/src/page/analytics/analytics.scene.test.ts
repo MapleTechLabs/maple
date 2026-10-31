@@ -3,6 +3,7 @@ import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Breakdowns, Model, Summary } from "./model"
@@ -75,10 +76,14 @@ describe("web analytics", () => {
 	test("an events answer ahead of the breakdowns lands after them, as legacy's does", () => {
 		const resolved = windowed()
 		const sent = names(
-			pageUpdate(init({ search: {} }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
-				.commands,
+			pageUpdate(
+				init({ search: {} }, context).model,
+				Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+			).commands,
 		)
-		expect(sent.indexOf("FetchWebAnalyticsBreakdowns")).toBeLessThan(sent.indexOf("FetchWebAnalyticsEvents"))
+		expect(sent.indexOf("FetchWebAnalyticsBreakdowns")).toBeLessThan(
+			sent.indexOf("FetchWebAnalyticsEvents"),
+		)
 		const early = settled(resolved, "events", [{ name: "add_to_cart", events: 12, sessions: 4 }])
 		expect(early.events.data._tag).toBe("Loading")
 		const both = settled(early, "breakdowns", breakdowns)
@@ -94,6 +99,27 @@ describe("web analytics", () => {
 		const sent = names(resolved.commands)
 		expect(sent).toContain("FetchWebAnalyticsAiCrawlers")
 		expect(sent).not.toContain("FetchWebAnalyticsTimeseries")
+	})
+
+	test("a failed AI read shows its failure instead of an empty panel", () => {
+		const resolved = pageUpdate(
+			init({ search: { tab: "ai" } }, context).model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		).model
+		const failed = pageUpdate(
+			resolved,
+			Message.CompletedFetch({
+				slot: "aiCrawlers",
+				key: resolved.aiCrawlers.key ?? "",
+				result: Result.fail(toLoadFailure("crawler store down")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			expectView(text("Couldn't load AI crawlers")).toExist(),
+		)
 	})
 
 	test("a breakdown row toggles its filter through the URL", () => {

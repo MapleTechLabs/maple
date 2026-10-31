@@ -1,4 +1,5 @@
 import {
+	formatWarehouseDateTime,
 	TinybirdDateTime,
 	type QueryEngineExecuteRequest,
 	type QueryEngineExecuteResponse,
@@ -15,6 +16,24 @@ import { ApiReachability, MapleApiV2Http, MapleInternalHttp, WarehouseExecutor }
 export * from "./warehouse-services"
 
 export const WarehouseDateTimeString = TinybirdDateTime
+
+/** An integration page's window; `resolveInfraWindow` fills a missing bound with the last 6 hours. */
+export const InfraWindowInput = Schema.Struct({
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+})
+
+export const resolveInfraWindow = (input: { startTime?: string; endTime?: string }, nowMillis: number) => ({
+	startTime: input.startTime ?? formatWarehouseDateTime(nowMillis - 6 * 60 * 60 * 1000),
+	endTime: input.endTime ?? formatWarehouseDateTime(nowMillis),
+})
+
+/** A wire-row number; a missing column reads as 0. */
+export const wireNumber = (value: unknown): number => Number(value ?? 0)
+
+/** A wire-row number that may be null on purpose (a gap); missing reads as null too. */
+export const wireNumberOrNull = (value: unknown): number | null =>
+	value === null || value === undefined ? null : Number(value)
 
 export class WarehouseDecodeError extends Schema.TaggedError<WarehouseDecodeError>()(
 	"@maple/web/errors/WarehouseDecodeError",
@@ -153,14 +172,28 @@ export const isWarehouseApiError = (cause: unknown): cause is WarehouseApiError 
  * batcher rejects its promise with an `HttpClientError`, which `Effect.tryPromise`
  * then wraps. Bounded at the same depth `displayError` uses.
  */
-export const isTransportFailure = (cause: unknown, depth = 0): boolean => {
-	if (HttpClientError.isHttpClientError(cause)) return cause.reason._tag === "TransportError"
-	if (depth >= 4) return false
+export const isTransportFailure = (cause: unknown): boolean => transportErrorOf(cause) !== undefined
+
+/** True when the transport failure is the client's own request deadline, not a dropped connection. */
+export const isRequestTimeout = (cause: unknown): boolean => {
+	const reason = transportErrorOf(cause)
+	return (
+		reason !== undefined &&
+		typeof DOMException !== "undefined" &&
+		reason.cause instanceof DOMException &&
+		reason.cause.name === "TimeoutError"
+	)
+}
+
+const transportErrorOf = (cause: unknown, depth = 0): HttpClientError.TransportError | undefined => {
+	if (HttpClientError.isHttpClientError(cause))
+		return cause.reason._tag === "TransportError" ? cause.reason : undefined
+	if (depth >= 4) return undefined
 	const nested =
 		typeof cause === "object" && cause !== null && "cause" in cause
 			? (cause as { readonly cause: unknown }).cause
 			: undefined
-	return nested === undefined || nested === cause ? false : isTransportFailure(nested, depth + 1)
+	return nested === undefined || nested === cause ? undefined : transportErrorOf(nested, depth + 1)
 }
 
 /**

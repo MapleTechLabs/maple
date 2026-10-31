@@ -1,13 +1,9 @@
-// One health model for every source. Push sources read the gateway's last_used_at; pull sources
-// reuse the integration inventory's poller status, so a source and list_integrations agree.
+// One health model for every source, read off its `sources` row. The gateway records when data
+// arrives (`last_used_at`) and what it refused; an integration's poller reports each tick's outcome
+// (`last_poll_*`, `disconnected_at`). A platform's policy says which of the two shows freshness.
 
-import {
-	type IntegrationEntry,
-	type IntegrationInventoryInputs,
-	type IntegrationStatus,
-	scrapeResource,
-	worstStatus,
-} from "./integration-inventory"
+import { AWS_STREAM_STALE_MS } from "./aws"
+import type { SourcePlatform } from "./primitives"
 
 /** Worst first. */
 export const SOURCE_HEALTH_STATUSES = [
@@ -20,9 +16,14 @@ export const SOURCE_HEALTH_STATUSES = [
 ] as const
 export type SourceHealthStatus = (typeof SOURCE_HEALTH_STATUSES)[number]
 
+export interface SourceResourceCount {
+	readonly total: number
+	readonly unhealthy: number
+}
+
 export interface SourceHealthResult {
 	readonly status: SourceHealthStatus
-	/** When data last arrived (push) or the last successful poll (pull); null when never. */
+	/** When data last arrived, or the last successful poll; null when never. */
 	readonly lastDataAt: number | null
 	/** One line on why the source is not healthy; null when it is. */
 	readonly problem: string | null
@@ -30,149 +31,114 @@ export interface SourceHealthResult {
 	readonly resources?: SourceResourceCount
 }
 
-export interface SourceResourceCount {
-	readonly total: number
-	readonly unhealthy: number
+interface HealthPolicy {
+	/** `data`: fresh while data arrives at the gateway. `poll`: fresh while the poller succeeds. */
+	readonly freshness: "data" | "poll"
+	readonly staleAfterMs: number
+	/** False when the poll only checks access and reads no data, so it never counts as data. */
+	readonly pollReadsData?: false
 }
 
-const countOf = (resources: ReadonlyArray<{ readonly status: string }>): SourceResourceCount | undefined =>
-	resources.length < 2
-		? undefined
-		: { total: resources.length, unhealthy: resources.filter((resource) => resource.status !== "healthy").length }
-
+const MINUTE = 60_000
 /** SDKs can go quiet overnight; a day without data is worth a look, not an alarm. */
-const PUSH_STALE_MS = 24 * 60 * 60 * 1000
-const GCP_METRICS_STALE_MS = 30 * 60 * 1000
-const GCP_METRICS_FAILED_MS = 10 * 60 * 1000
+const PUSH: HealthPolicy = { freshness: "data", staleAfterMs: 24 * 60 * MINUTE }
 
-const latest = (...values: ReadonlyArray<number | null>): number | null =>
-	values.reduce<number | null>((max, v) => (v !== null && (max === null || v > max) ? v : max), null)
-
-export interface PushSourceState {
-	readonly status: "active" | "paused" | "expired"
-	readonly lastUsedAt: number | null
-	/** The gateway's last refusal (rate limit or disallowed signal) and why; null when none. */
-	readonly lastRejectedAt?: number | null
-	readonly lastRejection?: string | null
-}
+/** The alerting pollers tick every 5 minutes: six missed ticks is no longer a blip. */
+const POLICIES = {
+	opentelemetry: PUSH,
+	nodejs: PUSH,
+	python: PUSH,
+	go: PUSH,
+	java: PUSH,
+	dotnet: PUSH,
+	ruby: PUSH,
+	php: PUSH,
+	rust: PUSH,
+	browser: PUSH,
+	kubernetes: PUSH,
+	docker: PUSH,
+	host: PUSH,
+	cloudflare_ai_gateway: PUSH,
+	claude_code: PUSH,
+	prometheus: { freshness: "poll", staleAfterMs: 10 * MINUTE },
+	// Analytics are polled and Logpush pushes; a grant may only push. Both arrive at the gateway.
+	cloudflare: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE },
+	railway: { freshness: "poll", staleAfterMs: 30 * MINUTE },
+	// Log forwarding pushes, metrics are polled; a connector may only forward logs.
+	gcp: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE },
+	// The inventory refreshes hourly; metrics arrive through the managed scrape.
+	planetscale: { freshness: "poll", staleAfterMs: 3 * 60 * MINUTE },
+	github: { freshness: "poll", staleAfterMs: 24 * 60 * MINUTE },
+	// The metric stream delivers about every minute; the hourly role check reads no data.
+	aws: { freshness: "data", staleAfterMs: AWS_STREAM_STALE_MS, pollReadsData: false },
+	// Project discovery runs hourly; metrics (scrape) and logs (drains) arrive later phases.
+	supabase: { freshness: "poll", staleAfterMs: 3 * 60 * MINUTE },
+} satisfies Record<SourcePlatform, HealthPolicy>
 
 /**
  * Refusals are recent when the gateway stamped one in the last 15 minutes. A source refused even
  * part of the time is failing (data is dropped); with no refusal for 15 minutes it clears itself.
- * Accepted requests are not compared: both stamps are written once a minute per instance.
  */
-const REFUSAL_WINDOW_MS = 15 * 60 * 1000
+const REFUSAL_WINDOW_MS = 15 * MINUTE
 
-const isRejectedNow = (source: PushSourceState, now: number): boolean => {
-	const rejectedAt = source.lastRejectedAt ?? null
-	return rejectedAt !== null && now - rejectedAt <= REFUSAL_WINDOW_MS
+/** The `sources` columns health reads, timestamps in epoch ms. */
+export interface SourceHealthInput {
+	readonly platform: SourcePlatform
+	/** As the gateway applies it: an expired token is rejected even while paused. */
+	readonly status: "active" | "paused" | "expired"
+	readonly lastUsedAt: number | null
+	readonly lastRejectedAt: number | null
+	readonly lastRejection: string | null
+	readonly lastPollOkAt: number | null
+	readonly lastPollError: string | null
+	readonly disconnectedAt: number | null
+	readonly pollResources: SourceResourceCount | null
+	/** Why the integration reads nothing on purpose (a scrape target switched off), or undefined. */
+	readonly turnedOff?: string
+	/** Replaces the platform's window, for a source whose cadence is its own (a scrape interval). */
+	readonly staleAfterMs?: number
+	/** Why the integration's own record says it fails (a refused delivery), or undefined. */
+	readonly failing?: string
 }
 
-export const pushSourceHealth = (source: PushSourceState, now: number): SourceHealthResult => {
-	const lastDataAt = source.lastUsedAt
-	if (source.status === "expired") {
-		return { status: "disconnected", lastDataAt, problem: "The token expired; senders get 401" }
+const latest = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b))
+
+const formatWindow = (ms: number) =>
+	ms >= 60 * MINUTE ? `${Math.round(ms / (60 * MINUTE))} hours` : `${Math.round(ms / MINUTE)} minutes`
+
+export const sourceHealth = (source: SourceHealthInput, now: number): SourceHealthResult => {
+	const policy: HealthPolicy = POLICIES[source.platform]
+	const lastDataAt =
+		policy.pollReadsData === false ? source.lastUsedAt : latest(source.lastUsedAt, source.lastPollOkAt)
+	const resources =
+		source.pollResources !== null && source.pollResources.total >= 2 ? source.pollResources : undefined
+	const result = (status: SourceHealthStatus, problem: string | null): SourceHealthResult =>
+		resources === undefined ? { status, lastDataAt, problem } : { status, lastDataAt, problem, resources }
+
+	if (source.status === "expired") return result("disconnected", "The token expired; senders get 401")
+	if (source.disconnectedAt !== null) {
+		return result("disconnected", source.lastPollError ?? "The integration is disconnected")
 	}
-	if (source.status === "paused")
-		return { status: "paused", lastDataAt, problem: "Data is dropped while paused" }
-	if (isRejectedNow(source, now)) {
-		return { status: "failing", lastDataAt, problem: source.lastRejection ?? "The gateway refused its requests" }
+	if (source.status === "paused") return result("paused", "Data is dropped while paused")
+	if (source.turnedOff !== undefined) return result("paused", source.turnedOff)
+	if (source.lastRejectedAt !== null && now - source.lastRejectedAt <= REFUSAL_WINDOW_MS) {
+		return result("failing", source.lastRejection ?? "The gateway refused its requests")
 	}
-	if (lastDataAt === null) return { status: "pending", lastDataAt, problem: null }
-	if (now - lastDataAt > PUSH_STALE_MS) {
-		return { status: "stale", lastDataAt, problem: "No data in the last 24 hours" }
+	if (source.lastPollError !== null) return result("failing", source.lastPollError)
+	if (source.failing !== undefined) return result("failing", source.failing)
+	if (resources !== undefined && resources.unhealthy > 0) {
+		return result("stale", `${resources.unhealthy} of ${resources.total} not up to date`)
 	}
-	return { status: "healthy", lastDataAt, problem: null }
+	const freshAt = policy.freshness === "data" ? source.lastUsedAt : source.lastPollOkAt
+	const staleAfterMs = source.staleAfterMs ?? policy.staleAfterMs
+	if (freshAt === null) return result("pending", null)
+	if (now - freshAt > staleAfterMs) {
+		const what = policy.freshness === "data" ? "No data" : "No successful update"
+		return result("stale", `${what} in the last ${formatWindow(staleAfterMs)}`)
+	}
+	return result("healthy", null)
 }
 
-const fromIntegrationStatus = (status: IntegrationStatus): SourceHealthStatus => status
-
-/** A provider-wide integration (Cloudflare, Railway, PlanetScale, GitHub) as one source. */
-export const integrationSourceHealth = (entry: IntegrationEntry | undefined): SourceHealthResult => {
-	if (entry === undefined) {
-		return { status: "disconnected", lastDataAt: null, problem: "The integration is no longer connected" }
-	}
-	const health: SourceHealthResult = {
-		status: fromIntegrationStatus(entry.status),
-		lastDataAt: latest(...entry.resources.map((resource) => resource.lastSuccessAt)),
-		problem: entry.problem,
-	}
-	const resources = countOf(entry.resources)
-	return resources === undefined ? health : { ...health, resources }
-}
-
-export const scrapeTargetSourceHealth = (
-	target: IntegrationInventoryInputs["scrapeTargets"][number],
-	now: number,
-): SourceHealthResult => {
-	const resource = scrapeResource(target, now, "scrape target")
-	return {
-		status: fromIntegrationStatus(resource.status),
-		lastDataAt: resource.lastSuccessAt,
-		problem: resource.lastError,
-	}
-}
-
-export interface GcpConnectorHealthInput {
-	readonly logsEnabled: boolean
-	readonly metricsEnabled: boolean
-	readonly lastReceivedAt: number | null
-	readonly lastError: string | null
-	readonly lastMetricsReceivedAt: number | null
-	readonly lastMetricsError: string | null
-}
-
-/** Coarser than the Google Cloud page's per-capability states: enough to rank a source. */
-export const gcpSourceHealth = (connector: GcpConnectorHealthInput, now: number): SourceHealthResult => {
-	const lastDataAt = latest(
-		connector.logsEnabled ? connector.lastReceivedAt : null,
-		connector.metricsEnabled ? connector.lastMetricsReceivedAt : null,
-	)
-	if (connector.logsEnabled && connector.lastError !== null) {
-		return { status: "failing", lastDataAt, problem: connector.lastError }
-	}
-	const metricsAge =
-		connector.lastMetricsReceivedAt === null
-			? Number.POSITIVE_INFINITY
-			: now - connector.lastMetricsReceivedAt
-	if (
-		connector.metricsEnabled &&
-		connector.lastMetricsError !== null &&
-		metricsAge > GCP_METRICS_FAILED_MS
-	) {
-		return { status: "failing", lastDataAt, problem: connector.lastMetricsError }
-	}
-	if (lastDataAt === null) return { status: "pending", lastDataAt, problem: null }
-	if (connector.metricsEnabled && metricsAge > GCP_METRICS_STALE_MS) {
-		return { status: "stale", lastDataAt, problem: "No metrics read in the last 30 minutes" }
-	}
-	if (!connector.metricsEnabled && now - lastDataAt > PUSH_STALE_MS) {
-		return { status: "stale", lastDataAt, problem: "No logs in the last 24 hours" }
-	}
-	return { status: "healthy", lastDataAt, problem: null }
-}
-
-/** One GitHub installation, from the repositories under its account (repo names are `owner/name`). */
-export const githubInstallationHealth = (
-	entry: IntegrationEntry | undefined,
-	accountLogin: string,
-): SourceHealthResult => {
-	if (entry === undefined) return integrationSourceHealth(undefined)
-	const prefix = `${accountLogin.toLowerCase()}/`
-	const repos = entry.resources.filter((resource) => resource.name.toLowerCase().startsWith(prefix))
-	if (repos.length === 0) return { status: "pending", lastDataAt: null, problem: null }
-	const status = worstStatus(repos.map((repo) => repo.status))
-	const failing = repos.find((repo) => repo.status === status && repo.lastError !== null)
-	const health: SourceHealthResult = {
-		status: fromIntegrationStatus(status),
-		lastDataAt: latest(...repos.map((repo) => repo.lastSuccessAt)),
-		problem:
-			status === "healthy"
-				? null
-				: failing === undefined
-					? `Repositories under ${accountLogin} are ${status}`
-					: `${failing.name}: ${failing.lastError}`,
-	}
-	const resources = countOf(repos)
-	return resources === undefined ? health : { ...health, resources }
-}
+/** Worst first, by `SOURCE_HEALTH_STATUSES`. */
+export const worstSourceStatus = (statuses: ReadonlyArray<SourceHealthStatus>): SourceHealthStatus =>
+	SOURCE_HEALTH_STATUSES.find((status) => statuses.includes(status)) ?? "healthy"

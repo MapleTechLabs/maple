@@ -105,7 +105,7 @@ describe("summarizePlanetScale", () => {
 		const { findings } = summarizePlanetScale([db("ledger", 2, 92), db("users", 0.1, null)])
 		expect(findings.map((f) => [f.tone, f.title])).toEqual([
 			["crit", "ledger storage at 92%"],
-			["warn", "ledger replica 2.0s behind primary"],
+			["warn", "ledger replica 2.00s behind primary"],
 		])
 	})
 })

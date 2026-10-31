@@ -21,6 +21,7 @@ export const init = (options: Readonly<{ isAdmin: boolean; userId: string | null
 		isAdmin: options.isAdmin,
 		userId: options.userId,
 		apiKeys: null,
+		isLoadFailed: false,
 		typeFilter: "all",
 		statusFilter: "active",
 		statusSelect: Select.init("keys-status", { value: "active", selectedIndex: 0 }),
@@ -44,7 +45,9 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 
 const liftRevoke = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, revokeDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRevokeDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRevokeDialogMessage({ message }),
+	),
 })
 
 const liftCreate = (model: Model, step: ReturnType<typeof CreateDialog.update>): Return => ({
@@ -94,7 +97,8 @@ const updateMenu = (
 	const step = Menu.update(current, message)
 	const next = write(model, step.model)
 	const commands = Command.mapMessages(step.commands ?? [], wrap)
-	const picked = step.outMessage?._tag === "SelectedItem" ? Option.some(step.outMessage.value) : Option.none()
+	const picked =
+		step.outMessage?._tag === "SelectedItem" ? Option.some(step.outMessage.value) : Option.none()
 	return Option.match(picked, {
 		onNone: () => ({ model: next, commands }),
 		onSome: (value) => {
@@ -106,19 +110,31 @@ const updateMenu = (
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows } }),
+		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows, isLoadFailed: false } }),
+		FailedLoadApiKeys: () => ({ model: { ...model, isLoadFailed: true } }),
+		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections. The failure
+		// stays up until the sync answers, so an auto-retry probe does not flash the skeleton.
+		ClickedRetryLoad: () => ({
+			model,
+			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+		}),
 		ClickedTypeFilter: ({ type }) => ({ model: { ...model, typeFilter: type } }),
 		GotStatusSelectMessage: ({ message: child }) => {
 			const step = Select.update(model.statusSelect, child)
 			const lifted = {
 				model: { ...model, statusSelect: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotStatusSelectMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotStatusSelectMessage({ message: inner }),
+				),
 			}
 			return Option.match(
 				Option.flatMap(Option.fromNullishOr(step.outMessage), (out) =>
 					Array.findFirst(STATUS_VALUES, (status) => status === out.value),
 				),
-				{ onNone: () => lifted, onSome: (status) => ({ ...lifted, model: { ...lifted.model, statusFilter: status } }) },
+				{
+					onNone: () => lifted,
+					onSome: (status) => ({ ...lifted, model: { ...lifted.model, statusFilter: status } }),
+				},
 			)
 		},
 		ChangedSearch: ({ value }) => ({ model: { ...model, search: value } }),
@@ -147,7 +163,10 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedConfirmRevoke: () =>
 			model.isRevoking || model.revoking === null
 				? { model }
-				: { model: { ...model, isRevoking: true }, commands: [RevokeApiKey({ id: model.revoking.id })] },
+				: {
+						model: { ...model, isRevoking: true },
+						commands: [RevokeApiKey({ id: model.revoking.id })],
+					},
 		CompletedRevoke: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
@@ -156,7 +175,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isRevoking: false },
-					outMessage: toast("error", "Failed to revoke key", error.message),
+					outMessage: toast("error", "Couldn't revoke key", error.message),
 				}),
 			}),
 		GotRollMessage: ({ message: child }) => liftRoll(model, RollDialog.update(model.roll, child)),
@@ -165,7 +184,9 @@ export const update = (model: Model, message: Message): Return =>
 			const step = CopyButton.update(model.baseUrlCopy, child)
 			return {
 				model: { ...model, baseUrlCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotBaseUrlCopyMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotBaseUrlCopyMessage({ message: inner }),
+				),
 			}
 		},
 		ToggledScopes: () => ({ model: { ...model, isScopesOpen: !model.isScopesOpen } }),

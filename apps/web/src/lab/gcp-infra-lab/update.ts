@@ -2,8 +2,11 @@ import { Effect } from "effect"
 import { Command, type Update } from "foldkit"
 import { load } from "foldkit/navigation"
 import { LoadChartRuntime } from "../../charts/chart-runtime"
+import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/list/command"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import { stepProjectMenu } from "../../page/infra-integrations/gcp/list/project-menu"
+import { stepTimePicker } from "../../page/infra-integrations/kit/page-time"
+import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import * as Menu from "../../ui/menu"
@@ -25,6 +28,9 @@ export const init = (): Return => ({
 		projectMenu: Menu.init("gcp-project-menu"),
 		themeColors: null,
 		chartRuntime: { _tag: "Loading" },
+		timePicker: TimeRangePicker.init("gcp-time-range"),
+		refreshVersion: 0,
+		isReloading: false,
 	},
 	commands: [
 		Command.mapMessage(LoadChartRuntime(), (message) =>
@@ -63,6 +69,34 @@ const stepList = (model: Model, message: GcpList.Message): Return => {
 			return patch(model, { region: undefined, scope: undefined })
 		case "SelectedProject":
 			return patch(model, { project: message.project, scope: undefined })
+		// Reload only spins: the fixtures never reload. A picked range has no URL to go to.
+		case "ClickedReload": {
+			const refreshVersion = model.refreshVersion + 1
+			return {
+				model: { ...model, refreshVersion, isReloading: true },
+				commands: [
+					Command.mapMessage(CompleteReloadSpin({ version: refreshVersion }), (inner) =>
+						Message.GotListMessage({ message: inner }),
+					),
+				],
+			}
+		}
+		case "CompletedReloadSpin":
+			return message.version === model.refreshVersion
+				? { model: { ...model, isReloading: false } }
+				: { model }
+		case "GotTimePickerMessage": {
+			const step = stepTimePicker(
+				model.timePicker,
+				message.message,
+				(picker) =>
+					Message.GotListMessage({
+						message: GcpList.Message.GotTimePickerMessage({ message: picker }),
+					}),
+				() => "",
+			)
+			return { model: { ...model, timePicker: step.timePicker }, commands: step.commands }
+		}
 		case "GotProjectMenuMessage": {
 			const step = stepProjectMenu(model.projectMenu, message.message)
 			const next = { ...model, projectMenu: step.menu }

@@ -11,7 +11,7 @@ import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-so
 import { MapleDb } from "@maple/infra/cloudflare"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import {

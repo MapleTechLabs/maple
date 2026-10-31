@@ -10,6 +10,7 @@
 
 import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple/query-engine/ch"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, GCP_INFRA_SOURCES } from "@maple/domain/gcp-infra"
 import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
@@ -57,6 +58,10 @@ const railwayServiceBucketed = {
 	serviceId: "svc_1",
 	bucketSeconds: 300,
 }
+
+/** One Supabase project, as /infra/supabase/$ref scopes it. */
+const supabaseProject = { ...window, projectRef: "abcdefghijklmnopqrst" }
+const supabaseProjectBucketed = { ...supabaseProject, bucketSeconds: 300 }
 
 /** The zone-slice filters the /infra/cloudflare page sends, as one bag. */
 const CF_FILTERS = { hosts: ["example.com"], statusClasses: ["5xx"], methods: ["GET"] }
@@ -784,6 +789,78 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
 	},
 	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugesSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectCpuSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCpuSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugeSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugeSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectRateSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectRateSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTrafficSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTrafficSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTrafficTotalsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTrafficTotalsSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTopPathsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTopPathsSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogIssuesSQL",
+		label: "project",
+		compile: () => compileUnsafe(CH.supabaseLogIssuesSQL({ byProject: true }), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogIssuesSQL",
+		label: "org",
+		compile: () => compileUnsafe(CH.supabaseLogIssuesSQL({ byProject: false }), window),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogsProjectsSummarySQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseLogsProjectsSummarySQL(), window),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseProjectCallersSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCallersSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseProjectCallerSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCallerSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
 		module: "gcp-infra",
 		name: "gcpInfraPresenceSQL",
 		label: "default",
@@ -836,6 +913,45 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 				window,
 			),
 	},
+	{
+		module: "aws-infra",
+		name: "awsInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.awsInfraPresenceSQL(), window),
+	},
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraMetricsSQL",
+		label: kind,
+		compile: () => compileUnsafe(CH.awsInfraMetricsSQL(kind), window),
+	})),
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraSparklinesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraSparklinesSQL(
+					kind,
+					CH.awsInfraBucketCount(START_TIME, END_TIME, bucketed.bucketSeconds),
+				),
+				bucketed,
+			),
+	})),
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraTimeseriesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraTimeseriesSQL(kind, [
+					...AWS_INFRA_KINDS[kind].identity.map(([, dimension]) => `acme-${dimension}`),
+					"us-east-1",
+					"123456789012",
+				]),
+				bucketed,
+			),
+	})),
 	{
 		module: "planetscale-map",
 		name: "planetscaleBranchGaugesSQL",

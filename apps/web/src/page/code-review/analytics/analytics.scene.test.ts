@@ -58,7 +58,9 @@ describe("code review analytics", () => {
 		const filtered = navigated(reloaded, { author: "ada-l" })
 		expect(names(filtered.commands)).toEqual(["FetchCodeReviewAnalytics"])
 		const moved = navigated(filtered.model, { author: "ada-l", timePreset: "1h" })
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveCodeReviewWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveCodeReviewWindow", "Refresh"],
+		])
 	})
 
 	test("an answer for a superseded filter is dropped", () => {

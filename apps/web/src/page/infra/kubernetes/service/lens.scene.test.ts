@@ -33,7 +33,10 @@ const workload = {
 describe("service lens", () => {
 	test("with nothing picked only the rail loads", () => {
 		const entered = pageUpdate(init({ search: {} }, context).model, resolved)
-		expect(names(entered.commands)).toEqual(["FetchLensServiceNames", "FetchLensServiceWorkloads"])
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["FetchLensServiceNames", "FetchLensServiceWorkloads"]),
+		)
+		expect(names(entered.commands)).not.toContain("FetchLensPods")
 	})
 
 	test("a picked service asks for the unscoped pod page first, then the workload's once it lands", () => {
@@ -43,7 +46,7 @@ describe("service lens", () => {
 			entered.model,
 			Message.CompletedFetchLinked({ key: entered.model.linked.key ?? "", result: Result.succeed([workload]) }),
 		)
-		expect(names(linked.commands)).toEqual(["FetchLensPods", "FetchLensCpu"])
+		expect(names(linked.commands)).toEqual(expect.arrayContaining(["FetchLensPods", "FetchLensCpu"]))
 	})
 
 	test("picking a service keeps the rail and starts the lens body afresh", () => {

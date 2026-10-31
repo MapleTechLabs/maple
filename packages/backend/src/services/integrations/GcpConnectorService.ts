@@ -30,6 +30,12 @@ import { gcpSetupPlan } from "@maple/domain/gcp"
 import { renderGcpAlchemy } from "./gcp/alchemy"
 import { gcpLogFilter, renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
 import { renderGcpTerraform } from "./gcp/terraform"
+import {
+	deleteSourcesOf,
+	createIntegrationSource,
+	integrationSourceName,
+	reportPoll,
+} from "@maple/backend/services/org/integration-sources"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
@@ -179,7 +185,7 @@ const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConne
 const notFound = () => new IntegrationsNotFoundError({ message: "No such Google Cloud connector." })
 
 export class GcpConnectorService extends Context.Service<GcpConnectorService, GcpConnectorServiceApi>()(
-	"@maple/api/services/GcpConnectorService",
+	"@maple/backend/services/GcpConnectorService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -387,26 +393,41 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					secretAad(id),
 				)
 				const now = yield* Clock.currentTimeMillis
+				// The connector and the source it sends as land together.
 				const [row] = yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(GcpConnectors)
-							.values({
-								id,
+					db.transaction(
+						Effect.gen(function* () {
+							const sourceId = yield* createIntegrationSource(
+								db,
 								orgId,
-								...input,
-								// What is created off is known not to exist; switching it on later resets this to null.
-								appliedLogsEnabled: input.logsEnabled ? null : false,
-								appliedMetricsEnabled: input.metricsEnabled ? null : false,
-								secretCiphertext: encrypted.ciphertext,
-								secretIv: encrypted.iv,
-								secretTag: encrypted.tag,
-								secretHash: hashIngestKey(secret, lookupHmacKey),
-								createdBy: userId,
-								createdAt: now,
-								updatedAt: now,
-							})
-							.onConflictDoNothing({ target: ["orgId", "scopeType", "scopeId"] })
-							.returning(),
+								{ platform: "gcp", name: integrationSourceName.gcp(input) },
+								now,
+							)
+							const inserted = yield* db.run(
+								PG.insertInto(GcpConnectors)
+									.values({
+										id,
+										orgId,
+										sourceId,
+										...input,
+										// What is created off is known not to exist; switching it on later resets this to null.
+										appliedLogsEnabled: input.logsEnabled ? null : false,
+										appliedMetricsEnabled: input.metricsEnabled ? null : false,
+										secretCiphertext: encrypted.ciphertext,
+										secretIv: encrypted.iv,
+										secretTag: encrypted.tag,
+										secretHash: hashIngestKey(secret, lookupHmacKey),
+										createdBy: userId,
+										createdAt: now,
+										updatedAt: now,
+									})
+									.onConflictDoNothing({ target: ["orgId", "scopeType", "scopeId"] })
+									.returning(),
+							)
+							// A scope that is already connected keeps no source of its own.
+							if (inserted.length === 0) yield* deleteSourcesOf(db, orgId, [{ sourceId }])
+							return inserted
+						}),
 					),
 				)
 				if (row === undefined) {
@@ -476,6 +497,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 										.set({ ...changes, updatedAt })
 										.where(($) => [$.id.eq(connectorId)]),
 								)
+								// Metrics switched off: the last read's error no longer describes the source.
+								if (current.metricsEnabled && !flags.metricsEnabled) {
+									yield* reportPoll(db, current.sourceId, { _tag: "Ok" }, updatedAt)
+								}
 							}
 							return { row: { ...current, ...changes }, invalid }
 						}),
@@ -577,11 +602,18 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				connectorId: GcpConnectorId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
+				// Its source goes with it.
 				const [row] = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(GcpConnectors)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
-							.returning(),
+					db.transaction(
+						Effect.gen(function* () {
+							const deleted = yield* db.run(
+								PG.deleteFrom(GcpConnectors)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
+									.returning(),
+							)
+							yield* deleteSourcesOf(db, orgId, deleted)
+							return deleted
+						}),
 					),
 				)
 				if (row === undefined) return yield* notFound()

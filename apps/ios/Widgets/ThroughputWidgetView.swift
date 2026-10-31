@@ -52,7 +52,7 @@ private struct SmallThroughputView: View {
 				QualityLine(service: service)
 					.padding(.top, 6)
 
-				ThroughputUpdatedFooter(snapshot: snapshot, now: entry.date)
+				ThroughputUpdatedFooter(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp)
 					.padding(.top, 4)
 			}
 		}
@@ -71,7 +71,7 @@ private struct MediumThroughputView: View {
 					TrendLine(service: service, snapshot: snapshot)
 					Spacer(minLength: 4)
 					QualityLine(service: service, isStacked: true)
-					ThroughputUpdatedFooter(snapshot: snapshot, now: entry.date)
+					ThroughputUpdatedFooter(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp)
 						.padding(.top, 4)
 				}
 				.frame(maxWidth: 150, alignment: .leading)
@@ -121,7 +121,7 @@ private struct LargeThroughputView: View {
 				// what the numbers measure, "updated 4m ago" is when we last
 				// asked. Same line because large already ends here, but joined
 				// so neither can be read as the other.
-				Text("\(windowLabel(snapshot)) · \(WidgetTime.updated(snapshot.age(at: entry.date)))")
+				Text("\(windowLabel(snapshot)) · \(WidgetTime.updated(snapshot.age(at: entry.date), needsApp: entry.needsApp))")
 					.font(Typo.micro)
 					.tabularNumbers()
 					.foregroundStyle(Token.mutedForeground)
@@ -305,9 +305,10 @@ private struct MissingOrganizationView: View {
 private struct ThroughputUpdatedFooter: View {
 	let snapshot: ThroughputSnapshot
 	let now: Date
+	var needsApp = false
 
 	var body: some View {
-		Text(WidgetTime.updated(snapshot.age(at: now)))
+		Text(WidgetTime.updated(snapshot.age(at: now), needsApp: needsApp))
 			.font(Typo.micro)
 			.tabularNumbers()
 			.foregroundStyle(Token.mutedForeground)

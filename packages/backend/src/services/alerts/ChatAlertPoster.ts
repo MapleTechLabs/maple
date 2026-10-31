@@ -1,4 +1,4 @@
-import type { ChatOutboundError, ChatOutboundTransport } from "@maple/chat-platform"
+import type { ChatBlock, ChatOutboundError, ChatOutboundTransport } from "@maple/chat-platform"
 import {
 	AlertDeliveryAuthError,
 	AlertDeliveryError,
@@ -79,6 +79,17 @@ export interface ChatAlertPosterApi {
 		channelId: string,
 	) => Effect.Effect<ChatChannelChoice, AlertValidationError | AlertPersistenceError>
 }
+
+/**
+ * The message with its chart images dropped. The platform fetches an image at post time and refuses
+ * the whole message when it cannot, so a rejected post with an image is retried once without it.
+ */
+const withoutImages = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<ChatBlock> | undefined =>
+	blocks.some((block) => (block.kind === "alert" || block.kind === "chart") && block.imageUrl !== null)
+		? blocks.map((block) =>
+				block.kind === "alert" || block.kind === "chart" ? { ...block, imageUrl: null } : block,
+			)
+		: undefined
 
 const validation = (message: string, cause?: unknown) =>
 	new AlertValidationError({ message, details: [], ...(cause === undefined ? undefined : { cause }) })
@@ -164,20 +175,38 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 					cached ?? (yield* chatOutboundTransport(workspace.value, outboundConfig, httpClient))
 				if (cached === undefined)
 					yield* Ref.update(transports, (map) => new Map(map).set(transportKey, transport))
-				const posted = yield* transport
-					.post({ workspaceId: externalWorkspaceId, channelId: request.channelId }, request.blocks)
-					.pipe(
-						Effect.mapError(chatDeliveryFailure),
-						Effect.timeoutOrElse({
-							duration: Duration.millis(runtime.deliveryTimeoutMs()),
-							orElse: () =>
-								Effect.fail(
-									deliveryError(
-										`${connector.manifest.name} delivery timed out after ${runtime.deliveryTimeoutMs()}ms`,
+				const target = { workspaceId: externalWorkspaceId, channelId: request.channelId }
+				const imageless = withoutImages(request.blocks)
+				const posted = yield* transport.post(target, request.blocks).pipe(
+					Effect.catchIf(
+						(error) => error.reason === "rejected",
+						(error) =>
+							imageless === undefined
+								? Effect.fail(error)
+								: Effect.logWarning(
+										"Chat alert rejected with its chart image; posting it without",
+									).pipe(
+										Effect.annotateLogs({
+											"maple.chat.connector": connector.id,
+											error: error.message,
+										}),
+										Effect.andThen(
+											Effect.annotateCurrentSpan("maple.delivery.image_dropped", true),
+										),
+										Effect.andThen(transport.post(target, imageless)),
 									),
+					),
+					Effect.mapError(chatDeliveryFailure),
+					Effect.timeoutOrElse({
+						duration: Duration.millis(runtime.deliveryTimeoutMs()),
+						orElse: () =>
+							Effect.fail(
+								deliveryError(
+									`${connector.manifest.name} delivery timed out after ${runtime.deliveryTimeoutMs()}ms`,
 								),
-						}),
-					)
+							),
+					}),
+				)
 				return { connectorName: connector.manifest.name, messageId: posted.messageId }
 			},
 			// Every failure, the ones before the post included: a flat rate of one tag is one
@@ -250,7 +279,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 )
 
 export class ChatAlertPoster extends Context.Service<ChatAlertPoster, ChatAlertPosterApi>()(
-	"@maple/api/services/ChatAlertPoster",
+	"@maple/backend/services/ChatAlertPoster",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))

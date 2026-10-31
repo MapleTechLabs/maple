@@ -20,12 +20,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for eve in this project.
 
-Load the skill with `npx skills use MapleTechLabs/maple/skills --skill maple-agent-tracing-eve`, then follow it.
+Load the skill, then follow it:
+npx skills use MapleTechLabs/maple/skills --skill maple-agent-tracing-eve
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the exporter
 
@@ -59,7 +60,7 @@ export default mapleKey
 	: disableInstrumentation()
 ```
 
-In deployments, set `MAPLE_INGEST_KEY` in your host's environment variables. For local runs, see [Check that it works](#check-that-it-works).
+In deployments, set `MAPLE_INGEST_KEY` in your host's environment variables. For local runs, see [Verify](#verify).
 
 Keep the `exportPolicy` line. Without it, eve's internal workflow spans make up most of the data you send.
 
@@ -101,13 +102,13 @@ export default eveChannel({
 
 Keep the `auth` list your project already uses. A public channel sends its message text to every trace destination, including Vercel Agent Runs, so mark it public only if storing those conversations is acceptable. For other channels, see [eve's audience docs](https://eve.dev/docs/channels/overview#audience).
 
-## Check that it works
+## Verify
 
 1. Copy the public ingest key (`maple_pk_…`) from **Settings → Ingestion** ([US](https://app.maple.dev/settings?tab=ingestion) or [EU](https://app.eu.maple.dev/settings?tab=ingestion)) and add it to `.env.local` in your project:
 
-   ```env
-   MAPLE_INGEST_KEY=maple_pk_...
-   ```
+    ```env
+    MAPLE_INGEST_KEY=maple_pk_...
+    ```
 
 2. Start the agent with `eve dev` and send it two messages, one of which uses a tool. eve sends the traces to Maple a few seconds after each reply.
 3. Open **Agent Sessions** in Maple ([US](https://app.maple.dev/agent-sessions) or [EU](https://app.eu.maple.dev/agent-sessions)).
@@ -131,29 +132,29 @@ Then:
 3. Add the two files from this guide.
 4. If the old file did more than send traces to Maple, move each part:
 
-| In the old `agent/instrumentation.ts` | After the upgrade |
-| --- | --- |
-| Another exporter in `registerOTel({ traceExporter })` | Its own file with `otelIntegration({ traceExporter })` |
-| `serviceName` | `service.name` in [`otel.ts`](#name-the-service) |
-| `functionId` | `otel({ functionId })` |
-| `recordInputs`, `recordOutputs` | Not needed: message text depends on [whether the conversation is public](#show-message-text-in-production) |
-| `events["step.started"]` returning `runtimeContext` | `otelIntegration({ runtimeContext })` |
+| In the old `agent/instrumentation.ts`                 | After the upgrade                                                                                          |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Another exporter in `registerOTel({ traceExporter })` | Its own file with `otelIntegration({ traceExporter })`                                                     |
+| `serviceName`                                         | `service.name` in [`otel.ts`](#name-the-service)                                                           |
+| `functionId`                                          | `otel({ functionId })`                                                                                     |
+| `recordInputs`, `recordOutputs`                       | Not needed: message text depends on [whether the conversation is public](#show-message-text-in-production) |
+| `events["step.started"]` returning `runtimeContext`   | `otelIntegration({ runtimeContext })`                                                                      |
 
 ## Troubleshooting
 
 - **Nothing arrives.** eve doesn't report failed exports, so check the key. The startup log must not say `MAPLE_INGEST_KEY is not set`. Then send this request with your key in place of `YOUR_INGEST_KEY`. `200` means the key works; `401` says what is wrong, including a key from the other region:
 
-  ```bash
-  curl -s -w "%{http_code}\n" -X POST https://ingest.maple.dev/v1/traces \
-    -H "Authorization: Bearer YOUR_INGEST_KEY" \
-    -H "Content-Type: application/json" -d '{"resourceSpans":[]}'
-  ```
+    ```bash
+    curl -s -w "%{http_code}\n" -X POST https://ingest.maple.dev/v1/traces \
+      -H "Authorization: Bearer YOUR_INGEST_KEY" \
+      -H "Content-Type: application/json" -d '{"resourceSpans":[]}'
+    ```
 
 - **Sessions have no message text.** The conversation isn't public. [Mark the channel public](#show-message-text-in-production). Setting a `tracePolicy` in `otel()` doesn't change this.
 - **Thousands of `workflow.*`, `world.*` and `step.*` spans.** The `exportPolicy` line is missing from `maple.ts`.
 - **A failed tool shows as successful.** The tool returned an error instead of throwing one. Throw from `execute`.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [eve: OpenTelemetry](https://eve.dev/docs/observability/otel)

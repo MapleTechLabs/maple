@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 // The tool playground (`scripts/tool-playground.sh`): one tool call per run against a fixture
 // world, for agents testing the tools by using them. Vitest only because the eval runtime's
@@ -13,6 +13,7 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["src/evals/playground/*.playground.ts"],
+		exclude: [...configDefaults.exclude, "**/.claude/**", "**/.context/**", "**/worktrees/**"],
 		globalSetup: ["../../packages/backend/test/global-setup.ts"],
 		testTimeout: 60_000,
 		hookTimeout: 60_000,

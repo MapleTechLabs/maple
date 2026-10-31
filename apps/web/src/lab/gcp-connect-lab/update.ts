@@ -20,16 +20,10 @@ type Staged = Readonly<{
 	pinnedScripts: Model["pinnedScripts"]
 }>
 
-/** The wizard each state mounts: a new connection, a connection's Data step, or a run fixture. */
+/** The wizard each state mounts: a connection's Data step, or a run fixture. */
 const staged = (nowMs: number, state: LabState): Staged => {
 	const fixtures = fixturesAt(nowMs)
 	switch (state) {
-		case "new":
-			return {
-				connectors: [],
-				configure: initConfigure({ _tag: "New" }, [], true),
-				pinnedScripts: null,
-			}
 		case "configure": {
 			const connector = fixtures.configured
 			const target = { _tag: "Connection", id: connector.id, stage: "choose" } as const
@@ -48,11 +42,13 @@ const staged = (nowMs: number, state: LabState): Staged => {
 				connectors: [connector],
 				configure: {
 					...base,
-					newTitle: "Connect Google Cloud",
 					created: connector,
 					connectionStage: "method",
 					method,
-					flavourGroup: { ...base.flavourGroup, values: [method === "alchemy" ? "alchemy" : "terraform"] },
+					flavourGroup: {
+						...base.flavourGroup,
+						values: [method === "alchemy" ? "alchemy" : "terraform"],
+					},
 				},
 				pinnedScripts: null,
 			}
@@ -66,7 +62,6 @@ const staged = (nowMs: number, state: LabState): Staged => {
 				connectors: [connector],
 				configure: {
 					...initConfigure(target, [connector], true),
-					newTitle: "Connect Google Cloud",
 					created: fixture.created ? connector : null,
 					filter: fixture.filter,
 					opened: fixture.opened,
@@ -117,12 +112,12 @@ export const init = (flags: GcpLabFlags): Return =>
 		{
 			nowMs: flags.nowMs,
 			timeZone: flags.timeZone,
-			state: "new",
-			stateGroup: ToggleGroup.init({ label: "", values: ["new"] }),
+			state: "configure",
+			stateGroup: ToggleGroup.init({ label: "", values: ["configure"] }),
 			hub: hubOf(flags.nowMs, []),
 			pinnedScripts: null,
 		},
-		"new",
+		"configure",
 	)
 
 /** A run fixture's Back, "Try again" and "I've removed them" do nothing. */

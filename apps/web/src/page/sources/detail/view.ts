@@ -24,7 +24,7 @@ import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sourceOf } from "./update"
-import { sourceActions } from "./view-actions"
+import { integrationActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
 import { settingsTab, setupTab } from "./view-tabs"
 
@@ -105,6 +105,16 @@ const connectionPart = (
 	})
 }
 
+/** Token sources take their own actions; an integration source pauses and deletes beside its integration's. */
+const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): Html | undefined => {
+	if (hasToken(source)) return detailActions(h, sourceActions(h, model, source))
+	if (source.is_default) return undefined
+	return detailActions(
+		h,
+		integrationActions(h, model, source, connectionPart(h, model, source, timeZone, "actions")),
+	)
+}
+
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {
 	const shown = model.revealed !== null && model.revealed.sourceId === source.id ? model.revealed : null
 	const timeZone = inputs.context.timeZone
@@ -116,7 +126,11 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 				kind: [
 					"Source",
 					platformMeta(source.platform).label,
-					source.is_default ? "Default" : integrationPlatformOf(source) === null ? null : "Integration",
+					source.is_default
+						? "Default"
+						: integrationPlatformOf(source) === null
+							? null
+							: "Integration",
 				],
 				title: [source.name],
 				adornment: platformTile(h, source.platform, "sm"),
@@ -124,12 +138,15 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 					sourceStatusBadge(h, source, { nowMs }),
 					...(source.key_prefix === null
 						? []
-						: [h.span([h.Class("text-muted-foreground font-mono text-xs")], [source.key_prefix, "…"])]),
+						: [
+								h.span(
+									[h.Class("text-muted-foreground font-mono text-xs")],
+									[source.key_prefix, "…"],
+								),
+							]),
 				],
 			}),
-			actions: hasToken(source)
-				? detailActions(h, sourceActions(h, model, source))
-				: (connectionPart(h, model, source, timeZone, "actions") ?? undefined),
+			actions: headerActions(h, model, source, timeZone),
 			tabs: tabs(h, source, tab),
 			gap: "md",
 		},
@@ -151,8 +168,10 @@ const body = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return AsyncData.match(model.list.data, {
 		onIdle: () => dashboardPage(h, {}, [loading(h)]),
 		onLoading: () => dashboardPage(h, {}, [loading(h)]),
-		onFailure: (failure) => dashboardPage(h, {}, [errorState(h, { failure, title: "Couldn't load this source" })]),
-		onStale: ({ error }) => dashboardPage(h, {}, [errorState(h, { failure: error, title: "Couldn't load this source" })]),
+		onFailure: (failure) =>
+			dashboardPage(h, {}, [errorState(h, { failure, title: "Couldn't load this source" })]),
+		onStale: ({ error }) =>
+			dashboardPage(h, {}, [errorState(h, { failure: error, title: "Couldn't load this source" })]),
 		onSuccess: () => loaded(h, model, inputs, nowMs),
 		onRefreshing: () => loaded(h, model, inputs, nowMs),
 	})
@@ -161,7 +180,8 @@ const body = (h: H, model: Model, inputs: PageViewInputs): Html => {
 const loaded = (h: H, model: Model, inputs: PageViewInputs, nowMs: number | null): Html =>
 	Option.match(sourceOf(model), {
 		onNone: () => dashboardPage(h, {}, [notFound(h)]),
-		onSome: (source) => (nowMs === null ? dashboardPage(h, {}, [loading(h)]) : found(h, model, source, inputs, nowMs)),
+		onSome: (source) =>
+			nowMs === null ? dashboardPage(h, {}, [loading(h)]) : found(h, model, source, inputs, nowMs),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>

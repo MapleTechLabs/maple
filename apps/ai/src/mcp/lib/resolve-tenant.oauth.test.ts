@@ -7,6 +7,8 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platfo
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { TRIAGE_AGENT_NAME } from "@maple/domain/system-agents"
 import { resolveMcpTenantContext } from "./resolve-tenant"
 
 /**
@@ -22,7 +24,7 @@ import { resolveMcpTenantContext } from "./resolve-tenant"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const config = () =>
+const config = (apiBaseUrl: string) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			TINYBIRD_HOST: "https://api.tinybird.co",
@@ -31,17 +33,19 @@ const config = () =>
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
 			MAPLE_APP_BASE_URL: "https://app.example.com",
+			MAPLE_API_BASE_URL: apiBaseUrl,
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 		}),
 	)
 
-const makeLayer = (testDb: TestDb) => {
-	const base = Layer.mergeAll(testDb.layer, Env.layer.pipe(Layer.provide(config())))
+const makeLayer = (testDb: TestDb, apiBaseUrl = "https://api.example.com") => {
+	const base = Layer.mergeAll(testDb.layer, Env.layer.pipe(Layer.provide(config(apiBaseUrl))))
 	return Layer.mergeAll(
 		McpOAuthService.layer.pipe(Layer.provide(base)),
 		ApiKeysService.layer.pipe(Layer.provide(base)),
 		AuthService.layer.pipe(Layer.provide(base)),
+		ErrorActorsService.layer.pipe(Layer.provide(base)),
 		base,
 	)
 }
@@ -55,7 +59,7 @@ const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
 const challenge = createHash("sha256").update(verifier).digest("base64url")
 
 /** Register → authorize → approve → exchange, the shortest path to a live grant. */
-const issueGrant = Effect.fnUntraced(function* (oauth: McpOAuthService) {
+const issueGrant = Effect.fnUntraced(function* (oauth: McpOAuthService["Service"]) {
 	const client = yield* oauth.register(
 		{ clientName: "seam-test", redirectUris: [redirectUri] },
 		"127.0.0.1",
@@ -121,6 +125,54 @@ describe("an MCP OAuth token, resolved by the AI worker", () => {
 			if (failure._tag === "@maple/mcp/errors/McpAuthInvalidError") {
 				expect(failure.reason).toBe("invalid_target")
 			}
+		}).pipe(Effect.provide(makeLayer(db, "https://other.example.com")))
+	})
+
+	it.effect("is checked against the configured origin, not the forwarded host", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const tokens = yield* issueGrant(yield* McpOAuthService)
+			const failure = yield* resolveMcpTenantContext(
+				new Request(resource, {
+					headers: {
+						authorization: `Bearer ${tokens.access_token}`,
+						"x-forwarded-host": "api.example.com",
+					},
+				}),
+			).pipe(Effect.flip)
+			expect(failure._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")
+		}).pipe(Effect.provide(makeLayer(db, "https://other.example.com")))
+	})
+})
+
+describe("an agent named in x-maple-agent-id", () => {
+	const otherUser = Schema.decodeUnknownSync(UserId)("user_other")
+	const otherOrg = Schema.decodeUnknownSync(OrgId)("org_other")
+
+	it.effect("is acted as only when it is the key user's own agent in the key's org", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const key = yield* (yield* ApiKeysService).create(orgId, userId, { name: "agent", kind: "mcp" })
+			const actors = yield* ErrorActorsService
+			const resolveAs = (agentId: string) =>
+				resolveMcpTenantContext(
+					new Request(resource, {
+						headers: { authorization: `Bearer ${key.secret}`, "x-maple-agent-id": agentId },
+					}),
+				).pipe(Effect.map((tenant) => tenant.actorId))
+
+			const own = yield* actors.registerAgent(orgId, userId, { name: "ci-bot" })
+			expect(yield* resolveAs(own.id)).toBe(own.id)
+
+			const teammate = yield* actors.registerAgent(orgId, otherUser, { name: "their-bot" })
+			const elsewhere = yield* actors.registerAgent(otherOrg, userId, { name: "ci-bot" })
+			const person = yield* actors.ensureUserActor(orgId, otherUser)
+			const reserved = yield* actors.ensureAgentActor(orgId, TRIAGE_AGENT_NAME, { createdBy: userId })
+			const ignored = yield* Effect.forEach(
+				[teammate.id, elsewhere.id, person.id, reserved.id, "not-an-actor"],
+				resolveAs,
+			)
+			expect(ignored).toEqual([undefined, undefined, undefined, undefined, undefined])
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 })

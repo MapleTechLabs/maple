@@ -1,23 +1,20 @@
 /**
- * Drives the live trace waterfall animation with Motion v12. Cycle structure:
+ * Drives the live trace waterfall animation with the Web Animations API. Cycle structure:
  *
  *   PLAY  (totalMs * speed)    — bars grow in sequence at 1/speed wall-speed.
  *   PAUSE (1400ms)             — all bars full; slowest-span annotation reveals.
  *   RESET (320ms)              — frame opacity fades to 0.35 (CSS transition);
  *                                bars snap back to scaleX(0); opacity returns to 1.
  *
- * Each bar is its own Motion `animate()` call with explicit delay/duration
+ * Each bar is its own `element.animate()` call with explicit delay/duration
  * matching its real wall-time window. `.is-active` is bound to each bar's
  * lifecycle (timer at start, .finished at end) so multi-active is automatic
  * and there's no per-frame index race.
  *
- * The cursor is one Motion `animate()` driving the `x` transform component, so
- * it rides the compositor — no layout work per frame.
- *
- * Uses Motion's individual transform properties (scaleX, x), not the `transform`
- * shorthand string keyframes — Motion can't interpolate opaque transform strings.
+ * The cursor is one `element.animate()` on `transform`, so it rides the
+ * compositor — no layout work per frame. Animations hold their values with
+ * `fill: "both"`, so each cycle cancels the last one's before re-arming.
  */
-import { animate, type AnimationPlaybackControls } from "motion"
 
 const PAUSE_MS = 1400
 const RESET_MS = 320
@@ -71,15 +68,11 @@ export function startWaterfall(root: HTMLElement) {
 	// Generation token: bumping it cancels any in-flight cycle. Stale callbacks
 	// (timers, .finished handlers) gate on `gen === myGen` and bail otherwise.
 	let gen = 0
-	let inflight: AnimationPlaybackControls[] = []
+	let inflight: Animation[] = []
 	let phaseTimers: number[] = []
 
 	const stopInflight = () => {
-		inflight.forEach((a) => {
-			try {
-				a.stop()
-			} catch {}
-		})
+		inflight.forEach((a) => a.cancel())
 		inflight = []
 	}
 
@@ -89,6 +82,7 @@ export function startWaterfall(root: HTMLElement) {
 	}
 
 	const armRows = () => {
+		stopInflight()
 		rows.forEach((r) => {
 			r.bar.style.transform = "scaleX(0)"
 			r.row.classList.remove("is-active", "is-slowest")
@@ -103,7 +97,7 @@ export function startWaterfall(root: HTMLElement) {
 	const playOnce = (myGen: number) => {
 		const playSec = (totalMs * speedDivisor) / 1000
 
-		const barAnims: AnimationPlaybackControls[] = []
+		const barAnims: Animation[] = []
 		rows.forEach((r) => {
 			const startSec = (r.startMs * speedDivisor) / 1000
 			const durSec = Math.max(0.01, (r.durationMs * speedDivisor) / 1000)
@@ -112,11 +106,12 @@ export function startWaterfall(root: HTMLElement) {
 				if (gen === myGen) r.row.classList.add("is-active")
 			}, startSec * 1000)
 
-			const a = animate(
-				r.bar,
-				{ scaleX: [0, 1] },
-				{ duration: durSec, delay: startSec, ease: "linear" },
-			)
+			const a = r.bar.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], {
+				duration: durSec * 1000,
+				delay: startSec * 1000,
+				easing: "linear",
+				fill: "both",
+			})
 			a.finished
 				.then(() => {
 					if (gen === myGen) r.row.classList.remove("is-active")
@@ -125,13 +120,15 @@ export function startWaterfall(root: HTMLElement) {
 			barAnims.push(a)
 		})
 
-		let cursorAnim: AnimationPlaybackControls | null = null
+		let cursorAnim: Animation | null = null
 		if (cursor) {
 			cursor.style.setProperty("--cursor-opacity", "1")
-			cursorAnim = animate(
-				cursor,
-				{ x: [trackOffsetX, trackOffsetX + trackWidth] },
-				{ duration: playSec, ease: "linear" },
+			cursorAnim = cursor.animate(
+				[
+					{ transform: `translate3d(${trackOffsetX}px, 0, 0)` },
+					{ transform: `translate3d(${trackOffsetX + trackWidth}px, 0, 0)` },
+				],
+				{ duration: playSec * 1000, easing: "linear", fill: "both" },
 			)
 		}
 

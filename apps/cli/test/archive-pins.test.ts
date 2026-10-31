@@ -24,6 +24,7 @@ import {
 	retireCheckpointIfEligible,
 	readCheckpointState,
 	withMaintenanceLock,
+	type CheckpointId,
 } from "../src/server/checkpoints"
 import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
@@ -66,7 +67,7 @@ const manifest = (checkpointId: string, sourceDataDir: string) => ({
 	},
 })
 
-const writeSnapshot = (dataDir: string, checkpointId: string): void => {
+const writeSnapshot = (dataDir: string, checkpointId: CheckpointId): void => {
 	const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
 	mkdirSync(join(snapshot, "backup"), { recursive: true })
 	writeFileSync(join(snapshot, "backup", "data.bin"), "backup")

@@ -1,6 +1,7 @@
 import { ALERT_TEMPLATE_VARIABLES } from "@maple/domain/http"
 import { comparatorSupportsTiers } from "@maple/web-data/alerts/form-utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Struct } from "effect"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { card } from "../../../ui/card"
 import { badge } from "../../../ui/display"
@@ -9,17 +10,26 @@ import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { statusDot } from "../../../ui/status-dot"
 import { textarea } from "../../../ui/textarea"
+import { stableSlice } from "../../kit/stable-slice"
 import { destinationsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
-import { destinationList } from "./view-notify"
+import { destinationList, type NotifyView } from "./view-notify"
 
 // `NotificationsSection`: who gets notified, per tier,
 // and the optional message template.
 
 type H = HtmlBuilder<Message>
+
+/** What the section reads off the Model and the draft. */
+type NotificationsView = NotifyView &
+	Pick<Model, "destinations" | "isSendingTest" | "isMessageTemplateOpen" | "mountedForm">
+type NotificationsForm = Pick<
+	RuleForm,
+	"comparator" | "escalation" | "destinationIds" | "notificationTitle" | "notificationBody"
+>
 
 const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
 const BODY_PLACEHOLDER = [
@@ -30,11 +40,17 @@ const BODY_PLACEHOLDER = [
 const tierHeading = (h: H, severity: "warning" | "critical", text: string): Html =>
 	h.p(
 		[h.Class("flex items-center gap-1.5 text-xs font-medium text-muted-foreground")],
-		[statusDot(h, { tone: "custom", className: severity === "critical" ? "bg-severity-error" : "bg-severity-warn" }), text],
+		[
+			statusDot(h, {
+				tone: "custom",
+				className: severity === "critical" ? "bg-severity-error" : "bg-severity-warn",
+			}),
+			text,
+		],
 	)
 
 /** `MessageTemplate`: collapsed until opened, or open when the rule has one. */
-const messageTemplate = (h: H, model: Model, form: RuleForm): Html => {
+const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const hasTemplate = form.notificationTitle.length > 0 || form.notificationBody.length > 0
 	const isOpen = model.isMessageTemplateOpen
 	const titleState = fieldStateOf(form.notificationTitle, model.mountedForm?.notificationTitle)
@@ -49,17 +65,26 @@ const messageTemplate = (h: H, model: Model, form: RuleForm): Html => {
 					h.Type("button"),
 					h.OnClick(Message.ToggledMessageTemplate()),
 					h.Class(
-						"flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground",
+						"flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
 					),
 					h.AriaExpanded(isOpen),
 				],
 				[
 					h.span(
 						[h.Class("flex items-center gap-1.5")],
-						[icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }), "Message template"],
+						[
+							icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }),
+							"Message template",
+						],
 					),
 					...(hasTemplate && !isOpen
-						? [badge(h, { pill: true, size: "xs", className: "bg-primary/10 text-primary" }, ["Customized"])]
+						? [
+								badge(
+									h,
+									{ pill: true, size: "xs", className: "bg-primary-a2 text-primary" },
+									["Customized"],
+								),
+							]
 						: []),
 				],
 			),
@@ -84,7 +109,9 @@ const messageTemplate = (h: H, model: Model, form: RuleForm): Html => {
 										attributes: [
 											h.Placeholder(TITLE_PLACEHOLDER),
 											h.Value(form.notificationTitle),
-											h.OnInput((value) => Message.ChangedField({ field: "notificationTitle", value })),
+											h.OnInput((value) =>
+												Message.ChangedField({ field: "notificationTitle", value }),
+											),
 										],
 									}),
 								]),
@@ -98,7 +125,9 @@ const messageTemplate = (h: H, model: Model, form: RuleForm): Html => {
 											h.AriaLabelledBy(bodyIds.label),
 											h.Placeholder(BODY_PLACEHOLDER),
 											h.Rows(4),
-											h.OnInput((value) => Message.ChangedField({ field: "notificationBody", value })),
+											h.OnInput((value) =>
+												Message.ChangedField({ field: "notificationBody", value }),
+											),
 										],
 									}),
 								]),
@@ -111,8 +140,7 @@ const messageTemplate = (h: H, model: Model, form: RuleForm): Html => {
 	)
 }
 
-/** "Who gets notified": one list per tier, Send test while anything is selected, and the template. */
-export const notificationsSection = (h: H, model: Model, form: RuleForm): Html => {
+const notifications = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const destinations = destinationsOf(model)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
 	const isAnySelected = destinations.some(
@@ -133,7 +161,7 @@ export const notificationsSection = (h: H, model: Model, form: RuleForm): Html =
 										variant: "ghost",
 										size: "sm",
 										isLoading: model.isSendingTest,
-										className: "-my-1 h-7 px-2 text-xs",
+										className: "-my-1 px-2 text-xs",
 										attributes: [h.OnClick(Message.ClickedSendTest())],
 									},
 									[icon(h, "PaperPlaneIcon", { size: 12 }), "Send test"],
@@ -152,14 +180,30 @@ export const notificationsSection = (h: H, model: Model, form: RuleForm): Html =
 									[h.Class("space-y-1.5")],
 									[
 										tierHeading(h, "warning", "Warning"),
-										destinationList(h, model, "warning", form.destinationIds, destinations),
+										destinationList(
+											h,
+											model,
+											"warning",
+											form.destinationIds,
+											destinations,
+										),
 									],
 								),
 								h.div(
 									[h.Class("space-y-1.5")],
 									[
-										tierHeading(h, "critical", "Critical, on top of the warning destinations"),
-										destinationList(h, model, "critical", escalation.destinationIds, destinations),
+										tierHeading(
+											h,
+											"critical",
+											"Critical, on top of the warning destinations",
+										),
+										destinationList(
+											h,
+											model,
+											"critical",
+											escalation.destinationIds,
+											destinations,
+										),
 									],
 								),
 							],
@@ -185,7 +229,8 @@ const variables = (h: H): Html =>
 						{
 							variant: "outline",
 							size: "xs",
-							className: "font-mono text-3xs text-muted-foreground hover:text-foreground sm:text-3xs",
+							className:
+								"font-mono text-3xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-3xs",
 							attributes: [h.OnClick(Message.ClickedTemplateVariable({ key: variable.key }))],
 						},
 						[variable.key],
@@ -194,3 +239,33 @@ const variables = (h: H): Html =>
 			),
 		],
 	)
+
+// Rebuilt on its own fields and the draft's delivery fields only: typing a name skips it.
+const slot = createLazy()
+const viewOf = stableSlice((model: Model) =>
+	Struct.pick(model, [
+		"destinations",
+		"isSendingTest",
+		"isMessageTemplateOpen",
+		"mountedForm",
+		"isAdmin",
+		"connectors",
+		"menus",
+		"chatConnect",
+		"chatConnectMenuId",
+		"brokenLogos",
+	]),
+)
+const formOf = stableSlice((form: RuleForm) =>
+	Struct.pick(form, [
+		"comparator",
+		"escalation",
+		"destinationIds",
+		"notificationTitle",
+		"notificationBody",
+	]),
+)
+
+/** "Who gets notified": one list per tier, Send test while anything is selected, and the template. */
+export const notificationsSection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(notifications, [h, viewOf(model), formOf(form)])

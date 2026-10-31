@@ -36,6 +36,18 @@ const view = (model: Model, h: HtmlBuilder<Message>) =>
 		topbarActions: () => null,
 	})()(model, h)
 
+/** A settings-style page whose filter slot holds a nav, named by `filtersLabel`. */
+const settingsView = (model: Model, h: HtmlBuilder<Message>) =>
+	withViewInputs(frameView, {
+		currentPath: "/settings",
+		breadcrumbs: [{ label: "Settings" }],
+		page: () =>
+			dashboardPage(h, { filtersLabel: "Settings", filters: h.p([], ["Members tab"]) }, [
+				h.p([], ["General"]),
+			]),
+		topbarActions: () => null,
+	})()(model, h)
+
 const filtersDialog = role("dialog", { name: "Filters" })
 const openFilters = role("button", { name: "Open filters" })
 
@@ -67,6 +79,19 @@ describe("page rails below lg", () => {
 			expect(filtersDialog).toExist(),
 			expect(filtersDialog).toContainText("Health filter"),
 			expect(selector('[data-slot="sheet-popup"]')).toHaveAttr("data-open", ""),
+		)
+	})
+
+	test("a rail named by filtersLabel names its trigger and sheet after it", () => {
+		scene(
+			{ update, view: settingsView },
+			given(signedIn()),
+			expect(openFilters).toBeAbsent(),
+			click(role("button", { name: "Open settings" })),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
+			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+			expect(role("dialog", { name: "Settings" })).toContainText("Members tab"),
 		)
 	})
 

@@ -7,12 +7,15 @@ import { filterSection, singleCheckboxFilter } from "../../../ui/filters/filter-
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
+	filterSidebarError,
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
 } from "../../../ui/filters/filter-sidebar"
 import { SOURCE_COLOR, SOURCE_DESCRIPTION, SOURCES } from "../kit/source"
-import { hasErrorFilters, KIND_LABEL } from "./derive"
+import { Option } from "effect"
+import { failureKind } from "../../../ui/error-state"
+import { hasErrorFilters, KIND_LABEL, listFailureOf } from "./derive"
 import { MountFilterRail } from "./command"
 import { type FilterParam, Message } from "./message"
 import type { Model } from "./model"
@@ -51,6 +54,14 @@ const railContent = (h: H, model: Model): Html => {
 	const { search } = model
 	const counts = model.serviceCounts.data
 	if (!AsyncData.hasData(counts) && !AsyncData.isFailure(counts)) return filterSidebarLoading(h, 3)
+	// A failed list steps the rail aside like the other list pages, unless changing a filter is the fix.
+	const listFailure = Option.getOrUndefined(listFailureOf(model))
+	const countsFailure = Option.getOrUndefined(AsyncData.getError(counts))
+	const railFailure =
+		countsFailure ??
+		(listFailure !== undefined && failureKind(listFailure) !== "fixable" ? listFailure : undefined)
+	if (railFailure !== undefined)
+		return filterSidebarError(h, railFailure, Message.ClickedReload(), listFailure)
 	const services = AsyncData.getOrElse(counts, () => []).map((row) => ({
 		name: row.service_name,
 		count: row.open_count,

@@ -132,7 +132,7 @@ export function useCopy({
 					})
 				} else {
 					toastManager.add({
-						title: label ? `Failed to copy ${label.toLowerCase()}` : "Failed to copy",
+						title: label ? `Couldn't copy ${label.toLowerCase()}` : "Couldn't copy",
 						type: "error",
 					})
 				}

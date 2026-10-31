@@ -10,7 +10,8 @@ export const label = <Message>(
 ): Html =>
 	h.label(
 		[
-			h.Class(cn(labelStyles, options.className)),
+			// A label around a disabled control dims its text like the control does.
+			h.Class(cn(labelStyles, "has-data-disabled:text-muted-foreground", options.className)),
 			h.DataAttribute("slot", "label"),
 			...(options.attributes ?? []),
 		],

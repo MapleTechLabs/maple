@@ -26,7 +26,7 @@ import { followRuns, request, runsPageStep } from "./requests"
 export type Search = typeof CodeReviewCiSearch.Type
 type Return = PageReturn<Model, Message>
 
-/** `CODE_REVIEW_CI_DEFAULT_PRESET`: CI scans raw traces, a week is the default. */
+/** `CODE_REVIEW_CI_DEFAULT_PRESET`: a week, since CI runs many times a day. */
 export const DEFAULT_PRESET = "7d"
 const FRAME_ID = "code-review-ci"
 const isRunResult = Schema.is(CiRunResult)

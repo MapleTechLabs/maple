@@ -12,12 +12,27 @@ export interface EyebrowOptions<Message> {
 	readonly attributes?: ReadonlyArray<Attribute<Message>>
 }
 
+// A trailing "(hint)" often holds units or syntax (`5m`, `AND`); uppercasing would change its meaning.
+const HINT = /^(.*\S)(\s+\(.*\))$/
+
+/** Keeps a trailing "(hint)" out of the uppercase transform; for any uppercased label. */
+export const withHint = <Message>(
+	h: HtmlBuilder<Message>,
+	child: Html | string,
+): ReadonlyArray<Html | string> => {
+	const match = typeof child === "string" ? HINT.exec(child) : null
+	return match === null
+		? [child]
+		: [match[1] ?? "", h.span([h.Class("normal-case tracking-normal")], [match[2] ?? ""])]
+}
+
 /** `Eyebrow`: the small uppercase overline that titles a group. */
 export const eyebrow = <Message>(
 	h: HtmlBuilder<Message>,
 	options: EyebrowOptions<Message>,
-	children: ReadonlyArray<Html | string>,
+	rawChildren: ReadonlyArray<Html | string>,
 ): Html => {
+	const children = rawChildren.flatMap((child) => withHint(h, child))
 	const attributes = [
 		h.Class(cn(eyebrowVariants({ variant: options.variant }), options.className)),
 		h.DataAttribute("slot", "eyebrow"),

@@ -6,6 +6,7 @@ import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { chartLoading } from "../../../ui/chart-state"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
+import { pageTitle } from "../../../ui/page-layout"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -101,7 +102,8 @@ const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string):
 const body = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.catalog.data, {
 		onEmpty: () => loading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load metric" }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load metric", onRetry: Message.ClickedReload() }),
 		onData: () => {
 			const summary = summaryOf(model)
 			return summary === null ? noData(h, model.metricName) : content(h, model, summary, timeZone)
@@ -111,6 +113,20 @@ const body = (h: H, model: Model, timeZone: string): Html =>
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))],
-		[dashboardPage(h, { actions: actions(h, model) }, [body(h, model, inputs.context.timeZone)])],
+		[
+			dashboardPage(
+				h,
+				{
+					// A metric name is an identifier, so it is set in mono like elsewhere.
+					titleContent: pageTitle(
+						h,
+						{ title: model.metricName, className: "font-mono text-xl leading-8 tracking-normal" },
+						[model.metricName],
+					),
+					actions: actions(h, model),
+				},
+				[body(h, model, inputs.context.timeZone)],
+			),
+		],
 	),
 )

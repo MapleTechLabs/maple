@@ -176,8 +176,10 @@ export const FetchInvestigations = Command.define("FetchErrorsInvestigations", {
 })
 
 export const LoadSignalPresence = Command.define("LoadErrorsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `ToolbarSearch`'s 300 ms debounce; a newer keystroke bumps the generation. */
@@ -200,18 +202,6 @@ export const CompleteReloadSpin = Command.define("CompleteErrorsReloadSpin", {
 export const MountFilterRail = Mount.define("MountErrorsFilterRail", {
 	messages: [Message.MountedFilterRail],
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
-})
-
-/** The empty list is on screen: `useSignalPresence` mounts with it. */
-export const MountEmptyList = Mount.define("MountErrorsEmptyList", {
-	messages: [Message.PaintedEmptyList],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyList>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyList()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
 })
 
 /** A row's or the selection's workflow write. */

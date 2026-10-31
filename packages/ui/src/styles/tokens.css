@@ -3,7 +3,7 @@
    `@import "tailwindcss"` (required: the @theme block references Tailwind
    palette vars like --color-red-400). Apps must not re-declare any token
    defined here — `bun run check:tokens` enforces that. App-local tokens
-   (web's Sugar High --sh-*, landing's --bg-elevated family) stay in the apps.
+   (web's syntax highlighting --sh-*, landing's --bg-elevated family) stay in the apps.
    Landing is dark-only: it pins class="dark" on <html> (Layout.astro). */
 
 @custom-variant dark (&:is(.dark *));
@@ -81,6 +81,15 @@
 	   the dark-canvas value lives in .dark). */
 	--service-map-edge-core: oklch(1 0 0);
 	--border-hairline: 1px;
+	/* Initials avatars: warm tiles near the primary amber, the same in both themes. */
+	--avatar-1: oklch(0.7 0.15 59);
+	--avatar-2: oklch(0.76 0.13 80);
+	--avatar-3: oklch(0.66 0.14 40);
+	--avatar-4: oklch(0.68 0.1 25);
+	--avatar-5: oklch(0.72 0.07 65);
+	/* Data-residency region identity (onboarding region picker). */
+	--region-us: oklch(0.628 0.193 17.9);
+	--region-eu: oklch(0.631 0.198 269.4);
 	--severity-trace: oklch(0.552 0.016 285.938); /* zinc-500 */
 	--severity-debug: oklch(0.623 0.214 259.815); /* blue-500 */
 	--severity-info: oklch(0.696 0.17 162.48); /* emerald-500 */
@@ -158,12 +167,15 @@
 	--heatmap-cividis-4: oklch(0.43 0.06 258);
 
 	--destructive-foreground: var(--color-red-700);
-	--info: var(--color-blue-500);
+	/* Status aliases: one palette, the logs severity scale. */
+	--info: var(--severity-debug);
 	--info-foreground: var(--color-blue-700);
-	--success: var(--color-emerald-500);
+	--success: var(--severity-info);
 	--success-foreground: var(--color-emerald-700);
-	--warning: var(--color-amber-500);
+	--warning: var(--severity-warn);
 	--warning-foreground: var(--color-amber-700);
+	/* A control's 1px highlight: a shade under it in light, a line of light over it in dark. */
+	--control-highlight: 0 1px oklch(0 0 0 / 4%);
 }
 
 @media only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi) {
@@ -184,7 +196,7 @@
 	--secondary: oklch(0.26 0.012 67);
 	--secondary-foreground: oklch(0.91 0.016 74);
 	--muted: oklch(0.26 0.012 67);
-	--muted-foreground: oklch(0.603 0.023 72);
+	--muted-foreground: oklch(0.66 0.022 72);
 	--accent: oklch(0.26 0.012 67);
 	--accent-foreground: oklch(0.91 0.016 74);
 	--destructive: oklch(0.654 0.176 30);
@@ -293,18 +305,22 @@
 	--heatmap-cividis-4: oklch(0.85 0.13 95);
 
 	--destructive-foreground: var(--color-red-400);
-	--info: var(--color-blue-500);
+	/* Status aliases: one palette, the logs severity scale. */
+	--info: var(--severity-debug);
 	--info-foreground: var(--color-blue-400);
-	--success: var(--color-emerald-500);
+	--success: var(--severity-info);
 	--success-foreground: var(--color-emerald-400);
-	--warning: var(--color-amber-500);
+	--warning: var(--severity-warn);
 	--warning-foreground: var(--color-amber-400);
+	--control-highlight: 0 -1px oklch(1 0 0 / 6%);
 }
 
 @theme inline {
 	--font-sans: "Geist Mono Variable", ui-monospace, monospace;
 	--font-mono: "Geist Mono Variable", ui-monospace, monospace;
 	--font-display: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+	/* Sentences (descriptions, empty and error copy) read in the proportional face; data stays mono. */
+	--font-prose: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -380,6 +396,33 @@
 	--radius-2xl: calc(var(--radius) + 8px);
 	--radius-3xl: calc(var(--radius) + 12px);
 	--radius-4xl: calc(var(--radius) + 16px);
+	/* Concentric corners: a fill inset 1px inside a bordered box (a `before:` layer) takes its
+	   parent's radius minus that 1px. `rounded-2xs` is for hairline bars and ticks. */
+	--radius-2xs: 1px;
+	/* Service and severity dots: a rounded square. */
+	--radius-dot: 35%;
+	/* A switch thumb squashing under the press. */
+	--radius-thumb-press: var(--thumb-size) / calc(var(--thumb-size) * 1.1);
+	--radius-sm-inset: calc(var(--radius-sm) - 1px);
+	--radius-md-inset: calc(var(--radius-md) - 1px);
+	--radius-lg-inset: calc(var(--radius-lg) - 1px);
+	--radius-xl-inset: calc(var(--radius-xl) - 1px);
+	--radius-2xl-inset: calc(var(--radius-2xl) - 1px);
+	/* Depth comes from surfaces and the hairline; these are the only shadows. `raised` lifts a
+	   control or card off its surface, `popup` floats menus, popovers, dialogs and toasts,
+	   `control` is a control's 1px highlight (swaps per theme), `accent-start` marks the current
+	   row's leading edge. Tailwind's sizes and raw `shadow-[…]` are lint errors. */
+	--shadow-raised: 0 1px 2px 0 oklch(0 0 0 / 5%);
+	--shadow-popup: 0 10px 15px -3px oklch(0 0 0 / 5%), 0 4px 6px -4px oklch(0 0 0 / 5%);
+	--shadow-control: var(--control-highlight);
+	--shadow-accent-start: inset 2px 0 0 var(--color-primary);
+	/* A sticky footer lifting over content scrolled under it. */
+	--shadow-overflow-up: 0 -6px 12px oklch(0 0 0 / 35%);
+	/* A sticky table header's bottom rule: a collapsed table's row border scrolls away under it. */
+	--shadow-rule-bottom: inset 0 -1px 0 var(--color-border);
+	/* A filled button's top-edge light at rest, and its pressed-in shade. */
+	--inset-shadow-highlight: 0 1px oklch(1 0 0 / 16%);
+	--inset-shadow-pressed: 0 1px oklch(0 0 0 / 8%);
 	/* Dense sizes below text-xs. No line-height: they inherit, like the text-[Npx] they replaced. */
 	--text-2xs: 0.6875rem;
 	--text-3xs: 0.625rem;
@@ -387,6 +430,11 @@
 	/* Dense body (13px) and sheet/detail titles (15px). */
 	--text-ui: 0.8125rem;
 	--text-title: 0.9375rem;
+	/* Motion curves. Tailwind's stock `ease-out` is too weak for UI; `ease-move` is for on-screen
+	   movement (sidebar collapse), `ease-drawer` for sheets sliding in from an edge. */
+	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	--ease-move: cubic-bezier(0.77, 0, 0.175, 1);
+	--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 	--animate-skeleton: skeleton 2s -1s infinite linear;
 	--animate-caret-blink: 1s ease-out infinite caret-blink;
 	--animate-tile-in: tile-in 0.35s ease both;
@@ -405,6 +453,73 @@
 	--color-info-foreground: var(--info-foreground);
 	--color-info: var(--info);
 	--color-destructive-foreground: var(--destructive-foreground);
+	/* The ladders, named. Text steps are solid (mixed into the page, never translucent), so a
+	   label reads the same grey on a tinted row: soft (body copy a step under foreground), subtle
+	   (secondary meta), faint (separators, placeholders, empty cells). Surfaces are translucent
+	   washes that read the same on any surface: faint, sunken (wells, row hover), strong (selected,
+	   pressed). Use these instead of `/NN` modifiers on the base colours. */
+	--color-foreground-soft: color-mix(in oklab, var(--foreground) 80%, var(--background));
+	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 70%, var(--background));
+	--color-foreground-faint: color-mix(in oklab, var(--muted-foreground) 45%, var(--background));
+	--color-surface-faint: color-mix(in oklab, var(--muted) 20%, transparent);
+	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
+	--color-surface-strong: color-mix(in oklab, var(--muted) 60%, transparent);
+	--color-border-subtle: color-mix(in oklab, var(--border) 60%, transparent);
+	/* Hover and selected outline on pickable cards. */
+	--color-border-strong: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--color-avatar-1: var(--avatar-1);
+	--color-avatar-2: var(--avatar-2);
+	--color-avatar-3: var(--avatar-3);
+	--color-avatar-4: var(--avatar-4);
+	--color-avatar-5: var(--avatar-5);
+	--color-region-us: var(--region-us);
+	--color-region-eu: var(--region-eu);
+	/* Tone alpha steps: -a1 a faint wash, -a2 a toned box's fill, -a3 its edge, -a4 a strong edge.
+	   Use these instead of `/NN` modifiers on a tone (design/tone-alpha-steps). */
+	--color-primary-a1: color-mix(in oklab, var(--color-primary) 6%, transparent);
+	--color-primary-a2: color-mix(in oklab, var(--color-primary) 12%, transparent);
+	--color-primary-a3: color-mix(in oklab, var(--color-primary) 24%, transparent);
+	--color-primary-a4: color-mix(in oklab, var(--color-primary) 40%, transparent);
+	--color-destructive-a1: color-mix(in oklab, var(--color-destructive) 6%, transparent);
+	--color-destructive-a2: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+	--color-destructive-a3: color-mix(in oklab, var(--color-destructive) 24%, transparent);
+	--color-destructive-a4: color-mix(in oklab, var(--color-destructive) 40%, transparent);
+	--color-success-a1: color-mix(in oklab, var(--color-success) 6%, transparent);
+	--color-success-a2: color-mix(in oklab, var(--color-success) 12%, transparent);
+	--color-success-a3: color-mix(in oklab, var(--color-success) 24%, transparent);
+	--color-success-a4: color-mix(in oklab, var(--color-success) 40%, transparent);
+	--color-warning-a1: color-mix(in oklab, var(--color-warning) 6%, transparent);
+	--color-warning-a2: color-mix(in oklab, var(--color-warning) 12%, transparent);
+	--color-warning-a3: color-mix(in oklab, var(--color-warning) 24%, transparent);
+	--color-warning-a4: color-mix(in oklab, var(--color-warning) 40%, transparent);
+	--color-info-a1: color-mix(in oklab, var(--color-info) 6%, transparent);
+	--color-info-a2: color-mix(in oklab, var(--color-info) 12%, transparent);
+	--color-info-a3: color-mix(in oklab, var(--color-info) 24%, transparent);
+	--color-info-a4: color-mix(in oklab, var(--color-info) 40%, transparent);
+	--color-severity-trace-a1: color-mix(in oklab, var(--color-severity-trace) 6%, transparent);
+	--color-severity-trace-a2: color-mix(in oklab, var(--color-severity-trace) 12%, transparent);
+	--color-severity-trace-a3: color-mix(in oklab, var(--color-severity-trace) 24%, transparent);
+	--color-severity-trace-a4: color-mix(in oklab, var(--color-severity-trace) 40%, transparent);
+	--color-severity-debug-a1: color-mix(in oklab, var(--color-severity-debug) 6%, transparent);
+	--color-severity-debug-a2: color-mix(in oklab, var(--color-severity-debug) 12%, transparent);
+	--color-severity-debug-a3: color-mix(in oklab, var(--color-severity-debug) 24%, transparent);
+	--color-severity-debug-a4: color-mix(in oklab, var(--color-severity-debug) 40%, transparent);
+	--color-severity-info-a1: color-mix(in oklab, var(--color-severity-info) 6%, transparent);
+	--color-severity-info-a2: color-mix(in oklab, var(--color-severity-info) 12%, transparent);
+	--color-severity-info-a3: color-mix(in oklab, var(--color-severity-info) 24%, transparent);
+	--color-severity-info-a4: color-mix(in oklab, var(--color-severity-info) 40%, transparent);
+	--color-severity-warn-a1: color-mix(in oklab, var(--color-severity-warn) 6%, transparent);
+	--color-severity-warn-a2: color-mix(in oklab, var(--color-severity-warn) 12%, transparent);
+	--color-severity-warn-a3: color-mix(in oklab, var(--color-severity-warn) 24%, transparent);
+	--color-severity-warn-a4: color-mix(in oklab, var(--color-severity-warn) 40%, transparent);
+	--color-severity-error-a1: color-mix(in oklab, var(--color-severity-error) 6%, transparent);
+	--color-severity-error-a2: color-mix(in oklab, var(--color-severity-error) 12%, transparent);
+	--color-severity-error-a3: color-mix(in oklab, var(--color-severity-error) 24%, transparent);
+	--color-severity-error-a4: color-mix(in oklab, var(--color-severity-error) 40%, transparent);
+	--color-severity-fatal-a1: color-mix(in oklab, var(--color-severity-fatal) 6%, transparent);
+	--color-severity-fatal-a2: color-mix(in oklab, var(--color-severity-fatal) 12%, transparent);
+	--color-severity-fatal-a3: color-mix(in oklab, var(--color-severity-fatal) 24%, transparent);
+	--color-severity-fatal-a4: color-mix(in oklab, var(--color-severity-fatal) 40%, transparent);
 	@keyframes skeleton {
 		from {
 			transform: translateX(-100%);
@@ -499,6 +614,27 @@
 }
 
 @layer base {
+	/* Icon ink: a glyph straight inside neutral text draws one solid step under it, so call sites
+	   never dim icons with `opacity-*`. Hover moves the text and the ink follows. A colour on the
+	   icon wins (utilities beat this base rule), and a parent that turns to a tone on hover or
+	   state keeps its icon at full tone. */
+	:where(
+			.text-foreground,
+			.text-card-foreground,
+			.text-popover-foreground,
+			.text-foreground-soft,
+			.text-muted-foreground
+		):not(
+			[class*=":text-primary"],
+			[class*=":text-destructive"],
+			[class*=":text-severity-"],
+			[class*=":text-warning"],
+			[class*=":text-success"],
+			[class*=":text-info"]
+		)
+		> svg {
+		color: color-mix(in oklch, currentColor 78%, var(--background));
+	}
 	* {
 		@apply border-border outline-ring/50;
 	}
@@ -547,4 +683,15 @@
 .react-flow__controls-button svg[fill="none"] {
 	fill: none;
 	color: var(--foreground);
+}
+
+/* A wait stays blank for 300ms before its skeleton shows, so a fast load never flashes. */
+@keyframes loading-delay {
+	from {
+		visibility: hidden;
+	}
+}
+
+@utility loading-delay {
+	animation: loading-delay 0s 300ms both;
 }

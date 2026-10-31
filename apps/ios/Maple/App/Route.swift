@@ -13,21 +13,25 @@ enum Route: Hashable {
 	case issue(id: String)
 	case incident(id: String)
 	case anomaly(id: String)
+	/// A trace's waterfall, optionally opened on one span.
+	case trace(id: String, spanId: String? = nil)
+	case dashboard(id: String, name: String)
 	/// The Alerts tab, opened on a specific segment. Handled by the tab
 	/// switcher rather than by push — see `AppNavigation`.
 	case alerts(AlertsSegment)
 }
 
+/// Triage's segments, in the web sidebar's order: errors lead, then alerts.
 enum AlertsSegment: String, CaseIterable, Identifiable, Hashable {
-	case incidents
 	case errors
+	case incidents
 	case anomalies
 
 	var id: String { rawValue }
 
 	var title: String {
 		switch self {
-		case .incidents: "Incidents"
+		case .incidents: "Alerts"
 		case .errors: "Errors"
 		case .anomalies: "Anomalies"
 		}
@@ -46,6 +50,10 @@ extension View {
 				IncidentDetailView(incidentID: id)
 			case .anomaly(let id):
 				AnomalyDetailView(anomalyID: id)
+			case .trace(let id, let spanId):
+				TraceDetailView(traceID: id, initialSpanID: spanId)
+			case .dashboard(let id, let name):
+				DashboardDetailView(dashboardID: id, name: name)
 			case .alerts:
 				// Cross-tab: Home asks the tab bar to switch. Rendering it inline
 				// would nest a hub inside a stack.
@@ -62,13 +70,16 @@ extension View {
 @Observable
 final class AppNavigation {
 	var tab: AppTab = .home
-	var alertsSegment: AlertsSegment = .incidents
+	var alertsSegment: AlertsSegment = .errors
 	/// The Alerts tab's stack. Owned here so a notification tap can push an
 	/// incident onto it from outside the view tree.
 	var alertsPath: [Route] = []
 	/// The Services tab's stack, owned here for the same reason: the
 	/// throughput widget opens the service it was configured for.
 	var servicesPath: [Route] = []
+	/// The Explore tab's stack and segment.
+	var explorePath: [Route] = []
+	var exploreSegment: ExploreSegment = .traces
 
 	func open(_ segment: AlertsSegment) {
 		alertsSegment = segment
@@ -117,4 +128,24 @@ enum AppTab: Hashable {
 	case home
 	case services
 	case alerts
+	case explore
+	/// The search tab: services, issues and trace ids.
+	case search
+}
+
+/// Explore's segments: the web sidebar's Analyze group.
+enum ExploreSegment: String, CaseIterable, Identifiable, Hashable {
+	case traces
+	case logs
+	case dashboards
+
+	var id: String { rawValue }
+
+	var title: String {
+		switch self {
+		case .traces: "Traces"
+		case .logs: "Logs"
+		case .dashboards: "Dashboards"
+		}
+	}
 }

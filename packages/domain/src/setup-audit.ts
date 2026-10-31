@@ -134,6 +134,9 @@ export interface AuditAlertRule {
 	readonly enabled: boolean
 	readonly destinationIds: ReadonlyArray<string>
 	readonly windowMinutes: number
+	/** Effective minutes between checks: picked, derived from the window, or slowed by the scheduler. */
+	readonly evaluationIntervalMinutes: number
+	/** Heartbeat stamped when the scheduler claims the rule, so it advances once per interval. */
 	readonly lastScheduledAt: number | null
 	readonly createdAt: number
 }
@@ -158,6 +161,10 @@ export interface AuditAttributeMapping {
 	readonly sourceContext: string
 	readonly sourceKey: string
 	readonly targetKey: string
+	/** `copy` keeps the source key on the span; `move` deletes it once the target is written. */
+	readonly operation: string
+	/** Epoch ms of the last change; spans stored before it predate the current rule. */
+	readonly updatedAt: number
 }
 
 export interface ConfigAuditInputs {
@@ -333,8 +340,11 @@ export interface SetupAuditInputs {
 /** How many affected entities a single finding carries; the rest are counted, not listed. */
 const AFFECTED_LIMIT = 20
 
-/** An enabled rule whose scheduler claim is older than this has stopped being picked up. */
-const RULE_SCHEDULE_STALE_MS = 30 * 60_000
+/** Floor for how old an enabled rule's scheduler claim may get before it counts as stalled. */
+const RULE_SCHEDULE_STALE_FLOOR_MS = 30 * 60_000
+/** A claim older than this has missed at least one full interval, not just a slow tick. */
+const ruleScheduleStaleMs = (intervalMinutes: number): number =>
+	Math.max(RULE_SCHEDULE_STALE_FLOOR_MS, 2 * intervalMinutes * 60_000)
 /** Grace period before a never-scheduled rule counts as broken rather than brand new. */
 const RULE_NEVER_SCHEDULED_GRACE_MS = 2 * 60 * 60_000
 /** Max characters of a provider error quoted into a finding, ellipsis included. */
@@ -542,10 +552,10 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 								]
 							: []
 					}
-					// The scheduler claims each rule at least every 5 minutes, so a claim this old
-					// means the rule has fallen out of the rotation entirely.
+					// The scheduler claims a rule once per its effective interval (1 to 60 minutes, picked or
+					// slowed), so a claim older than two intervals means it fell out of the rotation.
 					const age = now - rule.lastScheduledAt
-					return age > RULE_SCHEDULE_STALE_MS
+					return age > ruleScheduleStaleMs(rule.evaluationIntervalMinutes)
 						? [
 								{
 									kind: "alert_rule" as const,
@@ -574,7 +584,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "New errors notify someone",
 		severity: "warn",
 		fixHint:
-			"Error notifications have no settings screen yet. Ask the Maple MCP to run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
+			"Error notifications have no settings screen yet. Ask the Maple MCP to read the policy with `get_error_notification_policy`, then run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
 		evaluate: ({ config }) => {
 			// A missing row means Maple's defaults apply: enabled, but with an empty destination list —
 			// which still routes nowhere, so the second arm below catches it.
@@ -674,7 +684,9 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 					(mapping) =>
 						mapping.enabled &&
 						mapping.sourceContext === "span" &&
-						!present.has(mapping.sourceKey),
+						!present.has(mapping.sourceKey) &&
+						// A working move deletes its source, so the target arriving means it runs.
+						!(mapping.operation === "move" && present.has(mapping.targetKey)),
 				)
 				.map((mapping) => ({
 					kind: "attribute_mapping" as const,
@@ -698,13 +710,24 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 		needsWarehouse: true,
 		fixHint:
 			"Stop emitting the source key at the SDK — the mapping cannot merge two keys, so it will never run.",
-		evaluate: ({ config, warehouse }) => {
+		evaluate: ({ config, warehouse, now }) => {
 			if (!warehouse) return PASS
 			const present = spanKeySet(warehouse)
-			// The ingest gateway never overwrites an existing target key (apps/ingest/src/telemetry.rs
-			// `apply_attribute_mappings`), so a mapping whose target already arrives can never fire.
+			const lookbackMs = warehouse.lookbackHours * 60 * 60 * 1000
+			// Stored spans are post-mapping, so a working mapping's target is always present. Only a
+			// span move is decidable: it deletes its source, so a surviving source means it was skipped
+			// because the target already arrived (`apply_attribute_mappings` never overwrites).
 			const noop = config.attributeMappings
-				.filter((mapping) => mapping.enabled && present.has(mapping.targetKey))
+				.filter(
+					(mapping) =>
+						mapping.enabled &&
+						mapping.sourceContext === "span" &&
+						mapping.operation === "move" &&
+						// Spans from before the mapping changed still carry the source key.
+						now - mapping.updatedAt > lookbackMs &&
+						present.has(mapping.sourceKey) &&
+						present.has(mapping.targetKey),
+				)
 				.map((mapping) => ({
 					kind: "attribute_mapping" as const,
 					id: mapping.id,

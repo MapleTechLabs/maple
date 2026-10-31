@@ -34,6 +34,10 @@ export type AnchoredOptions = Readonly<{
 
 const MOUNTED: AnchoredEvent = { _tag: "Mounted" }
 
+/** The root's own modal backdrop: it covers the page, so a press on it is a press outside. */
+const isOwnBackdrop = (root: Element, target: Node): boolean =>
+	target instanceof Element && target.parentElement === root && target.hasAttribute("data-base-ui-inert")
+
 /** Pointer presses anywhere outside `inside` and the `insideSelectors` elements (`outsidePress`). */
 export const outsidePresses = (
 	root: Element,
@@ -44,7 +48,8 @@ export const outsidePresses = (
 			Effect.sync(() => {
 				const onPointerDown = (event: PointerEvent) => {
 					const target = event.target
-					if (!(target instanceof Node) || root.contains(target)) return
+					if (!(target instanceof Node)) return
+					if (root.contains(target) && !isOwnBackdrop(root, target)) return
 					const element = target instanceof Element ? target : target.parentElement
 					const isInside = Array.some(
 						insideSelectors,

@@ -30,7 +30,6 @@ import {
 import { scopeRow } from "../tools-kit/scope-row"
 import { seriesChart, TOOL_CHART_TOKENS } from "../tools-kit/series-chart"
 import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
-import { MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { bucketSecondsOf } from "./update"
@@ -148,7 +147,7 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 			...(tabs.tools === 0
 				? [
 						h.div(
-							[h.Class("contents"), h.OnMount(MountEmptyState())],
+							[h.Class("contents")],
 							[
 								signalEmptyState(h, {
 									signal: "traces",
@@ -274,12 +273,18 @@ const timeActions = (h: H, model: Model): Html =>
 export const toolsBody = (h: H, model: Model, options: BodyOptions): Html =>
 	AsyncData.matchData(model.totals.data, {
 		onEmpty: () => loadingView(h),
+		// The loaded view runs edge to edge; the error sits in the page gutter like the Sessions tab.
 		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Failed to load agent tool analytics",
-				onRetry: Message.ClickedReload(),
-			}),
+			h.div(
+				[h.Class("p-4")],
+				[
+					errorState(h, {
+						failure,
+						title: "Couldn't load agent tool analytics",
+						onRetry: Message.ClickedReload(),
+					}),
+				],
+			),
 		onData: () =>
 			model.themeColors === null || model.chartRuntime._tag === "Loading"
 				? loadingView(h)
@@ -293,6 +298,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Agent Sessions",
 					tabs: agentSessionsTabs(h, {
 						active: "tools",
 						search: model.search,

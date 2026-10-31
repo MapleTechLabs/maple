@@ -4,6 +4,7 @@ import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
@@ -27,6 +28,23 @@ const makeMcpToolExecutorStubLayer = (
 		}),
 	})
 
+// Loose shape of the MCP responses the tests read; unknown fields are ignored.
+const McpResponseBody = Schema.Struct({
+	result: Schema.optionalKey(
+		Schema.Struct({
+			protocolVersion: Schema.optionalKey(Schema.String),
+			serverInfo: Schema.optionalKey(Schema.Struct({ name: Schema.String })),
+			capabilities: Schema.optionalKey(Schema.Unknown),
+			tools: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
+		}),
+	),
+	error: Schema.optionalKey(Schema.Union([Schema.String, Schema.Struct({ code: Schema.Number })])),
+})
+const readBody = async (response: Response) =>
+	Schema.decodeUnknownSync(McpResponseBody)(await response.clone().json())
+const errorCode = (error: (typeof McpResponseBody.Type)["error"]) =>
+	typeof error === "object" ? error.code : undefined
+
 const makeRateLimiterStubLayer = (
 	check: RateLimiterApi["check"] = () => Effect.succeed("allowed" as const),
 ) => Layer.succeed(McpToolRateLimiter, { check })
@@ -40,6 +58,7 @@ const testConfig = () =>
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
 			MAPLE_APP_BASE_URL: "https://app.example.com",
+			MAPLE_API_BASE_URL: "https://api.example.com",
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 		}),
@@ -51,6 +70,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -95,6 +115,7 @@ describe("MCP HTTP authorization", () => {
 		let executedOrgId: string | undefined
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer((tenant) => {
 				executedOrgId = tenant.orgId
@@ -213,6 +234,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -254,7 +276,7 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const initializedBody = await initialized.clone().json()
+			const initializedBody = await readBody(initialized)
 			expect({
 				status: initialized.status,
 				protocolVersion: initializedBody.result?.protocolVersion,
@@ -294,6 +316,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -394,6 +417,7 @@ describe("MCP HTTP authorization", () => {
 				Context.empty() as never,
 			)
 			expect(stale.status).toBe(200)
+			expect(await stale.text()).toContain("inspect_trace")
 		} finally {
 			await second.dispose()
 		}
@@ -406,6 +430,7 @@ describe("MCP HTTP authorization", () => {
 		let executed = false
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(() => {
 				executed = true
@@ -450,7 +475,7 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const body = await response.clone().json()
+			const body = await readBody(response)
 			expect({
 				status: response.status,
 				retryAfter: response.headers.get("retry-after"),
@@ -476,6 +501,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -512,8 +538,8 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const body = await response.clone().json()
-			expect({ status: response.status, code: body.error?.code }).toEqual({
+			const body = await readBody(response)
+			expect({ status: response.status, code: errorCode(body.error) }).toEqual({
 				status: 200,
 				code: -32700,
 			})
@@ -530,6 +556,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -572,7 +599,7 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const result = (await initialized.clone().json()).result
+			const result = (await readBody(initialized)).result
 			expect({
 				status: initialized.status,
 				serverName: result?.serverInfo?.name,
@@ -592,7 +619,7 @@ describe("MCP HTTP authorization", () => {
 				Context.empty() as never,
 			)
 			const tools: ReadonlyArray<{ readonly name: string }> =
-				(await listed.clone().json()).result?.tools ?? []
+				(await readBody(listed)).result?.tools ?? []
 			expect({
 				status: listed.status,
 				hasInspectTrace: tools.some((tool) => tool.name === "inspect_trace"),

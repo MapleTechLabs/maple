@@ -1,12 +1,14 @@
 import { OrgId } from "@maple/domain"
-import { HazelIntegrationStatus } from "@maple/domain/http"
+import { HazelIntegrationStatus, LinearIntegrationStatus } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
 import { integrationOfSearch } from "./catalog"
+import { cardStatusOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -43,22 +45,47 @@ const withHazel = (connected: boolean, search: Model["search"] = {}): Model => {
 	])
 }
 
+const linear = (state: "absent" | "connected" | "revoked") =>
+	Schema.decodeUnknownSync(LinearIntegrationStatus)({
+		connected: state !== "absent",
+		workspaceName: state === "absent" ? null : "Acme Eng",
+		connectedByUserId: null,
+		revoked: state === "revoked",
+	})
+
+const withLinear = (state: "absent" | "connected" | "revoked"): Model => {
+	const model = entered({ integration: "linear" })
+	return steps(model, [
+		Message.CompletedLoadLinear({
+			key: model.statuses.linear.key ?? "",
+			result: Result.succeed(linear(state)),
+		}),
+	])
+}
+
 describe("integrations hub", () => {
 	test("entry reads the clock, every status and the customer once", () => {
 		const result = init({ search: {} }, context)
-		expect(names(result.commands)).toEqual([
-			"ReadIntegrationsClock",
-			"LoadIntegrationsCloudflareStatus",
-			"LoadIntegrationsRailwayStatus",
-			"LoadIntegrationsPlanetscaleStatus",
-			"LoadIntegrationsPlanetscaleDatabases",
-			"LoadIntegrationsGcpStatus",
-			"LoadIntegrationsHazelStatus",
-			"LoadIntegrationsGithubStatus",
-			"LoadIntegrationsChatConnectors",
-			"LoadIntegrationsScrapeTargets",
-			"LoadIntegrationsCustomer",
-		])
+		const sent = names(result.commands)
+		expect(sent).toEqual(
+			expect.arrayContaining([
+				"ReadIntegrationsClock",
+				"LoadIntegrationsCloudflareStatus",
+				"LoadIntegrationsRailwayStatus",
+				"LoadIntegrationsPlanetscaleStatus",
+				"LoadIntegrationsPlanetscaleDatabases",
+				"LoadIntegrationsGcpStatus",
+				"LoadIntegrationsAwsStatus",
+				"LoadIntegrationsSupabaseStatus",
+				"LoadIntegrationsLinearStatus",
+				"LoadIntegrationsHazelStatus",
+				"LoadIntegrationsGithubStatus",
+				"LoadIntegrationsChatConnectors",
+				"LoadIntegrationsScrapeTargets",
+				"LoadIntegrationsCustomer",
+			]),
+		)
+		expect(new Set(sent).size).toBe(sent.length)
 	})
 
 	test("a status answer under a superseded key is dropped", () => {
@@ -68,6 +95,27 @@ describe("integrations hub", () => {
 			Message.CompletedLoadHazel({ key: "stale", result: Result.succeed(hazel(true)) }),
 		)
 		expect(late.model.statuses.hazel).toEqual(model.statuses.hazel)
+	})
+
+	test("a write's re-read supersedes the read in flight, so the older answer cannot land last", () => {
+		const model = entered()
+		const preWriteKey = model.statuses.hazel.key ?? ""
+		const retried = pageUpdate(model, Message.ClickedRetryStatus({ name: "hazel" }))
+		expect(names(retried.commands)).toEqual(["LoadIntegrationsHazelStatus"])
+		const fresh = pageUpdate(
+			retried.model,
+			Message.CompletedLoadHazel({
+				key: retried.model.statuses.hazel.key ?? "",
+				result: Result.succeed(hazel(false)),
+			}),
+		).model
+		const late = pageUpdate(
+			fresh,
+			Message.CompletedLoadHazel({ key: preWriteKey, result: Result.succeed(hazel(true)) }),
+		).model
+		expect(Option.map(AsyncData.getData(late.statuses.hazel.data), (status) => status.connected)).toEqual(
+			Option.some(false),
+		)
 	})
 
 	test("a connected status lists the integration under Connected; selecting it navigates", () => {
@@ -189,7 +237,7 @@ describe("hazel card", () => {
 			started,
 			Message.FailedStartConnect({
 				attempt: 1,
-				title: "Failed to start Hazel connect flow",
+				title: "Couldn't start Hazel connect flow",
 				description: "nope",
 			}),
 		)
@@ -197,7 +245,7 @@ describe("hazel card", () => {
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to start Hazel connect flow",
+				title: "Couldn't start Hazel connect flow",
 				description: "nope",
 			}),
 		)
@@ -231,8 +279,82 @@ describe("hazel card", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
-			expectView(text("Failed to load the Hazel integration")).toExist(),
+			expectView(text("Couldn't load the Hazel integration")).toExist(),
 			expectView(role("button", { name: /Retry|Try again/ })).toExist(),
 		)
+	})
+})
+
+describe("linear card", () => {
+	test("not connected shows the connect card; connect starts a Linear attempt", () => {
+		const model = withLinear("absent")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(
+				text("Linear destinations will appear here after connecting your workspace."),
+			).toExist(),
+		)
+		const started = pageUpdate(model, Message.ClickedConnect())
+		expect(started.model.connect.active).toEqual({ provider: "linear", attempt: 1 })
+		const answered = pageUpdate(started.model, Message.SucceededStartConnect({ attempt: 1 }))
+		expect(names(answered.commands)).toEqual(["LoadIntegrationsLinearStatus"])
+	})
+
+	test("connected shows the workspace; a revoked grant asks for a reconnect", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withLinear("connected")),
+			expectView(text("Acme Eng")).toExist(),
+			expectView(text("Connected")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withLinear("revoked")),
+			expectView(text("Revoked")).toExist(),
+			expectView(role("button", { name: "Reconnect" })).toExist(),
+		)
+	})
+
+	test("a member cannot start a Linear connect from the header or the card", () => {
+		const member = steps(withLinear("absent"), [Message.CompletedLoadSession({ isAdmin: false })])
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("button", { name: "Connect Linear" })).toBeDisabled(),
+		)
+		expect(pageUpdate(member, Message.ClickedConnect()).model.connect.active).toBeNull()
+	})
+
+	test("a connected workspace without a name reads Connected", () => {
+		const model = entered({ integration: "linear" })
+		const unnamed = steps(model, [
+			Message.CompletedLoadLinear({
+				key: model.statuses.linear.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(LinearIntegrationStatus)({
+						connected: true,
+						workspaceName: "",
+						connectedByUserId: null,
+						revoked: false,
+					}),
+				),
+			}),
+		])
+		expect(cardStatusOf(unnamed.statuses, "linear", 0)?.label).toBe("Connected")
+	})
+
+	test("disconnect toasts and re-reads the Linear status", () => {
+		const opened = pageUpdate(withLinear("connected"), Message.ClickedDisconnect()).model
+		const confirmed = pageUpdate(opened, Message.ConfirmedDisconnect())
+		expect(names(confirmed.commands)).toContain("DisconnectIntegration")
+		const done = pageUpdate(
+			confirmed.model,
+			Message.CompletedDisconnect({ integration: "linear", failure: null }),
+		)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Linear disconnected", description: "" }),
+		)
+		expect(names(done.commands)).toEqual(["LoadIntegrationsLinearStatus"])
 	})
 })

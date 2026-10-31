@@ -1,4 +1,5 @@
 import Foundation
+import Maple
 import MapleAPI
 import Observation
 
@@ -51,6 +52,9 @@ final class ScreenLoader<Value: Sendable> {
 	private let isEmpty: @MainActor (Value) -> Bool
 	private let fetch: @MainActor () async throws -> Value
 	private var current: Task<Void, Never>?
+	/// `screen.ready` for this model's first answer; nil once it has painted.
+	private var readySpan: Span?
+	private var readyPending = true
 
 	/// - Parameters:
 	///   - isEmpty: maps a loaded value to `.empty`, so "no services in the
@@ -91,6 +95,7 @@ final class ScreenLoader<Value: Sendable> {
 			current = nil
 		}
 
+		if !state.hasContent { beginReady() }
 		generation += 1
 		let mine = generation
 		switch reason {
@@ -146,7 +151,39 @@ final class ScreenLoader<Value: Sendable> {
 	/// A no-op once any load has run or is running: live data beats cache.
 	func seed(_ value: Value) {
 		guard case .loading = state, !isLoading else { return }
+		beginReady()
 		state = isEmpty(value) ? .empty : .loaded(value)
+		readySource = "cache"
+	}
+
+	private func beginReady() {
+		guard readyPending, readySpan == nil else { return }
+		readySpan = Telemetry.screenReadyBegan(screen: screen, organizationId: session.currentOrganizationId)
+	}
+
+	private var readySource = "network"
+
+	/// The view drew this loader's first answer: content, empty or error.
+	func markPainted() {
+		switch state {
+		case .loaded: endReady(outcome: "loaded")
+		case .empty: endReady(outcome: "empty")
+		case .failed(let error): endReady(outcome: "failed", error: error)
+		case .loading: break
+		}
+	}
+
+	/// The screen went away before its first answer painted: end the span as
+	/// `abandoned` so it is not left running until the app backgrounds.
+	func abandonReady() {
+		endReady(outcome: "abandoned")
+	}
+
+	private func endReady(outcome: String, error: MapleAPIError? = nil) {
+		guard readyPending, let span = readySpan else { return }
+		readyPending = false
+		readySpan = nil
+		Telemetry.screenReadyEnded(span, outcome: outcome, source: readySource, error: error)
 	}
 
 	/// The error state's button and the refresh strip's button.
@@ -157,7 +194,9 @@ final class ScreenLoader<Value: Sendable> {
 	private func finish(_ next: LoadState<Value>?, reason: LoadReason) {
 		isLoading = false
 		isReplacing = false
-		guard let next else { return }
+		// Cancelled from outside (a newer model for this screen took over), so
+		// this model will never paint its first answer.
+		guard let next else { return endReady(outcome: "superseded") }
 		switch next {
 		case .loaded(let value):
 			state = isEmpty(value) ? .empty : .loaded(value)

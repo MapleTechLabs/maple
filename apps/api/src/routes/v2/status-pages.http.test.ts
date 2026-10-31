@@ -1,0 +1,923 @@
+import { afterEach, describe, expect, it } from "@effect/vitest"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
+import { OrgId, UserId } from "@maple/domain/http"
+import { MapleApiV2, UptimeMonitorPublicId } from "@maple/domain/http/v2"
+import { UptimeMonitorId, type StatusPageId } from "@maple/domain/primitives"
+import { utcDay } from "@maple/domain/status-page"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPagePublishDbError } from "@maple/backend/services/status-pages/publish-errors"
+import { Env } from "@maple/backend/platform/Env"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
+import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { V2TransportErrorBoundaryLive } from "./error-envelope"
+import {
+	AlertsServiceStubLayer,
+	allV2GroupLayersWithFeatureFlags,
+	ApiV2RateLimiterAllowAllLayer,
+	ConfigResourceServiceStubsLayer,
+	Phase1ResourceStubsLayer,
+	PlanetScaleServiceStubsLayer,
+	TelemetryServiceStubsLayer,
+} from "./v2-test-support"
+
+/** `/v2/status_pages` and `/v2/status_page_incidents` over an embedded PGlite with the real service. */
+
+const createdDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(createdDbs))
+
+const ORG = Schema.decodeUnknownSync(OrgId)("org_status_pages_e2e")
+const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_status_pages_other")
+const USER = Schema.decodeUnknownSync(UserId)("user_status_pages_e2e")
+const MEMBER = { source: "maple_cli", roles: ["org:member"], deviceName: "laptop" }
+
+const testConfig = () =>
+	ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			PORT: "3488",
+			MCP_PORT: "3489",
+			TINYBIRD_HOST: "https://api.tinybird.co",
+			TINYBIRD_TOKEN: "test-token",
+			MAPLE_AUTH_MODE: "self_hosted",
+			MAPLE_ROOT_PASSWORD: "test-root-password",
+			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_API_BASE_URL: "https://api.maple.test",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+			INTERNAL_SERVICE_TOKEN: "test-internal-token",
+		}),
+	)
+
+/** A publisher that records the pages it was asked to publish, or fails every publish. */
+const fakePublisher = (published: Array<StatusPageId>, options: { readonly fail?: boolean } = {}) =>
+	Layer.succeed(StatusPagePublisher, {
+		publish: (pageId) =>
+			options.fail === true
+				? Effect.fail(new StatusPagePublishDbError({ message: "edge down" }))
+				: Effect.sync(() => {
+						published.push(pageId)
+						return { pageId, revision: 1, written: true }
+					}),
+		sweep: () => Effect.die("unused"),
+		heartbeat: () => Effect.void,
+	})
+
+const makeHarness = (
+	publisher?: Layer.Layer<StatusPagePublisher>,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
+) => {
+	const testDb = createTestDb(createdDbs)
+	const audit = makeMemoryAuditLog()
+	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
+	const servicesLive = Layer.mergeAll(
+		ApiKeysService.layer,
+		AuthService.layer,
+		DashboardPersistenceService.layer,
+		SharedDashboardService.layer,
+		MobileDevicesService.layer,
+		LiveActivitiesService.layer,
+	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
+
+	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
+		Layer.provide(allV2GroupLayersWithFeatureFlags(featureFlags, Layer.succeed(AuditLogService, audit))),
+		Layer.provide(V2TransportErrorBoundaryLive),
+		Layer.provide(AlertsServiceStubLayer),
+		Layer.provide(ConfigResourceServiceStubsLayer),
+		Layer.provide(Phase1ResourceStubsLayer),
+		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(TelemetryServiceStubsLayer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
+		Layer.provideMerge(Layer.succeed(AuditLogService, audit)),
+		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
+		Layer.provideMerge(servicesLive),
+		Layer.provideMerge(publisher ?? Layer.empty),
+	)
+	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+	const runtime = ManagedRuntime.make(servicesLive)
+
+	const request = async (method: string, path: string, token: string, body?: unknown) => {
+		const response = await handler(
+			new Request(`http://maple.test${path}`, {
+				method,
+				headers: {
+					authorization: `Bearer ${token}`,
+					...(body !== undefined ? { "content-type": "application/json" } : undefined),
+				},
+				body: body === undefined ? undefined : JSON.stringify(body),
+			}),
+			Context.empty() as never,
+		)
+		const text = await response.text()
+		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
+	}
+
+	const bootstrapKey = (orgId: OrgId = ORG, metadataJson?: Record<string, unknown>) =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* ApiKeysService
+				return yield* service.create(orgId, USER, { name: "status-pages-test", metadataJson })
+			}),
+		)
+
+	const auditEntries = (action: string) =>
+		Effect.runPromise(audit.list(ORG, { action, limit: 100, offset: 0 }))
+
+	const sql = (text: string, params: ReadonlyArray<unknown>) => executeSql(testDb, text, [...params])
+
+	return {
+		request,
+		bootstrapKey,
+		auditEntries,
+		sql,
+		dispose: async () => {
+			await disposeHandler()
+			await runtime.dispose()
+		},
+	}
+}
+
+const withHarness = (
+	body: (harness: ReturnType<typeof makeHarness>) => Promise<void>,
+	publisher?: Layer.Layer<StatusPagePublisher>,
+	featureFlags?: Layer.Layer<OrganizationFeatureFlagsService>,
+) =>
+	Effect.runPromise(
+		Effect.acquireUseRelease(
+			Effect.sync(() => makeHarness(publisher, featureFlags)),
+			(harness) => Effect.promise(() => body(harness)),
+			(harness) => Effect.promise(() => harness.dispose()),
+		),
+	)
+
+describe("v2 status pages", () => {
+	it("creates, retrieves, updates and deletes a page", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const created = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme Status",
+				slug: "acme-status",
+				theme: { accent: "#1A2B3C" },
+			})
+			expect(created.status).toBe(200)
+			expect(created.body).toMatchObject({
+				object: "status_page",
+				name: "Acme Status",
+				slug: "acme-status",
+				theme: {
+					preset: "default",
+					appearance: "auto",
+					accent: "#1a2b3c",
+					background: null,
+					text: null,
+					card: null,
+					border: null,
+					radius: "md",
+					font: "sans",
+				},
+				auto_incidents: "off",
+				revision: 1,
+				published_revision: 0,
+				published_at: null,
+			})
+			const id: string = created.body.id
+			expect(id).toMatch(/^stp_/)
+
+			const retrieved = await harness.request("GET", `/v2/status_pages/${id}`, token)
+			expect(retrieved.body).toEqual(created.body)
+
+			const updated = await harness.request("PATCH", `/v2/status_pages/${id}`, token, {
+				description: "Live status of Acme.",
+				auto_incidents: "draft",
+				theme: { preset: "paper", appearance: "light", background: "#FFFDF7" },
+			})
+			expect(updated.status).toBe(200)
+			// Omitted theme fields keep their values.
+			expect(updated.body.theme).toMatchObject({
+				preset: "paper",
+				appearance: "light",
+				accent: "#1a2b3c",
+				background: "#fffdf7",
+			})
+
+			const unreadable = await harness.request("PATCH", `/v2/status_pages/${id}`, token, {
+				theme: { text: "#777777", background: "#ffffff" },
+			})
+			expect(unreadable.status).toBe(400)
+			expect(unreadable.body.error.message).toContain("4.48:1")
+			expect(updated.body).toMatchObject({
+				name: "Acme Status",
+				description: "Live status of Acme.",
+				auto_incidents: "draft",
+			})
+			expect(updated.body.revision).toBeGreaterThan(created.body.revision)
+
+			const listed = await harness.request("GET", "/v2/status_pages", token)
+			expect(listed.body.data.map((page: { id: string }) => page.id)).toEqual([id])
+
+			// No edge storage is bound in the harness, so the minutely sweep owns publishing.
+			const published = await harness.request("POST", `/v2/status_pages/${id}/publish`, token)
+			expect(published.body).toEqual({
+				id,
+				object: "status_page.publish_result",
+				outcome: "queued",
+				revision: updated.body.revision,
+			})
+
+			const removed = await harness.request("DELETE", `/v2/status_pages/${id}`, token)
+			expect(removed.body).toEqual({ id, object: "status_page", deleted: true })
+			const missing = await harness.request("GET", `/v2/status_pages/${id}`, token)
+			expect(missing.status).toBe(404)
+			expect(missing.body.error.code).toBe("status_page_not_found")
+		}))
+
+	it("sets, refuses and clears the footer links", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const created = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme Status",
+				slug: "acme-links",
+				privacy_url: "https://acme.example/privacy",
+			})
+			expect(created.status).toBe(200)
+			expect(created.body).toMatchObject({
+				privacy_url: "https://acme.example/privacy",
+				terms_url: null,
+			})
+			const path = `/v2/status_pages/${created.body.id}`
+
+			const insecure = await harness.request("PATCH", path, token, {
+				terms_url: "http://acme.example/terms",
+			})
+			expect(insecure.status).toBe(400)
+			expect(insecure.body.error.message).toContain("Terms of service URL")
+
+			const updated = await harness.request("PATCH", path, token, {
+				privacy_url: null,
+				terms_url: "https://acme.example/terms",
+			})
+			expect(updated.body).toMatchObject({ privacy_url: null, terms_url: "https://acme.example/terms" })
+			const config = await harness.request("GET", `${path}/config`, token)
+			expect(config.body).toMatchObject({ privacy_url: null, terms_url: "https://acme.example/terms" })
+		}))
+
+	it("refuses a taken slug and an invalid one", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			await harness.request("POST", "/v2/status_pages", token, { name: "A", slug: "acme-status" })
+			const taken = await harness.request("POST", "/v2/status_pages", token, {
+				name: "B",
+				slug: "acme-status",
+			})
+			expect(taken.status).toBe(409)
+			expect(taken.body.error.code).toBe("status_page_slug_taken")
+			const invalid = await harness.request("POST", "/v2/status_pages", token, {
+				name: "C",
+				slug: "Not A Slug",
+			})
+			expect(invalid.status).toBe(400)
+			expect(invalid.body.error.code).toBe("status_page_invalid")
+		}))
+
+	it("issues a break-glass token once and revokes it", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const page = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme",
+				slug: "acme-glass",
+			})
+			const issued = await harness.request(
+				"POST",
+				`/v2/status_pages/${page.body.id}/rotate_break_glass`,
+				token,
+			)
+			expect(issued.body.token).toMatch(/^mstat_/)
+			expect(issued.body.token_suffix).toBe(issued.body.token.slice(-6))
+			const retrieved = await harness.request("GET", `/v2/status_pages/${page.body.id}`, token)
+			expect(retrieved.body.break_glass_token_suffix).toBe(issued.body.token_suffix)
+			expect(JSON.stringify(retrieved.body)).not.toContain(issued.body.token)
+
+			const revoked = await harness.request(
+				"DELETE",
+				`/v2/status_pages/${page.body.id}/break_glass`,
+				token,
+			)
+			expect(revoked.body.break_glass_token_suffix).toBeNull()
+		}))
+
+	it("adds, reorders, updates and removes components", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const page = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme",
+				slug: "acme-parts",
+			})
+			const base = `/v2/status_pages/${page.body.id}/components`
+			const api = await harness.request("POST", base, token, { name: "API" })
+			const web = await harness.request("POST", base, token, { name: "Dashboard", group: "Apps" })
+			expect(api.body).toMatchObject({ object: "status_page_component", position: 0, group: null })
+			expect(web.body).toMatchObject({ position: 1, group: "Apps" })
+
+			const reordered = await harness.request("POST", `${base}/reorder`, token, {
+				component_ids: [web.body.id, api.body.id],
+			})
+			expect(reordered.body.data.map((c: { name: string }) => c.name)).toEqual(["Dashboard", "API"])
+			const partial = await harness.request("POST", `${base}/reorder`, token, {
+				component_ids: [web.body.id],
+			})
+			expect(partial.status).toBe(400)
+
+			const updated = await harness.request("PATCH", `${base}/${api.body.id}`, token, {
+				manual_status: "degraded",
+			})
+			expect(updated.body).toMatchObject({ name: "API", manual_status: "degraded" })
+
+			// A component addressed through another page is not found.
+			const other = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Other",
+				slug: "acme-other",
+			})
+			const crossPage = await harness.request(
+				"PATCH",
+				`/v2/status_pages/${other.body.id}/components/${api.body.id}`,
+				token,
+				{ name: "Hijack" },
+			)
+			expect(crossPage.status).toBe(404)
+			expect(crossPage.body.error.code).toBe("status_page_component_not_found")
+
+			const removed = await harness.request("DELETE", `${base}/${api.body.id}`, token)
+			expect(removed.body).toEqual({ id: api.body.id, object: "status_page_component", deleted: true })
+			const listed = await harness.request("GET", base, token)
+			expect(listed.body.data.map((c: { id: string }) => c.id)).toEqual([web.body.id])
+		}))
+
+	it("runs an incident from draft to resolved", () =>
+		withHarness(async (harness) => {
+			const { secret: admin } = await harness.bootstrapKey()
+			const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
+			const page = await harness.request("POST", "/v2/status_pages", admin, {
+				name: "Acme",
+				slug: "acme-incidents",
+			})
+			const component = await harness.request(
+				"POST",
+				`/v2/status_pages/${page.body.id}/components`,
+				admin,
+				{
+					name: "API",
+				},
+			)
+
+			// Responders post incidents without being org admins.
+			const opened = await harness.request("POST", "/v2/status_page_incidents", member, {
+				page_id: page.body.id,
+				title: "Elevated API errors",
+				body: "We are looking into elevated error rates.",
+				component_ids: [component.body.id],
+				published: false,
+			})
+			expect(opened.status).toBe(200)
+			expect(opened.body).toMatchObject({
+				object: "status_page_incident",
+				page_id: page.body.id,
+				kind: "incident",
+				impact: "minor",
+				status: "investigating",
+				published: false,
+				resolved_at: null,
+				component_ids: [component.body.id],
+			})
+			expect(opened.body.updates).toHaveLength(1)
+			expect(opened.body.updates[0]).toMatchObject({ source: "api", status: "investigating" })
+			const id: string = opened.body.id
+
+			const published = await harness.request("PATCH", `/v2/status_page_incidents/${id}`, member, {
+				published: true,
+				impact: "major",
+			})
+			expect(published.body).toMatchObject({ published: true, impact: "major" })
+
+			const resolved = await harness.request(
+				"POST",
+				`/v2/status_page_incidents/${id}/updates`,
+				member,
+				{
+					status: "resolved",
+					body: "Error rates are back to normal.",
+				},
+			)
+			expect(resolved.body.status).toBe("resolved")
+			expect(resolved.body.resolved_at).not.toBeNull()
+			expect(resolved.body.updates.map((u: { status: string }) => u.status)).toEqual([
+				"resolved",
+				"investigating",
+			])
+
+			const open = await harness.request(
+				"GET",
+				`/v2/status_page_incidents?page_id=${page.body.id}`,
+				member,
+			)
+			expect(open.body.data).toEqual([])
+			const closed = await harness.request("GET", "/v2/status_page_incidents?state=closed", member)
+			expect(closed.body.data.map((i: { id: string }) => i.id)).toEqual([id])
+
+			const wrongStatus = await harness.request(
+				"POST",
+				`/v2/status_page_incidents/${id}/updates`,
+				member,
+				{
+					status: "completed",
+					body: "Maintenance status on an incident.",
+				},
+			)
+			expect(wrongStatus.status).toBe(400)
+
+			const removed = await harness.request("DELETE", `/v2/status_page_incidents/${id}`, member)
+			expect(removed.body).toEqual({ id, object: "status_page_incident", deleted: true })
+		}))
+
+	it("schedules maintenance with its window", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const page = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme",
+				slug: "acme-maint",
+			})
+			const scheduled = await harness.request("POST", "/v2/status_page_incidents", token, {
+				page_id: page.body.id,
+				kind: "maintenance",
+				title: "Database upgrade",
+				body: "We are upgrading the primary database.",
+				scheduled_start: "2026-08-01T02:00:00.000Z",
+				scheduled_end: "2026-08-01T03:00:00.000Z",
+			})
+			expect(scheduled.body).toMatchObject({
+				kind: "maintenance",
+				status: "scheduled",
+				impact: "none",
+				scheduled_start: "2026-08-01T02:00:00.000Z",
+				scheduled_end: "2026-08-01T03:00:00.000Z",
+				started_at: "2026-08-01T02:00:00.000Z",
+			})
+			const noWindow = await harness.request("POST", "/v2/status_page_incidents", token, {
+				page_id: page.body.id,
+				kind: "maintenance",
+				title: "Upgrade",
+				body: "Soon.",
+			})
+			expect(noWindow.status).toBe(400)
+		}))
+
+	describe("statusPages rollout", () => {
+		const flagged = (statusPages: boolean) =>
+			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, statusPages })
+
+		it("refuses every page and incident route with 403 status_pages_disabled when the org is out", () =>
+			withHarness(
+				async (harness) => {
+					const { secret: token } = await harness.bootstrapKey()
+					const calls = [
+						harness.request("GET", "/v2/status_pages", token),
+						harness.request("POST", "/v2/status_pages", token, {
+							name: "Acme",
+							slug: "acme-off",
+						}),
+						harness.request("POST", "/v2/status_pages/preview", token, {
+							name: "Acme",
+							slug: "acme",
+							components: [{ name: "Docs" }],
+						}),
+						harness.request("GET", "/v2/status_page_incidents", token),
+					]
+					for (const response of await Promise.all(calls)) {
+						expect(response.status).toBe(403)
+						expect(response.body.error).toMatchObject({ code: "status_pages_disabled" })
+					}
+				},
+				undefined,
+				flagged(false),
+			))
+
+		it("serves the routes once the org is in", () =>
+			withHarness(
+				async (harness) => {
+					const { secret: token } = await harness.bootstrapKey()
+					const created = await harness.request("POST", "/v2/status_pages", token, {
+						name: "Acme",
+						slug: "acme-on",
+					})
+					expect(created.status).toBe(200)
+					const listed = await harness.request("GET", "/v2/status_pages", token)
+					expect(listed.body.data.map((page: { id: string }) => page.id)).toEqual([created.body.id])
+					expect((await harness.request("GET", "/v2/status_page_incidents", token)).status).toBe(
+						200,
+					)
+				},
+				undefined,
+				flagged(true),
+			))
+	})
+
+	it("refuses page and component writes from members", () =>
+		withHarness(async (harness) => {
+			const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
+			const create = await harness.request("POST", "/v2/status_pages", member, {
+				name: "Acme",
+				slug: "acme-member",
+			})
+			expect(create.status).toBe(403)
+			expect((await harness.request("GET", "/v2/status_pages", member)).status).toBe(200)
+		}))
+
+	it("hides one org's pages and incidents from another", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const { secret: outsider } = await harness.bootstrapKey(OTHER_ORG)
+			const page = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme",
+				slug: "acme-private",
+			})
+			const incident = await harness.request("POST", "/v2/status_page_incidents", token, {
+				page_id: page.body.id,
+				title: "Outage",
+				body: "Investigating.",
+			})
+
+			const pagePath = `/v2/status_pages/${page.body.id}`
+			const incidentPath = `/v2/status_page_incidents/${incident.body.id}`
+			const reads = await Promise.all([
+				harness.request("GET", pagePath, outsider),
+				harness.request("PATCH", pagePath, outsider, { name: "Mine" }),
+				harness.request("DELETE", pagePath, outsider),
+				harness.request("GET", `${pagePath}/components`, outsider),
+				harness.request("GET", incidentPath, outsider),
+				harness.request("POST", `${incidentPath}/updates`, outsider, {
+					status: "resolved",
+					body: "Not yours.",
+				}),
+				harness.request("POST", "/v2/status_page_incidents", outsider, {
+					page_id: page.body.id,
+					title: "Fake",
+					body: "Fake.",
+				}),
+			])
+			expect(reads.map((r) => r.status)).toEqual([404, 404, 404, 404, 404, 404, 404])
+			expect((await harness.request("GET", "/v2/status_pages", outsider)).body.data).toEqual([])
+			expect((await harness.request("GET", "/v2/status_page_incidents", outsider)).body.data).toEqual(
+				[],
+			)
+
+			const intact = await harness.request("GET", incidentPath, token)
+			expect(intact.body.status).toBe("investigating")
+		}))
+
+	describe("config", () => {
+		const seedPage = async (harness: ReturnType<typeof makeHarness>, token: string, slug: string) => {
+			const page = await harness.request("POST", "/v2/status_pages", token, { name: "Acme", slug })
+			const base = `/v2/status_pages/${page.body.id}/components`
+			const api = await harness.request("POST", base, token, { name: "API" })
+			const web = await harness.request("POST", base, token, { name: "Web", group: "Apps" })
+			return { id: page.body.id as string, apiId: api.body.id as string, webId: web.body.id as string }
+		}
+
+		it("round-trips the document without a revision bump", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id, apiId, webId } = await seedPage(harness, token, "acme-config")
+				const read = await harness.request("GET", `/v2/status_pages/${id}/config`, token)
+				expect(read.status).toBe(200)
+				expect(read.body).toMatchObject({
+					name: "Acme",
+					slug: "acme-config",
+					show_powered_by: true,
+					auto_incidents: "off",
+					components: [
+						{ id: apiId, name: "API", group: null, monitor_id: null, show_uptime: true },
+						{ id: webId, name: "Web", group: "Apps" },
+					],
+				})
+				const before = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
+				expect(read.body.version).toMatch(/^[0-9a-z]+$/u)
+
+				const applied = await harness.request(
+					"PUT",
+					`/v2/status_pages/${id}/config`,
+					token,
+					read.body,
+				)
+				expect(applied.status).toBe(200)
+				expect(applied.body).toEqual(read.body)
+				const after = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
+				// Nothing changed, so nothing republishes and nothing is audited.
+				expect(after).toBe(before)
+				expect(await harness.auditEntries("status_page.config_applied")).toEqual([])
+			}))
+
+		it("applies created, updated, deleted and reordered components with the page fields", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id, apiId, webId } = await seedPage(harness, token, "acme-apply")
+				const applied = await harness.request("PUT", `/v2/status_pages/${id}/config`, token, {
+					name: "Acme Inc",
+					slug: "acme-apply",
+					description: "Live status.",
+					theme: { preset: "midnight" },
+					components: [
+						{ name: "Docs" },
+						{ id: apiId, name: "Public API", manual_status: "degraded" },
+					],
+				})
+				expect(applied.status).toBe(200)
+				expect(applied.body).toMatchObject({
+					name: "Acme Inc",
+					description: "Live status.",
+					theme: { preset: "midnight", appearance: "auto", accent: null },
+					components: [
+						{ name: "Docs", manual_status: null },
+						{ id: apiId, name: "Public API", manual_status: "degraded" },
+					],
+				})
+				expect(applied.body.components[0].id).toMatch(/^stc_/)
+				const listed = await harness.request("GET", `/v2/status_pages/${id}/components`, token)
+				expect(
+					listed.body.data.map((c: { id: string; position: number }) => [c.id, c.position]),
+				).toEqual([
+					[applied.body.components[0].id, 0],
+					[apiId, 1],
+				])
+				expect(listed.body.data.some((c: { id: string }) => c.id === webId)).toBe(false)
+				const [entry, ...rest] = await harness.auditEntries("status_page.config_applied")
+				expect(rest).toEqual([])
+				expect(entry?.resourceId).toBe(id)
+				expect(entry?.metadata).toMatchObject({
+					name: "Acme Inc",
+					components_created: 1,
+					components_updated: 1,
+					components_deleted: 1,
+				})
+			}))
+
+		it("refuses an invalid document with a 400 naming the problem and changes nothing", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id } = await seedPage(harness, token, "acme-invalid")
+				const other = await seedPage(harness, token, "acme-invalid-other")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				const foreign = await harness.request("PUT", path, token, {
+					...read.body,
+					name: "Changed",
+					components: [...read.body.components, { id: other.apiId, name: "Stolen" }],
+				})
+				expect(foreign.status).toBe(400)
+				expect(foreign.body.error.code).toBe("status_page_invalid")
+				expect(foreign.body.error.message).toContain(other.apiId)
+				const duplicate = await harness.request("PUT", path, token, {
+					...read.body,
+					components: [...read.body.components, read.body.components[0]],
+				})
+				expect(duplicate.status).toBe(400)
+				expect(duplicate.body.error.message).toContain("more than once")
+				const malformed = await harness.request("PUT", path, token, { name: "No slug" })
+				expect(malformed.status).toBe(400)
+				expect((await harness.request("GET", path, token)).body).toEqual(read.body)
+			}))
+
+		it("refuses a key the document does not define, naming it, and changes nothing", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id } = await seedPage(harness, token, "acme-typo")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				const [first, ...rest] = read.body.components
+				const { show_uptime: _shown, ...withoutUptime } = first
+				const typo = await harness.request("PUT", path, token, {
+					...read.body,
+					name: "Changed",
+					components: [{ ...withoutUptime, show_uptim: false }, ...rest],
+				})
+				expect(typo.status).toBe(400)
+				expect(typo.body.error.param).toBe("components[0].show_uptim")
+				const topLevel = await harness.request("PUT", path, token, { ...read.body, colour: "red" })
+				expect(topLevel.status).toBe(400)
+				expect(topLevel.body.error.param).toBe("colour")
+				expect((await harness.request("GET", path, token)).body).toEqual(read.body)
+			}))
+
+		it("with a stale if_version answers 409 and writes nothing; a current one applies", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id } = await seedPage(harness, token, "acme-stale")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				await harness.request("POST", `/v2/status_pages/${id}/components`, token, { name: "Added" })
+				const moved = await harness.request("GET", path, token)
+				const stale = await harness.request("PUT", `${path}?if_version=${read.body.version}`, token, {
+					...read.body,
+					name: "Stale",
+				})
+				expect(stale.status).toBe(409)
+				expect(stale.body.error.code).toBe("status_page_conflict")
+				expect(stale.body.error.message).toContain("changed since it was read")
+				expect((await harness.request("GET", path, token)).body).toEqual(moved.body)
+
+				const current = await harness.request(
+					"PUT",
+					`${path}?if_version=${moved.body.version}`,
+					token,
+					{ ...moved.body, name: "Fresh" },
+				)
+				expect(current.status).toBe(200)
+				expect(current.body.name).toBe("Fresh")
+				expect(current.body.components.map((c: { name: string }) => c.name)).toContain("Added")
+			}))
+
+		it("refuses more than 200 components", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id } = await seedPage(harness, token, "acme-big")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				const tooMany = await harness.request("PUT", path, token, {
+					...read.body,
+					components: Array.from({ length: 201 }, (_, index) => ({ name: `C${index}` })),
+				})
+				expect(tooMany.status).toBe(400)
+				expect((await harness.request("GET", path, token)).body).toEqual(read.body)
+			}))
+
+		it("hides another org's config and refuses members", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { secret: outsider } = await harness.bootstrapKey(OTHER_ORG)
+				const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
+				const { id } = await seedPage(harness, token, "acme-guarded")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				expect((await harness.request("GET", path, outsider)).status).toBe(404)
+				expect((await harness.request("PUT", path, outsider, read.body)).status).toBe(404)
+				expect((await harness.request("GET", path, member)).status).toBe(200)
+				const refused = await harness.request("PUT", path, member, { ...read.body, name: "Member" })
+				expect(refused.status).toBe(403)
+				expect((await harness.request("GET", path, token)).body.name).toBe("Acme")
+			}))
+	})
+
+	describe("builder", () => {
+		const NOW_DAY = utcDay(Date.now())
+		const encodeMonitor = Schema.encodeSync(UptimeMonitorPublicId)
+
+		/** A monitor of `orgId` with its state and one day of checks; returns its `upm_` id. */
+		const seedMonitor = async (
+			harness: ReturnType<typeof makeHarness>,
+			orgId: OrgId,
+			status: "up" | "down",
+		) => {
+			const id = crypto.randomUUID()
+			await harness.sql(
+				`INSERT INTO uptime_monitors (id, org_id, name, kind, config_json, created_by, created_at, updated_at)
+				 VALUES ($1, $2, 'API', 'heartbeat', '{"type":"heartbeat","graceSeconds":60}', $3, now(), now())`,
+				[id, orgId, USER],
+			)
+			await harness.sql(
+				`INSERT INTO uptime_monitor_states (monitor_id, org_id, status, recent_json, updated_at)
+				 VALUES ($1, $2, $3, '[]', now())`,
+				[id, orgId, status],
+			)
+			await harness.sql(
+				`INSERT INTO uptime_monitor_daily (monitor_id, day, org_id, checks, failures, down_checks, last_check_at)
+				 VALUES ($1, $2, $3, 12, 3, 3, now())`,
+				[id, NOW_DAY, orgId],
+			)
+			return encodeMonitor(UptimeMonitorId.make(id))
+		}
+
+		it("creates a page with its components, published at once or as a draft", async () => {
+			const published: Array<StatusPageId> = []
+			await withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const monitor = await seedMonitor(harness, ORG, "up")
+				const live = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme",
+					slug: "acme-built",
+					components: [
+						{ name: "API", monitor_id: monitor },
+						{ name: "Docs", group: "Web" },
+					],
+					publish: true,
+				})
+				expect(live.status).toBe(200)
+				expect(live.body.draft).toBe(false)
+				const components = await harness.request(
+					"GET",
+					`/v2/status_pages/${live.body.id}/components`,
+					token,
+				)
+				expect(
+					components.body.data.map((c: { name: string; monitor_id: string | null }) => [
+						c.name,
+						c.monitor_id,
+					]),
+				).toEqual([
+					["API", monitor],
+					["Docs", null],
+				])
+				expect(published).toHaveLength(1)
+
+				const draft = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme draft",
+					slug: "acme-built-draft",
+					publish: false,
+				})
+				expect(draft.body.draft).toBe(true)
+				expect(published).toHaveLength(1)
+				const publish = await harness.request(
+					"POST",
+					`/v2/status_pages/${draft.body.id}/publish`,
+					token,
+				)
+				expect(publish.body.outcome).toBe("published")
+				expect(published).toHaveLength(2)
+				expect(
+					(await harness.request("GET", `/v2/status_pages/${draft.body.id}`, token)).body.draft,
+				).toBe(false)
+			}, fakePublisher(published))
+		})
+
+		it("keeps a created page when the publish after it fails", () =>
+			withHarness(
+				async (harness) => {
+					const { secret: token } = await harness.bootstrapKey()
+					const created = await harness.request("POST", "/v2/status_pages", token, {
+						name: "Acme",
+						slug: "acme-publish-fails",
+						components: [{ name: "API" }],
+						publish: true,
+					})
+					expect(created.status).toBe(200)
+					expect(created.body).toMatchObject({ draft: false, published_revision: 0 })
+					expect(
+						(await harness.request("GET", `/v2/status_pages/${created.body.id}`, token)).status,
+					).toBe(200)
+				},
+				fakePublisher([], { fail: true }),
+			))
+
+		it("creates nothing when a component names another org's monitor", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const foreign = await seedMonitor(harness, OTHER_ORG, "up")
+				const refused = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme",
+					slug: "acme-foreign",
+					components: [{ name: "API", monitor_id: foreign }],
+				})
+				expect(refused.status).toBe(400)
+				expect(refused.body.error.message).toContain(foreign)
+				expect((await harness.request("GET", "/v2/status_pages", token)).body.data).toEqual([])
+			}))
+
+		it("previews a draft for a member from real uptime history, writing nothing", () =>
+			withHarness(async (harness) => {
+				const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
+				const monitor = await seedMonitor(harness, ORG, "down")
+				const preview = await harness.request("POST", "/v2/status_pages/preview", member, {
+					name: "",
+					slug: "Half typed",
+					components: [{ name: "Docs" }, { name: "API", monitor_id: monitor }],
+				})
+				expect(preview.status).toBe(200)
+				expect(preview.body.page).toMatchObject({ name: "Status page", slug: "preview" })
+				expect(preview.body.revision).toBe(0)
+				const [docs, api] = preview.body.components
+				expect([docs.name, docs.status, docs.days]).toEqual(["Docs", "operational", []])
+				expect([api.name, api.status]).toEqual(["API", "major_outage"])
+				expect(api.days.at(-1)).toEqual({ day: NOW_DAY, checks: 12, failures: 3, downChecks: 3 })
+				expect((await harness.request("GET", "/v2/status_pages", member)).body.data).toEqual([])
+			}))
+
+		it("refuses to preview another org's monitor", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const foreign = await seedMonitor(harness, OTHER_ORG, "down")
+				const refused = await harness.request("POST", "/v2/status_pages/preview", token, {
+					name: "Acme",
+					slug: "acme",
+					components: [{ name: "API", monitor_id: foreign }],
+				})
+				expect(refused.status).toBe(400)
+				expect(refused.body.error.code).toBe("status_page_invalid")
+			}))
+	})
+})

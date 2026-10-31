@@ -12,9 +12,8 @@ import type { VariableValues } from "@maple/query-engine"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
-import { icon } from "../../../ui/icon"
 import { skeletonList } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
 import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
@@ -65,8 +64,6 @@ export type TileContext<M> = Readonly<{
 	onSparklineChart?: (message: Chart.Message) => M
 	/** The board's resolved variables: titles read `$service` as its value (`interpolateDisplayText`). */
 	variables?: VariableValues
-	/** "Fix with AI" on a decode error, when the surface offers it. */
-	fix?: M | null
 	/** "Show last 7 days" on a list wider than the cap, when the surface offers narrowing. */
 	narrowRange?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
@@ -143,39 +140,17 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 
 // TILES
 
-
-const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html => {
-	const sort = ctx.tableSort
-	const isActive = sort.key === column.field
-	return h.button(
-		[
-			h.Type("button"),
-			h.OnClick(ctx.onSort(column.field, isText)),
-			h.Class(
-				cn(
-					"inline-flex items-center gap-1 transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
-					cn(
-						"max-w-full",
-						column.align === "right" && "justify-end",
-						!isActive && "text-muted-foreground",
-					),
-				),
-			),
-		],
-		[
-			h.span([h.Class("truncate")], [column.header]),
-			icon(h, "ArrowUpDownIcon", {
-				size: 10,
-				className: cn(
-					"shrink-0 transition-opacity",
-					isActive ? "opacity-100" : "opacity-40",
-					isActive && sort.dir === "asc" && "rotate-180",
-				),
-			}),
-		],
+const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html =>
+	sortButton(
+		h,
+		{
+			isActive: ctx.tableSort.key === column.field,
+			direction: ctx.tableSort.dir,
+			onClick: ctx.onSort(column.field, isText),
+			align: column.align === "right" ? "right" : "left",
+		},
+		[h.span([h.Class("truncate")], [column.header])],
 	)
-}
 
 const cellStyle = <M>(h: HtmlBuilder<M>, column: Column, extra: Readonly<Record<string, string>> = {}) =>
 	h.Style(
@@ -291,7 +266,7 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 							),
 							h.Target("_blank"),
 							h.Class(
-								"font-mono text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary",
+								"font-mono text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
 							),
 						],
 						[shortId(value, "trace")],
@@ -302,7 +277,7 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 						[
 							h.Href(hrefOf(AppRoute.Traces({ search: { spanNames: [value] } }))),
 							h.Target("_blank"),
-							h.Class("hover:underline underline-offset-2"),
+							h.Class("hover:underline active:underline underline-offset-2"),
 						],
 						[display],
 					)
@@ -423,4 +398,3 @@ export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Wi
 			return chartWidgetTile(h, ctx, widget, CHART_WIDGETS.chart)
 	}
 }
-

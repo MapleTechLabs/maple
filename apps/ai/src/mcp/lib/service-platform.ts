@@ -4,6 +4,7 @@
  * only join these integrations share with traces.
  */
 import type { InfraKindSection } from "@maple/domain/mcp-outputs"
+import { isMissingServiceMapDbEdgesMinutely } from "@maple/backend/services/warehouse/missing-table"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Effect } from "effect"
@@ -27,13 +28,20 @@ const NONE = { rows: [], truncated: false }
 const calledDatabases = (service: string, window: InfraWindow) =>
 	Effect.gen(function* () {
 		const executor = yield* WarehouseExecutor
-		const rows = yield* executor.compiledQuery(
-			CH.compile(CH.serviceDbEdgesForServiceQuery({ serviceName: service }), {
-				orgId: executor.orgId,
-				startTime: window.startTime,
-				endTime: window.endTime,
-			}),
-			{ profile: "aggregation", context: "servicePlatformDbEdges" },
+		const read = (minuteTier: boolean) =>
+			executor.compiledQuery(
+				CH.compile(CH.serviceDbEdgesForServiceQuery({ serviceName: service, minuteTier }), {
+					orgId: executor.orgId,
+					startTime: window.startTime,
+					endTime: window.endTime,
+				}),
+				{ profile: "aggregation", context: "servicePlatformDbEdges" },
+			)
+		// A cluster without migration 0049 has no minute tier; the raw shape answers the same.
+		const rows = yield* read(true).pipe(
+			Effect.catch((error) =>
+				isMissingServiceMapDbEdgesMinutely(error) ? read(false) : Effect.fail(error),
+			),
 		)
 		return new Set(rows.map((row) => row.dbNamespace))
 	})

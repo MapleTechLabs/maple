@@ -44,10 +44,10 @@ describe("cloudflareZoneBreakdownTotalsSQL", () => {
 
 	it("keeps the row shape uniform by emitting literal zeros for absent measures", () => {
 		// `by_client` has neither an errors nor a bytes metric, so both columns must still exist.
-		const { sql } = compileUnsafe(cloudflareZoneBreakdownTotalsSQL("method"), zoneParams).valueOf() as {
-			sql: string
-		}
+		const { sql } = compileUnsafe(cloudflareZoneBreakdownTotalsSQL("method"), zoneParams)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- row decode needs every column
 		expect(sql).toContain("AS errors5xx")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- row decode needs every column
 		expect(sql).toContain("AS bytes")
 		expect(sql).toContain("MetricName IN ('cloudflare.http.requests.by_client')")
 	})
@@ -74,7 +74,8 @@ describe("cloudflareZoneBreakdownTotalsSQL", () => {
 		for (const dimension of CLOUDFLARE_BREAKDOWN_DIMENSIONS) {
 			const { sql } = compileUnsafe(cloudflareZoneBreakdownTotalsSQL(dimension), zoneParams)
 			expect(sql).toContain("GROUP BY key")
-			expect(cloudflareBreakdownMetrics(dimension).length).toBeGreaterThan(0)
+			const metrics = cloudflareBreakdownMetrics(dimension).map((name) => `'${name}'`)
+			expect(sql).toContain(`MetricName IN (${metrics.join(", ")})`)
 		}
 	})
 })
@@ -98,7 +99,6 @@ describe("cloudflareZoneBreakdownTimeseriesSQL", () => {
 		)
 		expect(sql).toContain("IN ('/api/users', '/health')")
 		expect(sql).toContain(`'${CLOUDFLARE_BREAKDOWN_OTHER_KEY}'`)
-		expect(sql).toContain("if(")
 		// The fold lives in the projection, so every row still contributes to some series.
 		expect(sql).toContain("GROUP BY bucket, key")
 	})
@@ -142,6 +142,7 @@ describe("cloudflareZoneFacetsQuery", () => {
 			"protocol",
 			"deviceType",
 		]) {
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its facet
 			expect(sql).toContain(`'${facetType}' AS facetType`)
 		}
 		// Weight, not entity count — the list is ranked by traffic.

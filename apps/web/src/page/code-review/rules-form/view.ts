@@ -283,6 +283,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						description: "Draft pull requests are skipped unless this is on.",
 					}),
 			toggleSetting(h, model, {
+				name: "reviewExternalContributors",
+				slug: "external",
+				label: "Review outside contributors",
+				description:
+					"Reviews pull requests from people without push access, forks included, on public repositories. The agent reads your telemetry and its review is public. One automatic review per pull request, three per author a day.",
+				inherited: parent.reviewExternalContributors ?? BUILT_IN.reviewExternalContributors,
+			}),
+			toggleSetting(h, model, {
 				name: "blockOnContractBreaks",
 				slug: "block-breaks",
 				label: "Fail the check on broken telemetry",
