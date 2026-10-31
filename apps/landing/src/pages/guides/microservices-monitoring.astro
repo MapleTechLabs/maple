@@ -41,7 +41,7 @@ const toc = [
     { depth: 3, slug: "cardinality", text: "Metric labels" },
     { depth: 3, slug: "sampling", text: "Head and tail sampling" },
     { depth: 2, slug: "tools", text: "Tools" },
-    { depth: 3, slug: "tool-categories", text: "Tool categories" },
+    { depth: 3, slug: "tools-compared", text: "Tools compared" },
     { depth: 3, slug: "maple", text: "Maple" },
 ];
 const sectionNav = toc.filter((h) => h.depth === 2);
@@ -594,13 +594,22 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>Microservices monitoring, defined</h2>
 
-                    <div class="guide-answer">
-                        <p><strong>Microservices monitoring</strong> means measuring every service the same way and following each request through all the services and queues it passes. When something breaks, it tells you which service caused it.</p>
+                    <p>
+                        When an app runs as one program, a slow request leaves one log file and one stack trace to read. Split the same app into services and one click on "Buy" fans out over the network to checkout, payments, inventory and a queue that wakes up fulfillment, each owned by a different team and deployed on a different day. <strong>Microservices monitoring</strong> is collecting the same health numbers from every service and stitching each request's path back together, so you can see which service caused a problem. Without it, an incident starts with every team checking its own dashboard while customers wait, and a stuck queue can delay orders for hours without a single error. This guide covers the metrics to give every service, passing one trace ID through HTTP calls and queues in six languages, what to alert on, keeping the bill down with sampling, and the tools to compare.
+                    </p>
+
+                    <div class="guide-callout guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Give every service RED metrics per endpoint, and USE metrics for its pools, such as database connections.</li>
+                            <li>A request stays one trace only if every hop passes the <code>traceparent</code> header. HTTP instrumentation does it for you; queues need inject and extract in code.</li>
+                            <li>For queues, alert on the age of the oldest message. A stalled consumer throws no errors.</li>
+                            <li>Page on user-facing symptoms and SLO burn rate, one incident per service. Keep CPU and pod restarts on dashboards.</li>
+                            <li>Label metrics by service, route and status code only, and sample traces in the Collector to keep every error.</li>
+                        </ul>
                     </div>
 
-                    <p>
-                        In a monolith, one slow request has one process, one log file and one stack trace. Split the same application into services and a single click becomes a chain of network calls, owned by different teams and deployed on different days. A checkout might look like this:
-                    </p>
+                    <p>A checkout request might look like this:</p>
 
                     <figure class="fanout" aria-label={`One checkout request. The api service calls checkout over HTTP. Checkout calls payments and inventory over HTTP, and publishes a message to the orders queue, which the fulfillment service consumes later. Every span of every service carries the same trace ID, ${traceId}.`}>
                         <svg viewBox="0 0 760 300" aria-hidden="true">
@@ -689,6 +698,9 @@ const articleJsonLd = {
                 <section id="signals" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>02</span> · Signals</p>
                     <h2>Measure every service with RED and USE</h2>
+                    <p>
+                        Monitoring tools work with three kinds of data. <strong>Metrics</strong> are numbers recorded over time, such as requests per second, and are cheap to keep for months. <strong>Logs</strong> are timestamped records of single events, and <strong>traces</strong> record one request's path through every service, with the time spent in each.
+                    </p>
                     <p>
                         Give every service the same small set of metrics, so any engineer can read any team's dashboard during an incident. <span class="sig sig--red">RED</span> covers the requests a service handles, and <span class="sig sig--use">USE</span> the resources those requests wait on.
                     </p>
@@ -924,21 +936,24 @@ const articleJsonLd = {
                         Instrumentation and storage are separate choices. OpenTelemetry SDKs export the same OTLP data to any compatible backend, so you can change the backend without touching the code in your services.
                     </p>
 
-                    <h3 id="tool-categories" class="scroll-mt-24">Tool categories</h3>
+                    <h3 id="tools-compared" class="scroll-mt-24">Tools compared</h3>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Category</th><th>Role</th><th>Examples</th></tr>
+                                <tr><th>Tool</th><th>What it is</th><th>License</th><th>Pricing model</th><th>Best for</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td><strong>Instrumentation</strong></td><td>SDKs that produce traces, metrics and logs; a Collector to process, sample and route them</td><td><a href="https://opentelemetry.io/" target="_blank" rel="noopener noreferrer">OpenTelemetry</a></td></tr>
-                                <tr><td><strong>Tracing backends</strong></td><td>Store and search traces</td><td><a href="https://www.jaegertracing.io/" target="_blank" rel="noopener noreferrer">Jaeger</a>, <a href="https://zipkin.io/" target="_blank" rel="noopener noreferrer">Zipkin</a>, <a href="https://grafana.com/oss/tempo/" target="_blank" rel="noopener noreferrer">Grafana Tempo</a></td></tr>
-                                <tr><td><strong>Metrics</strong></td><td>Time series, queries and alert rules</td><td><a href="https://prometheus.io/" target="_blank" rel="noopener noreferrer">Prometheus</a>, with <a href="https://grafana.com/oss/grafana/" target="_blank" rel="noopener noreferrer">Grafana</a> for dashboards</td></tr>
-                                <tr><td><strong>Logs</strong></td><td>Store and search logs</td><td><a href="https://grafana.com/oss/loki/" target="_blank" rel="noopener noreferrer">Grafana Loki</a>, <a href="https://opensearch.org/" target="_blank" rel="noopener noreferrer">OpenSearch</a></td></tr>
-                                <tr><td><strong>Observability platforms</strong></td><td>One store for all three signals, with links between them, service maps and alerting</td><td>Hosted or self-hosted products that accept OTLP, including Maple</td></tr>
+                                <tr><td><strong>Prometheus + Grafana + Jaeger</strong></td><td>Self-hosted metrics, dashboards and tracing</td><td>Open source (Apache 2.0; Grafana AGPL-3.0)</td><td>Free. You pay for the servers and run storage, upgrades and retention</td><td>Teams with the time to run their own stack</td></tr>
+                                <tr><td><strong><a href="https://www.datadoghq.com/pricing/?product=apm" target="_blank" rel="noopener noreferrer">Datadog</a></strong></td><td>Hosted APM, infrastructure and logs</td><td>Paid</td><td>Per host: APM from $31 per host per month, billed annually, plus span ingest over 150 GB per host at $0.10/GB</td><td>Teams that want every product from one vendor</td></tr>
+                                <tr><td><strong><a href="https://newrelic.com/pricing" target="_blank" rel="noopener noreferrer">New Relic</a></strong></td><td>Hosted observability platform</td><td>Paid, free tier</td><td>Per user and per GB: 100 GB a month free, then $0.40/GB, plus a monthly fee per full-platform user</td><td>Small teams with few people who need full access</td></tr>
+                                <tr><td><strong><a href="https://www.dynatrace.com/pricing/" target="_blank" rel="noopener noreferrer">Dynatrace</a></strong></td><td>Hosted observability with automatic service discovery</td><td>Paid</td><td>Annual commitment spent at rate-card prices: Full-Stack $58 per month per 8 GiB host, logs and traces $0.20/GiB ingested</td><td>Large host fleets that want an agent to find everything</td></tr>
+                                <tr><td><strong><a href="https://www.honeycomb.io/pricing" target="_blank" rel="noopener noreferrer">Honeycomb</a></strong></td><td>Hosted, trace-first observability</td><td>Paid, free tier</td><td>Per event: 20M events a month free, Pro from $150 a month for 50M</td><td>Debugging by querying traces on any attribute</td></tr>
+                                <tr><td><strong><a href="https://grafana.com/pricing/" target="_blank" rel="noopener noreferrer">Grafana Cloud</a></strong></td><td>Hosted Grafana with Prometheus-style metrics, Loki logs and Tempo traces</td><td>Paid, free tier</td><td>Free up to 10k metric series, 50 GB logs and 50 GB traces; Pro $19 a month plus usage per series and per GB</td><td>Teams already on Grafana dashboards</td></tr>
+                                <tr><td><strong><a href="https://maple.dev/pricing">Maple</a></strong></td><td>OpenTelemetry-native: traces, logs and metrics over OTLP in one store</td><td>Paid cloud, free self-hosting</td><td>$39 a month with 100 GB each of logs, traces and metrics, then $0.30/GB; no per-host or per-seat fees</td><td>Teams that already send OpenTelemetry</td></tr>
                             </tbody>
                         </table>
                     </div>
+                    <p class="guide-caption">Prices from each vendor's pricing page, last verified October 31, 2026.</p>
                     <p>Questions that separate the options for a system of many services:</p>
                     <ul class="guide-list">
                         <li>Does it accept OTLP for traces, metrics and logs?</li>
@@ -1024,15 +1039,13 @@ const articleJsonLd = {
     .ms-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .ms-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .ms-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .ms-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .ms-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .ms-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .ms-guide strong { font-weight: 600; color: var(--foreground); }
     .ms-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .ms-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .ms-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .ms-guide a:not(.guide-button):hover { color: var(--foreground); }
     .ms-guide .guide-caption { margin: 0.7rem 0 1.5rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .ms-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .ms-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .ms-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
 
     .ms-guide .sig { display: inline-flex; border: 1px solid color-mix(in oklab, var(--sig) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--sig) 14%, transparent); padding: 0 0.5rem; font-family: var(--font-mono); font-size: 12px; color: color-mix(in oklab, var(--sig) 70%, var(--foreground)); }
@@ -1152,6 +1165,10 @@ const articleJsonLd = {
     .ms-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .ms-guide .guide-callout .guide-kicker { color: var(--warning); }
     .ms-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .ms-guide .guide-takeaways { border-left-color: var(--primary); background: color-mix(in oklab, var(--primary) 6%, var(--bg-deep)); }
+    .ms-guide .guide-takeaways .guide-kicker { color: var(--primary); }
+    .ms-guide .guide-takeaways ul { margin: 0.7rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 14px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .ms-guide .guide-takeaways li + li { margin-top: 0.35rem; }
     .ms-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
     .ms-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
     .ms-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
