@@ -169,7 +169,7 @@ const currentBadge = (h: H, text: string): Html =>
 			pill: true,
 			size: "xs",
 			mono: true,
-			className: "px-2 bg-primary/15 text-primary",
+			className: "px-2 bg-primary-a2 text-primary",
 		},
 		[text],
 	)
@@ -196,7 +196,7 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 		{
 			padded: true,
 			className:
-				"gap-6 border-primary/40 bg-primary/[0.03] lg:flex-row lg:items-start lg:justify-between",
+				"gap-6 border-primary-a4 bg-primary/[0.03] lg:flex-row lg:items-start lg:justify-between",
 		},
 		[
 			h.div(
@@ -274,7 +274,7 @@ const offerPanel = (
 			padded: true,
 			className: cn(
 				"gap-6 lg:flex-row lg:items-start lg:justify-between",
-				isActive && "border-primary/40 bg-primary/[0.03]",
+				isActive && "border-primary-a4 bg-primary/[0.03]",
 			),
 		},
 		[

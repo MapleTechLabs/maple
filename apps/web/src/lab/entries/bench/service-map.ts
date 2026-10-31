@@ -182,7 +182,7 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 								"rounded-sm px-1.5 py-0.5 font-mono text-2xs transition-colors",
 								option === groups
 									? "bg-primary text-primary-foreground"
-									: "text-muted-foreground hover:text-foreground",
+									: "text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 						),
 					],

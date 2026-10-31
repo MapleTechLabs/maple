@@ -186,7 +186,7 @@ export const completedSelect = (
 ): Return => {
 	const settled = withCard(model, { isSelecting: false })
 	if (failure !== null)
-		return toast(settled, "error", "Failed to connect PlanetScale organization", failure.message)
+		return toast(settled, "error", "Couldn't connect PlanetScale organization", failure.message)
 	return chain(settled, [
 		(next) => toast(next, "success", `PlanetScale organization ${organization} connected`),
 		(next) => refreshAfterWrite(next, context),

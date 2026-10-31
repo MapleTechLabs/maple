@@ -29,7 +29,7 @@ export const uptimePanel = (h: H, model: Model): Html => {
 				],
 			),
 			action: h.a(
-				[h.Href(uptimeTabHref()), h.Class("text-xs text-primary hover:underline")],
+				[h.Href(uptimeTabHref()), h.Class("text-xs text-primary hover:underline active:underline")],
 				["Open in Alerts"],
 			),
 		}),
@@ -50,7 +50,7 @@ export const uptimePanel = (h: H, model: Model): Html => {
 											h.a(
 												[
 													h.Href(monitorHref(monitor.id)),
-													h.Class("truncate text-sm hover:underline"),
+													h.Class("truncate text-sm hover:underline active:underline"),
 												],
 												[targetLine(monitor, nowMs)],
 											),
@@ -88,7 +88,7 @@ export const uptimePanel = (h: H, model: Model): Html => {
 							[
 								h.Href(newMonitorHref({ serviceName: model.serviceName })),
 								h.Class(
-									"mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground",
+									"mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							],
 							[icon(h, "PlusIcon", { size: 14 }), "Add uptime check for this service"],

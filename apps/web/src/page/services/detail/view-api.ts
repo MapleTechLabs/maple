@@ -301,7 +301,7 @@ const endpointRow = (
 		],
 		cn(
 			"group/row h-12 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
-			isSelected ? "bg-accent hover:bg-accent" : "hover:bg-surface-sunken",
+			isSelected ? "bg-accent hover:bg-accent active:bg-accent" : "hover:bg-surface-sunken active:bg-surface-sunken",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)
@@ -376,7 +376,7 @@ const groupHeaderRow = (
 			cell("—", COLUMN.body),
 			tableCell(h, [], COLUMN.chevron),
 		],
-		"h-10 border-b bg-surface-sunken hover:bg-surface-strong",
+		"h-10 border-b bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
 	)
 }
 
@@ -453,7 +453,7 @@ export const groupRows = (
 						[h.Attribute("colspan", String(COLUMN_COUNT))],
 					),
 				],
-				"border-b hover:bg-transparent",
+				"border-b hover:bg-transparent active:bg-transparent",
 			),
 			...(isExpanded
 				? group.endpoints.map((endpoint) =>

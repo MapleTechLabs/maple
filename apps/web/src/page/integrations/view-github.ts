@@ -85,7 +85,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 													h.Href(`https://github.com/${login}`),
 													h.Target("_blank"),
 													h.Rel("noreferrer"),
-													h.Class("font-semibold hover:underline"),
+													h.Class("font-semibold hover:underline active:underline"),
 												],
 												["@", login],
 											),
@@ -232,7 +232,7 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 	return h.div(
 		[
 			h.Class(
-				"flex flex-col items-center gap-5 rounded-md border border-severity-warn/40 bg-severity-warn/5 px-6 py-10 text-center",
+				"flex flex-col items-center gap-5 rounded-md border border-severity-warn-a4 bg-severity-warn-a1 px-6 py-10 text-center",
 			),
 		],
 		[

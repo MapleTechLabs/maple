@@ -116,7 +116,7 @@ const firing = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html => {
 				PANEL,
 			),
 		],
-		"border-severity-error/30 bg-severity-error/[0.04]",
+		"border-severity-error-a3 bg-severity-error/[0.04]",
 	)
 }
 

@@ -31,7 +31,7 @@ const progressChip = (h: H, completed: number, total: number): Html =>
 			mono: true,
 			className: cn(
 				"text-2xs font-semibold sm:text-2xs",
-				completed === total ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary",
+				completed === total ? "bg-primary text-primary-foreground" : "bg-primary-a2 text-primary",
 			),
 		},
 		[String(completed), "/", String(total)],
@@ -43,13 +43,13 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 		[
 			h.Role("status"),
 			h.Class(
-				"absolute top-full right-0 z-40 mt-3 w-max max-w-[calc(100vw-1rem)] rounded-lg border border-primary/40 bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-top-1",
+				"absolute top-full right-0 z-40 mt-3 w-max max-w-[calc(100vw-1rem)] rounded-lg border border-primary-a4 bg-popover text-popover-foreground shadow-popup animate-in fade-in-0 slide-in-from-top-1",
 			),
 		],
 		[
 			h.span(
 				[
-					h.Class("absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l border-primary/40 bg-popover"),
+					h.Class("absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l border-primary-a4 bg-popover"),
 					h.AriaHidden(true),
 				],
 				[],
@@ -111,7 +111,7 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep, index: number): Html =>
 							h.Href(step.href),
 							h.OnClick(Message.ClickedStep()),
 							h.Class(
-								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring",
+								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[
@@ -156,7 +156,7 @@ const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyAr
 								h.span(
 									[
 										h.Class(
-											"flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/15 text-primary",
+											"flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary-a3 bg-primary-a2 text-primary",
 										),
 									],
 									[icon(h, isClaimed ? "CircleCheckIcon" : "RocketIcon", { size: 18 })],
@@ -180,7 +180,7 @@ const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyAr
 								),
 							],
 						),
-						meter(h, { value: progress, minVisible: 0, className: "bg-primary/15", fillClassName: "bg-primary" }),
+						meter(h, { value: progress, minVisible: 0, className: "bg-primary-a2", fillClassName: "bg-primary" }),
 					],
 				),
 				h.ol([h.Class("space-y-0.5 p-2")], checklist.steps.map((step, index) => stepRow(h, step, index + 1))),
@@ -220,8 +220,8 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 									variant: "outline",
 									size: "sm",
 									className: cn(
-										"gap-2 border-primary/40 bg-primary/10 text-foreground hover:bg-primary/15",
-										isClaimable && "border-primary bg-primary/20",
+										"gap-2 border-primary-a4 bg-primary-a2 text-foreground hover:bg-primary-a2 active:bg-primary-a2",
+										isClaimable && "border-primary bg-primary-a3",
 									),
 									slot: "popover-trigger",
 									attributes: trigger,

@@ -42,9 +42,9 @@ export const copyable = (
 			h.Class(
 				cn(
 					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
-					status === "idle" && "hover:bg-surface-sunken",
-					status === "copied" && "bg-severity-info/20",
-					status === "error" && "bg-severity-error/20",
+					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+					status === "copied" && "bg-severity-info-a3",
+					status === "error" && "bg-severity-error-a3",
 				),
 			),
 			h.OnClick(Message.ClickedCopy({ copyId, text: value })),
@@ -66,7 +66,7 @@ export const logTextButton = (
 			h.Type("button"),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground transition-colors hover:text-foreground",
+					"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
 					className,
 				),
 			),

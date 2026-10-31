@@ -131,7 +131,7 @@ export const traceRow = (
 				cn(
 					tableRowStyles,
 					state.isActive && "bg-surface-strong",
-					"hover:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+					"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),
 			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
@@ -158,7 +158,7 @@ export const traceRow = (
 						[
 							h.Attribute(
 								"class",
-								"relative z-10 font-mono text-xs text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary",
+								"relative z-10 font-mono text-xs text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
 							),
 							h.Href(traceHref(state.search, row)),
 						],
@@ -207,7 +207,7 @@ export const noiseNote = (h: HtmlBuilder<Message>, hidden: number): Html =>
 					variant: "link",
 					size: "xs",
 					className:
-						"h-auto p-0 text-primary underline decoration-primary/30 hover:decoration-primary",
+						"h-auto p-0 text-primary underline decoration-primary-a3 hover:decoration-primary active:decoration-primary",
 					attributes: [h.OnClick(Message.ClickedShowNoise())],
 				},
 				["show"],

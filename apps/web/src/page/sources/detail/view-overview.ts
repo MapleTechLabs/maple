@@ -220,7 +220,7 @@ const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number):
 					[
 						h.Href(sourceHref(source, "connection")),
 						h.Class(
-							"text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs",
+							"text-muted-foreground hover:text-foreground active:text-foreground inline-flex items-center gap-1 text-xs",
 						),
 					],
 					["Manage connection", icon(h, "ArrowRightIcon", { size: 12 })],

@@ -33,7 +33,7 @@ const glyph = <M>(h: HtmlBuilder<M>, d: string, size: string): Html =>
 	)
 
 const ACTION_CLASS =
-	"cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+	"cursor-pointer p-1 text-muted-foreground hover:text-foreground active:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
 
 const action = <M>(
 	h: HtmlBuilder<M>,

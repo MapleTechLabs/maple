@@ -104,7 +104,7 @@ export const lensRail = <M>(
 									h.a(
 										[
 											h.Href(hrefOf(AppRoute.InfraKubernetesPods({ search: timeSearch }))),
-											h.Class("text-primary hover:underline"),
+											h.Class("text-primary hover:underline active:underline"),
 										],
 										["Browse pods directly"],
 									),
@@ -128,7 +128,7 @@ const railRow = <M>(h: HtmlBuilder<M>, service: RailService, isActive: boolean, 
 				cn(
 					"flex h-[34px] items-center gap-2.5 rounded-md px-2 transition-colors",
 					rowSelectedClass(isActive),
-					!isActive && "hover:bg-surface-sunken",
+					!isActive && "hover:bg-surface-sunken active:bg-surface-sunken",
 				),
 			),
 		],

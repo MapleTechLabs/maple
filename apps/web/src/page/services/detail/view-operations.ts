@@ -119,7 +119,7 @@ const operationRow = (
 				"py-1.5 pr-3 align-middle",
 			),
 		],
-		"cursor-pointer group/row border-b last:border-b-0 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+		"cursor-pointer group/row border-b last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		[
 			h.Key(op.spanName),
 			h.Attribute("tabindex", "0"),

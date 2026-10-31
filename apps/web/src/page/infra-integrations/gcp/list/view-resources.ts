@@ -134,7 +134,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		? h.div(
 				[
 					h.Class(
-						"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken",
+						"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 				],
 				cells,

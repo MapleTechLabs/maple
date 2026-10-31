@@ -60,7 +60,7 @@ const SIGNAL_CLASS = cn(
 	"group flex cursor-pointer flex-col items-start gap-0.5 border-b-2 border-transparent px-3 py-2.5 text-left",
 	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 	"data-[checked]:border-primary data-[checked]:bg-surface-sunken",
-	"[&:not([data-checked])]:hover:bg-surface-faint",
+	"[&:not([data-checked])]:hover:bg-surface-faint [&:not([data-checked])]:active:bg-surface-faint",
 )
 
 const signalRadios = (h: H, form: RuleForm): Html => {

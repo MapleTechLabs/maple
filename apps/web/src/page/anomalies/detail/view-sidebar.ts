@@ -179,7 +179,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 													? h.a(
 															[
 																h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: fingerprint.errorIssueId, search: {} }))),
-																h.Class("truncate font-mono text-xs text-muted-foreground hover:text-foreground"),
+																h.Class("truncate font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
 															],
 															[shortIssueId(fingerprint.errorIssueId)],
 														)

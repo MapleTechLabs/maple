@@ -52,12 +52,12 @@ const VIEW_COPY = {
 // rewrites inline style every frame, keeping only position and colour.
 const NAIL =
 	"before:absolute before:top-1/2 before:size-[2px] before:-translate-y-1/2 before:rounded-full before:bg-current after:absolute after:top-1/2 after:size-[2px] after:-translate-y-1/2 after:rounded-full after:bg-current"
-const SIGN_CLASS = "rounded-[3px] px-1.5 font-medium"
+const SIGN_CLASS = "rounded-xs px-1.5 font-medium"
 const TAG_CLASS =
-	"rounded-l-[7px] rounded-r-[2px] border-current/50 pr-1 pl-2.5 before:absolute before:top-1/2 before:left-[3px] before:size-[3px] before:-translate-y-1/2 before:rounded-full before:border before:border-current/70 after:absolute after:bottom-full after:left-[4px] after:h-1.5 after:w-px after:bg-current/50"
-const PLANK_CLASS = `rounded-[2px] px-2.5 py-px font-semibold before:left-[4px] after:right-[4px] ${NAIL}`
+	"rounded-l-lg-inset rounded-r-xs border-current/50 pr-1 pl-2.5 before:absolute before:top-1/2 before:left-[3px] before:size-[3px] before:-translate-y-1/2 before:rounded-full before:border before:border-current/70 after:absolute after:bottom-full after:left-[4px] after:h-1.5 after:w-px after:bg-current/50"
+const PLANK_CLASS = `rounded-xs px-2.5 py-px font-semibold before:left-[4px] after:right-[4px] ${NAIL}`
 
-const PANEL_CLASS = "rounded-[3px] border border-(--map-sign-ink)/35 bg-(--map-sign) text-(--map-sign-ink)"
+const PANEL_CLASS = "rounded-xs border border-(--map-sign-ink)/35 bg-(--map-sign) text-(--map-sign-ink)"
 
 const LABEL = "data-scene-label"
 
@@ -181,7 +181,7 @@ const nodeLabels = <M>(
 				h.Attribute(LABEL, node.id),
 				h.Title(badge ? `${node.label} · ${badge.label}` : node.label),
 				h.Class(
-					`pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current"}`,
+					`pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
 				),
 				h.Style(nodeSignStyle(palette, node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1)),
 				h.OnClick(toMessage(Message.PickedNode({ nodeId: isSelected ? null : node.id }))),
@@ -215,7 +215,7 @@ const linkTags = <M>(
 					h.Type("button"),
 					h.Attribute(LABEL, link.id),
 					h.Class(
-						`pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current focus-visible:outline-2 focus-visible:outline-ring ${TAG_CLASS}`,
+						`pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current active:border-current focus-visible:outline-2 focus-visible:outline-ring ${TAG_CLASS}`,
 					),
 					h.Style(signStyle(palette)),
 					h.Title(

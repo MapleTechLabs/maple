@@ -79,7 +79,7 @@ const header = (
 			),
 			h.a(
 				[
-					h.Class("text-3xs text-primary hover:text-primary/80 transition-colors"),
+					h.Class("text-3xs text-primary hover:text-primary active:text-primary"),
 					h.Href(hrefOf(AppRoute.Service({ serviceName: inputs.serviceId, search: {} }))),
 				],
 				["View service"],

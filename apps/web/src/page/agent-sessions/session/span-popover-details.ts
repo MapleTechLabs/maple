@@ -106,7 +106,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 	return b.div(
 		[
 			b.Class(
-				"flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 p-3",
+				"flex flex-col gap-1.5 rounded-md border border-severity-error-a4 bg-severity-error-a1 p-3",
 			),
 		],
 		[

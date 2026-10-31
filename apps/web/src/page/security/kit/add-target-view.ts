@@ -182,7 +182,7 @@ const profileField = (h: H, model: Model): Html => {
 							h.Class(
 								cn(
 									"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-									isChecked ? "border-border-strong bg-accent/50" : "hover:bg-accent/30",
+									isChecked ? "border-border-strong bg-accent/50" : "hover:bg-accent/30 active:bg-accent/30",
 								),
 							),
 						],
@@ -236,7 +236,7 @@ const scopeChip = (h: H, path: string): Html =>
 				{
 					label: `Remove ${path}`,
 					size: "icon-2xs",
-					className: "text-muted-foreground hover:text-foreground pointer-coarse:after:hidden",
+					className: "text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 					attributes: [h.OnClick(Message.RemovedScopePath({ path }))],
 				},
 				[icon(h, "XmarkIcon", { size: 12 })],

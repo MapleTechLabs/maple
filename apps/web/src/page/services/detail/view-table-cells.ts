@@ -38,7 +38,7 @@ const sortableHeader = (
 				cn(
 					// Buttons reset text-transform, so restate the eyebrow's uppercase.
 					"inline-flex items-center gap-1 whitespace-nowrap uppercase transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
+					isActive ? "text-foreground" : "hover:text-foreground active:text-foreground",
 					className,
 				),
 			),
@@ -95,9 +95,9 @@ export const sortColumnHead = (
 }
 
 const BAR_TONE = {
-	calls: "bg-severity-info/20",
-	errors: "bg-severity-error/25",
-	latency: "bg-severity-warn/20",
+	calls: "bg-severity-info-a3",
+	errors: "bg-severity-error-a3",
+	latency: "bg-severity-warn-a3",
 } as const
 
 /** `BarCell`: a numeric cell over a column-tinted distribution bar. */

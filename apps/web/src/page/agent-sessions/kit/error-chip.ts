@@ -5,8 +5,8 @@ import { icon, type IconName } from "../../../ui/icon"
 import { statusDot } from "../../../ui/status-dot"
 
 /** Turn failures read red with the agent glyph; tool failures amber with the gear. */
-export const TURN_CHIP = "border-severity-error/30 bg-severity-error/10 text-severity-error"
-export const TOOL_CHIP = "border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
+export const TURN_CHIP = "border-severity-error-a3 bg-severity-error-a2 text-severity-error"
+export const TOOL_CHIP = "border-severity-warn-a4 bg-severity-warn-a2 text-severity-warn"
 
 /** `ErrorChip`: a failure count as a pill with its kind's glyph, the one error badge on agent views. */
 export const errorChip = <M>(

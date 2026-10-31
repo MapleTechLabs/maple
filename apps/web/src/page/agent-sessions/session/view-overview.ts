@@ -153,7 +153,7 @@ const callLane = (
 						h.AriaHasPopup("dialog"),
 						h.Class(
 							cn(
-								"absolute cursor-pointer rounded-[1px]",
+								"absolute cursor-pointer rounded-2xs",
 								event.failed
 									? "top-[5px] h-3.5 bg-severity-error"
 									: "top-[7px] h-2.5 bg-chart-4",
@@ -226,7 +226,7 @@ const ledgerRow = (
 									h.Class(
 										cn(
 											LEDGER_NAME,
-											"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary",
+											"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary active:text-primary",
 										),
 									),
 									h.Type("button"),

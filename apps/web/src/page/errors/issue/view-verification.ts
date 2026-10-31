@@ -14,7 +14,7 @@ import { sectionHeading } from "../../kit/section-heading"
 // The issue verification card: the post-merge fix check.
 
 type Status = ErrorIssueVerificationDocument["status"]
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 
 const STATUS_TONE = {
 	waiting: IN_FLIGHT_SOFT,
@@ -131,7 +131,7 @@ export const verificationCard = <M>(
 									AppRoute.Investigation({ id: verification.investigationId, search: {} }),
 								),
 							),
-							h.Class("mt-2 inline-block text-xs text-primary hover:underline"),
+							h.Class("mt-2 inline-block text-xs text-primary hover:underline active:underline"),
 						],
 						["View the verification run"],
 					),

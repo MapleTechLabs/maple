@@ -93,14 +93,14 @@ export const choiceTiles = <M>(h: HtmlBuilder<M>, tiles: ReadonlyArray<ChoiceTil
 			]
 			const className = cn(
 				"flex flex-col gap-1.5 rounded-md border p-3.5 text-left",
-				tile.isSelected === true ? "border-primary bg-primary/5" : "border-border",
+				tile.isSelected === true ? "border-primary bg-primary-a1" : "border-border",
 			)
 			return tile.onSelect === undefined
 				? h.div([h.Class(className)], body)
 				: h.button(
 						[
 							h.Type("button"),
-							h.Class(cn(className, "hover:border-border-strong")),
+							h.Class(cn(className, "hover:border-border-strong active:border-border-strong")),
 							h.AriaPressed(tile.isSelected === true ? "true" : "false"),
 							h.OnClick(tile.onSelect),
 						],
@@ -139,7 +139,7 @@ export const statusRow = <M>(h: HtmlBuilder<M>, options: StatusRowOptions, child
 			h.Class(
 				cn(
 					"flex items-start gap-3 rounded-md border bg-card p-4",
-					options.tone === "error" ? "border-severity-error/40" : "border-border",
+					options.tone === "error" ? "border-severity-error-a4" : "border-border",
 				),
 			),
 			h.Role("status"),
@@ -259,7 +259,7 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 													h.Href(options.docs.href),
 													h.Target("_blank"),
 													h.Rel("noreferrer"),
-													h.Class("text-foreground hover:underline"),
+													h.Class("text-foreground hover:underline active:underline"),
 												],
 												[options.docs.label],
 											),
@@ -395,7 +395,7 @@ export const whereToFind = <M>(h: HtmlBuilder<M>, label: string, href: string): 
 			h.Href(href),
 			h.Target("_blank"),
 			h.Rel("noreferrer"),
-			h.Class("inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"),
+			h.Class("inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
 		],
 		[label, icon(h, "ExternalLinkIcon", { size: 12 })],
 	)

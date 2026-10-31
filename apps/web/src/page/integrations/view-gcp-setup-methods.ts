@@ -66,7 +66,7 @@ const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
 							h.Class(
-								"inline-flex items-center gap-1 font-medium text-foreground hover:underline",
+								"inline-flex items-center gap-1 font-medium text-foreground hover:underline active:underline",
 							),
 						],
 						["Open in console", icon(h, "ExternalLinkIcon", { size: 12 })],

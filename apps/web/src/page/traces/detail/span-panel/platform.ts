@@ -24,8 +24,8 @@ export interface PlatformInfo {
 
 export const outcomeBadgeStyle = (bad: boolean): string =>
 	bad
-		? "bg-severity-error/15 text-severity-error border-severity-error/30"
-		: "bg-severity-info/15 text-severity-info border-severity-info/30"
+		? "bg-severity-error-a2 text-severity-error border-severity-error-a3"
+		: "bg-severity-info-a2 text-severity-info border-severity-info-a3"
 
 type Attrs = Readonly<Record<string, string>>
 

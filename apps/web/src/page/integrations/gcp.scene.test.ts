@@ -101,7 +101,7 @@ describe("google cloud card", () => {
 		)
 		expect(failed.model.gcpCard.removed).toEqual([])
 		expect(failed.outMessage).toEqual(
-			expect.objectContaining({ _tag: "RequestedToast", title: "Failed to disconnect" }),
+			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't disconnect" }),
 		)
 	})
 

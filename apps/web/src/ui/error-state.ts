@@ -271,8 +271,8 @@ const lockTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
 	])
 
 const INLINE_TINT = {
-	outage: "bg-severity-error/10 text-severity-error",
-	fixable: "bg-severity-warn/10 text-severity-warn",
+	outage: "bg-severity-error-a2 text-severity-error",
+	fixable: "bg-severity-warn-a2 text-severity-warn",
 	access: "bg-muted text-muted-foreground",
 } satisfies Record<FailureKind, string>
 
@@ -485,7 +485,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				),
 				...retryButtons(
 					"ghost",
-					"h-6 px-2 font-prose text-xs text-muted-foreground hover:text-foreground sm:text-xs",
+					"h-6 px-2 font-prose text-xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-xs",
 				),
 			],
 		)

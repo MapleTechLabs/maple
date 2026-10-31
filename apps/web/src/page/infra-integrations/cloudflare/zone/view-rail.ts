@@ -17,7 +17,7 @@ const railLink = (h: H, name: IconName, tab: ZoneTab, children: ReadonlyArray<st
 			h.Type("button"),
 			h.OnClick(Message.ClickedTab({ tab })),
 			h.Class(
-				"flex items-center gap-1.5 text-left font-mono text-xs text-primary transition-colors hover:text-primary/80",
+				"flex items-center gap-1.5 text-left font-mono text-xs text-primary hover:text-primary active:text-primary",
 			),
 		],
 		[icon(h, name, { className: "size-3.5 shrink-0" }), ...children],

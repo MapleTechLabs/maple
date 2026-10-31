@@ -262,7 +262,7 @@ const pageContent = (h: H, model: Model): Html =>
 											[
 												h.Href(`#${id}`),
 												h.Class(
-													"shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
+													"shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground",
 												),
 											],
 											[label],

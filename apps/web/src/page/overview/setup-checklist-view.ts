@@ -31,7 +31,7 @@ const keysUnavailable = (h: H): Html =>
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.Class("font-medium text-foreground underline underline-offset-2 hover:no-underline"),
+					h.Class("font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline"),
 				],
 				["Settings → Ingestion"],
 			),
@@ -114,7 +114,7 @@ const watchingStrip = (h: H): Html =>
 	h.div(
 		[
 			h.Class(
-				"flex items-center gap-2.5 rounded-md border border-dashed border-primary/30 bg-primary/5 p-4",
+				"flex items-center gap-2.5 rounded-md border border-dashed border-primary-a3 bg-primary-a1 p-4",
 			),
 		],
 		[
@@ -134,7 +134,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 					h.div(
 						[
 							h.Class(
-								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary",
+								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-a2 text-primary",
 							),
 						],
 						[icon(h, "CircleCheckIcon", { size: 20 })],
@@ -182,7 +182,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 				"flex flex-wrap items-center gap-4 p-5",
 			),
 		],
-		"mb-4 shrink-0 border-primary/40 bg-primary/[0.04] overflow-hidden",
+		"mb-4 shrink-0 border-primary-a4 bg-primary/[0.04] overflow-hidden",
 	)
 
 /** `SetupChecklistCard` while waiting: the collapsible "Connect your app" card. */
@@ -201,11 +201,11 @@ const waitingCard = (
 				[
 					listRow(h, {
 						onClick: Message.ClickedToggleExpanded(),
-						className: "flex-1 px-5 py-4 hover:bg-surface-sunken",
+						className: "flex-1 px-5 py-4 hover:bg-surface-sunken active:bg-surface-sunken",
 						leading: h.span(
 							[
 								h.Class(
-									"flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary",
+									"flex size-9 items-center justify-center rounded-lg bg-primary-a2 text-primary",
 								),
 							],
 							[icon(h, "CodeIcon", { size: 16 })],
@@ -250,14 +250,14 @@ const waitingCard = (
 							cardPanel(
 								h,
 								[guidedSetup(h, model, framework), watchingStrip(h)],
-								"border-t border-primary/20 p-5 space-y-5",
+								"border-t border-primary-a3 p-5 space-y-5",
 							),
 						],
 					),
 				],
 			),
 		],
-		"mb-4 shrink-0 border-primary/30 bg-primary/[0.02] overflow-hidden",
+		"mb-4 shrink-0 border-primary-a3 bg-primary/[0.02] overflow-hidden",
 	)
 
 /** The first read's failure while the card is mounted; the page's error strip shows it. */

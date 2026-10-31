@@ -129,7 +129,7 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 							h.pre(
 								[
 									h.Class(
-										"max-h-40 overflow-auto whitespace-pre-wrap text-severity-error/80",
+										"max-h-40 overflow-auto whitespace-pre-wrap text-severity-error",
 									),
 								],
 								[part.errorText],

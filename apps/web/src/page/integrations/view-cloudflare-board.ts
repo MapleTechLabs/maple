@@ -144,7 +144,7 @@ const resourceRow = (
 					h.Class(
 						cn(
 							rowClass,
-							"hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
+							"hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 						),
 					),
 				],
@@ -314,7 +314,7 @@ export const workersCard = (
 			action: h.a(
 				[
 					h.Href(hrefOf(AppRoute.ServiceMap({ search: {} }))),
-					h.Class("text-xs text-muted-foreground transition-colors hover:text-foreground"),
+					h.Class("text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
 				],
 				["View on map →"],
 			),
@@ -384,7 +384,7 @@ export const workersCard = (
 											variant: "link",
 											size: "xs",
 											className:
-												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground",
+												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
 											attributes: [h.OnClick(Message.ClickedWorkersExpand())],
 										},
 										[

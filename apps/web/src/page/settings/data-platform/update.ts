@@ -254,7 +254,7 @@ export const update = (model: Model, message: Message): Return =>
 					...withCommands(refreshConnection({ ...closed.model, password: "", draft: null, committedOver: null }), [closed.commands]),
 					outMessage: toast("success", "Disconnected"),
 				}),
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to disconnect", error.message) }),
+				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Couldn't disconnect", error.message) }),
 			})
 		},
 		ClickedRefreshDiff: () => ({ model: { ...model, diff: refresh(model.diff) }, commands: [FetchDiff()] }),
@@ -289,7 +289,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isStarting: false },
-					outMessage: toast("error", "Failed to start schema apply", error.message),
+					outMessage: toast("error", "Couldn't start schema apply", error.message),
 				}),
 			}),
 		ElapsedStartingHandoff: () => ({ model: { ...model, isStarting: false } }),

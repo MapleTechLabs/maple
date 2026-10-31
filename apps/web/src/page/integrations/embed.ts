@@ -82,7 +82,7 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 								h.Target("_blank"),
 								h.Rel("noreferrer"),
 								h.Class(
-									"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground",
+									"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							],
 							["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],

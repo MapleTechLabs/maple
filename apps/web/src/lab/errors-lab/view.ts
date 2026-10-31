@@ -42,7 +42,7 @@ const toggleGroup = <M, T>(
 									"h-6 rounded-sm px-2 text-xs transition-colors",
 									option.value === active
 										? "bg-muted text-foreground"
-										: "text-muted-foreground hover:text-foreground",
+										: "text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							),
 						],

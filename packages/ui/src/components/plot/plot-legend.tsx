@@ -279,7 +279,7 @@ function PlotLegendItem({ seriesKey }: { seriesKey: string }) {
 			onPointerEnter={() => actions.setActive(entry.key)}
 			onFocus={() => actions.setActive(entry.key)}
 			className={cn(
-				"flex items-center gap-1.5 rounded-sm px-1 py-0.5 hover:bg-surface-sunken",
+				"flex items-center gap-1.5 rounded-sm px-1 py-0.5 hover:bg-surface-sunken active:bg-surface-sunken",
 				isMuted && "opacity-40",
 				// Struck through as well as dimmed: opacity alone reads as "muted by
 				// someone else's highlight", and the two states have to be told apart

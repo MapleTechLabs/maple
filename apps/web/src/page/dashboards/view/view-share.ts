@@ -112,7 +112,7 @@ const accessOption = (
 			h.For(`share-${option.value}`),
 			h.Id(`share-${option.value}-label`),
 			h.Class(
-				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 transition-colors hover:bg-surface-sunken has-[[data-checked]]:bg-accent/64",
+				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-accent/64",
 			),
 		],
 		[

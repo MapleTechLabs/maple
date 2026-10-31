@@ -168,14 +168,14 @@ const contextList = (
 				],
 				[
 					isCurrent
-						? h.div([h.Class(cn(ROW_CLASS, "bg-primary/8"))], cells)
+						? h.div([h.Class(cn(ROW_CLASS, "bg-primary-a1"))], cells)
 						: h.button(
 								[
 									h.Type("button"),
 									h.Class(
 										cn(
 											ROW_CLASS,
-											"cursor-pointer text-left hover:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:outline-none",
+											"cursor-pointer text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:outline-none",
 										),
 									),
 									h.OnClick(Message.ClickedLog({ log: row })),
@@ -307,8 +307,8 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 							h.Style({ "border-left-color": getSeverityColor(log.severityText) }),
 							h.Class(
 								cn(
-									"border-l-2 flex items-center gap-1.5 px-2 py-1 text-xs font-mono cursor-pointer border-b border-border last:border-b-0 hover:bg-surface-sunken transition-colors",
-									isCurrent && "bg-primary/8",
+									"border-l-2 flex items-center gap-1.5 px-2 py-1 text-xs font-mono cursor-pointer border-b border-border last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken",
+									isCurrent && "bg-primary-a1",
 								),
 							),
 						],

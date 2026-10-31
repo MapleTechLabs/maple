@@ -27,7 +27,7 @@ export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): Reado
 				h.AriaLabel("Unsaved changes"),
 				h.Class(
 					cn(
-						"sticky bottom-4 z-10 mt-6 flex w-full items-center justify-between gap-4 rounded-lg border bg-popover py-2 pr-2 pl-4 shadow-lg",
+						"sticky bottom-4 z-10 mt-6 flex w-full items-center justify-between gap-4 rounded-lg border bg-popover py-2 pr-2 pl-4 shadow-popup",
 						options.className,
 					),
 				),

@@ -40,7 +40,7 @@ const repoLink = (h: H, repo: GithubRepoSummary): Html =>
 					h.Target("_blank"),
 					h.Rel("noreferrer"),
 					h.Class(
-						"group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline",
+						"group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline active:underline",
 					),
 				],
 				[
@@ -104,7 +104,7 @@ const branchContent = (h: H, model: Model, repo: GithubRepoSummary): ReadonlyArr
 								h.Type("button"),
 								h.OnClick(Message.ClickedBranch({ repoId: repo.id, branch: branch.name })),
 								h.Class(
-									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-sunken",
+									"flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 								),
 							],
 							[
@@ -323,7 +323,7 @@ export const repositoriesPanels = (
 										h.Target("_blank"),
 										h.Rel("noreferrer"),
 										h.Class(
-											"font-medium underline underline-offset-2 hover:text-foreground",
+											"font-medium underline underline-offset-2 hover:text-foreground active:text-foreground",
 										),
 									],
 									["Maple GitHub App"],

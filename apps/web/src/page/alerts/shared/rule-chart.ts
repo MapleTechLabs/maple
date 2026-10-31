@@ -610,7 +610,7 @@ const rail = <M>(
 										: [h.OnClick(onSelect(isSelected ? null : i))]),
 									h.Class(
 										cn(
-											"h-full flex-1 rounded-[1px] p-0",
+											"h-full flex-1 rounded-2xs p-0",
 											RAIL_COLOR.get(cell.status),
 											onSelect !== undefined && "cursor-pointer",
 											cell.opened && "ring-1 ring-inset ring-severity-error",
@@ -629,12 +629,12 @@ const rail = <M>(
 				[
 					gutter("Incident"),
 					h.div(
-						[h.Class("relative h-1 flex-1 rounded-[1px] bg-surface-strong")],
+						[h.Class("relative h-1 flex-1 rounded-2xs bg-surface-strong")],
 						spans.map((span) =>
 							h.div([
 								h.Class(
 									cn(
-										"absolute inset-y-0 rounded-[1px] bg-severity-error",
+										"absolute inset-y-0 rounded-2xs bg-severity-error",
 										!span.open && "opacity-60",
 									),
 								),

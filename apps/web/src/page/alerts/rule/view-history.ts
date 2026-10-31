@@ -236,7 +236,7 @@ const incidentRow = (
 				? h.a(
 						[
 							h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} }))),
-							h.Class("text-xs text-primary underline-offset-4 hover:underline"),
+							h.Class("text-xs text-primary underline-offset-4 hover:underline active:underline"),
 						],
 						["View"],
 					)

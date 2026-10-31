@@ -106,7 +106,7 @@ export type ApprovalCardOptions<M> = Readonly<{
 
 export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<M>): Html =>
 	h.div(
-		[h.Class("overflow-hidden rounded-md border border-severity-warn/40 bg-severity-warn/5 text-xs")],
+		[h.Class("overflow-hidden rounded-md border border-severity-warn-a4 bg-severity-warn-a1 text-xs")],
 		[
 			item(h, { size: "xs", variant: "flush", className: "gap-2 px-3" }, [
 				itemMedia(h, { variant: "icon" }, [
@@ -122,7 +122,7 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 				]),
 			]),
 			h.div(
-				[h.Class("border-t border-severity-warn/20 bg-background/50 p-3")],
+				[h.Class("border-t border-severity-warn-a3 bg-background/50 p-3")],
 				[
 					dashboardSummary(h, options.toolName, options.input) ??
 						approvalSummary(h, options.input, options.timeZone),
@@ -131,7 +131,7 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 						{
 							variant: "link",
 							size: "xs",
-							className: "mt-3 text-muted-foreground hover:text-foreground",
+							className: "mt-3 text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(options.onToggleRaw)],
 						},
 						[

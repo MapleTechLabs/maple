@@ -226,7 +226,7 @@ const agentsSection = (h: H, summary: SessionSummary): Html =>
 									cn(
 										"min-w-0 truncate rounded-sm px-2 py-0.5 font-mono text-2xs",
 										index === 0
-											? "bg-primary/12 text-primary"
+											? "bg-primary-a2 text-primary"
 											: "bg-muted text-muted-foreground",
 									),
 								),

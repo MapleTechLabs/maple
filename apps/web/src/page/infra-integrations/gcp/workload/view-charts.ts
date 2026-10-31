@@ -174,7 +174,7 @@ export const workloadCharts = (
 			const explore = h.a(
 				[
 					h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
-					h.Class("text-foreground-subtle transition-colors hover:text-foreground"),
+					h.Class("text-foreground-subtle hover:text-foreground active:text-foreground"),
 					h.Href(
 						hrefOf(
 							AppRoute.Metric({

@@ -50,12 +50,12 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 			className: cn(
 				"gap-2 font-mono text-xs",
 				isSet
-					? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary"
+					? "border-primary-a4 bg-primary-a2 text-primary [&_svg]:text-primary"
 					: "bg-card text-foreground",
 			),
 			renderValue: () => [
 				h.span(
-					[h.Class(cn("text-2xs", isSet ? "text-primary/70" : "text-muted-foreground"))],
+					[h.Class(cn("text-2xs", isSet ? "text-primary" : "text-muted-foreground"))],
 					[config.label],
 				),
 				" ",

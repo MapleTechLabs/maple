@@ -34,7 +34,7 @@ import { barCell, headLabel, sortColumnHead } from "./view-table-cells"
 type H = HtmlBuilder<Message>
 
 const BADGE = new Map<DependencyKind, Readonly<{ label: string; tone: string; icon: IconName }>>([
-	["service", { label: "Service", tone: "bg-severity-info/10 text-severity-info", icon: "ServerIcon" }],
+	["service", { label: "Service", tone: "bg-severity-info-a2 text-severity-info", icon: "ServerIcon" }],
 	["database", { label: "Database", tone: "bg-chart-3/10 text-chart-3", icon: "DatabaseIcon" }],
 	["http", { label: "HTTP", tone: "bg-foreground/5 text-muted-foreground", icon: "GlobeIcon" }],
 	["messaging", { label: "Queue", tone: "bg-chart-4/10 text-chart-4", icon: "PaperPlaneIcon" }],
@@ -115,7 +115,7 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 				latencyValue(h, { ms: row.p95DurationMs, scale: "p95", className: "text-xs" }),
 			),
 		],
-		"cursor-pointer group/row border-b last:border-b-0 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+		"cursor-pointer group/row border-b last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		[
 			h.Key(row.id),
 			h.Attribute("tabindex", "0"),

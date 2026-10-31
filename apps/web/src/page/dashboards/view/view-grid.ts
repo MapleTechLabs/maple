@@ -113,7 +113,7 @@ const gestureLayers = (h: H, model: Model, shown: ReadonlyArray<GridItem>): Read
 				h.div([
 					h.AriaHidden(true),
 					h.DataAttribute("grid-placeholder", ""),
-					h.Class("rounded-lg border border-dashed border-primary/60 bg-primary/5"),
+					h.Class("rounded-lg border border-dashed border-primary/60 bg-primary-a1"),
 					h.Style(gridArea(item)),
 				]),
 			]

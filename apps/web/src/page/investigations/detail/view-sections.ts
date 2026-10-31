@@ -213,7 +213,7 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 							h.Title(
 								`${formatNumber(bar.total)} lines${bar.errors ? ` · ${formatNumber(bar.errors)} errors` : ""}`,
 							),
-							h.Class("flex min-w-0 flex-1 flex-col justify-end overflow-hidden rounded-[1px]"),
+							h.Class("flex min-w-0 flex-1 flex-col justify-end overflow-hidden rounded-2xs"),
 							h.Style({
 								height: `${bar.total === 0 ? 0 : Math.max(6, (bar.total / peak) * 100)}%`,
 							}),
@@ -263,7 +263,7 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 							row.errorRate > 0 ? "text-severity-error" : undefined,
 						),
 						h.span([h.Class("flex-1")]),
-						link(h, "/traces", "shrink-0 text-xs text-primary hover:underline", [
+						link(h, "/traces", "shrink-0 text-xs text-primary hover:underline active:underline", [
 							"View traces →",
 						]),
 					],
@@ -294,7 +294,7 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 				link(
 					h,
 					`/services/${encodeURIComponent(service)}`,
-					"shrink-0 text-xs text-primary hover:underline",
+					"shrink-0 text-xs text-primary hover:underline active:underline",
 					["Open service →"],
 				),
 			],
@@ -354,13 +354,13 @@ const escalationPair = (h: H, attempt: typeof Escalation.Type | null): ReadonlyA
 
 const referenceLink = (h: H, label: string, url: string): Html =>
 	url.startsWith("/")
-		? link(h, url, "truncate text-primary hover:underline", [label])
+		? link(h, url, "truncate text-primary hover:underline active:underline", [label])
 		: h.a(
 				[
 					h.Href(url),
 					h.Attribute("rel", "noreferrer"),
 					h.Attribute("target", "_blank"),
-					h.Class("truncate text-primary hover:underline"),
+					h.Class("truncate text-primary hover:underline active:underline"),
 				],
 				[label],
 			)
@@ -397,7 +397,7 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 											h.Href(`/errors/issues/${issueId}`),
 											h.Title(issueId),
 											h.Class(
-												"max-w-60 truncate font-mono text-primary hover:underline",
+												"max-w-60 truncate font-mono text-primary hover:underline active:underline",
 											),
 										],
 										[issueId],
@@ -439,7 +439,7 @@ export const followUpComposer = (h: H): Html =>
 			h.Type("button"),
 			h.OnClick(Message.ClickedFollowUp()),
 			h.Class(
-				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left transition-colors hover:border-ring hover:bg-surface-sunken",
+				"flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left hover:border-ring active:border-ring hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -488,7 +488,7 @@ export const evidenceChips = (
 									h,
 									{
 										className:
-											"px-1.5 py-0.5 text-2xs text-primary transition-colors hover:bg-surface-strong",
+											"px-1.5 py-0.5 text-2xs text-primary hover:bg-surface-strong active:bg-surface-strong",
 									},
 									[shortId(traceId, "generic", { ellipsis: true })],
 								),

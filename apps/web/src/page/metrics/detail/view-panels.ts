@@ -123,7 +123,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 							h.Key(row.name),
 							h.Type("button"),
 							h.Class(
-								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left transition-colors hover:bg-accent",
+								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-accent active:bg-accent",
 							),
 							h.OnClick(Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name })),
 						],
@@ -132,7 +132,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 								value: row.value,
 								max,
 								className:
-									"inset-y-0.5 left-0 bg-primary/10 transition-colors group-hover:bg-primary/15",
+									"inset-y-0.5 left-0 bg-primary-a2 transition-colors group-hover:bg-primary-a2",
 							}) ?? h.empty,
 							h.span([h.Class("sr-only")], ["Filter to ", filterKey, " = "]),
 							truncatedText(h, {

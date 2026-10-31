@@ -170,7 +170,7 @@ const stats = (h: H, peek: QueryPeek): ReadonlyArray<Html> => {
 			? []
 			: [
 					h.div(
-						[h.Class("space-y-1 rounded-md border border-severity-error/40 p-3")],
+						[h.Class("space-y-1 rounded-md border border-severity-error-a4 p-3")],
 						[
 							h.p(
 								[h.Class("text-xs font-medium text-foreground")],
@@ -205,7 +205,7 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 						[
 							h.Href(hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch }))),
 							h.Class(
-								"flex items-center gap-3 border-b border-border-subtle px-1 py-2 transition-colors last:border-0 hover:bg-surface-sunken",
+								"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
 							),
 						],
 						[
@@ -241,7 +241,7 @@ const spanRow = (h: H, span: StatementSpan, slowestMs: number, timeZone: string)
 			),
 			h.AriaLabel(`Open trace: ${span.serviceName}, ${formatLatency(span.durationMs)}`),
 			h.Class(
-				"flex items-center gap-3 border-b border-border-subtle px-1 py-2 transition-colors last:border-0 hover:bg-surface-sunken",
+				"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[

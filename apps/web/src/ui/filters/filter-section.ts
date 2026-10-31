@@ -106,7 +106,7 @@ const rowAction = <M>(
 						className: cn(
 							"transition-colors",
 							isPressed === true
-								? "bg-destructive/12 text-destructive [button&]:hover:bg-destructive/20 [button&]:hover:text-destructive"
+								? "bg-destructive-a2 text-destructive [button&]:hover:bg-destructive-a3 [button&]:active:bg-destructive-a3 [button&]:hover:text-destructive [button&]:active:text-destructive"
 								: "bg-transparent",
 						),
 					}),
@@ -141,7 +141,7 @@ export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string): Html
 	h.span(
 		[
 			h.AriaLabel(`About ${title}`),
-			h.Class("inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground"),
+			h.Class("inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground active:text-muted-foreground"),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
 			h.Tabindex(0),
@@ -156,7 +156,7 @@ const swatch = <M>(h: HtmlBuilder<M>, color: string | undefined, isExcluded: boo
 					[
 						h.Class(
 							cn(
-								"size-2.5 rounded-[35%] [corner-shape:squircle] shrink-0",
+								"size-2.5 rounded-dot [corner-shape:squircle] shrink-0",
 								isExcluded && "opacity-40",
 							),
 						),
@@ -210,7 +210,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 				ariaLabel: optionLabel,
 				className: cn(
 					isExcluded &&
-						"border-destructive/40 [&_[data-slot=checkbox-indicator]]:bg-destructive/12 [&_[data-slot=checkbox-indicator]]:text-destructive",
+						"border-destructive-a4 [&_[data-slot=checkbox-indicator]]:bg-destructive-a2 [&_[data-slot=checkbox-indicator]]:text-destructive",
 				),
 			}),
 			label(
@@ -321,7 +321,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 					h.AriaExpanded(state.isOpen),
 					h.Class(
 						cn(
-							"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground text-muted-foreground transition-colors",
+							"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground active:text-foreground text-muted-foreground",
 							eyebrowVariants({ variant: "label" }),
 						),
 					),
@@ -408,7 +408,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 																	variant: "link",
 																	size: "xs",
 																	className:
-																		"px-0 text-muted-foreground hover:text-foreground",
+																		"px-0 text-muted-foreground hover:text-foreground active:text-foreground",
 																	attributes: [
 																		h.OnClick(
 																			toSections(

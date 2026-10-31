@@ -180,7 +180,7 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 							h.Key(String(bucket.from)),
 							h.Class(
 								cn(
-									"min-w-px flex-1 rounded-t-[1px] motion-safe:transition-[height,background-color] duration-150",
+									"min-w-px flex-1 rounded-t-2xs motion-safe:transition-[height,background-color] duration-150",
 									index === config.hoveredIndex
 										? "bg-foreground/60"
 										: isSelected(bucket, index)

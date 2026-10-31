@@ -47,7 +47,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 		: capForDisplay(body.full)
 	const { prompt } = options
 	return h.div(
-		[h.Class("mx-3 my-2 rounded-md border border-severity-error/25 bg-severity-error/4 p-3")],
+		[h.Class("mx-3 my-2 rounded-md border border-severity-error-a3 bg-severity-error-a1 p-3")],
 		[
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-2")],
@@ -72,7 +72,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 								h.span(
 									[
 										h.Class(
-											"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error/25 px-1 py-px font-mono text-4xs text-severity-error/70 uppercase",
+											"flex shrink-0 items-center gap-1 rounded-sm border border-severity-error-a3 px-1 py-px font-mono text-4xs text-severity-error uppercase",
 										),
 										h.Title("JSON payload"),
 									],
@@ -89,7 +89,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 									iconSize: 12,
 									idleIcon: "SparkleIcon",
 									className:
-										"ml-auto size-5 shrink-0 rounded-sm text-severity-error/70 hover:bg-severity-error/10 hover:text-severity-error sm:size-5",
+										"ml-auto size-5 shrink-0 rounded-sm text-severity-error hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
 									slot:
 										prompt.tooltipId === undefined && prompt.trigger === undefined
 											? undefined
@@ -114,7 +114,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 					h.Class(
 						cn(
 							"mt-1.5 block w-full cursor-copy rounded-sm text-left font-mono text-2xs text-foreground-soft leading-relaxed",
-							"transition-colors duration-150 hover:text-foreground motion-reduce:transition-none",
+							"duration-150 hover:text-foreground active:text-foreground motion-reduce:transition-none",
 							"data-[copy-status=copied]:text-severity-info",
 						),
 					),
@@ -163,7 +163,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 							[
 								h.AriaExpanded(options.isExpanded),
 								h.Class(
-									"mt-1 rounded-sm text-2xs text-severity-error/70 hover:text-severity-error",
+									"mt-1 rounded-sm text-2xs text-severity-error hover:text-severity-error active:text-severity-error",
 								),
 								h.Type("button"),
 								h.OnClick(options.onToggle),

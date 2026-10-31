@@ -288,7 +288,7 @@ const errorModal = (h: H, model: Model, inputs: ModalInputs | undefined): Html =
 		},
 	})
 
-const NAV_BUTTON = "text-muted-foreground hover:text-foreground"
+const NAV_BUTTON = "text-muted-foreground hover:text-foreground active:text-foreground"
 
 const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const { position } = inputs

@@ -221,7 +221,7 @@ const regionChip = (h: H, region: string): Html => {
 						{
 							variant: "ghost",
 							size: "icon-2xs",
-							className: "text-muted-foreground hover:text-foreground",
+							className: "text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [
 								h.AriaLabel(`Remove ${label}`),
 								h.OnClick(Message.ClickedClearRegion()),
@@ -286,7 +286,7 @@ const projectsStrip = (
 						h.Type("button"),
 						h.OnClick(Message.SelectedProject({ project })),
 						h.Class(
-							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
+							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
 						),
 					],
 					[

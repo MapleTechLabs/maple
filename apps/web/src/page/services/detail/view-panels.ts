@@ -66,14 +66,14 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 									h.Type("button"),
 									h.OnClick(onViewAll),
 									h.Class(
-										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 									),
 								],
 								[
 									backdropBar(h, {
 										value: op.estimatedSpanCount,
 										max: maxCalls,
-										className: "bg-severity-info/10",
+										className: "bg-severity-info-a2",
 									}),
 									truncatedText(h, {
 										text: op.spanName,

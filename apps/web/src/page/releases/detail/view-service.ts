@@ -125,7 +125,7 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 					h.Href(commit.htmlUrl),
 					h.Target("_blank"),
 					h.Rel("noreferrer"),
-					h.Class("font-mono text-primary hover:underline"),
+					h.Class("font-mono text-primary hover:underline active:underline"),
 				],
 				[shortReleaseLabel(model.commitSha), " ↗"],
 			),

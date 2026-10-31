@@ -83,7 +83,7 @@ const emptyState = (h: H, inputs: HeatmapChartInputs): Html => {
 								],
 								Array.from({ length: 32 }, (_, i) =>
 									h.div([
-										h.Class("size-1.5 rounded-[1px]"),
+										h.Class("size-1.5 rounded-2xs"),
 										h.Style({
 											background:
 												i === 11

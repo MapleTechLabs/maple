@@ -12,13 +12,13 @@ import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../sh
 // `AlertsEmptyState`: zero rules.
 
 const TILE_TONE = new Map<AlertTemplateId, { glyph: string; hoverBorder: string }>([
-	["high_error_rate", { glyph: "bg-chart-error/10 text-chart-error", hoverBorder: "hover:border-chart-error/50" }],
-	["slow_p95", { glyph: "bg-chart-p95/10 text-chart-p95", hoverBorder: "hover:border-chart-p95/50" }],
-	["slow_p99", { glyph: "bg-chart-p99/10 text-chart-p99", hoverBorder: "hover:border-chart-p99/50" }],
-	["low_apdex", { glyph: "bg-chart-apdex/10 text-chart-apdex", hoverBorder: "hover:border-chart-apdex/50" }],
+	["high_error_rate", { glyph: "bg-chart-error/10 text-chart-error", hoverBorder: "hover:border-chart-error/50 active:border-chart-error/50" }],
+	["slow_p95", { glyph: "bg-chart-p95/10 text-chart-p95", hoverBorder: "hover:border-chart-p95/50 active:border-chart-p95/50" }],
+	["slow_p99", { glyph: "bg-chart-p99/10 text-chart-p99", hoverBorder: "hover:border-chart-p99/50 active:border-chart-p99/50" }],
+	["low_apdex", { glyph: "bg-chart-apdex/10 text-chart-apdex", hoverBorder: "hover:border-chart-apdex/50 active:border-chart-apdex/50" }],
 	[
 		"throughput_drop",
-		{ glyph: "bg-chart-throughput/10 text-chart-throughput", hoverBorder: "hover:border-chart-throughput/50" },
+		{ glyph: "bg-chart-throughput/10 text-chart-throughput", hoverBorder: "hover:border-chart-throughput/50 active:border-chart-throughput/50" },
 	],
 ])
 
@@ -74,7 +74,7 @@ const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined):
 	h.div(
 		[
 			h.Class(
-				"flex w-full items-center gap-3 rounded-md border border-primary/40 bg-primary/[0.06] p-3 text-left",
+				"flex w-full items-center gap-3 rounded-md border border-primary-a4 bg-primary/[0.06] p-3 text-left",
 			),
 		],
 		[
@@ -116,7 +116,7 @@ const stepBadge = <M>(h: HtmlBuilder<M>, n: number): Html =>
 	h.span(
 		[
 			h.Class(
-				"flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-xs font-semibold text-primary",
+				"flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-a2 font-mono text-xs font-semibold text-primary",
 			),
 		],
 		[String(n)],

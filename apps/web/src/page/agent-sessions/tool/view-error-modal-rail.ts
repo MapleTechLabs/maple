@@ -74,7 +74,7 @@ const variantsSection = (
 						h.Class(
 							cn(
 								"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs transition-colors",
-								isSelected ? "bg-primary/10" : "hover:bg-surface-sunken",
+								isSelected ? "bg-primary-a2" : "hover:bg-surface-sunken active:bg-surface-sunken",
 							),
 						),
 						h.Title(unwrapToolErrorText(row.message).text),
@@ -170,7 +170,7 @@ export const sessionLink = (
 			h.Title(options.sessionId),
 			h.Class(
 				cn(
-					"group/link relative flex min-w-0 items-center gap-1.5 rounded-sm text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"group/link relative flex min-w-0 items-center gap-1.5 rounded-sm text-foreground hover:text-primary active:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					options.className,
 				),
 			),
@@ -189,7 +189,7 @@ const sessionRowClass = (isSelected: boolean) =>
 	cn(
 		"group flex w-full shrink-0 items-center gap-3 border-b border-border-subtle pr-4 pl-4 text-left transition-colors",
 		rowSelectedClass(isSelected),
-		!isSelected && "hover:bg-surface-sunken",
+		!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
 	)
 
 const LAST_CLASS = "w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-foreground-subtle"

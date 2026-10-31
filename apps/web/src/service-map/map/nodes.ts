@@ -103,7 +103,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
 						selected
 							? selectedBorderClass(errorRate)
-							: "border-border hover:border-border-strong",
+							: "border-border hover:border-border-strong active:border-border-strong",
 					),
 				),
 			],

@@ -558,7 +558,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isSaving: false },
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to save destination",
+						title: "Couldn't save destination",
 						description: error.message,
 					}),
 				}),

@@ -121,7 +121,7 @@ export const aiPanel = (
 							h.Type("button"),
 							h.OnClick(Message.ClickedExpandPanel({ panel: options.expand.id })),
 							h.Class(
-								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border-subtle px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
+								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border-subtle px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
 							),
 						],
 						[

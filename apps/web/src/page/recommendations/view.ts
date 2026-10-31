@@ -43,7 +43,7 @@ const MODE = {
 	auto: {
 		label: "Auto-apply",
 		icon: "BoltIcon",
-		className: "border-primary/30 text-primary",
+		className: "border-primary-a3 text-primary",
 		title: "Maple can apply this for you. Apply creates the ingest mapping.",
 	},
 	manual: {

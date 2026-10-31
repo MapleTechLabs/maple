@@ -121,7 +121,7 @@ const providerTile = (
 			className: cn(
 				"relative flex flex-col items-start gap-2 overflow-hidden p-3 disabled:opacity-100",
 				options.isSelected &&
-					"border-(--tile-accent) bg-surface-sunken hover:border-(--tile-accent) hover:bg-surface-sunken",
+					"border-(--tile-accent) bg-surface-sunken hover:border-(--tile-accent) active:border-(--tile-accent) hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			attributes: [h.Key(options.key), h.Style({ "--tile-accent": provider.accent })],
 		},
@@ -264,7 +264,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 									),
 									h.Target("_blank"),
 									h.Rel("noreferrer"),
-									h.Class("underline-offset-2 hover:text-foreground hover:underline"),
+									h.Class("underline-offset-2 hover:text-foreground active:text-foreground hover:underline active:underline"),
 								],
 								["Events API v2"],
 							),
@@ -514,7 +514,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 												h.Type("button"),
 												h.OnClick(Message.ClickedTelegramChat({ chatId: chat.id })),
 												h.Class(
-													"flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted",
+													"flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted active:bg-muted",
 												),
 											],
 											[
@@ -560,7 +560,7 @@ const fieldHelper = (h: H, type: AlertDestinationType): ReadonlyArray<Html> => {
 						h.Target("_blank"),
 						h.Rel("noreferrer"),
 						h.Class(
-							"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+							"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground active:text-foreground hover:underline active:underline",
 						),
 					],
 					[provider.docsLabel ?? "Docs", " ↗"],

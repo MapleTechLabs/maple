@@ -67,7 +67,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 				size: "icon-xs",
 				label: isCollapsed ? "Expand query" : "Collapse query",
 				hasTooltip: false,
-				className: "text-muted-foreground hover:text-foreground",
+				className: "text-muted-foreground hover:text-foreground active:text-foreground",
 				attributes: [h.OnClick(Message.ToggledCollapsed({ queryId: query.id }))],
 			},
 			[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
