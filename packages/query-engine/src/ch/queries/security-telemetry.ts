@@ -127,6 +127,9 @@ export function scannerSourcesQuery(opts: ScannerSourcesOpts = {}): CHQuery<any,
 		.format("JSON")
 }
 
+/** Most buckets the timeline returns; the registry widens the bucket so a window fits. */
+export const SCANNER_TIMELINE_MAX_BUCKETS = 2000
+
 export interface ScannerTimelineOpts {
 	readonly bucketSeconds?: number
 }
@@ -150,7 +153,7 @@ export function scannerTimelineQuery(
 		.where(scannerWhere)
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
-		.limit(2000)
+		.limit(SCANNER_TIMELINE_MAX_BUCKETS)
 		.format("JSON")
 }
 
@@ -170,36 +173,48 @@ export interface RuntimeVersionsOutput {
 
 /** Each service's runtime and SDK versions seen in the window, one row per combination. */
 export function runtimeVersionsQuery(): CHQuery<any, RuntimeVersionsOutput, any> {
-	return from(ServiceRuntimesHourly)
-		.select(($) => ({
-			service: $.ServiceName,
-			environment: $.DeploymentEnv,
-			runtimeName: $.RuntimeName,
-			runtimeVersion: $.RuntimeVersion,
-			executableName: $.ExecutableName,
-			sdkLanguage: $.SdkLanguage,
-			sdkName: $.SdkName,
-			sdkVersion: $.SdkVersion,
-			spans: CH.sum($.SpanCount),
-			lastSeen: CH.max_($.Hour),
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			// Whole hours: the bucket holding `startTime` counts, so a service seen minutes in shows.
-			$.Hour.gte(utcHourFloor("startTime")),
-			$.Hour.lte(utcSecondsParam("endTime")),
-		])
-		.groupBy(
-			"service",
-			"environment",
-			"runtimeName",
-			"runtimeVersion",
-			"executableName",
-			"sdkLanguage",
-			"sdkName",
-			"sdkVersion",
-		)
-		.orderBy(["service", "asc"])
-		.limit(1000)
-		.format("JSON")
+	return (
+		from(ServiceRuntimesHourly)
+			.select(($) => ({
+				service: $.ServiceName,
+				environment: $.DeploymentEnv,
+				runtimeName: $.RuntimeName,
+				runtimeVersion: $.RuntimeVersion,
+				executableName: $.ExecutableName,
+				sdkLanguage: $.SdkLanguage,
+				sdkName: $.SdkName,
+				sdkVersion: $.SdkVersion,
+				spans: CH.sum($.SpanCount),
+				lastSeen: CH.max_($.Hour),
+			}))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				// Whole hours: the bucket holding `startTime` counts, so a service seen minutes in shows.
+				$.Hour.gte(utcHourFloor("startTime")),
+				$.Hour.lte(utcSecondsParam("endTime")),
+			])
+			.groupBy(
+				"service",
+				"environment",
+				"runtimeName",
+				"runtimeVersion",
+				"executableName",
+				"sdkLanguage",
+				"sdkName",
+				"sdkVersion",
+			)
+			// Every grouped column, so a window past the cap returns the same rows each time.
+			.orderBy(
+				["service", "asc"],
+				["environment", "asc"],
+				["runtimeName", "asc"],
+				["runtimeVersion", "asc"],
+				["executableName", "asc"],
+				["sdkLanguage", "asc"],
+				["sdkName", "asc"],
+				["sdkVersion", "asc"],
+			)
+			.limit(1000)
+			.format("JSON")
+	)
 }

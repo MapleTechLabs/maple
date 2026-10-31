@@ -62,8 +62,8 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0050, never backfilled.",
 	],
 	service_runtimes_hourly: [
-		"Span counts per (hour, service, environment, `RuntimeName`, `RuntimeVersion`, `SdkLanguage`, `SdkName`, `SdkVersion`), from the resource attributes `process.runtime.*` and `telemetry.sdk.*`. '' where the service sets none. Values cut to 64 characters.",
-		"SummingMergeTree: always `sum(SpanCount)`. Sorting key: `(OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, SdkLanguage, SdkName, SdkVersion)`; filled forward from migration 0050.",
+		"Span counts per (hour, service, environment, `RuntimeName`, `RuntimeVersion`, `ExecutableName`, `SdkLanguage`, `SdkName`, `SdkVersion`), from the resource attributes `process.runtime.*`, `process.executable.name` and `telemetry.sdk.*`. Bun and Deno under the stock OTel JS SDK report `RuntimeName = 'nodejs'` and differ only by `ExecutableName`. '' where the service sets none. Values cut to 64 characters.",
+		"SummingMergeTree: always `sum(SpanCount)`. Sorting key: `(OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, ExecutableName, SdkLanguage, SdkName, SdkVersion)`; filled forward from migration 0050.",
 	],
 	ci_runs: [
 		"One row per CI workflow run attempt: the root span of a `github-actions` trace, with `Owner`, `Repository`, `Pipeline` (workflow name), `Result` (success, failure, timeout, error, cancellation, skip), `Branch`, `Revision`, `PullRequest` (0 = none) and `Attempt` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['cicd.pipeline.*']`.",

@@ -4297,7 +4297,7 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:security-telemetry:runtimeVersionsQuery:default  [7dc35564]
+-- builder:security-telemetry:runtimeVersionsQuery:default  [7bc01cfb]
 SELECT
           service_runtimes_hourly.ServiceName AS service,
           service_runtimes_hourly.DeploymentEnv AS environment,
@@ -4314,7 +4314,7 @@ SELECT
           AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND service_runtimes_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY service, environment, runtimeName, runtimeVersion, executableName, sdkLanguage, sdkName, sdkVersion
-        ORDER BY service ASC
+        ORDER BY service ASC, environment ASC, runtimeName ASC, runtimeVersion ASC, executableName ASC, sdkLanguage ASC, sdkName ASC, sdkVersion ASC
         LIMIT 1000
         FORMAT JSON
 
