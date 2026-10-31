@@ -108,6 +108,29 @@ describe("security telemetry tabs", () => {
 		)
 	})
 
+	test("answers only from catch-all routes leave no callout, and the totals say so", () => {
+		const data = catchAllExposureOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withExposure({ ...data, exposed: data.exposed.filter((row) => row.service === "web-app") }),
+			),
+			expectView(text(/answered with a success/)).toBeAbsent(),
+			expectView(text("1 likely catch-all route")).toExist(),
+		)
+	})
+
+	test("a full exposed list reads as a floor", () => {
+		const data = exposureOf(NOW)
+		const row = data.exposed[0]!
+		const exposed = Array.from({ length: 50 }, (_, index) => ({ ...row, path: `/.env.${index}` }))
+		scene(
+			{ update: pageUpdate, view },
+			given(withExposure({ ...data, exposed })),
+			expectView(text("50+ probe paths answered with a success")).toExist(),
+		)
+	})
+
 	test("traffic with nothing answered shows no exposure callout", () => {
 		scene(
 			{ update: pageUpdate, view },

@@ -25,6 +25,7 @@ import {
 	categoryRows,
 	exposedRows,
 	exposureTotals,
+	isExposedCapped,
 	isExposureEmpty,
 	SOURCES_SHOWN,
 	timelineValues,
@@ -51,9 +52,9 @@ const count = (value: number): string => formatNumber(value)
 // EXPOSED PROBES
 
 const EXPOSED_COPY =
-	"A scanner asked for something that should never be public and the service answered with a 2xx. Check that the response does not contain it. Single-page apps that answer every path with their index page show up here too."
+	"A scanner asked for something that should never be public and the service answered with a 2xx. Check that the response does not contain it. Services that answer almost every path are listed separately as likely catch-all routes."
 
-const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"]): Html =>
+const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boolean): Html =>
 	panel(h, { className: "overflow-hidden border-severity-error-a3" }, [
 		panelHeader(h, {
 			className: "bg-severity-error-a1",
@@ -61,7 +62,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"]): Html =>
 				[h.Class("flex items-center gap-2")],
 				[
 					icon(h, "CircleWarningIcon", { size: 16, className: "shrink-0 text-severity-error" }),
-					`${rows.length} probe ${rows.length === 1 ? "path" : "paths"} answered with a success`,
+					`${rows.length}${capped ? "+" : ""} probe ${rows.length === 1 && !capped ? "path" : "paths"} answered with a success`,
 				],
 			),
 		}),
@@ -136,6 +137,8 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"]): Html =>
 const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	const totals = exposureTotals(exposure)
 	const exposedCount = exposedRows(exposure).length
+	const catchAllCount = catchAllServices(exposure).length
+	const plus = isExposedCapped(exposure) ? "+" : ""
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Probe requests",
@@ -162,9 +165,11 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 			value: String(totals.servicesProbed),
 			compact: true,
 			subline:
-				exposedCount === 0
-					? "none answered a sensitive probe"
-					: `${exposedCount} answered ${exposedCount === 1 ? "path" : "paths"}`,
+				exposedCount > 0
+					? `${exposedCount}${plus} answered ${exposedCount === 1 && plus === "" ? "path" : "paths"}`
+					: catchAllCount > 0
+						? `${catchAllCount} likely catch-all ${catchAllCount === 1 ? "route" : "routes"}`
+						: "none answered a sensitive probe",
 		}),
 	])
 }
@@ -358,7 +363,7 @@ export const exposureBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 			const exposed = exposedRows(exposure)
 			const catchAll = catchAllServices(exposure)
 			return [
-				...(exposed.length === 0 ? [] : [exposedPanel(h, clock, exposed)]),
+				...(exposed.length === 0 ? [] : [exposedPanel(h, clock, exposed, isExposedCapped(exposure))]),
 				...(catchAll.length === 0 ? [] : [catchAllPanel(h, catchAll)]),
 				totalsRail(h, clock, exposure),
 				...(categories.length === 0 ? [] : [categoriesPanel(h, categories)]),

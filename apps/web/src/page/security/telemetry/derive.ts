@@ -22,6 +22,12 @@ type SignatureRow = Exposure["signatures"][number]
 /** The sources query returns the most active addresses only, so past this the count is a floor. */
 export const SOURCES_SHOWN = 20
 
+/** The exposed-probe query returns at most this many rows, most recent first. */
+export const EXPOSED_SHOWN = 50
+
+/** True when the exposed list hit the query's cap, so its length is a floor. */
+export const isExposedCapped = (exposure: Exposure): boolean => exposure.exposed.length >= EXPOSED_SHOWN
+
 export interface ExposureTotals {
 	readonly probeRequests: number
 	readonly scannerRequests: number
