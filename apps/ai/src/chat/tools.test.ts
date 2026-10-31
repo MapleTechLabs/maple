@@ -232,6 +232,7 @@ describe("buildReviewCompletion", () => {
 				unread: ReadonlyArray<string>,
 				partial: boolean,
 				wholeDiff: boolean,
+				submission: PrReviewSubmission = CLEAN,
 			) => {
 				const filed: Array<SubmitPrReviewRequest> = []
 				const { call } = submitWith(
@@ -241,8 +242,8 @@ describe("buildReviewCompletion", () => {
 					wholeDiff,
 				)
 				// Unread files are refused once; the second call records.
-				await call(CLEAN)
-				if (filed.length === 0) await call(CLEAN)
+				await call(submission)
+				if (filed.length === 0) await call(submission)
 				assert.lengthOf(filed, 1)
 				return filed[0]?.report.wholeDiff
 			}
@@ -250,6 +251,12 @@ describe("buildReviewCompletion", () => {
 			assert.isUndefined(await filedWholeDiff([], false, false))
 			assert.isUndefined(await filedWholeDiff(["src/b.ts"], false, true))
 			assert.isUndefined(await filedWholeDiff([], true, true))
+			assert.isUndefined(
+				await filedWholeDiff(["src/b.ts"], false, true, {
+					verdict: "not_applicable",
+					summary: "Only docs changed.",
+				}),
+			)
 		})
 
 		it("never holds a close-out or a not_applicable verdict", async () => {
