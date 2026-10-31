@@ -180,7 +180,7 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 											),
 										]),
 									],
-									"p-0",
+									"whitespace-normal p-0",
 									[h.Attribute("colspan", "5")],
 								),
 							]),
