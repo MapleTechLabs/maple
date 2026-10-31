@@ -23,16 +23,18 @@ import {
 	VcsInstallations,
 } from "@maple/db/tables"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
-import { BillingCustomerId, CancellationSnapshot, type OrgId } from "@maple/domain/http"
+import { BillingCustomerId, CancellationModelRequest, CancellationSnapshot, type OrgId } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { stripeCustomerIdOf } from "@maple/backend/services/billing/billing-profile"
+import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -43,6 +45,19 @@ import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService
 import type { PlanCancellation } from "@maple/backend/services/product-events/autumn-events"
 import { SupportSlackClient } from "@maple/backend/services/support/SupportSlackClient"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { CancellationReader } from "./CancellationReader"
+import {
+	AUDIT_ENTRIES_READ,
+	AUDIT_ENTRIES_SHOWN,
+	SESSIONS_READ,
+	SESSIONS_SHOWN,
+	TRANSCRIPT_PAGES,
+	TRANSCRIPT_PROBLEMS,
+	auditEntryOf,
+	digestSession,
+	isAuditedChange,
+	stripeFeedbackOf,
+} from "./evidence"
 import { deriveSignals, ruleReason } from "./signals"
 import { buildCancellationMessage, OTHER_ORGS_SHOWN, type OrgLinks, type OtherOrg } from "./slack-message"
 import {
@@ -68,6 +83,15 @@ export interface CancellationToReview extends Omit<PlanCancellation, "orgId"> {
  * second delivery must wait rather than post beside it.
  */
 const CLAIM_LEASE_MS = 2 * 60 * 1000
+
+/**
+ * How long each source only the model reads may take. The review answers Svix
+ * within 15 seconds, and the model's own read comes after these.
+ */
+const EVIDENCE_TIMEOUT = "4 seconds"
+
+/** The visit the org cancelled in can start after the cancellation's timestamp is set. */
+const CANCELLATION_SESSION_GRACE_MS = 60 * 60 * 1000
 
 /** Members whose other orgs are looked up: one Clerk call each. */
 const OTHER_ORGS_MEMBER_LIMIT = 10
@@ -159,6 +183,9 @@ export class CancellationReviewService extends Context.Service<
 		const autumn = yield* AutumnClient
 		const slack = yield* SupportSlackClient
 		const inventory = yield* IntegrationInventoryService
+		const auditLog = yield* AuditLogService
+		const stripe = yield* StripeClient
+		const reader = yield* CancellationReader
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
@@ -274,22 +301,28 @@ export class CancellationReviewService extends Context.Service<
 		}
 
 		/**
-		 * The org's people in Maple's own app. Those page views are product events
-		 * of the org Maple reports its own usage under, tagged with the customer's
-		 * org as `GroupId`; that org is whichever one owns the product-events key.
+		 * The org Maple reports its own app usage under: whichever one owns the
+		 * product-events key. The customer's page views and browser sessions live
+		 * there, tagged with the customer's org as `GroupId`.
 		 */
-		const readVisits = Effect.fn("CancellationReviewService.readVisits")(function* (
-			orgId: OrgId,
-			atMs: number,
-		) {
+		const readOwnOrg = Effect.gen(function* () {
 			const key = Option.orElse(env.MAPLE_PRODUCT_EVENTS_INGEST_KEY, () => env.MAPLE_INGEST_KEY)
 			if (Option.isNone(key)) return null
 			const own = yield* ingestKeys.resolveIngestKey(Redacted.value(key.value))
-			if (Option.isNone(own)) return null
+			return Option.isNone(own) ? null : own.value.orgId
+		})
+
+		/** The org's people in Maple's own app, from the page views under Maple's org. */
+		const readVisits = Effect.fn("CancellationReviewService.readVisits")(function* (
+			orgId: OrgId,
+			atMs: number,
+			ownOrgId: OrgId | null,
+		) {
+			if (ownOrgId === null) return null
 			const window = visitsWindow(atMs)
 			const pageViews = (groupIds: ReadonlyArray<string> | undefined, bucketSeconds: number) =>
 				warehouse.compiledQuery(
-					systemTenant(own.value.orgId),
+					systemTenant(ownOrgId),
 					CH.compile(
 						CH.productEventsTimeseriesQuery({
 							metric: "users",
@@ -298,7 +331,7 @@ export class CancellationReviewService extends Context.Service<
 							...(groupIds === undefined ? undefined : { groupIds }),
 						}),
 						{
-							orgId: own.value.orgId,
+							orgId: ownOrgId,
 							startTime: formatWarehouseDateTime(window.startMs),
 							endTime: formatWarehouseDateTime(window.endMs),
 							bucketSeconds,
@@ -324,6 +357,87 @@ export class CancellationReviewService extends Context.Service<
 				atMs,
 			)
 		})
+
+		/**
+		 * The org's browser sessions in Maple's own app up to the cancellation,
+		 * newest first, the latest few with their last pages and problems.
+		 */
+		const readSessions = Effect.fn("CancellationReviewService.readSessions")(function* (
+			orgId: OrgId,
+			atMs: number,
+			ownOrgId: OrgId | null,
+		) {
+			if (ownOrgId === null) return null
+			const tenant = systemTenant(ownOrgId)
+			const rows = yield* warehouse.compiledQuery(
+				tenant,
+				// Read a few extra, to still show `SESSIONS_SHOWN` once bots are dropped.
+				CH.compile(CH.sessionReplaysListQuery({ groupId: orgId, limit: SESSIONS_SHOWN * 2 }), {
+					orgId: ownOrgId,
+					startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
+					// Up to the visit the org cancelled in; later visits are not why it left.
+					endTime: formatWarehouseDateTime(atMs + CANCELLATION_SESSION_GRACE_MS),
+				}),
+				{ profile: "list", context: "cancellationReviewSessions" },
+			)
+			const transcript = (row: (typeof rows)[number], options: CH.SessionTranscriptOpts) =>
+				warehouse
+					.compiledQuery(
+						tenant,
+						CH.compile(
+							CH.sessionTranscriptQuery({
+								...options,
+								newestFirst: true,
+								startTime: row.startTime,
+								...(row.endTime === null ? undefined : { endTime: row.endTime }),
+							}),
+							{ orgId: ownOrgId, sessionId: row.sessionId },
+						),
+						{ profile: "list", context: "cancellationReviewSessionEvents" },
+					)
+					.pipe(Effect.map((events) => events.toReversed()))
+			return yield* Effect.forEach(
+				rows.filter((row) => row.quality !== "bot").slice(0, SESSIONS_SHOWN),
+				(row, index) =>
+					index < SESSIONS_READ
+						? Effect.all([
+								transcript(row, { types: ["navigation"], limit: TRANSCRIPT_PAGES }),
+								transcript(row, { errorsOnly: true, limit: TRANSCRIPT_PROBLEMS }),
+							]).pipe(Effect.map(([pages, problems]) => digestSession(row, pages, problems)))
+						: Effect.succeed(digestSession(row, [], [])),
+				{ concurrency: 3 },
+			)
+		})
+
+		/** The org's changes around the cancellation; reads and tool calls are left out. */
+		const readAuditLog = (orgId: OrgId, atMs: number) =>
+			auditLog
+				.list(orgId, {
+					sinceMs: atMs - WINDOW_DAYS * DAY_MS,
+					untilMs: atMs + CANCELLATION_SESSION_GRACE_MS,
+					limit: AUDIT_ENTRIES_READ,
+					offset: 0,
+				})
+				.pipe(
+					Effect.map((entries) =>
+						entries.filter(isAuditedChange).slice(0, AUDIT_ENTRIES_SHOWN).map(auditEntryOf),
+					),
+				)
+
+		/** What the customer told Stripe when cancelling; nothing to tell without a Stripe customer. */
+		const readStripeFeedback = (customer: unknown, atMs: number) =>
+			Option.match(stripeCustomerIdOf(customer), {
+				onNone: () => Effect.succeed({ feedback: null, comment: null }),
+				onSome: (customerId) =>
+					stripe.listSubscriptions(customerId).pipe(
+						Effect.flatMap(ensureOk),
+						Effect.flatMap((response) => stripeFeedbackOf(response, atMs)),
+					),
+			})
+
+		/** Evidence for the model only: a slow source is dropped rather than holding the report. */
+		const evidence = <A, E>(name: string, read: Effect.Effect<A, E>) =>
+			optional(name, read.pipe(Effect.timeout(EVIDENCE_TIMEOUT)))
 
 		/** Orgs the members also belong to: a customer moving to another org is not leaving. */
 		const readOtherOrgs = (orgId: OrgId, people: ReadonlyArray<{ userId: string; email: string }>) =>
@@ -520,11 +634,26 @@ export class CancellationReviewService extends Context.Service<
 				// The moment the org decided, which for a scheduled cancellation is
 				// well before the plan ends.
 				const atMs = job.canceledAt ?? job.receivedAt
-				const [org, ingest, visits, adoption, billing, integrations] = yield* Effect.all(
+				const ownOrgId = yield* optional("ownOrg", readOwnOrg)
+				const [
+					sessions,
+					audit,
+					stripeFeedback,
+					org,
+					ingest,
+					visits,
+					adoption,
+					billing,
+					integrations,
+				] = yield* Effect.all(
 					[
+						// First, so their timeouts start with the review rather than in a queue.
+						evidence("sessions", readSessions(orgId, atMs, ownOrgId)),
+						evidence("auditLog", readAuditLog(orgId, atMs)),
+						evidence("stripeFeedback", readStripeFeedback(response, atMs)),
 						optional("org", readOrg(orgId)),
 						optional("ingest", readIngest(orgId, atMs)),
-						optional("visits", readVisits(orgId, atMs)),
+						optional("visits", readVisits(orgId, atMs, ownOrgId)),
 						optional("adoption", readAdoption(orgId)),
 						optional(
 							"billing",
@@ -539,13 +668,8 @@ export class CancellationReviewService extends Context.Service<
 							inventory.list(orgId).pipe(Effect.map((listed) => listed.integrations)),
 						),
 					],
-					{ concurrency: 3 },
+					{ concurrency: 5 },
 				)
-				const otherOrgs =
-					org?.members == null
-						? null
-						: yield* optional("otherOrgs", readOtherOrgs(orgId, org.members))
-
 				const snapshot = new CancellationSnapshot({
 					plan: {
 						planId: job.planId,
@@ -584,6 +708,26 @@ export class CancellationReviewService extends Context.Service<
 				})
 
 				const reason = ruleReason(snapshot)
+				const signals = deriveSignals(snapshot)
+				// The model does not read the other orgs, so neither waits on the other.
+				const [otherOrgs, modelRead] = yield* Effect.all(
+					[
+						org?.members == null
+							? Effect.succeed(null)
+							: optional("otherOrgs", readOtherOrgs(orgId, org.members)),
+						reader.read(
+							new CancellationModelRequest({
+								snapshot,
+								ruleReason: reason,
+								signals: signals.map((signal) => signal.text),
+								stripeFeedback,
+								sessions,
+								auditLog: audit,
+							}),
+						),
+					],
+					{ concurrency: 2 },
+				)
 				const message = buildCancellationMessage({
 					subject: {
 						orgId,
@@ -591,12 +735,30 @@ export class CancellationReviewService extends Context.Service<
 						contactEmail: org?.state?.email ?? null,
 						expiresAt: job.expiresAt,
 						links: orgLinks(orgId, response),
+						// The same sessions the model read: this org's, up to the visit it cancelled in.
+						sessionsUrl:
+							ownOrgId === null
+								? null
+								: `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/replays?${new URLSearchParams(
+										{
+											groupId: orgId,
+											startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
+											endTime: formatWarehouseDateTime(
+												atMs + CANCELLATION_SESSION_GRACE_MS,
+											),
+										},
+									)}`,
 						integrations,
 						otherOrgs,
 					},
 					snapshot,
 					reason,
-					signals: deriveSignals(snapshot),
+					signals,
+					modelRead,
+					stripeFeedback,
+					unreadEvidence: Object.entries({ sessions, "audit log": audit, Stripe: stripeFeedback })
+						.filter(([, source]) => source === null)
+						.map(([name]) => name),
 				})
 
 				const delivered = yield* slack
@@ -628,6 +790,7 @@ export class CancellationReviewService extends Context.Service<
 								.set({
 									snapshotJson: snapshot,
 									ruleReason: reason,
+									modelRead,
 									canceledAt: job.canceledAt,
 									postedAt: nowMs,
 									updatedAt: nowMs,
@@ -646,6 +809,7 @@ export class CancellationReviewService extends Context.Service<
 
 				yield* Effect.annotateCurrentSpan({
 					"maple.cancellation.reason": reason,
+					"maple.cancellation.model_verdict": modelRead?.verdict ?? "none",
 					// A report can go out missing sections; this is how that shows on the span.
 					"maple.cancellation.unread_sources": Object.entries({
 						org,
@@ -653,6 +817,9 @@ export class CancellationReviewService extends Context.Service<
 						visits,
 						adoption,
 						billing,
+						sessions,
+						auditLog: audit,
+						stripeFeedback,
 					})
 						.filter(([, section]) => section === null)
 						.map(([name]) => name)
@@ -680,6 +847,9 @@ export class CancellationReviewService extends Context.Service<
 				AutumnClient.layer,
 				SupportSlackClient.layer,
 				IntegrationInventoryService.layer,
+				AuditLogService.layer,
+				StripeClient.layer,
+				CancellationReader.layer,
 			),
 		),
 	)

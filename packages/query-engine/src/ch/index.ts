@@ -163,6 +163,7 @@ export {
 	sessionActivityAggregateQuery,
 	IDLE_GAP_THRESHOLD_MS,
 	type SessionTranscriptOutput,
+	type SessionTranscriptOpts,
 	type SessionEventMatchOpts,
 	type SessionActivityOpts,
 	type SessionActivityOutput,
