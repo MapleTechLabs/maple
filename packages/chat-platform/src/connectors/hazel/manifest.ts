@@ -9,7 +9,8 @@ import { HAZEL_CONNECTOR_ID } from "./id"
 export const hazelManifest: ChatConnectorManifest = {
 	id: HAZEL_CONNECTOR_ID,
 	name: "Hazel",
-	description: "Add the Maple bot to a Hazel workspace and link it to your Maple organization.",
+	description:
+		"Add the Maple bot to a Hazel workspace: ask it questions in threads and post alerts to Hazel channels.",
 	icon: {
 		viewBox: "0 0 266 219",
 		paths: [

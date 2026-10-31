@@ -17,8 +17,11 @@ declared once, in `api.ts`.
 
 A half whose names are unset is skipped rather than fatal, as for every connector.
 
-1. **Create the bot** with the scopes `messages:read`, `messages:write` and `channels:write` (the
-   last one opens threads), mark it **public**, and make it **mentionable**.
+1. **Create the bot** with the scopes `messages:read`, `messages:write`, `channels:write` (opens
+   threads) and `channels:read` (lists the channels an alert can go to), mark it **public**, and
+   make it **mentionable**.
+   A bot created before alerts came through it lacks `channels:read`: add it on each instance's
+   bot (US and EU), or its channel list answers `auth` and no Hazel channel can be picked.
 2. **Register the install redirect URIs** on the bot (Edit Application → Install redirect URIs):
    `https://api.maple.dev/oauth/chat/hazel/callback`, plus the equivalent origin of any other
    stage that shares this bot. Hazel compares them exactly.
@@ -40,7 +43,10 @@ its own bot, with its own redirect URI.
 2. **Mention it.** `@Maple why is checkout slow?` in any channel. The bot opens a thread on the
    message (`POST /api/v1/channels/{id}/threads`) and edits one message in it as the answer streams.
    A follow-up inside that thread needs no mention.
-3. **Decide what it proposes.** A write the agent wants to make is an embed with two buttons. A
+3. **Send it alerts.** A Hazel channel is an alert destination like any other chat channel. The
+   picker lists what `GET /api/v1/organizations/{id}/bot-channels` answers: every public channel and the
+   private ones the bot was added to. Delivery posts as the bot.
+4. **Decide what it proposes.** A write the agent wants to make is an embed with two buttons. A
    press reaches the bot as an `interaction.create` gateway event, and the card is then edited with
    what came of it, without the buttons.
 
@@ -75,7 +81,5 @@ pays for them; the host decides whether an unaddressed message is still a turn.
 
 - **No private replies.** A whisper is a message in the conversation that mentions the person.
 - **No typing indicator** for a bot; the placeholder message says it is working.
-- **No alert destinations** through this connector: alerts reach Hazel through Maple's separate
-  Hazel webhook integration.
 - **No uninstall event.** Removing the bot in Hazel does not unlink the workspace in Maple; answers
   fail with `auth` until it is unlinked there.
