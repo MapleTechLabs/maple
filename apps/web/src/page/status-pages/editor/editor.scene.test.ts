@@ -752,6 +752,19 @@ describe("settings and appearance views", () => {
 		)
 	})
 
+	test("a bad field on Settings blocks the save on Appearance too, and the bar names its tab", () => {
+		const edited = pageUpdate(
+			loaded({ tab: "settings" }),
+			Message.ChangedSetting({ field: "termsUrl", value: "http://acme.example/terms" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...edited, search: { view: "appearance" } }),
+			expectView(text("Fix the fields marked on the Settings tab.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+	})
+
 	test("a footer link must use https before the settings save", () => {
 		scene(
 			{ update: pageUpdate, view },

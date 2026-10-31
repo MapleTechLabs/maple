@@ -382,10 +382,17 @@ export const themeContrastOf = (theme: ThemeForm): string | null =>
 		? null
 		: themeContrastIssue(themeOf(theme))
 
-export const hasSettingsIssues = (form: SettingsForm): boolean =>
-	Object.values(settingsIssues(form)).some((issue) => issue !== null) ||
+/** A problem in the page fields, which the Settings tab shows. */
+export const hasPageFieldIssues = (form: SettingsForm): boolean =>
+	Object.values(settingsIssues(form)).some((issue) => issue !== null)
+
+/** A problem in the colours, which the Appearance tab shows. */
+export const hasThemeIssues = (form: SettingsForm): boolean =>
 	Object.values(themeColorIssues(form.theme)).some((issue) => issue !== null) ||
 	themeContrastOf(form.theme) !== null
+
+export const hasSettingsIssues = (form: SettingsForm): boolean =>
+	hasPageFieldIssues(form) || hasThemeIssues(form)
 
 export const settingsPayload = (form: SettingsForm): V2StatusPageUpdateParams => ({
 	name: form.name.trim(),

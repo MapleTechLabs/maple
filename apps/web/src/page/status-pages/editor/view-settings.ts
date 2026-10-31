@@ -13,7 +13,14 @@ import { adminOnlyNote, settingsSection, settingsSections } from "../../settings
 import { switchRow } from "../../settings/kit/switch-row"
 import { publicAddress } from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
-import { hasSettingsIssues, type SettingsForm, settingsFormOf, settingsIssues } from "../shared/form"
+import {
+	hasPageFieldIssues,
+	hasSettingsIssues,
+	hasThemeIssues,
+	type SettingsForm,
+	settingsFormOf,
+	settingsIssues,
+} from "../shared/form"
 import { appearanceSection, previewPanel } from "./view-appearance"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -294,15 +301,20 @@ const dangerZone = (h: H): Html =>
 		]),
 	])
 
-/** Settings and Appearance edit one form: each shows its sections beside the preview, one save bar. */
+/**
+ * Settings and Appearance edit one form: each shows its sections beside the preview, one save bar.
+ * A problem on the other tab still blocks the save, so the bar names that tab.
+ */
 const formView = (
 	h: H,
 	model: Model,
 	page: V2StatusPage,
+	tab: "settings" | "appearance",
 	sections: (form: SettingsForm) => ReadonlyArray<Html>,
 ): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	const hasIssues = hasSettingsIssues(form)
+	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasThemeIssues(form)
 	return h.div(
 		[h.Class("flex max-w-4xl flex-col xl:max-w-7xl")],
 		[
@@ -335,7 +347,9 @@ const formView = (
 				isDirty: isSettingsDirty(model),
 				isPending: model.isSavingSettings,
 				context: hasIssues
-					? "Fix the fields marked above."
+					? isHere
+						? "Fix the fields marked above."
+						: `Fix the fields marked on the ${tab === "settings" ? "Appearance" : "Settings"} tab.`
 					: model.isApplyingJson
 						? "Saving waits for the JSON apply to finish."
 						: undefined,
@@ -348,7 +362,7 @@ const formView = (
 }
 
 export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
-	formView(h, model, page, (form) => [
+	formView(h, model, page, "settings", (form) => [
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
 		breakGlassSection(h, model, page),
@@ -356,7 +370,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	])
 
 export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>
-	formView(h, model, page, (form) => [appearanceSection(h, model, form)])
+	formView(h, model, page, "appearance", (form) => [appearanceSection(h, model, form)])
 
 export const breakGlassDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {

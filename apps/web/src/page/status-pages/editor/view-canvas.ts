@@ -264,7 +264,11 @@ const onThisPage = (h: H, model: Model): Html => {
 					components.length === 0
 						? h.p(
 								[h.Class("px-2 text-xs text-muted-foreground")],
-								["Nothing yet. Add a monitor and visitors see its status and uptime."],
+								[
+									model.isAdmin
+										? "Nothing yet. Add a monitor and visitors see its status and uptime."
+										: "No monitors on this page yet.",
+								],
 							)
 						: h.ul(
 								[h.AriaLabel("Components"), h.Class("flex flex-col gap-0.5")],
