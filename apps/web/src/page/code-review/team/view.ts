@@ -127,7 +127,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 ]
 
 /** How the panel title names the column a ranked view orders by. */
-const RANKED_BY: Readonly<Record<Metric, string>> = {
+const RANKED_BY = {
 	merged: "pull requests merged",
 	mergeTime: "time to merge",
 	fixRate: "fix rate",
@@ -136,7 +136,7 @@ const RANKED_BY: Readonly<Record<Metric, string>> = {
 	rerunRate: "rerun rate",
 	shippedClean: "shipped clean",
 	ciTime: "CI time",
-}
+} satisfies Readonly<Record<Metric, string>>
 
 const headlineStrip = (h: H, totals: CodeReviewTeamTotals): Html => {
 	const failRate =
