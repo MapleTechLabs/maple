@@ -15,7 +15,7 @@ import {
 	type IncidentTimelineEntry,
 	signalTitle,
 } from "@maple/web-data/alerts/incident-timeline"
-import { incidentTitle } from "@maple/web-data/alerts/overview-derive"
+import { incidentTitle, isQueryIncident } from "@maple/web-data/alerts/overview-derive"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -67,16 +67,18 @@ export const headerTitle = <M>(
 ) => {
 	const group = incidentGroup(incident)
 	const isUptime = incident.signalType === "uptime"
-	// An uptime incident names its monitor and has no threshold to spell out.
-	const title = isUptime
-		? incidentTitle(incident)
-		: `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
+	const isQuery = isQueryIncident(incident)
+	// An uptime incident names its monitor and a query incident its rule; neither has a signal to spell out.
+	const title =
+		isUptime || isQuery
+			? incidentTitle(incident)
+			: `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
 	const subline = (
 		isUptime
 			? ["Uptime check", group]
 			: [
-					`Rule ${rule?.name ?? incident.ruleName}`,
-					`${incident.signalType === "builder_query" || incident.signalType === "raw_query" ? "value" : signalLabels[incident.signalType].toLowerCase()} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+					isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+					`${isQuery ? "value" : signalLabels[incident.signalType].toLowerCase()} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
 					rule != null && rule.environments.length > 0 ? rule.environments.join(", ") : null,
 				]
 	)
