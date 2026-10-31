@@ -67,6 +67,20 @@ describe("stripeFeedbackOf", () => {
 		).toEqual({ feedback: "missing_features", comment: null })
 	})
 
+	it("drops an address the length cut splits rather than quoting half of it", () => {
+		const comment = `${"y".repeat(995)} ada@acme.io`
+		const result = feedback({
+			data: [
+				{
+					created: 1,
+					canceledAt: CANCELLED_S,
+					cancellationDetails: { feedback: null, comment },
+				},
+			],
+		})
+		expect(result.comment).not.toContain("ada")
+	})
+
 	it("fails on a body it cannot read, so the report says Stripe was not read", () => {
 		expect(Exit.isFailure(Effect.runSyncExit(stripeFeedbackOf({ error: "nope" }, 0)))).toBe(true)
 	})

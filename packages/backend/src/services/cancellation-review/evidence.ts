@@ -49,8 +49,13 @@ const COMMENT_CHARS = 1_000
  * may name where they went.
  */
 const text = (value: string | null | undefined): string | null => {
-	const trimmed = value?.trim().slice(0, COMMENT_CHARS)
-	return trimmed ? trimmed.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]") : null
+	const full = value?.trim()
+	// The cut can split an address: the word it cut into is dropped, never half-scrubbed.
+	const cut =
+		full === undefined || full.length <= COMMENT_CHARS
+			? full
+			: full.slice(0, COMMENT_CHARS).replace(/\S*$/, "")
+	return cut ? cut.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]") : null
 }
 
 /**
