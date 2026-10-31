@@ -100,10 +100,56 @@ Send a request to the Worker and open [Traces](/docs/explore/traces) in Maple. T
 | `ingestKey`   | `MAPLE_INGEST_KEY` (secret) | A `Maple.IngestKeys` resource (its private key is used) or a `Redacted` key           |
 | `endpoint`    | `MAPLE_ENDPOINT`            | Defaults to `https://ingest.maple.dev`. Use `https://ingest.eu.maple.dev` for EU orgs |
 | `environment` | `MAPLE_ENVIRONMENT`         | Becomes `deployment.environment.name`, e.g. your Alchemy stage                        |
+| `local`       | `MAPLE_ENDPOINT`            | A `Local` resource. Under `alchemy dev` only, replaces `ingestKey` and `endpoint`     |
 
 Every other option (`serviceName`, `serviceNamespace`, `dropSpanNames`, `anticipatedErrorIdentifiers`, …) is the Effect SDK's and is forwarded unchanged. See [Effect SDK on Cloudflare Workers](/docs/sdks/effect-cloudflare) for the full list.
 
 Import `Telemetry` from the `/telemetry` subpath, not the package root, so the Maple API client stays out of the Worker bundle.
+
+## Local development
+
+Under `alchemy dev` your Workers can report to Maple Local instead of your Maple organization: an embedded collector and store that runs inside `alchemy dev`, needs no account or keys, and keeps everything on your machine. Declare one `Local` resource, register `localProviders()`, and pass it to every Worker's `Telemetry`:
+
+```typescript
+// observability.ts
+import { Local } from "@maple-dev/alchemy/local"
+
+export const Observability = Local("observability")
+```
+
+```typescript
+// alchemy.run.ts
+import { localProviders } from "@maple-dev/alchemy/local"
+
+export default Alchemy.Stack(
+	"my-app",
+	{ providers: Layer.mergeAll(Cloudflare.providers(), localProviders()) },
+	Effect.gen(function* () {
+		const local = yield* Observability
+		const api = yield* Api
+		return { api: api.url, dashboard: local.dashboardUrl }
+	}),
+)
+```
+
+```typescript
+// api.ts
+}).pipe(Effect.provide(Telemetry({ serviceName: "api", local: Observability }))),
+```
+
+Run `alchemy dev` and open the `dashboard` output. Workers sharing one `Local` report into one store, so their traces join up across services. Outside `alchemy dev`, `Local` starts nothing and its outputs are `undefined`.
+
+To use the same stack for hosted deploys, also pass `ingestKey` (or `endpoint`): `Telemetry` ignores both under `alchemy dev` and binds them on deploy. `Maple.providers()` reads `MAPLE_API_KEY` when the stack loads, so either keep that key set while developing or register `Maple.providers()` only when deploying.
+
+| Prop           | Default                            | Notes                                                                          |
+| -------------- | ---------------------------------- | ------------------------------------------------------------------------------ |
+| `dataDir`      | `.alchemy/maple-local/<hash>/data` | One store per stack, stage and resource; it persists across `alchemy dev` runs |
+| `port`         | `4318`                             | An occupied port fails startup                                                 |
+| `onDirtyStore` | `"fail"`                           | `"wipe"` discards a store left unclean by a crashed server and starts fresh    |
+
+The first run downloads the chDB library Maple pins (the same release the `maple` CLI ships), verifies its checksum and caches it in `~/.maple/cache/libchdb` (about 330 MB, shared across projects). Set `MAPLE_LIBCHDB` to point at a copy you already have. Run `alchemy dev` with Bun, on macOS or Linux.
+
+Stopping `alchemy dev` always closes the store cleanly, even when the terminal closes or the process is killed. The store is only left unclean if the server process itself dies (out of memory, power loss). Reopening it then could crash chDB, so it is refused; set `onDirtyStore: "wipe"` to start fresh.
 
 ## Add alerts and dashboards
 

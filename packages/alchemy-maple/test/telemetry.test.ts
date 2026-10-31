@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { Effect, Exit, Layer, Redacted, Scope } from "effect"
 import * as Output from "alchemy/Output"
+import { AlchemyContext } from "alchemy/AlchemyContext"
 import {
 	type BaseRuntimeContext,
 	packEnvValue,
@@ -9,6 +10,7 @@ import {
 	RuntimeContext,
 } from "alchemy/RuntimeContext"
 import { Telemetry, unpackBoundEnv } from "../src/Telemetry"
+import { Local } from "../src/Local"
 
 /** A recording host: what the layer binds onto it at plan time. */
 const host = () => {
@@ -60,6 +62,51 @@ describe("Maple.Telemetry", () => {
 			assert.isDefined(context.telemetry)
 		}).pipe(Effect.scoped),
 	)
+
+	it.effect("binds one shared local resource for two hosts without evaluating the cloud key", () =>
+		Effect.gen(function* () {
+			const shared = yield* Local.ref("observability")
+			for (const serviceName of ["api", "jobs"]) {
+				const { bound, context } = host()
+				yield* Layer.build(
+					Telemetry({
+						serviceName,
+						local: shared,
+						ingestKey: Effect.die("cloud ingest keys must not be evaluated in dev"),
+						endpoint: "https://ingest.maple.dev",
+					}),
+				).pipe(
+					Effect.provideService(RuntimeContext, context),
+					Effect.provideService(AlchemyContext, {
+						dotAlchemy: ".alchemy",
+						dev: true,
+						adopt: false,
+					}),
+				)
+				assert.deepStrictEqual([...bound.keys()], ["MAPLE_ENDPOINT"])
+				assert.isTrue(Output.isOutput(bound.get("MAPLE_ENDPOINT")))
+				assert.isDefined(context.telemetry)
+			}
+		}).pipe(Effect.scoped),
+	)
+
+	it.effect("does not evaluate the local declaration on deploy and retains hosted bindings", () =>
+		Effect.gen(function* () {
+			const { bound, context } = host()
+			yield* Layer.build(
+				Telemetry({
+					serviceName: "api",
+					local: Effect.die("local must not be evaluated on deploy"),
+					ingestKey: Redacted.make("maple_sk_deployed"),
+					endpoint: "https://ingest.maple.dev",
+				}),
+			).pipe(
+				Effect.provideService(RuntimeContext, context),
+				Effect.provideService(AlchemyContext, { dotAlchemy: ".alchemy", dev: false, adopt: false }),
+			)
+			assert.deepStrictEqual([...bound.keys()].sort(), ["MAPLE_ENDPOINT", "MAPLE_INGEST_KEY"])
+		}).pipe(Effect.scoped),
+	)
 })
 
 describe("unpackBoundEnv", () => {
@@ -87,10 +134,13 @@ describe("Maple.Telemetry at runtime", () => {
 		Effect.gen(function* () {
 			const authorizations: Array<string | null> = []
 			const realFetch = globalThis.fetch
-			globalThis.fetch = async (input, init) => {
-				authorizations.push(new Headers(init?.headers).get("authorization"))
-				return new Response(null, { status: 200 })
-			}
+			globalThis.fetch = Object.assign(
+				async (_input: string | Request | URL, init?: RequestInit) => {
+					authorizations.push(new Headers(init?.headers).get("authorization"))
+					return new Response(null, { status: 200 })
+				},
+				{ preconnect: realFetch.preconnect },
+			)
 			yield* Effect.addFinalizer(() =>
 				Effect.sync(() => {
 					globalThis.fetch = realFetch

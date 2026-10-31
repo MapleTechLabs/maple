@@ -196,6 +196,49 @@ Cloudflare options, forwarded unchanged.
 
 Full docs: [maple.dev/docs/iac/alchemy](https://maple.dev/docs/iac/alchemy).
 
+## Local development
+
+`Local` runs Maple Local inside `alchemy dev`: an embedded OTLP collector, query API and
+chDB store that every Worker in the stack exports to, with no Maple account or keys. Declare it
+once and pass it to each Worker's `Telemetry`:
+
+```typescript
+// observability.ts
+import { Local } from "@maple-dev/alchemy/local"
+export const Observability = Local("observability")
+
+// alchemy.run.ts
+import { localProviders } from "@maple-dev/alchemy/local"
+// providers: Layer.mergeAll(Cloudflare.providers(), localProviders())
+
+// api.ts (and every other Worker)
+}).pipe(Effect.provide(Telemetry({ serviceName: "api", local: Observability }))),
+```
+
+Open the dashboard at the `dashboardUrl` output (`https://local.maple.dev`, reading from your
+machine); ingest and queries never leave it.
+
+- **Dev only.** Under `alchemy dev` the Workers export keylessly to the local endpoint and
+  `ingestKey`/`endpoint` are ignored. On deploy `Local` starts nothing, its outputs are
+  `undefined`, and `Telemetry` uses `ingestKey` and `endpoint` as usual, so one stack can keep both.
+  `localProviders()` needs no Maple credentials.
+- **One server per stack.** Every Worker that passes the same `Local` shares it; the server
+  survives stack hot reloads and closes its store when `alchemy dev` exits.
+- **Storage.** Data persists per stack, stage and resource under
+  `.alchemy/maple-local/<hash>/data`. Set `dataDir` to keep it elsewhere and `port` (default
+  `4318`) to move the listener; an occupied port fails startup rather than picking another.
+- **libchdb.** On first use the sidecar downloads the chDB release Maple pins (the same one the
+  `maple` CLI ships with), verifies its sha256, and caches it in `~/.maple/cache/libchdb`
+  (~330 MB, shared by every project). Set `MAPLE_LIBCHDB` to use a library you already have; a
+  different chDB release is refused before the store is touched.
+- **Unclean shutdowns.** Ending `alchemy dev` any way it can be ended (Ctrl-C, a closed terminal,
+  even `kill -9` of `alchemy dev` itself) closes the store first. Only the sidecar process dying
+  outright (out of memory, `kill -9` on the sidecar, power loss) leaves it unclean, and
+  reopening such a store can crash chDB, so it is refused. Set `onDirtyStore: "wipe"` on `Local`
+  to discard its data and start fresh; that change restarts the server and is safe to leave set.
+- **Requirements.** Bun (the sidecar uses Bun's FFI), on macOS or Linux, x64 or arm64.
+  Periodic checkpoints are a `maple start` feature; this store keeps none.
+
 ## Notes
 
 - Alert rules reserve one of Maple's 20 tag slots for an `alchemy:` ownership tag, leaving up to 19 user tags. Keep the ownership tag intact. To take over an existing rule deliberately, wrap the resource in Alchemy's `adopt(true)` or deploy with `--adopt`. Use distinct rule names for different stages in the same Maple organization.

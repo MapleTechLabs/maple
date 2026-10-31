@@ -503,8 +503,11 @@
         "@maple-dev/effect-sdk": "workspace:*",
       },
       "devDependencies": {
+        "@effect/platform-bun": "catalog:effect",
         "@effect/vitest": "catalog:effect",
         "@maple/domain": "workspace:*",
+        "@maple/local-server": "workspace:*",
+        "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
@@ -513,9 +516,13 @@
         "vitest": "catalog:",
       },
       "peerDependencies": {
+        "@effect/platform-bun": "^4.0.0",
         "alchemy": ">=2.0.0-beta.80 <3",
         "effect": "^4.0.0",
       },
+      "optionalPeers": [
+        "@effect/platform-bun",
+      ],
     },
     "packages/alerting-core": {
       "name": "@maple/alerting-core",
