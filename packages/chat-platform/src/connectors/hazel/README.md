@@ -41,14 +41,40 @@ its own bot, with its own redirect URI.
    this bot, the redirect URI and that workspace, is single-use and lives ten minutes, so the
    workspace comes from Hazel's answer and never from the callback's query.
 2. **Mention it.** `@Maple why is checkout slow?` in any channel. The bot opens a thread on the
-   message (`POST /api/v1/channels/{id}/threads`) and edits one message in it as the answer streams.
-   A follow-up inside that thread needs no mention.
+   message (`POST /api/v1/channels/{id}/threads`) and posts one live message in it: the answer
+   streams into the message's live state as it is written, and the finished answer is written into
+   the message at the end. A follow-up inside that thread needs no mention.
 3. **Send it alerts.** A Hazel channel is an alert destination like any other chat channel. The
    picker lists what `GET /api/v1/organizations/{id}/bot-channels` answers: every public channel and the
    private ones the bot was added to. Delivery posts as the bot.
 4. **Decide what it proposes.** A write the agent wants to make is an embed with two buttons. A
    press reaches the bot as an `interaction.create` gateway event, and the card is then edited with
    what came of it, without the buttons.
+
+## How an answer streams
+
+A turn's message is created with a `liveState` embed, which makes Hazel render the message's live
+state (`MessageLiveObject`) in place of its content. The driver hands the transport the whole turn
+on every write and says whether the turn is still `streaming` or `final`; the transport turns that
+into live-state writes (`POST /api/v1/messages/{id}/live`):
+
+| The driver calls            | Hazel receives                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `post(…, "streaming")`      | `POST /messages` with `embeds: [{ liveState: { enabled, loading } }]`, then `Start`           |
+| `edit(…, "streaming")`      | `AppendText` with what the render added, or `SetText` when it took words back                 |
+| …and the embeds changed     | `PATCH /messages/{id}` first: a card, chart or button is a message embed, not live state      |
+| `edit(…, "final")`          | `AppendText`/`SetText`, `Complete` (or `Fail`, on the error a turn closes on), then the PATCH |
+| `post`/`edit` with no phase | a plain message: a notice, a whisper, a tail posted at the end, a settled approval            |
+
+The final PATCH writes the answer as the message's `content`, for search, notifications and
+history (Maple's own included), and the same state as the embed's `cached` snapshot, for a client
+without the live socket. `Complete` and `Fail` go out with `persist: false`: Hazel's own snapshot
+write would replace the message's embeds, and an approval's buttons with them.
+
+Live writes are not message writes: Hazel's 120 a minute per bot does not count them. So the
+driver writes every 250 ms, and a turn costs the message budget one create, one write per change of
+its embeds, and one at the end. A settled approval is a plain edit, which leaves the message plain:
+its content then says everything.
 
 ## Who may ask and approve
 
@@ -80,6 +106,9 @@ pays for them; the host decides whether an unaddressed message is still a turn.
 ## What Hazel cannot do (yet)
 
 - **No private replies.** A whisper is a message in the conversation that mentions the person.
-- **No typing indicator** for a bot; the placeholder message says it is working.
+- **No typing indicator** for a bot; the live message's loading indicator says it is working.
+- **No agent steps.** Hazel's live state can show tool calls as steps, but its web client does not
+  render them yet, and the driver hands a connector rendered blocks rather than tool-call events:
+  what a tool is doing is a line of the streamed text.
 - **No uninstall event.** Removing the bot in Hazel does not unlink the workspace in Maple; answers
   fail with `auth` until it is unlinked there.
