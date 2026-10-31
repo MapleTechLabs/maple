@@ -74,8 +74,3 @@ export function pickAttr(attrs: Record<string, string>, ...keys: string[]): stri
 	}
 	return null
 }
-
-/** Join present, non-blank parts with a middot — ["ORD","ENAM"] → "ORD · ENAM". */
-export function joinEdge(...parts: Array<string | null | undefined>): string | null {
-	return parts.filter((p): p is string => !!p && p.trim() !== "").join(" · ") || null
-}

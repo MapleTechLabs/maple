@@ -1,8 +1,10 @@
+import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
+import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
 import type { IconName } from "../../ui/icon"
 
-// copied: packages/ui/src/lib/cloud-platforms/{cloudflare,database,index}.ts, the fields the
-// flow card reads, with `Icon` as an icon name. The adapters import React icon components,
-// so they cannot be imported here until Phase 1 splits them like `service-map-db-style.ts`.
+// copied: packages/ui/src/lib/cloud-platforms/{database,index}.ts, the fields the flow card
+// reads, with `Icon` as an icon name (the adapters import React icon components). Workers
+// detection is shared with the adapters through `@maple/domain/cloud-platform`.
 
 export interface CloudPlatformInfo {
 	readonly id: string
@@ -10,6 +12,7 @@ export interface CloudPlatformInfo {
 	readonly kind: string
 	readonly icon: IconName
 	readonly edge: string | null
+	readonly location: string | null
 	readonly outcome: { readonly value: string; readonly bad: boolean } | null
 }
 
@@ -64,22 +67,18 @@ function humanizeDbSystem(system: string): string {
 export const pickAttr = (attrs: Record<string, string>, ...keys: ReadonlyArray<string>): string | null =>
 	keys.map((key) => attrs[key]).find((value) => value != null && value.trim() !== "") ?? null
 
-const joinEdge = (...parts: ReadonlyArray<string | null>): string | null =>
-	parts.filter((part): part is string => !!part && part.trim() !== "").join(" · ") || null
-
 const cloudflare = (attrs: Record<string, string>): CloudPlatformInfo | null => {
-	const isWorker =
-		attrs["cloud.platform"] === "cloudflare.workers" ||
-		Object.entries(attrs).some(([k, v]) => k.startsWith("cloudflare.") && v.trim() !== "")
-	if (!isWorker) return null
-	const outcome = pickAttr(attrs, "cloudflare.outcome")
+	const worker = detectCloudflareWorker(attrs)
+	if (worker === undefined) return null
+	const { edge, location, outcome } = cloudflareDisplay(worker)
 	return {
 		id: "cloudflare",
 		label: "Cloudflare Worker",
 		kind: "Worker",
 		icon: "CloudflareIcon",
-		edge: joinEdge(pickAttr(attrs, "cloudflare.colo"), pickAttr(attrs, "faas.invoked_region")),
-		outcome: outcome ? { value: outcome, bad: outcome.toLowerCase() !== "ok" } : null,
+		edge,
+		location,
+		outcome,
 	}
 }
 
@@ -93,6 +92,7 @@ const database = (attrs: Record<string, string>): CloudPlatformInfo | null => {
 		kind: "Query",
 		icon: "DatabaseIcon",
 		edge: null,
+		location: null,
 		outcome: errorType ? { value: errorType, bad: true } : null,
 	}
 }
