@@ -15,9 +15,20 @@ const decodeEventType = Schema.decodeUnknownOption(Schema.Struct({ eventType: Sc
 /** `@[userId:<id>]`, Hazel's mention markup (`@hazel/domain`'s mention parser). */
 export const mentionOf = (userId: string): string => `@[userId:${userId}]`
 
-/** The bot's own mention removed. A literal split: the id comes off the wire. */
+/**
+ * The bot's own mention removed, a literal split because the id comes off the wire. Only the spaces
+ * beside each mention go: line breaks and indentation stay, so a pasted log or code block reaches
+ * the model as it was written.
+ */
 const stripMention = (text: string, botUserId: string): string =>
-	text.split(mentionOf(botUserId)).join(" ").replace(/\s+/gu, " ").trim()
+	text
+		.split(mentionOf(botUserId))
+		.map((part, index, parts) => {
+			const start = index === 0 ? part : part.replace(/^[ \t]+/u, "")
+			return index === parts.length - 1 ? start : start.replace(/[ \t]+$/u, "")
+		})
+		.join(" ")
+		.trim()
 
 /** The workspace out of `org:<orgId>:channel:<channelId>`. */
 const organizationOf = (partitionKey: string): string | undefined => {

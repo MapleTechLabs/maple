@@ -133,6 +133,18 @@ describe("dispatch", () => {
 		])
 	})
 
+	it("keeps the question's line breaks and indentation when it strips the mention", () => {
+		const step = gatewayProtocol.onFrame(
+			ready(),
+			dispatch([
+				messageCreate(`@[userId:${BOT_USER}]  what does this mean?\n\n    Error: pool exhausted\n`),
+			]),
+			NOW,
+			config,
+		)
+		expect(step.events?.[0]).toMatchObject({ text: "what does this mean?\n\n    Error: pool exhausted" })
+	})
+
 	it("reports an unaddressed message too, and drops its own, other bots' and empty ones", () => {
 		const step = gatewayProtocol.onFrame(
 			ready(),
