@@ -9,9 +9,10 @@ import { resolve } from "node:path"
 
 const alchemy = realpathSync("node_modules/alchemy")
 const cloudflare = realpathSync("node_modules/@alchemy.run/cloudflare")
-const require = createRequire(alchemy + "/package.json")
-const { rolldown } = await import(require.resolve("rolldown"))
-const { bundleAnalyzerPlugin } = await import(require.resolve("rolldown/experimental"))
+// Resolved through alchemy's own dependencies, the copy the deploy bundles with.
+const alchemyRequire = createRequire(alchemy + "/package.json")
+const { rolldown } = await import(alchemyRequire.resolve("rolldown"))
+const { bundleAnalyzerPlugin } = await import(alchemyRequire.resolve("rolldown/experimental"))
 const { default: cloudflareRolldown } = await import("@alchemy.run/cloudflare-runtime/rolldown")
 const { makeEffectVirtualEntry } = await import(cloudflare + "/src/Workers/Sources/Rolldown.ts")
 
