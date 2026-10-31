@@ -346,6 +346,47 @@ describe("service detail view", () => {
 		)
 	})
 
+	test("a failed dependencies reload keeps the last rows on screen", () => {
+		const model = entered({ tab: "dependencies" })
+		const edge = {
+			callCount: 10,
+			estimatedCallCount: 10,
+			errorCount: 0,
+			errorRate: 0,
+			avgDurationMs: 2,
+			maxDurationMs: 4,
+			hasSampling: false,
+			samplingWeight: 1,
+		}
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchDependencies({
+				key: model.dependencies.key ?? "",
+				result: Result.succeed({
+					serviceEdges: [{ sourceService: "payment-svc", targetService: "ledger-svc", ...edge }],
+					dbEdges: [],
+					externalEdges: [],
+				}),
+			}),
+		).model
+		const reloading = pageUpdate(loaded, Message.ClickedReload()).model
+		const stale = pageUpdate(
+			reloading,
+			Message.CompletedFetchDependencies({
+				key: reloading.dependencies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		expect(stale.dependencies.data._tag).toBe("Stale")
+		scene(
+			{ update: pageUpdate, view },
+			given(stale),
+			themeResolved(),
+			expectView(text("ledger-svc")).toExist(),
+			expectView(text("Couldn't load dependencies")).toBeAbsent(),
+		)
+	})
+
 	test("more than eight deploys list eight until Show all", () => {
 		const model = entered()
 		const releases = Array.from({ length: 10 }, (_, index) =>

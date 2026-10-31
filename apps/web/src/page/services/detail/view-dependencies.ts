@@ -283,13 +283,14 @@ const loadingState = (h: H): Html =>
 		),
 	])
 
-/** The Dependencies tab: skeleton, error, or the summary strip, the 30-day note and the table. */
+/** The Dependencies tab: skeleton, error (first read only), or the summary strip, note and table. */
 export const dependenciesTab = (h: H, model: Model): Html =>
 	AsyncData.match(model.dependencies.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
 		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load dependencies" }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load dependencies" }),
+		// A failed reload keeps the last rows on screen, as before.
+		onStale: ({ data }) => dependenciesBody(h, model, data, false),
 		onRefreshing: (bundle) => dependenciesBody(h, model, bundle, true),
 		onSuccess: (bundle) => dependenciesBody(h, model, bundle, false),
 	})
