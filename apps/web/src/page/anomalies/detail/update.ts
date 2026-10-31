@@ -41,12 +41,12 @@ const slotStep = <A>(
 	slot: Keyed.Keyed<A, LoadFailure>,
 	write: (next: Keyed.Keyed<A, LoadFailure>) => Partial<Model>,
 	key: string,
-	mode: Keyed.RequestMode,
-	command: Commands[number],
+	mode: Keyed.ReadMode,
+	command: (key: string) => Commands[number],
 ): Return =>
-	Option.match(Keyed.request(slot, key, mode), {
+	Option.match(Keyed.requestFor(slot, key, mode), {
 		onNone: () => ({ model }),
-		onSome: (next) => ({ model: { ...model, ...write(next) }, commands: [command] }),
+		onSome: (next) => ({ model: { ...model, ...write(next) }, commands: [command(next.key)] }),
 	})
 
 const chain = (first: Return, next: (model: Model) => Return): Return => {
@@ -58,10 +58,10 @@ const chain = (first: Return, next: (model: Model) => Return): Return => {
 	}
 }
 
-const loadIncident = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return =>
+const loadIncident = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 {
 	const key = requestKey(context.orgId, "anomalies.getIncident", { params: { id: model.incidentId } })
-	return slotStep(model, model.incident, (incident) => ({ incident }), key, mode, FetchIncident({ key, id: model.incidentId }))
+	return slotStep(model, model.incident, (incident) => ({ incident }), key, mode, (key) => FetchIncident({ key, id: model.incidentId }))
 }
 
 /** What mounts once the incident renders: its signal series and the linked issue's card. */
@@ -73,11 +73,11 @@ const followIncident = (model: Model, context: PageContext, mode: Keyed.RequestM
 				params: { id: model.incidentId },
 				query: {},
 			})
-			const series = slotStep(model, model.timeseries, (timeseries) => ({ timeseries }), seriesKey, mode, FetchTimeseries({ key: seriesKey, id: model.incidentId }))
+			const series = slotStep(model, model.timeseries, (timeseries) => ({ timeseries }), seriesKey, mode, (key) => FetchTimeseries({ key, id: model.incidentId }))
 			const issueId = incident.errorIssueId
 			if (issueId === null) return series
 			const issueKey = requestKey(context.orgId, "errorIssues.retrieve", { params: { id: issueId } })
-			return chain(series, (next) => slotStep(next, next.linkedIssue, (linkedIssue) => ({ linkedIssue }), issueKey, "Load", FetchLinkedIssue({ key: issueKey, id: issueId })))
+			return chain(series, (next) => slotStep(next, next.linkedIssue, (linkedIssue) => ({ linkedIssue }), issueKey, "Load", (key) => FetchLinkedIssue({ key, id: issueId })))
 		},
 	})
 
@@ -87,7 +87,7 @@ const loadLinkIssues = (model: Model, context: PageContext): Return =>
 		onSome: (incident) => {
 			const serviceName = model.linkAllServices ? null : incident.serviceName
 			const key = requestKey(context.orgId, "errorIssues.list", { serviceName })
-			return slotStep(model, model.linkIssues, (linkIssues) => ({ linkIssues }), key, "Load", FetchLinkIssues({ key, serviceName }))
+			return slotStep(model, model.linkIssues, (linkIssues) => ({ linkIssues }), key, "Load", (key) => FetchLinkIssues({ key, serviceName }))
 		},
 	})
 
@@ -136,8 +136,12 @@ const dialogStep = (
 const wrapResolve = (message: Dialog.Message) => Message.GotResolveDialogMessage({ message })
 const wrapLink = (message: Dialog.Message) => Message.GotLinkDialogMessage({ message })
 
-/** A successful write re-reads the incident (its `reactivityKeys`); the answer re-follows the issue. */
-const afterWrite = (model: Model, context: PageContext): Return => loadIncident({ ...model, busy: null }, context, "Refresh")
+/**
+ * A successful write re-reads the incident (its `reactivityKeys`); the answer re-follows the issue.
+ * It supersedes a live-refresh read in flight, so a pre-write answer cannot land last.
+ */
+const afterWrite = (model: Model, context: PageContext): Return =>
+	loadIncident({ ...model, busy: null }, context, "Supersede")
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -177,7 +181,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onFailure: (failure) => ({
 					model: { ...model, busy: null },
-					outMessage: failureToast("Failed to open investigation", failure),
+					outMessage: failureToast("Couldn't open investigation", failure),
 				}),
 			}),
 		ClickedResolve: () => dialogStep(model, "resolveDialog", Dialog.open(model.resolveDialog), wrapResolve),

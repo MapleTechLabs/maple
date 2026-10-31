@@ -68,7 +68,7 @@ export const succeededConnect = (
 		}),
 		[
 			(next) => toast(next, "success", title, description),
-			(next) => requestStatus(next, context, "railway", "Refresh"),
+			(next) => requestStatus(next, context, "railway", "Supersede"),
 		],
 	)
 
@@ -84,8 +84,8 @@ export const clickedSync = (model: Model): Return =>
 export const completedSync = (model: Model, context: PageContext, failure: LoadFailure | null): Return => {
 	const settled = withCard(model, { isSyncing: false })
 	return failure === null
-		? requestStatus(settled, context, "railway", "Refresh")
-		: toast(settled, "error", "Failed to sync Railway", failure.message)
+		? requestStatus(settled, context, "railway", "Supersede")
+		: toast(settled, "error", "Couldn't sync Railway", failure.message)
 }
 
 export const setRotating = (model: Model, isRotating: boolean): Return => ({

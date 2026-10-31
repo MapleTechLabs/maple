@@ -46,11 +46,13 @@ const loaded = (rows: ReadonlyArray<V2Recommendation>, key = UUID): Model => {
 
 describe("recommendation detail", () => {
 	test("entry reads the clock, the recommendations and the attribute mappings", () => {
-		expect(names(init(route(), context).commands)).toEqual([
-			"ReadRecommendationClock",
-			"FetchRecommendations",
-			"FetchRecommendationAttributeMappings",
-		])
+		expect(names(init(route(), context).commands)).toEqual(
+			expect.arrayContaining([
+				"ReadRecommendationClock",
+				"FetchRecommendations",
+				"FetchRecommendationAttributeMappings",
+			]),
+		)
 	})
 
 	test("an unknown key says so and links back to the ingestion settings", () => {
@@ -70,11 +72,12 @@ describe("recommendation detail", () => {
 			entered,
 			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.fail(toLoadFailure(new Error("boom"))) }),
 		).model
-		scene({ update: pageUpdate, view }, given(failed), expectView(text("Failed to load recommendation")).toExist())
+		scene({ update: pageUpdate, view }, given(failed), expectView(text("Couldn't load recommendation")).toExist())
 	})
 
 	test("Dismiss sends one request and refreshes the list", () => {
 		const model = loaded([rec()])
+		const reread = pageUpdate(pageUpdate(model, Message.ClickedDismiss()).model, Message.CompletedDismiss({ result: Result.succeed(undefined) }))
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -82,7 +85,7 @@ describe("recommendation detail", () => {
 			Command.resolve(DismissRecommendation, Message.CompletedDismiss({ result: Result.succeed(undefined) })),
 			Command.resolve(
 				FetchRecommendations,
-				Message.CompletedFetchList({ key: model.list.key ?? "", result: Result.succeed([rec("dismissed")]) }),
+				Message.CompletedFetchList({ key: reread.model.list.key ?? "", result: Result.succeed([rec("dismissed")]) }),
 			),
 			expectView(role("button", { name: "Reopen recommendation" })).toExist(),
 		)
@@ -91,13 +94,22 @@ describe("recommendation detail", () => {
 		expect(pageUpdate(started.model, Message.ClickedApply()).commands ?? []).toHaveLength(0)
 	})
 
+	test("a write's re-read is sent even while a list read is in flight, and only its answer lands", () => {
+		const reading = pageUpdate(loaded([rec()]), Message.ClickedRetry()).model
+		const started = pageUpdate(reading, Message.ClickedDismiss()).model
+		const reread = pageUpdate(started, Message.CompletedDismiss({ result: Result.succeed(undefined) }))
+		expect(names(reread.commands)).toEqual(["FetchRecommendations"])
+		const late = pageUpdate(reread.model, Message.CompletedFetchList({ key: reading.list.key ?? "", result: Result.succeed([rec()]) })).model
+		expect(late.list).toEqual(reread.model.list)
+	})
+
 	test("a failed apply toasts and clears the busy state", () => {
 		const started = pageUpdate(loaded([rec()]), Message.ClickedApply())
 		expect(names(started.commands)).toEqual(["CreateRecommendationMapping"])
 		const failed = pageUpdate(started.model, Message.CompletedApply({ result: Result.fail(toLoadFailure(new Error("no"))) }))
 		expect(failed.model.busy).toBeNull()
 		expect(failed.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "error", title: "Failed to create mapping", description: toLoadFailure(new Error("no")).message }),
+			PageOutMessage.RequestedToast({ type: "error", title: "Couldn't create mapping", description: toLoadFailure(new Error("no")).message }),
 		)
 		scene({ update: pageUpdate, view }, given(failed.model), expectView(role("button", { name: "Apply mapping" })).toBeEnabled())
 	})

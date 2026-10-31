@@ -171,6 +171,121 @@ describe("analyzeTelemetry", () => {
 		assert.lengthOf(telemetry.contractBreaks, 0)
 	})
 
+	// #1817: deleting a hard-coded OTLP test payload was held as removing `service.name`.
+	const otlpCatalog: TelemetryCatalog = {
+		...catalog,
+		attributeKeys: new Map([
+			["service.name", 98_700_000],
+			["http.response.status_code", 18_900_000],
+		]),
+	}
+	const statusAlert: ReferenceSource = {
+		kind: "alert",
+		id: "rule-3",
+		name: "High error rate",
+		texts: ["service.name = 'api' AND http.response.status_code >= 500"],
+	}
+	const otlpPayloadPatch = [
+		"@@ -123,24 +121,0 @@ export const SaveFramework = Command.define(",
+		"-const testEventPayload = (now: number, traceId: string, spanId: string) => ({",
+		"-\tresourceSpans: [",
+		"-\t\t{",
+		"-\t\t\tresource: {",
+		"-\t\t\t\tattributes: [",
+		'-\t\t\t\t\t{ key: "service.name", value: { stringValue: "maple-onboarding-test" } },',
+		'-\t\t\t\t\t{ key: "deployment.environment", value: { stringValue: "development" } },',
+		"-\t\t\t\t],",
+		"-\t\t\t},",
+		"-\t\t\tscopeSpans: [",
+		"-\t\t\t\t{",
+		"-\t\t\t\t\tspans: [",
+		"-\t\t\t\t\t\t{",
+		"-\t\t\t\t\t\t\tattributes: [",
+		'-\t\t\t\t\t\t\t\t{ key: "http.route", value: { stringValue: "/maple/test-event" } },',
+		'-\t\t\t\t\t\t\t\t{ key: "http.response.status_code", value: { intValue: 200 } },',
+		"-\t\t\t\t\t\t\t],",
+		"-\t\t\t\t\t\t},",
+		"-\t\t\t\t\t],",
+		"-\t\t\t\t},",
+		"-\t\t\t],",
+		"-\t\t},",
+		"-\t],",
+		"-})",
+	].join("\n")
+
+	it("ignores attribute keys inside a removed OTLP payload literal", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("apps/web/src/page/settings/ingestion/command.ts", otlpPayloadPatch)],
+			catalog: otlpCatalog,
+			sources: [statusAlert],
+			issues: [],
+		})
+		assert.lengthOf(telemetry.removed, 0)
+		assert.lengthOf(telemetry.contractBreaks, 0)
+	})
+
+	it("ignores an OTLP payload key written on the line after `key:`", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/payload.ts",
+					'@@ -1,5 +1,0 @@\n-attributes: [\n-\t{\n-\t\tkey:\n-\t\t\t"http.response.status_code",\n-\t\tvalue: { intValue: 200 } },',
+				),
+			],
+			catalog: otlpCatalog,
+			sources: [statusAlert],
+			issues: [],
+		})
+		assert.lengthOf(telemetry.removed, 0)
+	})
+
+	it("reports a removed attribute call, but never a universal resource key", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/http/middleware.ts",
+					`@@ -1,2 +1,0 @@\n-span.setAttribute("service.name", name)\n-span.setAttribute("http.response.status_code", status)`,
+				),
+			],
+			catalog: otlpCatalog,
+			sources: [statusAlert],
+			issues: [],
+		})
+		assert.deepStrictEqual(
+			telemetry.contractBreaks.map((item) => [item.name, item.kind]),
+			[["http.response.status_code", "attribute"]],
+		)
+	})
+
+	it("still reports a resource key a service sets by hand", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("src/telemetry.ts", `@@ -1,1 +1,0 @@\n-span.setAttribute("service.namespace", ns)`)],
+			catalog: { ...catalog, attributeKeys: new Map([["service.namespace", 7_000]]) },
+			sources: [{ kind: "alert", id: "rule-4", name: "By namespace", texts: ["service.namespace"] }],
+			issues: [],
+		})
+		assert.deepStrictEqual(
+			telemetry.contractBreaks.map((item) => item.name),
+			["service.namespace"],
+		)
+	})
+
+	it("ignores mock and lab data", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"apps/web/src/lab/spans.ts",
+					`@@ -1,1 +1,0 @@\n-span.setAttribute("payment.provider", p)`,
+				),
+				file("src/payments.mock.ts", `@@ -1,1 +1,0 @@\n-span.setAttribute("payment.provider", p)`),
+			],
+			catalog,
+			sources: [alert],
+			issues: [],
+		})
+		assert.lengthOf(telemetry.contractBreaks, 0)
+	})
+
 	it("reports a removed span name, under the kind production knows it by", () => {
 		const telemetry = analyzeTelemetry({
 			files: [file("src/payments/charge.ts", `@@ -1,1 +1,0 @@\n-Effect.withSpan("Payments.charge")`)],
@@ -283,5 +398,84 @@ describe("analyzeTelemetry", () => {
 			telemetry.linkedIssues.map((issue) => [issue.issueId, issue.path]),
 			[["issue-1", "src/payments/charge.ts"]],
 		)
+	})
+
+	it("does not link a service's issues to the bundle entry file every frame names", () => {
+		const issue = (id: string, service: string, topFrame: string) => ({
+			id,
+			fingerprintHash: id,
+			title: `Error ${id}`,
+			service,
+			topFrame,
+			occurrences: 100,
+			lastSeenAt: 1,
+		})
+		const telemetry = analyzeTelemetry({
+			files: [
+				file("apps/api/src/worker-app.ts", "@@ -1,1 +1,1 @@\n-a\n+b"),
+				file("src/payments/charge.ts", "@@ -1,1 +1,1 @@\n-a\n+b"),
+			],
+			catalog,
+			sources: [],
+			issues: [
+				...["a", "b", "c", "d", "e", "f"].map((id) =>
+					issue(id, "api-v2", "at Object.fetch (worker-app.js:1:52311)"),
+				),
+				issue("charge", "payments", "at charge (/app/payments/charge.js)"),
+			],
+		})
+		assert.deepStrictEqual(
+			telemetry.linkedIssues.map((linked) => [linked.issueId, linked.path]),
+			[["charge", "src/payments/charge.ts"]],
+		)
+	})
+
+	it("matches a frame's whole directory segment and prefers it over a name-only match", () => {
+		const linked = (files: ReadonlyArray<string>, topFrame: string) =>
+			analyzeTelemetry({
+				files: files.map((path) => file(path, "@@ -1,1 +1,1 @@\n-a\n+b")),
+				catalog,
+				sources: [],
+				issues: ["a", "b", "c", "d", "e"].map((id) => ({
+					id,
+					fingerprintHash: id,
+					title: `Error ${id}`,
+					service: "shop",
+					topFrame,
+					occurrences: 10,
+					lastSeenAt: 1,
+				})),
+			}).linkedIssues.map((issue) => issue.path)
+		// Matched by name only, `public-api` not being `api`: the bundle entry, so unlinked.
+		assert.deepStrictEqual(
+			linked(["src/api/worker-app.ts"], "at f (/dist/public-api/worker-app.js:1:9)"),
+			[],
+		)
+		// The `orders` file is named with its directory, so it is chosen and kept.
+		assert.deepStrictEqual(
+			linked(
+				["src/admin/checkout.ts", "src/orders/checkout.ts"],
+				"at f (/dist/orders/checkout.js:4:2)",
+			),
+			Array(5).fill("src/orders/checkout.ts"),
+		)
+	})
+
+	it("keeps a service's issues whose frames name the changed file's directory", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("src/orders/checkout.ts", "@@ -1,1 +1,1 @@\n-a\n+b")],
+			catalog,
+			sources: [],
+			issues: ["a", "b", "c", "d", "e"].map((id, i) => ({
+				id,
+				fingerprintHash: id,
+				title: `Error ${id}`,
+				service: "orders",
+				topFrame: `at step${i} (/app/dist/orders/checkout.js:${10 * (i + 1)}:5)`,
+				occurrences: 10,
+				lastSeenAt: 1,
+			})),
+		})
+		assert.lengthOf(telemetry.linkedIssues, 5)
 	})
 })

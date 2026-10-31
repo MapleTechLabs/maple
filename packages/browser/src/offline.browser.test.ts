@@ -32,4 +32,17 @@ describe("OfflineSpanExporter", () => {
 		exporter.export(finishedSpans("late"), () => {})
 		expect(stashed.map((batch) => batch[0]?.name)).toEqual(["early", "late"])
 	})
+
+	it("drops batches it held when the stash is detached, so a later session never sends them", () => {
+		const failing = {
+			export: (_spans: ReadableSpan[], callback: (result: { code: number }) => void) =>
+				callback({ code: 1 }),
+			shutdown: async () => {},
+		}
+		new OfflineSpanExporter(failing).export(finishedSpans("old session"), () => {})
+		attachSpanStash(undefined)
+		const stashed: ReadableSpan[][] = []
+		attachSpanStash((batch) => stashed.push(batch))
+		expect(stashed).toEqual([])
+	})
 })

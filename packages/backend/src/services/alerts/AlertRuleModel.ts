@@ -1,4 +1,6 @@
 import {
+	alertQueryLimits,
+	alertRuleIntervalMinutes,
 	alertWindowBucketSeconds,
 	CompiledAlertQueryPlan,
 	QueryEngineAlertReducer,
@@ -11,6 +13,8 @@ import { prepareRawSql, type AlertBucketSource } from "@maple/query-engine/runti
 import {
 	AlertComparator as AlertComparatorSchema,
 	AlertDestinationDocument,
+	type AlertEvaluationErrorKind,
+	AlertEvaluationIntervalMinutes,
 	AlertGroupBy as AlertGroupBySchema,
 	AlertNotificationTemplate,
 	AlertRuleDocument,
@@ -83,6 +87,7 @@ const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema
 const decodeQueryEngineAlertReducerSync = Schema.decodeUnknownSync(QueryEngineAlertReducer)
 const decodeNoDataBehaviorSync = Schema.decodeUnknownSync(QueryEngineNoDataBehavior)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
+const decodeEvaluationIntervalSync = Schema.decodeUnknownSync(Schema.NullOr(AlertEvaluationIntervalMinutes))
 
 export interface NormalizedRule {
 	readonly id: AlertRuleId
@@ -104,6 +109,10 @@ export interface NormalizedRule {
 	readonly threshold: number
 	readonly thresholdUpper: number | null
 	readonly windowMinutes: number
+	/** The author's check interval; null derives it from the window. */
+	readonly evaluationIntervalMinutes: AlertEvaluationIntervalMinutes | null
+	/** The scheduler's slowdown after repeated query timeouts; null until then, cleared by an edit. */
+	readonly slowedIntervalMinutes: AlertEvaluationIntervalMinutes | null
 	readonly minimumSampleCount: number
 	readonly consecutiveBreachesRequired: number
 	/** M in "N of the last M checks"; null is N in a row. */
@@ -123,6 +132,7 @@ export interface NormalizedRule {
 
 export interface RuleEvaluationState {
 	readonly error: string | null
+	readonly errorKind: AlertEvaluationErrorKind | null
 	readonly evaluatedAt: number | null
 }
 
@@ -154,6 +164,7 @@ export const normalizedRuleToDocument = (
 		threshold: rule.threshold,
 		thresholdUpper: rule.thresholdUpper,
 		windowMinutes: rule.windowMinutes,
+		evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
 		minimumSampleCount: rule.minimumSampleCount,
 		consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
 		breachesOutOf: rule.breachesOutOf,
@@ -166,6 +177,9 @@ export const normalizedRuleToDocument = (
 		destinationIds: [...rule.destinationIds],
 		noDataBehavior: rule.compiledPlan.noDataBehavior,
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: rule.slowedIntervalMinutes,
+		slowedAt: null,
 		lastEvaluatedAt: null,
 		lastScheduledAt: null,
 		createdAt: timestamp,
@@ -215,6 +229,75 @@ const planGroupingTokens = (
 	return groupBy
 }
 
+/** Why the generic rule APIs refuse an `uptime` rule. */
+export const UPTIME_RULE_MANAGED_MESSAGE =
+	"uptime rules belong to an uptime monitor; create, edit or delete the monitor instead"
+
+/** The stored plan of every `uptime` rule: no query, the evaluator reads the monitor's state. */
+export const UPTIME_RULE_PLAN = new CompiledAlertQueryPlan({
+	kind: "spec",
+	query: null,
+	rawSql: null,
+	reducer: "identity",
+	sampleCountStrategy: null,
+	noDataBehavior: "skip",
+})
+
+/**
+ * The `alert_rules` columns of a monitor's backing rule: down (1) breaches, one check opens
+ * and one healthy check resolves. Scoped to the monitor's service so links follow it.
+ */
+export const uptimeRuleFields = (monitor: {
+	readonly name: string
+	readonly serviceName: string | null
+	readonly enabled: boolean
+	readonly destinationIds: ReadonlyArray<AlertDestinationId>
+}) => {
+	const thresholds: AlertThresholds = [
+		{
+			severity: "critical",
+			value: 1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [...monitor.destinationIds],
+		},
+	]
+	return {
+		name: monitor.name,
+		notes: null,
+		notificationTemplateJson: null,
+		enabled: monitor.enabled,
+		severity: "critical",
+		serviceNamesJson: monitor.serviceName === null ? null : [monitor.serviceName],
+		excludeServiceNamesJson: null,
+		environmentsJson: null,
+		tagsJson: null,
+		groupBy: null,
+		signalType: "uptime",
+		comparator: "gte",
+		threshold: 1,
+		thresholdUpper: null,
+		thresholdsJson: thresholds,
+		windowMinutes: 1,
+		evaluationIntervalMinutes: 1,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
+		minimumSampleCount: 0,
+		consecutiveBreachesRequired: 1,
+		breachesOutOf: null,
+		consecutiveHealthyRequired: 1,
+		renotifyIntervalMinutes: 30,
+		apdexThresholdMs: null,
+		queryBuilderDraftJson: null,
+		rawQuerySql: null,
+		destinationIdsJson: [...monitor.destinationIds],
+		querySpecJson: null,
+		reducer: UPTIME_RULE_PLAN.reducer,
+		sampleCountStrategy: null,
+		noDataBehavior: UPTIME_RULE_PLAN.noDataBehavior,
+	} as const
+}
+
 export const isGroupedPlan = (plan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>): boolean =>
 	plan.kind === "raw_sql" || planGroupingTokens(plan) != null
 
@@ -236,15 +319,34 @@ export const toStorageGroupKey = (
 	engineGroupKey: string,
 ): string => (isGroupedPlan(plan) ? engineGroupKey : UNGROUPED_GROUP_KEY)
 
+/** The scheduler lane a rule runs in: `long_query` for raw SQL allowed more than the 1-minute time limit. */
+export type AlertSchedulerLane = "standard" | "long_query"
+
+export const alertSchedulerLaneOf = (
+	row: Pick<
+		StoredAlertRuleRow,
+		"signalType" | "windowMinutes" | "evaluationIntervalMinutes" | "slowedIntervalMinutes"
+	>,
+): AlertSchedulerLane =>
+	row.signalType === "raw_query" &&
+	alertQueryLimits(alertRuleIntervalMinutes(row)).timeSeconds > alertQueryLimits(1).timeSeconds
+		? "long_query"
+		: "standard"
+
 export const planEvaluateSource = (
 	plan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>,
-	windowMinutes: number,
+	rule: Parameters<typeof alertRuleIntervalMinutes>[0],
 ): Effect.Effect<AlertBucketSource, AlertValidationError> => {
 	if (plan.kind === "raw_sql") {
 		if (plan.rawSql == null) {
 			return Effect.fail(makeAlertValidationError("Compiled alert plan is missing its SQL query"))
 		}
-		return Effect.succeed({ kind: "raw_sql", sql: plan.rawSql, windowMinutes })
+		return Effect.succeed({
+			kind: "raw_sql",
+			sql: plan.rawSql,
+			windowMinutes: rule.windowMinutes,
+			intervalMinutes: alertRuleIntervalMinutes(rule),
+		})
 	}
 	if (plan.query == null || plan.sampleCountStrategy == null) {
 		return Effect.fail(makeAlertValidationError("Compiled alert plan is missing its query spec"))
@@ -439,6 +541,8 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			sampleCountStrategy: null,
 			noDataBehavior,
 		})
+	} else if (rule.signalType === "uptime") {
+		return yield* Effect.fail(makeAlertValidationError(UPTIME_RULE_MANAGED_MESSAGE))
 	} else {
 		return yield* Effect.fail(makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`))
 	}
@@ -472,6 +576,8 @@ const parseCompiledPlan = (
 			component: "compiled_plan",
 			cause,
 		})
+	// An uptime rule reads its monitor's state, not the warehouse: no query to decode.
+	if (row.signalType === "uptime") return Effect.succeed(UPTIME_RULE_PLAN)
 	if (row.signalType === "raw_query") {
 		if (row.rawQuerySql == null) {
 			return Effect.fail(invalid("Stored raw alert is missing its SQL query", "rawQuerySql is null"))
@@ -642,6 +748,7 @@ export const rowToRuleDocument = (
 					threshold: legacy.threshold,
 					thresholdUpper: legacy.thresholdUpper,
 					windowMinutes: row.windowMinutes,
+					evaluationIntervalMinutes: decodeEvaluationIntervalSync(row.evaluationIntervalMinutes),
 					minimumSampleCount: row.minimumSampleCount,
 					consecutiveBreachesRequired: row.consecutiveBreachesRequired,
 					breachesOutOf: row.breachesOutOf,
@@ -657,6 +764,9 @@ export const rowToRuleDocument = (
 					destinationIds: legacy.destinationIds,
 					noDataBehavior: decodeNoDataBehaviorSync(row.noDataBehavior),
 					lastEvaluationError: evaluationState?.error ?? null,
+					lastEvaluationErrorKind: evaluationState?.errorKind ?? null,
+					slowedIntervalMinutes: decodeEvaluationIntervalSync(row.slowedIntervalMinutes),
+					slowedAt: toIso(row.slowedAt),
 					lastEvaluatedAt:
 						evaluationState?.evaluatedAt != null ? toIso(evaluationState.evaluatedAt) : null,
 					lastScheduledAt: toIso(row.lastScheduledAt),
@@ -699,6 +809,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 						row.signalType === "raw_query"
 							? decodeQueryEngineAlertReducerSync(row.reducer)
 							: null,
+					evaluationIntervalMinutes: decodeEvaluationIntervalSync(row.evaluationIntervalMinutes),
+					slowedIntervalMinutes: decodeEvaluationIntervalSync(row.slowedIntervalMinutes),
 				}
 			},
 			catch: (cause) =>
@@ -732,6 +844,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			threshold: legacy.threshold,
 			thresholdUpper: legacy.thresholdUpper,
 			windowMinutes: row.windowMinutes,
+			evaluationIntervalMinutes: decoded.evaluationIntervalMinutes,
+			slowedIntervalMinutes: decoded.slowedIntervalMinutes,
 			minimumSampleCount: row.minimumSampleCount,
 			consecutiveBreachesRequired: row.consecutiveBreachesRequired,
 			breachesOutOf: row.breachesOutOf,
@@ -754,6 +868,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		request: AlertRuleUpsertRequest,
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
+		if (request.signalType === "uptime") {
+			return yield* Effect.fail(invalidRuleError([UPTIME_RULE_MANAGED_MESSAGE]))
+		}
 		const name = request.name.trim()
 		// A builder query's draft carries its own scope and never reads the
 		// service fields, so keeping them would only fan out identical queries.
@@ -821,6 +938,13 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		const consecutiveBreachesRequired = request.consecutiveBreachesRequired ?? 2
 		const breachesOutOf = request.breachesOutOf ?? null
 		details.push(...validateBreachWindow(consecutiveBreachesRequired, breachesOutOf))
+		const evaluationIntervalMinutes = request.evaluationIntervalMinutes ?? null
+		// A check reads only its window, so a longer gap between checks would leave data unread.
+		if (evaluationIntervalMinutes !== null && evaluationIntervalMinutes > request.windowMinutes) {
+			details.push(
+				`windowMinutes (${request.windowMinutes}) must be at least evaluationIntervalMinutes (${evaluationIntervalMinutes}), or data between checks is never evaluated`,
+			)
+		}
 		if (request.signalType === "builder_query" && !request.queryBuilderDraft) {
 			details.push("queryBuilderDraft is required for builder_query alerts")
 		}
@@ -891,6 +1015,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			threshold: legacy.threshold,
 			thresholdUpper: legacy.thresholdUpper,
 			windowMinutes: request.windowMinutes,
+			evaluationIntervalMinutes,
+			// An edit gives a slowed rule a fresh start at the interval it asks for.
+			slowedIntervalMinutes: null,
 			minimumSampleCount: request.minimumSampleCount ?? 0,
 			consecutiveBreachesRequired,
 			breachesOutOf,

@@ -7,6 +7,7 @@ import { documentStream, orgTagsStream } from "../kit/document-stream"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
+import { pollTicks } from "../../../data/poll"
 
 type PointerMessage =
 	| typeof Message.MovedPointer.Type
@@ -135,7 +136,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ widgetId }) => (widgetId === null ? Stream.empty : pointerEvents(widgetId)),
 			},
 		),
-		/** `useIntervalRefresh`: paused in edit mode and in a preview; a hidden tab skips its ticks. */
+		/** `useIntervalRefresh`: paused in edit mode and in a preview; paused while hidden or offline. */
 		autoRefresh: entry(
 			{ seconds: Schema.Number },
 			{
@@ -151,9 +152,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ seconds }) =>
 					seconds <= 0
 						? Stream.empty
-						: Stream.tick(Duration.seconds(seconds)).pipe(
-								Stream.drop(1),
-								Stream.filter(() => !document.hidden),
+						: pollTicks(Duration.seconds(seconds)).pipe(
 								Stream.map(() => Message.TickedAutoRefresh()),
 							),
 			},

@@ -105,7 +105,7 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 												h.button(
 													[
 														h.Class(
-															"font-mono underline decoration-dotted underline-offset-2 hover:text-primary",
+															"font-mono underline decoration-dotted underline-offset-2 hover:text-primary active:text-primary",
 														),
 														h.Title("Select the parent span"),
 														h.Type("button"),

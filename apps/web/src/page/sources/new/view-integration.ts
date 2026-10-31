@@ -2,73 +2,80 @@ import type { V2Source } from "@maple/domain/http/v2"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
-import { linkButton } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
-import { cardEmbed, type DataIntegration } from "../../integrations/embed"
-import { overviewOf } from "../../integrations/derive"
+import { type DataIntegration, flowEmbed } from "../../integrations/embed"
+import { canContinue, type FlowSpec } from "../../integrations/flow"
 import { sourceHref } from "../kit/shared"
 import { Message } from "./message"
-import type { Model } from "./model"
-import { integrationMeta } from "./view-picker"
+import type { FlowHost, Model } from "./model"
+import { flowSpecOf } from "./update"
+import { flowFooter } from "./view-footer"
 
-// `/sources/new?integration=`: the integration's own card as step 2, the source it creates as step 3.
+// `/sources/new?integration=`: the integration's current step, then the footer that moves between them.
 
 type H = HtmlBuilder<Message>
 
-/**
- * WarpStream clusters are scraped as Prometheus targets and cannot be told apart from other ones,
- * so its step is done once a target is added in this visit, not when any Prometheus target exists.
- */
-export const isIntegrationConnected = (model: Model, integration: DataIntegration): boolean =>
-	integration === "warpstream"
-		? model.hasAddedTarget
-		: overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)?.kind === "connected"
-
 /** The sources an integration feeds. */
-const sourcesOfIntegration = (model: Model, integration: Exclude<DataIntegration, "warpstream">): ReadonlyArray<V2Source> =>
-	AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
-		(source) => source.platform === integration,
-	)
+const sourcesOfIntegration = (model: Model, integration: DataIntegration): ReadonlyArray<V2Source> =>
+	integration === "warpstream"
+		? []
+		: AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
+				(source) => source.platform === integration,
+			)
 
-/** Once connected, one source opens directly; several (accounts, targets) open the list. */
-const connectedNotice = (h: H, model: Model, integration: DataIntegration): Html => {
-	// A WarpStream target is one Prometheus source among others: the list, not a guess at which.
-	const sources = integration === "warpstream" ? [] : sourcesOfIntegration(model, integration)
+/** Go live's way out: one source opens directly; several (accounts, targets) open the list. */
+const openSource = (h: H, model: Model, integration: DataIntegration): Html => {
+	const sources = sourcesOfIntegration(model, integration)
 	const only = sources.length === 1 ? sources[0] : undefined
-	return alert(h, { variant: "ok" }, [
-		icon(h, "CircleCheckIcon"),
-		alertTitle(h, [integrationMeta(integration).label, " is connected"]),
-		alertDescription(h, ["Each account or target it collects from shows up as its own source."]),
-		alertAction(h, [
-			only === undefined
-				? linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Sources()) }, ["View sources"])
-				: linkButton(h, { size: "sm", variant: "outline", href: sourceHref(only, "connection") }, ["Open source"]),
-		]),
-	])
+	return only === undefined
+		? linkButton(h, { variant: "outline", href: hrefOf(AppRoute.Sources()) }, ["View sources"])
+		: linkButton(h, { variant: "outline", href: sourceHref(only, "connection") }, ["Open source"])
 }
 
-export const integrationStep = (h: H, model: Model, integration: DataIntegration, timeZone: string): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedBack()),
-					h.Class(
-						"text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1.5 text-xs",
+/** The drawer stays in onboarding: Done closes it where the page opens the source. */
+const doneButton = (h: H): Html => button(h, { attributes: [h.OnClick(Message.ClickedDone())] }, ["Done"])
+
+const footer = (h: H, model: Model, integration: DataIntegration, spec: FlowSpec, host: FlowHost): Html =>
+	flowFooter(h, {
+		back: Message.ClickedStepBack(),
+		hint: spec.hint[model.stage],
+		host,
+		actions: [
+			model.stage === "live"
+				? host === "drawer"
+					? doneButton(h)
+					: openSource(h, model, integration)
+				: button(
+						h,
+						{
+							isDisabled: !canContinue(spec, model.stage),
+							attributes: [h.OnClick(Message.ClickedContinue())],
+						},
+						["Continue", icon(h, "ArrowRightIcon", { size: 14 })],
 					),
-				],
-				[icon(h, "ArrowLeftIcon", { size: 12 }), "Pick another source"],
-			),
-			...(isIntegrationConnected(model, integration) ? [connectedNotice(h, model, integration)] : []),
+		],
+	})
+
+export const integrationStep = (
+	h: H,
+	model: Model,
+	integration: DataIntegration,
+	timeZone: string,
+	host: FlowHost,
+): Html => {
+	const spec = flowSpecOf(model)
+	return h.div(
+		[h.Class("flex flex-1 flex-col gap-4")],
+		[
 			h.submodel({
 				slotId: "sources-new-integration",
 				model: model.integrations,
-				view: cardEmbed,
-				viewInputs: { integration, timeZone },
+				view: flowEmbed,
+				viewInputs: { integration, stage: model.stage, timeZone },
 				toParentMessage: (message) => Message.GotIntegrationsMessage({ message }),
 			}),
+			...(spec === null ? [] : [footer(h, model, integration, spec, host)]),
 		],
 	)
+}

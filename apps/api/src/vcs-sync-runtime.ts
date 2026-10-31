@@ -19,6 +19,7 @@ import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewServi
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
 import {
 	PullRequestChecklistSinkLive,
+	PullRequestCiApprovalSinkLive,
 	PullRequestCommentSinkLive,
 } from "@maple/backend/services/pr-review/pull-request-comment-handler"
 import { CiTraceSinkLive } from "@maple/backend/services/integrations/ci-traces/CiTraceService"
@@ -63,6 +64,8 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestEventSinkLive),
 	// `@maple` mentions on pull requests; the review debounce's queue is not needed to answer.
 	Layer.provide(PullRequestCommentSinkLive),
+	// A maintainer approving an outside contributor's CI runs that pull request's review.
+	Layer.provide(PullRequestCiApprovalSinkLive),
 	// Ticked "Before merge" boxes on review comments.
 	Layer.provide(PullRequestChecklistSinkLive.pipe(Layer.provide(PrReviewLive))),
 	// Finished CI runs and jobs, written as spans into the org's traces.

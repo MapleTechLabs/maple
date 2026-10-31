@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest"
+import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/list/command"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import { ALL_PROJECTS, MANAGE_CONNECTIONS } from "../../page/infra-integrations/gcp/list/view-project-menu"
 import * as Menu from "../../ui/menu"
@@ -48,11 +49,26 @@ describe("Google Cloud list lab", () => {
 		expect(left.model.state).toEqual(opened.state)
 	})
 
-	test("a search filters until it is cleared; reads the route sends are dropped", () => {
+	test("a search filters until it is cleared", () => {
 		const searched = list(init().model, GcpList.Message.ChangedSearch({ value: "checkout" }))
 		expect(searched.state.q).toBe("checkout")
 		expect(list(searched, GcpList.Message.ClickedClearSearch()).state.q).toBeUndefined()
-		const reload = update(searched, Message.GotListMessage({ message: GcpList.Message.ClickedReload() }))
-		expect([reload.model, reload.commands ?? []]).toEqual([searched, []])
+	})
+
+	test("Reload spins until its own spin ends and sends no reads", () => {
+		const reload = update(
+			init().model,
+			Message.GotListMessage({ message: GcpList.Message.ClickedReload() }),
+		)
+		expect(reload.model.isReloading).toBe(true)
+		expect(reload.commands?.map((command) => command.name)).toEqual([CompleteReloadSpin.name])
+		const again = list(reload.model, GcpList.Message.ClickedReload())
+		const stale = list(
+			again,
+			GcpList.Message.CompletedReloadSpin({ version: reload.model.refreshVersion }),
+		)
+		expect(stale.isReloading).toBe(true)
+		const done = list(stale, GcpList.Message.CompletedReloadSpin({ version: again.refreshVersion }))
+		expect(done.isReloading).toBe(false)
 	})
 })

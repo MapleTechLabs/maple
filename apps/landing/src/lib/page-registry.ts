@@ -41,6 +41,8 @@ export type ArtifactId =
 	| "alert-firing"
 	| "funnel"
 	| "pr-review"
+	| "uptime"
+	| "anomaly"
 
 export type SectionId =
 	| "k8s-console"
@@ -50,6 +52,7 @@ export type SectionId =
 	| "product-events-sources"
 	| "github-ci"
 	| "github-after-merge"
+	| "uptime-check-trace"
 
 /**
  * A plate. `src` unset renders MediaFrame's placeholder, which prints the

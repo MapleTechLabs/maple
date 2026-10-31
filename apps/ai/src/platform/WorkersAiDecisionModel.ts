@@ -8,6 +8,7 @@
  */
 import { Effect, Layer, Schema } from "effect"
 import * as AiError from "effect/ai/AiError"
+import type * as Decision from "effect/ai/Decision"
 import * as DecisionModel from "effect/ai/DecisionModel"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 
@@ -40,9 +41,13 @@ const ClefOutput = Schema.Struct({
 const ClefResponse = Schema.Union([Schema.Struct({ result: ClefOutput }), ClefOutput])
 
 type ClefQuestion =
-	| { readonly type: "noul"; readonly instructions: string; readonly criteria: unknown }
-	| { readonly type: "choice"; readonly instructions: string; readonly criteria: unknown }
-	| { readonly type: "score"; readonly instructions: string; readonly criteria: ReadonlyArray<string> }
+	| { readonly type: "noul"; readonly instructions: Decision.Description; readonly criteria: unknown }
+	| { readonly type: "choice"; readonly instructions: Decision.Description; readonly criteria: unknown }
+	| {
+			readonly type: "score"
+			readonly instructions: Decision.Description
+			readonly criteria: ReadonlyArray<Decision.Description>
+	  }
 
 /** `@cf/cloudflare/clef-flash` → `clef-flash`: the body names the variant, the URL the model. */
 const variantOf = (model: string): string => model.slice(model.lastIndexOf("/") + 1)
@@ -90,7 +95,7 @@ export const make = Effect.fnUntraced(function* (options: {
 						questions[key] = {
 							type: "score",
 							instructions: decision.instructions,
-							criteria: decision.criteria,
+							criteria: decision.criteria.map((level) => level.description),
 						}
 						break
 					case "Probability":
@@ -143,7 +148,7 @@ export const make = Effect.fnUntraced(function* (options: {
 						const decision = decisions[key]
 						const probabilities: Record<string, number> = {}
 						if (decision?._tag === "Rate") {
-							for (const [index, label] of decision.criteria.entries()) {
+							for (const [index, { label }] of decision.criteria.entries()) {
 								const probability = answer.probabilities[String(index)]
 								if (probability !== undefined) probabilities[label] = probability
 							}

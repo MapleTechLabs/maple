@@ -154,7 +154,7 @@ export const seriesChart = <M>(
 			h.Class(
 				cn(
 					"flex min-w-0 flex-col",
-					"gap-4 border-b border-border px-6 pt-[22px] pb-5",
+					"gap-4 border-b border-border px-6 py-5",
 					refreshingClass(inputs.isWaiting),
 				),
 			),
@@ -174,7 +174,7 @@ export const seriesChart = <M>(
 											h.span(
 												[
 													h.AriaHidden(true),
-													h.Class("text-xs text-muted-foreground/60"),
+													h.Class("text-xs text-foreground-subtle"),
 												],
 												["·"],
 											),
@@ -194,12 +194,11 @@ export const seriesChart = <M>(
 											label: entry.label,
 											color: `var(${entry.token})`,
 										})),
-										swatch: "square",
 									}),
 								]
 							: []),
 						h.span(
-							[h.Class("font-mono text-2xs text-muted-foreground/60")],
+							[h.Class("font-mono text-2xs text-foreground-subtle")],
 							bucketMs === null ? [] : [`${bucketLabel(bucketMs)} buckets`],
 						),
 					],
@@ -208,7 +207,7 @@ export const seriesChart = <M>(
 				className: cn("px-3 pt-2.5", "px-0 pt-0"),
 			}),
 			inputs.failure !== undefined
-				? errorState(h, { failure: inputs.failure, title: `Failed to load ${title}` })
+				? errorState(h, { failure: inputs.failure, title: `Couldn't load ${title}` })
 				: inputs.isLoading && rows.length === 0
 					? chartLoading(h, { variant: "line", height: PLOT_HEIGHT })
 					: rows.length === 0

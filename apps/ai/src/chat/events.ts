@@ -10,7 +10,7 @@
  */
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
 import type * as RunEvent from "@yielded/agent/run-event"
-import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
+import { APPROVAL_REQUIRED, type ToolUiPayload, type UiSource } from "../mcp/tools/llm-tools"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */
 type WithoutSeq<T> = T extends unknown ? Omit<T, "seq"> : never
@@ -37,9 +37,39 @@ export interface AdapterContext {
 	 * result stays text; the payload rides on the wire event beside it as `{ text, ui }`.
 	 */
 	readonly uiOf?: (toolCallId: string) => ToolUiPayload | undefined
+	/**
+	 * The calls a `run_code` program made that produced a UI payload, taken once when the program
+	 * settles. The engine announces none of them, so without this their payloads never reach a reader.
+	 */
+	readonly programCallsOf?: (toolCallId: string) => ReadonlyArray<ProgramCall>
 	/** One {@link makeTextSanitizer} per run: the state it keeps spans deltas. */
 	readonly sanitizer: TextSanitizer
 }
+
+/** One call a `run_code` program made, with the UI payload its answer carried. */
+export interface ProgramCall extends UiSource {
+	readonly callId: string
+	readonly ui: ToolUiPayload
+}
+
+/** A program's calls as ordinary settled tool calls, written just before the program's own result. */
+const programCallEvents = (context: AdapterContext, toolCallId: string): ReadonlyArray<ChatTurnEvent> =>
+	(context.programCallsOf?.(toolCallId) ?? []).flatMap((call) => [
+		tagged(context, {
+			type: "tool-call",
+			messageId: context.messageId,
+			callId: call.callId,
+			name: call.name,
+			input: call.input,
+			...optionalLabel(context.labelOf?.(call.name)),
+		}),
+		tagged(context, {
+			type: "tool-result",
+			messageId: context.messageId,
+			callId: call.callId,
+			output: { text: call.text, ui: call.ui },
+		}),
+	])
 
 /**
  * Markup a model writes into `content` that is not for the reader.
@@ -221,6 +251,12 @@ const flushed = (context: AdapterContext): ReadonlyArray<ChatTurnEvent> => {
 	return text === "" ? [] : [tagged(context, { type: "text-delta", messageId: context.messageId, text })]
 }
 
+/** The end of a turn that a landed submit tool settled, in place of the engine's `RunCompleted`. */
+export const settledTurnEnd = (context: AdapterContext): ReadonlyArray<ChatTurnEvent> => [
+	...flushed(context),
+	tagged(context, { type: "turn-end", messageId: context.messageId, reason: "stop" }),
+]
+
 /** Stamp an event with the ref that routes it into a parent's task card. */
 const tagged = <E extends ChatTurnEvent>(context: AdapterContext, event: E): E =>
 	context.task === undefined ? event : { ...event, task: context.task }
@@ -272,6 +308,7 @@ export const toChatEvents = (
 		case "ToolCallSucceeded": {
 			const ui = context.uiOf?.(event.toolCallId)
 			return [
+				...programCallEvents(context, event.toolCallId),
 				tagged(context, {
 					type: "tool-result",
 					messageId: context.messageId,
@@ -286,6 +323,7 @@ export const toChatEvents = (
 			// approval was refused as already settled.
 			if (event.errorTag === APPROVAL_REQUIRED) return []
 			return [
+				...programCallEvents(context, event.toolCallId),
 				tagged(context, {
 					type: "tool-result",
 					messageId: context.messageId,

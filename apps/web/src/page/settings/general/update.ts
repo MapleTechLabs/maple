@@ -3,18 +3,13 @@ import { Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, File } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-import {
-	clerkTry,
-	currentClerkOrganization,
-	currentClerkUser,
-	switchAwayFrom,
-} from "../../../platform/clerk"
+import { clerkTry, currentClerkOrganization, currentClerkUser, switchAwayFrom } from "../../../platform/clerk"
 import * as Dialog from "../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Draft from "../kit/draft"
 import { checkImage, clickFileInput } from "../kit/image-dropzone"
-import { memberDisplayName } from "../kit/members"
+import { otherAdminName } from "../kit/members"
 import { AdminsInfo, Message, type Model, OrgInfo } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -23,7 +18,8 @@ export const LOGO_INPUT_ID = "org-logo-input"
 
 const sameString = (a: string, b: string) => a === b
 
-const toResult = <A, E, B>(toMessage: (result: Result.Result<A, string>) => B) =>
+const toResult =
+	<A, E, B>(toMessage: (result: Result.Result<A, string>) => B) =>
 	(effect: Effect.Effect<A, E & { readonly message: string }>) =>
 		effect.pipe(
 			Effect.mapError((error) => error.message),
@@ -34,35 +30,34 @@ const toResult = <A, E, B>(toMessage: (result: Result.Result<A, string>) => B) =
 export const FetchOrganization = Command.define("FetchClerkOrganization", {
 	messages: [Message.CompletedFetchOrganization],
 	execute: Effect.sync(() => window.Clerk?.organization ?? null).pipe(
-		Effect.map(
-			(organization): OrgInfo | null =>
-				organization === null
-					? null
-					: {
-							id: organization.id,
-							name: organization.name,
-							hasImage: organization.hasImage,
-							region: organizationHomeRegion(organization.publicMetadata),
-						},
+		Effect.map((organization): OrgInfo | null =>
+			organization === null
+				? null
+				: {
+						id: organization.id,
+						name: organization.name,
+						hasImage: organization.hasImage,
+						region: organizationHomeRegion(organization.publicMetadata),
+					},
 		),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchOrganization({ result })),
 	),
 })
 
-/** `useOrganization({ memberships: { role: ["org:admin"], pageSize: 1 } })`. */
+/** Two admins: the count gates leaving, and the notice names one who is not the viewer. */
 export const FetchAdmins = Command.define("FetchClerkOrganizationAdmins", {
 	messages: [Message.CompletedFetchAdmins],
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) =>
-			clerkTry("Failed to load admins", () => organization.getMemberships({ role: ["org:admin"], pageSize: 1 })),
+			clerkTry("Couldn't load admins", () =>
+				organization.getMemberships({ role: ["org:admin"], pageSize: 2 }),
+			),
 		),
-		Effect.map(
-			(page): AdminsInfo => ({
-				count: page.total_count,
-				firstAdminName: memberDisplayName(page.data[0]?.publicUserData) ?? null,
-			}),
-		),
+		Effect.map((page): AdminsInfo => ({
+			count: page.total_count,
+			firstAdminName: otherAdminName(page.data, window.Clerk?.user?.id),
+		})),
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchAdmins({ result })),
@@ -75,7 +70,7 @@ const RenameOrganization = Command.define("RenameClerkOrganization", {
 	execute: ({ submitted, sent }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) =>
-				clerkTry("Failed to rename organization", () => organization.update({ name: sent })),
+				clerkTry("Couldn't rename organization", () => organization.update({ name: sent })),
 			),
 			Effect.asVoid,
 			toResult((result) => Message.CompletedSaveName({ submitted, sent, result })),
@@ -93,7 +88,7 @@ const SetLogo = Command.define("SetClerkOrganizationLogo", {
 	execute: ({ file }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) =>
-				clerkTry(file === null ? "Failed to remove logo" : "Failed to update logo", () =>
+				clerkTry(file === null ? "Couldn't remove logo" : "Couldn't update logo", () =>
 					organization.setLogo({ file }),
 				),
 			),
@@ -107,7 +102,9 @@ const LeaveOrganization = Command.define("LeaveClerkOrganization", {
 	messages: [Message.CompletedLeave],
 	execute: ({ orgId }) =>
 		currentClerkUser.pipe(
-			Effect.flatMap((user) => clerkTry("Failed to leave organization", () => user.leaveOrganization(orgId))),
+			Effect.flatMap((user) =>
+				clerkTry("Couldn't leave organization", () => user.leaveOrganization(orgId)),
+			),
 			Effect.asVoid,
 			toResult((result) => Message.CompletedLeave({ result })),
 		),
@@ -155,7 +152,11 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 export const orgOf = (model: Model): Option.Option<OrgInfo> =>
 	Option.flatMap(AsyncData.getData(model.org), Option.fromNullishOr)
 
-const savedName = (model: Model): string => Option.getOrElse(Option.map(orgOf(model), (org) => org.name), () => "")
+const savedName = (model: Model): string =>
+	Option.getOrElse(
+		Option.map(orgOf(model), (org) => org.name),
+		() => "",
+	)
 
 export const nameDraftOf = (model: Model): string => Draft.draftOf(model.name, savedName(model))
 export const isNameDirty = (model: Model): boolean => Draft.isDirty(model.name, savedName(model), sameString)
@@ -175,12 +176,16 @@ const orgIdOf = (model: Model): Option.Option<string> => Option.map(orgOf(model)
 
 const liftLeave = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, leaveDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotLeaveDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotLeaveDialogMessage({ message }),
+	),
 })
 
 const liftDelete = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, deleteDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDeleteDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDeleteDialogMessage({ message }),
+	),
 })
 
 const isConfirmMatching = (model: Model): boolean => model.confirmText.trim() === savedName(model)
@@ -188,7 +193,9 @@ const isConfirmMatching = (model: Model): boolean => model.confirmText.trim() ==
 /** `handleDeleteDialogChange`: closing the dialog clears the typed name. */
 const deleteDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const lifted = liftDelete(model, step)
-	return step.outMessage?._tag === "Closed" ? { ...lifted, model: { ...lifted.model, confirmText: "" } } : lifted
+	return step.outMessage?._tag === "Closed"
+		? { ...lifted, model: { ...lifted.model, confirmText: "" } }
+		: lifted
 }
 
 const startLogo = (model: Model, file: File.File | null): Return =>
@@ -200,7 +207,10 @@ const startLogo = (model: Model, file: File.File | null): Return =>
 export const revisit = (model: Model): Return => {
 	const org = revisitData(model.org, FetchOrganization)
 	const admins = revisitData(model.admins, FetchAdmins)
-	return { model: { ...model, org: org.data, admins: admins.data }, commands: [...org.commands, ...admins.commands] }
+	return {
+		model: { ...model, org: org.data, admins: admins.data },
+		commands: [...org.commands, ...admins.commands],
+	}
 }
 
 export const update = (model: Model, message: Message): Return =>
@@ -213,7 +223,9 @@ export const update = (model: Model, message: Message): Return =>
 			)
 			return { model: { ...model, org, name: Draft.settle(model.name, saved, sameString) } }
 		},
-		CompletedFetchAdmins: ({ result }) => ({ model: { ...model, admins: AsyncData.settle(model.admins, result) } }),
+		CompletedFetchAdmins: ({ result }) => ({
+			model: { ...model, admins: AsyncData.settle(model.admins, result) },
+		}),
 		ChangedName: ({ value }) => ({ model: { ...model, name: Draft.setDraft(model.name, value) } }),
 		ClickedDiscardName: () => ({ model: { ...model, name: Draft.discard() } }),
 		ClickedSaveName: () => {
@@ -252,7 +264,10 @@ export const update = (model: Model, message: Message): Return =>
 				onSome: (file) =>
 					Option.match(checkImage(file), {
 						onNone: () => startLogo(model, file),
-						onSome: (problem) => ({ model: { ...model, isDragging: false }, outMessage: toast("error", problem) }),
+						onSome: (problem) => ({
+							model: { ...model, isDragging: false },
+							outMessage: toast("error", problem),
+						}),
 					}),
 			}),
 		ClickedRemoveLogo: () => startLogo(model, null),
@@ -261,9 +276,15 @@ export const update = (model: Model, message: Message): Return =>
 				onSuccess: () => ({
 					model: { ...model, isSavingLogo: false },
 					commands: [FetchOrganization()],
-					outMessage: toast("success", isRemoved ? "Organization logo removed" : "Organization logo updated"),
+					outMessage: toast(
+						"success",
+						isRemoved ? "Organization logo removed" : "Organization logo updated",
+					),
 				}),
-				onFailure: (error) => ({ model: { ...model, isSavingLogo: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isSavingLogo: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		ClickedLeave: () => liftLeave(model, Dialog.open(model.leaveDialog)),
 		GotLeaveDialogMessage: ({ message: child }) =>
@@ -280,10 +301,16 @@ export const update = (model: Model, message: Message): Return =>
 			Result.match(result, {
 				onSuccess: () => ({
 					...liftLeave(model, Dialog.close(model.leaveDialog)),
-					commands: Option.match(orgIdOf(model), { onNone: () => [], onSome: (orgId) => [SwitchAway({ orgId })] }),
+					commands: Option.match(orgIdOf(model), {
+						onNone: () => [],
+						onSome: (orgId) => [SwitchAway({ orgId })],
+					}),
 					outMessage: toast("success", `You left ${savedName(model)}`),
 				}),
-				onFailure: (error) => ({ model: { ...model, isLeaving: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isLeaving: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		ClickedDelete: () => liftDelete(model, Dialog.open(model.deleteDialog)),
 		GotDeleteDialogMessage: ({ message: child }) =>
@@ -301,14 +328,17 @@ export const update = (model: Model, message: Message): Return =>
 						...closed,
 						commands: [
 							...(closed.commands ?? []),
-							...Option.match(orgIdOf(model), { onNone: () => [], onSome: (orgId) => [SwitchAway({ orgId })] }),
+							...Option.match(orgIdOf(model), {
+								onNone: () => [],
+								onSome: (orgId) => [SwitchAway({ orgId })],
+							}),
 						],
 						outMessage: toast("success", "Organization deleted"),
 					}
 				},
 				onFailure: (error) => ({
 					model: { ...model, isDeleting: false },
-					outMessage: toast("error", "Failed to delete organization", error.message),
+					outMessage: toast("error", "Couldn't delete organization", error.message),
 				}),
 			}),
 		CompletedSwitchAway: () => ({

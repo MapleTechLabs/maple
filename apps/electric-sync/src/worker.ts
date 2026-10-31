@@ -19,7 +19,7 @@ import {
 	selfObservabilityEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { ELECTRIC_SYNC_CORS_OPTIONS } from "./routes/cors"
@@ -27,10 +27,14 @@ import { ELECTRIC_SYNC_CORS_OPTIONS } from "./routes/cors"
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		authEnv,
-		optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
-		// A preview proxies its own Electric, never the shared `dev` one (another stage's data).
-		stage.kind === "pr" && domains.electric
-			? derived("ELECTRIC_URL", `https://${domains.electric}`)
+		// Dev only, like the API: on a deploy a pin would point every session at one tenant.
+		stage.kind === "dev" ? optionalPlain("MAPLE_ORG_ID_OVERRIDE") : merge(),
+		// A preview proxies its own Electric, never the shared `dev` one (another stage's data);
+		// a `preview:web` stage has none, so sync stays off.
+		stage.kind === "pr"
+			? domains.electric
+				? derived("ELECTRIC_URL", `https://${domains.electric}`)
+				: merge()
 			: merge(optionalPlain("ELECTRIC_URL"), optionalPlain("ELECTRIC_SOURCE_ID")),
 		optionalSecret("ELECTRIC_SECRET"),
 		selfObservabilityEnv(stage, region),

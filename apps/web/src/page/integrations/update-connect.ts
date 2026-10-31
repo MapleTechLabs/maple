@@ -1,12 +1,15 @@
 import { Schema } from "effect"
+import type * as Keyed from "../../data/keyed"
 import { PageOutMessage, type PageContext, type PageReturn } from "../contract"
 import { integrationOfSearch } from "./catalog"
 import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
-import { chain, requestStatus, type StatusMode } from "./update-status"
+import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 import * as Cloudflare from "./update-cloudflare"
+import * as Planetscale from "./update-planetscale"
+import * as Supabase from "./update-supabase"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
 
@@ -15,8 +18,10 @@ type Return = PageReturn<Model, Message>
 const STATUS_OF = {
 	cloudflare: "cloudflare",
 	hazel: "hazel",
+	linear: "linear",
 	github: "github",
 	planetscale: "planetscale",
+	supabase: "supabase",
 } satisfies { readonly [K in ConnectProvider]: keyof Statuses }
 
 const withConnect = (model: Model, connect: Partial<ConnectModel>): Model => ({
@@ -36,12 +41,13 @@ export const refreshProvider = (
 	model: Model,
 	context: PageContext,
 	provider: ConnectProvider,
-	mode: StatusMode = "Refresh",
+	mode: Keyed.ReadMode = "Supersede",
 ): Return => requestStatus(model, context, STATUS_OF[provider], mode)
 
 export const clickedConnect = (model: Model): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (!Schema.is(ConnectProvider)(integration) || model.connect.isStarting) return { model }
+	if (integration === "linear" && !model.isAdmin) return { model }
 	const attempt = model.connect.attempts + 1
 	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
 	return {
@@ -63,7 +69,7 @@ export const succeededStart = (model: Model, context: PageContext, attempt: numb
 				// PlanetScale's start invalidates every `planetscaleIntegration` read, the inventory too.
 				(next) =>
 					active.provider === "planetscale"
-						? requestStatus(next, context, "planetscaleDatabases", "Refresh")
+						? requestStatus(next, context, "planetscaleDatabases", "Supersede")
 						: { model: next },
 			])
 		: { model }
@@ -89,7 +95,7 @@ export const blockedPopup = (model: Model, context: PageContext, attempt: number
 export const polled = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
 	return active !== null && active.attempt === attempt
-		? refreshProvider(model, context, active.provider, "Poll")
+		? refreshProvider(model, context, active.provider, "Refresh")
 		: { model }
 }
 
@@ -110,8 +116,10 @@ export const endedGrace = (model: Model, attempt: number): Return =>
 const CONNECTED_TITLE = {
 	cloudflare: "Cloudflare account connected",
 	hazel: "Hazel connected",
+	linear: "Linear connected",
 	github: "GitHub connected",
 	planetscale: null,
+	supabase: "Supabase connected",
 } satisfies { readonly [K in ConnectProvider]: string | null }
 
 /** `useIntegrationMessage`: the callback page's verdict; a success is `integration_connected`. */
@@ -125,11 +133,13 @@ export const receivedCallback = (
 	const label = PROVIDERS[provider].label
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
-		return chain(model, [
+		return chain(provider === "planetscale" ? Planetscale.restartWatch(model) : model, [
 			(next) => ({ model: next, commands: [TrackConnected({ provider })] }),
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
+			// The callback no longer discovers projects; a sync now lists them instead of the hourly cron.
+			(next) => (provider === "supabase" ? Supabase.clickedSync(next) : { model: next }),
 		])
 	}
 	if (status !== "error") return { model }

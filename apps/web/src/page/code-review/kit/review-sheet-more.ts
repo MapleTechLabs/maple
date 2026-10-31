@@ -13,6 +13,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { bulletList, ciResultBadge, section, traceLink } from "./parts"
 import { type ReviewSheet, SheetMessage } from "./review-sheet"
 import { CI_RUNS_SHOWN } from "./review-sheet-update"
+import { emptyMessage } from "../../../ui/empty"
 
 // `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history.
 
@@ -116,17 +117,15 @@ export const postMergeSection = (h: H, postMerge: PrReviewPostMerge, nowMs: numb
 
 const ciSection = (h: H, children: ReadonlyArray<Html>): Html => section(h, "CI runs", children)
 
-/** `PullRequestCiRuns`: the pull request's runs over the last two weeks. */
+/** `PullRequestCiRuns`: the pull request's runs over the last 90 days. */
 export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 	AsyncData.matchData(sheet.ciRuns.data, {
 		onEmpty: () => ciSection(h, [skeleton(h, "h-16 w-full")]),
 		onFailure: () =>
-			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["CI runs could not be loaded"])]),
+			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["Couldn't load cI runs"])]),
 		onData: (response) =>
 			response.runs.length === 0
-				? ciSection(h, [
-						h.p([h.Class("text-sm text-muted-foreground")], ["No CI runs in the last two weeks"]),
-					])
+				? ciSection(h, [emptyMessage(h, {}, ["No CI runs in the last 90 days"])])
 				: ciSection(h, [
 						h.ul(
 							[h.Class("-mx-2 flex flex-col")],
@@ -135,7 +134,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 									[
 										h.Key(run.traceId),
 										h.Class(
-											"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-muted/60",
+											"flex items-center gap-3 rounded-md px-2 py-1 text-sm hover:bg-surface-sunken active:bg-surface-sunken",
 										),
 									],
 									[
@@ -157,7 +156,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 											],
 											[formatDuration(run.durationMs)],
 										),
-										traceLink(h, run, "shrink-0"),
+										...traceLink(h, run, sheet.nowMs, "shrink-0"),
 									],
 								),
 							),
@@ -188,7 +187,7 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 								h.Class(
 									cn(
 										"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-										isCurrent ? "bg-muted" : "hover:bg-muted/60",
+										isCurrent ? "bg-muted" : "hover:bg-surface-sunken active:bg-surface-sunken",
 									),
 								),
 								...(isCurrent ? [h.Disabled(true)] : []),

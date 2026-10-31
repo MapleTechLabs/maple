@@ -32,6 +32,11 @@ export interface ClientReplayConfig {
 	readonly maskAllInputs?: boolean | undefined
 	/** Mask all text in the recording. Default `false`. */
 	readonly maskAllText?: boolean | undefined
+	/**
+	 * Record `<canvas>` content at this many frames per second. Off by default,
+	 * and never with `maskAllText`: canvas pixels can hold text.
+	 */
+	readonly canvasFps?: number | undefined
 }
 
 export interface ClientSessionConfig {
@@ -137,6 +142,7 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 						serviceVersion: config.serviceVersion,
 						maskAllInputs: engineConfig.maskAllInputs,
 						maskAllText: engineConfig.maskAllText,
+						canvasFps: config.replay?.canvasFps,
 						getIdentity: getCurrentIdentity,
 						captureUserEmail: config.privacy?.captureUserEmail,
 					})

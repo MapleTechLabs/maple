@@ -15,8 +15,12 @@ import { heroChip } from "../../kit/hero-chip"
 import * as Frame from "../../kit/frame"
 import { k8sChart } from "../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { pageHero } from "../../kit/page-parts"
-import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
+import { pageHeroParts } from "../../kit/page-parts"
+import {
+	metaRow,
+	resourceAttributesCard,
+	resourceAttributesCardSkeleton,
+} from "../../kit/resource-attributes"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { Message } from "./message"
 import type { ContainerMetric, ContainerSummary, Model } from "./model"
@@ -44,7 +48,7 @@ const METRIC_LABELS = new Map<ContainerMetric, string>([
 ])
 
 const rail = (h: H, summary: Summary): Html =>
-	resourceAttributesCard(h, "DockerIcon", [
+	resourceAttributesCard(h, [
 		metaRow(h, { label: "container.name", value: summary.containerName }),
 		metaRow(h, { label: "container.id", value: summary.containerId }),
 		metaRow(h, { label: "container.image.name", value: summary.imageName }),
@@ -58,13 +62,18 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	if (summary !== null) return rail(h, summary)
 	return AsyncData.isLoading(model.summary.data) || AsyncData.isIdle(model.summary.data)
-		? resourceAttributesCardSkeleton(h, "DockerIcon")
+		? resourceAttributesCardSkeleton(h)
 		: undefined
 }
 
 const stats = (h: H, summary: Summary): Html =>
 	statRail(h, {}, [
-		statRailItem(h, { eyebrow: "CPU", value: formatPercent(summary.cpuPct), tone: severityLevel(summary.cpuPct), compact: true }),
+		statRailItem(h, {
+			eyebrow: "CPU",
+			value: formatPercent(summary.cpuPct),
+			tone: severityLevel(summary.cpuPct),
+			compact: true,
+		}),
 		statRailItem(h, {
 			eyebrow: "Memory vs limit",
 			value: formatPercent(summary.memoryPct),
@@ -94,14 +103,26 @@ const noData = (h: H, model: Model): Html =>
 			[
 				...(Frame.canWidenTimeRange(model.search, DEFAULT_PRESET)
 					? [
-							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedWidenRange())] }, [
-								"Show last 7 days",
-							]),
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedWidenRange())],
+								},
+								["Show last 7 days"],
+							),
 						]
 					: []),
-				linkButton(h, { variant: "outline", size: "sm", href: hrefOf(AppRoute.InfraContainers({ search: {} })) }, [
-					"Back to containers",
-				]),
+				linkButton(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						href: hrefOf(AppRoute.InfraContainers({ search: {} })),
+					},
+					["Back to containers"],
+				),
 			],
 		),
 	])
@@ -110,7 +131,11 @@ const summaryArea = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => statRailLoading(h, 5),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load container metrics", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load container metrics",
+				onRetry: Message.ClickedRetrySummary(),
+			}),
 		onData: (summary) => (summary === null ? noData(h, model) : stats(h, summary)),
 	})
 
@@ -119,26 +144,33 @@ const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	const metric = model.metric
+	const hero = pageHeroParts(h, {
+		title: h.span([h.Class("font-mono")], [model.containerName]),
+		description: "Container metrics from the Docker stats receiver.",
+		meta: [
+			...(summary?.hostName ? [heroChip(h, ["host ", summary.hostName])] : []),
+			...(summary?.imageName ? [heroChip(h, ["image ", summary.imageName])] : []),
+			...(summary?.runtime ? [heroChip(h, ["runtime ", summary.runtime])] : []),
+		],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					titleContent: hero.title,
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					rightPanel: rightPanel(h, model),
-					scrollClassName: "gap-6",
+					gap: "lg",
 				},
 				[
-					pageHero(h, {
-						title: h.span([h.Class("font-mono")], [model.containerName]),
-						description: "Container metrics from the Docker stats receiver.",
-						meta: [
-							...(summary?.hostName ? [heroChip(h, ["host ", summary.hostName])] : []),
-							...(summary?.imageName ? [heroChip(h, ["image ", summary.imageName])] : []),
-							...(summary?.runtime ? [heroChip(h, ["runtime ", summary.runtime])] : []),
-						],
-					}),
+					hero.body,
 					summaryArea(h, model),
 					h.div(
 						[h.Class("space-y-3")],

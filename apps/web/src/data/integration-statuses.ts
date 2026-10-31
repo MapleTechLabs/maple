@@ -1,10 +1,14 @@
-import type { CloudflareIntegrationStatus, RailwayIntegrationStatus } from "@maple/domain/http"
+import type {
+	CloudflareIntegrationStatus,
+	RailwayIntegrationStatus,
+	SupabaseIntegrationStatus,
+} from "@maple/domain/http"
 import type { V2GcpIntegration, V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { Context, Effect, Layer, Option, Ref, SynchronizedRef } from "effect"
 import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 
 /**
- * The four integration statuses the sidebar mounts and the infra integration pages read:
+ * The integration statuses the sidebar mounts and the infra integration pages read:
  * one request per status, shared while in flight
  * and kept after, until a reader asks for a refresh (a write's `reactivityKeys`, an empty-page poll).
  */
@@ -55,6 +59,7 @@ export class IntegrationStatuses extends Context.Service<
 		readonly railway: Loader<RailwayIntegrationStatus>
 		readonly planetscale: Loader<PlanetscaleStatus>
 		readonly gcp: Loader<GcpStatus>
+		readonly supabase: Loader<SupabaseIntegrationStatus>
 		/** The open org: readers that do not name one read under it. */
 		readonly scopeTo: (orgId: string) => Effect.Effect<void>
 	}
@@ -76,6 +81,7 @@ export class IntegrationStatuses extends Context.Service<
 				railway: inOrg(yield* sharedLoader(internal.integrations.railwayStatus())),
 				planetscale: inOrg(yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())),
 				gcp: inOrg(yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())),
+				supabase: inOrg(yield* sharedLoader(internal.integrations.supabaseStatus())),
 				scopeTo: (orgId: string) => Ref.set(openOrg, Option.some(orgId)),
 			}
 		}),

@@ -109,6 +109,17 @@ function meadowOutline({ id, width, depth }: District) {
 	return new THREE.Shape(outline)
 }
 
+/** Neighbouring namespaces get slightly different moss, so each zone reads as its own field. */
+function zoneMoss(id: string, palette: InkPalette) {
+	const tones = [
+		palette.plinth,
+		fade(palette.plinth, palette.evergreen, 0.35),
+		fade(palette.plinth, palette.kraft, 0.22),
+		fade(palette.plinth, palette.stone, 0.25),
+	]
+	return tones[zoneSeed(id) % tones.length] ?? palette.plinth
+}
+
 export function meadowMat(_scope: Scope, { district, palette }: { district: District; palette: InkPalette }) {
 	const [x, y, z] = district.position
 	const top = y + 0.16
@@ -120,7 +131,7 @@ export function meadowMat(_scope: Scope, { district, palette }: { district: Dist
 	const lines = new THREE.EdgesGeometry(faces, 35)
 	const tufts = meadowTufts(edge, x, top, z, district.id)
 	const turf = mesh(faces, paperMaterial("#ffffff"))
-	paintTurf(turf.geometry, palette.plinth, palette.soil)
+	paintTurf(turf.geometry, zoneMoss(district.id, palette), palette.soil)
 	return group({}, [turf, inkOutline(lines, palette.ink), inkLines(tufts, palette.evergreen)])
 }
 

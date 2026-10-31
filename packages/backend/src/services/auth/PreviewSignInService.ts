@@ -144,7 +144,7 @@ const clerkPort = (secretKey: string): PreviewClerk => {
 }
 
 export class PreviewSignInService extends Context.Service<PreviewSignInService, PreviewSignInServiceApi>()(
-	"@maple/api/services/auth/PreviewSignInService",
+	"@maple/backend/services/auth/PreviewSignInService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

@@ -82,14 +82,20 @@ export const syncSheet = (
 	}
 	// A new `ReviewDetailBody` reads its own atom: the previous review is never shown while it loads.
 	const opened = liftDialog(
-		{ ...sheet, reviewId, detail: Keyed.idle(), ciRuns: Keyed.idle(), nowMs: Math.max(sheet.nowMs, nowMs) },
+		{
+			...sheet,
+			reviewId,
+			detail: Keyed.idle(),
+			ciRuns: Keyed.idle(),
+			nowMs: Math.max(sheet.nowMs, nowMs),
+		},
 		Dialog.open(sheet.dialog),
 	)
 	const read = readDetail(opened.sheet, reviewId, context, "Load")
 	return { sheet: read.sheet, commands: [...opened.commands, ...read.commands], out: null }
 }
 
-const LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000
+const LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000
 const MINUTE_MS = 60_000
 /** `SHOWN`: the latest runs the sheet lists. */
 export const CI_RUNS_SHOWN = 20

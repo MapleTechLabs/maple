@@ -89,12 +89,25 @@ type PlanState = Readonly<{
 	asked: ReadonlyArray<string>
 }>
 
-/** Asks for a gate's request unless this pass already did, or the key is held and fresh. */
-const ask = (state: PlanState, gate: WidgetGate, mode: Keyed.RequestMode): PlanState => {
-	if (gate._tag !== "Request") return state
+const requestKeyOf = (gate: WidgetGate | null | undefined): string | null =>
+	gate?._tag === "Request" ? gate.request.key : null
+
+/** The previous key whose data may stand in for a new one: only when just the window moved. */
+const carriedKeyOf = (gate: Extract<WidgetGate, { _tag: "Request" }>, previous: WidgetGate | null | undefined) =>
+	previous?._tag === "Request" && previous.request.shape === gate.request.shape ? previous.request.key : null
+
+/**
+ * Asks for a gate's request unless this pass already did, or the key is held and fresh. A new key
+ * for the same query over a new window starts from the tile's previous key, so its data shows as
+ * refreshing; a different query starts loading.
+ */
+const ask = (state: PlanState, gate: WidgetGate | null, previous: WidgetGate | null | undefined, mode: Keyed.RequestMode): PlanState => {
+	if (gate === null || gate._tag !== "Request") return state
 	const { key, endpoint, params } = gate.request
 	if (state.asked.includes(key)) return state
-	return Option.match(Keyed.request(state.requests[key] ?? Keyed.idle(), key, mode), {
+	const previousKey = carriedKeyOf(gate, previous)
+	const seed = state.requests[key] ?? (previousKey === null ? undefined : state.requests[previousKey]) ?? Keyed.idle()
+	return Option.match(Keyed.request(seed, key, mode), {
 		onNone: () => state,
 		onSome: (next) => ({
 			...state,
@@ -105,9 +118,18 @@ const ask = (state: PlanState, gate: WidgetGate, mode: Keyed.RequestMode): PlanS
 	})
 }
 
+/** Drops request slots no tile's current gate points at, so refreshes do not grow the map. */
+const referencedRequests = (state: PlanState): Model["requests"] => {
+	const keys = new Set(
+		Object.values(state.widgets).flatMap((slot) => [requestKeyOf(slot.gate), requestKeyOf(slot.sparkGate)]),
+	)
+	return Object.fromEntries(Object.entries(state.requests).filter(([key]) => keys.has(key)))
+}
+
 /**
  * `StatSparklineLoader` mounts inside the stat's ready frame, so its series is asked for only once
- * the stat itself has data, at the series' own default resolution.
+ * the stat itself has data, at the series' own default resolution. While the stat is loading again
+ * the previous series gate is kept, so its data survives pruning until replaced or disabled.
  */
 const sparklineGate = (
 	context: PageContext,
@@ -115,12 +137,15 @@ const sparklineGate = (
 	window: ReturnType<typeof windowOf>,
 	requests: Model["requests"],
 	gate: WidgetGate,
+	previous: WidgetGate | null | undefined,
 	variables: ReturnType<typeof variablesOf>,
 ): WidgetGate | null => {
 	const sparkline = widget.display.sparkline
 	if (widget.visualization !== "stat" || sparkline?.enabled !== true || sparkline.dataSource === undefined)
 		return null
-	if (dataStateOf(requests, widget, gate)._tag !== "Ready") return null
+	const state = dataStateOf(requests, widget, gate)._tag
+	if (state === "Loading") return previous ?? null
+	if (state !== "Ready") return null
 	return planWidget({
 		orgId: context.orgId,
 		dataSource: sparkline.dataSource,
@@ -164,15 +189,15 @@ export const replan = (
 			variables,
 			isNarrowed: slot.isNarrowed === true,
 		})
-		const sparkGate = sparklineGate(context, widget, window, state.requests, gate, variables)
-		const widgets = { ...state.widgets, [widget.id]: { ...slot, gate, sparkGate } }
-		return [gate, sparkGate].reduce(
-			(acc, next) => (next === null ? acc : ask(acc, next, mode)),
-			{ ...state, widgets },
-		)
+		// The stat is asked for first, so its refreshing data gates the sparkline on the new key.
+		const asked = ask(state, gate, slot.gate, mode)
+		const sparkGate = sparklineGate(context, widget, window, asked.requests, gate, slot.sparkGate, variables)
+		const kept = sparkGate !== null && sparkGate === slot.sparkGate
+		const widgets = { ...asked.widgets, [widget.id]: { ...slot, gate, sparkGate } }
+		return kept ? { ...asked, widgets } : ask({ ...asked, widgets }, sparkGate, slot.sparkGate, mode)
 	}, initial)
 	return {
-		model: { ...withOptions, widgets: planned.widgets, requests: planned.requests },
+		model: { ...withOptions, widgets: planned.widgets, requests: referencedRequests(planned) },
 		commands: planned.commands,
 	}
 }

@@ -130,6 +130,30 @@ describe("setupErrorCapture", () => {
 		}
 	})
 
+	it("groups a thrown non-Error by where it was thrown, with signed script URLs redacted", () => {
+		const stop = setupErrorCapture()
+		window.dispatchEvent(
+			new ErrorEvent("error", {
+				error: "boom",
+				message: "Uncaught boom",
+				filename: "https://cdn.test/app.js?signature=abc",
+				lineno: 3,
+				colno: 7,
+			}),
+		)
+		stop()
+
+		const [span] = exporter.getFinishedSpans()
+		assert.strictEqual(span?.attributes["code.file.path"], "https://cdn.test/app.js?signature=REDACTED")
+		const event = exceptionEventOf(span!)
+		assert.strictEqual(event?.attributes?.["exception.message"], "boom")
+		// One frame at the throw site, none from inside the SDK.
+		assert.strictEqual(
+			event?.attributes?.["exception.stacktrace"],
+			"Error: boom\n    at https://cdn.test/app.js?signature=REDACTED:3:7",
+		)
+	})
+
 	it("drops an opaque cross-origin script error", () => {
 		const stop = setupErrorCapture()
 		// No error object, no filename — "Script error." carries nothing
@@ -163,6 +187,13 @@ describe("filters and linked errors", () => {
 		window.dispatchEvent(new ErrorEvent("error", { error, message: error.message }))
 		stop()
 		assert.strictEqual(exporter.getFinishedSpans().length, 0)
+	})
+
+	it("describes a thrown plain object by its fields, with no stack from inside the SDK", () => {
+		captureException({ code: 1, reason: "busy" })
+		const event = exceptionEventOf(exporter.getFinishedSpans()[0]!)
+		assert.strictEqual(event?.attributes?.["exception.message"], '{"code":1,"reason":"busy"}')
+		assert.isUndefined(event?.attributes?.["exception.stacktrace"])
 	})
 
 	it("records the cause chain in exception.stacktrace", () => {

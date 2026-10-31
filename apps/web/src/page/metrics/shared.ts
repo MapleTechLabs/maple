@@ -21,9 +21,9 @@ export type MetricRow = typeof MetricRow.Type
 // copied: `metricTypeConfig` and `METRIC_TYPE_COLORS` (packages/ui/src/components/metrics/metric-type-badge.tsx, a React module).
 const METRIC_TYPE_CONFIG = new Map<string, Readonly<{ label: string; className: string }>>([
 	["sum", { label: "Sum", className: "bg-chart-p50/15 text-chart-p50" }],
-	["gauge", { label: "Gauge", className: "bg-severity-info/15 text-severity-info" }],
+	["gauge", { label: "Gauge", className: "bg-severity-info-a2 text-severity-info" }],
 	["histogram", { label: "Histogram", className: "bg-chart-4/15 text-chart-4" }],
-	["exponential_histogram", { label: "Exp Hist", className: "bg-primary/15 text-primary" }],
+	["exponential_histogram", { label: "Exp Hist", className: "bg-primary-a2 text-primary" }],
 ])
 
 export const METRIC_TYPE_COLORS = new Map<string, string>([

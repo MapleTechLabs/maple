@@ -13,8 +13,8 @@ type Mode = "text" | "trace" | "header"
 
 // The search mode badge's label and colours.
 const MODE = new Map<Mode, Readonly<{ label: string; className: string }>>([
-	["text", { label: "Text", className: "bg-primary/15 text-primary" }],
-	["trace", { label: "Trace", className: "bg-info/15 text-info" }],
+	["text", { label: "Text", className: "bg-primary-a2 text-primary" }],
+	["trace", { label: "Trace", className: "bg-severity-debug-a2 text-severity-debug" }],
 	["header", { label: "Header", className: "bg-chart-throughput/15 text-chart-throughput" }],
 ])
 
@@ -61,7 +61,7 @@ const lookupRow = (h: HtmlBuilder<Message>, lookup: (typeof LOOKUPS)[number]): H
 			h.dd([h.Class("min-w-0 truncate font-mono text-2xs text-foreground")], [lookup.example]),
 			h.dd(
 				[h.Class("col-start-2 text-2xs text-muted-foreground leading-relaxed")],
-				[lookup.does, " ", h.span([h.Class("text-muted-foreground/60")], ["(", lookup.note, ")"])],
+				[lookup.does, " ", h.span([h.Class("text-foreground-subtle")], ["(", lookup.note, ")"])],
 			),
 		],
 	)
@@ -80,7 +80,7 @@ const content = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	h.div(
 		[
 			h.Class(
-				"mt-3 break-words rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-2xs text-foreground leading-relaxed",
+				"mt-3 break-words rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-2xs text-foreground leading-relaxed",
 			),
 		],
 		highlightedText(h, TEXT_EXAMPLE, "conn reset"),
@@ -113,7 +113,7 @@ export const searchHelp = (h: HtmlBuilder<Message>, model: Popover.Model): Html 
 								h.Type("button"),
 								h.AriaLabel("What you can search for"),
 								h.Class(
-									"cursor-pointer rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
+									"cursor-pointer rounded-sm text-foreground-subtle hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
 								),
 								...trigger,
 							],

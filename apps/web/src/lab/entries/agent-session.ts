@@ -12,7 +12,7 @@ import { Model as SessionModel } from "../../page/agent-sessions/session/model"
 import type { Resources } from "../../platform/resources"
 import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
 import * as Toast from "../../ui/toast"
-import { toggle } from "../../ui/toggle"
+import { segmentedSelect } from "../../ui/segmented-select"
 import { defineLabWithFlags } from "../define"
 import {
 	enterSession,
@@ -26,17 +26,25 @@ import {
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 
 // `/lab/agent-session`: the session page's header and four
-// views over the package's fixture, with the Clean and Capture off toggles. No warehouse reads.
+// views over the package's fixtures, picked with a Fixture control. No warehouse reads.
 
 const SESSION_ID = "lab-session-0f3c9a1e2b7d"
 
 const Flags = Schema.Struct({ ...ViewerFlags.fields, view: Schema.NullOr(Schema.String) })
 type Flags = typeof Flags.Type
 
+const Fixture = Schema.Literals(["findings", "clean", "captureOff"])
+type Fixture = typeof Fixture.Type
+
+const FIXTURE_OPTIONS: ReadonlyArray<{ value: Fixture; label: string }> = [
+	{ value: "findings", label: "With findings" },
+	{ value: "clean", label: "Clean" },
+	{ value: "captureOff", label: "Capture off" },
+]
+
 const Model = Schema.Struct({
 	session: SessionModel,
-	isClean: Schema.Boolean,
-	isCaptureOff: Schema.Boolean,
+	fixture: Fixture,
 	timeZone: Schema.String,
 	toasts: Toast.Model,
 })
@@ -44,8 +52,7 @@ type Model = typeof Model.Type
 
 const Message = defineMessageUnion({
 	GotSessionMessage: { message: SessionMessage },
-	ToggledClean: {},
-	ToggledCaptureOff: {},
+	ChoseFixture: { fixture: Fixture },
 	GotToastMessage: { message: Toast.Message },
 })
 type Message = typeof Message.Type
@@ -54,9 +61,13 @@ type Return = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<
 
 const toLab = (message: SessionMessage) => Message.GotSessionMessage({ message })
 
-const spansOf = (isClean: boolean, isCaptureOff: boolean) =>
+const spansOf = (fixture: Fixture) =>
 	toWire(
-		isClean ? buildCleanFixture() : isCaptureOff ? buildCaptureOffFixture() : buildAgentSessionFixture(),
+		fixture === "clean"
+			? buildCleanFixture()
+			: fixture === "captureOff"
+				? buildCaptureOffFixture()
+				: buildAgentSessionFixture(),
 		SESSION_ID,
 	)
 
@@ -65,19 +76,18 @@ const landed = (model: Model, step: SessionStep): Return => ({
 	commands: Command.mapMessages(step.commands, toLab),
 })
 
-/** A toggle swaps the session's spans; the views keep their state. */
+/** A fixture swaps the session's spans; the views keep their state. */
 const swapped = (model: Model): Return =>
-	landed(model, withSpans(model.session, spansOf(model.isClean, model.isCaptureOff), model.timeZone))
+	landed(model, withSpans(model.session, spansOf(model.fixture), model.timeZone))
 
 const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
 
 const init = (flags: Flags): Return => {
-	const entered = enterSession(SESSION_ID, flags.view ?? undefined, spansOf(false, false), flags.timeZone)
+	const entered = enterSession(SESSION_ID, flags.view ?? undefined, spansOf("findings"), flags.timeZone)
 	return landed(
 		{
 			session: entered.session,
-			isClean: false,
-			isCaptureOff: false,
+			fixture: "findings",
 			timeZone: flags.timeZone,
 			toasts: initLabToasts(),
 		},
@@ -89,13 +99,9 @@ const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotSessionMessage: ({ message: inner }) =>
 			landed(model, stepSession(model.session, inner, model.timeZone)),
-		ToggledClean: () => swapped({ ...model, isClean: !model.isClean }),
-		ToggledCaptureOff: () => swapped({ ...model, isCaptureOff: !model.isCaptureOff }),
+		ChoseFixture: ({ fixture }) => swapped({ ...model, fixture }),
 		GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
 	})
-
-const labToggle = (h: HtmlBuilder<Message>, label: string, isPressed: boolean, onClick: Message): Html =>
-	toggle(h, { variant: "outline", size: "sm", isPressed, onClick, className: "text-xs" }, [label])
 
 const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const selected = model.session.search.span
@@ -129,8 +135,15 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 					h.div(
 						[h.Class("ml-auto flex shrink-0 items-center gap-2")],
 						[
-							labToggle(h, "Clean", model.isClean, Message.ToggledClean()),
-							labToggle(h, "Capture off", model.isCaptureOff, Message.ToggledCaptureOff()),
+							// A lab fixture picker, not a session setting: the session page itself is read-only.
+							h.span([h.Class("text-xs text-muted-foreground")], ["Fixture"]),
+							segmentedSelect(h, {
+								options: FIXTURE_OPTIONS,
+								value: model.fixture,
+								onChange: (fixture) => Message.ChoseFixture({ fixture }),
+								size: "sm",
+								ariaLabel: "Fixture",
+							}),
 						],
 					),
 				],

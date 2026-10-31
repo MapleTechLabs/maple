@@ -1,0 +1,13 @@
+{
+	"extends": "./packages/alchemy-maple/tsconfig.json",
+	"include": ["packages/alchemy-maple/src/**/*.ts"],
+	"compilerOptions": {
+		"paths": {
+			"@maple/domain/*": ["./packages/domain/src/*"],
+			"@maple/widgets": ["./packages/widgets/src/index.ts"],
+			"@maple/widgets/*": ["./packages/widgets/src/*"],
+			"@maple/query-model": ["./packages/query-model/src/index.ts"],
+			"@maple/primitives": ["./packages/primitives/src/index.ts"]
+		}
+	}
+}

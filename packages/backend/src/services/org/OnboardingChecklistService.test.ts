@@ -165,6 +165,7 @@ const stubs = (world: World) =>
 								})),
 							),
 				),
+			listOrganizationsOf: die,
 			resolveMembers: die,
 		}),
 		Layer.succeed(AutumnClient, {
@@ -246,10 +247,10 @@ const connectGithub = (testDb: TestDb, status: "active" | "suspended" = "active"
 	Effect.promise(() =>
 		executeSql(
 			testDb,
-			`INSERT INTO vcs_installations
+			`WITH source AS (INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at) VALUES (gen_random_uuid()::text, $2, 'Source', 'github', 'integration', now(), now()) RETURNING id) INSERT INTO vcs_installations
 			   (id, org_id, provider, external_installation_id, account_login, account_type,
-			    external_account_id, installed_by_user_id, status, created_at, updated_at)
-			 VALUES ($1, $2, 'github', '42', 'acme', 'organization', '7', $3, $4, now(), now())`,
+			    external_account_id, installed_by_user_id, status, created_at, updated_at, source_id)
+			 SELECT $1, $2, 'github', '42', 'acme', 'organization', '7', $3, $4, now(), now(), source.id FROM source`,
 			[
 				status === "active"
 					? "0b2c1c3e-1d2a-4f3b-9c8d-0000000000a1"

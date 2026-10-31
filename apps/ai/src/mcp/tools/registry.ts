@@ -1,7 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, type SchemaAST } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
@@ -25,6 +25,9 @@ import { registerListSourcesTool } from "./list-sources"
 import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
+import { registerUptimeMonitorTools } from "./uptime-monitors"
+import { registerIngestRuleTools } from "./ingest-rules"
+import { registerStatusPageTools } from "./status-pages"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
 import { registerServiceDeploymentsTool } from "./service-deployments"
@@ -55,6 +58,7 @@ import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
 import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
+import { registerGetErrorNotificationPolicyTool } from "./get-error-notification-policy"
 import { registerListDashboardsTool } from "./list-dashboards"
 import { registerListMetricsTool } from "./list-metrics"
 import { registerListServicesTool } from "./list-services"
@@ -118,6 +122,8 @@ export interface MapleToolCatalogEntry {
 	readonly title: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
+	/** How arguments decode; `rejectUnknownKeys` tools refuse nested keys the schema lacks. */
+	readonly parseOptions: SchemaAST.ParseOptions
 	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
 	readonly hints: McpToolHints
 	readonly aliases: Readonly<Record<string, string>>
@@ -188,21 +194,24 @@ const isEmptyStructSchema = (base: Record<string, unknown>): boolean => {
  * Safe only while no MCP parameter is GENUINELY nullable — `Schema.NullOr` would
  * render identically and be wrongly narrowed here. `registry.test.ts` pins that
  * invariant by decoding `null` into every parameter of every tool.
+ * The one exception, `P.optionalNullableNumberOneOf`, is optional and names null in its description.
  */
 const collapseNullableUnions = (node: unknown): unknown => {
 	if (Array.isArray(node)) return node.map(collapseNullableUnions)
 	if (node === null || typeof node !== "object") return node
 	const obj = node as Record<string, unknown>
 	const anyOf = obj.anyOf
-	if (Array.isArray(anyOf) && anyOf.length === 2) {
-		const nullIndex = anyOf.findIndex(
-			(member) => (member as Record<string, unknown> | null)?.type === "null",
-		)
-		if (nullIndex !== -1) {
+	if (Array.isArray(anyOf)) {
+		// Nested unions arrive flattened: `optional(Union([A, B]))` is `anyOf: [A, B, null]`.
+		const kept = anyOf.filter((member) => !isJsonObject(member) || member.type !== "null")
+		if (kept.length > 0 && kept.length < anyOf.length) {
 			const { anyOf: _replaced, ...siblings } = obj
-			const kept = anyOf[1 - nullIndex] as Record<string, unknown>
 			// Siblings last: a `description` on the property outranks one on the branch.
-			return collapseNullableUnions({ ...kept, ...siblings })
+			return collapseNullableUnions(
+				kept.length === 1 && isJsonObject(kept[0])
+					? { ...kept[0], ...siblings }
+					: { anyOf: kept, ...siblings },
+			)
 		}
 	}
 	return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, collapseNullableUnions(value)]))
@@ -336,6 +345,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
+			parseOptions: { onExcessProperty: spec.rejectUnknownKeys === true ? "error" : "ignore" },
 			outputSchema: spec.output,
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
@@ -427,6 +437,9 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCiRunsTool(registrar)
 	registerCompareCommitsTool(registrar)
 	registerIntegrationWriteTools(registrar)
+	registerUptimeMonitorTools(registrar)
+	registerIngestRuleTools(registrar)
+	registerStatusPageTools(registrar)
 	registerSourceCodeTools(registrar)
 	registerSandboxTools(registrar)
 	registerPullRequestTools(registrar)
@@ -443,6 +456,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRegisterAgentTool(registrar)
 	registerSendMapleFeedbackTool(registrar)
 	registerListErrorIncidentsTool(registrar)
+	registerGetErrorNotificationPolicyTool(registrar)
 	registerUpdateErrorNotificationPolicyTool(registrar)
 
 	return definitions
@@ -500,7 +514,9 @@ export const readToolCall = (
 	return {
 		args: isArgumentRecord(normalized.args) ? normalized.args : {},
 		unknown: normalized.unknown.map((entry) => entry.key),
-		decodes: Schema.decodeUnknownOption(definition.schema)(normalized.args)._tag === "Some",
+		decodes:
+			Schema.decodeUnknownOption(definition.schema)(normalized.args, definition.parseOptions)._tag ===
+			"Some",
 	}
 }
 
@@ -539,7 +555,7 @@ const isValidNextCall = (call: NextCall, surface: McpToolSurface): boolean => {
 	const normalized = normalizeFor(target, call.args)
 	return (
 		normalized.unknown.length === 0 &&
-		Schema.decodeUnknownOption(target.schema)(normalized.args)._tag === "Some"
+		Schema.decodeUnknownOption(target.schema)(normalized.args, target.parseOptions)._tag === "Some"
 	)
 }
 
@@ -608,7 +624,10 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 			? undefined
 			: { "maple.mcp.tool.aliased_arguments": normalized.renamed.map(([from]) => from).join(",") }),
 	})
-	const decoded = yield* Schema.decodeUnknownEffect(definition.schema)(normalized.args).pipe(
+	const decoded = yield* Schema.decodeUnknownEffect(definition.schema)(
+		normalized.args,
+		definition.parseOptions,
+	).pipe(
 		Effect.mapError(
 			(error) =>
 				new McpDecodeError({

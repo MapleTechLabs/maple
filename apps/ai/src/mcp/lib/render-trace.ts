@@ -1,5 +1,5 @@
 import type { SpanNode } from "@maple/query-engine/observability"
-import type { InspectTraceOutput, SpanNodeOutput } from "@maple/domain/mcp-outputs"
+import type { InspectTraceOutput, TraceSpanOutput } from "@maple/domain/mcp-outputs"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
 import { doc, type DocBlock, type ToolDoc } from "./tool-doc"
@@ -52,6 +52,39 @@ export function rollupSpanNames(roots: ReadonlyArray<SpanNode>): Array<Rollup> {
 	return [...byKey.values()].sort((a, b) => b.totalDurationMs - a.totalDurationMs).slice(0, ROLLUP_ROWS)
 }
 
+/** The tree as a flat pre-order list with depths, so the output's JSON nesting is constant. */
+export function flattenSpanTree(roots: ReadonlyArray<SpanNode>): Array<TraceSpanOutput> {
+	const out: Array<TraceSpanOutput> = []
+	const stack = roots.map((node) => ({ node, depth: 0 })).reverse()
+	for (let entry = stack.pop(); entry !== undefined; entry = stack.pop()) {
+		const { children, ...span } = entry.node
+		out.push({ ...span, depth: entry.depth })
+		const depth = entry.depth + 1
+		stack.push(...children.map((node) => ({ node, depth })).reverse())
+	}
+	return out
+}
+
+interface TreeNode {
+	readonly span: TraceSpanOutput
+	readonly children: Array<TreeNode>
+}
+
+/** Rebuild the tree from the pre-order list: a span's parent is the last span one level up. */
+export function spanTreeOf(spans: ReadonlyArray<TraceSpanOutput>): Array<TreeNode> {
+	const roots: Array<TreeNode> = []
+	const path: Array<TreeNode> = []
+	for (const span of spans) {
+		const node: TreeNode = { span, children: [] }
+		path.length = Math.min(span.depth, path.length)
+		const parent = path[path.length - 1]
+		if (parent === undefined) roots.push(node)
+		else parent.children.push(node)
+		path.push(node)
+	}
+	return roots
+}
+
 /**
  * Bound a trace to its overview: the output mirrors the rendered tree, not the full
  * (up to 5_000-span) tree, which keeps the response bounded.
@@ -63,7 +96,7 @@ export function buildTraceOverview(input: TraceOverviewInput): Output {
 		serviceCount: input.serviceCount,
 		spanCount: input.spanCount,
 		rootDurationMs: input.rootDurationMs,
-		spans: overview.roots,
+		spans: flattenSpanTree(overview.roots),
 		renderedSpanCount: overview.renderedCount,
 		totalSpanCount: overview.totalCount,
 		truncated: overview.truncated,
@@ -84,7 +117,7 @@ const renderTree = (output: Output): string => {
 	const lines: Array<string> = []
 	// Resource attributes are per service; print them once, on its first span.
 	const servicesWithResource = new Set<string>()
-	const renderNode = (node: SpanNodeOutput, prefix: string, isLast: boolean): void => {
+	const renderNode = ({ span: node, children }: TreeNode, prefix: string, isLast: boolean): void => {
 		const connector = prefix === "" ? "" : isLast ? "└── " : "├── "
 		const status = node.statusCode === "Error" ? " [Error]" : node.statusCode === "Ok" ? " [Ok]" : ""
 		// Full span id at the END of the line: readable label first, copyable id
@@ -97,7 +130,7 @@ const renderTree = (output: Output): string => {
 		// parent is what the SDK reported (e.g. a frozen clock), not a render bug.
 		const notes = [
 			...(node.rawSpanName === undefined ? [] : [`span_name="${node.rawSpanName}"`]),
-			...(node.durationMs === 0 && node.children.length > 0 ? ["duration not recorded"] : []),
+			...(node.durationMs === 0 && children.length > 0 ? ["duration not recorded"] : []),
 		]
 		if (notes.length > 0) lines.push(`${detailPrefix}    ${notes.join(", ")}`)
 		if (node.statusCode === "Error" && node.statusMessage) {
@@ -117,8 +150,8 @@ const renderTree = (output: Output): string => {
 			)
 		}
 		const omitted = omittedByParent.get(node.spanId)
-		node.children.forEach((child, i) => {
-			renderNode(child, detailPrefix, i === node.children.length - 1 && omitted === undefined)
+		children.forEach((child, i) => {
+			renderNode(child, detailPrefix, i === children.length - 1 && omitted === undefined)
 		})
 		if (omitted !== undefined) {
 			const omittedConnector = detailPrefix === "" ? "" : "└── "
@@ -128,7 +161,7 @@ const renderTree = (output: Output): string => {
 			)
 		}
 	}
-	output.spans.forEach((root) => renderNode(root, "", true))
+	spanTreeOf(output.spans).forEach((root) => renderNode(root, "", true))
 	return lines.join("\n")
 }
 
@@ -144,21 +177,7 @@ const renderLogs = (logs: Output["logs"]): string =>
 		}),
 	].join("\n")
 
-const collectServices = (node: SpanNodeOutput): Array<string> => [
-	node.serviceName,
-	...node.children.flatMap(collectServices),
-]
-
-const findFirstError = (nodes: ReadonlyArray<SpanNodeOutput>): SpanNodeOutput | undefined => {
-	for (const node of nodes) {
-		const hit = node.statusCode === "Error" ? node : findFirstError(node.children)
-		if (hit !== undefined) return hit
-	}
-	return undefined
-}
-
-const hasErrorSpan = (node: SpanNodeOutput): boolean =>
-	node.statusCode === "Error" || node.children.some(hasErrorSpan)
+const isErrorSpan = (span: TraceSpanOutput): boolean => span.statusCode === "Error"
 
 /**
  * The trace as a bounded span tree (+ related logs). Pure, from the output alone, so the exact
@@ -212,8 +231,8 @@ export function renderTraceOverview(output: Output): ToolDoc {
 		)
 	}
 	if (output.logs.length > 0) blocks.push(doc.text(renderLogs(output.logs)))
-	const services = [...new Set(output.spans.flatMap(collectServices))]
-	const focus = findFirstError(output.spans) ?? output.spans[0]
+	const services = [...new Set(output.spans.map((span) => span.serviceName))]
+	const focus = output.spans.find(isErrorSpan) ?? output.spans[0]
 	return {
 		title: `Trace ${output.traceId} (${output.serviceCount} services, ${output.spanCount} spans, ${formatDurationFromMs(output.rootDurationMs)})`,
 		scope: [
@@ -254,7 +273,7 @@ export function renderTraceOverview(output: Output): ToolDoc {
 								: "every attribute of the root span",
 						),
 					]),
-			...(output.spans.some(hasErrorSpan)
+			...(output.spans.some(isErrorSpan)
 				? [doc.next("search_logs", { trace_id: output.traceId }, "see all logs for this trace")]
 				: []),
 			...services

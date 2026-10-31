@@ -47,7 +47,12 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, locale: Schema.String, mode: RequestMode },
+	CompletedResolveWindow: {
+		window: TimeWindow,
+		nowMs: Schema.Number,
+		locale: Schema.String,
+		mode: RequestMode,
+	},
 	CompletedLoadStatus: result(GcpStatus),
 	CompletedFetchFleet: result(Schema.Array(FleetRead)),
 	CompletedFetchSparks: result(Schema.Array(SparkRead)),

@@ -60,7 +60,7 @@ function markdownReply(random: () => number, paragraphs: number): string {
 		}
 		if (p % 4 === 2) {
 			blocks.push(
-				Array.from({ length: 5 }, (_, i) => `- **item ${i}** — ${prose(random, 9)}`).join("\n"),
+				Array.from({ length: 5 }, (_, i) => `- **item ${i}**: ${prose(random, 9)}`).join("\n"),
 			)
 		}
 	}

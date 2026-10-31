@@ -1,6 +1,5 @@
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
-import { CI_RESULT_LABELS, windowWasCut } from "../../../components/code-review/ci/ci-format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { CI_RESULT_LABELS } from "../../../components/code-review/ci/ci-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -15,10 +14,11 @@ import { icon } from "../../../ui/icon"
 import type * as Select from "../../../ui/select"
 import { type SelectEntry, view as selectView } from "../../../ui/select-view"
 import type { PageViewInputs } from "../../contract"
-import { epochWindow } from "../kit/api"
 import { seriesTokens } from "../kit/analytics-panel"
-import { CI_PRESETS, filtersView } from "../kit/filters-view"
-import { codeReviewLayout, nothingInWindow } from "../kit/layout"
+import { filtersView } from "../kit/filters-view"
+import * as TimeRangePicker from "../../kit/time-range-picker"
+import { nothingInWindow } from "../../kit/nothing-in-window"
+import { codeReviewLayout } from "../kit/layout"
 import { sectionHeading } from "../../kit/section-heading"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
@@ -101,33 +101,14 @@ const runsActions = (h: H, model: Model): Html =>
 	)
 
 const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, timeZone: string): Html => {
-	const window = model.frame.window
-	const requestedStart = window === null ? analytics.startTime : epochWindow(window).startTime
-	const isCut = windowWasCut(requestedStart, analytics.startTime)
 	const windowLabel =
-		isCut || model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
+		model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
 	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
 	return h.div(
 		[h.Class("flex flex-col gap-6")],
 		[
-			...(isCut
-				? [
-						h.p(
-							[h.Class("text-sm text-muted-foreground")],
-							[
-								"CI analytics cover at most 14 days: showing runs since",
-								" ",
-								formatTimestampInTimezone(new Date(analytics.startTime), {
-									timeZone,
-									style: "range",
-								}),
-								".",
-							],
-						),
-					]
-				: []),
 			h.div(
 				[h.Class("flex flex-col gap-6")],
 				[
@@ -168,7 +149,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load CI analytics",
+				title: "Couldn't load CI analytics",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onData: (analytics) => {
@@ -192,8 +173,20 @@ const pipelinesOf = (model: Model): ReadonlyArray<string> =>
 		onSome: (analytics) => [...new Set(analytics.pipelines.map((row) => row.pipeline))].toSorted(),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	h.div(
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const filters = filtersView(h, {
+		frame: model.frame,
+		search: model.search,
+		reviewedOnly: false,
+		kind: "workflow",
+		options: pipelinesOf(model),
+		selected: model.search.pipeline,
+		defaultPreset: DEFAULT_PRESET,
+		presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+		toMessage: (message) => Message.GotFrameMessage({ message }),
+		isFailed: AsyncData.isFailure(model.analytics.data),
+	})
+	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
 			codeReviewLayout(
@@ -201,22 +194,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h,
 					active: "ci",
 					search: model.search,
-					nowMs: model.frame.nowMs,
-					timeZone: inputs.context.timeZone,
-					toolbar: filtersView(h, {
-						frame: model.frame,
-						search: model.search,
-						reviewedOnly: false,
-						kind: "workflow",
-						options: pipelinesOf(model),
-						selected: model.search.pipeline,
-						defaultPreset: DEFAULT_PRESET,
-						presets: CI_PRESETS,
-						toMessage: (message) => Message.GotFrameMessage({ message }),
-					}),
+					toolbar: filters.actions,
+					filters: filters.filters,
 				},
 				[content(h, model, inputs.context.timeZone)],
 			),
 		],
-	),
-)
+	)
+})

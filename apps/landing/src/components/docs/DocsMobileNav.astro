@@ -1,32 +1,114 @@
 ---
-// Below `lg` the sidebar folds into a disclosure above the article. Same tree
-// as the desktop sidebar — one component, two placements.
+// Below the rails the docs tree (below `lg`) and the outline (below `xl`) fold
+// into two disclosures. Their summaries are pinned side by side in one row and
+// the open panel flows in below it, so it pushes the article down. Plain
+// `<details>` (one open at a time via `name`); the script only adds polish.
 import { getCollection } from "astro:content";
 import DocsSidebar from "./DocsSidebar.astro";
+import TableOfContents from "../TableOfContents.astro";
 
 interface Props {
     currentSlug: string;
+    headings: Array<{ depth: number; slug: string; text: string }>;
+    hasToc: boolean;
+    tocDepth: 2 | 3;
 }
 
-const { currentSlug } = Astro.props;
+const { currentSlug, headings, hasToc, tocDepth } = Astro.props;
 
 const allDocs = await getCollection("docs", ({ data }) => !data.draft);
 const currentDoc = allDocs.find((d) => d.id === currentSlug);
+const currentLabel = currentDoc ? (currentDoc.data.navLabel ?? currentDoc.data.title) : null;
+
+const summaryClass =
+    "mnav-summary absolute top-0 flex h-10 cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-border px-3.5 text-[13px] text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary [&::-webkit-details-marker]:hidden";
+const panelClass = "max-h-[70vh] overflow-y-auto rounded-lg border border-border";
 ---
 
-<details class="rounded-lg border border-border lg:hidden">
-    <summary class="flex items-center justify-between px-4 py-2.5 cursor-pointer text-[13px] text-fg-muted hover:text-fg transition-colors list-none [&::-webkit-details-marker]:hidden">
-        <span class="flex min-w-0 items-baseline gap-2">
-            <span class="shrink-0">Browse the docs</span>
-            {currentDoc && (
-                <span class="truncate text-fg-muted/60" aria-hidden="true">· {currentDoc.data.navLabel ?? currentDoc.data.title}</span>
-            )}
-        </span>
-        <svg class="w-3 h-3 shrink-0 transition-transform details-open:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M3 5l3 3 3-3" />
-        </svg>
-    </summary>
-    <div class="max-h-[70vh] overflow-y-auto border-t border-border px-3 pt-4 pb-4">
-        <DocsSidebar currentSlug={currentSlug} idPrefix="docs-nav-mobile" />
-    </div>
-</details>
+<div data-docs-mobile-nav class:list={["mnav relative mb-8 pt-12", hasToc ? "xl:hidden" : "lg:hidden"]} data-has-toc={hasToc ? "" : undefined}>
+    <details name="docs-mobile-nav" data-docs-browse class="lg:hidden">
+        <summary class:list={[summaryClass, "mnav-browse left-0"]}>
+            <span class="flex min-w-0 items-baseline gap-1.5">
+                <span class="shrink-0">Browse</span>
+                {currentLabel && <span class="truncate text-fg-muted/60">· {currentLabel}</span>}
+            </span>
+            <svg class="details-open:rotate-180 h-3 w-3 shrink-0 transition-transform" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M3 5l3 3 3-3" />
+            </svg>
+        </summary>
+        <div class:list={[panelClass, "px-3 pt-4 pb-4"]} data-scroller>
+            <DocsSidebar currentSlug={currentSlug} idPrefix="docs-nav-mobile" />
+        </div>
+    </details>
+    {hasToc && (
+        <details name="docs-mobile-nav">
+            <summary class:list={[summaryClass, "mnav-toc right-0"]}>
+                <span class="whitespace-nowrap">On this page</span>
+                <svg class="details-open:rotate-180 h-3 w-3 shrink-0 transition-transform" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M3 5l3 3 3-3" />
+                </svg>
+            </summary>
+            <div class:list={[panelClass, "px-4 pt-4 pb-4"]}>
+                <TableOfContents headings={headings} maxDepth={tocDepth} spy={false} showLabel={false} />
+            </div>
+        </details>
+    )}
+</div>
+
+<style>
+    /* Browse fills the row; with an outline it leaves room for that button. */
+    .mnav-browse {
+        right: 0;
+    }
+    .mnav[data-has-toc] .mnav-browse {
+        right: calc(8.5rem + 0.5rem);
+    }
+    .mnav-toc {
+        width: 8.5rem;
+    }
+    details[open] > .mnav-summary {
+        color: var(--foreground);
+    }
+    /* From `lg` the sidebar is back and only the outline button remains. */
+    @media (min-width: 1024px) {
+        .mnav-toc {
+            left: 0;
+            width: auto;
+        }
+    }
+</style>
+
+<script>
+    const root = document.querySelector<HTMLElement>("[data-docs-mobile-nav]");
+    const panels = root ? [...root.querySelectorAll<HTMLDetailsElement>("details")] : [];
+
+    for (const details of panels) {
+        details.addEventListener("toggle", () => {
+            if (!details.open) return;
+            // `name` already keeps one open; this covers browsers without it.
+            for (const other of panels) if (other !== details) other.open = false;
+            // Opening the tree centres the current page in it instead of showing the top.
+            const scroller = details.querySelector<HTMLElement>("[data-scroller]");
+            const active = scroller?.querySelector<HTMLElement>("a[aria-current='page']");
+            if (scroller && active) {
+                const offset = active.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+                scroller.scrollTop += offset - (scroller.clientHeight - active.offsetHeight) / 2;
+            }
+        });
+    }
+
+    // A jump link in the outline closes it so the section lands at the top.
+    root?.addEventListener("click", (event) => {
+        const link = event.target instanceof Element ? event.target.closest("a[href^='#']") : null;
+        const details = link?.closest("details");
+        if (details) details.open = false;
+    });
+
+    // Escape closes the open panel and hands focus back to its summary.
+    document.addEventListener("keydown", (event) => {
+        const open = panels.find((d) => d.open);
+        if (event.key !== "Escape" || !open) return;
+        open.open = false;
+        open.querySelector<HTMLElement>("summary")?.focus();
+    });
+</script>

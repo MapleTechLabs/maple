@@ -85,6 +85,15 @@ describe("resolveWorkerName", () => {
 })
 
 describe("resolveMapleDomains", () => {
+	it("gives a preview's status Worker its own hostname, and prd and dev none", () => {
+		expect(resolveMapleDomains({ stage: stage("pr-42"), region: "us" }).status).toBe(
+			"status-pr-42.maple.dev",
+		)
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "us" }).status).toBeUndefined()
+		expect(resolveMapleDomains({ stage: stage("prd"), region: "eu" }).status).toBeUndefined()
+		expect(resolveMapleDomains({ stage: stage("dev_makisuo"), region: "us" }).status).toBeUndefined()
+	})
+
 	it("gives the EU instance its own hostnames under eu.maple.dev, and no shared apps", () => {
 		const eu = resolveMapleDomains({ stage: stage("prd"), region: "eu" })
 		expect(eu).toEqual({

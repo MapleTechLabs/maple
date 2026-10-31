@@ -1,3 +1,4 @@
+import { timestampMs } from "@maple/backend/platform/time"
 import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
@@ -30,6 +31,7 @@ import {
 	type V2Metric,
 	type V2MetricFilters,
 	type V2Service,
+	type V2ServiceHealthEntry,
 	type V2ServiceMapEdge,
 	type V2ServiceOperation,
 	type V2ServiceOverviewPoint,
@@ -44,6 +46,7 @@ import {
 	parseUtc,
 	formatWarehouseDateTimeMs,
 	parseWarehouseDateTime,
+	serviceHealthSnapshotHours,
 } from "@maple/query-engine"
 import {
 	computeBucketSeconds,
@@ -53,6 +56,7 @@ import {
 	MAX_QUERY_RANGE_SECONDS,
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
+	timeWindowViolation,
 } from "@maple/query-engine/runtime"
 import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
@@ -63,6 +67,7 @@ import {
 	type ServiceBaselines,
 } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import type { OperationRow } from "@maple/backend/queries/dashboard-reads"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
@@ -108,6 +113,8 @@ const parseWindow = (
 		readonly precision: WindowPrecision
 		readonly maxSeconds?: number
 		readonly rangeLabel?: string
+		/** The request's names for the two bounds, when they are not `start_time`/`end_time`. */
+		readonly params?: { readonly start: string; readonly end: string }
 	},
 ) =>
 	Effect.gen(function* () {
@@ -118,23 +125,25 @@ const parseWindow = (
 		// start_time", blaming the wrong parameter.
 		const startMs = parseWarehouseDateTime(start)
 		const endMs = parseWarehouseDateTime(end)
-		if (endMs <= startMs) {
-			return yield* Effect.fail(
-				V2TimeRangeInvalid.make("end_time must be later than start_time.", {
-					param: "end_time",
-				}),
-			)
-		}
-		const rangeSeconds = (endMs - startMs) / 1000
 		const maxSeconds = options.maxSeconds ?? MAX_QUERY_RANGE_SECONDS
-		if (rangeSeconds > maxSeconds) {
+		const violation = timeWindowViolation(startMs, endMs, maxSeconds)
+		if (violation === "empty") {
 			return yield* Effect.fail(
-				V2TelemetryRangeTooLarge.make(
-					`${options.rangeLabel ?? "Telemetry queries"} support a maximum time range of ${formatRangeSeconds(maxSeconds)}.`,
-					{ param: "start_time" },
+				V2TimeRangeInvalid.make(
+					`${options.params?.end ?? "end_time"} must be later than ${options.params?.start ?? "start_time"}.`,
+					{ param: options.params?.end ?? "end_time" },
 				),
 			)
 		}
+		if (violation === "too_wide") {
+			return yield* Effect.fail(
+				V2TelemetryRangeTooLarge.make(
+					`${options.rangeLabel ?? "Telemetry queries"} support a maximum time range of ${formatRangeSeconds(maxSeconds)}.`,
+					{ param: options.params?.start ?? "start_time" },
+				),
+			)
+		}
+		const rangeSeconds = (endMs - startMs) / 1000
 		const format = options.precision === "second" ? formatWarehouseDateTime : formatWarehouseDateTimeMs
 		return {
 			startTime: format(startMs),
@@ -599,10 +608,9 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const rows = yield* telemetry.traceSpans(tenant, params.trace_id)
+					const { rows, truncated } = yield* telemetry.traceSpans(tenant, params.trace_id)
 					if (rows.length === 0) return yield* Effect.fail(V2TraceNotFound.make())
-					const truncated = rows.length > CH.SPAN_HIERARCHY_MAX_SPANS
-					const spans = rows.slice(0, CH.SPAN_HIERARCHY_MAX_SPANS).map(toSpan)
+					const spans = rows.map(toSpan)
 					const startMs = Math.min(...spans.map((span) => parseWarehouseDateTime(span.start_time)))
 					const endMs = Math.max(
 						...spans.map((span) => parseWarehouseDateTime(span.start_time) + span.duration_ms),
@@ -997,7 +1005,33 @@ const toOverviewPoints = (
 		p99_latency_ms: Number(point.series.p99_duration ?? 0),
 	}))
 
-const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
+const baselineKey = (serviceName: string, environment: string) => JSON.stringify([serviceName, environment])
+
+/** Baseline per (service, environment); of several namespaces, the busiest one's. */
+const baselineByServiceEnvironment = (rows: ReadonlyArray<CH.ServiceHealthBaselineOutput>) =>
+	new Map(
+		[...rows]
+			.sort((left, right) => left.baselineSpanCount - right.baselineSpanCount)
+			.map((row) => [baselineKey(row.serviceName, row.environment), row] as const),
+	)
+
+const isoAt = (epochMs: number): Timestamp => timestamp(new Date(epochMs).toISOString())
+
+const toServiceHealthEntry = (
+	row: CH.ServiceHealthSnapshotOutput,
+	seconds: number,
+): V2ServiceHealthEntry => ({
+	object: "service_health.service",
+	service_name: decodeServiceName(row.serviceName),
+	deployment_environment: row.environment === "" ? null : row.environment,
+	request_count: row.requestCount,
+	error_count: row.errorCount,
+	error_rate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
+	p95_latency_ms: row.p95LatencyMs,
+	throughput: row.requestCount / seconds,
+})
+
+const toOperation = (row: OperationRow): V2ServiceOperation => ({
 	name: row.spanName,
 	span_count: row.spanCount,
 	estimated_span_count: row.estimatedSpanCount,
@@ -1051,6 +1085,144 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							}),
 						)
 						return { object: "list" as const, ...page }
+					}),
+				)
+				/**
+				 * The dashboard overview's health snapshot, for both windows a "vs previous" tile
+				 * needs, run concurrently in one invocation under the dashboard's cache key.
+				 */
+				.handle("health", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const windowOptions = {
+							maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+							// Reads the hourly aggregate, whose Hour is a plain DateTime.
+							precision: "second",
+							rangeLabel: "Service health queries",
+						} as const
+						const window = yield* parseWindow(payload.start_time, payload.end_time, windowOptions)
+						const hours = serviceHealthSnapshotHours(window.startTime, window.endTime)
+						const previousStart = payload.previous_start_time
+						const previousEnd = payload.previous_end_time
+						const previousBounds =
+							previousStart === undefined || previousEnd === undefined
+								? undefined
+								: yield* parseWindow(previousStart, previousEnd, {
+										...windowOptions,
+										params: { start: "previous_start_time", end: "previous_end_time" },
+									})
+						// Compared as sent: the parsed windows are rounded to the second.
+						if (
+							previousEnd !== undefined &&
+							previousBounds !== undefined &&
+							timestampMs(previousEnd) > timestampMs(payload.start_time)
+						) {
+							return yield* Effect.fail(
+								V2TimeRangeInvalid.make("previous_end_time must not be after start_time.", {
+									param: "previous_end_time",
+								}),
+							)
+						}
+						const environments = payload.deployment_environment
+							? [payload.deployment_environment]
+							: undefined
+						const read = (
+							bounds: { readonly startTime: string; readonly endTime: string },
+							seconds: number,
+						) =>
+							seconds <= 0
+								? Effect.succeed([])
+								: telemetry
+										.serviceHealthSnapshot(tenant, { environments }, bounds)
+										.pipe(
+											Effect.map((rows) =>
+												rows.map((row) => toServiceHealthEntry(row, seconds)),
+											),
+										)
+						// The comparison stops where the current window's first hour starts, so the two
+						// never count the same hour; it can come out shorter, or empty.
+						const previousHours =
+							previousBounds === undefined
+								? undefined
+								: (() => {
+										const widened = serviceHealthSnapshotHours(
+											previousBounds.startTime,
+											previousBounds.endTime,
+										)
+										const endMs = Math.max(
+											widened.startMs,
+											Math.min(widened.endMs, hours.startMs),
+										)
+										return {
+											startMs: widened.startMs,
+											endMs,
+											seconds: (endMs - widened.startMs) / 1000,
+										}
+									})()
+
+						// The baseline the dashboard judges latency by: trailing 7 days before the window.
+						const baselines = telemetry
+							.serviceBaselineRows(tenant, parseWarehouseDateTime(window.startTime), {
+								deploymentEnvironment: payload.deployment_environment,
+							})
+							.pipe(Effect.map(baselineByServiceEnvironment))
+
+						yield* warehouse.warmRoute(tenant)
+						const [current, previous, baselineMap] = yield* Effect.all(
+							[
+								read(window, hours.seconds),
+								previousHours === undefined
+									? Effect.succeed(null)
+									: read(
+											{
+												startTime: formatWarehouseDateTime(previousHours.startMs),
+												endTime: formatWarehouseDateTime(previousHours.endMs),
+											},
+											previousHours.seconds,
+										).pipe(
+											Effect.map((rows) => ({
+												start_time: isoAt(previousHours.startMs),
+												end_time: isoAt(previousHours.endMs),
+												services: rows,
+											})),
+											// The comparison is optional: losing it must not lose the current window.
+											Effect.catch((error) =>
+												Effect.logWarning(
+													"Service health comparison read failed",
+												).pipe(
+													Effect.annotateLogs({ error: error.message }),
+													Effect.andThen(
+														Effect.annotateCurrentSpan(
+															"maple.service_health.previous_failed",
+															true,
+														),
+													),
+													Effect.as(null),
+												),
+											),
+										),
+								baselines,
+							],
+							{ concurrency: 3 },
+						)
+						const services = current.map((entry) => {
+							const baseline = baselineMap.get(
+								baselineKey(entry.service_name, entry.deployment_environment ?? ""),
+							)
+							return {
+								...entry,
+								baseline_p95_latency_ms: baseline?.baselineP95LatencyMs ?? null,
+								baseline_span_count: baseline?.baselineSpanCount ?? null,
+							}
+						})
+						return {
+							object: "service_health" as const,
+							// The whole hours actually read, which every rate here is per.
+							start_time: isoAt(hours.startMs),
+							end_time: isoAt(hours.endMs),
+							services,
+							previous,
+						}
 					}),
 				)
 				.handle("retrieve", ({ params, query }) =>

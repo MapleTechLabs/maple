@@ -274,7 +274,7 @@ function buildBreakdownFromRows(
 		.sort((a, b) => b.requests - a.requests)
 }
 
-export class DigestService extends Context.Service<DigestService>()("@maple/api/services/DigestService", {
+export class DigestService extends Context.Service<DigestService>()("@maple/backend/services/DigestService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "DigestService", toPersistenceError)

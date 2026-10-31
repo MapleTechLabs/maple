@@ -404,7 +404,7 @@ const make: Effect.Effect<
 export class FixVerificationTickService extends Context.Service<
 	FixVerificationTickService,
 	FixVerificationTickServiceApi
->()("@maple/api/services/errors/FixVerificationTickService", { make }) {
+>()("@maple/backend/services/errors/FixVerificationTickService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, IssueFixVerificationService.layer)),
 	)

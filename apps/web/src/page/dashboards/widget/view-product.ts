@@ -68,7 +68,7 @@ export const panelShell = (
 					ariaLabel: "Query source",
 					toView: (parts) =>
 						h.div(
-							[h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")],
+							[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
 							[
 								iconButton(
 									h,
@@ -76,7 +76,7 @@ export const panelShell = (
 										size: "icon-xs",
 										label: isCollapsed ? "Expand query" : "Collapse query",
 										hasTooltip: false,
-										className: "text-muted-foreground hover:text-foreground",
+										className: "text-muted-foreground hover:text-foreground active:text-foreground",
 										attributes: [h.OnClick(Message.ToggledProductPanel())],
 									},
 									[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
@@ -187,7 +187,7 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 		FUNNEL_KEY_BY_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
 		{
 			size: "sm",
-			className: "w-[220px]",
+			className: "w-56",
 			ariaLabel: "Count by",
 			renderItem: (option) => {
 				const description =

@@ -1,9 +1,10 @@
 import { assert, describe, it } from "@effect/vitest"
 import { type GitCommitSha, OrgId } from "@maple/domain/http"
-import { Effect, Exit, Layer, Option, Schema } from "effect"
+import { Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
-import { VcsSourceService } from "./VcsSourceService"
+import { CLONE_CREDENTIALS_REUSE, VcsSourceService } from "./VcsSourceService"
 import type { VcsProviderClient } from "./VcsProviderClient"
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_source_test")
@@ -34,7 +35,7 @@ const repository = {
 	syncStatus: "ready",
 } as const
 
-const makeLayer = (providerCalls: string[]) => {
+const makeLayer = (providerCalls: string[], connected: { value: boolean } = { value: true }) => {
 	const provider = {
 		id: "github",
 		reviewerMention: "@maple-review-bot",
@@ -54,6 +55,11 @@ const makeLayer = (providerCalls: string[]) => {
 			Effect.sync(() => {
 				providerCalls.push(`resolve:${repo.owner}/${repo.name}:${ref}`)
 				return ref === "gone" ? Option.none() : Option.some("d".repeat(40) as GitCommitSha)
+			}),
+		repositorySizeBytes: (_installation, repo) =>
+			Effect.sync(() => {
+				providerCalls.push(`size:${repo.owner}/${repo.name}`)
+				return 5 * 1024 * 1024
 			}),
 		fetchCloneCredentials: (_installation, repo) =>
 			Effect.sync(() => {
@@ -78,7 +84,7 @@ const makeLayer = (providerCalls: string[]) => {
 
 	const repoLayer = Layer.succeed(VcsRepository, {
 		listInstallationsByOrg: (orgId: OrgId) => Effect.succeed(orgId === ORG ? [installation] : []),
-		listRepositoriesByInstallation: () => Effect.succeed([repository]),
+		listRepositoriesByInstallation: () => Effect.sync(() => (connected.value ? [repository] : [])),
 	} as never)
 	const registryLayer = Layer.succeed(VcsProviderRegistry, {
 		ids: ["github"],
@@ -112,6 +118,19 @@ describe("VcsSourceService", () => {
 		}).pipe(Effect.provide(makeLayer(calls)))
 	})
 
+	it.effect("reads a connected repository's size from its provider, and only the org's own", () => {
+		const calls: string[] = []
+		return Effect.gen(function* () {
+			const source = yield* VcsSourceService
+			const bytes = yield* source.repositorySizeBytes(ORG, "Octo/Shop")
+			const other = yield* Effect.exit(source.repositorySizeBytes(OTHER_ORG, "octo/shop"))
+			assert.deepStrictEqual(
+				[bytes, Exit.isFailure(other), calls],
+				[5 * 1024 * 1024, true, ["size:octo/shop"]],
+			)
+		}).pipe(Effect.provide(makeLayer(calls)))
+	})
+
 	it.effect("resolves a checkout at the tracked branch, at a named ref, and straight from a SHA", () => {
 		const calls: string[] = []
 		return Effect.gen(function* () {
@@ -130,11 +149,32 @@ describe("VcsSourceService", () => {
 			assert.isTrue(Exit.isFailure(missing))
 			assert.deepStrictEqual(calls, [
 				"resolve:octo/shop:production",
-				"clone:octo/shop",
+				// The second checkout reuses the first one's clone token.
 				"clone:octo/shop",
 				"resolve:octo/shop:gone",
 			])
 		}).pipe(Effect.provide(makeLayer(calls)))
+	})
+
+	it.effect("reuses a clone token while fresh but checks repository access on every checkout", () => {
+		const calls: string[] = []
+		const connected = { value: true }
+		const sha = "e".repeat(40)
+		return Effect.gen(function* () {
+			const source = yield* VcsSourceService
+			yield* source.resolveCheckout(ORG, "octo/shop", sha)
+			yield* source.resolveCheckout(ORG, "octo/shop", sha)
+			assert.deepStrictEqual(calls, ["clone:octo/shop"])
+
+			yield* TestClock.adjust(Duration.sum(CLONE_CREDENTIALS_REUSE, Duration.seconds(1)))
+			yield* source.resolveCheckout(ORG, "octo/shop", sha)
+			assert.deepStrictEqual(calls, ["clone:octo/shop", "clone:octo/shop"])
+
+			// Disconnected inside the reuse window: the cached token is never handed out.
+			connected.value = false
+			const gone = yield* Effect.exit(source.resolveCheckout(ORG, "octo/shop", sha))
+			assert.isTrue(Exit.isFailure(gone))
+		}).pipe(Effect.provide(makeLayer(calls, connected)))
 	})
 
 	it.effect("does not expose repositories across organizations", () => {

@@ -21,6 +21,8 @@ export const DestinationPublicConfigSchema = Schema.Struct({
 	/** `chat` only: which connector draws the row, and the workspace an edit lists channels from. */
 	chatConnector: Schema.optionalKey(ChatConnectorId),
 	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
+	/** `linear` only: the team, so an edit can preselect it. */
+	linearTeamId: Schema.optionalKey(Schema.String),
 })
 
 const DestinationSecretConfigSchema = Schema.Union([
@@ -53,12 +55,23 @@ const DestinationSecretConfigSchema = Schema.Union([
 		chatId: Schema.String,
 	}),
 	Schema.Struct({
+		type: Schema.Literal("google-chat"),
+		webhookUrl: Schema.String,
+	}),
+	Schema.Struct({
 		type: Schema.Literal("chat"),
 		// The `chat_workspaces` row id — no token here either: the connector's credential is
 		// opened from that row, scoped to the destination's org, at dispatch time.
 		workspaceId: ChatWorkspaceId,
 		channelId: Schema.String,
 		channelName: Schema.String,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("linear"),
+		// No token: the org's Linear connection is opened at dispatch time.
+		teamId: Schema.String,
+		teamKey: Schema.String,
+		teamName: Schema.String,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("email"),

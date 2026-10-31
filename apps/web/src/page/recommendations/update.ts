@@ -26,14 +26,14 @@ type RecommendationRoute = Extract<AppRoute, { readonly _tag: "Recommendation" }
 const LIST_QUERY = { query: { limit: 100 } }
 
 /** Requests the list (and the mappings when asked) under `mode`. */
-const load = (model: Model, context: PageContext, mode: Keyed.RequestMode, withMappings: boolean) => {
+const load = (model: Model, context: PageContext, mode: Keyed.ReadMode, withMappings: boolean) => {
 	const listKey = requestKey(context.orgId, "instrumentationRecommendations.list", LIST_QUERY)
 	const mappingsKey = requestKey(context.orgId, "attributeMappings.list", LIST_QUERY)
-	const list = Keyed.request(model.list, listKey, mode)
-	const mappings = withMappings ? Keyed.request(model.mappings, mappingsKey, mode) : Option.none()
+	const list = Keyed.requestFor(model.list, listKey, mode)
+	const mappings = withMappings ? Keyed.requestFor(model.mappings, mappingsKey, mode) : Option.none()
 	const commands: Commands = [
-		...(Option.isSome(list) ? [FetchRecommendations({ key: listKey })] : []),
-		...(Option.isSome(mappings) ? [FetchAttributeMappings({ key: mappingsKey })] : []),
+		...Option.toArray(Option.map(list, (slot) => FetchRecommendations({ key: slot.key }))),
+		...Option.toArray(Option.map(mappings, (slot) => FetchAttributeMappings({ key: slot.key }))),
 	]
 	return {
 		model: {
@@ -81,7 +81,7 @@ const settle = <A>(
 	Result.match(result, {
 		onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: errorToast(options.error, failure) }),
 		onSuccess: (value) => {
-			const refreshed = load({ ...model, busy: null }, context, "Refresh", options.withMappings)
+			const refreshed = load({ ...model, busy: null }, context, "Supersede", options.withMappings)
 			if (options.success === undefined) return refreshed
 			const outMessage = PageOutMessage.RequestedToast({
 				type: "success",
@@ -128,14 +128,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedReopen: () => startWrite(model, "reopen", (issue) => Option.some(ReopenRecommendation({ id: issue.id }))),
 		CompletedApply: ({ result }) =>
 			settle(model, context, result, {
-				error: "Failed to create mapping",
+				error: "Couldn't create mapping",
 				withMappings: true,
 				success: (mapping) => `Mapping created: ${mapping.source_key} → ${mapping.target_key}`,
 			}),
 		CompletedDismiss: ({ result }) =>
-			settle(model, context, result, { error: "Failed to dismiss recommendation", withMappings: false }),
+			settle(model, context, result, { error: "Couldn't dismiss recommendation", withMappings: false }),
 		CompletedReopen: ({ result }) =>
-			settle(model, context, result, { error: "Failed to reopen recommendation", withMappings: false }),
+			settle(model, context, result, { error: "Couldn't reopen recommendation", withMappings: false }),
 		GotCopyMessage: ({ message: inner }) => {
 			const next = CopyButton.update(model.copy, inner)
 			// `useCopy`'s toast: on by default for `<CopyButton label="Mapping">`.
@@ -144,7 +144,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				isCurrent && inner._tag === "SucceededCopy"
 					? { outMessage: PageOutMessage.RequestedToast({ type: "success", title: "Mapping copied", description: "" }) }
 					: isCurrent && inner._tag === "FailedCopy"
-						? { outMessage: PageOutMessage.RequestedToast({ type: "error", title: "Failed to copy mapping", description: "" }) }
+						? { outMessage: PageOutMessage.RequestedToast({ type: "error", title: "Couldn't copy mapping", description: "" }) }
 						: {}
 			return {
 				model: { ...model, copy: next.model },

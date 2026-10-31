@@ -32,7 +32,10 @@ export const escapeDirectives = (text: string): string =>
 			(acc, line) => {
 				const marker = FENCE.exec(line)?.[1]
 				if (acc.fence !== null) {
-					const closes = marker !== undefined && marker[0] === acc.fence[0] && marker.length >= acc.fence.length
+					const closes =
+						marker !== undefined &&
+						marker[0] === acc.fence[0] &&
+						marker.length >= acc.fence.length
 					return { lines: [...acc.lines, line], fence: closes ? null : acc.fence }
 				}
 				if (marker !== undefined) return { lines: [...acc.lines, line], fence: marker }
@@ -42,12 +45,12 @@ export const escapeDirectives = (text: string): string =>
 		)
 		.lines.join("\n")
 
-/** Each text parsed by the lazily imported remark pipeline (after `prepare`); a rejected text parses to `null`. */
-export const parseMarkdownTexts = (texts: ReadonlyArray<string>, prepare: (text: string) => string = (text) => text) =>
+/** Each text parsed by the lazily imported remark pipeline; a rejected text parses to `null`. */
+export const parseMarkdownTexts = (texts: ReadonlyArray<string>) =>
 	Effect.promise(() => import("@foldkit/markdown/vite")).pipe(
 		Effect.flatMap(({ parseMarkdown }) =>
 			Effect.forEach(texts, (text) =>
-				Effect.try(() => parseMarkdown(escapeDirectives(prepare(text)))).pipe(
+				Effect.try(() => parseMarkdown(escapeDirectives(text))).pipe(
 					Effect.map((document): ParsedMarkdown => ({ text, document })),
 					Effect.orElseSucceed((): ParsedMarkdown => ({ text, document: null })),
 				),

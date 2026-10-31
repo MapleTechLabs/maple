@@ -25,3 +25,21 @@ export const EVAL_TENANT: TenantContext = {
 	roles: [],
 	authMode: "self_hosted",
 }
+
+/** How many arrays/objects deep a JSON value nests; scalars are 0. */
+export const jsonDepth = (value: unknown): number => {
+	const children = Array.isArray(value)
+		? value
+		: typeof value === "object" && value !== null
+			? Object.values(value)
+			: undefined
+	return children === undefined
+		? 0
+		: 1 + children.reduce<number>((max, v) => Math.max(max, jsonDepth(v)), 0)
+}
+
+/**
+ * MCP clients cap a tool result's depth (some at 32, counting the JSON-RPC envelope), so every
+ * fixture-run tool keeps its structured output well under it.
+ */
+export const MAX_STRUCTURED_OUTPUT_DEPTH = 20

@@ -2,7 +2,6 @@ import { Schema } from "effect"
 import { HttpTaggedError, publicHttpErrorDefinitionFor } from "./error-policy"
 import {
 	OrgClickHouseSettingsEncryptionError,
-	OrgClickHouseSettingsPersistenceError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
 } from "./org-clickhouse-settings-errors"
 
@@ -320,9 +319,11 @@ export const managedWarehouseHttpErrors = [
 	WarehouseScopeError,
 ] as const
 
-/** Errors added while resolving the saved per-org read override. */
+/**
+ * Errors added while resolving the saved per-org read override. A failed settings
+ * read surfaces as the retryable `WarehouseUpstreamError`, already in the managed list.
+ */
 export const warehouseSettingsRouteHttpErrors = [
-	OrgClickHouseSettingsPersistenceError,
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
 ] as const
@@ -368,7 +369,9 @@ export type ManagedWarehouseError = ErrorInstance<(typeof managedWarehouseHttpEr
 /** Errors possible on ordinary tenant reads. */
 export type WarehouseReadError = ErrorInstance<(typeof warehouseReadHttpErrors)[number]>
 
-export type WarehouseSettingsRouteError = ErrorInstance<(typeof warehouseSettingsRouteHttpErrors)[number]>
+export type WarehouseSettingsRouteError =
+	| ErrorInstance<(typeof warehouseSettingsRouteHttpErrors)[number]>
+	| WarehouseUpstreamError
 export type WarehouseTokenRouteError = ErrorInstance<(typeof warehouseTokenRouteHttpErrors)[number]>
 export type WarehouseRouteError = WarehouseSettingsRouteError | WarehouseTokenRouteError
 

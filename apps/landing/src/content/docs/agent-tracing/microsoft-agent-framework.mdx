@@ -19,12 +19,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Microsoft Agent Framework in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-microsoft-agent-framework -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-microsoft-agent-framework -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Export traces
 
@@ -34,7 +35,9 @@ Your ingest key is in **Settings → Ingestion**. If your organization is in the
 Install MAF with the OTLP/HTTP exporter:
 
 ```bash
-pip install "agent-framework-core>=1.19.0" "agent-framework-openai>=1.14.4" opentelemetry-exporter-otlp-proto-http
+pip install "agent-framework-core>=1.19.0" \
+  "agent-framework-openai>=1.14.4" \
+  opentelemetry-exporter-otlp-proto-http
 ```
 
 Call `configure_otel_providers()` once at startup, before you create agents. Without `enable_sensitive_data=True` the transcript is empty.
@@ -240,7 +243,8 @@ In .NET, `using var tracerProvider` flushes when `Main` ends.
 Semantic Kernel (SK) reads its telemetry switches at import time, so set them before the first `import semantic_kernel`. Configure your own provider with the same `ConversationIdProcessor`:
 
 ```bash
-pip install "semantic-kernel>=1.44.1" opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+pip install "semantic-kernel>=1.44.1" opentelemetry-sdk \
+  opentelemetry-exporter-otlp-proto-http
 ```
 
 ```py
@@ -279,7 +283,7 @@ trace.set_tracer_provider(provider)
 
 Wrap each turn in `with conversation(thread.id):`. Pass messages positionally, as in `await agent.get_response(text, thread=thread)`; the `messages=` keyword records an empty input. Only `ChatCompletionAgent` calls produce a transcript; calling the kernel directly doesn't.
 
-## Check that it works
+## Verify
 
 Run a conversation of two or three turns where one turn calls a tool. Within about a minute, **Agent Sessions** shows one session for it, labeled **Microsoft Agent Framework** or **Semantic Kernel**, with one turn per `agent.run()`, the transcript, and tool calls with their arguments and results. Cost shows as unpriced; MAF doesn't emit cost.
 
@@ -291,7 +295,7 @@ Run a conversation of two or three turns where one turn calls a tool. Within abo
 - **.NET: no spans at all.** Use `AddSource("*Microsoft.Agents.AI*")` with the leading `*`.
 - **Semantic Kernel: no `chat` or `invoke_agent` spans.** The `SEMANTICKERNEL_EXPERIMENTAL_GENAI_*` variables were set after `semantic_kernel` was imported.
 
-## Related
+## Next steps
 
 - [Agent Sessions](/docs/agent-sessions/overview): reading a session in Maple.
 - [Python instrumentation](/docs/guides/instrumentation-python) and [.NET instrumentation](/docs/guides/instrumentation-csharp): tracing the rest of the service.

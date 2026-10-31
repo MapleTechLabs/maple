@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, iconColor } from "../../../ui/icon"
 import { type DetectedModel, modelTitle } from "./detected-models"
 import { modelVendorColor, modelVendorIcon } from "./vendor"
+import { moreChip } from "./more-chip"
 
 /** The vendor's mark and the model's name. */
 export const modelLabel = <M>(
@@ -32,7 +33,7 @@ export const modelLabel = <M>(
 				attributes: [h.AriaHidden(true)],
 			}),
 			h.span([h.Class("min-w-0 truncate")], [options.detected.displayName]),
-			...(moreCount > 0 ? [h.span([h.Class("shrink-0 tabular-nums")], ["+", String(moreCount)])] : []),
+			...(moreCount > 0 ? [moreChip(h, { count: moreCount })] : []),
 		],
 	)
 }

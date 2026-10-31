@@ -14,7 +14,7 @@ import { Duration, Effect, Option, Result } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
-import { describeHttpClientError, guard } from "@maple/safe-fetch"
+import { describeHttpClientError, guard, readTextPrefix, readTextWithin } from "@maple/safe-fetch"
 import type {
 	EffectTransport,
 	EffectTransportDeps,
@@ -31,14 +31,20 @@ export interface TransportRuntime {
 export const makeDeliveryError = (message: string, destinationType?: AlertDestinationType, cause?: unknown) =>
 	new AlertDeliveryError({ message, destinationType, ...(!(cause === undefined) ? { cause } : undefined) })
 
+/** A failure body is read only this far: the message keeps 500 chars of it. */
+const MAX_ERROR_BODY_BYTES = 16 * 1024
+
+/** Largest ack body a transport may `interpret` (Telegram's `{ ok }` is tiny). */
+const MAX_ACK_BODY_BYTES = 1024 * 1024
+
 /**
  * Best-effort read of a failure body for the error message. Truncated and
  * whitespace-collapsed: this ends up in a delivery row and a log line, and some
  * providers answer with an HTML error page.
  */
 const readErrorBody = (response: HttpClientResponse.HttpClientResponse) =>
-	response.text.pipe(
-		Effect.map((text) => {
+	readTextPrefix(response, MAX_ERROR_BODY_BYTES).pipe(
+		Effect.map(({ text }) => {
 			const detail = text.replace(/\s+/g, " ").trim().slice(0, 500)
 			if (detail.length > 0) return detail
 			// An empty body used to render as `"<Provider> delivery failed with 400"`
@@ -209,7 +215,7 @@ export const runHttpTransport = <Config>(
 		// A 2xx is not proof of delivery for every provider — Telegram answers 200
 		// with `{ ok: false }` — so a transport may claim the body.
 		if (transport.interpret) {
-			const rawBody = yield* response.text.pipe(
+			const rawBody = yield* readTextWithin(response, MAX_ACK_BODY_BYTES).pipe(
 				Effect.mapError((error) =>
 					makeDeliveryError(
 						`${transport.providerLabel} returned an unreadable response`,

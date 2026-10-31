@@ -43,11 +43,19 @@ export {
 export { ApiKey, ApiKeyProvider, type ApiKeyProps } from "./ApiKey"
 export { Dashboard, DashboardProvider, type DashboardProps } from "./Dashboard"
 export {
+	DashboardData,
+	DashboardWidget,
+	DashboardVariable,
+	DashboardSection,
+	DashboardTimeRange,
+} from "./DashboardData"
+export {
 	isMapleApiResponseError,
 	makeMapleApiResponseError,
 	MapleApiProtocolError,
 	MapleAlertRuleOwnershipError,
 	MapleAlertRuleTagsError,
+	MapleDashboardIdentityError,
 	MapleApiRequestEncodingError,
 	MapleApiResponseDecodeError,
 	MapleApiResponseReadError,

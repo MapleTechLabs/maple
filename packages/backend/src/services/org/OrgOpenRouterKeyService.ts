@@ -1,4 +1,5 @@
 import { customerHasFlag, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billing"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import {
 	IsoDateTimeString,
 	OPENROUTER_KEY_MAX_LENGTH,
@@ -50,7 +51,9 @@ const toKeyError =
 					message: region === "eu" ? EU_PLAN_MESSAGE : "OpenRouter rejected this key.",
 				})
 			case "@maple/backend/openrouter/PaymentRequired":
-				return new OpenRouterKeyValidationError({ message: "This OpenRouter key has no credits left." })
+				return new OpenRouterKeyValidationError({
+					message: "This OpenRouter key has no credits left.",
+				})
 			// Only the EU check makes a chat call: OpenRouter could not route Maple's EU model on this
 			// key's account. Its message names the routing step at fault, so it is passed on.
 			case "@maple/backend/openrouter/BadRequest":
@@ -102,12 +105,13 @@ export interface OrgOpenRouterKeyServiceApi {
 export class OrgOpenRouterKeyService extends Context.Service<
 	OrgOpenRouterKeyService,
 	OrgOpenRouterKeyServiceApi
->()("@maple/api/services/OrgOpenRouterKeyService", {
+>()("@maple/backend/services/OrgOpenRouterKeyService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
 		const edgeCache = yield* EdgeCacheService
 		const autumn = yield* AutumnClient
+		const billingCustomers = yield* BillingCustomerResolver
 		const httpClient = yield* HttpClient.HttpClient
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -126,12 +130,16 @@ export class OrgOpenRouterKeyService extends Context.Service<
 			).pipe(Effect.map((rows) => Option.fromUndefinedOr(rows[0])))
 
 		// Billing that is not configured (self-hosted, local dev) has no add-ons to sell: everything is on.
+		// A member org holds the add-on through the org that pays for it.
 		const entitlement = (orgId: OrgId): Effect.Effect<Entitlement> =>
-			readCustomerCached(
-				edgeCache,
-				orgId,
-				autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
-			).pipe(
+			billingCustomers.customerFor(orgId).pipe(
+				Effect.flatMap((customerId) =>
+					readCustomerCached(
+						edgeCache,
+						customerId,
+						autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
+					),
+				),
 				Effect.flatMap(({ result }) => ensureOk(result)),
 				Effect.map((customer): Entitlement =>
 					customerHasFlag(customer, OPENROUTER_BYOK_FEATURE_ID) ? "entitled" : "not_entitled",
@@ -140,6 +148,11 @@ export class OrgOpenRouterKeyService extends Context.Service<
 					"@maple/http/errors/BillingNotConfiguredError": () =>
 						Effect.succeed<Entitlement>("entitled"),
 					"@maple/http/errors/BillingUpstreamError": (error) =>
+						Effect.logWarning("Could not read the OpenRouter add-on entitlement").pipe(
+							Effect.annotateLogs({ orgId, error: error.message }),
+							Effect.as<Entitlement>("unknown"),
+						),
+					"@maple/http/errors/BillingAccountPersistenceError": (error) =>
 						Effect.logWarning("Could not read the OpenRouter add-on entitlement").pipe(
 							Effect.annotateLogs({ orgId, error: error.message }),
 							Effect.as<Entitlement>("unknown"),
@@ -286,7 +299,20 @@ export class OrgOpenRouterKeyService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(AutumnClient.layer),
+		Layer.provide(Layer.mergeAll(AutumnClient.layer, BillingCustomerResolver.layer)),
 		Layer.provide(FetchHttpClient.layer),
 	)
+
+	/** Runs resolve to `apiKey` for every org, for tests; the settings methods are not served. */
+	static readonly fixedRunKey = (apiKey: Option.Option<string>) => {
+		const unserved = Effect.fail(
+			new OpenRouterKeyPersistenceError({ message: "fixedRunKey serves runs only" }),
+		)
+		return Layer.succeed(this, {
+			get: () => unserved,
+			set: () => unserved,
+			remove: () => unserved,
+			resolveForRun: () => Effect.succeed(Option.map(apiKey, Redacted.make)),
+		})
+	}
 }

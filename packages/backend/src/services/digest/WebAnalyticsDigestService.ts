@@ -98,7 +98,7 @@ function pageLabels<T extends { host: string; path: string }>(rows: ReadonlyArra
 }
 
 export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDigestService>()(
-	"@maple/api/services/WebAnalyticsDigestService",
+	"@maple/backend/services/WebAnalyticsDigestService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

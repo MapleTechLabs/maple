@@ -1,0 +1,159 @@
+import { HttpServerRequest } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
+import { CurrentTenant, DeviceCredentialSessionRequiredError } from "@maple/domain/http"
+import { MapleApiV2, isoTimestamp, V2RateLimited } from "@maple/domain/http/v2"
+import type { DeviceCredentialRow } from "@maple/db/tables"
+import { Effect } from "effect"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import {
+	API_V2_RATE_LIMIT_PERIOD_SECONDS,
+	ApiV2RateLimiter,
+	deviceRateLimitKey,
+	deviceTokenIpRateLimitKey,
+} from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
+
+const toWire = (row: DeviceCredentialRow) => ({
+	object: "device_credential" as const,
+	id: row.id,
+	organization_id: row.orgId,
+	installation_id: row.installationId,
+	jkt: row.jkt,
+	scopes: row.scopes,
+	attested: row.attested,
+	created_at: isoTimestamp(row.createdAt),
+	expires_at: isoTimestamp(row.expiresAt),
+	hard_expires_at: isoTimestamp(row.hardExpiresAt),
+})
+
+/**
+ * A device credential pins its creator's roles and outlives any API key, so only a signed-in
+ * person may manage one: API keys (even unscoped ones) and device tokens are refused.
+ */
+const requireSession = Effect.gen(function* () {
+	const actor = yield* CurrentAuditActor
+	const tenant = yield* CurrentTenant.Context
+	if (actor?.type !== "user" || actor.source !== "dashboard") {
+		return yield* new DeviceCredentialSessionRequiredError({
+			message: "Device credentials require a signed-in session.",
+		})
+	}
+	return tenant
+})
+
+export const HttpV2DeviceCredentialsLive = HttpApiBuilder.group(MapleApiV2, "deviceCredentials", (handlers) =>
+	Effect.gen(function* () {
+		const devices = yield* DeviceCredentialsService
+
+		return handlers
+			.handle("register", ({ params, payload, headers }) =>
+				Effect.gen(function* () {
+					const tenant = yield* requireSession
+					const request = yield* HttpServerRequest.HttpServerRequest
+					const row = yield* devices.register(
+						tenant,
+						{
+							installationId: params.installation_id,
+							publicJwk: {
+								kty: payload.public_jwk.kty,
+								crv: payload.public_jwk.crv,
+								x: payload.public_jwk.x,
+								y: payload.public_jwk.y,
+							},
+							...(payload.attestation === undefined
+								? undefined
+								: {
+										attestation: {
+											keyId: payload.attestation.key_id,
+											attestationObject: payload.attestation.attestation_object,
+											challenge: payload.attestation.challenge,
+										},
+									}),
+						},
+						{ proof: headers.dpop, method: request.method, path: request.url },
+					)
+					yield* recordHttpAudit("device_credential.registered", {
+						resourceId: row.id,
+						metadata: {
+							installation_id: row.installationId,
+							attested: row.attested,
+							scopes: row.scopes,
+						},
+					})
+					return toWire(row)
+				}),
+			)
+			.handle("revoke", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* requireSession
+					// Idempotent like the widget credential revoke: this is the sign-out path.
+					yield* devices.revoke(tenant.orgId, tenant.userId, params.installation_id)
+					yield* recordHttpAudit("device_credential.revoked", {
+						metadata: { installation_id: params.installation_id },
+					})
+					return { object: "device_credential" as const, deleted: true as const }
+				}),
+			)
+			.handle("attestationChallenge", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* requireSession
+					const issued = yield* devices.attestationChallenge(
+						tenant.orgId,
+						tenant.userId,
+						params.installation_id,
+					)
+					return {
+						object: "attestation_challenge" as const,
+						challenge: issued.challenge,
+						expires_at: isoTimestamp(issued.expiresAt),
+					}
+				}),
+			)
+	}),
+)
+
+export const HttpV2DeviceTokensLive = HttpApiBuilder.group(MapleApiV2, "deviceTokens", (handlers) =>
+	Effect.gen(function* () {
+		const devices = yield* DeviceCredentialsService
+		const rateLimiter = yield* ApiV2RateLimiter
+
+		return handlers.handle("issue", ({ headers }) =>
+			Effect.gen(function* () {
+				const request = yield* HttpServerRequest.HttpServerRequest
+				const limit = (key: string) =>
+					rateLimiter.check(key).pipe(
+						Effect.tap((outcome) =>
+							Effect.annotateCurrentSpan("maple.rate_limit.outcome", outcome),
+						),
+						Effect.flatMap((outcome) =>
+							outcome === "limited"
+								? Effect.fail(
+										V2RateLimited.make(undefined, {
+											retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
+										}),
+									)
+								: Effect.void,
+						),
+					)
+				// Before any proof work: keys are free to generate, the client IP is not. Absent
+				// outside Cloudflare (self-hosted), where only the per-credential limit applies.
+				const ip = request.headers["cf-connecting-ip"]
+				if (ip !== undefined) yield* limit(deviceTokenIpRateLimitKey(ip))
+				// The same per-credential budget its requests draw from, checked before issuance.
+				const admit = (credentialId: string) => limit(deviceRateLimitKey(credentialId))
+				const issued = yield* devices.issueToken(
+					{ proof: headers.dpop, method: request.method, path: request.url },
+					admit,
+				)
+				return {
+					object: "device_token" as const,
+					access_token: issued.accessToken,
+					token_type: "DPoP" as const,
+					expires_in: issued.expiresIn,
+					scope: issued.scope,
+				}
+			}),
+		)
+	}),
+)

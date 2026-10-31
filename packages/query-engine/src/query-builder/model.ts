@@ -938,8 +938,7 @@ function resolveProductEventsGroupByToken(
 		case "Literal":
 			return resolution.token
 		case "Prefixed": {
-			// The shared resolver lowercases the token; the prop key keeps the case it was typed with.
-			const key = raw.trim().slice(ATTRIBUTE_PREFIX.prefix.length)
+			const key = resolution.key
 			// One attribute group column, as on metrics.
 			if (filters.groupByAttributeKey !== undefined && filters.groupByAttributeKey !== key) {
 				warnings.push(`Product events queries support a single attr.* group by; ignoring attr.${key}`)
@@ -1236,7 +1235,8 @@ function resolveGroupByToken<K extends string>(
 
 	for (const known of ALL_GROUP_BY_PREFIXES) {
 		if (!token.startsWith(known.prefix)) continue
-		const key = token.slice(known.prefix.length)
+		// Attribute Map keys are case-sensitive: keep the key as typed. Prefixes are ASCII, so the slice is safe.
+		const key = raw.trim().slice(known.prefix.length)
 		if (!key) return { _tag: "Rejected", warning: `Invalid ${known.prefix}* group by ignored` }
 		const supported = spec.prefixes.find((p) => p.prefix === known.prefix)
 		if (!supported) {

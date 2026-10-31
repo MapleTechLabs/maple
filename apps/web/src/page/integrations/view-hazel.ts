@@ -97,7 +97,7 @@ const connected = (
 				h.div(
 					[
 						h.Class(
-							"flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-2xs text-muted-foreground",
+							"flex flex-col gap-1 rounded-md bg-surface-sunken px-3 py-2 text-2xs text-muted-foreground",
 						),
 					],
 					[
@@ -160,7 +160,7 @@ export const hazelCard = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Hazel integration",
+				title: "Couldn't load the Hazel integration",
 				onRetry: Message.ClickedRetryStatus({ name: "hazel" }),
 			}),
 		onStale: ({ data }) => (data.connected ? connected(h, model, data) : notConnected(h, model)),

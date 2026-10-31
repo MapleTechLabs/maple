@@ -2,17 +2,34 @@ import type { SpanNodeData } from "../trace-data"
 
 // Pure tree walks over the Model's span tree for `SpanHierarchy`.
 
-/** `flattenVisible`: the ordered rows whose every ancestor is expanded. */
-export const flattenVisible = (
+/** A visible row and what its tree connectors need: which ancestor rails continue past it. */
+export type TreeRow = Readonly<{
+	node: SpanNodeData
+	/** One per ancestor column above the parent's: true where that ancestor has later siblings. */
+	rails: ReadonlyArray<boolean>
+	isLast: boolean
+	parent: SpanNodeData | null
+}>
+
+/** The ordered rows whose every ancestor is expanded. */
+export const flattenTree = (
 	nodes: ReadonlyArray<SpanNodeData>,
 	expanded: ReadonlySet<string>,
-): ReadonlyArray<SpanNodeData> =>
-	nodes.flatMap((node) => [
-		node,
-		...(expanded.has(node.spanId) && node.children.length > 0
-			? flattenVisible(node.children, expanded)
-			: []),
-	])
+	rails: ReadonlyArray<boolean> = [],
+	parent: SpanNodeData | null = null,
+): ReadonlyArray<TreeRow> =>
+	nodes.flatMap((node, index) => {
+		const isLast = index === nodes.length - 1
+		return [
+			{ node, rails, isLast, parent },
+			...(expanded.has(node.spanId) && node.children.length > 0
+				? flattenTree(node.children, expanded, parent === null ? [] : [...rails, !isLast], node)
+				: []),
+		]
+	})
+
+/** A row's column in the tree: 0 for roots. */
+export const treeLevel = (row: TreeRow): number => (row.parent === null ? 0 : row.rails.length + 1)
 
 /** Every span in the tree, the header's "N of total". */
 export const countSpans = (nodes: ReadonlyArray<SpanNodeData>): number =>

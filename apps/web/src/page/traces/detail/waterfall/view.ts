@@ -1,10 +1,11 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../../ui/empty"
+import { eyebrow } from "../../../../ui/eyebrow"
 import { depthControls } from "../depth-controls"
 import { Message, type Model } from "./model"
 import { spanRow } from "./row"
-import { flattenVisible } from "./tree"
+import { flattenTree } from "./tree"
 import { KEYS_ATTRIBUTE, SELECTED_ATTRIBUTE, VirtualizeWaterfall } from "./virtualize"
 
 // `SpanHierarchy` (packages/ui/src/components/traces/span-hierarchy.tsx): the Waterfall tab's body.
@@ -16,7 +17,7 @@ const header = (h: HtmlBuilder<Message>, shown: number, total: number): Html =>
 	h.div(
 		[
 			h.Class(
-				"@container/row flex shrink-0 items-center border-b bg-muted/30 px-2 py-1.5 text-xs font-medium text-muted-foreground",
+				"@container/row flex shrink-0 items-center border-b bg-surface-sunken px-2 py-1.5 text-xs font-medium text-muted-foreground",
 			),
 		],
 		[
@@ -53,9 +54,9 @@ const header = (h: HtmlBuilder<Message>, shown: number, total: number): Html =>
 			h.div(
 				[h.Class("flex items-center gap-2 shrink-0 ml-2")],
 				[
-					h.span([h.Class("hidden w-48 text-center @min-[560px]/row:block")], ["Duration"]),
-					h.span([h.Class("w-16 text-right")], ["Time"]),
-					h.span([h.Class("w-14 text-center")], ["Status"]),
+					eyebrow(h, { className: "hidden w-48 @min-[560px]/row:block" }, ["Timeline"]),
+					eyebrow(h, { className: "w-16 text-right" }, ["Duration"]),
+					eyebrow(h, { className: "w-14 text-center" }, ["Status"]),
 				],
 			),
 		],
@@ -68,7 +69,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inp
 		])
 	}
 	const expanded = new Set(model.expanded)
-	const flat = flattenVisible(model.rootSpans, expanded)
+	const flat = flattenTree(model.rootSpans, expanded)
 	return h.div(
 		[h.Class("flex h-full flex-col overflow-hidden rounded-md border")],
 		[
@@ -76,7 +77,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inp
 			h.div(
 				[
 					h.Class("flex-1 min-h-0 overflow-auto"),
-					h.DataAttribute(KEYS_ATTRIBUTE, flat.map((node) => node.spanId).join(" ")),
+					h.DataAttribute(KEYS_ATTRIBUTE, flat.map((row) => row.node.spanId).join(" ")),
 					h.DataAttribute(SELECTED_ATTRIBUTE, model.selectedSpanId ?? ""),
 					h.OnMount(VirtualizeWaterfall()),
 				],
@@ -84,13 +85,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inp
 					h.div(
 						[h.Style({ height: `${model.totalSize}px`, position: "relative", width: "100%" })],
 						model.virtualRows.flatMap((item) => {
-							const node = flat[item.index]
-							return node === undefined
+							const row = flat[item.index]
+							return row === undefined
 								? []
 								: [
 										h.div(
 											[
-												h.Key(node.spanId),
+												h.Key(row.node.spanId),
 												h.DataAttribute("index", String(item.index)),
 												h.Style({
 													position: "absolute",
@@ -101,11 +102,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inp
 												}),
 											],
 											[
-												spanRow(h, node, {
+												spanRow(h, row, {
 													totalDurationMs: model.totalDurationMs,
 													traceStartTime: model.traceStartTime,
-													isExpanded: expanded.has(node.spanId),
-													isSelected: model.selectedSpanId === node.spanId,
+													isExpanded: expanded.has(row.node.spanId),
+													isSelected: model.selectedSpanId === row.node.spanId,
 												}),
 											],
 										),

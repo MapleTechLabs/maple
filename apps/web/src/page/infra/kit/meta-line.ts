@@ -23,7 +23,7 @@ export const metaLine = <M>(
 		[
 			h.Class(
 				cn(
-					"mt-1 flex min-w-0 items-center gap-x-2 truncate font-mono text-2xs text-muted-foreground/80",
+					"mt-1 flex min-w-0 items-center gap-x-2 truncate font-mono text-xs text-foreground-subtle",
 					options.className,
 				),
 			),
@@ -31,9 +31,10 @@ export const metaLine = <M>(
 		],
 		present.map((item, index) =>
 			h.span(
-				[h.Class("flex shrink-0 items-center gap-x-2")],
+				// The last item shrinks so an overflowing line ends in an ellipsis, not a clipped word.
+				[h.Class(cn("flex items-center gap-x-2", index === present.length - 1 ? "min-w-0" : "shrink-0"))],
 				[
-					...(index > 0 ? [h.span([h.Class("text-foreground/20")], ["·"])] : []),
+					...(index > 0 ? [h.span([h.Class("text-foreground-faint")], ["·"])] : []),
 					typeof item === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [item]) : item,
 				],
 			),
@@ -73,11 +74,11 @@ export const platformLabel = <M>(h: HtmlBuilder<M>, kind: PlatformKind, value: s
 				: [
 						known.color === undefined
 							? icon(h, known.icon, {
-									size: 11,
-									className: cn("shrink-0", "text-foreground/70"),
+									size: 12,
+									className: cn("shrink-0", "text-foreground-soft"),
 								})
 							: icon(h, known.icon, {
-									size: 11,
+									size: 12,
 									className: cn("shrink-0"),
 									style: { color: known.color },
 								}),

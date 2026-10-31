@@ -27,7 +27,7 @@ const idsOf = (control: string, hasDescription = false): Field.FieldIds => ({
 	description: hasDescription ? `${control}-description` : undefined,
 })
 
-const textField = (
+export const textField = (
 	h: H,
 	model: Model,
 	options: Readonly<{
@@ -39,14 +39,19 @@ const textField = (
 		description?: string
 		error?: string
 		extra?: ReadonlyArray<ReturnType<H["Attribute"]>>
+		/** At the label's end: a "Where to find this" link. */
+		aside?: Html
 	}>,
 ): Html => {
 	const fieldModel = model.prometheusCard.form[options.field]
 	const isInvalid = options.error !== undefined
 	const state = Field.stateOf(fieldModel, isInvalid)
 	const ids = idsOf(options.id, options.description !== undefined)
+	const label = Field.fieldLabel(h, { ids, state }, options.label)
 	return Field.field(h, { state }, [
-		Field.fieldLabel(h, { ids, state }, options.label),
+		options.aside === undefined
+			? label
+			: h.div([h.Class("flex items-center justify-between gap-2")], [label, options.aside]),
 		Field.input(h, {
 			ids,
 			state,
@@ -75,7 +80,7 @@ const keepPlaceholder = (model: Model, authType: "bearer" | "basic", fallback: s
 		: fallback
 }
 
-const authField = (h: H, model: Model): Html => {
+export const authField = (h: H, model: Model): Html => {
 	const ids = idsOf("scrape-auth-type")
 	const state = Field.stateOf(Field.init(), false)
 	return Field.field(h, { state }, [
@@ -93,6 +98,41 @@ const authField = (h: H, model: Model): Html => {
 			toParentMessage: (message) => Message.GotAuthSelectMessage({ message }),
 		}),
 	])
+}
+
+/** The bearer token or basic auth fields the picked auth type asks for. */
+export const credentialFields = (h: H, model: Model): ReadonlyArray<Html> => {
+	const form = model.prometheusCard.form
+	return [
+		...(form.authType === "bearer"
+			? [
+					textField(h, model, {
+						field: "token",
+						id: "scrape-auth-token",
+						label: "Bearer Token",
+						type: "password",
+						placeholder: keepPlaceholder(model, "bearer", "Enter bearer token"),
+					}),
+				]
+			: []),
+		...(form.authType === "basic"
+			? [
+					textField(h, model, {
+						field: "username",
+						id: "scrape-auth-username",
+						label: "Username",
+						placeholder: keepPlaceholder(model, "basic", "Enter username"),
+					}),
+					textField(h, model, {
+						field: "password",
+						id: "scrape-auth-password",
+						label: "Password",
+						type: "password",
+						placeholder: keepPlaceholder(model, "basic", "Enter password"),
+					}),
+				]
+			: []),
+	]
 }
 
 const formFields = (h: H, model: Model): ReadonlyArray<Html> => {
@@ -128,34 +168,7 @@ const formFields = (h: H, model: Model): ReadonlyArray<Html> => {
 			error: intervalInvalid ? "Scrape interval must be an integer from 5 to 300 seconds." : undefined,
 		}),
 		authField(h, model),
-		...(form.authType === "bearer"
-			? [
-					textField(h, model, {
-						field: "token",
-						id: "scrape-auth-token",
-						label: "Bearer Token",
-						type: "password",
-						placeholder: keepPlaceholder(model, "bearer", "Enter bearer token"),
-					}),
-				]
-			: []),
-		...(form.authType === "basic"
-			? [
-					textField(h, model, {
-						field: "username",
-						id: "scrape-auth-username",
-						label: "Username",
-						placeholder: keepPlaceholder(model, "basic", "Enter username"),
-					}),
-					textField(h, model, {
-						field: "password",
-						id: "scrape-auth-password",
-						label: "Password",
-						type: "password",
-						placeholder: keepPlaceholder(model, "basic", "Enter password"),
-					}),
-				]
-			: []),
+		...credentialFields(h, model),
 	]
 }
 
@@ -229,14 +242,13 @@ export const targetDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			slotId: "scrape-target-delete",
 			model: card.deleteDialog,
 			toParentMessage: (message) => Message.GotTargetDeleteDialogMessage({ message }),
-			title: "Delete scrape target?",
+			title: "Disconnect this scrape target?",
 			description: [
-				"Are you sure you want to delete",
-				" ",
+				"Maple stops scraping ",
 				h.span([h.Class("font-medium text-foreground")], [target?.name ?? ""]),
-				"? This action cannot be undone.",
+				" and removes it from Sources. This cannot be undone.",
 			],
-			confirmLabel: "Delete",
+			confirmLabel: "Disconnect",
 			isPending: card.isDeleting,
 			onConfirm: Message.ConfirmedTargetDelete(),
 		}),

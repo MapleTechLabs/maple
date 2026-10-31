@@ -341,11 +341,11 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		locale: "en-US",
 		isInspecting: false,
 		isScrolledAway: false,
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("logs-time-range"),
 		refreshMenu: Menu.init("logs-refresh-menu"),
-		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip", { openDelayMs: 250 }),
+		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip"),
 		columnsPopover: Popover.init("logs-columns-popover", { align: "end" }),
 		searchHelp: initSearchHelp(),
 		detail: LogDetail.init("logs-detail"),
@@ -359,6 +359,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			ReadPreferences(),
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
@@ -385,7 +386,8 @@ export const routeChanged = (
 	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -510,13 +512,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const mounted = { ...model, isFilterRailMounted: true }
 			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
 		},
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
@@ -704,7 +699,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: cleared }
 				: navigate(cleared, { ...model.search, ...range, timePreset: undefined }, true)
 		},
-		LeftVolumeChart: () => (model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model }),
+		LeftVolumeChart: () =>
+			model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {
 			const next = TimeRangePicker.update(model.timePicker, inner)
 			const lifted = liftChild({ ...model, timePicker: next.model }, next.commands, (m) =>

@@ -60,8 +60,8 @@ const metadataBlock = (value: unknown): string | null => {
 }
 
 const changeValue = (h: H, value: unknown): Html => {
-	if (isPlaceholder(value)) return h.span([h.Class("text-muted-foreground/70 italic")], [value.slice(1, -1)])
-	if (value === undefined || value === null || value === "") return h.span([h.Class("text-muted-foreground/60")], [EMPTY_VALUE])
+	if (isPlaceholder(value)) return h.span([h.Class("text-foreground-subtle italic")], [value.slice(1, -1)])
+	if (value === undefined || value === null || value === "") return h.span([h.Class("text-foreground-subtle")], [EMPTY_VALUE])
 	return h.span([h.Class("break-all")], [formatScalar(value)])
 }
 
@@ -87,7 +87,7 @@ const changesTable = (h: H, changes: V2AuditChanges): Html =>
 	table(h, { size: "sm", className: "font-mono" }, [
 		tableHeader(h, [
 			tableRow(h, [
-				tableHead(h, ["Field"], "w-[160px] font-normal"),
+				tableHead(h, ["Field"], "w-40 font-normal"),
 				tableHead(h, ["Before"], "font-normal"),
 				tableHead(h, ["After"], "font-normal"),
 			]),
@@ -142,7 +142,7 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 	const changes = entry.changes
 	const metadata = entry.metadata
 	return h.div(
-		[h.Class("border-border/60 space-y-4 border-t px-4 py-3 @md:pl-[44px]")],
+		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-[44px]")],
 		[
 			keyValueList(
 				h,
@@ -194,7 +194,7 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 					]),
 					keyValue(h, { wrap: true, label: "Resource" }, [
 						entry.resource_type === null && entry.resource_id === null
-							? h.span([h.Class("text-muted-foreground/60")], [EMPTY_VALUE])
+							? h.span([h.Class("text-foreground-subtle")], [EMPTY_VALUE])
 							: h.span(
 									[h.Class("flex min-w-0 flex-wrap items-center gap-1.5")],
 									[

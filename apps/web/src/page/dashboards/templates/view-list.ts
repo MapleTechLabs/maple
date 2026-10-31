@@ -51,13 +51,13 @@ const templateRow = (
 				cn(
 					"flex min-h-9 w-full items-center text-left transition-colors",
 					rowSelectedClass(isSelected),
-					!isSelected && "hover:bg-muted/50",
+					!isSelected && "hover:bg-surface-sunken active:bg-surface-sunken",
 				),
 			),
 		],
 		[
 			h.span(
-				[h.Class("flex min-w-0 grow items-center gap-2.5 py-2 pr-5 pl-4.5")],
+				[h.Class("flex min-w-0 grow items-center gap-2.5 py-2 pr-4 pl-4")],
 				[
 					h.span(
 						[
@@ -86,22 +86,27 @@ const templateRow = (
 						],
 						[template.name],
 					),
+					...(status === null
+						? []
+						: [
+								h.span(
+									[
+										h.Class(
+											cn(
+												truncatedTextStyles,
+												truncatedTextMonoStyles,
+												"text-foreground-subtle max-w-31.5 shrink-0 text-right text-2xs",
+											),
+										),
+										h.Title(status),
+									],
+									[status],
+								),
+							]),
+					// Last, so every count lines up on the list's right edge.
 					h.span(
 						[h.Class("text-muted-foreground w-18 shrink-0 text-right font-mono text-2xs")],
 						[widgetCountLabel(template)],
-					),
-					h.span(
-						[
-							h.Class(
-								cn(
-									truncatedTextStyles,
-									truncatedTextMonoStyles,
-									"text-muted-foreground/80 w-31.5 shrink-0 text-right text-2xs",
-								),
-							),
-							...(status === null ? [] : [h.Title(status)]),
-						],
-						status === null ? [] : [status],
 					),
 				],
 			),
@@ -114,7 +119,7 @@ const filteredEmpty = (h: H, query: string): Html =>
 		noun: "templates",
 		title: `No template matches “${query.trim()}”`,
 		description: "Try a shorter term. Or start blank and add the widgets you want.",
-		icon: icon(h, "MagnifierIcon", { size: 17 }),
+		icon: icon(h, "MagnifierIcon", { size: 16 }),
 		onClear: Message.ChangedSearchDraft({ value: "" }),
 		clearLabel: "Clear search",
 		className: "py-14",
@@ -126,7 +131,7 @@ const filterHidEverything = (h: H, filter: ReadinessFilter, matched: number, isS
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [
-					icon(h, filter === "ready" ? "CircleWarningIcon" : "CircleCheckIcon", { size: 17 }),
+					icon(h, filter === "ready" ? "CircleWarningIcon" : "CircleCheckIcon", { size: 16 }),
 				]),
 				emptyTitle(h, [
 					filter === "ready" ? "None of these are ready yet" : "These are all ready to use",
@@ -163,6 +168,7 @@ const groups = (
 	ready: ReadonlyArray<V2DashboardTemplate>,
 	needsSetup: ReadonlyArray<V2DashboardTemplate>,
 	readiness: ReadonlyMap<string, TemplateReadiness>,
+	isReadinessKnown: boolean,
 ): ReadonlyArray<Html> => {
 	const row = (template: V2DashboardTemplate) =>
 		templateRow(h, template, readiness.get(template.id), template.id === model.search.template)
@@ -174,11 +180,12 @@ const groups = (
 		...(ready.length === 0
 			? []
 			: [
+					// Until the data check answers, nothing is known to be ready: just count the templates.
 					listSectionHeader(h, {
-						title: "Ready for your data",
+						title: isReadinessKnown ? "Ready for your data" : "Templates",
 						count: ready.length,
-						accent: true,
-						className: "px-5 pt-4",
+						accent: isReadinessKnown,
+						className: "px-4 pt-4",
 					}),
 					...ready.map(row),
 				]),
@@ -189,7 +196,7 @@ const groups = (
 						title: "Needs setup",
 						count: needsSetup.length,
 						note: "these would render empty today",
-						className: cn("px-5 pt-4", ready.length > 0 && "mt-2 border-t border-border pt-6"),
+						className: cn("px-4 pt-4", ready.length > 0 && "mt-2 border-t border-border pt-6"),
 					}),
 					...byCategory.map(({ category, templates }) =>
 						h.keyed("div")(
@@ -197,7 +204,7 @@ const groups = (
 							[],
 							[
 								h.div(
-									[h.Class("text-muted-foreground/70 pt-3.5 pr-5 pb-1 pl-12.75 text-2xs")],
+									[h.Class("text-foreground-subtle pt-3.5 pr-4 pb-1 pl-12.5 text-2xs")],
 									[CATEGORY_LABELS.get(category) ?? category],
 								),
 								...templates.map(row),
@@ -208,7 +215,12 @@ const groups = (
 	]
 }
 
-export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, TemplateReadiness>): Html => {
+export const templateList = (
+	h: H,
+	model: Model,
+	readiness: ReadonlyMap<string, TemplateReadiness>,
+	isReadinessKnown: boolean,
+): Html => {
 	const isLoading =
 		!AsyncData.isSuccess(model.templates.data) && !AsyncData.isRefreshing(model.templates.data)
 	const listed =
@@ -230,7 +242,7 @@ export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, 
 					h.Class(
 						cn(
 							"flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3",
-							"shrink-0 flex-nowrap gap-2.5 px-5",
+							"shrink-0 flex-nowrap gap-2.5",
 						),
 					),
 				],
@@ -247,6 +259,7 @@ export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, 
 						value: model.filter,
 						onChange: (filter) => Message.ChangedFilter({ filter }),
 						ariaLabel: "Filter templates by readiness",
+						size: "sm",
 						className: "shrink-0",
 					}),
 				],
@@ -256,7 +269,7 @@ export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, 
 						h.div(
 							[
 								h.Class(
-									"flex shrink-0 items-center gap-2 border-b border-border px-5 py-2 text-2xs",
+									"flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-2xs",
 								),
 							],
 							[
@@ -277,21 +290,33 @@ export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, 
 								rows: 8,
 								rowClassName: "h-7 rounded-sm",
 								gap: "2",
-								className: "p-5",
+								className: "p-4",
 							}),
 						]
 					: isNothingMatched
 						? [filteredEmpty(h, model.query)]
 						: isFilterHidingAll
 							? [filterHidEverything(h, model.filter, searched.length, isSearching)]
-							: groups(h, model, ready, needsSetup, readiness),
+							: [
+									...groups(h, model, ready, needsSetup, readiness, isReadinessKnown),
+									// Pads the list by its own height and fades rows into the footer as they scroll under.
+									h.div(
+										[
+											h.AriaHidden(true),
+											h.Class(
+												"pointer-events-none sticky bottom-0 h-6 bg-gradient-to-t from-background to-transparent",
+											),
+										],
+										[],
+									),
+								],
 			),
 			h.button(
 				[
 					h.Type("button"),
 					h.OnClick(Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID })),
 					h.Class(
-						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-5 pl-4.5 text-left transition-colors hover:bg-muted/50",
+						"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 					),
 				],
 				[
@@ -301,7 +326,7 @@ export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, 
 								"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-input border-dashed",
 							),
 						],
-						[icon(h, "PlusIcon", { size: 11, className: "text-muted-foreground" })],
+						[icon(h, "PlusIcon", { size: 12, className: "text-muted-foreground" })],
 					),
 					h.span(
 						[h.Class("flex min-w-0 grow items-baseline gap-2.25")],
@@ -310,7 +335,7 @@ export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, 
 							h.span([h.Class("text-muted-foreground text-2xs")], ["start from nothing"]),
 						],
 					),
-					icon(h, "ArrowRightIcon", { size: 13, className: "text-muted-foreground shrink-0" }),
+					icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 				],
 			),
 		],

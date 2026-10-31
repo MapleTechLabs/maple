@@ -1,6 +1,6 @@
 ---
 title: "Google Cloud"
-description: "Connect a Google Cloud organization, folder or project with a script in Cloud Shell, by hand in the console, or with Terraform or Alchemy. Maple receives Cloud Logging entries through Pub/Sub and reads Cloud Monitoring metrics every 5 minutes."
+description: "Connect a Google Cloud organization, folder or project to Maple with a Cloud Shell script, console steps, Terraform or Alchemy."
 group: "Integrations"
 order: 7
 ---
@@ -12,17 +12,17 @@ The Google Cloud integration connects an organization, a folder or a single proj
 | **Log forwarding**        | A Log Router sink sends Cloud Logging entries through Pub/Sub to Maple. They appear in [Logs](/docs/explore/logs) under the service that wrote them.                                                                                                                           |
 | **Metrics and resources** | Maple reads Cloud Monitoring metrics for Cloud Run, Cloud Functions, GKE, Compute Engine, Cloud SQL, Pub/Sub and HTTP(S) load balancers every 5 minutes, and lists the resources behind them every hour. The metrics are named `gcp.*` and work in dashboards and alert rules. |
 
-There is no OAuth step and no service account key, and Maple gets no write access to Google Cloud. You set a connection up in one of three ways, chosen in the dialog's **Method** step. Each creates the same resources under the same names:
+There is no OAuth step and no service account key, and Maple gets no write access to Google Cloud. You set a connection up in one of three ways, chosen under **How do you want to apply the setup?**. Each creates the same resources under the same names:
 
-| Method                     | What you do                                                                                                                                                 |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cloud Shell script**     | Paste a generated `gcloud` script into Cloud Shell. About a minute. This page covers it.                                                                    |
-| **Manual setup**           | Create each resource in the Google Cloud console from a step list in the dialog. About 20 minutes. See [Manual setup](/docs/integrations/gcp-manual-setup). |
-| **Infrastructure as code** | Copy a generated Terraform or Alchemy file into your own repo and apply it. See [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code).     |
+| Method                       | What you do                                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cloud Shell script**       | Paste a generated `gcloud` script into Cloud Shell. About a minute. This page covers it.                                                                  |
+| **Console steps**            | Create each resource in the Google Cloud console from a step list Maple shows. About 20 minutes. See [Manual setup](/docs/integrations/gcp-manual-setup). |
+| **Terraform** or **Alchemy** | Copy a generated file into your own repo and apply it. See [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code).                        |
 
 If your workloads also send telemetry over OpenTelemetry, read [Google Cloud with OpenTelemetry](/docs/integrations/gcp-opentelemetry) first: it covers which logs to collect where.
 
-## Before you start
+## Prerequisites
 
 You need to be an admin of the Maple organization, and in Google Cloud:
 
@@ -42,12 +42,12 @@ The host project holds Maple's Pub/Sub topic, subscription and service accounts,
 
 ## Connect
 
-1. In Maple, open **Integrations → Google Cloud** and click **Connect Google Cloud**.
-2. On **Scope**, choose **Organization**, **Folder** or **Project** and enter its ID, plus the host project for a folder or organization. An organization or folder covers every project in it, including new ones.
-3. On **Data**, choose what to collect and, for logs, the [log filter](#log-filter). Click **Continue**: Maple creates the connection.
-4. On **Method**, leave **Cloud Shell script** selected and click **Continue**. For the other methods, follow [Manual setup](/docs/integrations/gcp-manual-setup) or [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code) from here.
+1. In Maple, open **Sources**, click **Connect source** and pick **Google Cloud**.
+2. Under **Enter what Maple should watch**, choose **Organization**, **Folder** or **Project** and enter its ID, plus the **Host project ID** for a folder or organization. An organization or folder covers every project in it, including new ones.
+3. Under **Choose what to collect**, pick **Log forwarding**, **Metrics and resources** or both and, for logs, the [log filter](#log-filter). Click **Create connection**.
+4. Under **How do you want to apply the setup?**, keep **Cloud Shell script**. For the other methods, follow [Manual setup](/docs/integrations/gcp-manual-setup) or [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code) from here.
 5. Click **Open Cloud Shell**, then **Copy script**, paste it into Cloud Shell and press Enter. It takes about a minute.
-6. The dialog updates on its own and shows **Google Cloud matches this configuration** once the script reports back.
+6. The checklist updates on its own and shows **Google Cloud matches this configuration** once the script reports back.
 
 If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped, and running it again is always safe.
 
@@ -68,9 +68,9 @@ Owner on the host project is the simplest. Without it, these predefined roles to
 | The project, folder or organization | Logs Configuration Writer (`roles/logging.configWriter`)                                                                                                                                         | Log forwarding: the sink.                             |
 | The project, folder or organization | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`), Folder IAM Admin (`roles/resourcemanager.folderIamAdmin`) or Organization Administrator (`roles/resourcemanager.organizationAdmin`) | Metrics and resources: the read-only roles.           |
 
-### Change what a connection collects
+### Change collection
 
-Click **Configure** on the connection's row, change **Log forwarding**, **Metrics and resources** or the log filter, and click **Save and continue**. Then apply the change the way you set the connection up: run the script again, follow the dialog's console steps, or apply the regenerated file.
+Open the menu on the connection's row and choose **Edit data**, change **Log forwarding**, **Metrics and resources** or the log filter, and click **Save and continue**. Then apply the change the way you set the connection up: run the script again, follow the dialog's console steps, or apply the regenerated file.
 
 Turning something off takes effect in Maple at once. Google Cloud keeps the sink or the read-only account until the change is applied, and the connection says so until then. A connection collects at least one of the two; to stop collecting, [disconnect](#disconnect).
 
@@ -101,9 +101,9 @@ AND NOT resource.type="k8s_container"
 
 For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`; in the console or a file, edit the sink's filter. It uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). On a connection that already has a sink, the dialog starts on **Keep current filter**, which leaves your filter alone.
 
-## Check that it works
+## Verify
 
-**Integrations → Google Cloud** shows each connection with a status for **Logs** and one for **Metrics**, and a band with the fix when something needs attention. Once data arrives, the page also shows log and error counts for the last 24 hours, the workloads that reported metrics, and the resource inventory. Then:
+The Google Cloud source in **Sources** shows each connection with a status for **Logs** and one for **Metrics**, and a band with the fix when something needs attention. Once data arrives, the page also shows log and error counts for the last 24 hours, the workloads that reported metrics, and the resource inventory. Then:
 
 1. Open [Logs](/docs/explore/logs) and look for a service named after one of your Cloud Run services, functions or instances.
 2. In the [metrics explorer](/docs/explore/metrics), search for the prefix `gcp`.
@@ -181,12 +181,12 @@ Google bills Pub/Sub for the log entries that pass through the topic and subscri
 
 The connection's band names the problem and the fix; when it asks for another setup run, its button **Set up again** opens the dialog at **Method**. For the script, read its last lines in Cloud Shell. A few cases need more:
 
-| You see                                                  | Do                                                                                                                                                      |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Waiting for the first entry** for more than 20 minutes | Run the `gcloud logging write` command the band shows. If the entry doesn't arrive within a minute, set the connection up again.                        |
-| A workload's logs appear twice                           | Its application output is forwarded and it also sends logs over OpenTelemetry. Untick its runtime under [Log filter](#log-filter) and apply the change. |
-| A workload's stdout and stderr are missing               | Application output isn't forwarded by default. Send it over OpenTelemetry, or tick its runtime under **Log filter**.                                    |
-| A wrong project, folder or organization ID               | A connection's ID can't be changed: disconnect it and connect the right one.                                                                            |
+| You see                                                 | Do                                                                                                                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Waiting for the first data** for more than 20 minutes | Run the `gcloud logging write` command the band shows. If the entry doesn't arrive within a minute, set the connection up again.                        |
+| **A workload's logs appear twice**                      | Its application output is forwarded and it also sends logs over OpenTelemetry. Untick its runtime under [Log filter](#log-filter) and apply the change. |
+| **A workload's stdout and stderr are missing**          | Application output isn't forwarded by default. Send it over OpenTelemetry, or tick its runtime under **Log filter**.                                    |
+| **A wrong project, folder or organization ID**          | A connection's ID can't be changed: disconnect it and connect the right one.                                                                            |
 
 On a self-hosted Maple, **Metrics and resources** reads **Not available on this Maple deployment** until `MAPLE_GCP_SERVICE_ACCOUNT_EMAIL` names a Google service account the deployment owns. Reading metrics also needs `MAPLE_GCP_SERVICE_ACCOUNT_KEY`, that account's key file, base64-encoded.
 

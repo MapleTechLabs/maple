@@ -119,7 +119,7 @@ const main = async (): Promise<void> => {
 			if (differences > 0) process.exitCode = 1
 		})
 	if (databaseUrl !== undefined && databaseUrl !== "") await run(databaseUrl)
-	else await withBranchConnection(branch, run)
+	else await withBranchConnection(branch, "read", run)
 }
 
 if (import.meta.main) await main()

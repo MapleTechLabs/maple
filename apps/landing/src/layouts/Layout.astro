@@ -1,6 +1,7 @@
 ---
 import { getRelativeLocaleUrl } from "astro:i18n";
 import "../styles/global.css";
+import FontPreloads from "../components/FontPreloads.astro";
 import MediaLightbox from "../components/MediaLightbox.astro";
 
 interface Props {
@@ -67,6 +68,7 @@ const absoluteImage = image.startsWith("http")
         <link rel="apple-touch-icon" sizes="192x192" href="/logo192.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <FontPreloads />
         <meta name="description" content={description} />
         <meta name="theme-color" content={themeColor} />
         <meta name="robots" content="index,follow" />

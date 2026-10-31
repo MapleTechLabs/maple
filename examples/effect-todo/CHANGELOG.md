@@ -1,5 +1,23 @@
 # @maple-examples/effect-todo
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies [bf01691]
+    - @maple-dev/effect-sdk@0.12.1
+
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [af2b366]
+- Updated dependencies [75a59ca]
+- Updated dependencies [f34141f]
+- Updated dependencies [c463f5c]
+- Updated dependencies [7216bb9]
+    - @maple-dev/effect-sdk@0.12.0
+
 ## 0.0.3
 
 ### Patch Changes

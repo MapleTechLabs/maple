@@ -65,12 +65,13 @@ export const sourceStatusBadge = <M>(h: HtmlBuilder<M>, source: V2Source, option
 			? formatRelativeTime(lastDataAt, options.nowMs)
 			: null
 	const rollup = rollupLabel(source)
+	const full = [LABEL[status], time, rollup].filter((part) => part !== null).join(" · ")
 	return h.span(
-		[h.Class(cn("inline-flex min-w-0 items-center gap-2 text-sm", options.className))],
+		[h.Class(cn("inline-flex max-w-full min-w-0 items-center gap-2 text-sm", options.className))],
 		[
 			statusDot(h, { tone: TONE[status], size: "lg" }),
 			h.span(
-				[h.Class("truncate")],
+				[h.Class("truncate"), h.Title(full)],
 				[
 					LABEL[status],
 					...(time === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", time])]),

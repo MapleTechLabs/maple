@@ -6,7 +6,7 @@
  * the binding is either on the env or not, and every non-prd isolate reads none.
  */
 import { NotificationsEmail, parseMapleDeployment } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Stage } from "alchemy/Stage"
 import { Effect, Option } from "effect"

@@ -20,7 +20,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 			h.span([h.Class("text-xs text-muted-foreground")], [title]),
 			rows.length === 0
 				? h.span(
-						[h.Class("py-1 text-sm text-muted-foreground/70")],
+						[h.Class("py-1 text-sm text-foreground-subtle")],
 						["No repositories in this window"],
 					)
 				: h.ul(
@@ -30,7 +30,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 								[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
 								[
 									icon(h, "GithubIcon", {
-										size: 15,
+										size: 16,
 										className: "shrink-0 text-muted-foreground",
 									}),
 									h.span([h.Class("min-w-0 flex-1 truncate")], [row.name]),
@@ -103,7 +103,7 @@ export const outcomesCard = <M>(
 			tone: TONE_FILL.neutral,
 		},
 		{ key: "failed", label: "Failed", value: current.failedReviews, tone: TONE_FILL.crit },
-		{ key: "skipped", label: "Skipped", value: current.skippedReviews, tone: "bg-muted-foreground/30" },
+		{ key: "skipped", label: "Skipped", value: current.skippedReviews, tone: "bg-foreground-faint" },
 	]
 	return analyticsPanel(h, { title: "Review outcomes" }, [
 		barList(

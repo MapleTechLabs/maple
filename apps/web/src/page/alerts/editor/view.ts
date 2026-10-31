@@ -1,8 +1,7 @@
 import { deriveTierIssues, isFilledNumber } from "@maple/web-data/alerts/form-utils"
-import { diffRuleForms } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
@@ -11,6 +10,7 @@ import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { stableSlice } from "../../kit/stable-slice"
 import * as DestinationDialogView from "../destination/view"
 import { RULE_CHART_TOKENS } from "../shared/rule-chart"
 import type { RuleForm } from "./form"
@@ -49,17 +49,15 @@ const formSkeleton = (h: H): Html =>
 		],
 	)
 
-/** The rules list's `SYNC_UNAVAILABLE`, shown through `ErrorState`. */
-const SYNC_UNAVAILABLE = { message: "Live sync is unavailable, so alerts couldn’t be loaded. Reload to try again." }
-
 /** `AlertRuleFormLoadError`: the rules stream stopped, so the rule being edited can never load. */
 const loadError = (h: H): Html =>
 	h.div(
 		[h.Class(cn("mx-auto w-full", RULE_FORM_MAX_WIDTH))],
 		[
 			errorState(h, {
-				failure: toLoadFailure(SYNC_UNAVAILABLE),
-				title: "Failed to load alert rules",
+				failure: toLoadFailure(null),
+				title: "Couldn't load alert rules",
+				message: "Live sync is unavailable.",
 				onRetry: Message.ClickedReloadPage(),
 				className: "py-12",
 			}),
@@ -71,16 +69,47 @@ const noticeBanner = (h: H, notices: ReadonlyArray<Notice>): ReadonlyArray<Html>
 	notices.length === 0
 		? []
 		: [
-				alert(h, { variant: notices.some((notice) => notice.severity === "error") ? "crit" : "warn", className: "rounded-md" }, [
-					icon(h, "CircleWarningIcon", { size: 14 }),
-					alertTitle(h, ["Review chart alert draft"]),
-					alertDescription(h, [h.div([h.Class("space-y-1")], notices.map((notice) => h.p([], [notice.message])))]),
-				]),
+				alert(
+					h,
+					{
+						variant: notices.some((notice) => notice.severity === "error") ? "crit" : "warn",
+						className: "rounded-md",
+					},
+					[
+						icon(h, "CircleWarningIcon", { size: 14 }),
+						alertTitle(h, ["Review chart alert draft"]),
+						alertDescription(h, [
+							h.div(
+								[h.Class("space-y-1")],
+								notices.map((notice) => h.p([], [notice.message])),
+							),
+						]),
+					],
+				),
 			]
 
+// `never[]` holds nothing, so sharing one is safe; a fresh `[]` would change the slice every render.
+const NONE: Array<never> = []
+
+/**
+ * The draft without the fields the evaluator never reads (name, notes, tags, warning destinations,
+ * message), kept by reference while the rest is unchanged: the query, condition, noise and chart
+ * sections skip those edits. A critical tier's destinations stay, inside `escalation`.
+ */
+const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
+	...form,
+	name: "",
+	notes: "",
+	tags: NONE,
+	destinationIds: NONE,
+	notificationTitle: "",
+	notificationBody: "",
+}))
+
 const surface = (h: H, model: Model, form: RuleForm, timeZone: string): ReadonlyArray<Html> => {
-	const changes = model.savedForm === null ? null : diffRuleForms(model.savedForm, form).length
-	const isNotifyMissing = form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
+	const evaluated = evaluatedFormOf(form)
+	const isNotifyMissing =
+		form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
 	return [
 		h.div(
 			[h.Class(cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH))],
@@ -95,7 +124,7 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 						hint: "Pick a built-in signal, or build the query like a dashboard widget.",
 						status: "done",
 					},
-					[querySection(h, model, form)],
+					[querySection(h, model, evaluated)],
 				),
 				ruleStep(
 					h,
@@ -108,7 +137,11 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 					[
 						h.div(
 							[h.Class("space-y-4")],
-							[liveChartHero(h, model, form, timeZone), conditionFields(h, model, form), noiseSection(h, model, form)],
+							[
+								liveChartHero(h, model, form, evaluated, timeZone),
+								conditionFields(h, model, evaluated),
+								noiseSection(h, model, evaluated),
+							],
 						),
 					],
 				),
@@ -117,7 +150,12 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 					[
 						ruleStep(
 							h,
-							{ number: 3, hasDivider: false, title: "Who gets notified", status: isNotifyMissing ? "missing" : "done" },
+							{
+								number: 3,
+								hasDivider: false,
+								title: "Who gets notified",
+								status: isNotifyMissing ? "missing" : "done",
+							},
 							[notificationsSection(h, model, form)],
 						),
 						ruleStep(
@@ -134,10 +172,21 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 				),
 			],
 		),
-		actionBar(h, model, form, changes),
+		actionBar(h, model, form),
 		templatesOverlay(h, model),
 	]
 }
+
+const dialogSlot = createLazy()
+
+const destinationDialog = (h: H, dialog: Model["destinationDialog"]): Html =>
+	h.submodel({
+		slotId: "alert-rule-destination",
+		model: dialog,
+		view: DestinationDialogView.view,
+		viewInputs: { id: "alert-rule-destination" },
+		toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
+	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const form = model.form
@@ -151,13 +200,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					? surface(h, model, form, inputs.context.timeZone)
 					: [model.status === "Failed" ? loadError(h) : formSkeleton(h)],
 			),
-			h.submodel({
-				slotId: "alert-rule-destination",
-				model: model.destinationDialog,
-				view: DestinationDialogView.view,
-				viewInputs: { id: "alert-rule-destination" },
-				toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
-			}),
+			dialogSlot(destinationDialog, [h, model.destinationDialog]),
 		],
 	)
 })
