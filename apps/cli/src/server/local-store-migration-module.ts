@@ -1,7 +1,10 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import type { Chdb } from "./chdb"
-import type { LocalSchemaIdentity } from "./schema-identity"
-import type { MigrationPhase, MigrationStepJournalSchema } from "./local-store-migrations/journal-schema"
+import type { Chdb } from "@maple/local-server/chdb"
+import type { LocalSchemaIdentity } from "@maple/local-server/schema-identity"
+import type {
+	MigrationPhase,
+	MigrationStepJournalSchema,
+} from "@maple/local-server/local-store-migrations/journal-schema"
 
 /** Coordinator-owned transaction phases. Modules may report progress, but
  * only the coordinator advances this top-level state machine. The union is

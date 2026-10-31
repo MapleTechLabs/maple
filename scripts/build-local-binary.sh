@@ -5,7 +5,7 @@
 # Pipeline:
 #   1. Build the workspace packages consumed through gitignored `dist/` paths.
 #   2. Build the lightweight SPA (`apps/local-ui` → its `dist/`).
-#   3. Inline that dist into apps/cli/src/server/ui-embed.gen.ts so
+#   3. Inline that dist into packages/local-server/src/ui-embed.gen.ts so
 #      `bun build --compile` bakes the SPA into the binary.
 #   4. Compile apps/cli (the CLI + the OTLP-ingest/query server) into a single
 #      executable with `bun build --compile`. The schema artifacts and SPA are
@@ -27,7 +27,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/dist}"
 LIBCHDB_VERSION="${LIBCHDB_VERSION:-v26.7.3}"
-UI_EMBED="$REPO_ROOT/apps/cli/src/server/ui-embed.gen.ts"
+UI_EMBED="$REPO_ROOT/packages/local-server/src/ui-embed.gen.ts"
 
 # Version baked into the binary via `bun build --define`. The release workflow
 # passes the tag; a local build defaults to `git describe` (or "dev").

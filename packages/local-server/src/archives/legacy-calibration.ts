@@ -6,8 +6,8 @@ import { type Dirent, readdirSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect, Option, Result } from "effect"
-import { debugLog } from "../../lib/debug"
 import { assertCheckpointPinIdentity, checkpointPinsRoot, releaseCheckpointPin } from "../checkpoints"
+import { debugLog } from "../debug-log"
 import { ArchiveError } from "./errors"
 import { classifyArchivePathSync } from "./paths"
 
@@ -104,12 +104,11 @@ export const retireLegacyCalibration = (
 			else if (removed.success) removedDirectories++
 		}
 		yield* Effect.sync(() => {
-			if (releasedPins + removedDirectories > 0) {
+			if (releasedPins + removedDirectories > 0)
 				debugLog(
 					"retired legacy archive calibration state",
 					`${releasedPins} pin(s), ${removedDirectories} dir(s)`,
 				)
-			}
 			for (const failure of failures) debugLog("legacy archive calibration cleanup skipped", failure)
 		})
 		return { releasedPins, removedDirectories, failures }

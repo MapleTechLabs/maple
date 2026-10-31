@@ -2,15 +2,15 @@ import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
 import { gzipSync } from "node:zlib"
 import { Effect, Result } from "effect"
 import { describe, it } from "vitest"
-import { EventingControlStoreError, OutboxEventRejected } from "../src/server/eventing/control-store"
-import { normalizeOtlpLogs } from "../src/server/eventing/otlp"
+import { EventingControlStoreError, OutboxEventRejected } from "@maple/local-server/eventing/control-store"
+import { normalizeOtlpLogs } from "@maple/local-server/eventing/otlp"
 import {
 	type LocalEventingRuntimeApi,
 	ProjectionActivationConflict,
 	SourceOccurrenceCollision,
-} from "../src/server/eventing/runtime"
-import { InsertBatcher } from "../src/server/insert-batcher"
-import { __testables } from "../src/server/serve"
+} from "@maple/local-server/eventing/runtime"
+import { InsertBatcher } from "@maple/local-server/insert-batcher"
+import { __testables } from "@maple/local-server/serve"
 import { run, serveCheckpointWith, serveWith, stubEventing } from "./eventing-test-support"
 
 describe("Local eventing ingest seam", () => {

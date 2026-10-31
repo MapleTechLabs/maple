@@ -1,4 +1,4 @@
-import { Chdb } from "../src/server/chdb"
+import { Chdb } from "@maple/local-server/chdb"
 import type { MigrationDbOptions, MigrationModuleContext } from "../src/server/local-store-migration-module"
 import { localStoreMigrations } from "../src/server/local-store-migrations"
 

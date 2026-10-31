@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { withMaintenanceLock } from "../src/server/checkpoints"
+import { withMaintenanceLock } from "@maple/local-server/checkpoints"
 
 const lockPathOf = (dataDir: string): string => `${resolve(dataDir)}.maple-maintenance-lock`
 

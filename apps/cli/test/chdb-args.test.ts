@@ -9,7 +9,7 @@ import {
 	configureRawTelemetryRetentionDays,
 	rawTelemetryTtlStatements,
 	readRawTelemetryRetentionDays,
-} from "../src/server/chdb"
+} from "@maple/local-server/chdb"
 
 describe("embedded chDB arguments", () => {
 	it("keeps an explicit config after the loader and restore safety settings", () => {

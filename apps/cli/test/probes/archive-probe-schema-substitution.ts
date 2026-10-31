@@ -7,7 +7,7 @@
 // Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-schema-substitution.ts
 
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { compareSchema } from "../../src/server/archives/export"
+import { compareSchema } from "@maple/local-server/archives/export"
 
 const h = ArchiveProbe.create("schema-substitution")
 

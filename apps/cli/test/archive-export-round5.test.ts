@@ -7,10 +7,10 @@ import {
 	COMPLEX_DIGEST_ALGORITHM,
 	multisetDigestSql,
 	type ExportSettings,
-} from "../src/server/archives/export"
-import { parseArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/export"
+import { parseArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 
 // Pure-logic tests for the round-5 fixes. The end-to-end adversarial coverage
 // (column swap, row reassociation, byte refinement, timezone, recovery) lives

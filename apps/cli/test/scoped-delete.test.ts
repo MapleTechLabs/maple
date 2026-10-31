@@ -3,12 +3,12 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
-import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
-import { Chdb } from "../src/server/chdb"
-import { decodeJsonEachRow } from "../src/server/chdb-rows"
-import { buildLocalSchemaManifest } from "../src/server/schema-manifest"
-import { LOCAL_SCHEMA_MANIFEST } from "../src/server/schema-identity"
-import { serviceMapRollupInserts } from "../src/server/service-map-rollup"
+import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
+import { Chdb } from "@maple/local-server/chdb"
+import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
+import { buildLocalSchemaManifest } from "@maple/local-server/schema-manifest"
+import { LOCAL_SCHEMA_MANIFEST } from "@maple/local-server/schema-identity"
+import { serviceMapRollupInserts } from "@maple/local-server/service-map-rollup"
 import { describeWithChdb } from "./libchdb-test-support"
 import {
 	pendingDeletePath,
@@ -17,7 +17,7 @@ import {
 	TABLE_DELETE_PLAN,
 	tablePlan,
 	validateDeletePlan,
-} from "../src/server/scoped-delete"
+} from "@maple/local-server/scoped-delete"
 
 describe("scoped delete plan", () => {
 	// Fails when a table is added to the local schema without a delete strategy.

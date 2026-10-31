@@ -55,7 +55,7 @@ export const resolveUiAssets = (): Effect.Effect<AssetResolver | undefined, neve
 
 		// Dev: preload apps/local-ui/dist if it has been built.
 		const fs = yield* FileSystem
-		const distDir = fileURLToPath(new URL("../../../local-ui/dist/", import.meta.url))
+		const distDir = fileURLToPath(new URL("../../../apps/local-ui/dist/", import.meta.url))
 		if (!(yield* fs.exists(distDir).pipe(Effect.orElseSucceed(() => false)))) return undefined
 
 		const entries = yield* fs

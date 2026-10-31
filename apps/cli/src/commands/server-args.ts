@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { homedir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "../lib/local-address"
+import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "@maple/local-server/local-address"
 
 export type DirtyStorePolicy = "wipe" | "fail" | "restore-checkpoint"
 
@@ -16,7 +16,7 @@ export {
 	serverProbeUrl,
 	serverUrl,
 	validateHost,
-} from "../lib/local-address"
+} from "@maple/local-server/local-address"
 
 export const defaultDataDir = (): string => join(homedir(), ".maple", "data")
 
@@ -113,23 +113,6 @@ export const ServerDiscovery = Schema.Struct({
 })
 export type ServerDiscovery = typeof ServerDiscovery.Type
 
-/** Parse `ps -o etime=` (`[[dd-]hh:]mm:ss`) into whole seconds. */
-export const parseElapsedSeconds = (raw: string): number | undefined => {
-	const match = raw.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
-	if (!match) return undefined
-	const [, days, hours, minutes, seconds] = match
-	return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes) * 60 + Number(seconds)
-}
-
-/**
- * Could a live process that started at `startedAtMs` have written a PID file
- * last modified at `writtenAtMs`? A reused PID belongs to a process started
- * after the writer died, so after the write. The slack covers `etime`'s
- * whole-second resolution.
- */
-export const startedBeforeWrite = (startedAtMs: number, writtenAtMs: number): boolean =>
-	startedAtMs <= writtenAtMs + 2_000
-
 /** Does telemetry ingested since `sinceMs` need a fresh checkpoint? Unknown
  * ingest state (`undefined`) always does. */
 export const ingestedSince = (lastIngestAtMs: number | null | undefined, sinceMs: number): boolean =>
@@ -215,24 +198,3 @@ export const buildCheckpointChildArgs = (options: {
 	"--data-dir",
 	options.dataDir,
 ]
-
-/** Liveness probe via signal 0: a process primitive with no FileSystem
- *  equivalent. Never throws (errors mean "not alive").
- *
- *  A PID file naming *this* process is stale by definition: the previous server
- *  is the one that wrote it, so if its number is ours it has died and the OS
- *  reused the PID. In a container that is the common case, not the edge case:
- *  `maple start` is PID 1 on every restart, the file survives on the data
- *  volume, and `kill(1, 0)` always succeeds, so without this check a container
- *  whose server died once refuses to start forever ("already running (PID 1)").
- *  Non-positive PIDs are rejected for the same reason: `kill(0, 0)` and
- *  `kill(-n, 0)` signal process groups and "succeed" for a group that exists. */
-export const isProcessAlive = (pid: number): boolean => {
-	if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
-	try {
-		process.kill(pid, 0)
-		return true
-	} catch {
-		return false
-	}
-}

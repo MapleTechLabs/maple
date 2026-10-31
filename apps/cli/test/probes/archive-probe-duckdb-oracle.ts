@@ -14,8 +14,8 @@ import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { execSync } from "node:child_process"
 import { ArchiveProbe, readRows } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
 
 const SCHEMA = `CREATE DATABASE IF NOT EXISTS default;
 CREATE TABLE IF NOT EXISTS default.traces (

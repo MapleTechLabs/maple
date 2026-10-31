@@ -10,7 +10,7 @@
 		"start": "bun run src/bin.ts",
 		"bench:ingest": "bun bench/ingest-http.ts",
 		"bench:ingest:chdb": "bun bench/ingest-chdb.ts",
-		"test": "bun test --max-concurrency=1 test/*.test.ts src/server/otlp/encode.test.ts src/core/*.test.ts",
+		"test": "bun test --max-concurrency=1 test/*.test.ts src/core/*.test.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
@@ -18,10 +18,9 @@
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
-		"@maple/ingest-rules": "workspace:*",
+		"@maple/local-server": "workspace:*",
 		"@maple/query-engine": "workspace:*",
-		"effect": "catalog:effect",
-		"protobufjs": "^8.8.1"
+		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",

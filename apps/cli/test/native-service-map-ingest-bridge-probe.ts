@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { Chdb } from "../src/server/chdb"
-import { LOCAL_SCHEMA_SQL } from "../src/server/schema-identity"
-import { markStoreClosedDurable, markStoreOpenDurable } from "../src/server/store-version"
+import { Chdb } from "@maple/local-server/chdb"
+import { LOCAL_SCHEMA_SQL } from "@maple/local-server/schema-identity"
+import { markStoreClosedDurable, markStoreOpenDurable } from "@maple/local-server/store-version"
 
 const [dataDir, configFile] = process.argv.slice(2)
 if (!dataDir || !configFile)

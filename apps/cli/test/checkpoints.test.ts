@@ -1,7 +1,7 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
-import { sha256File } from "../src/server/checkpoint-digest"
+import { sha256File } from "@maple/local-server/checkpoint-digest"
 import { Clock, Duration, Effect, Exit, Option } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
@@ -56,17 +56,17 @@ import {
 	retireCheckpointIfEligible,
 	validateCheckpointDataDir,
 	writeBackupConfig,
-} from "../src/server/checkpoints"
+} from "@maple/local-server/checkpoints"
 import {
 	durableWrite,
 	isUnsupportedDirectorySyncError,
 	syncDirectory,
 	syncTree,
-} from "../src/server/durable-files"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { eventingControlSnapshotPath } from "../src/server/eventing/control-store"
+} from "@maple/local-server/durable-files"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { storeMarkerPath, storeOpenMarkerPath } from "@maple/local-server/store-version"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { eventingControlSnapshotPath } from "@maple/local-server/eventing/control-store"
 import { openStore, runAsync } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void> | void): Promise<void> => {

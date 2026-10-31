@@ -14,14 +14,11 @@ import {
 	startFailureFingerprint,
 	startFailuresPath,
 } from "../src/commands/start-failures"
-import {
-	BackgroundServerExitedError,
-	LocalStoreDirtyError,
-	ServerOptionError,
-} from "../src/commands/server-errors"
+import { BackgroundServerExitedError, ServerOptionError } from "../src/commands/server-errors"
+import { LocalStoreDirtyError } from "@maple/local-server/store-errors"
 import { ProjectorModuleError } from "../src/server/eventing/projector-modules"
-import { ServerBindError } from "../src/server/serve"
-import { ChdbError, describeChdbOpenFailure } from "../src/server/chdb"
+import { ServerBindError } from "@maple/local-server/serve"
+import { ChdbError, describeChdbOpenFailure } from "@maple/local-server/chdb"
 
 const MINUTE = 60 * 1000
 

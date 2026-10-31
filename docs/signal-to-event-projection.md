@@ -6,7 +6,7 @@ Related work: [issue #222](https://github.com/MapleTechLabs/maple/issues/222),
 Audience: Maple maintainers and implementers of hosted or Maple Local runtimes
 
 Status (2026-09-25): slices 1, 2, 3 and 5 shipped. `packages/eventing-core`
-landed in #363, the Local runtime lives in `apps/cli/src/server/eventing`,
+landed in #363, the Local runtime lives in `packages/local-server/src/eventing`,
 PlanetScale uses
 `packages/backend/src/services/integrations/planetscale/webhook-events.ts`, and
 alert lifecycle events come from `packages/alerting-core`. The slice 4 example
@@ -602,7 +602,7 @@ field keys by JavaScript code-unit order, not locale collation, so checkpoint
 recovery does not depend on host locale.
 
 The control schema (`LOCAL_CONTROL_SCHEMA_VERSION = 1` in
-`apps/cli/src/server/local-schema-version.ts`) includes source fingerprints.
+`packages/local-server/src/local-schema-version.ts`) includes source fingerprints.
 Opening a store or validating a snapshot rejects staged source-backed rows with
 missing or malformed fingerprints. Restore verifies the control snapshot against
 its checkpoint manifest, validates it, and copies it through a private scratch
@@ -964,7 +964,7 @@ The TypeScript reference implementation settles the remaining host choices:
 
 - Maple Local stores projection revisions, failures, and the staged/ready outbox
   in SQLite at `<dataDir>/control/eventing.sqlite`, with WAL and
-  `synchronous = FULL` (`apps/cli/src/server/eventing/control-store.ts`). While
+  `synchronous = FULL` (`packages/local-server/src/eventing/control-store.ts`). While
   ingest is quiesced, backup first runs and verifies a blocking
   `wal_checkpoint(TRUNCATE)`, so the serialized database holds every committed
   control-store transaction and not only the main SQLite file. A version-2
@@ -982,7 +982,7 @@ The TypeScript reference implementation settles the remaining host choices:
   event type and schema names; neutral fixtures use
   `dev.maple.example.record.observed.v1` with
   `urn:maple:event-schema:example-record:v1`.
-- Limits (`apps/cli/src/server/eventing/otlp.ts`, `MAX_CLOUD_EVENT_BYTES` in
+- Limits (`packages/local-server/src/eventing/otlp.ts`, `MAX_CLOUD_EVENT_BYTES` in
   eventing-core): attribute strings 16 KiB; source and event identities 256
   characters (longer stable inputs become a SHA-256 URN); 256 entries per
   attribute namespace; nested values depth 8 and 1,024 nodes; normalized source
@@ -1022,7 +1022,7 @@ Maple Local activates immutable revisions with authenticated
 `POST /local/eventing/projections`. The same maintenance credential protects
 `GET /local/eventing/projections`, `/local/eventing/health`,
 `/local/eventing/outbox`, and consumer administration (routes in
-`apps/cli/src/server/serve.ts`).
+`packages/local-server/src/serve.ts`).
 
 A ready record gets a separate, append-only readiness `sequence` on its first
 staged-to-ready transition. `?after=<sequence>&limit=<n>` therefore cannot skip

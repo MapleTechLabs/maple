@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strictEqual } from "node:assert"
-import { retainedDaysMatch, type RetainedDays } from "../src/server/checkpoints"
+import { retainedDaysMatch, type RetainedDays } from "@maple/local-server/checkpoints"
 
 const TABLES = [
 	"logs",

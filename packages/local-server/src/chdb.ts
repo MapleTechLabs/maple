@@ -18,7 +18,7 @@ import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "./version"
 
 /** A chDB failure — locating libchdb, opening the connection, or bootstrapping
  *  the schema. Carries the underlying message verbatim. */

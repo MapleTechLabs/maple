@@ -1,4 +1,4 @@
-// Inline apps/local-ui/dist into apps/cli/src/server/ui-embed.gen.ts so
+// Inline apps/local-ui/dist into packages/local-server/src/ui-embed.gen.ts so
 // `bun build --compile` bakes the SPA into the `maple` binary. Run by
 // scripts/build-local-binary.sh, which restores the committed stub afterwards.
 
@@ -7,7 +7,7 @@ import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const distDir = fileURLToPath(new URL("../apps/local-ui/dist/", import.meta.url))
-const outPath = fileURLToPath(new URL("../apps/cli/src/server/ui-embed.gen.ts", import.meta.url))
+const outPath = fileURLToPath(new URL("../packages/local-server/src/ui-embed.gen.ts", import.meta.url))
 
 const MIME: Record<string, string> = {
 	html: "text/html",

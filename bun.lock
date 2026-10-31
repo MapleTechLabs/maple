@@ -148,10 +148,9 @@
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/eventing-core": "workspace:*",
-        "@maple/ingest-rules": "workspace:*",
+        "@maple/local-server": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "effect": "catalog:effect",
-        "protobufjs": "^8.8.1",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
@@ -778,6 +777,24 @@
       },
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/local-server": {
+      "name": "@maple/local-server",
+      "version": "0.0.0",
+      "dependencies": {
+        "@maple/domain": "workspace:*",
+        "@maple/eventing-core": "workspace:*",
+        "@maple/ingest-rules": "workspace:*",
+        "@maple/query-engine": "workspace:*",
+        "effect": "catalog:effect",
+        "protobufjs": "^8.8.1",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
@@ -1534,6 +1551,8 @@
     "@maple/ingest-rules": ["@maple/ingest-rules@workspace:packages/ingest-rules"],
 
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
+
+    "@maple/local-server": ["@maple/local-server@workspace:packages/local-server"],
 
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 

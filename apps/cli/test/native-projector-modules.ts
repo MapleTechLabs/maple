@@ -14,7 +14,7 @@ import {
 	readlinkSync,
 } from "node:fs"
 import { createHash } from "node:crypto"
-import { serverPidPath, storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
+import { serverPidPath, storeMarkerPath, storeOpenMarkerPath } from "@maple/local-server/store-version"
 import { tmpdir } from "node:os"
 import { Schema } from "effect"
 import { join, resolve } from "node:path"
