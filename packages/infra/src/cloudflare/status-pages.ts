@@ -3,7 +3,7 @@
  * the status Worker reads them and writes only break-glass entry keys. Stage-isolated, and
  * retained: a replaced namespace or bucket would blank every customer's page.
  */
-import { stageProps } from "@maple/infra/cloudflare"
+import { stageProps } from "./stack.ts"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 

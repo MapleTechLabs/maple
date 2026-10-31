@@ -4,7 +4,12 @@
  * No service bindings or Hyperdrive: serving never calls Maple. Traces export to Maple's ingest after
  * the response, best effort, so an outage loses them without touching the page.
  */
-import { MapleStack, mapleWorkerProps } from "@maple/infra/cloudflare"
+import {
+	MapleStack,
+	mapleWorkerProps,
+	StatusSnapshotsBucket,
+	StatusSnapshotsKv,
+} from "@maple/infra/cloudflare"
 import { selfObservabilityEnv } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
@@ -12,7 +17,6 @@ import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Clock, Effect, Layer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { handleRequest } from "./handler"
-import { StatusSnapshotsBucket, StatusSnapshotsKv } from "./resources"
 import { nativeStorage } from "./storage"
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */

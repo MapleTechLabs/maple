@@ -28,16 +28,32 @@ import { SupabaseConnectionService } from "@maple/backend/services/integrations/
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
+import {
+	type StatusPageBindings,
+	StatusPageStore,
+} from "@maple/backend/services/status-pages/StatusPageStore"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Cause, Effect, Layer, Match, Option } from "effect"
+import { Cause, Clock, Effect, Layer, Match, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
+
+/** The status page publisher, only when its KV and R2 bindings exist on this Worker. */
+const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
+	Option.match(bindings, {
+		onNone: () => Layer.empty,
+		onSome: ({ kv, bucket }) =>
+			Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
+				Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+			),
+	})
 
 /**
  * The tick graph for one fire. Deliberately without a tracer or logger of its
@@ -50,6 +66,7 @@ export const layerTick = (
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient> = Option.none(),
 	chatSessions?: ChatSessionNamespace,
+	statusPages: Option.Option<StatusPageBindings> = Option.none(),
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
@@ -73,6 +90,7 @@ export const layerTick = (
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
+		statusPagesLayerIfBound(statusPages),
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
 		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
@@ -400,6 +418,43 @@ const prReviewPostMergeTick = makeTick(
 			: undefined,
 )
 
+/**
+ * Imports break-glass updates, repairs auto incidents, then sweeps: edge cleanups, lagging pages
+ * and the heartbeat (written by the sweep only once it reached the database). Each step isolated.
+ */
+const statusPagesTick = Effect.gen(function* () {
+	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
+	const reconciler = yield* Effect.serviceOption(StatusPageReconciler)
+	if (Option.isNone(publisher) || Option.isNone(reconciler)) {
+		return yield* Effect.logInfo("Status page storage is not bound; skipping status page publishing")
+	}
+	yield* makeTick(reconciler.value.reconcileAll(), "status_page_reconcile", (result) =>
+		result.imported + result.cleared + result.failed > 0
+			? {
+					statusPageImported: result.imported,
+					statusPageCleared: result.cleared,
+					statusPageFailures: result.failed,
+				}
+			: undefined,
+	)
+	yield* makeTick(reconciler.value.repairAutoIncidents(), "status_page_repair", (repaired) =>
+		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
+	)
+	const nowMs = yield* Clock.currentTimeMillis
+	yield* makeTick(publisher.value.sweep(nowMs), "status_page_publish", (result) =>
+		result.due + result.cleaned + result.cleanupsFailed > 0
+			? {
+					statusPagesDue: result.due,
+					statusPagesWritten: result.written,
+					statusPagesUnchanged: result.unchanged,
+					statusPageFailures: result.failed,
+					statusPagesCleaned: result.cleaned,
+					statusPageCleanupFailures: result.cleanupsFailed,
+				}
+			: undefined,
+	)
+})
+
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
 	readonly alertLongQuery: Effect.Effect<void, never, R>
@@ -416,6 +471,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
+	readonly statusPages: Effect.Effect<void, never, R>
 	readonly supabaseDiscovery: Effect.Effect<void, never, R>
 	readonly supabaseLogs: Effect.Effect<void, never, R>
 	readonly supabaseInsights: Effect.Effect<void, never, R>
@@ -430,7 +486,8 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		// a window this minute's error tick just refuted must already be settled
 		// when the verification tick looks at it.
 		Match.when("error", () => Effect.andThen(ticks.error, ticks.fixVerification)),
-		Match.when("escalation", () => ticks.escalation),
+		// Status pages ride the escalation lane: the minute cron is one connection under its cap.
+		Match.when("escalation", () => Effect.andThen(ticks.escalation, ticks.statusPages)),
 		Match.when("anomaly", () => ticks.anomaly),
 		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
 		Match.when("gcp_metrics", () => ticks.gcpMetrics),
@@ -516,6 +573,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
+	statusPages: statusPagesTick,
 	supabaseDiscovery: supabaseDiscoveryTick,
 	supabaseLogs: supabaseLogsTick,
 	supabaseInsights: supabaseInsightsTick,
@@ -534,10 +592,11 @@ export const runScheduled = (
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
+	statusPages: Option.Option<StatusPageBindings>,
 ): Effect.Effect<void, unknown> =>
 	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(layerTick(env, email, chatSessions)),
+		Effect.provide(layerTick(env, email, chatSessions, statusPages)),
 	)
