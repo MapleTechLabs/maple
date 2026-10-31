@@ -11,8 +11,8 @@ export const rowClass = <Message>(h: HtmlBuilder<Message>, value: string): Attri
 
 // styles: packages/ui/src/components/logs/log-attribute-chip.tsx
 export const CHIP_TONE_CLASSES = {
-	crit: "bg-severity-error-a2 text-severity-error border-severity-error-a3 hover:bg-severity-error-a2 active:bg-severity-error-a2",
-	warn: "bg-severity-warn-a2 text-severity-warn border-severity-warn-a3 hover:bg-severity-warn-a2 active:bg-severity-warn-a2",
+	crit: "bg-severity-error-a2 text-severity-error border-severity-error-a3 hover:bg-severity-error-a3 active:bg-severity-error-a3",
+	warn: "bg-severity-warn-a2 text-severity-warn border-severity-warn-a3 hover:bg-severity-warn-a3 active:bg-severity-warn-a3",
 	emphasis: "bg-muted text-foreground-soft border-border hover:bg-surface-strong active:bg-surface-strong",
 	muted: "bg-surface-sunken text-muted-foreground border-border-subtle hover:bg-surface-strong active:bg-surface-strong",
 } satisfies Record<ChipTone, string>

@@ -541,7 +541,7 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 					off.map((row) =>
 						h.a(
 							[
-								h.Class("text-primary hover:text-primary active:text-primary"),
+								h.Class("text-primary hover:text-primary/80 active:text-primary/80"),
 								h.Href(gcpQueryInsightsConsoleUrl(row.project ?? "", row.name)),
 								h.Rel("noreferrer"),
 								h.Target("_blank"),

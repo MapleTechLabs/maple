@@ -132,7 +132,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 								value: row.value,
 								max,
 								className:
-									"inset-y-0.5 left-0 bg-primary-a2 transition-colors group-hover:bg-primary-a2",
+									"inset-y-0.5 left-0 bg-primary-a2 transition-colors group-hover:bg-primary-a3",
 							}) ?? h.empty,
 							h.span([h.Class("sr-only")], ["Filter to ", filterKey, " = "]),
 							truncatedText(h, {

@@ -220,7 +220,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 									variant: "outline",
 									size: "sm",
 									className: cn(
-										"gap-2 border-primary-a4 bg-primary-a2 text-foreground hover:bg-primary-a2 active:bg-primary-a2",
+										"gap-2 border-primary-a4 bg-primary-a2 text-foreground hover:bg-primary-a3 active:bg-primary-a3",
 										isClaimable && "border-primary bg-primary-a3",
 									),
 									slot: "popover-trigger",

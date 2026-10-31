@@ -135,7 +135,7 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							h.a(
 								[
 									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary active:text-primary @2xl:ml-0",
+										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
 									),
 									h.Href(hrefOf(AppRoute.Logs({ search: { services: [tracedService] } }))),
 								],
@@ -431,7 +431,7 @@ const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 				].filter((node): node is Html => node !== null),
 				h.a(
 					[
-						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary active:text-primary"),
+						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80"),
 						h.Href(hrefOf(AppRoute.Service({ serviceName: traced.service, search: {} }))),
 					],
 					["Open ", traced.service],

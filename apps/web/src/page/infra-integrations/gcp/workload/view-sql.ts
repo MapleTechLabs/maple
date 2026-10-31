@@ -199,7 +199,7 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 										[
 											h.Type("button"),
 											h.OnClick(Message.ClickedShowAllQueries()),
-											h.Class("shrink-0 text-primary hover:text-primary active:text-primary"),
+											h.Class("shrink-0 text-primary hover:text-primary/80 active:text-primary/80"),
 										],
 										[inputs.showAll ? "Show fewer" : `Show all ${rows.length}`],
 									),
@@ -300,7 +300,7 @@ export const appWaitCallout = (
 							h.a(
 								[
 									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary active:text-primary @2xl:ml-0",
+										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
 									),
 									h.Href(
 										hrefOf(
