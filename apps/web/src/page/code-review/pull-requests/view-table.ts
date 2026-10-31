@@ -30,9 +30,7 @@ const OUTCOME_ICONS = {
 } as const satisfies Record<string, IconName>
 
 const scoreCell = (h: H, value: number | null, out: string): ReadonlyArray<Html | string> =>
-	value === null
-		? [emptyValue(h)]
-		: [String(value), h.span([h.Class("text-muted-foreground")], [out])]
+	value === null ? [emptyValue(h)] : [String(value), h.span([h.Class("text-muted-foreground")], [out])]
 
 export type RowContext = Readonly<{ selected: string | undefined; nowMs: number; timeZone: string }>
 
@@ -166,7 +164,10 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				"hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell",
 			),
 		],
-		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", isSelected && "bg-surface-strong"),
+		cn(
+			"cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken",
+			isSelected && "bg-surface-strong",
+		),
 		[h.Key(review.id), h.OnClick(open)],
 	)
 }
@@ -186,7 +187,7 @@ const sortableHead = (h: H, label: string, key: CodeReviewSortKey, sort: Sort, c
 					h.Class(
 						cn(
 							"inline-flex items-center gap-1 transition-colors",
-							isActive ? "text-foreground" : "hover:text-foreground",
+							isActive ? "text-foreground" : "hover:text-foreground active:text-foreground",
 						),
 					),
 				],
