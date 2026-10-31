@@ -21,19 +21,20 @@ export const NO_DOMAIN_NOTE = "Public address appears once a status domain is co
 /** The header's address: a link to the public page, or the note while there is no status domain. */
 export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
 	const url = publicUrl(model.publicBaseUrl, page.slug)
-	return url === null
-		? h.span([h.Class("text-xs text-muted-foreground")], [NO_DOMAIN_NOTE])
-		: h.a(
-				[
-					h.Href(url),
-					h.Target("_blank"),
-					h.Rel("noopener"),
-					h.Class(
-						"font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
-					),
-				],
-				[url],
-			)
+	if (url === null) return h.span([h.Class("text-xs text-muted-foreground")], [NO_DOMAIN_NOTE])
+	// A draft is never published, so its address does not resolve yet: text, not a link.
+	if (page.draft) return h.span([h.Class("font-mono text-xs text-muted-foreground")], [url])
+	return h.a(
+		[
+			h.Href(url),
+			h.Target("_blank"),
+			h.Rel("noopener"),
+			h.Class(
+				"font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+			),
+		],
+		[url],
+	)
 }
 
 const nextStep = (
@@ -123,16 +124,20 @@ export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
 									}),
 								],
 							),
-							linkButton(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									href: url,
-									attributes: [h.Target("_blank"), h.Rel("noopener")],
-								},
-								[icon(h, "ExternalLinkIcon"), "Open"],
-							),
+							...(page.draft
+								? []
+								: [
+										linkButton(
+											h,
+											{
+												size: "sm",
+												variant: "outline",
+												href: url,
+												attributes: [h.Target("_blank"), h.Rel("noopener")],
+											},
+											[icon(h, "ExternalLinkIcon"), "Open"],
+										),
+									]),
 						],
 					),
 			h.section(

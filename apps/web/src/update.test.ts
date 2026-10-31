@@ -154,7 +154,7 @@ describe("re-render on change only", () => {
 			homeRegion: "us",
 			isServedHere: true,
 			isRegionOpen: false,
-			flags: { aiAutoTriage: false, releases: false, securityAudit: false },
+			flags: { aiAutoTriage: false, releases: false, securityAudit: false, statusPages: false },
 		}),
 		memberships: [],
 		maybePendingTask: Option.none(),

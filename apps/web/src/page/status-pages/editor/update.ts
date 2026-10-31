@@ -134,7 +134,6 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isReordering: false,
 		addPicker: emptyPicker,
 		isAddingComponents: false,
-		addFailure: null,
 		incidentForm: emptyIncidentForm("incident"),
 		isCreatingIncident: false,
 		incidentFailure: null,

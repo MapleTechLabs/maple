@@ -4,6 +4,7 @@ import {
 	StatusPageComponentNotFoundError,
 	StatusPageNotFoundError,
 	StatusPagePersistenceError,
+	StatusPagesDisabledError,
 	type StatusPageComponentRecord,
 	type StatusPageIncidentRecord,
 	type StatusPageRecord,
@@ -34,6 +35,10 @@ import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { timestampMs } from "@maple/backend/platform/time"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
+import {
+	OrganizationFeatureFlagsService,
+	type OrganizationFeatureFlagsServiceApi,
+} from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import {
 	StatusPageSnapshotBuilder,
@@ -46,6 +51,19 @@ import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPage
 // public sees about the whole org. Incidents stay open to any writer, so responders can post.
 const adminOnly = (action: string) => () =>
 	V2InsufficientPermissions.make(`Only org admins can ${action} status pages`)
+
+/** The caller's tenant, once its org is in the `statusPages` rollout. */
+const tenantInRollout = (featureFlags: OrganizationFeatureFlagsServiceApi) =>
+	Effect.gen(function* () {
+		const tenant = yield* CurrentTenant.Context
+		const flags = yield* featureFlags.flags(tenant.orgId)
+		if (!flags.statusPages) {
+			return yield* new StatusPagesDisabledError({
+				message: "Status pages are not enabled for this organization.",
+			})
+		}
+		return tenant
+	})
 
 export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	id: page.id,
@@ -152,6 +170,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 	Effect.gen(function* () {
 		const service = yield* StatusPagesService
 		const snapshotBuilder = yield* StatusPageSnapshotBuilder
+		const enabledTenant = tenantInRollout(yield* OrganizationFeatureFlagsService)
 
 		/** The component, only when it is on this page; anything else reads as not found. */
 		const requireComponentOnPage = (
@@ -176,7 +195,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					const pages = yield* service.list(tenant.orgId)
 					const page = yield* paginateArray(pages.map(toV2StatusPage), query)
 					return { object: "list" as const, ...page }
@@ -184,7 +203,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("preview", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					const nowMs = yield* Clock.currentTimeMillis
 					return yield* snapshotBuilder
 						.buildDraft(tenant.orgId, toStatusPageDraft(payload), nowMs)
@@ -197,13 +216,13 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					return toV2StatusPage(yield* service.get(tenant.orgId, params.id))
 				}),
 			)
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("create"))
 					const created = yield* service.create(tenant.orgId, {
 						name: payload.name,
@@ -266,7 +285,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("update"))
 					const current = yield* service.get(tenant.orgId, params.id)
 					const updated = yield* service.update(tenant.orgId, params.id, {
@@ -302,7 +321,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("delete"))
 					const current = yield* service.get(tenant.orgId, params.id)
 					const deleted = yield* service.remove(tenant.orgId, params.id)
@@ -337,7 +356,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("publish", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("publish"))
 					// A draft goes public first, so the publish below writes it.
 					const page = yield* service.makePublic(tenant.orgId, params.id)
@@ -373,7 +392,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("rotateBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("issue break-glass tokens for"))
 					const token = yield* service.rotateBreakGlassToken(tenant.orgId, params.id)
 					yield* recordHttpAudit("status_page.break_glass_rotated", { resourceId: params.id })
@@ -387,7 +406,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("revokeBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("revoke break-glass tokens for"))
 					yield* service.revokeBreakGlassToken(tenant.orgId, params.id)
 					yield* recordHttpAudit("status_page.break_glass_revoked", { resourceId: params.id })
@@ -396,13 +415,13 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("getConfig", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					return yield* service.getConfig(tenant.orgId, params.id)
 				}),
 			)
 			.handle("applyConfig", ({ params, query, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("update"))
 					const { previous, config, changes } = yield* service.applyConfig(
 						tenant.orgId,
@@ -430,7 +449,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("listComponents", ({ params, query }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					const components = yield* service.listComponents(tenant.orgId, params.id)
 					const page = yield* paginateArray(components.map(toV2StatusPageComponent), query)
 					return { object: "list" as const, ...page }
@@ -438,7 +457,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("createComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("edit"))
 					const created = yield* service.createComponent(tenant.orgId, params.id, {
 						name: payload.name,
@@ -463,7 +482,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("reorderComponents", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("edit"))
 					const components = yield* service.reorderComponents(
 						tenant.orgId,
@@ -481,7 +500,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("updateComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("edit"))
 					const current = yield* requireComponentOnPage(
 						tenant.orgId,
@@ -516,7 +535,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			)
 			.handle("deleteComponent", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* enabledTenant
 					yield* requireAdmin(tenant.roles, adminOnly("edit"))
 					const current = yield* requireComponentOnPage(
 						tenant.orgId,
@@ -540,11 +559,12 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 	(handlers) =>
 		Effect.gen(function* () {
 			const service = yield* StatusPagesService
+			const enabledTenant = tenantInRollout(yield* OrganizationFeatureFlagsService)
 
 			return handlers
 				.handle("list", ({ query }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
+						const tenant = yield* enabledTenant
 						const state = query.state ?? "open"
 						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 							service.listOrgIncidents(tenant.orgId, {
@@ -560,13 +580,13 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("retrieve", ({ params }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
+						const tenant = yield* enabledTenant
 						return toV2StatusPageIncident(yield* service.getIncident(tenant.orgId, params.id))
 					}),
 				)
 				.handle("create", ({ payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
+						const tenant = yield* enabledTenant
 						const kind = payload.kind ?? "incident"
 						const created = yield* service.createIncident(tenant.orgId, payload.page_id, {
 							kind,
@@ -601,7 +621,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("update", ({ params, payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
+						const tenant = yield* enabledTenant
 						const current = yield* service.getIncident(tenant.orgId, params.id)
 						const scheduledStart = parseTimestamp(payload.scheduled_start)
 						const scheduledEnd = parseTimestamp(payload.scheduled_end)
@@ -631,7 +651,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("delete", ({ params }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
+						const tenant = yield* enabledTenant
 						const current = yield* service.getIncident(tenant.orgId, params.id)
 						const removed = yield* service.removeIncident(tenant.orgId, params.id)
 						yield* recordHttpAudit("status_page_incident.deleted", {
@@ -647,7 +667,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 				)
 				.handle("postUpdate", ({ params, payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
+						const tenant = yield* enabledTenant
 						const updated = yield* service.postUpdate(tenant.orgId, params.id, {
 							status: payload.status,
 							body: payload.body,

@@ -241,7 +241,7 @@ export const openAdd = (model: Model): Return => {
 		monitorsOf(model).filter((monitor) => !used.has(monitor.id)),
 		false,
 	)
-	return focusPanel({ ...model, panel: { _tag: "Add" }, addPicker: picker, addFailure: null })
+	return focusPanel({ ...model, panel: { _tag: "Add" }, addPicker: picker })
 }
 
 export const addPickerStep = (model: Model, message: PickerMessage): Return => {
@@ -285,7 +285,7 @@ export const submitAdd = (model: Model): Return => {
 		hasRowIssues(model.addPicker)
 		? { model }
 		: {
-				model: { ...model, isAddingComponents: true, addFailure: null },
+				model: { ...model, isAddingComponents: true },
 				commands: [AddComponents({ pageId: model.pageId, components })],
 			}
 }
@@ -305,7 +305,11 @@ export const addedComponents = (
 				added.map((component) => component.name).join(", "),
 			),
 		}),
-		// Some may have been created before the failure: the re-read shows which.
-		onFailure: (addFailure): Return => reread({ ...settled, addFailure }, context),
+		// Some may have been created before the failure, so the panel closes rather than offer a
+		// retry that would add them twice; the re-read lists what landed.
+		onFailure: (addFailure): Return => ({
+			...reread({ ...settled, panel: null }, context),
+			outMessage: errorToast("Couldn't add every component", addFailure),
+		}),
 	})
 }

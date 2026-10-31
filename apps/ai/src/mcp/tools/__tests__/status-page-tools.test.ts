@@ -8,7 +8,9 @@ import {
 	ListStatusPagesOutput,
 	StatusPageIncidentMutationOutput,
 } from "@maple/domain/mcp-outputs"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { executeSql } from "@maple/backend/platform/test-pglite"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 
@@ -117,6 +119,26 @@ describe("status page tools", () => {
 			}),
 		)
 		expect(created.incident.published).toBe(true)
+		expect(created.pageDraft).toBe(false)
+	})
+
+	it("warns that a published incident stays private while its page is a draft", async () => {
+		await executeSql(
+			rt.testDb,
+			`INSERT INTO status_pages (id, org_id, name, slug, draft, created_by, created_at, updated_at)
+			 VALUES ($1, $2, 'Draft Status', 'draft-status', true, $3, now(), now())`,
+			["7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d0a", rt.tenant.orgId, rt.tenant.userId],
+		)
+		const result = await runToolDirect(rt, "create_status_page_incident", {
+			page: "draft-status",
+			title: "Login delays",
+			message: "Some sign-ins are slow.",
+			publish: true,
+		})
+		const created = decode(StatusPageIncidentMutationOutput, result)
+		expect(created.incident.published).toBe(true)
+		expect(created.pageDraft).toBe(true)
+		expect(markdown(result)).toContain("The page is a draft")
 	})
 
 	it("schedules maintenance as a draft with its window", async () => {
@@ -398,5 +420,49 @@ describe("status page tools", () => {
 			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
 			expect(after.structuredContent.config).toEqual(read.structuredContent.config)
 		})
+	})
+})
+
+describe("status page tools outside the statusPages rollout", () => {
+	let off: EvalRuntime
+	beforeAll(() => {
+		off = makeEvalRuntime(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS))
+	})
+	afterAll(async () => {
+		await off.dispose()
+	})
+
+	it("refuses every tool as unavailable, naming the missing capability", async () => {
+		// A real document, so the apply is refused by the gate and not by decoding.
+		const config = decode(
+			GetStatusPageConfigOutput,
+			await runToolDirect(rt, "get_status_page_config", { page: "acme-status" }),
+		).config
+		const incident = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
+		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+			["list_status_pages", {}],
+			["get_status_page", { page: "acme-status" }],
+			["create_status_page_incident", { page: "acme-status", title: "x", message: "y" }],
+			["post_status_page_update", { incident, status: "identified", message: "y" }],
+			["resolve_status_page_incident", { incident, message: "y" }],
+			[
+				"schedule_status_page_maintenance",
+				{
+					page: "acme-status",
+					title: "x",
+					message: "y",
+					starts_at: "2026-08-01T02:00:00Z",
+					ends_at: "2026-08-01T03:00:00Z",
+				},
+			],
+			["get_status_page_config", { page: "acme-status" }],
+			["apply_status_page_config", { page: "acme-status", config }],
+		]
+		for (const [name, params] of calls) {
+			const result: McpToolResult = await runToolDirect(off, name, params)
+			expect(result.isError).toBe(true)
+			expect(result.failureCategory).toBe("unavailable")
+			expect(markdown(result)).toContain("not enabled for this organization")
+		}
 	})
 })

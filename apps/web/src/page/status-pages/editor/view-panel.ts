@@ -658,7 +658,6 @@ export const addPanel = (h: H, model: Model): Html => {
 			focusOnMount: h.OnMount(FocusNewRow()),
 			isOrderable: false,
 		}),
-		...failureAlert(h, "Couldn't add every component", model.addFailure),
 		h.div(
 			[h.Class("flex justify-end border-t pt-4")],
 			[

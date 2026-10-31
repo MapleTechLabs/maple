@@ -7,6 +7,8 @@ import { MapleApiV2, UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { UptimeMonitorId, type StatusPageId } from "@maple/domain/primitives"
 import { utcDay } from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPagePublishDbError } from "@maple/backend/services/status-pages/publish-errors"
 import { Env } from "@maple/backend/platform/Env"
@@ -21,7 +23,7 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
-	allV2GroupLayersWithAudit,
+	allV2GroupLayersWithFeatureFlags,
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
 	Phase1ResourceStubsLayer,
@@ -70,7 +72,10 @@ const fakePublisher = (published: Array<StatusPageId>, options: { readonly fail?
 		heartbeat: () => Effect.void,
 	})
 
-const makeHarness = (publisher?: Layer.Layer<StatusPagePublisher>) => {
+const makeHarness = (
+	publisher?: Layer.Layer<StatusPagePublisher>,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
+) => {
 	const testDb = createTestDb(createdDbs)
 	const audit = makeMemoryAuditLog()
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -84,7 +89,7 @@ const makeHarness = (publisher?: Layer.Layer<StatusPagePublisher>) => {
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(allV2GroupLayersWithAudit(Layer.succeed(AuditLogService, audit))),
+		Layer.provide(allV2GroupLayersWithFeatureFlags(featureFlags, Layer.succeed(AuditLogService, audit))),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
@@ -144,10 +149,11 @@ const makeHarness = (publisher?: Layer.Layer<StatusPagePublisher>) => {
 const withHarness = (
 	body: (harness: ReturnType<typeof makeHarness>) => Promise<void>,
 	publisher?: Layer.Layer<StatusPagePublisher>,
+	featureFlags?: Layer.Layer<OrganizationFeatureFlagsService>,
 ) =>
 	Effect.runPromise(
 		Effect.acquireUseRelease(
-			Effect.sync(() => makeHarness(publisher)),
+			Effect.sync(() => makeHarness(publisher, featureFlags)),
 			(harness) => Effect.promise(() => body(harness)),
 			(harness) => Effect.promise(() => harness.dispose()),
 		),
@@ -472,6 +478,56 @@ describe("v2 status pages", () => {
 			})
 			expect(noWindow.status).toBe(400)
 		}))
+
+	describe("statusPages rollout", () => {
+		const flagged = (statusPages: boolean) =>
+			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, statusPages })
+
+		it("refuses every page and incident route with 403 status_pages_disabled when the org is out", () =>
+			withHarness(
+				async (harness) => {
+					const { secret: token } = await harness.bootstrapKey()
+					const calls = [
+						harness.request("GET", "/v2/status_pages", token),
+						harness.request("POST", "/v2/status_pages", token, {
+							name: "Acme",
+							slug: "acme-off",
+						}),
+						harness.request("POST", "/v2/status_pages/preview", token, {
+							name: "Acme",
+							slug: "acme",
+							components: [{ name: "Docs" }],
+						}),
+						harness.request("GET", "/v2/status_page_incidents", token),
+					]
+					for (const response of await Promise.all(calls)) {
+						expect(response.status).toBe(403)
+						expect(response.body.error).toMatchObject({ code: "status_pages_disabled" })
+					}
+				},
+				undefined,
+				flagged(false),
+			))
+
+		it("serves the routes once the org is in", () =>
+			withHarness(
+				async (harness) => {
+					const { secret: token } = await harness.bootstrapKey()
+					const created = await harness.request("POST", "/v2/status_pages", token, {
+						name: "Acme",
+						slug: "acme-on",
+					})
+					expect(created.status).toBe(200)
+					const listed = await harness.request("GET", "/v2/status_pages", token)
+					expect(listed.body.data.map((page: { id: string }) => page.id)).toEqual([created.body.id])
+					expect((await harness.request("GET", "/v2/status_page_incidents", token)).status).toBe(
+						200,
+					)
+				},
+				undefined,
+				flagged(true),
+			))
+	})
 
 	it("refuses page and component writes from members", () =>
 		withHarness(async (harness) => {

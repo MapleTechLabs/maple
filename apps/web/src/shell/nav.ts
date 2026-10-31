@@ -128,17 +128,26 @@ const exploreItem: NavItem = {
 	],
 }
 
-/** `navGroups(flags)`; `releases` and `securityAudit` gate a row each. */
-export const navGroups = (
-	flags: Readonly<{ releases: boolean; securityAudit: boolean }>,
-): ReadonlyArray<NavGroup> => [
+/** The org rollout flags that gate a nav row each. */
+export type NavFlags = Readonly<{ releases: boolean; securityAudit: boolean; statusPages: boolean }>
+
+/** `navGroups(flags)`; `releases`, `securityAudit` and `statusPages` gate a row each. */
+export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
 		id: "monitor",
 		label: "Monitor",
 		items: [
-			{ ...servicesItem, alsoActive: flags.releases ? [] : ["/releases"] },
-			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
+			{
+				...servicesItem,
+				alsoActive: [
+					...(flags.releases ? [] : ["/releases"]),
+					...(flags.statusPages ? [] : ["/status-pages"]),
+				],
+			},
+			...(flags.statusPages
+				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
+				: []),
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
