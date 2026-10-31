@@ -57,11 +57,39 @@ const coreGuides = [
         read: "7 min",
     },
     {
+        href: "/guides/pino-logger",
+        label: "Logging",
+        title: "Pino logger for Node.js",
+        description: "Set up Pino, configure it for production, log HTTP requests, and tie every line to the trace it came from.",
+        read: "9 min",
+    },
+    {
+        href: "/guides/new-relic-pricing",
+        label: "Pricing",
+        title: "New Relic pricing, explained",
+        description: "How users and gigabytes add up to a monthly bill, what the free tier covers, and what a 12-person team pays.",
+        read: "9 min",
+    },
+    {
+        href: "/guides/sentry-pricing",
+        label: "Pricing",
+        title: "Sentry pricing in 2026",
+        description: "The free Developer plan, Team and Business prices, per-unit rates for errors, spans and replays, and two worked monthly bills.",
+        read: "9 min",
+    },
+    {
         href: "/guides/dynatrace-pricing",
         label: "Pricing",
         title: "Dynatrace pricing, explained",
         description: "The DPS rate card, cost per host and per GiB, what OpenTelemetry data costs, and a worked monthly bill for a small fleet.",
         read: "9 min",
+    },
+    {
+        href: "/guides/loguru",
+        label: "Logging",
+        title: "Loguru for Python",
+        description: "Start logging with Loguru, set the level, write files and JSON, add context, then send its logs to OpenTelemetry.",
+        read: "7 min",
     },
 ];
 
@@ -72,6 +100,20 @@ const investigationGuides = [
         title: "When API p99 jumps but p50 doesn't",
         description: "Measure the right latency clock, isolate the slow requests, and trace a regression to the release and operation responsible.",
         read: "14 min",
+    },
+    {
+        href: "/guides/python-logging-levels",
+        label: "Python",
+        title: "Python logging levels and how to set them",
+        description: "The five levels and when to use each, why info() prints nothing by default, and how to set the level with basicConfig, a --log-level flag or LOG_LEVEL.",
+        read: "6 min",
+    },
+    {
+        href: "/guides/incident-response",
+        label: "On-call",
+        title: "Incident response, step by step",
+        description: "An incident response process for small teams: an afternoon of preparation, the response steps for one or two engineers, and lightweight postmortems.",
+        read: "12 min",
     },
 ];
 
@@ -217,8 +259,11 @@ const itemListJsonLd = {
                             href={guide.href}
                             class:list={[
                                 "group flex min-h-[280px] flex-col bg-bg p-6 transition-colors hover:bg-bg-deep focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring md:p-8",
-                                // An odd count leaves a hole in the last row; the last card fills it.
-                                index === coreGuides.length - 1 && coreGuides.length % 2 === 1 && "md:col-span-2",
+                                // A short last row leaves a hole; the last card stretches to fill it at each column count.
+                                index === coreGuides.length - 1 && [
+                                    coreGuides.length % 2 === 1 && "md:col-span-2",
+                                    ["xl:col-span-1", "xl:col-span-3", "xl:col-span-2"][coreGuides.length % 3],
+                                ],
                             ]}
                         >
                             <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">

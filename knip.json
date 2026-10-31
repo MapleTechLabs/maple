@@ -37,7 +37,12 @@
 		// alchemy bundles it, so it is the app's one entry.
 		// The tool playground config is run by path from scripts/tool-playground.sh.
 		"apps/ai": {
-			"entry": ["src/worker.ts", "vitest.playground.config.ts", "src/evals/playground/*.playground.ts"]
+			"entry": [
+				"src/worker.ts",
+				"vitest.playground.config.ts",
+				"src/evals/playground/*.playground.ts",
+				"scripts/cold-path/*.{ts,mjs}"
+			]
 		},
 		"apps/alerting": {
 			"entry": ["src/worker.ts"]
