@@ -64,6 +64,8 @@ export interface CatchAllService {
 	readonly service: string
 	readonly answered: number
 	readonly probed: number
+	/** A trace of one answered sensitive probe, `''` when the exposed list holds none for it. */
+	readonly sampleTraceId: string
 }
 
 /**
@@ -78,7 +80,17 @@ export const catchAllServices = (exposure: Exposure): ReadonlyArray<CatchAllServ
 		const probed = distinct(own.map((row) => row.signature))
 		const answered = distinct(own.filter((row) => row.answered > 0).map((row) => row.signature))
 		return answered >= CATCH_ALL_MIN_ANSWERED && answered / probed >= CATCH_ALL_SHARE
-			? [{ service, answered, probed }]
+			? [
+					{
+						service,
+						answered,
+						probed,
+						sampleTraceId:
+							exposure.exposed.find(
+								(row) => row.service === service && row.sampleTraceId !== "",
+							)?.sampleTraceId ?? "",
+					},
+				]
 			: []
 	})
 }

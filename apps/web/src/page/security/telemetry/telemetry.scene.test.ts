@@ -117,6 +117,10 @@ describe("security telemetry tabs", () => {
 			),
 			expectView(text(/answered with a success/)).toBeAbsent(),
 			expectView(text("1 likely catch-all route")).toExist(),
+			expectView(role("link", { name: "Sample trace" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.Trace({ traceId: SAMPLE_TRACE_ID, search: {} })),
+			),
 		)
 	})
 

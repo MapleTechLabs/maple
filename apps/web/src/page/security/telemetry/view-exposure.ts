@@ -193,8 +193,31 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 					[
 						h.span([h.Class("font-medium")], [entry.service]),
 						h.span(
-							[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
-							[`${entry.answered} of ${entry.probed} sensitive probe paths answered`],
+							[h.Class("flex items-center gap-4")],
+							[
+								h.span(
+									[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+									[`${entry.answered} of ${entry.probed} sensitive probe paths answered`],
+								),
+								...(entry.sampleTraceId === ""
+									? []
+									: [
+											textLink(
+												h,
+												{
+													tone: "muted",
+													className: "whitespace-nowrap text-xs",
+													href: hrefOf(
+														AppRoute.Trace({
+															traceId: entry.sampleTraceId,
+															search: {},
+														}),
+													),
+												},
+												["Sample trace"],
+											),
+										]),
+							],
 						),
 					],
 				),
