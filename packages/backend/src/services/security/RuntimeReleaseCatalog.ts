@@ -79,6 +79,13 @@ export class RuntimeReleaseCatalog extends Context.Service<RuntimeReleaseCatalog
 									cause,
 								}),
 						),
+						Effect.withSpan("endoflife.request", {
+							kind: "client",
+							attributes: {
+								"peer.service": "endoflife.date",
+								"maple.runtime.product": product,
+							},
+						}),
 					)
 
 			const releasesFor = (product: RuntimeProduct) =>
