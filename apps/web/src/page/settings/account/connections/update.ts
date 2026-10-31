@@ -51,7 +51,7 @@ const Connect = Command.define("CreateClerkExternalAccount", {
 	messages: [Message.CompletedStart],
 	execute: ({ provider }) => {
 		const { strategy, label } = providerOf(provider)
-		return withUser(`Failed to connect ${label}`, (user) =>
+		return withUser(`Couldn't connect ${label}`, (user) =>
 			user.createExternalAccount({ strategy, redirectUrl: REDIRECT_URL }),
 		).pipe(startedWith(provider))
 	},
@@ -78,7 +78,7 @@ const Retry = Command.define("ReauthorizeClerkExternalAccount", {
 	args: { provider: ProviderId, accountId: Schema.String },
 	messages: [Message.CompletedStart],
 	execute: ({ provider, accountId }) =>
-		withAccount(accountId, `Failed to reconnect ${providerOf(provider).label}`, (account) =>
+		withAccount(accountId, `Couldn't reconnect ${providerOf(provider).label}`, (account) =>
 			account.reauthorize({ redirectUrl: REDIRECT_URL }),
 		).pipe(startedWith(provider)),
 })
@@ -97,7 +97,7 @@ const Disconnect = Command.define("DestroyClerkExternalAccount", {
 	args: { accountId: Schema.String, label: Schema.String },
 	messages: [Message.CompletedDisconnect],
 	execute: ({ accountId, label }) =>
-		withAccount(accountId, `Failed to disconnect ${label}`, (account) => account.destroy(), withUserReverified).pipe(
+		withAccount(accountId, `Couldn't disconnect ${label}`, (account) => account.destroy(), withUserReverified).pipe(
 			settled((result) => Message.CompletedDisconnect({ result })),
 		),
 })

@@ -16,6 +16,7 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(InfraSurfaceLiteral), LoadFailure),
 	},
+	ClickedRetry: {},
 	GotFrameMessage: { message: Frame.Message },
 	GotInstallMessage: { message: InstallModal.Message },
 })

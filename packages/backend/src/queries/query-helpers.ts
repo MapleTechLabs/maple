@@ -143,7 +143,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.utilization",
 				groupByAttributeKey: "state",
-				attributeEquals: undefined,
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -151,7 +152,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.memory.utilization",
 				groupByAttributeKey: "state",
-				attributeEquals: undefined,
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -159,8 +161,10 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.filesystem.utilization",
 				groupByAttributeKey: "mountpoint",
-				// Per-mount disk usage is the `used` share; free and reserved are its complement.
-				attributeEquals: { key: "state", value: "used" },
+				// The used share per mount, whether or not the collector splits rows by state.
+				attributeIn: { key: "state", values: CH.FILESYSTEM_USED_STATES },
+				// Read-only and virtual mounts always read ~100%; the headline disk % drops them too.
+				attributeNotIn: { key: "type", values: CH.PSEUDO_FS_TYPES },
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -168,7 +172,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.load_average.15m",
 				groupByAttributeKey: undefined,
-				attributeEquals: undefined,
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "load" as const,
 				isNetwork: false,
 			}
@@ -176,7 +181,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.network.io",
 				groupByAttributeKey: "direction",
-				attributeEquals: undefined,
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "bytes_per_second" as const,
 				isNetwork: true,
 			}

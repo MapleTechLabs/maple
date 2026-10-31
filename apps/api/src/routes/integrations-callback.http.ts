@@ -10,10 +10,12 @@ import { PLANETSCALE_CALLBACK_PATH } from "@maple/backend/services/auth/PlanetSc
 import { SUPABASE_CALLBACK_PATH } from "@maple/backend/services/auth/SupabaseOAuthService"
 
 export const HAZEL_CALLBACK_PATH = "/api/integrations/hazel/callback"
+export const LINEAR_CALLBACK_PATH = "/api/integrations/linear/callback"
 export const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
 export const CLOUDFLARE_CALLBACK_PATH = "/api/integrations/cloudflare/callback"
 
 const HAZEL_MESSAGE_TYPE = "maple:integration:hazel"
+const LINEAR_MESSAGE_TYPE = "maple:integration:linear"
 const GITHUB_MESSAGE_TYPE = "maple:integration:github"
 const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
 const PLANETSCALE_MESSAGE_TYPE = "maple:integration:planetscale"
@@ -251,6 +253,15 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 		precheck: requireCodeAndState,
 	},
 	{
+		path: LINEAR_CALLBACK_PATH,
+		flow: "linear",
+		provider: "linear",
+		label: "Linear",
+		page: "/integrations",
+		messageType: LINEAR_MESSAGE_TYPE,
+		precheck: requireCodeAndState,
+	},
+	{
 		path: GITHUB_CALLBACK_PATH,
 		flow: "github",
 		provider: "github",
@@ -287,6 +298,15 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 		precheck: requireCodeAndState,
 	},
 ]
+
+/**
+ * The redirect that hands a callback query to the dashboard. The location carries the provider's
+ * code, so no cache may keep it and the landing request sends no `Referer`.
+ */
+export const forwardToDashboard = (location: string) =>
+	HttpServerResponse.redirect(location, {
+		headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" },
+	})
 
 /**
  * The provider callbacks. They redeem nothing: this request carries no Maple session, so it
@@ -343,7 +363,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 						flow: route.flow,
 						query: url.search.replace(/^\?/, ""),
 					})
-					return HttpServerResponse.redirect(`${appBaseUrl}${route.page}?${search}${hash}`)
+					return forwardToDashboard(`${appBaseUrl}${route.page}?${search}${hash}`)
 				},
 				// Every branch returns a response, so the status is the only signal of a rejection.
 				Effect.tap((response) =>

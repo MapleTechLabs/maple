@@ -170,7 +170,7 @@ const stats = (h: H, peek: QueryPeek): ReadonlyArray<Html> => {
 			? []
 			: [
 					h.div(
-						[h.Class("space-y-1 rounded-md border border-severity-error/40 px-3 py-2.5")],
+						[h.Class("space-y-1 rounded-md border border-severity-error-a4 p-3")],
 						[
 							h.p(
 								[h.Class("text-xs font-medium text-foreground")],
@@ -199,13 +199,13 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 		[
 			sectionHead(h, "Called by", more > 0 ? `the busiest, +${more} more` : "client spans"),
 			h.div(
-				[h.Class("border-y border-border/70")],
+				[h.Class("border-y border-border-subtle")],
 				services.map((service) =>
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch }))),
 							h.Class(
-								"flex items-center gap-3 border-b border-border/40 px-1 py-2 transition-colors last:border-0 hover:bg-muted/50",
+								"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
 							),
 						],
 						[
@@ -241,7 +241,7 @@ const spanRow = (h: H, span: StatementSpan, slowestMs: number, timeZone: string)
 			),
 			h.AriaLabel(`Open trace: ${span.serviceName}, ${formatLatency(span.durationMs)}`),
 			h.Class(
-				"flex items-center gap-3 border-b border-border/40 px-1 py-2 transition-colors last:border-0 hover:bg-muted/50",
+				"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -268,12 +268,12 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 		onEmpty: () =>
 			h.div(
 				[h.Class("space-y-2 py-2"), h.AriaBusy(true)],
-				Array.from({ length: SPAN_ROWS }, () => skeleton(h, "h-5 w-full rounded")),
+				Array.from({ length: SPAN_ROWS }, () => skeleton(h, "h-5 w-full rounded-sm")),
 			),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the calls",
+				title: "Couldn't load the calls",
 				variant: "inline",
 				onRetry: Message.ClickedRetryStatementSpans(),
 			}),
@@ -286,7 +286,7 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 						[
 							h.Class(
 								cn(
-									"border-y border-border/70",
+									"border-y border-border-subtle",
 									refreshingClass(AsyncData.isRefreshing(inputs.spans)),
 								),
 							),
@@ -339,7 +339,7 @@ const untraced = (h: H, inputs: QueryPeekInputs): Html =>
 	AsyncData.matchData(inputs.traceSide, {
 		onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load what the traces saw", variant: "inline" }),
+			errorState(h, { failure, title: "Couldn't load what the traces saw", variant: "inline" }),
 		onData: () => notTraced(h),
 	})
 

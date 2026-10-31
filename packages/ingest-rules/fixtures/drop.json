@@ -1,0 +1,2420 @@
+[
+	{
+		"name": "drops debug logs below info",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "severity",
+						"op": "lt",
+						"value": "info"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 5,
+			"severityText": "DEBUG"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keeps info logs with a below-info rule",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "severity",
+						"op": "lt",
+						"value": "info"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "derives severity from text when the number is 0",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "severity",
+						"op": "lt",
+						"value": "info"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 0,
+			"severityText": "debug"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "err text prefix is error",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "severity",
+						"op": "gte",
+						"value": "error"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 0,
+			"severityText": "ERROR"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "unknown severity matches no severity condition",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "severity",
+						"op": "lt",
+						"value": "info"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 0,
+			"severityText": ""
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "crit text is fatal",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "severity",
+						"op": "gte",
+						"value": "fatal"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 0,
+			"severityText": "CRITICAL"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "drops health check spans by route",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "in",
+						"key": "http.route",
+						"values": ["/health", "/ready"]
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"http.route": "/health"
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keeps spans on other routes",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "in",
+						"key": "http.route",
+						"values": ["/health", "/ready"]
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"http.route": "/users"
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"http.route": "/users"
+			}
+		}
+	},
+	{
+		"name": "rule for logs does not touch spans",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "http.route",
+						"value": "/health"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"http.route": "/health"
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"http.route": "/health"
+			}
+		}
+	},
+	{
+		"name": "all conditions must match",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "http.route",
+						"value": "/health"
+					},
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "checkout"
+			},
+			"attributes": {
+				"http.route": "/health"
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "checkout"
+			},
+			"attributes": {
+				"http.route": "/health"
+			}
+		}
+	},
+	{
+		"name": "all conditions matching drops",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "http.route",
+						"value": "/health"
+					},
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"http.route": "/health"
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "missing service name compares as empty",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": ""
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"host.name": "x"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "span name prefix",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "name",
+						"op": "prefix",
+						"value": "SELECT"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "SELECT 1",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "span kind in",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "span_kind",
+						"op": "in",
+						"values": ["internal", "client"]
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "internal",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "span status not_in keeps errors",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "span_status",
+						"op": "not_in",
+						"values": ["error"]
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "error",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "span status not_in drops unset",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "span_status",
+						"op": "not_in",
+						"values": ["error"]
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "unset",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "neq passes on a missing attribute",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "neq",
+						"key": "k",
+						"value": "x"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "eq fails on a missing attribute",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "k",
+						"value": "x"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "not_exists on a missing attribute",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "not_exists",
+						"key": "k"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "int compares as decimal",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "retries",
+						"value": "3"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"retries": 3,
+				"cached": true,
+				"ratio": 1.5,
+				"whole": 2.0
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "bool compares as true",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "cached",
+						"value": "true"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"retries": 3,
+				"cached": true,
+				"ratio": 1.5,
+				"whole": 2.0
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "double compares shortest form",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "ratio",
+						"value": "1.5"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"retries": 3,
+				"cached": true,
+				"ratio": 1.5,
+				"whole": 2.0
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "integral double compares without fraction",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "whole",
+						"value": "2"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"retries": 3,
+				"cached": true,
+				"ratio": 1.5,
+				"whole": 2.0
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "arrays never match a value comparison",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "contains",
+						"key": "tags",
+						"value": "a"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"tags": ["a", "b"]
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"tags": ["a", "b"]
+			}
+		}
+	},
+	{
+		"name": "arrays satisfy exists",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "exists",
+						"key": "tags"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"tags": ["a", "b"]
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "resource attribute regex",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "resource_attribute",
+						"op": "regex",
+						"key": "k8s.namespace.name",
+						"value": "^kube-"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api",
+				"k8s.namespace.name": "kube-system"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "body contains",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "body",
+						"op": "contains",
+						"value": "/healthz"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"body": "GET /healthz 200"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "case-insensitive regex flag",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "body",
+						"op": "regex",
+						"value": "(?i)connection reset"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"body": "Connection RESET by peer"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "regex is case-sensitive by default",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "body",
+						"op": "regex",
+						"value": "connection reset"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"body": "Connection RESET by peer"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "Connection RESET by peer"
+		}
+	},
+	{
+		"name": "drops metric data points by name prefix",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["metrics"],
+				"conditions": [
+					{
+						"field": "name",
+						"op": "prefix",
+						"value": "process.runtime."
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "metrics",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "process.runtime.go.gc.count"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "metric data point attribute",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["metrics"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "http.route",
+						"value": "/health"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "metrics",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"http.route": "/health"
+			},
+			"name": "http.server.duration"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 10 on trace 0af7651916cd43dd8448eb211c80319c",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 10
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 50 on trace 0af7651916cd43dd8448eb211c80319c",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 90 on trace 0af7651916cd43dd8448eb211c80319c",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 90
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "log keepPercent 50 on trace 0af7651916cd43dd8448eb211c80319c",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 10 on trace 4bf92f3577b34da6a3ce929d0e0e4736",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 10
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 50 on trace 4bf92f3577b34da6a3ce929d0e0e4736",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "keepPercent 90 on trace 4bf92f3577b34da6a3ce929d0e0e4736",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 90
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "log keepPercent 50 on trace 4bf92f3577b34da6a3ce929d0e0e4736",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "keepPercent 10 on trace 5B8EFFF798038103D269B633813FC60C",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 10
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "5B8EFFF798038103D269B633813FC60C"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 50 on trace 5B8EFFF798038103D269B633813FC60C",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "5B8EFFF798038103D269B633813FC60C"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 90 on trace 5B8EFFF798038103D269B633813FC60C",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 90
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "5B8EFFF798038103D269B633813FC60C"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "log keepPercent 50 on trace 5B8EFFF798038103D269B633813FC60C",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"traceId": "5B8EFFF798038103D269B633813FC60C"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 10 on trace 00000000000000000000000000000001",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 10
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "00000000000000000000000000000001"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 50 on trace 00000000000000000000000000000001",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "00000000000000000000000000000001"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 90 on trace 00000000000000000000000000000001",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 90
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "00000000000000000000000000000001"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "log keepPercent 50 on trace 00000000000000000000000000000001",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"traceId": "00000000000000000000000000000001"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 10 on trace ffffffffffffffffffffffffffffffff",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 10
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "ffffffffffffffffffffffffffffffff"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "keepPercent 50 on trace ffffffffffffffffffffffffffffffff",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "ffffffffffffffffffffffffffffffff"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "keepPercent 90 on trace ffffffffffffffffffffffffffffffff",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 90
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "ffffffffffffffffffffffffffffffff"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "log keepPercent 50 on trace ffffffffffffffffffffffffffffffff",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"traceId": "ffffffffffffffffffffffffffffffff"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "keepPercent 10 on trace a3ce929d0e0e47364bf92f3577b34da6",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 10
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "a3ce929d0e0e47364bf92f3577b34da6"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "keepPercent 50 on trace a3ce929d0e0e47364bf92f3577b34da6",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "a3ce929d0e0e47364bf92f3577b34da6"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "keepPercent 90 on trace a3ce929d0e0e47364bf92f3577b34da6",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 90
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "a3ce929d0e0e47364bf92f3577b34da6"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "log keepPercent 50 on trace a3ce929d0e0e47364bf92f3577b34da6",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"traceId": "a3ce929d0e0e47364bf92f3577b34da6"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "keepPercent 100 keeps",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 100
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	},
+	{
+		"name": "survives only if every matching drop rule keeps it",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "api"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 50
+				}
+			},
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "name",
+						"op": "eq",
+						"value": "GET /users"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "drop rules run before redact rules",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [],
+					"detectors": ["email"],
+					"patterns": [],
+					"scopes": ["attributes"],
+					"method": "mask"
+				}
+			},
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "severity",
+						"op": "lt",
+						"value": "info"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"user.email": "a@b.co"
+			},
+			"severityNumber": 5,
+			"severityText": "DEBUG"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "conditions see the record as received",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": ["user.email"],
+					"detectors": [],
+					"patterns": [],
+					"scopes": ["attributes"],
+					"method": "mask"
+				}
+			},
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "user.email",
+						"value": "a@b.co"
+					}
+				],
+				"action": {
+					"_tag": "redact",
+					"keys": ["note"],
+					"detectors": [],
+					"patterns": [],
+					"scopes": ["attributes"],
+					"method": "mask"
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"user.email": "a@b.co",
+				"note": "x"
+			},
+			"severityNumber": 9,
+			"severityText": "INFO"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"user.email": "[REDACTED]",
+				"note": "[REDACTED]"
+			}
+		}
+	},
+	{
+		"name": "large doubles compare without exponent",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "big",
+						"value": "1000000000000000000000"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"big": 1e21,
+				"tiny": 1e-7,
+				"negz": -0.0
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "tiny doubles compare without exponent",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "tiny",
+						"value": "0.0000001"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"big": 1e21,
+				"tiny": 1e-7,
+				"negz": -0.0
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "negative zero keeps its sign",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "eq",
+						"key": "negz",
+						"value": "-0"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"big": 1e21,
+				"tiny": 1e-7,
+				"negz": -0.0
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "regex conditions read the first 16 KiB only",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "body",
+						"op": "regex",
+						"value": "needle"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxneedle"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxneedle"
+		}
+	},
+	{
+		"name": "regex conditions match inside the first 16 KiB",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["logs"],
+				"conditions": [
+					{
+						"field": "body",
+						"op": "regex",
+						"value": "needle"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"severityNumber": 9,
+			"severityText": "INFO",
+			"body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxneedle"
+		},
+		"expected": {
+			"dropped": true
+		}
+	},
+	{
+		"name": "exists ignores names inherited by JS objects",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "exists",
+						"key": "constructor"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
+	}
+]

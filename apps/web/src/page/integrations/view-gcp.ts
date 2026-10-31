@@ -8,22 +8,15 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
 import { sectionHeading } from "../kit/section-heading"
-import {
-	integrationEmpty,
-	integrationEmptyCard,
-	integrationEmptyFeatures,
-	integrationEmptyHint,
-	integrationEmptyMedia,
-} from "../infra-integrations/kit/integration-empty"
-import { GCP_ACCENT } from "./catalog"
 import { HEALTH_TONE } from "./derive"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { gcpConnectors } from "./update-gcp"
@@ -37,12 +30,10 @@ import { usageBand } from "./view-gcp-workloads"
 
 type H = HtmlBuilder<Message>
 
-const newConnection = Message.ClickedGcpConfigure({ target: { _tag: "New" } })
-
 /** A removed connection whose cleanup script was never seen to run. */
 const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 	model.gcpCard.removed.map((entry) =>
-		panel(h, { className: "gap-3 border-severity-warn/32 bg-severity-warn/4 px-4 py-3" }, [
+		panel(h, { className: "gap-3 border-severity-warn-a3 bg-severity-warn-a1 px-4 py-3" }, [
 			h.div(
 				[],
 				[
@@ -83,42 +74,14 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 		]),
 	)
 
-const emptyState = (h: H): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, [
-			{
-				label: "Logs",
-				title: "Google Cloud's logs",
-				description:
-					"Request, audit and managed-service logs. GKE container logs stay out by default.",
-			},
-			{
-				label: "Metrics",
-				title: "Workloads, no agents",
-				description: "Cloud Run, GKE, Compute Engine, Cloud SQL and more, read every 5 minutes.",
-			},
-			{
-				label: "Access",
-				title: "Read-only, your choice of setup",
-				description:
-					"A Cloud Shell script, the console, Terraform or Alchemy. No keys, no write access for Maple.",
-			},
-		]),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, {
-				icon: "GoogleCloudIcon",
-				backerIcon: "GoogleCloudMonoIcon",
-				accent: GCP_ACCENT,
-			}),
-			integrationEmptyHint(h, [
-				"Connect a project, folder or organization. Its logs, workloads and resources appear here.",
-			]),
-			button(h, { attributes: [h.OnClick(newConnection)] }, [
-				icon(h, "GoogleCloudMonoIcon"),
-				"Connect Google Cloud",
-			]),
-		]),
-	])
+const FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } }))
+
+/** A source page whose connection was removed: the way back is the connect flow. */
+const gcpReconnect = (h: H, text: string): Html =>
+	integrationNotice(h, {
+		message: text,
+		action: linkButton(h, { size: "sm", href: FLOW_HREF }, ["Reconnect"]),
+	})
 
 const byStatus = (
 	h: H,
@@ -137,15 +100,19 @@ const byStatus = (
 		...(focusId === null ? gcpDialogs(h, model, timeZone) : []),
 		...gcpConfigure(h, model, timeZone),
 	]
-	if (connectors.length === 0 && focusId !== null)
-		return h.p(
-			[h.Class("text-muted-foreground text-sm")],
-			["This Google Cloud connection no longer exists."],
-		)
 	if (connectors.length === 0)
 		return h.div(
 			[h.Class("flex flex-col gap-4")],
-			[...cleanupPanels(h, model), emptyState(h), ...dialogs],
+			[
+				...cleanupPanels(h, model),
+				gcpReconnect(
+					h,
+					focusId === null
+						? "Google Cloud is not connected."
+						: "This Google Cloud connection no longer exists.",
+				),
+				...dialogs,
+			],
 		)
 	const ordered = connectors.toSorted(
 		(a, b) =>
@@ -166,15 +133,9 @@ const byStatus = (
 						count: connectors.length > 1 ? String(connectors.length) : undefined,
 						actions:
 							focusId === null
-								? button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											attributes: [h.OnClick(newConnection)],
-										},
-										["Add connection"],
-									)
+								? linkButton(h, { size: "sm", variant: "outline", href: FLOW_HREF }, [
+										"Add another account",
+									])
 								: undefined,
 					}),
 					...ordered.map((connector) => gcpConnection(h, model, connector, timeZone)),
@@ -192,7 +153,7 @@ export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | 
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Google Cloud integration",
+				title: "Couldn't load the Google Cloud integration",
 				onRetry: Message.ClickedRetryStatus({ name: "gcp" }),
 			}),
 		onStale: ({ data }) => byStatus(h, model, data, timeZone, focusId),

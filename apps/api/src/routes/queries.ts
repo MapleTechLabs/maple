@@ -3,6 +3,10 @@ import * as Integrations from "@maple/query-engine-integrations"
 import { defineQuery } from "@maple/query-engine/registry"
 import { Queries as Core } from "@maple/query-engine/registry"
 import type {
+	AwsInfraMetricsRequest,
+	AwsInfraPresenceRequest,
+	AwsInfraSparklinesRequest,
+	AwsInfraTimeseriesRequest,
 	CloudflareInfraZoneBreakdownRequest,
 	HostInfraTimeseriesRequest,
 	CloudflareInfraZoneFacetsRequest,
@@ -432,6 +436,61 @@ const supabaseLogIssues = defineQuery({
 				}),
 })
 
+// A small read of the hourly catalog that decides which tabs /infra/aws shows.
+const awsInfraPresence = defineQuery({
+	id: "awsInfraPresence",
+	profile: "discovery",
+	cache: 60,
+	compile: (payload: AwsInfraPresenceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.awsInfraPresenceSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const awsInfraMetrics = defineQuery({
+	id: "awsInfraMetrics",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: AwsInfraMetricsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const awsInfraSparklines = defineQuery({
+	id: "awsInfraSparklines",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: AwsInfraSparklinesRequest, orgId: OrgId) => {
+		// The stream sends one point per minute.
+		const bucketSeconds = Math.max(60, payload.bucketSeconds)
+		const buckets = Integrations.awsInfraBucketCount(payload.startTime, payload.endTime, bucketSeconds)
+		return CH.compile(Integrations.awsInfraSparklinesSQL(payload.kind, buckets), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			bucketSeconds,
+		})
+	},
+})
+
+const awsInfraTimeseries = defineQuery({
+	id: "awsInfraTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: AwsInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.awsInfraTimeseriesSQL(payload.kind, payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
 // A small read of the hourly catalog that decides which tabs /infra/gcp shows.
 const gcpInfraPresence = defineQuery({
 	id: "gcpInfraPresence",
@@ -718,7 +777,8 @@ const hostInfraGaugeTimeseries = defineQuery({
 				hostName: payload.hostName,
 				metricName: spec.metricName,
 				groupByAttributeKey: spec.groupByAttributeKey,
-				attributeEquals: spec.attributeEquals,
+				attributeIn: spec.attributeIn,
+				attributeNotIn: spec.attributeNotIn,
 			}),
 			{
 				orgId,
@@ -1055,6 +1115,10 @@ export const Queries = {
 	supabaseProjectCallers,
 	supabaseProjectCallerSeries,
 	supabaseLogIssues,
+	awsInfraPresence,
+	awsInfraMetrics,
+	awsInfraSparklines,
+	awsInfraTimeseries,
 	gcpInfraPresence,
 	gcpInfraMetrics,
 	gcpInfraTimeseries,

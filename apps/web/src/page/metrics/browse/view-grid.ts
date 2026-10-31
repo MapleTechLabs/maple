@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
 import * as Sparkline from "../../../charts/sparkline"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
+import { cardButton } from "../../../ui/card-button"
 import { badge } from "../../../ui/display"
 import { listFooter } from "../../../ui/list-footer"
 import { skeletonList } from "../../../ui/skeleton"
@@ -119,17 +120,16 @@ const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: 
 		: sparklines.failedTypes.has(entry.metricType)
 			? "Preview unavailable"
 			: "Not enough datapoints for a preview"
-	return h.button(
-		[
-			h.Key(entryKey(entry.metricName, entry.metricType)),
-			h.Type("button"),
-			h.Class(
-				"group flex flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40",
-			),
-			h.OnClick(
-				Message.ClickedMetricCard({ metricName: entry.metricName, metricType: entry.metricType }),
-			),
-		],
+	return cardButton(
+		h,
+		{
+			onClick: Message.ClickedMetricCard({
+				metricName: entry.metricName,
+				metricType: entry.metricType,
+			}),
+			className: "flex flex-col gap-2 p-3",
+			attributes: [h.Key(entryKey(entry.metricName, entry.metricType))],
+		},
 		[
 			h.div(
 				[h.Class("flex w-full items-start justify-between gap-2")],

@@ -27,6 +27,7 @@ const status = (connected: boolean): PlanetscaleStatus => ({
 	detected_permissions: null,
 	metrics_auth: "service_token",
 	scrape_target: null,
+	webhooks: null,
 	last_inventory_at: null,
 	last_inventory_error: null,
 	revoked_at: null,
@@ -82,7 +83,7 @@ describe("planetscale list", () => {
 			given(step.model),
 			expectView(role("link", { name: "Connect PlanetScale" })).toHaveAttr(
 				"href",
-				"/integrations?integration=planetscale",
+				"/sources/new?integration=planetscale",
 			),
 		)
 	})

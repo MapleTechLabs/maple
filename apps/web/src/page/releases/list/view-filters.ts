@@ -24,12 +24,13 @@ type H = HtmlBuilder<Message>
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
+// The table shows this same read's failure in full, so the rail stays quiet.
 export const filtersRail = (h: H, model: Model): Html =>
 	AsyncData.match(model.releases.data, {
 		onIdle: () => filterSidebarLoading(h, 3),
 		onLoading: () => filterSidebarLoading(h, 3),
-		onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetry()),
-		onStale: ({ error }) => filterSidebarError(h, error, Message.ClickedRetry()),
+		onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetry(), failure),
+		onStale: ({ error }) => filterSidebarError(h, error, Message.ClickedRetry(), error),
 		onSuccess: (data) => rail(h, model, data, false),
 		onRefreshing: (data) => rail(h, model, data, true),
 	})

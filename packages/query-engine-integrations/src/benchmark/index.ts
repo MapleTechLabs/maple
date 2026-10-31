@@ -10,6 +10,7 @@
 
 import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple/query-engine/ch"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, GCP_INFRA_SOURCES } from "@maple/domain/gcp-infra"
 import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
@@ -912,6 +913,45 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 				window,
 			),
 	},
+	{
+		module: "aws-infra",
+		name: "awsInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.awsInfraPresenceSQL(), window),
+	},
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraMetricsSQL",
+		label: kind,
+		compile: () => compileUnsafe(CH.awsInfraMetricsSQL(kind), window),
+	})),
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraSparklinesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraSparklinesSQL(
+					kind,
+					CH.awsInfraBucketCount(START_TIME, END_TIME, bucketed.bucketSeconds),
+				),
+				bucketed,
+			),
+	})),
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraTimeseriesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraTimeseriesSQL(kind, [
+					...AWS_INFRA_KINDS[kind].identity.map(([, dimension]) => `acme-${dimension}`),
+					"us-east-1",
+					"123456789012",
+				]),
+				bucketed,
+			),
+	})),
 	{
 		module: "planetscale-map",
 		name: "planetscaleBranchGaugesSQL",

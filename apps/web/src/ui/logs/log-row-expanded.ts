@@ -3,11 +3,12 @@ import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AttributesPanel from "../attributes/attributes-panel"
-import { tryParseJson } from "../attributes/attribute-row"
+import { capForDisplay, prettyJson } from "../../lib/display-text"
 import * as AttributesView from "../attributes/attributes-view"
 import { copyButton, type CopyStatus } from "../copy-button"
 import { icon } from "../icon"
 import { highlightedText } from "./highlight"
+import { truncationNote } from "./log-message"
 import type { LogRecord } from "./log-row-view"
 
 // An expanded log row: the full body on a
@@ -31,13 +32,6 @@ export const buildLogJsonPayload = (log: LogRecord): string =>
 		2,
 	)
 
-/** A JSON body, re-indented; anything else comes back as-is. */
-const prettyBody = (body: string): string =>
-	Option.match(tryParseJson(body), {
-		onNone: () => body,
-		onSome: (parsed) => JSON.stringify(parsed, null, 2),
-	})
-
 /** Stack frames (`at …`, `File "…"`) read as context under the message line. */
 const FRAME = /^\s+(at |File "|from )/
 
@@ -58,9 +52,12 @@ export const logRowExpanded = <Message>(
 	canFilter: boolean,
 	events: ExpandedEvents<Message>,
 ): Html => {
-	const lines = prettyBody(stripAnsi(log.body)).split("\n")
+	const body = stripAnsi(log.body)
+	const formatted = Option.getOrElse(prettyJson(body), () => body)
+	const { shown, omitted } = capForDisplay(formatted)
+	const lines = shown.split("\n")
 	return h.div(
-		[h.Class("border-t border-border/60 bg-muted/20 px-3 py-3 pl-9 font-mono")],
+		[h.Class("border-t border-border-subtle bg-surface-faint px-3 py-3 pl-9 font-mono")],
 		[
 			h.div(
 				[h.Class("max-h-[60vh] space-y-3 overflow-auto")],
@@ -68,7 +65,7 @@ export const logRowExpanded = <Message>(
 					h.div(
 						[
 							h.Class(
-								"relative rounded-md border border-border/70 bg-background/60 py-2 pl-3 pr-24",
+								"relative rounded-md border border-border-subtle bg-background/60 py-2 pl-3 pr-24",
 							),
 						],
 						[
@@ -84,7 +81,7 @@ export const logRowExpanded = <Message>(
 										[
 											h.Type("button"),
 											h.Class(
-												"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground transition-colors hover:text-foreground",
+												"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
 											),
 											h.OnClick(events.clickedDetails, stop),
 										],
@@ -113,6 +110,7 @@ export const logRowExpanded = <Message>(
 									]),
 								),
 							),
+							...(omitted === 0 ? [] : [truncationNote(h, shown.length, formatted.length)]),
 						],
 					),
 					h.submodel({

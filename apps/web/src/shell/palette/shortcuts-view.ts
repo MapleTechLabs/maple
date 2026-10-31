@@ -47,7 +47,7 @@ const groups = <M>(h: HtmlBuilder<M>, platform: Platform): ReadonlyArray<Html> =
 						[
 							eyebrow(h, { variant: "label", className: "mb-1", as: "h3" }, [group]),
 							h.div(
-								[h.Class("divide-y divide-border/50")],
+								[h.Class("divide-y divide-border-subtle")],
 								defs.map((def) => row(h, def, platform)),
 							),
 						],
@@ -77,7 +77,7 @@ export const shortcutsDialogView = <M>(
 						h,
 						"dialog",
 						dialog.id,
-						"Available across Maple — press ? anywhere to open this list.",
+						"Available across Maple. Press ? anywhere to open this list.",
 					),
 				]),
 				dialogPanel(

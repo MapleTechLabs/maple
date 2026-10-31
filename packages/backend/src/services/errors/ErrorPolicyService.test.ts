@@ -42,6 +42,19 @@ const makeLayer = () => {
 	return databaseOnlyLayer.pipe(Layer.provide(database), Layer.provideMerge(database))
 }
 
+// Yields before every statement so concurrent writers interleave their reads and writes,
+// which an in-memory database otherwise runs back to back.
+const makeInterleavingLayer = () => {
+	const interleaving = Layer.effect(
+		Database,
+		Effect.gen(function* () {
+			const database = yield* Database
+			return Database.of({ execute: (fn) => Effect.andThen(Effect.yieldNow, database.execute(fn)) })
+		}),
+	).pipe(Layer.provide(createTestDb(createdDbs).layer))
+	return databaseOnlyLayer.pipe(Layer.provide(interleaving), Layer.provideMerge(interleaving))
+}
+
 const insertDestination = (
 	id: ReturnType<typeof asDestinationId>,
 	orgId: ReturnType<typeof asOrgId>,
@@ -83,6 +96,7 @@ describe("ErrorPolicyService", () => {
 			assert.strictEqual(initial.updatedBy, "system")
 
 			const destinationId = asDestinationId(randomUUID())
+			yield* insertDestination(destinationId, ORG)
 			const updated = yield* policies.upsertNotificationPolicy(
 				ORG,
 				USER,
@@ -106,6 +120,61 @@ describe("ErrorPolicyService", () => {
 				destinationId,
 			])
 		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("rejects notification destinations the org does not own and keeps the stored ones", () =>
+		Effect.gen(function* () {
+			const policies = yield* ErrorPolicyService
+			const ownedId = asDestinationId(randomUUID())
+			const foreignId = asDestinationId(randomUUID())
+			yield* insertDestination(ownedId, ORG)
+			yield* insertDestination(foreignId, OTHER_ORG)
+			yield* policies.upsertNotificationPolicy(
+				ORG,
+				USER,
+				ADMIN_ROLES,
+				new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId] }),
+			)
+
+			const failure = yield* Effect.flip(
+				policies.upsertNotificationPolicy(
+					ORG,
+					USER,
+					ADMIN_ROLES,
+					new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId, foreignId] }),
+				),
+			)
+
+			expect(failure).toMatchObject({
+				_tag: "@maple/http/errors/ErrorNotificationUnknownDestinationError",
+				destinationIds: [foreignId],
+			})
+			assert.deepStrictEqual((yield* policies.getNotificationPolicy(ORG)).destinationIds, [ownedId])
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("keeps every field when writes of different fields run concurrently", () =>
+		Effect.gen(function* () {
+			const policies = yield* ErrorPolicyService
+			const destinationId = asDestinationId(randomUUID())
+			yield* insertDestination(destinationId, ORG)
+			const write = (request: ErrorNotificationPolicyUpsertRequest) =>
+				policies.upsertNotificationPolicy(ORG, USER, ADMIN_ROLES, request)
+
+			yield* Effect.all(
+				[
+					write(new ErrorNotificationPolicyUpsertRequest({ destinationIds: [destinationId] })),
+					write(new ErrorNotificationPolicyUpsertRequest({ minOccurrenceCount: 9 })),
+					write(new ErrorNotificationPolicyUpsertRequest({ notifyOnResolve: true })),
+				],
+				{ concurrency: "unbounded" },
+			)
+
+			const policy = yield* policies.getNotificationPolicy(ORG)
+			assert.deepStrictEqual(policy.destinationIds, [destinationId])
+			assert.strictEqual(policy.minOccurrenceCount, 9)
+			assert.isTrue(policy.notifyOnResolve)
+		}).pipe(Effect.provide(makeInterleavingLayer())),
 	)
 
 	// The gate lives here rather than on the v1 route because the MCP tool and

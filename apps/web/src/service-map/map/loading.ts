@@ -1,5 +1,6 @@
 import "@maple/ui/components/service-map/service-map.css"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { eyebrow } from "../../ui/eyebrow"
 
 // `ServiceMapLoading` (packages/ui `service-map/service-map-loading.tsx`): a fixed ghost topology,
 // generated once since it carries no data.
@@ -981,24 +982,16 @@ export const serviceMapLoading = <Message>(h: HtmlBuilder<Message>): Html =>
 					),
 				],
 			),
-			h.div(
-				[
-					h.Class(
-						"font-medium uppercase font-mono text-3xs tracking-[0.12em] text-muted-foreground/70 flex items-center gap-2",
-					),
-					h.Attribute("data-slot", "eyebrow"),
-				],
-				[
-					h.span([], ["Mapping service connections"]),
-					h.span(
-						[h.Attribute("aria-hidden", "true"), h.Class("inline-flex")],
-						[
-							h.span([h.Class("pulse-dot")], ["."]),
-							h.span([h.Class("pulse-dot")], ["."]),
-							h.span([h.Class("pulse-dot")], ["."]),
-						],
-					),
-				],
-			),
+			eyebrow(h, { variant: "mono", as: "div", className: "flex items-center gap-2" }, [
+				h.span([], ["Mapping service connections"]),
+				h.span(
+					[h.Attribute("aria-hidden", "true"), h.Class("inline-flex")],
+					[
+						h.span([h.Class("pulse-dot")], ["."]),
+						h.span([h.Class("pulse-dot")], ["."]),
+						h.span([h.Class("pulse-dot")], ["."]),
+					],
+				),
+			]),
 		],
 	)

@@ -8,7 +8,7 @@ import { settingsSections } from "./section"
 // `AccountSectionSkeleton`: what a settings or account section shows while its Clerk resource loads.
 
 export const accountSectionSkeleton = <M>(h: HtmlBuilder<M>, children?: ReadonlyArray<Html>): Html =>
-	settingsSections(h, "standard", [
+	settingsSections(h, [
 		h.div(
 			[h.Class("flex flex-col gap-3")],
 			[

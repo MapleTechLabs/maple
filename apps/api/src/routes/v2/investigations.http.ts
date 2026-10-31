@@ -13,7 +13,13 @@ import {
 	InvestigationSubjectSnapshot,
 	TraceId,
 } from "@maple/domain/http"
-import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
+import {
+	INVESTIGATION_READ_FAMILIES,
+	MapleApiV2,
+	missingReadScopes,
+	paginateOffsetQuery,
+	V2InsufficientScope,
+} from "@maple/domain/http/v2"
 import type {
 	V2Investigation,
 	V2InvestigationCreateParams,
@@ -185,6 +191,18 @@ const logSubjectDecodeError = (error: InvestigationDataCorruptionError) =>
 const serializeInvestigation = (doc: InvestigationDocument) =>
 	toV2Investigation(doc).pipe(Effect.tapError(logSubjectDecodeError))
 
+/** A run reads the whole org as an internal service, so a scoped key must already read it all. */
+const requireInvestigationScopes = (scopes: ReadonlyArray<string> | undefined) => {
+	const missing = missingReadScopes(scopes, INVESTIGATION_READ_FAMILIES)
+	return missing.length === 0
+		? Effect.void
+		: Effect.fail(
+				V2InsufficientScope.make(
+					`Running an investigation requires read access to everything its agent reads. Missing scopes: ${missing.map((family) => `"${family}:read"`).join(", ")}.`,
+				),
+			)
+}
+
 export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "investigations", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* InvestigationService
@@ -229,6 +247,7 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* requireInvestigationScopes(tenant.scopes)
 					const doc = yield* service.createAndStartInvestigation(
 						tenant.orgId,
 						tenant.userId,
@@ -252,6 +271,7 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 			.handle("restart", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* requireInvestigationScopes(tenant.scopes)
 					const doc = yield* service.restartInvestigation(tenant.orgId, params.id)
 					yield* recordHttpAudit("investigation.restarted", { resourceId: doc.id })
 

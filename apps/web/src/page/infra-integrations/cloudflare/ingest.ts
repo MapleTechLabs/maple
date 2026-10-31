@@ -12,7 +12,7 @@ import { integrationLinkActions, integrationNotConnected } from "../kit/empty-st
 import type { Status, Usage } from "./data"
 
 // `CloudflareIngestBanner`, `CloudflareIngestEmpty`, `CloudflareStalledAction`
-// and `CloudflareNotConnected`.
+// and the missing-permissions empty state.
 
 /** `useCloudflareIngestPhase`'s phase: null without a usable connection. */
 export const ingestPhaseOf = (
@@ -69,16 +69,14 @@ export const ingestEmpty = <M>(h: HtmlBuilder<M>, phase: CloudflareIngestPhase):
 	)
 }
 
-export const notConnected = <M>(h: HtmlBuilder<M>, variant: "not-connected" | "needs-permissions"): Html => {
-	const fresh = variant === "not-connected"
-	return integrationNotConnected(h, {
+/** Connected without the analytics scopes: reconnecting re-grants them. */
+export const needsPermissions = <M>(h: HtmlBuilder<M>): Html =>
+	integrationNotConnected(h, {
 		icon: icon(h, "CloudflareBrandIcon", { size: 16 }),
-		title: fresh ? "Connect Cloudflare to see edge analytics" : "Update Cloudflare permissions",
-		description: fresh
-			? "Connect your Cloudflare account and Maple will continuously ingest zone HTTP analytics and Workers invocation metrics. No agents or Logpush setup required."
-			: "Your Cloudflare connection is missing the analytics read scopes. Reconnect to grant them and analytics polling will start automatically.",
+		title: "Update Cloudflare permissions",
+		description:
+			"Your Cloudflare connection is missing the analytics read scopes. Reconnect to grant them and analytics polling will start automatically.",
 		integration: "cloudflare",
-		actionLabel: fresh ? "Connect Cloudflare" : "Reconnect Cloudflare",
+		actionLabel: "Reconnect Cloudflare",
 		docsPage: "cloudflare",
 	})
-}

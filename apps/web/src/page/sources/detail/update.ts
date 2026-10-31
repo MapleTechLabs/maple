@@ -482,19 +482,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedPause: ({ result }) =>
 			settled(model, context, result, {
 				success: "Source paused. Takes effect within a minute.",
-				error: "Failed to pause source",
+				error: "Couldn't pause source",
 			}),
 		CompletedResume: ({ result }) =>
 			settled(model, context, result, {
 				success: "Source resumed. Takes effect within a minute.",
-				error: "Failed to resume source",
+				error: "Couldn't resume source",
 			}),
 		CompletedRoll: ({ result }) => {
 			const closed = liftDialog({ ...model, busy: null }, "rollDialog", Dialog.close(model.rollDialog))
 			return Result.match(result, {
 				onFailure: (failure) => ({
 					...closed,
-					outMessage: failureToast("Failed to roll token", failure),
+					outMessage: failureToast("Couldn't roll token", failure),
 				}),
 				onSuccess: (rolled) =>
 					andThen(closed, (next) =>
@@ -513,7 +513,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onFailure: (failure) => ({
 					model: { ...model, busy: null },
-					outMessage: failureToast("Failed to delete source", failure),
+					outMessage: failureToast("Couldn't delete source", failure),
 				}),
 				onSuccess: () => {
 					const closed = liftDialog(
@@ -566,7 +566,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				result,
 				{
 					success: "Source saved. Changes reach the gateway within a minute.",
-					error: "Failed to save source",
+					error: "Couldn't save source",
 				},
 			),
 		GotTokenCopyMessage: ({ message: inner }) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildInsertSql, buildInsertStatements } from "../src/server/inserts"
+import { buildBatchedInsertStatements, buildInsertSql, buildInsertStatements } from "../src/server/inserts"
 
 const line = (i: number, pad = 0) => JSON.stringify({ body: `row-${i}${"x".repeat(pad)}` })
 
@@ -61,5 +61,48 @@ describe("buildInsertStatements", () => {
 
 	it("throws on an unknown datasource", () => {
 		expect(() => buildInsertStatements("nope", line(1))).toThrow("no insert mapping")
+	})
+})
+
+describe("buildBatchedInsertStatements", () => {
+	it("puts batches that fit together into one statement, identical to one batch of all their rows", () => {
+		const statements = buildBatchedInsertStatements("logs", [
+			{ owner: "a", ndjson: line(1) },
+			{ owner: "b", ndjson: [line(2), line(3)].join("\n") },
+		])
+		expect(statements).toHaveLength(1)
+		expect(statements[0]?.sql).toBe(buildInsertSql("logs", [line(1), line(2), line(3)].join("\n")))
+		expect(statements[0]?.parts).toEqual([
+			{ owner: "a", rowCount: 1 },
+			{ owner: "b", rowCount: 2 },
+		])
+	})
+
+	it("never splits a batch that fits across statements", () => {
+		const batch = (owner: string) => ({
+			owner,
+			ndjson: Array.from({ length: 8 }, (_, i) => line(i, 10_000)).join("\n"),
+		})
+		const statements = buildBatchedInsertStatements("logs", ["a", "b", "c"].map(batch))
+		expect(statements.length).toBeGreaterThan(1)
+		const owners = statements.flatMap((statement) => statement.parts.map((part) => part.owner))
+		expect(owners).toEqual(["a", "b", "c"])
+		for (const statement of statements)
+			expect(Buffer.byteLength(statement.sql, "utf8")).toBeLessThan(256 * 1024)
+	})
+
+	it("splits a batch over the budget into statements of its own", () => {
+		const big = Array.from({ length: 50 }, (_, i) => line(i, 10_000)).join("\n")
+		const statements = buildBatchedInsertStatements("logs", [
+			{ owner: "small", ndjson: line(1) },
+			{ owner: "big", ndjson: big },
+			{ owner: "after", ndjson: line(2) },
+		])
+		expect(statements.map((statement) => statement.parts.map((part) => part.owner))).toEqual([
+			["small"],
+			...buildInsertStatements("logs", big).map(() => ["big"]),
+			["after"],
+		])
+		expect(statements.reduce((n, statement) => n + statement.rowCount, 0)).toBe(52)
 	})
 })

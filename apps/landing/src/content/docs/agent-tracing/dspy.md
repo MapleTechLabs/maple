@@ -18,17 +18,19 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for DSPy in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-dspy -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-dspy -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install and point the exporter at Maple
 
 ```bash
-pip install "dspy>=3.4" "openinference-instrumentation-dspy>=0.1.45" "openinference-instrumentation>=0.1.66" \
+pip install "dspy>=3.4" "openinference-instrumentation-dspy>=0.1.45" \
+  "openinference-instrumentation>=0.1.66" \
   "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45" \
   "opentelemetry-instrumentation-threading>=0.66b0"
 ```
@@ -206,7 +208,7 @@ finally:
     provider.force_flush()  # serverless: before returning; notebooks: after each run
 ```
 
-## Check that it works
+## Verify
 
 Set `cache=False` on the LM, then run two or three messages through `handle_message` with one conversation id, including one tool call. In **Agent Sessions** you should see one session with framework **DSPy**, one turn per call, and `LM.__call__` model calls with tokens. `finish.__call__` is `dspy.ReAct`'s built-in end-of-loop tool.
 
@@ -218,7 +220,7 @@ Set `cache=False` on the LM, then run two or three messages through `handle_mess
 - **Every model call counted twice.** Remove `openinference-instrumentation-litellm` or `-openai`; the callback already records model calls.
 - **`TypeError: object of type 'History' has no len()`.** A module attribute is named `history`. Rename it, or pass the `dspy.History` as an input field.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [LiteLLM](/docs/agent-tracing/litellm) and [OpenRouter](/docs/agent-tracing/openrouter): if your models go through either gateway.

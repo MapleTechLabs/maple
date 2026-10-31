@@ -31,6 +31,11 @@ jobs:
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
+            workers: ${{ steps.filter.outputs.workers == 'true' }}
+            ingest: ${{ steps.filter.outputs.ingest == 'true' }}
+            collector: ${{ steps.filter.outputs.collector == 'true' }}
+            terraform: ${{ steps.filter.outputs.terraform == 'true' }}
+            browser-sdk: ${{ steps.filter.outputs.browser-sdk == 'true' }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -54,6 +59,7 @@ jobs:
                       ts:
                         - *base
                         - 'alchemy.run.ts'
+                        - 'test/**'
                         - 'apps/**'
                         - 'examples/**'
                         - 'packages/**'
@@ -115,12 +121,49 @@ jobs:
                         - 'apps/api/test/integration/**'
                         - 'apps/api/vitest.integration.config.ts'
                         - 'packages/db/**'
+                      # Whatever the api and maple-ai bundles are built from: their workspace
+                      # dependencies span nearly all of packages/ and lib/, so both are listed whole.
+                      workers:
+                        - *base
+                        - 'alchemy.run.ts'
+                        - 'test/alchemy/**'
+                        - 'apps/api/**'
+                        - 'apps/ai/**'
+                        - 'packages/**'
+                        - 'lib/**'
                       shell:
                         - *base
                         - 'scripts/*.sh'
                         - 'apps/cli/test/*.sh'
+                        - 'apps/cli/docker/*.sh'
+                      # Not `*base`: the JS lockfile and tsconfigs cannot move a Rust or Go build.
+                      ingest:
+                        - '.github/workflows/ci.yml'
+                        - 'mise.toml'
+                        - 'apps/ingest/**'
+                        # Shared rule fixtures are compiled into the Rust tests; the rule
+                        # contract and TS engine are diffed against the gateway's below.
+                        - 'packages/ingest-rules/**'
+                        - 'packages/domain/src/ingest-rules.ts'
+                        # Embedded by telemetry.rs's cross-language contract test.
+                        - 'apps/scraper/src/__fixtures__/otlp-export.json'
+                        - 'packages/db/drizzle/**'
+                        - 'packages/db/src/tables/**'
+                      collector:
+                        - '.github/workflows/ci.yml'
+                        - 'packages/otel-collector-maple-exporter/**'
+                      terraform:
+                        - '.github/workflows/ci.yml'
+                        - 'packages/terraform-provider-maple/**'
+                      # Everything bundled into @maple-dev/browser's dist.
+                      browser-sdk:
+                        - *base
+                        - 'packages/browser/**'
+                        - 'packages/browser-session/**'
+                        - 'packages/sdk-core/**'
+                        - 'packages/tsconfig.browser.dts.json'
 
-            - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+            - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
               with:
                   install_args: bun
 
@@ -151,6 +194,10 @@ jobs:
                   apps/cli/test/native-archive-gc-probe.sh
                   apps/cli/test/native-archive-merge-probe.sh
                   apps/cli/test/native-retention-probe.sh
+                  apps/cli/test/native-remote-auth-smoke.sh
+                  apps/cli/docker/entrypoint.sh
+                  apps/cli/docker/build-image.sh
+                  apps/cli/docker/image-smoke.sh
 
             # The installers claim POSIX /bin/sh; check them against it.
             - name: sh -n
@@ -346,6 +393,32 @@ jobs:
                   MAPLE_TEST_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
               run: bun run --cwd apps/api test:integration
 
+    # api and maple-ai bundled and booted in local workerd by alchemy's test harness, joined by
+    # the real service binding. Nothing is deployed; the placeholders only satisfy plan-time
+    # config, and no test reaches Postgres or the warehouse.
+    workers-e2e:
+        name: Workers in workerd (alchemy test harness)
+        needs: changes
+        if: ${{ needs.changes.outputs.workers == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: ./.github/actions/setup
+
+            - name: api → maple-ai over the service binding
+              env:
+                  MAPLE_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
+                  TINYBIRD_HOST: http://127.0.0.1:7181
+                  TINYBIRD_TOKEN: placeholder
+                  # Keys are checked as base64 for 32 bytes when maple-ai's graph builds.
+                  MAPLE_INGEST_KEY_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_SHARE_TOKEN_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_ROOT_PASSWORD: placeholder
+              run: bun run test:alchemy
+
     # One server version, pinned to docker-compose.development.yml's tag.
     clickhouse-schema-e2e:
         name: ClickHouse schema + SQL catalog E2E
@@ -386,7 +459,7 @@ jobs:
               run: bun run --cwd lib/effect-clickhouse-http test
 
             # Migration replay and search indexes, raw-vs-rollup parity for web
-            # analytics (a divergence renders as a plausible wrong number), and the
+            # analytics and the service map (a divergence renders as a plausible wrong number), and the
             # cascaded trace facets rollup (one that never fires reads as "no data").
             - name: Replay migrations and verify rollups
               run: >-
@@ -395,6 +468,9 @@ jobs:
                   src/services/warehouse/alert-window-alignment.clickhouse.e2e.test.ts
                   src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts
                   src/services/warehouse/trace-facets-hourly-materialization.clickhouse.e2e.test.ts
+                  src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
+                  src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
+                  src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
 
             # Every SQL shape the product emits, against the real analyzer: unit tests
             # only compare SQL text, which is how a NO_COMMON_TYPE reached production.
@@ -434,7 +510,7 @@ jobs:
                   MAPLE_TELEMETRY: off
               run: |
                   for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard; do
-                      bun test "test/$file.test.ts"
+                      bun test --timeout 30000 "test/$file.test.ts"
                   done
 
             # Each probe owns its TMPDIR and port, so they run side by side. Probes
@@ -461,6 +537,16 @@ jobs:
                         mkdir -p "$TMPDIR"
                         apps/cli/test/native-checkpoint-refresh-probe.sh "$GITHUB_WORKSPACE/dist"
 
+                  - name: Run native external projector module probe
+                    timeout-minutes: 4
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-projectors
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        bun run apps/cli/test/native-projector-modules.ts "$GITHUB_WORKSPACE/dist"
+
                   - name: Run native local-store migration and reopen probe
                     timeout-minutes: 4
                     env:
@@ -470,6 +556,26 @@ jobs:
                     run: |
                         mkdir -p "$TMPDIR"
                         apps/cli/test/native-local-store-migration.sh "$GITHUB_WORKSPACE/dist"
+
+                  # Ingest key, access token, sign-in and the CLI against a server off loopback.
+                  - name: Run native remote auth smoke
+                    timeout-minutes: 3
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-remote-auth
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        apps/cli/test/native-remote-auth-smoke.sh "$GITHUB_WORKSPACE/dist"
+
+                  # The self-hosted image around this bundle: secrets, a root-owned volume, restart.
+                  - name: Build and smoke the self-hosted image
+                    timeout-minutes: 5
+                    run: |
+                        mkdir -p "$RUNNER_TEMP/image-bundles/linux-amd64"
+                        cp dist/maple dist/libchdb.so "$RUNNER_TEMP/image-bundles/linux-amd64/"
+                        BUNDLES="$RUNNER_TEMP/image-bundles" apps/cli/docker/build-image.sh maple-local:ci linux/amd64
+                        apps/cli/docker/image-smoke.sh maple-local:ci
 
             # cancelled() too: a timeout or concurrency cancel mid-hang is the evidence that matters.
             - name: Upload checkpoint failure evidence
@@ -481,6 +587,8 @@ jobs:
                       ${{ runner.temp }}/maple-native-checkpoint
                       ${{ runner.temp }}/maple-native-cp-refresh
                       ${{ runner.temp }}/maple-native-migration
+                      ${{ runner.temp }}/maple-native-remote-auth
+                      ${{ runner.temp }}/maple-native-projectors
                   if-no-files-found: ignore
 
     # Each leg rebuilds the ~400 MB bundle (~10s); uploading it once and downloading
@@ -561,6 +669,167 @@ jobs:
                   path: ${{ runner.temp }}/archive-${{ matrix.leg }}
                   if-no-files-found: ignore
 
+    # Here, not in its own workflow, so `CI passed` (and with it deploy-prd, which ships
+    # this binary) waits on it. The load benchmark is opt-in in ingest-bench.yml.
+    ingest-rust:
+        name: Ingest Rust tests
+        needs: changes
+        if: ${{ needs.changes.outputs.ingest == 'true' }}
+        runs-on: ubuntu-latest
+        # A cold cache (Cargo.lock change) compiles the crate graph twice, debug and release.
+        timeout-minutes: 30
+        env:
+            CARGO_TERM_COLOR: never
+        defaults:
+            run:
+                working-directory: apps/ingest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            # Bun and the ingest-rules workspace drive the differential fuzz below.
+            - uses: ./.github/actions/setup
+              with:
+                  tools: rust bun
+                  install-filters: "@maple/ingest-rules"
+                  turbo-cache: "false"
+
+            - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+              with:
+                  workspaces: apps/ingest
+
+            - name: Run ingest unit and fake Tinybird e2e tests
+              run: cargo test --locked
+
+            # The deploy builds release only; catch a release-only break before merge.
+            - name: Build the release binary
+              run: cargo build --locked --release --bin maple-ingest
+
+            # Random rules and records through both rule engines; a disagreement prints the
+            # shrunk case and a --seed to replay it (docs/ingest-rules.md#fuzzing).
+            - name: Diff the gateway's rule engine against the TS one
+              # A JS regex cannot be interrupted, so a pattern that backtracks hangs; fail instead.
+              timeout-minutes: 10
+              run: bun run --cwd ../../packages/ingest-rules fuzz --runs 20000
+
+    otel-collector:
+        name: OTel collector exporter tests
+        needs: changes
+        if: ${{ needs.changes.outputs.collector == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        defaults:
+            run:
+                working-directory: packages/otel-collector-maple-exporter
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+              with:
+                  # Match `go 1.25.0` in packages/otel-collector-maple-exporter/go.mod.
+                  go-version-file: packages/otel-collector-maple-exporter/go.mod
+                  cache: true
+                  cache-dependency-path: packages/otel-collector-maple-exporter/go.sum
+
+            - name: gofmt -l
+              run: |
+                  diff=$(gofmt -l .)
+                  if [ -n "$diff" ]; then
+                    echo "::error::gofmt found unformatted files:"
+                    echo "$diff"
+                    exit 1
+                  fi
+
+            - name: go vet
+              run: go vet ./...
+
+            - name: go test
+              run: go test -race -count=1 ./...
+
+    terraform-provider:
+        name: Terraform provider tests
+        needs: changes
+        if: ${{ needs.changes.outputs.terraform == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        defaults:
+            run:
+                working-directory: packages/terraform-provider-maple
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+              with:
+                  go-version-file: packages/terraform-provider-maple/go.mod
+                  cache: true
+                  cache-dependency-path: packages/terraform-provider-maple/go.sum
+
+            - name: gofmt -l
+              run: |
+                  diff=$(gofmt -l .)
+                  if [ -n "$diff" ]; then
+                    echo "::error::gofmt found unformatted files:"
+                    echo "$diff"
+                    exit 1
+                  fi
+
+            - name: go vet
+              run: go vet ./...
+
+            # Runs real `terraform` plan/apply/import cycles against an in-process fake
+            # API; terraform-plugin-testing installs a Terraform CLI when none is on PATH.
+            - name: go test
+              run: go test -race -count=1 ./...
+
+            - name: Registry docs are up to date
+              run: |
+                  go generate ./...
+                  if [ -n "$(git status --porcelain -- docs examples)" ]; then
+                    echo "::error::docs/ is stale: run go generate ./... in packages/terraform-provider-maple"
+                    git status --porcelain -- docs examples
+                    exit 1
+                  fi
+
+    # The built @maple-dev/browser in a real Chromium against a fake ingest: replay
+    # playback, privacy across every channel, unload delivery and consent.
+    browser-sdk-e2e:
+        name: Browser SDK e2e
+        needs: changes
+        if: ${{ needs.changes.outputs.browser-sdk == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: ./.github/actions/setup
+              with:
+                  install-filters: "@maple-dev/browser"
+
+            - name: Read Playwright version
+              id: playwright
+              working-directory: packages/browser
+              run: echo "version=$(bun -e 'console.log(require("playwright/package.json").version)')" >> "$GITHUB_OUTPUT"
+
+            - name: Cache Chromium
+              id: browser-cache
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
+            - name: Install Chromium
+              if: steps.browser-cache.outputs.cache-hit != 'true'
+              working-directory: packages/browser
+              run: bun run playwright install chromium
+
+            - name: Build the SDK and run the e2e suite
+              run: bun run --cwd packages/browser test:e2e
+
     # The single required check, and branch protection must require only this one:
     # skipped path-filtered jobs never report, so requiring them would hang forever.
     ci:
@@ -573,9 +842,14 @@ jobs:
             - typescript
             - tests
             - postgres-connection-e2e
+            - workers-e2e
             - clickhouse-schema-e2e
             - local-checkpoint-native
             - local-archive-native
+            - ingest-rust
+            - otel-collector
+            - terraform-provider
+            - browser-sdk-e2e
         steps:
             - name: Fail if any job failed or was cancelled
               if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

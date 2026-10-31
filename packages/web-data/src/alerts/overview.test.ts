@@ -35,6 +35,7 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 2,
 		breachesOutOf: null,
+		evaluationIntervalMinutes: null,
 		thresholds: [
 			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
 		],
@@ -47,6 +48,9 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		destinationIds: ["00000000-0000-4000-8000-00000000dddd"],
 		noDataBehavior: "skip",
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
 		lastEvaluatedAt: iso(60_000),
 		lastScheduledAt: iso(60_000),
 		createdAt: "2026-01-01T00:00:00.000Z",
@@ -198,5 +202,20 @@ describe("deriveOverview", () => {
 			now: NOW,
 		})
 		expect(overview.timelineRange).toEqual({ min: NOW - DAY_MS, max: NOW })
+	})
+
+	it("hides uptime monitors' backing rules but keeps their incidents in the inbox", () => {
+		const overview = deriveOverview({
+			rules: [
+				makeRule({ id: RULE_A }),
+				makeRule({ id: RULE_B, signalType: "uptime", name: "API health" }),
+			],
+			incidents: [makeIncident({ ruleId: RULE_B, ruleName: "API health", signalType: "uptime" })],
+			states: [],
+			deliveryEvents: [],
+			now: NOW,
+		})
+		expect(overview.rules.map((rule) => rule.id)).toEqual([RULE_A])
+		expect(overview.openIncidents.map((incident) => incident.ruleName)).toEqual(["API health"])
 	})
 })

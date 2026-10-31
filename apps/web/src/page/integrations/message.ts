@@ -5,6 +5,7 @@ import {
 	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	HazelIntegrationStatus,
+	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
 	SupabaseIntegrationStatus,
@@ -13,6 +14,7 @@ import {
 import {
 	V2AwsConnection,
 	V2AwsIntegration,
+	V2AwsIngest,
 	V2AwsSetup,
 	V2ChatConnectorList,
 	V2GcpConnector,
@@ -21,11 +23,17 @@ import {
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
 	V2PlanetScaleOrganizationList,
-	V2PlanetScaleWebhookConfig,
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { AwsConnectionId, ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
+import {
+	AwsConnectionId,
+	AwsMetricNamespace,
+	ChatWorkspaceId,
+	GcpConnectorId,
+	GcpLogRuntime,
+	SupabaseProjectRef,
+} from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -44,7 +52,7 @@ import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
-import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
+import { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -55,6 +63,7 @@ export const StatusName = Schema.Literals([
 	"aws",
 	"supabase",
 	"hazel",
+	"linear",
 	"github",
 	"chat",
 	"scrapeTargets",
@@ -76,6 +85,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadAws: result(V2AwsIntegration),
 	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadHazel: result(HazelIntegrationStatus),
+	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
@@ -102,6 +112,8 @@ export const Message = defineMessageUnion({
 	EndedConnectGrace: { attempt: Schema.Number },
 	/** The callback page's `postMessage` (`maple:integration:<provider>`). */
 	ClickedRetryStatus: { name: StatusName },
+	/** The hub's one Try again: re-reads every status that failed. */
+	ClickedRetryFailedStatuses: {},
 	ClickedDisconnect: {},
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},
@@ -142,6 +154,15 @@ export const Message = defineMessageUnion({
 	ChangedZoneSearch: { value: Schema.String },
 	ClickedZoneSort: { key: Schema.Literals(["name", "status", "requests"]) },
 	ClickedWorkersExpand: {},
+	ClickedManageZones: {},
+	GotZoneDialogMessage: { message: Dialog.Message },
+	ToggledManagedZone: { accountId: Schema.String, zoneId: Schema.String },
+	ToggledWatchNewZones: { accountId: Schema.String },
+	/** "Select all" / "Select none" over the account's zones the name filter shows. */
+	ClickedSetAccountZones: { accountId: Schema.String, watched: Schema.Boolean },
+	ChangedManagedZoneSearch: { value: Schema.String },
+	SubmittedZoneSettings: {},
+	CompletedCloudflareZones: { failure: Schema.NullOr(LoadFailure) },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	GotSparklineMessage: { message: Chart.Message },
@@ -164,7 +185,6 @@ export const Message = defineMessageUnion({
 	},
 	ClickedToggleTarget: { id: ScrapeTargetId },
 	CompletedToggle: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
-	ClickedAddTarget: {},
 	ClickedEditTarget: { id: ScrapeTargetId },
 	ClickedDeleteTarget: { id: ScrapeTargetId },
 	GotTargetMenuMessage: { id: ScrapeTargetId, message: Menu.Message },
@@ -199,10 +219,13 @@ export const Message = defineMessageUnion({
 	ClickedAwsSetup: { id: AwsConnectionId },
 	ClickedAwsSetupClose: {},
 	CompletedLoadAwsSetup: result(V2AwsSetup),
-	ClickedAwsSetupMethod: { method: AwsSetupMethod },
+	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
+	ClickedAwsSetupMethod: { part: AwsSetupPart, method: AwsSetupMethod },
 	ClickedAwsCheck: { id: AwsConnectionId },
 	/** The background re-check of connections still waiting for their stack. */
 	TickedAwsPending: {},
+	/** A streaming connection's status and ingest are read again. */
+	TickedAwsWatch: {},
 	CompletedAwsCheck: {
 		id: AwsConnectionId,
 		quiet: Schema.Boolean,
@@ -221,6 +244,15 @@ export const Message = defineMessageUnion({
 	DismissedAwsRemoved: { connectionId: Schema.String },
 	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
 	CompletedWriteAwsRemoved: {},
+	ClickedAwsMetrics: { id: AwsConnectionId },
+	ClickedAwsMetricsCancel: {},
+	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
+	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
+	SubmittedAwsMetrics: { id: AwsConnectionId },
+	CompletedAwsMetricStream: {
+		connection: Schema.NullOr(V2AwsConnection),
+		error: Schema.NullOr(Schema.String),
+	},
 	ClickedSupabaseSync: {},
 	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
 	TickedSupabaseClock: {},
@@ -250,7 +282,6 @@ export const Message = defineMessageUnion({
 		failure: Schema.NullOr(LoadFailure),
 	},
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
-	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
 	ClickedChangeOrganization: {},
 	GotPickerDialogMessage: { message: Dialog.Message },
 	SelectedOrganization: { name: Schema.String },
@@ -258,18 +289,16 @@ export const Message = defineMessageUnion({
 	ClickedPickerCancel: {},
 	SubmittedOrganization: {},
 	CompletedSelectOrganization: { organization: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedRotateToken: {},
-	ClickedRotateCancel: {},
-	GotMetricsTokenMessage: { field: Schema.Literals(["id", "secret"]), message: Field.Message },
-	/** A paste into a token field (`normalizeTokenPaste`): an `id:secret` line fills both. */
-	PastedMetricsToken: { field: Schema.Literals(["id", "secret"]), text: Schema.String },
-	SubmittedMetricsToken: {},
-	CompletedSetMetricsToken: { error: Schema.NullOr(Schema.String) },
 	ClickedMetricsDetails: {},
-	ClickedShowWebhookSetup: {},
-	/** Every 5 s while the first scrape is awaited. */
+	SelectedPlanetscaleMetricsMethod: { method: Schema.Literals(["api", "service_token"]) },
+	GotPlanetscaleTokenField: { field: Schema.Literals(["id", "secret"]), message: Field.Message },
+	SubmittedPlanetscaleToken: {},
+	CompletedPlanetscaleToken: { failure: Schema.NullOr(LoadFailure) },
+	ClickedPlanetscaleReplaceToken: {},
+	/** While the first metrics are awaited: every 5 s, then every minute, for 30 minutes. */
 	TickedPlanetscaleWatch: {},
-	GotWebhookCopyMessage: { field: Schema.Literals(["url", "secret"]), message: CopyButton.Message },
+	/** Restarts the watch once it ran out. */
+	ClickedPlanetscaleCheckAgain: {},
 	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
 	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
 	CompletedGcpInventory: result(GcpResourcesResponse),
@@ -300,9 +329,7 @@ export const Message = defineMessageUnion({
 	GotGcpScopeTypeMessage: { message: ToggleGroup.Message },
 	GotGcpScopeFieldMessage: { field: Schema.Literals(["scopeId", "hostProjectId"]), message: Field.Message },
 	/** The scope step's form submit (Continue or Enter). */
-	SubmittedGcpScope: {},
 	SubmittedGcpCreate: {},
-	ClickedGcpConfigureBack: {},
 	ToggledGcpCollect: { capability: Capability },
 	ClickedGcpLogFilter: {},
 	GotGcpFilterModeMessage: { message: Select.Message },

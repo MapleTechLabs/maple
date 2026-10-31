@@ -33,7 +33,7 @@ import {
 	formatErrorRate,
 	formatLatency,
 	formatNumber,
-	formatPercent,
+	formatPercentColumn,
 } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -66,13 +66,13 @@ import {
 	spark,
 	SUB,
 	volumeCell,
+	volumeHead,
 	workloadHref,
 	workloadRow,
 } from "./view-rows"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
-const TABLE_MAX_HEIGHT = "640px"
 const seconds = (value: number) => formatLatency(value * 1000)
 const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
 	columnHead(h, { label, width, align, hidden })
@@ -91,7 +91,17 @@ const rowsOrEmpty = (h: H, rows: ReadonlyArray<Html>, emptyMessage: string) =>
 const SERVICE_KIND = { cloudRun: "Cloud Run", cloudFunctions: "Function 1st gen" } as const
 
 const statusMix = (h: H, row: GcpServiceRow): Html => {
-	if (row.requests === 0) return h.div([h.Class(cn("hidden w-[170px] md:block", SUB))], ["no traffic"])
+	// An idle service still bills instance time; say so here, not in the sub-line, so the place fits.
+	if (row.requests === 0)
+		return GCP_SERVICE_RULES.inScope(row, "idle")
+			? h.div(
+					[
+						h.Class(cn("hidden w-44 md:block", SUB)),
+						h.Title("No requests, instance time billed"),
+					],
+					["idle, still billed"],
+				)
+			: h.div([h.Class(cn("hidden w-44 md:block", SUB))], ["no traffic"])
 	const failedShare = row.failed / row.requests
 	const clientShare = row.clientErrors / row.requests
 	const rated = GCP_SERVICE_RULES.inScope(row, "serving5xx")
@@ -99,18 +109,18 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	const label =
 		row.failed > 0 && (rated || clientShare === 0)
 			? {
-					text: `${formatPercent(failedShare)} ${failedWord}`,
+					text: `${formatPercentColumn(failedShare)} ${failedWord}`,
 					className: rated ? TONE_TEXT.crit : undefined,
 				}
 			: clientShare > 0
-				? { text: `${formatPercent(clientShare)} 4xx`, className: undefined }
+				? { text: `${formatPercentColumn(clientShare)} 4xx`, className: undefined }
 				: { text: row.service === "cloudRun" ? "no errors" : "all ok", className: undefined }
 	const ok = row.requests - row.clientErrors - row.failed
 	return h.div(
-		[h.Class("hidden w-[170px] items-center gap-2.5 md:flex")],
+		[h.Class("hidden w-44 items-center gap-2.5 md:flex")],
 		[
 			segmentedBar(h, {
-				className: "w-[72px] shrink-0 gap-px bg-transparent",
+				className: "w-20 shrink-0 gap-px bg-transparent",
 				minVisible: 2,
 				label: `ok ${ok}, 4xx ${row.clientErrors}, ${failedWord} ${row.failed}`,
 				segments: [
@@ -134,13 +144,26 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	)
 }
 
-const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => [
-	SERVICE_KIND[row.service],
-	...placeItems(row, showProject),
-	GCP_SERVICE_RULES.inScope(row, "idle")
-		? h.span([h.Class(TONE_TEXT.warn)], ["no requests · instance time billed"])
-		: undefined,
-]
+/** Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line there. */
+/** The idle note rides inside the last item, separator included, so hiding it at `md` leaves no stray dot. */
+const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => {
+	// Only items metaLine will draw: the note joins the last shown one, never an empty slot.
+	const items = [SERVICE_KIND[row.service], ...placeItems(row, showProject)].filter(
+		(item): item is Html | string => item !== null && item !== undefined && item !== false && item !== "",
+	)
+	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
+	// Flex drops a leading space, so the note carries its own separator and gap, like metaLine's.
+	const note = h.span(
+		[h.Class("flex items-center gap-x-2 md:hidden")],
+		[h.span([h.Class("text-foreground-faint")], ["·"]), "idle, still billed"],
+	)
+	const last = items[items.length - 1]
+	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
+	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
+	return last === undefined
+		? [note]
+		: [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
+}
 
 export const servicesTable = (
 	h: H,
@@ -150,16 +173,16 @@ export const servicesTable = (
 ): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Services", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Services" },
 		[
 			dotLane(h),
 			head(h, "Service", NAME),
-			head(h, "Requests", "w-[180px]"),
-			head(h, "Status mix", "w-[170px]", undefined, "hidden md:flex"),
-			head(h, "5xx", "w-[64px]", "right"),
-			head(h, "Latency p95", "w-[88px]", "right"),
-			head(h, "Instances", "w-[76px]", "right", "hidden lg:flex"),
-			head(h, "CPU p95", "w-[64px]", "right", "hidden md:flex"),
+			volumeHead(h, "Requests"),
+			head(h, "Status mix", "w-44", undefined, "hidden md:flex"),
+			head(h, "5xx", "w-16", "right"),
+			head(h, "Latency p95", "w-24", "right"),
+			head(h, "Instances", "w-20", "right", "hidden lg:flex"),
+			head(h, "CPU p95", "w-16", "right", "hidden md:flex"),
 		],
 		rowsOrEmpty(
 			h,
@@ -188,7 +211,7 @@ export const servicesTable = (
 							[
 								h.Class(
 									cn(
-										"w-[64px]",
+										"w-16",
 										NUMBER,
 										rate === undefined ? "text-muted-foreground" : errorRateClass(rate),
 									),
@@ -200,18 +223,18 @@ export const servicesTable = (
 							[
 								h.Class(
 									cn(
-										"w-[88px]",
+										"w-24",
 										NUMBER,
 										(row.latencyP95 ?? 0) >= GCP_SLOW_P95_SECONDS
 											? TONE_TEXT.warn
-											: "text-foreground/80",
+											: "text-foreground-soft",
 									),
 								),
 							],
 							[row.latencyP95 === undefined ? EMPTY_VALUE : seconds(row.latencyP95)],
 						),
 						h.div(
-							[h.Class(cn("hidden w-[76px] text-foreground/80 lg:block", NUMBER))],
+							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMBER))],
 							[
 								row.instances === undefined
 									? EMPTY_VALUE
@@ -219,8 +242,8 @@ export const servicesTable = (
 							],
 						),
 						h.div(
-							[h.Class(cn("hidden w-[64px] md:block", NUMBER, BAR_VALUE_TONE[cpuLevel]))],
-							[row.cpuP95 === undefined ? EMPTY_VALUE : formatPercent(row.cpuP95)],
+							[h.Class(cn("hidden w-16 md:block", NUMBER, BAR_VALUE_TONE[cpuLevel]))],
+							[row.cpuP95 === undefined ? EMPTY_VALUE : formatPercentColumn(row.cpuP95)],
 						),
 					],
 				)
@@ -242,15 +265,15 @@ export const subscriptionsTable = (
 ): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Pub/Sub subscriptions", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Pub/Sub subscriptions" },
 		[
 			dotLane(h),
 			head(h, "Subscription", NAME),
-			head(h, "Delivered", "w-[180px]"),
-			head(h, "Backlog", "w-[200px]"),
-			head(h, "Oldest unacked", "w-[104px]", "right"),
-			head(h, "Push failed", "w-[84px]", "right", "hidden md:flex"),
-			head(h, "Dead-lettered", "w-[96px]", "right", "hidden md:flex"),
+			volumeHead(h, "Delivered"),
+			head(h, "Backlog", "w-52"),
+			head(h, "Oldest unacked", "w-28", "right"),
+			head(h, "Push failed", "w-20", "right", "hidden md:flex"),
+			head(h, "Dead-lettered", "w-24", "right", "hidden md:flex"),
 		],
 		rowsOrEmpty(
 			h,
@@ -279,17 +302,17 @@ export const subscriptionsTable = (
 							row.deliveredSpark,
 						),
 						h.div(
-							[h.Class("flex w-[200px] items-center gap-3")],
+							[h.Class("flex w-52 items-center gap-3")],
 							[
 								h.div(
-									[h.Class("flex w-[64px] shrink-0 flex-col")],
+									[h.Class("flex w-16 shrink-0 flex-col")],
 									[
 										h.span(
 											[
 												h.Class(
 													cn(
 														"font-mono text-xs tabular-nums",
-														growing ? TONE_TEXT.crit : "text-foreground/80",
+														growing ? TONE_TEXT.crit : "text-foreground-soft",
 													),
 												),
 											],
@@ -317,11 +340,11 @@ export const subscriptionsTable = (
 							[
 								h.Class(
 									cn(
-										"w-[104px]",
+										"w-28",
 										NUMBER,
 										(row.oldestUnackedSeconds ?? 0) >= GCP_STALE_SECONDS
 											? TONE_TEXT.warn
-											: "text-foreground/80",
+											: "text-foreground-soft",
 									),
 								),
 							],
@@ -335,7 +358,7 @@ export const subscriptionsTable = (
 							[
 								h.Class(
 									cn(
-										"hidden w-[84px] md:block",
+										"hidden w-20 md:block",
 										NUMBER,
 										pushRate === undefined
 											? "text-muted-foreground"
@@ -355,9 +378,9 @@ export const subscriptionsTable = (
 							[
 								h.Class(
 									cn(
-										"hidden w-[96px] md:block",
+										"hidden w-24 md:block",
 										NUMBER,
-										row.deadLettered > 0 ? TONE_TEXT.crit : "text-foreground/80",
+										row.deadLettered > 0 ? TONE_TEXT.crit : "text-foreground-soft",
 									),
 								),
 							],
@@ -377,16 +400,16 @@ const quotaTone = (value: number) =>
 
 const quotaText = (value: number | undefined) => {
 	const tone = quotaTone(value ?? 0)
-	return tone === "neutral" ? "text-foreground/80" : TONE_TEXT[tone]
+	return tone === "neutral" ? "text-foreground-soft" : TONE_TEXT[tone]
 }
 
 const quotaCell = (h: H, value: number | undefined, hidden?: string): Html =>
 	h.div(
-		[h.Class(cn("flex w-[72px] flex-col items-end gap-1", hidden))],
+		[h.Class(cn("flex w-20 flex-col items-end gap-1", hidden))],
 		[
 			h.span(
 				[h.Class(cn("font-mono text-xs tabular-nums", quotaText(value)))],
-				[value === undefined ? EMPTY_VALUE : formatPercent(value)],
+				[value === undefined ? EMPTY_VALUE : formatPercentColumn(value)],
 			),
 			meter(h, { value: value ?? 0, tone: quotaTone(value ?? 0), className: "w-14" }),
 		],
@@ -428,7 +451,7 @@ const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 				[volumeCell(h, ctx, rowSlot("gcp-sql-queries", row.keys), row.queries, row.queriesSpark)],
 			)
 		: h.div(
-				[h.Class("hidden w-[180px] items-center gap-3 md:flex")],
+				[h.Class("hidden w-44 items-center gap-3 md:flex")],
 				[
 					h.span(
 						[h.Class("w-[56px] shrink-0 font-mono text-xs text-muted-foreground")],
@@ -441,10 +464,10 @@ const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 const queryP95Cell = (h: H, row: GcpDatabaseRow): Html => {
 	const slow = (row.queryP95 ?? 0) >= GCP_SLOW_P95_SECONDS
 	return h.div(
-		[h.Class("flex w-[80px] flex-col items-end")],
+		[h.Class("flex w-20 flex-col items-end")],
 		[
 			h.span(
-				[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground/80"))],
+				[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
 				[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
 			),
 			...(isMysql(row) || row.slowQueries > 0
@@ -465,7 +488,7 @@ const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
 	const idle = Math.round(row.idleInTransaction ?? 0)
 	const count = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 0 })
 	return h.div(
-		[h.Class("flex w-[150px] flex-col items-end")],
+		[h.Class("flex w-36 flex-col items-end")],
 		[
 			h.span(
 				[h.Class(cn(NUMBER, quotaText(share)))],
@@ -518,7 +541,7 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 					off.map((row) =>
 						h.a(
 							[
-								h.Class("text-primary hover:text-primary/80"),
+								h.Class("text-primary hover:text-primary/80 active:text-primary/80"),
 								h.Href(gcpQueryInsightsConsoleUrl(row.project ?? "", row.name)),
 								h.Rel("noreferrer"),
 								h.Target("_blank"),
@@ -540,16 +563,16 @@ export const databasesTable = (
 ): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Cloud SQL instances", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Cloud SQL instances" },
 		[
 			dotLane(h),
 			head(h, "Instance", NAME),
-			head(h, "Queries", "w-[180px]", undefined, "hidden md:flex"),
-			head(h, "Query p95", "w-[80px]", "right"),
-			head(h, "CPU", "w-[72px]", "right"),
-			head(h, "Memory", "w-[72px]", "right", "hidden md:flex"),
-			head(h, "Disk", "w-[72px]", "right"),
-			head(h, "Connections", "w-[150px]", "right"),
+			volumeHead(h, "Queries", "hidden md:flex"),
+			head(h, "Query p95", "w-20", "right"),
+			head(h, "CPU", "w-20", "right"),
+			head(h, "Memory", "w-20", "right", "hidden md:flex"),
+			head(h, "Disk", "w-20", "right"),
+			head(h, "Connections", "w-36", "right"),
 		],
 		[
 			...rowsOrEmpty(
@@ -582,8 +605,8 @@ export const databasesTable = (
 
 // The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
 
-const GENERIC_NAME = "w-0 flex-1 min-w-[240px]"
-const VALUE_WIDTH = "w-[104px]"
+const GENERIC_NAME = "w-0 flex-1 min-w-60"
+const VALUE_WIDTH = "w-28"
 
 const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [
 	dotLane(h),
@@ -615,7 +638,7 @@ export const valueClass = (spec: GcpColumn, value: number | undefined): string =
 	if (value !== undefined && spec.format === "percent" && utilizationLevel(value) !== "ok") {
 		return BAR_VALUE_TONE[utilizationLevel(value)]
 	}
-	return "text-foreground/80"
+	return "text-foreground-soft"
 }
 
 /** `GcpServiceTable`: a service without a list of its own, its curated columns. */

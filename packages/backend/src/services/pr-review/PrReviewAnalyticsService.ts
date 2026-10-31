@@ -79,6 +79,17 @@ const decodeCursor = (cursor: string) => {
 	return { createdAt: Number(cursor.slice(0, at)), id: cursor.slice(at + 1) }
 }
 
+/** A list's `q`: a substring pattern (LIKE wildcards escaped), and the number when it reads as one. */
+const searchOf = (q: string | undefined) => {
+	const term = q?.trim() ?? ""
+	if (term === "") return undefined
+	const number = /^#?(\d{1,9})$/u.exec(term)?.[1]
+	return {
+		pattern: `%${term.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`,
+		number: number === undefined ? undefined : Number(number),
+	}
+}
+
 type Reviews = PG.ColumnAccessor<typeof PrReviews.columns>
 type Findings = PG.ColumnAccessor<typeof PrReviewFindings.columns>
 
@@ -152,7 +163,7 @@ interface Window {
 export class PrReviewAnalyticsService extends Context.Service<
 	PrReviewAnalyticsService,
 	PrReviewAnalyticsServiceApi
->()("@maple/api/services/pr-review/PrReviewAnalyticsService", {
+>()("@maple/backend/services/pr-review/PrReviewAnalyticsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "PrReviewAnalyticsService", toPersistence)
@@ -526,7 +537,12 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const limit = query.limit ?? DEFAULT_PAGE
 			const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor)
 			const window: Window = { start: query.startTime, end: query.endTime }
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
+			const search = searchOf(query.q)
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.code_review.limit": limit,
+				"maple.code_review.searched": search !== undefined,
+			})
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					reviewsWithRepositories()
@@ -535,6 +551,14 @@ export class PrReviewAnalyticsService extends Context.Service<
 							...reviewFilter(orgId, window, query)($),
 							query.status === undefined ? undefined : $.status.eq(query.status),
 							query.verdict === undefined ? undefined : verdictOf($).eq(query.verdict),
+							search === undefined
+								? undefined
+								: PG.or(
+										$.title.ilike(search.pattern),
+										$.repo.fullName.ilike(search.pattern),
+										$.authorLogin.ilike(search.pattern),
+										search.number === undefined ? undefined : $.number.eq(search.number),
+									),
 							cursor === undefined
 								? undefined
 								: PG.or(
@@ -659,7 +683,12 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const limit = query.limit ?? DEFAULT_PAGE
 			const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor)
 			const window: Window = { start: query.startTime, end: query.endTime }
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
+			const search = searchOf(query.q)
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.code_review.limit": limit,
+				"maple.code_review.searched": search !== undefined,
+			})
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					findingsWithRepositories()
@@ -669,6 +698,15 @@ export class PrReviewAnalyticsService extends Context.Service<
 							query.severity === undefined ? undefined : $.severity.eq(query.severity),
 							query.category === undefined ? undefined : $.category.eq(query.category),
 							query.status === undefined ? undefined : $.status.eq(query.status),
+							search === undefined
+								? undefined
+								: PG.or(
+										$.title.ilike(search.pattern),
+										$.path.ilike(search.pattern),
+										$.r.title.ilike(search.pattern),
+										$.repo.fullName.ilike(search.pattern),
+										search.number === undefined ? undefined : $.number.eq(search.number),
+									),
 							cursor === undefined
 								? undefined
 								: PG.or(

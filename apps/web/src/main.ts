@@ -14,7 +14,6 @@ import { readEffectiveTimeZone } from "./platform/time-zone"
 import * as Toast from "./ui/toast"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
-import * as ChatSheet from "./page/chat/sheet"
 import { settle } from "./update"
 
 export { Message } from "./message"
@@ -37,6 +36,7 @@ export const Flags = Schema.Struct({
 		theme: Shell.Theme,
 		pinnedNamespaces: Schema.Record(Schema.String, Schema.String),
 		dashboardFavorites: Schema.Array(Schema.String),
+		rememberedSurfaces: Schema.optionalKey(Schema.Record(Schema.String, Schema.Array(Shell.NavSurface))),
 		isQuotaApproachingDismissed: Schema.optionalKey(Schema.Boolean),
 	}),
 })
@@ -60,7 +60,6 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		toastRootActions: {},
-		chatSheet: ChatSheet.init(),
 		page: null,
 		pageInstances: 0,
 		parkedPages: [],

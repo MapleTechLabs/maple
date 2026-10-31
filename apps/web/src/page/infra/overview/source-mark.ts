@@ -15,9 +15,10 @@ export const SOURCE_TITLE = {
 	supabase: "Supabase",
 	planetscale: "PlanetScale",
 	gcp: "Google Cloud",
+	aws: "AWS",
 } satisfies Record<SourceId, string>
 
-const SOURCE_ICON = {
+export const SOURCE_ICON = {
 	hosts: "ServerIcon",
 	containers: "DockerIcon",
 	kubernetes: "KubernetesIcon",
@@ -26,6 +27,7 @@ const SOURCE_ICON = {
 	supabase: "SupabaseIcon",
 	planetscale: "PlanetScaleIcon",
 	gcp: "GoogleCloudIcon",
+	aws: "AwsIcon",
 } satisfies Record<SourceId, IconName>
 
 export const sourceMark = <M>(h: HtmlBuilder<M>, id: SourceId, size: number, className?: string): Html =>

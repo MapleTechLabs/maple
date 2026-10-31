@@ -41,6 +41,7 @@ import {
 	UserId,
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsPersistenceError,
+	WarehouseUpstreamError,
 } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
@@ -368,7 +369,11 @@ const ORG = Schema.decodeUnknownSync(OrgId)("org_phase1_e2e")
 const USER = Schema.decodeUnknownSync(UserId)("user_phase1_e2e")
 
 type InvestigationStartMode = "success" | "unavailable" | "restart_not_found"
-type IssueReadFailure = "none" | "persistence" | "warehouse_config_lookup" | "warehouse_config_decryption"
+type IssueReadFailure =
+	| "none"
+	| "persistence"
+	| "warehouse_settings_unavailable"
+	| "warehouse_config_decryption"
 
 const makeHarness = (
 	warehouseService: WarehouseQueryServiceApi = warehouseStub,
@@ -390,10 +395,15 @@ const makeHarness = (
 	} | null = null
 	const issueReadFailureEffect = () => {
 		switch (issueReadFailure) {
-			case "warehouse_config_lookup":
+			// What WarehouseQueryService reports when the org's saved settings can't be read.
+			case "warehouse_settings_unavailable":
 				return Effect.fail(
-					new OrgClickHouseSettingsPersistenceError({
+					new WarehouseUpstreamError({
 						message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						pipeName: "errorIssues",
+						cause: new OrgClickHouseSettingsPersistenceError({
+							message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						}),
 					}),
 				)
 			case "warehouse_config_decryption":
@@ -686,9 +696,19 @@ const makeHarness = (
 			}),
 		)
 
+	// A self-hosted root session: a dashboard user, which carries no scopes.
+	const bootstrapSession = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return (yield* auth.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
 	return {
 		request,
 		bootstrapKey,
+		bootstrapSession,
 		lastIssueListCall: () => lastIssueListCall,
 		lastIssueDetailCall: () => lastIssueDetailCall,
 		issueActions: () => issueActions,
@@ -871,15 +891,15 @@ describe("v2 error_issues over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("preserves exact warehouse failures instead of relabeling them as persistence", async () => {
-		const harness = makeHarness(warehouseStub, "warehouse_config_lookup")
+	it("answers an unreadable warehouse settings row as a retryable warehouse outage", async () => {
+		const harness = makeHarness(warehouseStub, "warehouse_settings_unavailable")
 		const key = await harness.bootstrapKey(["error_issues:read"])
 		const response = await harness.request("GET", "/v2/error_issues", { token: key.secret })
 
 		expect(response.status).toBe(503)
 		expect(response.body.error).toMatchObject({
-			_tag: "@maple/http/errors/OrgClickHouseSettingsPersistenceError",
-			code: "clickhouse_settings_unavailable",
+			_tag: "@maple/http/errors/WarehouseUpstreamError",
+			code: "warehouse_unavailable",
 			retryable: true,
 			recovery: "retry",
 		})
@@ -1075,6 +1095,51 @@ describe("v2 investigations over HTTP", () => {
 		)
 		expect(unavailable.body.error.retryable).toBe(true)
 		await unavailableHarness.dispose()
+	})
+
+	it("starts a run only for callers that can read everything the agent reads", async () => {
+		const harness = makeHarness()
+		const start = (token: string) =>
+			Promise.all([
+				harness.request("POST", "/v2/investigations", {
+					token,
+					body: { subject: { type: "freeform", title: "t", prompt: "p", context_refs: [] } },
+				}),
+				harness.request("POST", `/v2/investigations/${INV_ID}/restart`, { token }),
+			]).then((responses) => responses.map((response) => response.status))
+
+		const narrow = await harness.bootstrapKey(["investigations:write"])
+		expect(await start(narrow.secret)).toEqual([403, 403])
+		const telemetryOnly = await harness.bootstrapKey([
+			"investigations:write",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		expect(await start(telemetryOnly.secret)).toEqual([403, 403])
+
+		const reads = [
+			"traces",
+			"logs",
+			"metrics",
+			"services",
+			"service_map",
+			"error_issues",
+			"session_replays",
+			"alerts",
+			"anomalies",
+			"dashboards",
+			"sources",
+			"instrumentation",
+			"integrations",
+		].map((family) => `${family}:read`)
+		const covered = await harness.bootstrapKey(["investigations:write", ...reads])
+		const unscoped = await harness.bootstrapKey()
+		const session = await harness.bootstrapSession()
+		for (const token of [covered.secret, unscoped.secret, session]) {
+			expect(await start(token)).toEqual([200, 200])
+		}
+		await harness.dispose()
 	})
 })
 
@@ -1367,6 +1432,23 @@ describe("v2 session_replays over HTTP", () => {
 		expect(second.body.data[0].seq).toBe(100)
 		expect(second.body.has_more).toBe(false)
 		expect(second.body.next_cursor).toBeNull()
+
+		// A transcript page goes past the shared list cap, so the dashboard reads it in one trip.
+		const whole = await harness.request("GET", `/v2/session_replays/${sessionId}/transcript?limit=1000`, {
+			token: key.secret,
+		})
+		expect(whole.status).toBe(200)
+		expect(whole.body.data).toHaveLength(105)
+		expect(whole.body.has_more).toBe(false)
+
+		const tooWide = await harness.request(
+			"GET",
+			`/v2/session_replays/${sessionId}/transcript?limit=1001`,
+			{
+				token: key.secret,
+			},
+		)
+		expect(tooWide.status).toBe(400)
 		await harness.dispose()
 	})
 

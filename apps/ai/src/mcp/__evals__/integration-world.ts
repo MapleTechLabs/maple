@@ -245,7 +245,13 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		 FROM scrape_targets t WHERE t.source_id = s.id AND s.platform = 'prometheus'`,
 		[],
 	)
-	const reported = (platform: string, okMinutesAgo: number, error: string | null, total: number, unhealthy: number) =>
+	const reported = (
+		platform: string,
+		okMinutesAgo: number,
+		error: string | null,
+		total: number,
+		unhealthy: number,
+	) =>
 		sql(
 			`UPDATE sources SET last_poll_at = $2, last_poll_ok_at = $2, last_poll_error = $3,
 				poll_resources = $4::jsonb WHERE platform = $1`,
@@ -410,13 +416,13 @@ const inWindow = (sql: string, hoursAgo: number) => {
 
 export const integrationFixtureRules = (): FixtureRule[] => [
 	{
-		match: (sql) => sql.includes(" AS pipeline") && sql.includes("cicd.pipeline.name"),
+		match: (sql) => sql.includes("FROM ci_runs"),
 		rows: (sql) =>
 			CI_RUNS.filter((run) => inWindow(sql, run.hoursAgo))
 				.filter((run) => !sql.includes("'failure'") || run.result === "failure")
 				.filter(
 					(run) =>
-						!sql.includes("vcs.repository.name'] = '") || sql.includes(`= '${run.repository}'`),
+						!sql.includes("Repository = '") || sql.includes(`Repository = '${run.repository}'`),
 				)
 				.map((run) => ({
 					traceId: run.traceId,
@@ -427,16 +433,16 @@ export const integrationFixtureRules = (): FixtureRule[] => [
 					repository: run.repository,
 					branch: "main",
 					revision: run.revision,
-					attempt: "1",
+					attempt: 1,
 					trigger: "push",
 					actor: "ada",
-					pullRequest: "",
+					pullRequest: 0,
 					durationMs: run.minutes * 60_000,
 					startedAt: wire(Date.now() - run.hoursAgo * 3_600_000),
 				})),
 	},
 	{
-		match: (sql) => sql.includes("maple.cicd.failure.reason"),
+		match: (sql) => sql.includes("FROM ci_jobs"),
 		rows: CI_RUNS.filter((run) => run.result === "failure").map((run) => ({
 			traceId: run.traceId,
 			job: CI_WORLD.failingJob,

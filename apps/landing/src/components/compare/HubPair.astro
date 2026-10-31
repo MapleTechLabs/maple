@@ -7,14 +7,12 @@
 import { MapleMark } from "@maple/ui/components/icons/maple-mark";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import { comparePath, competitors } from "../../lib/competitors";
-import { PairGrainient } from "./PairGrainient";
 
 const locale = Astro.currentLocale ?? "en";
 ---
 
 <div class="relative grid grid-cols-[1fr_1.6fr] gap-px overflow-hidden rounded-xl border border-border bg-border">
 	<div class="pair-cell flex flex-col items-center gap-4 px-6 py-10 text-center md:py-12" style="--pair: var(--primary)">
-		<PairGrainient client:only="react" color="#e8872a" />
 		<span class="flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-bg-elevated">
 			<MapleMark size={34} className="text-primary" />
 		</span>

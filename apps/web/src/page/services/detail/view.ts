@@ -1,3 +1,4 @@
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { AsyncData, Submodel } from "foldkit"
@@ -12,15 +13,26 @@ import * as SelectView from "../../../ui/select-view"
 import { serviceDot } from "../../../ui/values"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { timeControls } from "../../kit/time-controls"
+import { presetLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { ALL_ENVIRONMENTS, DEFAULT_PRESET, environmentsOf, SERVICE_TABS, tabOf } from "./derive"
+import {
+	ALL_ENVIRONMENTS,
+	apiBucketSeconds,
+	DEFAULT_PRESET,
+	environmentsOf,
+	SERVICE_TABS,
+	tabOf,
+	windowSeconds,
+} from "./derive"
+import * as EndpointPeekView from "./endpoint-peek/view"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { searchHref, tabSearch } from "./update"
+import { peekOf, searchHref, seriesSpanNames, tabSearch, traceSearch } from "./update"
 import { apiTab } from "./view-api-tab"
+import { API_THEME_TOKENS } from "./view-api-charts"
 import { dependenciesTab } from "./view-dependencies"
 import { operationsTab } from "./view-operations"
+import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 
 // TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
@@ -50,12 +62,38 @@ const createAlert = (h: H, model: Model): Html =>
 	h.a(
 		[
 			h.AriaLabel("Create alert"),
-			h.Class(buttonVariants({ variant: "outline" })),
+			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
 			h.DataAttribute("slot", "button"),
 			h.Href(hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } }))),
 		],
 		[icon(h, "BellIcon"), h.span([h.Class("hidden sm:inline")], ["Create alert"])],
 	)
+
+/** The first place the service runs, beside Create alert; the Overview's "Runs on" card lists them all. */
+const runsOn = (h: H, model: Model): Html => {
+	const links = runsOnLinks(model)
+	const first = links[0]
+	if (first === undefined) return null
+	const more = links.length - 1
+	return h.a(
+		[
+			h.AriaLabel(`Runs on ${first.label} ${first.name}`),
+			h.Title(links.map((link) => `${link.label}: ${link.name}`).join("\n")),
+			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
+			h.DataAttribute("slot", "button"),
+			h.Href(first.href),
+		],
+		[
+			icon(h, first.icon),
+			h.span([h.Class("hidden sm:inline")], [first.label]),
+			...(more > 0 ? [h.span([h.Class("text-muted-foreground")], [`+${more}`])] : []),
+		],
+	)
+}
+
+/** The Overview tab's failure card offers Try again, so Reload steps aside; other tabs have no retry. */
+const isTabFailed = (model: Model): boolean =>
+	tabOf(model.search) === "overview" && AsyncData.isFailure(model.overview.data)
 
 const headerActions = (h: H, model: Model): Html => {
 	const controls = timeControls(h, {
@@ -65,6 +103,7 @@ const headerActions = (h: H, model: Model): Html => {
 		onReset: Message.ClickedResetTimeRange(),
 		onReload: Message.ClickedReload(),
 		isReloading: model.isReloading,
+		isReloadHidden: isTabFailed(model),
 		trigger: (label) =>
 			h.submodel({
 				slotId: "time-range-picker",
@@ -93,16 +132,21 @@ const headerActions = (h: H, model: Model): Html => {
 			toView: (parts) =>
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-2")],
-					[...parts, createAlert(h, model), controls],
+					[...parts, runsOn(h, model), createAlert(h, model), controls],
 				),
 		},
 	})
 }
 
 const titleContent = (h: H, model: Model): Html =>
-	pageTitle(h, { title: model.serviceName, className: "flex items-center gap-2.5" }, [
-		serviceDot(h, { serviceName: model.serviceName, className: "size-3" }),
-		h.span([h.Class("truncate")], [model.serviceName]),
+	// A block title like every other page's, so the baseline matches; the swatch sits inline on the
+	// cap height (middle is the x-height, so it is lifted a further 1px).
+	pageTitle(h, { title: model.serviceName }, [
+		serviceDot(h, {
+			serviceName: model.serviceName,
+			className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
+		}),
+		model.serviceName,
 	])
 
 /** `UnderlineTabStrip navigation`: route links; TanStack marks a link whose search the URL contains `active`. */
@@ -136,16 +180,92 @@ const body = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> =
 			return [overviewTab(h, model, inputs.context)]
 		case "operations":
 			return [operationsTab(h, model, model.themeColors)]
-		case "api":
-			return [apiTab(h, model)]
+		case "api": {
+			const bucketSeconds = model.window === null ? 60 : apiBucketSeconds(model.window)
+			return [
+				apiTab(
+					h,
+					model,
+					{ bucketSeconds, timeZone: inputs.context.timeZone, window: windowMs(model) },
+					model.themeColors,
+				),
+				endpointDrawer(h, model, inputs, bucketSeconds),
+			]
+		}
 		case "dependencies":
 			return [dependenciesTab(h, model)]
 	}
 }
 
+/** The resolved window in epoch ms; before the clock is read, an empty one. */
+const windowMs = (model: Model) =>
+	model.window === null
+		? { startMs: 0, endMs: 0 }
+		: {
+				startMs: parseWarehouseDateTime(model.window.startTime),
+				endMs: parseWarehouseDateTime(model.window.endTime),
+			}
+
+/** "ingest · production · last 12 hours": what the drawer's numbers are scoped to. */
+const scopeLabel = (model: Model): string => {
+	const environment = environmentsOf(model.search)?.join(", ") ?? "all environments"
+	const preset =
+		model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined)
+	const range = preset === undefined ? "custom range" : presetLabel(preset).toLowerCase()
+	return [model.serviceName, environment, range].join(" · ")
+}
+
+/** The peeked endpoint's buckets: the tab's sparkline read, or the drawer's own for the rest. */
+const peekSeries = (model: Model, spanName: string) =>
+	seriesSpanNames(model).includes(spanName)
+		? AsyncData.map(model.endpointSeries.data, (buckets) =>
+				buckets.filter((bucket) => bucket.spanName === spanName),
+			)
+		: (model.endpointPeek.series[spanName]?.data ?? AsyncData.Idle())
+
+const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSeconds: number): Html => {
+	const peek = peekOf(model)
+	const spanName = peek?.endpoint.spanName ?? ""
+	const theme = model.themeColors
+	return h.submodel({
+		slotId: "endpoint-peek",
+		model: model.endpointPeek,
+		view: EndpointPeekView.view,
+		viewInputs: {
+			peek,
+			series: peek === null ? AsyncData.Idle() : peekSeries(model, spanName),
+			bucketSeconds,
+			window: windowMs(model),
+			statusRows: AsyncData.getOrElse(model.statusBreakdown.data, () => []),
+			chartContext:
+				theme === null ? null : { theme, timeZone: inputs.context.timeZone, nowMs: model.nowMs ?? 0 },
+			seconds: model.window === null ? 0 : windowSeconds(model.window),
+			scopeLabel: scopeLabel(model),
+			tracesHref: (filter) =>
+				hrefOf(
+					AppRoute.Traces({
+						search: {
+							...traceSearch(model, spanName),
+							httpStatusCodes:
+								filter.statusCode === undefined ? undefined : [filter.statusCode],
+							sortBy: filter.slowest === true ? "durationMs" : undefined,
+							sortDir: filter.slowest === true ? "desc" : undefined,
+						},
+					}),
+				),
+			alertHref: hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } })),
+			timeZone: inputs.context.timeZone,
+		},
+		toParentMessage: (message) => Message.GotEndpointPeekMessage({ message }),
+	})
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
+		[
+			h.Class("contents"),
+			h.OnMount(ResolveThemeColors({ tokens: [...THEME_TOKENS, ...API_THEME_TOKENS] })),
+		],
 		[
 			dashboardPage(
 				h,

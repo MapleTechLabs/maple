@@ -3,9 +3,11 @@ import {
 	PrReviewCostNote,
 	PrReviewFinding,
 	PrReviewHotFile,
+	PrReviewLinkedIssue,
 	PrReviewOperationTraffic,
 	PrReviewPostMerge,
 	PrReviewTelemetry,
+	PrReviewTelemetryChange,
 	PrReviewTelemetryReference,
 } from "@maple/domain/http"
 import { DateTime, Duration } from "effect"
@@ -215,6 +217,72 @@ describe("rendering", () => {
 			"This check fails",
 		)
 		assert.deepStrictEqual(renderTelemetryMarkdown(undefined, { blocking: false }), [])
+	})
+
+	const issue = (id: string, title: string, occurrences: number) =>
+		new PrReviewLinkedIssue({
+			issueId: id,
+			fingerprintHash: `fp-${id}`,
+			title,
+			service: "alerting",
+			path: "src/scheduled.ts",
+			topFrame: "src/scheduled.ts:10",
+			occurrences,
+			lastSeenAt: 0,
+		})
+
+	// Separate fingerprints of one error read as the same row repeated.
+	it("folds open errors with the same title, service and file into one summed row", () => {
+		const text = renderTelemetryMarkdown(
+			telemetry({
+				contractBreaks: [],
+				linkedIssues: [
+					issue("a", "ForbiddenError", 4_600),
+					issue("b", "ForbiddenError", 4_600),
+					issue("c", "ForbiddenError", 4_600),
+					issue("d", "WarehouseAuthError", 1_500),
+				],
+			}),
+			{ blocking: false },
+		).join("\n")
+		assert.include(text, "<details><summary>Open errors in the changed files (2)</summary>")
+		assert.include(text, "| ForbiddenError (3 issues) | alerting | 14k | `src/scheduled.ts` |")
+		assert.include(text, "| WarehouseAuthError | alerting | 1.5k | `src/scheduled.ts` |")
+		assert.notInclude(text, "<details open>")
+	})
+
+	// The comment keeps what needs action; traffic, the telemetry inventory and log costs are the check's.
+	it("keeps only breaks and open errors in the brief comment section", () => {
+		const full = telemetry({
+			linkedIssues: [issue("a", "ForbiddenError", 10)],
+			added: [
+				new PrReviewTelemetryChange({ kind: "span", name: "Cache.read", path: "src/c.ts", line: 4 }),
+			],
+			costNotes: [
+				new PrReviewCostNote({
+					path: "src/c.ts",
+					line: 9,
+					kind: "log",
+					gbPerMonth: 2,
+					note: "about 2 GB a month",
+				}),
+			],
+		})
+		const brief = renderTelemetryMarkdown(full, { blocking: false, brief: true }).join("\n")
+		assert.include(brief, "`payment.provider` (attribute")
+		assert.include(brief, "Open errors in the changed files (1)")
+		assert.notInclude(brief, "Production traffic")
+		assert.notInclude(brief, "Telemetry this change adds and removes")
+		assert.notInclude(brief, "Ingest cost of new log lines")
+		const check = renderTelemetryMarkdown(full, { blocking: false }).join("\n")
+		assert.include(check, "Production traffic")
+		assert.include(check, "Telemetry this change adds and removes (1)")
+		assert.include(check, "Ingest cost of new log lines")
+		// Nothing that needs action: the comment has no section at all.
+		assert.deepStrictEqual(
+			renderTelemetryMarkdown(telemetry({ contractBreaks: [] }), { blocking: false, brief: true }),
+			[],
+		)
 	})
 })
 

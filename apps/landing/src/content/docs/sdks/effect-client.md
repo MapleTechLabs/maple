@@ -7,13 +7,7 @@ navLabel: "Browser"
 sdk: "effect"
 ---
 
-The browser entry point of `@maple-dev/effect-sdk` runs in single-page apps and any other browser context. Unlike the server build, it reads no environment variables: browsers have no `process.env`, so all configuration is passed to `Maple.layer()`.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Browsers</span>
-</div>
-
-> Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
+The browser entry point of `@maple-dev/effect-sdk` runs in single-page apps and any other browser context. [Install the SDK](/docs/sdks/effect#install) first. Unlike the server build, it reads no environment variables: browsers have no `process.env`, so all configuration is passed to `Maple.layer()`.
 
 ## Quick start
 
@@ -42,14 +36,15 @@ The client layer reads `globalThis.navigator` and `Intl.DateTimeFormat` to fill 
 
 - `user_agent.original`: `navigator.userAgent`
 - `browser.language`: `navigator.language`
-- `browser.timezone`: `Intl.DateTimeFormat().resolvedOptions().timeZone`
+- `maple.browser.timezone`: `Intl.DateTimeFormat().resolvedOptions().timeZone`
 - `maple.sdk.type`: always `"client"`, so server and browser spans can be filtered apart
+- `telemetry.sdk.name`, `telemetry.sdk.language` (`webjs`) and `telemetry.sdk.version`
 
 Attributes you pass in the `attributes` option are merged on top of these.
 
 ## Session replay and sessions
 
-The browser presets (`Maple.layer` and `MapleFlush.make`) record **rrweb session replays by default**, without a separate browser SDK. Every span carries a `session.id`, the session appears in [Sessions](/docs/session-replay/browser-sdk) with its linked traces, and the recording plays back next to them.
+The browser presets (`Maple.layer` and `MapleFlush.make`) record **rrweb session replays by default**, without a separate browser SDK. Every span carries a `session.id`, the session appears on the [Replays](/docs/session-replay/replays) page with its linked traces, and the recording plays back next to them.
 
 ```typescript
 const TracerLive = Maple.layer({
@@ -61,17 +56,18 @@ const TracerLive = Maple.layer({
 })
 ```
 
-| Option                 | Default | Description                                                                        |
-| ---------------------- | ------- | ---------------------------------------------------------------------------------- |
-| `replay.enabled`       | `true`  | Record rrweb session replays.                                                      |
-| `replay.sampleRate`    | `1`     | Fraction of sessions to record, 0 to 1.                                            |
-| `replay.maskAllInputs` | `true`  | Mask all `<input>` values in the recording.                                        |
-| `replay.maskAllText`   | `false` | Mask all text in the recording.                                                    |
-| `emitSessionMeta`      | `true`  | Post session metadata rows so unrecorded sessions still appear in the Sessions UI. |
+| Option                 | Default | Description                                                                                             |
+| ---------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| `replay.enabled`       | `true`  | Record rrweb session replays.                                                                           |
+| `replay.sampleRate`    | `1`     | Fraction of sessions to record, 0 to 1.                                                                 |
+| `replay.maskAllInputs` | `true`  | Mask all `<input>` values in the recording.                                                             |
+| `replay.maskAllText`   | `false` | Mask all text in the recording.                                                                         |
+| `replay.canvasFps`     |         | Record `<canvas>` content at this many frames per second. Off when unset, and never with `maskAllText`. |
+| `emitSessionMeta`      | `true`  | Post session metadata rows so unrecorded sessions still appear on the Replays page.                     |
 
 How it behaves:
 
-- **Sampling still yields sessions.** When replay is disabled or a session isn't sampled, the SDK still posts session metadata rows. The session shows up in the Sessions UI with its linked traces, just without a recording. Set `emitSessionMeta: false` to turn that off too.
+- **Sampling still yields sessions.** When replay is disabled or a session isn't sampled, the SDK still posts session metadata rows. The session shows up on the Replays page with its linked traces, just without a recording. Set `emitSessionMeta: false` to turn that off too.
 - **Tab lifecycle.** Recording suspends when the tab is hidden (flushing the tail with `keepalive`) and resumes when it becomes visible again. Sessions survive reloads within a tab and rotate after 30 minutes of inactivity (24-hour hard cap).
 - **Identify users** at any point; the id is attached when the session's next metadata row is posted and stamped as `user.id` on future spans. Pass `null` or `undefined` after sign-out to make future telemetry anonymous again:
 
@@ -117,7 +113,37 @@ import { setConsent } from "@maple-dev/effect-sdk/client"
 setConsent(true)
 ```
 
-With `requireConsent`, `Maple.layer` does not export metrics, because it cannot separate values recorded before consent was granted. Use `MapleFlush.make` if you need browser metrics after consent.
+With `requireConsent`, `Maple.layer` does not export metrics, because it cannot separate values recorded before consent was granted. Use [`MapleFlush.make`](#mapleflushmake) if you need browser metrics after consent.
+
+## MapleFlush.make
+
+`MapleFlush.make` is the buffered browser preset. It keeps spans, logs and metrics in memory and sends them on a timer, on demand with `flush()`, and before the tab goes away. It returns the layer together with the controls:
+
+```typescript
+import { MapleFlush } from "@maple-dev/effect-sdk/client"
+import { Effect } from "effect"
+
+const telemetry = MapleFlush.make({
+	serviceName: "my-frontend",
+	ingestKey: "maple_pk_...",
+})
+
+Effect.runPromise(program.pipe(Effect.provide(telemetry.layer)))
+await telemetry.flush()
+```
+
+It takes `serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `attributes`, `excludeLogSpans`, `replay`, `emitSessionMeta` and `privacy` as `Maple.layer` does, the span filters (`dropSpanNames`, `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorTags`, `anticipatedErrorIdentifiers`, `isAnticipatedError`), and these options of its own:
+
+| Option                | Default       | Description                                                                                                 |
+| --------------------- | ------------- | ----------------------------------------------------------------------------------------------------------- |
+| `autoFlushInterval`   | `5000`        | Background flush cadence in ms. `0` or `false` flushes only on demand; the buffer holds up to 10,000 items. |
+| `flushOnUnload`       | `true`        | Flush on `pagehide` and when the tab becomes hidden.                                                        |
+| `captureGlobalErrors` | `true`        | Record uncaught errors and unhandled promise rejections from the page as error spans.                       |
+| `tracesPath`          | `/v1/traces`  | OTLP traces path appended to `endpoint`.                                                                    |
+| `logsPath`            | `/v1/logs`    | OTLP logs path appended to `endpoint`.                                                                      |
+| `metricsPath`         | `/v1/metrics` | OTLP metrics path appended to `endpoint`.                                                                   |
+
+The returned object has `layer`, `flush()`, `dispose()` (removes the unload listeners, stops the timer and flushes once more) and `captureException(error)` for errors thrown outside an Effect span, such as in a React error boundary.
 
 ## Use the public ingest key
 
@@ -129,7 +155,7 @@ The `/client` entry point leaves out the Node-only resource detector and platfor
 
 ## Configuration reference
 
-See the full [configuration table](/docs/sdks/effect#configuration-reference) on the Effect SDK page. In the browser, `serviceName` is required and every other option is optional.
+See the full [configuration table](/docs/sdks/effect#configuration-reference) on the Effect SDK page for `Maple.layer`, and [MapleFlush.make](#mapleflushmake) for the buffered preset. In the browser, `serviceName` is required and every other option is optional.
 
 ## Verify
 

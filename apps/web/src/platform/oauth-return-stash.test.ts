@@ -1,8 +1,8 @@
 import { encodeOAuthReturnHash, type OAuthCompleteRequest } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { completeOAuthReturnWith } from "../page/integrations/oauth-return"
-import { captureOAuthReturn, type ReturnStorage } from "./oauth-return-stash"
+import { captureOAuthReturn, peekOAuthReturn, type ReturnStorage } from "./oauth-return-stash"
 
 /** A tab's sessionStorage. */
 const memoryStorage = (): ReturnStorage => {
@@ -81,5 +81,20 @@ describe("an OAuth return captured at boot", () => {
 		const storage = memoryStorage()
 		expect(boot(storage, "#section-2")).toBe(false)
 		expect(finish(storage, BOOT_AT).posted).toHaveLength(0)
+	})
+
+	test("onboarding sees which provider returned without taking it from the flow that finishes it", () => {
+		const storage = memoryStorage()
+		boot(storage)
+		const peeked = Effect.runSync(peekOAuthReturn(storage, BOOT_AT + 500))
+		expect(Option.map(peeked, (request) => request.flow)).toEqual(Option.some("cloudflare"))
+		expect(finish(storage, BOOT_AT + 600).posted).toHaveLength(1)
+		expect(Effect.runSync(peekOAuthReturn(storage, BOOT_AT + 700))).toEqual(Option.none())
+	})
+
+	test("a return older than its state reads as none to onboarding too", () => {
+		const storage = memoryStorage()
+		boot(storage)
+		expect(Effect.runSync(peekOAuthReturn(storage, BOOT_AT + 11 * 60_000))).toEqual(Option.none())
 	})
 })

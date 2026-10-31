@@ -3,7 +3,7 @@
  * the US prd instance alone, the account's one multi-region CloudTrail trail. Every stage shares
  * the account, so `profile.deploys.awsSecurityBaseline` keeps it on the prd instances.
  */
-import * as AWS from "alchemy/AWS"
+import * as AWS from "@alchemy.run/aws"
 import * as Output from "alchemy/Output"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"

@@ -68,3 +68,11 @@ export const pollTicks = (every: Duration.Input, presence: Presence = browserPre
 		),
 	)
 }
+
+/** `pollTicks` every `fast` for the first `fastTicks` ticks, then every `slow`. */
+export const backoffPollTicks = (
+	fast: Duration.Input,
+	fastTicks: number,
+	slow: Duration.Input,
+	presence: Presence = browserPresence,
+): Stream.Stream<void> => Stream.concat(Stream.take(pollTicks(fast, presence), fastTicks), pollTicks(slow, presence))

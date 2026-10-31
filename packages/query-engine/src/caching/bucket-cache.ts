@@ -433,7 +433,7 @@ const readConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_READ_CONCURRENCY").
 const fillConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(Config.withDefault(4))
 
 export class BucketCacheService extends Context.Service<BucketCacheService, BucketCacheServiceApi>()(
-	"@maple/api/lib/BucketCacheService",
+	"@maple/query-engine/caching/BucketCacheService",
 	{
 		make: Effect.gen(function* () {
 			const edgeCache = yield* EdgeCacheService

@@ -345,7 +345,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("logs-time-range"),
 		refreshMenu: Menu.init("logs-refresh-menu"),
-		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip", { openDelayMs: 250 }),
+		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip"),
 		columnsPopover: Popover.init("logs-columns-popover", { align: "end" }),
 		searchHelp: initSearchHelp(),
 		detail: LogDetail.init("logs-detail"),

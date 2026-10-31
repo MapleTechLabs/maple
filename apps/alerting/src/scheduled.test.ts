@@ -13,13 +13,17 @@ const cronCases = [
 			"cloudflareAnalytics",
 			"gcpMetrics",
 			"planetScale",
+			"planetScaleMetrics",
 			"railwayMetrics",
 			"prReviewPostMerge",
 		],
 	],
 	["*/15 * * * *", ["digest", "supabaseInsights"]],
 	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery", "awsConnections"]],
-	["* * * * *", ["alert", "error", "escalation", "fixVerification", "supabaseLogs"]],
+	[
+		"* * * * *",
+		["alert", "alertLongQuery", "error", "escalation", "fixVerification", "statusPages", "supabaseLogs"],
+	],
 ] as const
 
 /** Every tick recording its name when it runs, with `overrides` swapped in. */
@@ -30,6 +34,7 @@ const recordingTicks = (
 	const tick = (name: string) => Effect.sync(() => calls.push(name)).pipe(Effect.asVoid)
 	return {
 		alert: tick("alert"),
+		alertLongQuery: tick("alertLongQuery"),
 		anomaly: tick("anomaly"),
 		awsConnections: tick("awsConnections"),
 		cloudflareAnalytics: tick("cloudflareAnalytics"),
@@ -39,9 +44,11 @@ const recordingTicks = (
 		fixVerification: tick("fixVerification"),
 		gcpMetrics: tick("gcpMetrics"),
 		planetScale: tick("planetScale"),
+		planetScaleMetrics: tick("planetScaleMetrics"),
 		prReviewPostMerge: tick("prReviewPostMerge"),
 		railwayMetrics: tick("railwayMetrics"),
 		serviceMapRollup: tick("serviceMapRollup"),
+		statusPages: tick("statusPages"),
 		supabaseDiscovery: tick("supabaseDiscovery"),
 		supabaseLogs: tick("supabaseLogs"),
 		supabaseInsights: tick("supabaseInsights"),

@@ -39,7 +39,7 @@ const mono = (
 	h.div(
 		[h.Class("group/mono flex min-w-0 items-start gap-1.5")],
 		[
-			h.code([h.Class("min-w-0 break-all font-mono text-xs leading-5 text-foreground/90")], [value]),
+			h.code([h.Class("min-w-0 break-all font-mono text-xs leading-5 text-foreground-soft")], [value]),
 			CopyButton.view(h, {
 				model,
 				value,
@@ -87,7 +87,7 @@ export const culpritPanel = (h: H, model: Model, issue: ErrorIssueDocument): Htm
 							)
 						: h.p(
 								[h.Class("text-sm text-muted-foreground")],
-								["This error carries no message — only its type and where it was raised."],
+								["This error carries no message, only its type and where it was raised."],
 							),
 					// TODO(top-frame-copy): a top frame should copy through its own button status.
 					issueField(h, "Culprit", [

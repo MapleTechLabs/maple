@@ -8,8 +8,8 @@ import { type Resolve, type ShareError, SharedDashboard, type WidgetState } from
 
 // The share's reads: resolve the token, then widget data in batches of four (`useShareWidgetData`).
 
-const SHARE_UNAVAILABLE_MESSAGE = "This dashboard could not be loaded. Try again later."
-export const DATA_UNAVAILABLE_MESSAGE = "This data could not be loaded."
+const SHARE_UNAVAILABLE_MESSAGE = "Couldn't load this dashboard. Try again later."
+export const DATA_UNAVAILABLE_MESSAGE = "Couldn't load this data."
 
 export const ResolveClock = Command.define("ResolveShareClock", {
 	messages: [Message.CompletedResolveClock],

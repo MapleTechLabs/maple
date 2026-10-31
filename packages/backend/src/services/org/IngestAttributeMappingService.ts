@@ -96,7 +96,7 @@ const validateRule = Effect.fnUntraced(function* (rule: {
 export class IngestAttributeMappingService extends Context.Service<
 	IngestAttributeMappingService,
 	IngestAttributeMappingServiceApi
->()("@maple/api/services/IngestAttributeMappingService", {
+>()("@maple/backend/services/IngestAttributeMappingService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "IngestAttributeMappingService", toPersistenceError)

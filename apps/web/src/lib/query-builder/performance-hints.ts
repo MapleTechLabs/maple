@@ -120,8 +120,8 @@ export function getListPerformanceHints(
 			location: "filter",
 			speed: "slow",
 			reason: rootOnly
-				? `Slow filters: ${keys} — no materialized column, scans Map for every row`
-				: `Slow filters: ${keys} — enable "Root spans only" to use materialized columns`,
+				? `Slow filters: ${keys}. No materialized column, scans Map for every row`
+				: `Slow filters: ${keys}. Enable "Root spans only" to use materialized columns`,
 		})
 	}
 
@@ -130,7 +130,7 @@ export function getListPerformanceHints(
 			key: "_mv_accelerated",
 			location: "filter",
 			speed: "fast",
-			reason: `${mvAcceleratedFilters.join(", ")} — accelerated by materialized view`,
+			reason: `${mvAcceleratedFilters.join(", ")}: accelerated by materialized view`,
 		})
 	}
 
@@ -139,7 +139,7 @@ export function getListPerformanceHints(
 			key: "_no_filters",
 			location: "filter",
 			speed: "slow",
-			reason: "No filters — will scan the entire time range. Add service.name or other filters.",
+			reason: "No filters, so this scans the entire time range. Add service.name or other filters.",
 		})
 	}
 

@@ -8,6 +8,7 @@ import {
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import type { HttpClient } from "effect/http"
@@ -292,6 +293,61 @@ describe("GithubConnectService", () => {
 				}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 			},
 		)
+	}
+
+	// The refusal answers 200, so the connect span must say why: alerts count these attributes.
+	const refusalCases = [
+		{
+			name: "a 403 on the org role read is refused as unverifiable, with what to do next",
+			membership: () =>
+				jsonResponse({ message: "Resource not accessible by integration" }, { status: 403 }),
+			outcome: "installation_admin_unverifiable",
+			copy: "approve the app's pending permission request",
+		},
+		{
+			name: "a plain org member is refused as not an admin",
+			membership: orgMembershipResponse("member"),
+			outcome: "installation_not_administrable",
+			copy: "Only an admin of this GitHub account",
+		},
+	] as const
+
+	for (const c of refusalCases) {
+		it.effect(`completeConnect: ${c.name}`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			const http = scriptedHttp([
+				oauthTokenResponse,
+				userInstallationsResponse([42]),
+				installationResponse,
+				c.membership,
+			])
+			return Effect.gen(function* () {
+				const { spans, tracer } = makeRecordingTracer()
+				const svc = yield* GithubConnectService
+				const repo = yield* VcsRepository
+				const { state } = yield* svc.startConnect(INITIATOR.orgId, INITIATOR.userId, {
+					callbackUrl: "https://tunnel.example/cb",
+				})
+				const exit = yield* svc
+					.completeConnect("42", state, TEST_CODE, INITIATOR)
+					.pipe(Effect.withTracer(tracer), Effect.exit)
+
+				const error = findError(exit)
+				assert.ok(error instanceof IntegrationsValidationError)
+				assert.include(error.message, c.copy)
+				assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
+				assert.strictEqual(sent.length, 0)
+				const [span] = spansNamed(spans, "GithubConnectService.completeConnect")
+				assert.isDefined(span)
+				assert.strictEqual(span.attributes.get("maple.vcs.connect.refused"), true)
+				assert.strictEqual(span.attributes.get("vcs.connect.outcome"), c.outcome)
+				assert.deepStrictEqual(
+					span.events.map(([name, , attributes]) => [name, attributes["vcs.connect.outcome"]]),
+					[["maple.vcs.connect.refused", c.outcome]],
+				)
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+		})
 	}
 
 	it.effect("completeConnect allows a same-org reconnect without an OAuth code", () => {

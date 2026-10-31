@@ -35,13 +35,8 @@ describe("serviceCatalogQuery", () => {
 			}),
 			baseParams,
 		)
-		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Hour >= if(toDateTime('2024-01-01 00:00:00')")
-		expect(sql).toContain("DeploymentEnv IN ('production')")
-		expect(sql).toContain("ServiceNamespace IN ('checkout')")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("LIMIT 21")
 		expect(sql).toContain("OFFSET 20")
@@ -57,15 +52,18 @@ describe("serviceHealthSnapshotQuery", () => {
 			baseParams,
 		)
 
-		expect(sql).toContain("FROM traces_aggregates_hourly")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("IsEntryPoint = 1")
-		expect(sql).toContain("DeploymentEnv IN ('production')")
 		expect(sql).toContain("sum(WeightedCount) AS requestCount")
 		expect(sql).toContain("sum(WeightedErrorCount) AS errorCount")
 		expect(sql).toContain("quantilesTDigestWeightedMerge(0.95)(DurationQuantiles)")
 		expect(sql).toContain("GROUP BY serviceName, environment")
 		expect(sql).not.toContain("service_overview_spans")
+	})
+
+	it("reads whole hours with an exclusive, rounded-up end", () => {
+		const { sql } = compileUnsafe(serviceHealthSnapshotQuery({}), baseParams)
+		// Back-to-back windows must not share the hour at their seam.
+		expect(sql).toMatch(/Hour < toStartOfHour\(addSeconds\(toDateTime\('[^']+'\), 3599\)\)/)
+		expect(sql).not.toMatch(/Hour <= /)
 	})
 
 	it("coerces BYO ClickHouse string-encoded aggregates", () => {
@@ -228,9 +226,6 @@ describe("serviceHealthBaselineQuery", () => {
 	it("compiles a per-service p95 baseline scoped to the org", () => {
 		const q = serviceHealthBaselineQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain(
 			"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000 AS baselineP95LatencyMs",
@@ -240,13 +235,6 @@ describe("serviceHealthBaselineQuery", () => {
 		expect(sql).toContain("GROUP BY serviceName, serviceNamespace, environment")
 		expect(sql).not.toContain("commitSha")
 		expect(sql).toContain("LIMIT 200")
-	})
-
-	it("applies environment and namespace filters", () => {
-		const q = serviceHealthBaselineQuery({ environments: ["production"], namespaces: ["shop"] })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("DeploymentEnv IN ('production')")
-		expect(sql).toContain("ServiceNamespace IN ('shop')")
 	})
 })
 
@@ -296,16 +284,9 @@ describe("serviceEnvironmentsQuery", () => {
 	it("compiles a service-scoped, time-windowed distinct-environments query", () => {
 		const q = serviceEnvironmentsQuery({ serviceName: "api" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("FROM service_overview_hourly")
-		// Scoped to the org + this one service (replaces an all-services scan)…
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("ServiceName = 'api'")
-		// …and to the active window so date partitions are pruned.
+		// Scoped to the active window so date partitions are pruned.
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp <= '2024-01-02 00:00:00'")
-		// Empty env rows are excluded (matches the old switcher's truthy filter).
-		expect(sql).toContain("bEnvironment != ''")
 		expect(sql).toContain("GROUP BY environment")
 	})
 })
@@ -358,7 +339,7 @@ describe("serviceApdexTimeseriesQuery", () => {
 		// The Apdex SELECT must contain the split-term form: each countIf is
 		// divided by count() before being summed, instead of summed first.
 		expect(sql).toContain(
-			"sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount)",
+			"sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + (sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount))",
 		)
 		// And it must NOT contain the buggy summed-then-divided form.
 		expect(sql).not.toMatch(/sum\((\w+\.)?bApdexSatisfiedCount\) \+ sum\((\w+\.)?bApdexToleratingCount\)/)

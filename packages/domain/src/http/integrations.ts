@@ -126,6 +126,48 @@ export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectRespons
 	},
 ) {}
 
+export class LinearIntegrationStatus extends Schema.Class<LinearIntegrationStatus>("LinearIntegrationStatus")(
+	{
+		connected: Schema.Boolean,
+		/** The Linear workspace the app is installed in. */
+		workspaceName: Schema.NullOr(Schema.String),
+		connectedByUserId: Schema.NullOr(UserId),
+		/** Set once Linear rejected the grant; the org must reconnect. */
+		revoked: Schema.Boolean,
+	},
+) {}
+
+export class LinearTeamSummary extends Schema.Class<LinearTeamSummary>("LinearTeamSummary")({
+	id: Schema.String,
+	key: Schema.String,
+	name: Schema.String,
+}) {}
+
+export class LinearTeamsListResponse extends Schema.Class<LinearTeamsListResponse>("LinearTeamsListResponse")(
+	{
+		teams: Schema.Array(LinearTeamSummary),
+	},
+) {}
+
+export class LinearStartConnectRequest extends Schema.Class<LinearStartConnectRequest>(
+	"LinearStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class LinearStartConnectResponse extends Schema.Class<LinearStartConnectResponse>(
+	"LinearStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class LinearDisconnectResponse extends Schema.Class<LinearDisconnectResponse>(
+	"LinearDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
 /** Per-zone edge-analytics collection state (from the GraphQL Analytics poller). */
 export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyticsZoneStatus>(
 	"CloudflareAnalyticsZoneStatus",
@@ -143,6 +185,11 @@ export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyt
 	 * it, and once history is complete. optionalKey only for deploy-window compat; always sent.
 	 */
 	backfillAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	/**
+	 * False when the customer turned collection off for this zone. Separate from `enabled`, which
+	 * is the poller's own state. optionalKey only for deploy-window compat; always sent.
+	 */
+	watched: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Account-level Workers invocation-metrics collection state. */
@@ -176,6 +223,8 @@ export class CloudflareConnectedAccountStatus extends Schema.Class<CloudflareCon
 	revoked: Schema.Boolean,
 	zones: Schema.Array(CloudflareAnalyticsZoneStatus),
 	workers: Schema.NullOr(CloudflareAnalyticsWorkersStatus),
+	/** Whether zones discovered later are collected. optionalKey only for deploy-window compat. */
+	watchNewZones: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /**
@@ -315,6 +364,25 @@ export class CloudflareStartConnectResponse extends Schema.Class<CloudflareStart
 	state: Schema.String,
 }) {}
 
+export class CloudflareZoneWatchSetting extends Schema.Class<CloudflareZoneWatchSetting>(
+	"CloudflareZoneWatchSetting",
+)({
+	zoneId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watched: Schema.Boolean,
+}) {}
+
+/**
+ * Replaces one account's zone selection. `zones` lists explicit choices; a zone it leaves out
+ * follows `watchNewZones`.
+ */
+export class CloudflareZoneSettingsRequest extends Schema.Class<CloudflareZoneSettingsRequest>(
+	"CloudflareZoneSettingsRequest",
+)({
+	accountId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+	watchNewZones: Schema.Boolean,
+	zones: Schema.Array(CloudflareZoneWatchSetting).check(Schema.isMaxLength(5000)),
+}) {}
+
 export class CloudflareDisconnectResponse extends Schema.Class<CloudflareDisconnectResponse>(
 	"CloudflareDisconnectResponse",
 )({
@@ -360,6 +428,29 @@ export class PlanetScaleScrapeTargetSummary extends Schema.Class<PlanetScaleScra
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
+export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetricsStatus>(
+	"PlanetScaleApiMetricsStatus",
+)({
+	/** Epoch ms of the last poll that landed its window; null before the first. */
+	lastPolledAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+/** The webhooks Maple registers on the bound organization's databases. */
+export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
+	"PlanetScaleWebhookStatus",
+)({
+	/**
+	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
+	 * `pending`: not every database has one yet. `failing`: registering one failed.
+	 */
+	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	registeredDatabases: Schema.Number,
+	databases: Schema.Number,
+	/** The most recent registration failure, or null. */
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
 export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegrationStatus>(
 	"PlanetScaleIntegrationStatus",
 )({
@@ -375,14 +466,16 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	/** API permissions probed at org-binding time (e.g. readMetricsEndpoints). */
 	detectedPermissions: Schema.NullOr(Schema.Record(Schema.String, Schema.Boolean)),
 	/**
-	 * How branch-metrics scraping authenticates. PlanetScale's metrics endpoints
-	 * only document service-token auth, so "oauth" applies only when the bearer
-	 * probe succeeded; "missing" means scraping is paused until a service token
-	 * with the read_metrics_endpoints permission is added (the one manual step —
-	 * inventory, insights, and webhooks run on the OAuth grant regardless).
+	 * Where branch metrics come from: `api` polls PlanetScale's metrics API on the
+	 * OAuth grant; `service_token` scrapes Prometheus with a token stored on the
+	 * managed target (connections set up before the API existed).
 	 */
-	metricsAuth: Schema.Literals(["oauth", "service_token", "missing"]),
+	metricsAuth: Schema.Literals(["api", "service_token"]),
+	/** The metrics API poller's progress; null for `service_token` and before binding. */
+	apiMetrics: Schema.NullOr(PlanetScaleApiMetricsStatus),
 	scrapeTarget: Schema.NullOr(PlanetScaleScrapeTargetSummary),
+	/** Null until an organization is bound. */
+	webhooks: Schema.NullOr(PlanetScaleWebhookStatus),
 	/** Epoch ms of the last successful inventory refresh; null before the first. */
 	lastInventoryAt: Schema.NullOr(Schema.Number),
 	lastInventoryError: Schema.NullOr(Schema.String),
@@ -1371,7 +1464,7 @@ export type IntegrationHttpError =
 	| IntegrationsPersistenceError
 
 /**
- * Dashboard control surface for the Hazel, Cloudflare, Railway and GitHub
+ * Dashboard control surface for the Hazel, Linear, Cloudflare, Railway and GitHub
  * integrations, plus VCS lookups. Internal transport: session-only, absent from
  * the public docs. PlanetScale and chat connectors are public v2 resources.
  *
@@ -1431,6 +1524,42 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.get("linearStatus", "/linear/status", {
+			success: LinearIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("linearStart", "/linear/start", {
+			payload: LinearStartConnectRequest,
+			success: LinearStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("linearTeams", "/linear/teams", {
+			success: LinearTeamsListResponse,
+			error: [
+				IntegrationsValidationError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("linearDisconnect", "/linear", {
+			success: LinearDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("cloudflareStatus", "/cloudflare/status", {
 			success: CloudflareIntegrationStatus,
 			error: IntegrationsPersistenceError,
@@ -1465,6 +1594,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("cloudflareZoneSettings", "/cloudflare/zones", {
+			payload: CloudflareZoneSettingsRequest,
+			success: CloudflareIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(

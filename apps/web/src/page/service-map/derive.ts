@@ -4,6 +4,7 @@ import { Option } from "effect"
 import type { TimeWindow } from "../../data/time-range"
 import { buildSourceGraph, type SourceGraph } from "../../service-map/map/graph"
 import type { Focus } from "../../service-map/map/state"
+import { SERVICE_RUNTIME_KINDS } from "@maple/domain/service-runtimes"
 import type { Model } from "./model"
 
 // The pure halves of the service map page and its view.
@@ -94,6 +95,7 @@ export const scopedRows = (model: Model, pinnedNamespace: string | null) => {
 						.filter((row) => isMember(row.serviceName))
 						.map((row) => ({ ...row, serviceNamespace: "" })),
 		workloads: bundle.workloads.filter((workload) => isMember(workload.serviceName)),
+		runtimes: bundle.runtimes.filter((runtime) => isMember(runtime.serviceName)),
 		platforms: bundle.platforms,
 	}
 }
@@ -115,6 +117,11 @@ export const sourceGraphOf = (model: Model, rows: ScopedRows, window: TimeWindow
 		serviceOverviews: [...rows.overviews],
 		durationSeconds: durationSecondsOf(window),
 		serviceWorkloads: [...rows.workloads],
+		serviceRunsOn: new Map(
+			rows.runtimes.map(
+				(runtime) => [runtime.serviceName, SERVICE_RUNTIME_KINDS[runtime.kind].short] as const,
+			),
+		),
 		platforms,
 		runtimes,
 		cloudflareServices: Option.match(AsyncData.getData(model.cloudflare.data), {

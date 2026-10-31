@@ -408,6 +408,136 @@ describe("guard", () => {
 	)
 })
 
+interface SeenHop {
+	readonly url: string
+	readonly method: string | undefined
+	readonly body: string
+	readonly apiKey: string | null
+}
+
+/** Records each hop and answers the first with `status` to `location`, the rest with 200. */
+const redirectOnce = (status: number, location: string) => {
+	const seen: Array<SeenHop> = []
+	const fakeFetch: typeof fetch = async (input, init) => {
+		seen.push({
+			url: urlOf(input),
+			method: init?.method,
+			body: String(init?.body ?? ""),
+			apiKey: new Headers(init?.headers).get("x-api-key"),
+		})
+		return seen.length === 1
+			? new Response(null, { status, headers: { location } })
+			: new Response("ok", { status: 200 })
+	}
+	return { seen, fakeFetch }
+}
+
+const postThroughStrictGuard = (fakeFetch: typeof fetch) =>
+	Effect.flatMap(HttpClient.HttpClient, (client) =>
+		guard(client, { strictRedirects: true }).post("https://api.example.com/x", {
+			headers: { "X-Api-Key": "probe-secret" },
+			body: HttpBody.text("payload"),
+		}),
+	).pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fakeFetch))
+
+const hopsOf = (seen: ReadonlyArray<SeenHop>) =>
+	seen.map((hop) => [hop.url, hop.method, hop.body, hop.apiKey])
+
+describe("guard with strictRedirects", () => {
+	it.effect("drops every configured header and the body on a cross-origin 302", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(302, "https://elsewhere.example/landing")
+			const response = yield* postThroughStrictGuard(fakeFetch)
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(hopsOf(seen), [
+				["https://api.example.com/x", "POST", "payload", "probe-secret"],
+				["https://elsewhere.example/landing", "GET", "", null],
+			])
+		}),
+	)
+
+	it.effect("keeps the caller's own headers across origins while dropping the rest", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ readonly trace: string | null; readonly apiKey: string | null }> = []
+			const fakeFetch: typeof fetch = async (_input, init) => {
+				const headers = new Headers(init?.headers)
+				seen.push({ trace: headers.get("traceparent"), apiKey: headers.get("x-api-key") })
+				return seen.length === 1
+					? new Response(null, {
+							status: 302,
+							headers: { location: "https://elsewhere.example/y" },
+						})
+					: new Response("ok", { status: 200 })
+			}
+			yield* Effect.flatMap(HttpClient.HttpClient, (client) =>
+				guard(client, { strictRedirects: true, ownHeaders: ["Traceparent"] }).get(
+					"https://api.example.com/x",
+					{ headers: { "X-Api-Key": "probe-secret", traceparent: "00-a-b-01" } },
+				),
+			).pipe(
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+			assert.deepStrictEqual(seen, [
+				{ trace: "00-a-b-01", apiKey: "probe-secret" },
+				{ trace: "00-a-b-01", apiKey: null },
+			])
+		}),
+	)
+
+	it.effect("replays a cross-origin 307 as a body-less GET without headers", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "https://elsewhere.example/y")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], ["https://elsewhere.example/y", "GET", "", null])
+		}),
+	)
+
+	it.effect("keeps method, body and headers on a same-origin 307", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "/y")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://api.example.com/y",
+				"POST",
+				"payload",
+				"probe-secret",
+			])
+		}),
+	)
+
+	it.effect("turns a same-origin 303 into a GET that keeps the headers", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(303, "/status")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://api.example.com/status",
+				"GET",
+				"",
+				"probe-secret",
+			])
+		}),
+	)
+
+	it.effect("without the option, forwards non-credential headers cross-origin as before", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "https://elsewhere.example/y")
+			yield* run(fakeFetch, (client) =>
+				client.post("https://api.example.com/x", {
+					headers: { "X-Api-Key": "probe-secret" },
+					body: HttpBody.text("payload"),
+				}),
+			)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://elsewhere.example/y",
+				"POST",
+				"payload",
+				"probe-secret",
+			])
+		}),
+	)
+})
+
 describe("describeHttpClientError", () => {
 	it.effect("redacts the request URL from a transport failure's message", () =>
 		Effect.gen(function* () {

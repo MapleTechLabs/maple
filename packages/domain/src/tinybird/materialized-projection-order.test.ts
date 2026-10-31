@@ -111,10 +111,13 @@ describe("materialized projection order", () => {
 		const targets = [
 			["ai_trace_index", "ai_trace_index_mv"],
 			["ai_crawler_requests", "ai_crawler_requests_mv"],
+			["ci_runs", "ci_runs_mv"],
+			["ci_jobs", "ci_jobs_mv"],
 			["service_map_edges_hourly", "service_map_edges_hourly_ingest_mv"],
 			["service_overview_spans", "service_overview_spans_mv"],
 			["service_overview_hourly", "service_overview_hourly_mv"],
 			["service_operations_hourly", "service_operations_hourly_mv"],
+			["service_endpoint_details_hourly", "service_endpoint_details_hourly_mv"],
 			["trace_list_mv", "trace_list_mv_mv"],
 			["trace_facets_hourly", "trace_facets_hourly_mv"],
 			["logs_aggregates_hourly", "logs_aggregates_hourly_mv"],

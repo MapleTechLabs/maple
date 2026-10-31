@@ -5,6 +5,7 @@ import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartEmpty } from "../ui/chart-state"
+import { eyebrow } from "../ui/eyebrow"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import type { Message, Model } from "./chart"
 import type { ChartSpec } from "./chart-spec"
@@ -202,3 +203,17 @@ export const metricView = Submodel.defineView<Model, Message, MetricChartInputs>
 	})
 	return chartBody(h, model, { ...inputs, spec, header: inputs.header?.(h, info) })
 })
+
+type SeriesHeader = (h: HtmlBuilder<Message>, info: InfraSeriesInfo) => Html
+
+/** A chart-card header: the eyebrow title on the left, the series legend on the right. */
+export const titledHeader =
+	(title: string, legend: SeriesHeader): SeriesHeader =>
+	(h, info) =>
+		h.div(
+			[h.Class("mb-3 flex min-w-0 items-center justify-between gap-3")],
+			[
+				eyebrow(h, { variant: "label", as: "h3", className: "shrink-0" }, [title]),
+				h.div([h.Class("flex min-w-0 justify-end")], [legend(h, info)]),
+			],
+		)

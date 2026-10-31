@@ -175,7 +175,7 @@ interface CommitProbeHit {
 	readonly reposProbed: number
 }
 export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommitServiceApi>()(
-	"@maple/api/services/vcs/VcsCommitService",
+	"@maple/backend/services/vcs/VcsCommitService",
 	{
 		make: Effect.gen(function* () {
 			const repo = yield* VcsRepository

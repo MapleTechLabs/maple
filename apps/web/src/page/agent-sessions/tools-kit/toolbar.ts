@@ -1,10 +1,10 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { filterChip } from "../../../ui/filter-chip"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
 import { searchInput } from "../../../ui/search-input"
+import { switchControl } from "../../../ui/switch"
 
 // The tool filter toolbar and its facet selects.
 
@@ -48,14 +48,14 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 			size: "sm",
 			isDisabled: config.options.length === 0,
 			className: cn(
-				"h-[30px] gap-2 rounded-md px-2.5 font-mono text-xs",
+				"gap-2 font-mono text-xs",
 				isSet
-					? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary"
+					? "border-primary-a4 bg-primary-a2 text-primary [&_svg]:text-primary"
 					: "bg-card text-foreground",
 			),
 			renderValue: () => [
 				h.span(
-					[h.Class(cn("text-2xs", isSet ? "text-primary/70" : "text-muted-foreground"))],
+					[h.Class(cn("text-2xs", isSet ? "text-primary" : "text-muted-foreground"))],
 					[config.label],
 				),
 				" ",
@@ -79,8 +79,8 @@ export type ToolbarConfig<M> = Readonly<{
 const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig<M>["nameSearch"]>): Html =>
 	searchInput(h, {
 		id: search.inputId,
-		size: "default",
-		className: cn("max-w-sm", "w-full font-mono sm:w-[260px]"),
+		size: "sm",
+		className: cn("max-w-sm", "w-full font-mono sm:w-64"),
 		placeholder: "Tool name…",
 		value: search.value,
 		onInput: search.onInput,
@@ -107,16 +107,21 @@ export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>
 				],
 				[
 					...config.selects,
-					filterChip(
-						h,
-						{
-							isPressed: config.isFailingOnly,
-							onClick: config.onToggleFailingOnly,
-							tone: "crit",
-							hasDot: true,
-							className: "font-mono",
-						},
-						["Failing only"],
+					// The same switch as "With errors" on the sessions list, so it reads as a filter.
+					h.label(
+						[h.Class("inline-flex cursor-pointer items-center gap-2 text-xs font-medium")],
+						[
+							...switchControl(h, {
+								id: "agent-tools-failing-switch",
+								inputId: "agent-tools-failing-input",
+								isChecked: config.isFailingOnly,
+								ariaLabel: "Failing only",
+								className:
+									"[--thumb-size:--spacing(3.5)] data-checked:bg-severity-error sm:[--thumb-size:--spacing(3.5)]",
+								onToggle: config.onToggleFailingOnly,
+							}),
+							"Failing only",
+						],
 					),
 				],
 			),

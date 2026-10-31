@@ -36,7 +36,7 @@ export interface VcsScheduledSyncServiceApi {
 export class VcsScheduledSyncService extends Context.Service<
 	VcsScheduledSyncService,
 	VcsScheduledSyncServiceApi
->()("@maple/api/services/vcs/VcsScheduledSyncService", {
+>()("@maple/backend/services/vcs/VcsScheduledSyncService", {
 	make: Effect.gen(function* () {
 		const repo = yield* VcsRepository
 		const queue = yield* VcsSyncQueue

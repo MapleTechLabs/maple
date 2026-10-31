@@ -181,12 +181,12 @@ Keep `db.system.name`, `messaging.system`, and `rpc.system` values spelled the s
 
 Besides the service map, these drive the log chips and the AI error-debug prompt context.
 
-| Attribute                                   | What Maple does with it                                                                                     |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `db.system.name` (legacy `db.system`)       | Scored 70 in log chips; with `db.namespace`, keys the service map database node; toned `info` in log chips. |
-| `db.namespace`                              | Names the database node on the service map.                                                                 |
-| `db.query.text` (legacy `db.statement`)     | Scored 70; rendered in span detail; included as context in the error-debug prompt.                          |
-| `db.operation.name` (legacy `db.operation`) | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                                    |
+| Attribute                                   | What Maple does with it                                                                                         |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `db.system.name` (legacy `db.system`)       | Scored 70 in log chips; with `db.namespace`, keys the service map database node; toned `emphasis` in log chips. |
+| `db.namespace`                              | Names the database node on the service map.                                                                     |
+| `db.query.text` (legacy `db.statement`)     | Scored 70; rendered in span detail; included as context in the error-debug prompt.                              |
+| `db.operation.name` (legacy `db.operation`) | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                                        |
 
 ## Caching
 
@@ -211,7 +211,7 @@ Drives the error banner in the log detail panel and the highest-priority chip on
 | `error.message`     | Same as `exception.message` (legacy fallback).                       |
 | `error.type`        | Same as `exception.type` (legacy fallback).                          |
 
-Any attribute matching `exception.*` scores 100 (top of the log chips) and is toned `error` (red).
+Any attribute matching `exception.*` scores 100 (top of the log chips) and is toned `crit` (red).
 
 If the message runs past 3 lines or 160 characters, the banner collapses by default and shows a "Show more" toggle.
 
@@ -219,12 +219,12 @@ If the message runs past 3 lines or 160 characters, the banner collapses by defa
 
 For gRPC and other RPC frameworks.
 
-| Attribute              | What Maple does with it                                                      |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| `rpc.system`           | Names RPC dependencies when `rpc.service` is missing.                        |
-| `rpc.service`          | Scored 68 in log chips; toned `info`. Names RPC dependencies.                |
-| `rpc.method`           | Scored 68; toned `info`.                                                     |
-| `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values are toned `error` (red). |
+| Attribute              | What Maple does with it                                                     |
+| ---------------------- | --------------------------------------------------------------------------- |
+| `rpc.system`           | Names RPC dependencies when `rpc.service` is missing.                       |
+| `rpc.service`          | Scored 68 in log chips; toned `emphasis`. Names RPC dependencies.           |
+| `rpc.method`           | Scored 68; toned `emphasis`.                                                |
+| `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values are toned `crit` (red). |
 
 ## User identity
 
@@ -348,13 +348,13 @@ Each log row shows every attribute that isn't hidden as a chip, ordered by score
 | ----- | --------------------------------------------------------------------------------------------------- |
 | 100   | `error`, `exception`, `exception.*` (anything)                                                      |
 | 95    | `http.status_code`, `http.response.status_code`                                                     |
-| 90    | `rpc.grpc.status_code`                                                                              |
+| 90    | `rpc.grpc.status_code`, `rpc.response.status_code`                                                  |
 | 80    | `http.method`, `http.request.method`                                                                |
 | 70    | `db.system.name`, `db.system`, `db.query.text`, `db.statement`, `db.operation.name`, `db.operation` |
-| 68    | `rpc.service`, `rpc.method`                                                                         |
+| 68    | `rpc.system.name`, `rpc.service`, `rpc.method`                                                      |
 | 66    | `user.id`, `enduser.id`, `customer.id`, `customer_id`                                               |
 | 60    | `duration_ms`, `latency_ms`, `http.duration`                                                        |
-| 55    | `http.url`, `http.route`, `url.path`                                                                |
+| 55    | `http.url`, `url.full`, `http.route`, `url.path`                                                    |
 | 40    | Other `http.*`, `url.*`                                                                             |
 | 38    | Other `db.*`                                                                                        |
 | 36    | Other `rpc.*`                                                                                       |

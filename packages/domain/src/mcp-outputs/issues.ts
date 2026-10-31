@@ -212,12 +212,34 @@ export const ListErrorIncidentsOutput = Schema.Struct({
 	issueId: Schema.optionalKey(Schema.String),
 })
 
-export const UpdateErrorNotificationPolicyOutput = Schema.Struct({
+/** A destination the policy delivers to; `name`/`type` are null when it no longer exists. */
+export const ErrorNotificationPolicyDestination = Schema.Struct({
+	id: Schema.String,
+	/** The same destination's id in the REST API (`dest_…`). */
+	publicId: Schema.String,
+	name: Schema.NullOr(Schema.String),
+	type: Schema.NullOr(Schema.String),
+	enabled: Schema.Boolean,
+})
+
+export const ErrorNotificationPolicyOutput = Schema.Struct({
 	enabled: Schema.Boolean,
 	destinationIds: Schema.Array(Schema.String),
+	/** Set when the destination names could not be read; ids are still exact. */
+	destinationNamesUnavailable: Schema.optionalKey(Schema.Boolean),
+	destinations: Schema.Array(ErrorNotificationPolicyDestination),
 	notifyOnFirstSeen: Schema.Boolean,
 	notifyOnRegression: Schema.Boolean,
 	notifyOnResolve: Schema.Boolean,
 	minOccurrenceCount: Schema.Number,
+	/** Occurrences a first-seen incident must open with to notify: at least 3, since issues open at 3. */
+	firstNotificationThreshold: Schema.Number,
 	severity: Schema.String,
+	updatedAt: Schema.String,
+	/** `system` while the org still runs on the defaults. */
+	updatedBy: Schema.String,
 })
+
+export const GetErrorNotificationPolicyOutput = ErrorNotificationPolicyOutput
+
+export const UpdateErrorNotificationPolicyOutput = ErrorNotificationPolicyOutput

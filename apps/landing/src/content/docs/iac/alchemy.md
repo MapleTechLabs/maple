@@ -203,3 +203,10 @@ const mapleProviders = Maple.providersWithDependencies().pipe(
 ```
 
 `Maple.MapleApiFromHttpClient()` gives you the same API client outside the Alchemy provider collection, for scripts that call the Maple API directly.
+
+## Next steps
+
+- [Alchemy resources](/docs/iac/alchemy-resources)
+- [Alert rules](/docs/alerting/alert-rules)
+- [Build dashboards](/docs/dashboards/build-dashboards)
+- [Explore traces](/docs/explore/traces)

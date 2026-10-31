@@ -159,12 +159,12 @@ export const historyTab = (
 				: table(h, {}, [
 						tableHeader(h, [
 							tableRow(h, [
-								tableHead(h, ["State"], "w-[100px]"),
-								tableHead(h, ["Group"], "w-[180px]"),
+								tableHead(h, ["State"], "w-24"),
+								tableHead(h, ["Group"], "w-44"),
 								tableHead(h, ["Labels"]),
-								tableHead(h, ["Triggered at"], "w-[180px]"),
-								tableHead(h, ["Duration"], "w-[110px]"),
-								tableHead(h, ["Issue"], "w-[70px]"),
+								tableHead(h, ["Triggered at"], "w-44"),
+								tableHead(h, ["Duration"], "w-28"),
+								tableHead(h, ["Issue"], "w-16"),
 								tableHead(h, [], "w-[50px]"),
 							]),
 						]),
@@ -236,11 +236,11 @@ const incidentRow = (
 				? h.a(
 						[
 							h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} }))),
-							h.Class("text-xs text-primary underline-offset-4 hover:underline"),
+							h.Class("text-xs text-primary underline-offset-4 hover:underline active:underline"),
 						],
 						["View"],
 					)
-				: h.span([h.Class("text-xs text-muted-foreground/60")], [EMPTY_VALUE]),
+				: h.span([h.Class("text-xs text-foreground-subtle")], [EMPTY_VALUE]),
 		]),
 		tableCell(h, [
 			h.div(

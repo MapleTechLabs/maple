@@ -8,9 +8,9 @@ navLabel: "Google Cloud manual setup"
 
 Manual setup creates the same resources as the [setup script](/docs/integrations/gcp), by hand in the Google Cloud console. It takes about 20 minutes.
 
-In Maple, open **Integrations → Google Cloud**, click **Connect Google Cloud**, choose the scope and what to collect, then choose **Manual setup** in **Method** and click **Continue**. The dialog lists the steps below with this connection's names and values: copy them from there. Each step has an **Open in console** link to the right page.
+In Maple, open **Sources**, click **Connect source** and pick **Google Cloud**. Enter the scope, choose what to collect and click **Create connection**, then choose **Console steps** under **How do you want to apply the setup?**. Maple lists the steps below with this connection's names and values: copy them from there. Each step has an **Open in console** link to the right page.
 
-## Roles you need
+## Prerequisites
 
 | You connect     | Roles you need                                                                                                                                      |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -40,7 +40,7 @@ In **Pub/Sub → Topics**, click **Create topic**. Paste the **Topic ID**, untic
   <figcaption>Untick <strong>Add a default subscription</strong>: it would keep a copy of every log that nobody reads.</figcaption>
 </figure>
 
-### 3. Create the push service account
+### 3. Create the push account
 
 Pub/Sub signs each push to Maple as this account.
 
@@ -117,7 +117,7 @@ A new sink takes a few minutes to start forwarding. Entries written in that time
   <figcaption>Ready to create: Cloud Pub/Sub topic, the filter, no exclusions.</figcaption>
 </figure>
 
-### 6. Let the sink publish to the topic
+### 6. Let the sink publish
 
 1. In **Log router**, open the sink's **⋮** menu → **View sink details** and copy its **Writer identity**.
 2. In **Pub/Sub → Topics**, tick the topic. In the info panel on the right (**Show info panel** if it is hidden), open **Permissions** → **Add principal**.
@@ -140,16 +140,16 @@ Grant it on the topic, not on the IAM page, where it would cover every topic in 
   <figcaption>The identity without <code>serviceAccount:</code>, with <strong>Pub/Sub Publisher</strong>.</figcaption>
 </figure>
 
-### 7. Send a test message (optional)
+### 7. Send a test message
 
-On the topic's **Messages** tab, click **Publish message**, paste the dialog's message body as **Message**, and click **Publish**. Maple confirms log forwarding within seconds. The message proves the topic, subscription and push; the sink is proven by the first real log.
+This step is optional. On the topic's **Messages** tab, click **Publish message**, paste the dialog's message body as **Message**, and click **Publish**. Maple confirms log forwarding within seconds. The message proves the topic, subscription and push; the sink is proven by the first real log.
 
 <figure class="shot">
   <img src="/screenshots/docs/gcp-manual-07-test-message.webp" alt="The Publish message panel with the test message body pasted into Message and the Publish button." loading="lazy" />
   <figcaption>The test message from the dialog.</figcaption>
 </figure>
 
-### 8. Create the read-only service account
+### 8. Create the read-only account
 
 Maple reads metrics and resources as this account, with short-lived tokens and no key. In **IAM & Admin → Service accounts**, click **Create service account**, paste the name, replace the ID the console fills in, and click **Create and close**.
 
@@ -158,7 +158,7 @@ Maple reads metrics and resources as this account, with short-lived tokens and n
   <figcaption>The read-only account, created without roles.</figcaption>
 </figure>
 
-### 9. Let Maple use the read-only account
+### 9. Let Maple use the account
 
 Open the read-only account → **Principals with access** → **Grant access**. Paste Maple's service account from the dialog as **New principals**, replace the preselected **Service Account Admin** with **Service Account Token Creator**, and click **Save**.
 
@@ -169,7 +169,7 @@ If an organization policy restricts members to your domain, Google refuses this 
   <figcaption>Maple's account gets <strong>Service Account Token Creator</strong> on the read-only account.</figcaption>
 </figure>
 
-### 10. Grant the read-only roles
+### 10. Grant read-only roles
 
 In **IAM & Admin → IAM**, click **Grant access**, paste the read-only account as **New principals**, and add **Monitoring Viewer**, **Cloud Asset Viewer** and **Service Usage Consumer**, each after the first with **Add another role**. Click **Save**. Cloud Monitoring only answers for a host project with billing linked.
 
@@ -185,7 +185,7 @@ Everything goes in the host project except these, which you do on the folder or 
 - **The Log Router sink.** Choose **Other resource** as the sink service and paste the full destination from the dialog, `pubsub.googleapis.com/projects/HOST_PROJECT/topics/…`: the picker lists only the current project's topics. Choose **Include logs ingested by this folder (organization) and all child resources**, not **Intercept logs**, which keeps those logs from the projects' own sinks and log buckets. The writer identity in step 6 is the folder's or organization's own.
 - **Monitoring Viewer and Cloud Asset Viewer** on the folder or organization. **Service Usage Consumer** goes on the host project, as its own step in the dialog.
 
-## Confirm the connection
+## Verify
 
 A manual setup sends Maple no report. Maple confirms each part by its first data:
 

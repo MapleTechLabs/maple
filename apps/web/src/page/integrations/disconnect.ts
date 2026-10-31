@@ -24,8 +24,19 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			description: "Alerts routed to Hazel stop being delivered until you reconnect.",
 			confirmLabel: "Disconnect",
 			success: "Hazel disconnected",
-			error: "Failed to disconnect Hazel",
+			error: "Couldn't disconnect Hazel",
 			refresh: ["hazel"],
+		},
+	],
+	[
+		"linear",
+		{
+			title: "Disconnect Linear",
+			description: "Maple stops opening and updating Linear issues for incidents until you reconnect.",
+			confirmLabel: "Disconnect",
+			success: "Linear disconnected",
+			error: "Couldn't disconnect Linear",
+			refresh: ["linear"],
 		},
 	],
 	[
@@ -36,7 +47,7 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 				"This removes the Maple GitHub App connection and permanently deletes all synced repositories and their commit history from Maple. This cannot be undone. You can reconnect later, but everything will be re-synced from scratch.",
 			confirmLabel: "Disconnect",
 			success: "GitHub disconnected",
-			error: "Failed to disconnect GitHub",
+			error: "Couldn't disconnect GitHub",
 			refresh: ["github"],
 		},
 	],
@@ -48,7 +59,7 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 				"Maple stops collecting metrics from your Railway projects. You can reconnect later.",
 			confirmLabel: "Disconnect",
 			success: "Railway disconnected",
-			error: "Failed to disconnect Railway",
+			error: "Couldn't disconnect Railway",
 			refresh: ["railway"],
 		},
 	],
@@ -60,7 +71,7 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 				"Maple revokes its access to your Supabase organization and stops collecting metrics from its projects. Data already collected stays. You can reconnect later.",
 			confirmLabel: "Disconnect",
 			success: "Supabase disconnected",
-			error: "Failed to disconnect Supabase",
+			error: "Couldn't disconnect Supabase",
 			refresh: ["supabase"],
 		},
 	],
@@ -71,7 +82,7 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			description: "Maple stops collecting data from PlanetScale. You can reconnect later.",
 			confirmLabel: "Disconnect",
 			success: "PlanetScale organization disconnected",
-			error: "Failed to disconnect PlanetScale organization",
+			error: "Couldn't disconnect PlanetScale organization",
 			refresh: ["planetscale", "planetscaleDatabases"],
 		},
 	],
@@ -83,7 +94,7 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			confirmLabel: "Disconnect",
 			success:
 				key === "cloudflare" ? "Cloudflare account disconnected" : "Cloudflare accounts disconnected",
-			error: "Failed to disconnect Cloudflare",
+			error: "Couldn't disconnect Cloudflare",
 			refresh: ["cloudflare"],
 		},
 	]),
@@ -96,6 +107,8 @@ const mutation = (integration: string) =>
 		switch (integration) {
 			case "hazel":
 				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
+			case "linear":
+				return yield* Effect.asVoid(internal.integrations.linearDisconnect())
 			case "github":
 				return yield* Effect.asVoid(internal.integrations.githubDisconnect())
 			case "planetscale":

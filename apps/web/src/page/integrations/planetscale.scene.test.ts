@@ -1,12 +1,11 @@
 import { OrgId } from "@maple/domain"
-import { V2PlanetScaleIntegration, V2PlanetScaleOrganizationList } from "@maple/domain/http/v2"
+import { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { normalizeTokenPaste } from "./planetscale"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -24,20 +23,12 @@ const pending = Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
 	organization: null,
 	connected_by_user_id: null,
 	detected_permissions: null,
-	metrics_auth: "missing",
+	metrics_auth: "api",
 	scrape_target: null,
 	last_inventory_at: null,
 	last_inventory_error: null,
 	revoked_at: null,
 	expires_at: null,
-})
-
-const organizations = Schema.decodeUnknownSync(V2PlanetScaleOrganizationList)({
-	object: "planetscale_integration.organization_list",
-	organizations: [
-		{ id: "organization/acme", name: "acme" },
-		{ id: "organization/labs", name: "labs" },
-	],
 })
 
 const withPending = () => {
@@ -52,21 +43,17 @@ const withPending = () => {
 }
 
 describe("planetscale card", () => {
-	test("a pending organization choice reads the organizations and renders the picker", () => {
+	test("an organization still to be picked sends the source page back to the connect flow", () => {
 		const entered = withPending()
 		expect(names(entered.commands)).toEqual(["FetchPlanetscaleOrganizations"])
-		const listed = pageUpdate(
-			entered.model,
-			Message.CompletedFetchOrganizations({
-				key: entered.model.planetscaleCard.organizations.key ?? "",
-				result: Result.succeed(organizations),
-			}),
-		).model
 		scene(
 			{ update: pageUpdate, view },
-			given(listed),
-			expectView(text("Authorized")).toExist(),
-			expectView(role("radio", { name: "labs" })).toExist(),
+			given(entered.model),
+			expectView(text(/no organization is picked yet/)).toExist(),
+			expectView(role("link", { name: "Reconnect" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=planetscale",
+			),
 		)
 	})
 
@@ -88,14 +75,105 @@ describe("planetscale card", () => {
 		)
 	})
 
-	test("an id:secret paste fills both token fields", () => {
-		expect(normalizeTokenPaste("id", "tok_1:pscale_tkn_2", { id: "", secret: "" })).toEqual({
-			id: "tok_1",
-			secret: "pscale_tkn_2",
-		})
-		expect(normalizeTokenPaste("id", "pscale_tkn_2", { id: "x", secret: "" })).toEqual({
-			id: "x",
-			secret: "pscale_tkn_2",
-		})
+	test("the webhook row reports registration and offers to reconnect when the grant predates webhooks", () => {
+		const connected = (webhooks: Record<string, unknown>) => {
+			const model = init({ search: { integration: "planetscale" } }, context).model
+			return pageUpdate(
+				model,
+				Message.CompletedLoadPlanetscale({
+					key: model.statuses.planetscale.key ?? "",
+					result: Result.succeed(
+						Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+							object: "planetscale_integration",
+							connected: true,
+							pending_org_selection: false,
+							organization: "acme",
+							connected_by_user_id: null,
+							detected_permissions: null,
+							metrics_auth: "service_token",
+							scrape_target: null,
+							webhooks: {
+								registered_databases: 0,
+								databases: 2,
+								last_error: null,
+								...webhooks,
+							},
+							last_inventory_at: null,
+							last_inventory_error: null,
+							revoked_at: null,
+							expires_at: null,
+						}),
+					),
+				}),
+			).model
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(connected({ state: "needs_reauthorization" })),
+			expectView(text("Needs attention")).toExist(),
+			expectView(role("button", { name: "Reconnect" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				connected({ state: "failing", registered_databases: 1, last_error: "Webhook limit reached" }),
+			),
+			expectView(text("Webhook limit reached")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(connected({ state: "active", registered_databases: 2 })),
+			expectView(text("Active")).toExist(),
+			expectView(role("button", { name: "Reconnect" })).not.toExist(),
+		)
+	})
+
+	test("metrics polled from the API wait for the first poll, then stream, and surface a poll error", () => {
+		const NOW = Date.parse("2026-08-04T12:00:00Z")
+		const connected = (apiMetrics: { last_polled_at: string | null; last_error: string | null }) => {
+			const model = init({ search: { integration: "planetscale" } }, context).model
+			const loaded = pageUpdate(
+				model,
+				Message.CompletedLoadPlanetscale({
+					key: model.statuses.planetscale.key ?? "",
+					result: Result.succeed(
+						Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+							object: "planetscale_integration",
+							connected: true,
+							pending_org_selection: false,
+							organization: "acme",
+							connected_by_user_id: null,
+							detected_permissions: null,
+							metrics_auth: "api",
+							api_metrics: apiMetrics,
+							scrape_target: null,
+							last_inventory_at: null,
+							last_inventory_error: null,
+							revoked_at: null,
+							expires_at: null,
+						}),
+					),
+				}),
+			).model
+			return pageUpdate(loaded, Message.CompletedReadClock({ nowMs: NOW })).model
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(connected({ last_polled_at: null, last_error: null })),
+			expectView(text("Starting")).toExist(),
+			expectView(text("First poll, branch metrics")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(connected({ last_polled_at: new Date(NOW - 4 * 60_000).toISOString(), last_error: null })),
+			expectView(text("Connected")).toExist(),
+			expectView(text(/metrics API every 5 minutes/)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(connected({ last_polled_at: null, last_error: "PlanetScale returned 403" })),
+			expectView(text("Needs attention")).toExist(),
+			expectView(text("The last poll failed: PlanetScale returned 403")).toExist(),
+		)
 	})
 })

@@ -35,7 +35,12 @@ export const init = (id: string): Model => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, locale: Schema.String, mode: RequestMode },
+	CompletedResolveWindow: {
+		window: TimeWindow,
+		nowMs: Schema.Number,
+		locale: Schema.String,
+		mode: RequestMode,
+	},
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
@@ -149,8 +154,11 @@ export const controls = <M>(
 	model: Model,
 	scope: Pick<Scope, "search" | "defaultPreset">,
 	toParent: (message: Message) => M,
+	/** True while the page's failure card shows, so its Try again is the only retry. */
+	isFailed = false,
 ): Html =>
 	timeControls(h, {
+		isReloadHidden: isFailed,
 		search: scope.search,
 		defaultPreset: scope.defaultPreset,
 		window: model.window,

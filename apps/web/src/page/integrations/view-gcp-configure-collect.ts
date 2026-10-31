@@ -34,7 +34,7 @@ export const collectFields = (
 		[
 			h.legend([h.Class(cn(GCP_TITLE, "mb-3"))], ["What should Maple collect?"]),
 			h.div(
-				[h.Class("divide-y divide-border/60 rounded-lg border")],
+				[h.Class("divide-y divide-border-subtle rounded-md border")],
 				CAPABILITY_IDS.map((capability, index) => {
 					const { title, flag, description, effects } = CAPABILITIES[capability]
 					const note = options.effect?.(capability) ?? null

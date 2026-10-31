@@ -189,7 +189,7 @@ export interface CloudflareOAuthServiceApi {
 export class CloudflareOAuthService extends Context.Service<
 	CloudflareOAuthService,
 	CloudflareOAuthServiceApi
->()("@maple/api/services/CloudflareOAuthService", {
+>()("@maple/backend/services/CloudflareOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env

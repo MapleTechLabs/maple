@@ -247,8 +247,11 @@ export const messagesJson = (
  * `withPerCallFields` in `./Llm.ts`) the final usage object carries `cost`, and the provider passes
  * the raw usage through on the finish part. Maple never prices tokens itself.
  */
-const reportedCost = (finish: FinishPart): number | undefined => {
-	const cost = finish.metadata?.openrouter?.usage?.cost
+const reportedCost = (finish: FinishPart): number | undefined => reportedCostOf(finish.metadata)
+
+/** The same, from a finish part's metadata, for hosts that price runs through the engine. */
+export const reportedCostOf = (metadata: FinishPart["metadata"] | undefined): number | undefined => {
+	const cost = metadata?.openrouter?.usage?.cost
 	return Predicate.isNumber(cost) && Number.isFinite(cost) && cost >= 0 ? cost : undefined
 }
 

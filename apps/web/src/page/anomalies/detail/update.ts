@@ -181,7 +181,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onFailure: (failure) => ({
 					model: { ...model, busy: null },
-					outMessage: failureToast("Failed to open investigation", failure),
+					outMessage: failureToast("Couldn't open investigation", failure),
 				}),
 			}),
 		ClickedResolve: () => dialogStep(model, "resolveDialog", Dialog.open(model.resolveDialog), wrapResolve),

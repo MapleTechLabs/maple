@@ -2,6 +2,7 @@ import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
 import {
+	OrgClickHouseSettingsPersistenceError,
 	OrgClickHouseSettingsUpstreamRejectedError,
 	OrgClickHouseSettingsUpstreamUnavailableError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
@@ -479,6 +480,20 @@ describe("resolveRuntimeConfig caching", () => {
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
 			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
 			expect(error.cause).toBeInstanceOf(OrgClickHouseSettingsValidationError)
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
+	it.effect("the settings page still reports a settings database outage as its own error", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = asOrgId("org_ch_settings_db_down")
+		const admin = [asRole("org:admin")]
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			yield* Effect.promise(() => executeSql(testDb, "DROP TABLE org_clickhouse_settings CASCADE"))
+			const get = getError(yield* service.get(orgId, admin).pipe(Effect.exit))
+			const remove = getError(yield* service.delete(orgId, admin).pipe(Effect.exit))
+			expect(get).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
+			expect(remove).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 

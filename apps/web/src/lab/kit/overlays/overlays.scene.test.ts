@@ -15,13 +15,15 @@ const toastPortals = () => [
 ]
 
 describe("kit overlays gallery", () => {
-	test("without an item it lists every overlay and opens none", () => {
+	test("without an item it lists every overlay and opens the dialog", () => {
 		scene(
 			config,
 			given(init({ item: null }).model),
 			...toastPortals(),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectAll(all.role("link")).toHaveCount(18),
-			expect(role("dialog")).toBeAbsent(),
+			expect(role("link", { name: "dialog" })).toHaveAttr("aria-current", "page"),
+			expect(role("dialog", { name: "Rename dashboard" })).toExist(),
 		)
 	})
 
@@ -31,6 +33,7 @@ describe("kit overlays gallery", () => {
 			given(init({ item: "nope" }).model),
 			...toastPortals(),
 			expect(role("region", { name: "nope" })).toBeAbsent(),
+			expect(role("dialog")).toBeAbsent(),
 		)
 		scene(
 			config,

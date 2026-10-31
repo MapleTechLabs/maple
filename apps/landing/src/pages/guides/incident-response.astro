@@ -1,0 +1,675 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
+
+const pageTitle = "Incident response, step by step | Maple";
+const pageDescription =
+    "An incident response process for startups and small teams: prepare in an afternoon, respond with one or two engineers, and learn from each postmortem.";
+const published = "2026-10-19";
+const updatedLabel = "October 21, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const toc = [
+    { depth: 2, slug: "how-it-works", text: "How it works" },
+    { depth: 2, slug: "prepare", text: "Prepare" },
+    { depth: 2, slug: "respond", text: "Respond" },
+    { depth: 2, slug: "example", text: "A worked example" },
+    { depth: 3, slug: "timeline", text: "The timeline" },
+    { depth: 3, slug: "metrics", text: "MTTD, MTTA and MTTR" },
+    { depth: 2, slug: "learn", text: "Learn" },
+    { depth: 3, slug: "postmortem", text: "The postmortem" },
+    { depth: 3, slug: "action-items", text: "Action items" },
+    { depth: 3, slug: "trend", text: "Review the trend" },
+    { depth: 2, slug: "maple", text: "In Maple" },
+    { depth: 3, slug: "maple-detect", text: "Detect" },
+    { depth: 3, slug: "maple-triage", text: "Triage and fix" },
+    { depth: 3, slug: "maple-prevent", text: "Prevent" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
+
+// One color per phase, used by the loop diagram, the step badges, the timeline and the clock chart.
+const phases = {
+    prepare: { name: "Prepare", color: "var(--chart-5)" },
+    detect: { name: "Detect and triage", color: "var(--chart-2)" },
+    mitigate: { name: "Mitigate and resolve", color: "var(--chart-4)" },
+    learn: { name: "Learn", color: "var(--chart-3)" },
+} as const;
+type PhaseKey = keyof typeof phases;
+
+const loop: { key: PhaseKey; title: string[]; items: string[] }[] = [
+    { key: "prepare", title: ["Prepare"], items: ["alerts", "who gets alerted", "runbooks"] },
+    { key: "detect", title: ["Detect and", "triage"], items: ["alert fires", "how far it reaches", "#incidents post"] },
+    { key: "mitigate", title: ["Mitigate and", "resolve"], items: ["rollback", "feature flag", "failover"] },
+    { key: "learn", title: ["Learn"], items: ["postmortem", "action items", "trend review"] },
+];
+
+const steps: { slug: string; title: string; phase: PhaseKey | null; label?: string; body: string }[] = [
+    { slug: "detect", title: "Detect", phase: "detect", body: "An alert fires on something users feel: error rate, latency, a drop in traffic. A customer report counts too, and an incident customers reported first should end with a new alert among the postmortem's action items." },
+    { slug: "declare", title: "Triage and declare", phase: "detect", body: "Acknowledge the page and check how far the problem reaches: one service or all, one region or all, which customers. If it matches your incident definition, post in #incidents with what you see and that you are on it. That post is the declaration. Declaring early and downgrading later costs less than declaring late." },
+    { slug: "mitigate", title: "Mitigate", phase: "mitigate", body: "Stop the user impact before you know the cause. Roll back the last deploy, turn off the feature flag, fail over to another region, scale up or shed load. A deploy in the last hour is the first suspect." },
+    { slug: "communicate", title: "Communicate", phase: null, label: "Throughout", body: "Post a short update at a fixed interval while customers are affected, even when nothing has changed: what is broken, what you are doing, when the next update comes. If a second engineer is around, hand them the updates and keep debugging." },
+    { slug: "resolve", title: "Resolve", phase: "mitigate", body: "Confirm recovery on the same signal that detected the problem, then check for side effects: queued jobs, duplicate writes, retries still running. Close the incident, post a final update and decide whether it needs a postmortem. The root-cause fix can ship later as an action item." },
+];
+
+// Minutes after 14:00 UTC. The clock chart below uses the same minutes.
+const timeline: { at: number; label: string; phase: PhaseKey | null; body: string }[] = [
+    { at: 2, label: "Deploy", phase: null, body: "checkout v2.41.0 ships. It runs one database query per item when it loads a cart." },
+    { at: 6, label: "Impact starts", phase: null, body: "Large carts hold database connections longer, the connection pool runs dry and checkout requests fail with 503." },
+    { at: 8, label: "Alert fires", phase: "detect", body: "The checkout error rate has been above 5% on two checks in a row. The alert rule opens an incident and PagerDuty pages the on-call engineer." },
+    { at: 11, label: "Acknowledged", phase: "detect", body: "The on-call engineer acknowledges the page. The error rate is 23% on checkout and normal everywhere else." },
+    { at: 13, label: "Declared", phase: "detect", body: "The on-call engineer posts in #incidents and asks a second engineer to take the status page updates." },
+    { at: 16, label: "Diagnosis", phase: "detect", body: "Failing traces wait 4 to 5 seconds for a database connection before they time out. The failures started four minutes after the deploy." },
+    { at: 18, label: "Decision", phase: "mitigate", body: "Roll back to v2.40.3 instead of raising the pool size, following the bad-deploy runbook. The first status page update goes out." },
+    { at: 24, label: "Mitigated", phase: "mitigate", body: "The rollback finishes. The error rate is under 1% within two minutes." },
+    { at: 31, label: "Alert resolves", phase: "mitigate", body: "Once the 5-minute window no longer holds the failures, two healthy checks in a row resolve the alert's incident. The resolve notification closes the PagerDuty incident." },
+    { at: 45, label: "Resolved", phase: "mitigate", body: "The order queue is drained and the payment provider confirms no duplicate charges. The on-call engineer closes the incident and books the postmortem." },
+];
+const clock = (minutes: number) => `14:${String(minutes).padStart(2, "0")}`;
+
+const axisMinutes = 50; // 14:00 to 14:50 on the clock chart
+const clocks = [
+    { name: "MTTD", full: "time to detect", from: 6, to: 8, by: "Alerts on user-facing symptoms, shorter evaluation windows" },
+    { name: "MTTA", full: "time to acknowledge", from: 8, to: 11, by: "Alerts that ring a phone, fewer noisy alerts" },
+    { name: "MTTM", full: "time to mitigate", from: 6, to: 24, by: "Rollbacks that take one command, feature flags, runbooks" },
+    { name: "MTTR", full: "time to resolve", from: 6, to: 45, by: "All of the above, plus written exit criteria" },
+];
+const pct = (minutes: number) => `${(minutes / axisMinutes) * 100}%`;
+
+// Each kind of action item moves one number. The checkout postmortem has one of each.
+const actionKinds = [
+    { kind: "Prevent", example: "Load test checkout with large carts", moves: "How often this failure happens" },
+    { kind: "Detect", example: "Alert on connection pool wait time", moves: "MTTD" },
+    { kind: "Respond", example: "Send checkout alerts to phones, not only to Slack", moves: "MTTA" },
+    { kind: "Mitigate", example: "Put the rollback command in the runbook", moves: "MTTM" },
+];
+
+const postmortemTemplate = `# Postmortem: checkout failures after v2.41.0 (2026-10-19)
+
+## What happened
+Two or three sentences: what broke, for whom, for how long, how it was fixed.
+User impact: 14:06 to 14:24 UTC, 23% of checkout attempts failed (<number> orders).
+
+## Timeline (UTC)
+Copied from the #incidents channel.
+
+## Why it happened
+The chain of events in the system. Describe systems and decisions, not people.
+
+## What helped, what slowed us down
+How we found out, and how long after impact started.
+
+## Action items
+| Action                                       | Type     | Owner  | Due    |
+| -------------------------------------------- | -------- | ------ | ------ |
+| Load test checkout with large carts          | Prevent  | <name> | <date> |
+| Alert on connection pool wait time           | Detect   | <name> | <date> |
+| Send checkout alerts to phones, not Slack    | Respond  | <name> | <date> |
+| Put the rollback command in the runbook      | Mitigate | <name> | <date> |`;
+
+const faqs = [
+    {
+        question: "What are the incident response steps?",
+        answer:
+            "For an on-call software team: detect the problem, triage it and declare an incident, mitigate the user impact, communicate at a fixed interval throughout, resolve the incident once the service is healthy, and review it in a blameless postmortem with tracked action items. Preparation (alert rules, who gets alerted, runbooks) happens before any of them.",
+    },
+    {
+        question: "What are the phases of the incident response lifecycle?",
+        answer:
+            "Four: prepare, detect and triage, mitigate and resolve, and learn, with the lessons feeding the next round of preparation. NIST SP 800-61 Rev. 2 calls them Preparation; Detection and Analysis; Containment, Eradication and Recovery; and Post-Incident Activity. The SANS Incident Handler's Handbook splits the third phase into three steps, for six in total.",
+    },
+    {
+        question: "Does a small team need an incident response plan?",
+        answer:
+            "Yes, and a short one is enough: alerts on the symptoms users feel, an agreement on who gets alerted and where you talk during an incident, and runbooks for the three likeliest failures. Two engineers can set it up in an afternoon.",
+    },
+    {
+        question: "How do you reduce the number of incidents over time?",
+        answer:
+            "Give every postmortem action items with an owner and a due date, track them in the same tracker as feature work, and review the trend each quarter: incidents per month, median time to detect and mitigate, and repeat causes. Prevent items (tests, load tests, safer deploys) lower the count; detect and mitigate items make the remaining incidents shorter.",
+    },
+    {
+        question: "What goes in a postmortem?",
+        answer:
+            "A summary, the user impact in numbers, a timestamped timeline, the root cause, how the incident was detected, what helped and what slowed the response, and action items with an owner and a due date each. A blameless postmortem describes systems and decisions, not who made a mistake.",
+    },
+    {
+        question: "What is the difference between MTTA and MTTR?",
+        answer:
+            "MTTA (mean time to acknowledge) runs from the alert firing to a person acknowledging it, and measures paging and on-call. MTTR runs from the start of the incident to its resolution, and measures the whole response. MTTR also stands for repair, recover and respond, so write down which clock your team means.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Incident response, step by step",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: "2026-10-21",
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/incident-response`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Incident response" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">On-call</span>
+                    <span>12 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Incident response, step by step
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    How a small team runs an incident from the first alert to the postmortem, and makes the next one rarer and shorter.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime="2026-10-21">Updated {updatedLabel}</time>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={toc} class="sticky top-28" />
+            </aside>
+
+            <article class="ir-guide min-w-0">
+                <section id="how-it-works" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · The process</p>
+                    <h2>How incident response works</h2>
+
+                    <div class="guide-answer">
+                        <p><strong>Incident response</strong> is what a team does from the moment something breaks in production until users are fine again and the cause is fixed. It runs as a loop: what the team learns from one incident changes the alerts, runbooks and code the next incident meets.</p>
+                    </div>
+
+                    <p>
+                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential.
+                    </p>
+                    <p>
+                        This guide is written for startups and small companies. Often one or two engineers are on call, and the engineer who gets paged is the one who fixes the problem, so every step is sized for that. For the formal versions, written for larger security teams, see <a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61</a> and the <a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Incident Handler's Handbook</a>.
+                    </p>
+                    <p>
+                        The process has four phases. You <span class="phase-badge" style={`--phase: ${phases.prepare.color}`}>Prepare</span> on a quiet day. When an alert fires, you <span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect and triage</span>, then <span class="phase-badge" style={`--phase: ${phases.mitigate.color}`}>Mitigate and resolve</span> until users are no longer affected and the system is clean. Afterwards you <span class="phase-badge" style={`--phase: ${phases.learn.color}`}>Learn</span> in a postmortem whose action items go back into preparation: a load test that would have caught the bug, an alert that fires two minutes sooner, a rollback that takes one command.
+                    </p>
+
+                    <figure class="cycle" aria-label="The incident response loop. Prepare leads to Detect and triage, which leads to Mitigate and resolve, which leads to Learn. Mitigation loops back to triage when it turns up new evidence, and Learn loops back to Prepare through the postmortem's action items.">
+                        <svg viewBox="0 0 760 280" aria-hidden="true">
+                            <defs>
+                                {Object.entries(phases).map(([key, p]) => (
+                                    <marker id={`cycle-arrow-${key}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                        <path d="M0,0 L8,4 L0,8 z" style={`fill: ${p.color}`} />
+                                    </marker>
+                                ))}
+                            </defs>
+
+                            <path d="M 470 60 C 470 22, 290 22, 290 58" class="cycle__loop" style={`stroke: ${phases.mitigate.color}`} marker-end="url(#cycle-arrow-mitigate)" />
+                            <text x="380" y="20" text-anchor="middle" class="cycle__note">new evidence: triage again</text>
+
+                            {loop.map((phase, i) => {
+                                const x = i * 203;
+                                const color = phases[phase.key].color;
+                                return (
+                                    <g style={`--phase: ${color}`}>
+                                        <rect x={x} y="60" width="150" height="150" rx="8" class="cycle__box" />
+                                        {phase.title.map((line, l) => (
+                                            <text x={x + 14} y={88 + l * 19} class="cycle__title">{line}</text>
+                                        ))}
+                                        <line x1={x + 14} y1="136" x2={x + 136} y2="136" class="cycle__rule" />
+                                        {phase.items.map((line, l) => (
+                                            <text x={x + 14} y={156 + l * 16} class="cycle__item">{line}</text>
+                                        ))}
+                                        {i < loop.length - 1 && (
+                                            <line x1={x + 152} y1="110" x2={x + 199} y2="110" class="cycle__line" style={`stroke: ${color}`} marker-end={`url(#cycle-arrow-${phase.key})`} />
+                                        )}
+                                    </g>
+                                );
+                            })}
+
+                            <path d="M 684 212 L 684 242 L 75 242 L 75 216" class="cycle__loop" style={`stroke: ${phases.learn.color}`} marker-end="url(#cycle-arrow-learn)" />
+                            <text x="380" y="264" text-anchor="middle" class="cycle__note">action items change the next round of preparation</text>
+                        </svg>
+                    </figure>
+                    <p class="guide-caption">The four phases and what each one holds. Each arrow takes the color of the phase it leaves.</p>
+                </section>
+
+                <section id="prepare" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · <span class="eyebrow-phase" style={`--phase: ${phases.prepare.color}`}>Before</span></p>
+                    <h2>Prepare in an afternoon</h2>
+                    <p>
+                        A team of two can do all of this in one afternoon. Each step ends with something written down that the on-call engineer can open at 3 a.m.
+                    </p>
+
+                    <ol class="guide-steps guide-steps--prep" style={`--phase: ${phases.prepare.color}`}>
+                        <li>
+                            <span>01</span>
+                            <div>
+                                <h3 id="prep-alerts" class="scroll-mt-24">Alert on symptoms users feel</h3>
+                                <p>For each journey your business depends on (signup, login, checkout, the public API), add one error-rate alert and one latency alert on the traces your services already send. Real traffic shows failures a scripted ping from outside never reaches (see <a href="/guides/uptime-monitoring">uptime monitoring</a>). For latency, an <a href="/guides/what-is-apdex">Apdex score</a> gives one number per journey instead of a percentile per endpoint. Leave CPU and memory off the phone: they fire for problems users never see. Check each rule against the data from your last outage to confirm it would have fired.</p>
+                                <p class="guide-steps__out"><span>Output</span>Four to eight alert rules that reach a phone, each tested against a past outage.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div>
+                                <h3 id="prep-on-call" class="scroll-mt-24">Agree who gets alerted when</h3>
+                                <p>Decide whose phone the alerts ring, by day, at night and on weekends, so that at any hour at least one person who can deploy is reachable. Send a test alert to each phone. Pick one channel, such as #incidents, where whoever handles an incident posts what they see.</p>
+                                <p class="guide-steps__out"><span>Output</span>A short note with names and hours, a test alert each person received, and the channel.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div>
+                                <h3 id="prep-runbooks" class="scroll-mt-24">Write runbooks for your top three failure modes</h3>
+                                <p>List the three things most likely to break. For most small teams that is a bad deploy, the database and a third-party API. Write one page each: how it shows up, where to look, and the first mitigation to try. The bad-deploy runbook holds the exact rollback command, run once by everyone who gets alerted.</p>
+                                <p>Writing them also hardens the system before anything breaks. A runbook that says "restore from the last backup" makes you check that the backup restores, and a third-party API with no timeout or fallback shows up while you describe how it fails.</p>
+                                <p class="guide-steps__out"><span>Output</span>Three one-page runbooks linked from their alerts, and a list of the weak spots you found.</p>
+                            </div>
+                        </li>
+                    </ol>
+                </section>
+
+                <section id="respond" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · During</p>
+                    <h2>Respond: the incident response steps</h2>
+                    <p>
+                        When an alert fires, whoever is on call works through these steps in order, often alone. Communication starts with the first post in #incidents and runs alongside the rest until the final update.
+                    </p>
+
+                    <ol class="guide-steps">
+                        {steps.map((s, i) => (
+                            <li>
+                                <span>{String(i + 1).padStart(2, "0")}</span>
+                                <div>
+                                    <div class="guide-steps__head">
+                                        <h3 id={s.slug} class="scroll-mt-24">{s.title}</h3>
+                                        {s.phase === null
+                                            ? <span class="phase-badge phase-badge--neutral">{s.label}</span>
+                                            : <span class="phase-badge" style={`--phase: ${phases[s.phase].color}`}>{phases[s.phase].name}</span>}
+                                    </div>
+                                    <p>{s.body}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                    <p>
+                        On a security incident the same steps apply with different mitigations: isolate the compromised host, rotate the leaked credential, then remove the attacker's access before you restore service.
+                    </p>
+                </section>
+
+                <section id="example" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Worked example</p>
+                    <h2>An incident, minute by minute</h2>
+                    <p>
+                        A deploy at 14:02 UTC makes checkout run one database query per item in a cart. At normal traffic nobody notices. At the afternoon peak, large carts hold database connections longer, the connection pool runs dry, and checkout starts failing.
+                    </p>
+                    <p>
+                        This is the ideal case, with every step on time and in order. Real incidents are more hectic: two things break at once, the first guess is wrong, nobody posts an update for 40 minutes. Skip what is not urgent in the moment and fill it in afterwards.
+                    </p>
+
+                    <h3 id="timeline" class="scroll-mt-24">The timeline</h3>
+                    <ol class="ir-timeline">
+                        {timeline.map((e) => (
+                            <li style={e.phase === null ? undefined : `--phase: ${phases[e.phase].color}`} class={e.phase === null ? "ir-timeline__before" : undefined}>
+                                <time>{clock(e.at)}</time>
+                                <div><h4>{e.label}</h4><p>{e.body}</p></div>
+                            </li>
+                        ))}
+                    </ol>
+                    <p>
+                        The dot on each entry takes the color of its phase: <span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect and triage</span> until the decision to roll back, <span class="phase-badge" style={`--phase: ${phases.mitigate.color}`}>Mitigate and resolve</span> from then on. The rollback went out before anyone had confirmed the cause, which is the intended order. The diff was read against the slow traces after the incident closed.
+                    </p>
+
+                    <h3 id="metrics" class="scroll-mt-24">MTTD, MTTA, MTTM and MTTR</h3>
+                    <p>
+                        Each incident metric is a clock that starts and stops at a different event. They are worth tracking because each one shows where an incident's time went and which kind of fix would shorten it. A rough estimate written into the postmortem after each incident is enough to see the trend over a few months. Measured on this incident:
+                    </p>
+                    <figure class="clocks" aria-label="Four clocks on a 14:00 to 14:50 axis. MTTD runs from 14:06 to 14:08, 2 minutes. MTTA from 14:08 to 14:11, 3 minutes. MTTM from 14:06 to 14:24, 18 minutes. MTTR from 14:06 to 14:45, 39 minutes.">
+                        <div class="clocks__rows" aria-hidden="true">
+                            <div class="clocks__row clocks__row--phases">
+                                <span class="clocks__label"></span>
+                                <span class="clocks__track">
+                                    <span class="clocks__phase" style={`left: ${pct(6)}; width: ${pct(18 - 6)}; --phase: ${phases.detect.color}`}>Detect and triage</span>
+                                    <span class="clocks__phase" style={`left: ${pct(18)}; width: ${pct(45 - 18)}; --phase: ${phases.mitigate.color}`}>Mitigate and resolve</span>
+                                </span>
+                                <span></span>
+                            </div>
+                            {clocks.map((c) => (
+                                <div class="clocks__row">
+                                    <span class="clocks__label"><strong>{c.name}</strong>{c.full}</span>
+                                    <span class="clocks__track"><span class="clocks__bar" style={`left: ${pct(c.from)}; width: ${pct(c.to - c.from)}`}></span></span>
+                                    <span class="clocks__value">{c.to - c.from} min</span>
+                                </div>
+                            ))}
+                            <div class="clocks__row clocks__row--axis">
+                                <span class="clocks__label"></span>
+                                <span class="clocks__track">
+                                    {[0, 10, 20, 30, 40, 50].map((m) => (
+                                        <span class="clocks__tick" style={`left: ${pct(m)}`}>{clock(m)}</span>
+                                    ))}
+                                </span>
+                                <span></span>
+                            </div>
+                        </div>
+                        <figcaption>Three of the four clocks start when users are first affected, at 14:06. MTTA starts at the alert, so it measures paging, not the alerts themselves.</figcaption>
+                    </figure>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Metric</th><th>Starts</th><th>Stops</th><th>Shortened by</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>MTTD</strong></td><td>User impact begins</td><td>An alert fires or someone reports it</td><td>{clocks[0].by}</td></tr>
+                                <tr><td><strong>MTTA</strong></td><td>The alert fires</td><td>A person acknowledges it</td><td>{clocks[1].by}</td></tr>
+                                <tr><td><strong>MTTM</strong></td><td>User impact begins</td><td>User impact ends</td><td>{clocks[2].by}</td></tr>
+                                <tr><td><strong>MTTR</strong></td><td>User impact begins</td><td>The incident is closed</td><td>{clocks[3].by}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        MTTR also stands for repair, recover and respond, so teams end up comparing different clocks. Write down which one yours means. With a handful of incidents a quarter, one long outage moves the mean a lot: report the median next to it.
+                    </p>
+                </section>
+
+                <section id="learn" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · <span class="eyebrow-phase" style={`--phase: ${phases.learn.color}`}>After</span></p>
+                    <h2>Learn: fewer and shorter incidents</h2>
+                    <p>
+                        After the incident closes, the remaining work is to change the system so the same failure is less likely, gets caught sooner or is over faster. The postmortem decides what those changes are.
+                    </p>
+
+                    <h3 id="postmortem" class="scroll-mt-24">The blameless postmortem</h3>
+                    <p>
+                        A blameless postmortem assumes everyone acted reasonably with what they knew at the time, and asks which parts of the system let a reasonable action cause an outage. "Checkout has no load test with large carts" leads to a fix. "Alex shipped a bad query" teaches people to hide their mistakes next time. Keep it to one page, written by whoever handled the incident while the details are fresh, and go through the action items with anyone who was involved. Write one for incidents customers noticed; skip it for the rest.
+                    </p>
+                    <p>
+                        The template carries the checkout incident's numbers as an example. Copy it into your docs tool and fill each <code>&lt;placeholder&gt;</code> from the #incidents channel:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">postmortem.md</p>
+                        <pre><code set:html={highlight(postmortemTemplate, "markdown")} /></pre>
+                    </div>
+
+                    <h3 id="action-items" class="scroll-mt-24">Action items that change the system</h3>
+                    <p>
+                        Sort each action item by the number it moves. A postmortem with only prevent items leaves detection and mitigation as slow as they were; one with only detect items lets the same bug ship again.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Type</th><th>Checkout example</th><th>What it moves</th></tr>
+                            </thead>
+                            <tbody>
+                                {actionKinds.map((a) => (
+                                    <tr><td><strong>{a.kind}</strong></td><td>{a.example}</td><td>{a.moves}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Track action items like feature work</p>
+                        <p>
+                            Give each action item an owner, a due date and a ticket in the same tracker as feature work, and look at the open ones in your weekly planning.
+                        </p>
+                    </div>
+
+                    <h3 id="trend" class="scroll-mt-24">Review the trend</h3>
+                    <p>
+                        Once a quarter, spend 30 minutes on the incident list and count:
+                    </p>
+                    <ul class="guide-list">
+                        <li><strong>Incidents per month.</strong> A falling count is the sign that prevent items are working.</li>
+                        <li><strong>Median MTTD and MTTM.</strong> These move when detect and mitigate items ship.</li>
+                        <li><strong>Incidents a customer reported first.</strong> Each one points at a missing alert.</li>
+                        <li><strong>Repeat causes.</strong> The same root cause twice means an action item from the first postmortem was not done, or did not work.</li>
+                        <li><strong>Pages with no incident behind them.</strong> Tune or delete those alerts; every false page makes the next real one slower to acknowledge.</li>
+                    </ul>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · In practice</p>
+                    <h2>Incident response in Maple</h2>
+
+                    <h3 id="maple-detect" class="scroll-mt-24"><span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect</span> Alert rules open incidents</h3>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div>
+                                <h4>Alert on what users feel</h4>
+                                <p>On the <strong>Alerts</strong> page, click <strong>New rule</strong> and start from a template such as <strong>High error rate</strong> (above 5% over a 5-minute window) or <strong>Slow P95 latency</strong>. Set <strong>Severity</strong> to <strong>Critical</strong> or <strong>Warning</strong>; Maple shows it on the incident and in every notification. Pick a past range and click <strong>Dry run</strong> to replay the rule: the chart shades where it would have held an incident open, so you can check it would have caught your last outage.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-01-rule.webp" data-zoomable alt="A new alert rule from the High error rate template: error rate above 5% over a 5 minute window, severity Critical, with the Dry run preview over the last hour shading the span where the rule would have fired for checkout." width="2316" height="2016" loading="lazy" /></figure>
+                            </div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div>
+                                <h4>Route critical alerts to a phone</h4>
+                                <p>Each rule sends to the <a href="/docs/alerting/notification-destinations">notification destinations</a> attached to it. Attach PagerDuty to the <strong>Critical</strong> rules and a Slack channel to the <strong>Warning</strong> ones. PagerDuty receives a stable <code>dedup_key</code>, so the trigger and the resolve land on the same PagerDuty incident.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div>
+                                <h4>Open the incident from the notification</h4>
+                                <p>Maple checks each rule once a minute and opens an <a href="/docs/alerting/incidents">incident</a> after <strong>Breaches to fire</strong> breaching checks in a row (2 by default). The notification shows the value, the threshold and the window, and links to the alert in Maple and to Maple AI. Open incidents are listed under <strong>Open</strong> on the <strong>Alerts</strong> inbox, with the current value against the threshold and how long each has been open. If the service stops sending telemetry, the incident shows <strong>Waiting on data</strong> and stays open instead of resolving on an empty window.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-02-active-incident.webp" data-zoomable alt="The Alerts inbox with one firing incident under Open: severity Critical, rule High error rate, group checkout, its current value against the 0.05 threshold and how long it has been open." width="2330" height="324" loading="lazy" /></figure>
+                            </div>
+                        </li>
+                    </ol>
+
+                    <h3 id="maple-triage" class="scroll-mt-24"><span class="phase-badge" style={`--phase: ${phases.mitigate.color}`}>Triage and fix</span> Errors, traces and the MCP server</h3>
+                    <p>
+                        Maple groups error spans into <a href="/docs/errors/overview">issues</a> by fingerprint. Each flare-up of an issue is an incident under it, and the issue page shows the stack, the occurrences and the traces behind them. For a browser app instrumented with the Browser SDK, a <a href="/docs/session-replay/replays">session replay</a> plays back what the user saw next to the backend traces of that session.
+                    </p>
+                    <p>
+                        The <a href="/docs/reference/mcp">Maple MCP server</a> at <code>https://api.maple.dev/mcp</code> gives Claude Code, Cursor or any other MCP client the same data, scoped to your organization. The <strong>MCP</strong> page under <strong>Settings</strong> shows the endpoint and ready-made configuration for common clients.
+                    </p>
+                    <p>
+                        Data from <a href="/docs/integrations/gcp">Google Cloud</a> (Cloud Logging and Cloud Monitoring), <a href="/docs/integrations/cloudflare">Cloudflare</a> (zone and Workers analytics), <a href="/docs/integrations/planetscale">PlanetScale</a> (branch metrics), Railway (service metrics), <a href="/docs/integrations/prometheus">any Prometheus endpoint</a> and <a href="/docs/integrations/github">GitHub Actions</a> is stored in the same log, metric and trace tables as your own telemetry. One query layer covers all of it, so an agent can follow a root cause from a failing checkout to a saturated database or a red deploy without switching tools.
+                    </p>
+                    <figure class="guide-figure"><img src="/screenshots/flow-04-agent.webp" data-zoomable alt="Claude Code connected to the Maple MCP server, asked why api-gateway is erroring: list_services, search_traces, find_errors and read_source_file calls lead to a propose_fix call with a patch to a payment retry." width="1984" height="1200" loading="lazy" /></figure>
+
+                    <h3 id="maple-prevent" class="scroll-mt-24"><span class="phase-badge" style={`--phase: ${phases.learn.color}`}>Prevent</span> Postmortem data, verified fixes and Code Review</h3>
+                    <p>
+                        An alert incident resolves after <strong>Healthy to resolve</strong> healthy checks in a row and sends a resolve notification. The rule's <strong>History</strong> tab lists its past incidents with <strong>Total triggered</strong> and <strong>Avg resolution</strong>, and <code>list_alert_incidents</code> returns the same data to an assistant drafting the postmortem.
+                    </p>
+                    <figure class="guide-figure"><img src="/screenshots/guides/incident-response-03-history.webp" data-zoomable alt="The History tab of the High error rate rule: Total triggered 3 and Avg resolution 6.5m, then each incident for checkout with its state, values, trigger time and duration." width="2330" height="1230" loading="lazy" /></figure>
+                    <p>
+                        Attach the fix's pull request to the error issue (<strong>Attach</strong> in the issue's <strong>Pull requests</strong> panel, or <code>link_pull_request</code>). When it merges, the issue moves to <strong>Verifying</strong> and Maple counts occurrences from builds that postdate the merge. If the error keeps firing, the issue goes back to <strong>In progress</strong>; if it returns after the issue is done, it is marked <strong>Regressed</strong>. See <a href="/docs/errors/overview#fix-verification">fix verification</a>.
+                    </p>
+                    <p>
+                        <a href="/features/github">Code Review</a> (in beta, through the <a href="/docs/integrations/github">GitHub integration</a>) reviews every push to a pull request with a summary comment, an inline review and a check run. Findings cite the traffic, errors and alerts behind the lines that changed, and removing a span, attribute or metric that an alert or dashboard reads is flagged before it ships. Deploy steps found in the diff, such as migrations, env vars and secrets, become a checklist. An hour after the deploy, Maple compares the hour before with the hour after and comments on the pull request with new errors and any telemetry that stopped arriving.
+                    </p>
+                    <figure class="guide-figure"><img src="/screenshots/gallery-code-review-pr.webp" data-zoomable alt="A pull request's review in Maple Code Review: outcome Issues found, confidence 4/10, a summary noting the change drops a span an alert and a dashboard read, key changes and a before-merge checklist." width="2880" height="1620" loading="lazy" /></figure>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Your first alert rule</h3>
+                        <p>Every rule setting, when incidents open and resolve, and what each notification contains.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/alerting/alert-rules" class="guide-button guide-button--primary">Alert rules docs</a>
+                            <a href="/docs/reference/mcp" class="guide-button">MCP server docs</a>
+                            <a href="/features/github" class="guide-button">Code Review</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">References</p>
+                    <ul>
+                        <li><a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61 Rev. 2: Computer Security Incident Handling Guide (2012)</a>, four phases: Preparation; Detection and Analysis; Containment, Eradication and Recovery; Post-Incident Activity</li>
+                        <li><a href="https://csrc.nist.gov/pubs/sp/800/61/r3/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61 Rev. 3 (2025)</a>, which files incident response under the NIST Cybersecurity Framework 2.0 functions</li>
+                        <li><a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Institute: Incident Handler's Handbook</a>, six steps: Preparation, Identification, Containment, Eradication, Recovery, Lessons Learned</li>
+                        <li><a href="https://sre.google/sre-book/postmortem-culture/" target="_blank" rel="noopener noreferrer">Google SRE book: Postmortem Culture</a></li>
+                        <li><a href="/docs/alerting/alert-rules">Maple docs: Alert rules</a> · <a href="/docs/alerting/incidents">Incidents</a> · <a href="/docs/errors/overview">Errors and issues</a> · <a href="/docs/reference/mcp">MCP server</a> · <a href="/docs/integrations/github">GitHub</a></li>
+                        <li><a href="/guides/uptime-monitoring">Maple guide: Uptime monitoring with traces and HTTP checks</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .ir-guide { max-width: 46rem; font-family: var(--font-display); }
+    .ir-guide section + section { margin-top: 5.5rem; }
+    .ir-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .ir-guide .guide-eyebrow > span:first-child { color: var(--primary); }
+    .ir-guide .guide-eyebrow .eyebrow-phase { color: color-mix(in oklab, var(--phase) 75%, var(--foreground)); }
+    .ir-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .ir-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .ir-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .ir-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .ir-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .ir-guide strong { font-weight: 600; color: var(--foreground); }
+    .ir-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .ir-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .ir-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .ir-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .ir-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .ir-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .ir-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .ir-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
+    /* One color per NIST phase: set --phase on the element. */
+    .ir-guide .phase-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--phase) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--phase) 14%, transparent); padding: 0.1rem 0.55rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; line-height: 1.5; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); white-space: nowrap; vertical-align: 0.1em; }
+    .ir-guide .phase-badge--neutral { --phase: var(--muted-foreground); }
+
+    .cycle { margin: 2rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .cycle svg { display: block; width: 100%; min-width: 600px; height: auto; }
+    .cycle__box { fill: color-mix(in oklab, var(--phase) 9%, var(--background)); stroke: color-mix(in oklab, var(--phase) 60%, transparent); }
+    .cycle__title { fill: color-mix(in oklab, var(--phase) 45%, var(--foreground)); font-family: var(--font-display); font-size: 14px; font-weight: 600; }
+    .cycle__rule { stroke: color-mix(in oklab, var(--phase) 30%, transparent); }
+    .cycle__item { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+    .cycle__line { stroke-width: 1.5; }
+    .cycle__loop { fill: none; stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .cycle__note { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+
+    .ir-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .ir-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .ir-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .ir-guide .guide-steps__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+    .ir-guide .guide-steps h3 { margin: 0; font-size: 1.05rem; }
+    .ir-guide .guide-steps--prep > li > span { border-color: color-mix(in oklab, var(--phase) 50%, transparent); background: color-mix(in oklab, var(--phase) 14%, transparent); color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); }
+    .ir-guide .guide-steps p.guide-steps__out { margin-top: 0.8rem; color: var(--foreground); }
+    .ir-guide .guide-steps__out > span { display: inline-block; margin-right: 0.6rem; border: 1px solid color-mix(in oklab, var(--phase) 45%, transparent); border-radius: 999px; padding: 0 0.5rem; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.6; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); vertical-align: 0.1em; }
+    .ir-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
+    .ir-guide .guide-figure { margin: 1rem 0 0; }
+    .ir-guide > section > .guide-figure { margin: 1.5rem 0 1.75rem; }
+    .ir-guide h3 > .phase-badge { margin-right: 0.55rem; vertical-align: 0.2em; }
+    .ir-guide .guide-list { margin: 0 0 1.5rem; padding-left: 1.1rem; }
+    .ir-guide .guide-list li { margin: 0 0 0.6rem; font-size: 16px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .ir-guide .guide-list li::marker { color: var(--chart-3); }
+    .ir-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+
+    .ir-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .ir-guide table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .ir-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .ir-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: top; }
+    .ir-guide td + td { border-left: 1px solid var(--border); }
+    .ir-guide tbody tr:last-child td { border-bottom: 0; }
+
+
+    .ir-timeline { margin: 1.5rem 0 2rem; padding: 0; list-style: none; }
+    .ir-timeline li { --phase: var(--muted-foreground); position: relative; display: grid; grid-template-columns: 3.25rem 1fr; gap: 1.25rem; padding: 0 0 1.1rem; }
+    .ir-timeline li::before { content: ""; position: absolute; top: 0.3rem; left: 3.85rem; width: 0.55rem; height: 0.55rem; border-radius: 999px; background: var(--phase); box-shadow: 0 0 0 3px color-mix(in oklab, var(--phase) 20%, transparent); }
+    .ir-timeline li::after { content: ""; position: absolute; top: 1.1rem; bottom: 0; left: calc(3.85rem + 0.25rem); width: 1px; background: var(--border); }
+    .ir-timeline li:last-child::after { display: none; }
+    .ir-timeline li > div { padding-left: 0.6rem; }
+    .ir-timeline li.ir-timeline__before::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
+    .ir-timeline time { font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .ir-timeline h4 { font-size: 0.9rem; }
+    .ir-timeline p { margin: 0.2rem 0 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .clocks { --label-w: 9rem; --value-w: 3.5rem; margin: 1.5rem 0 1rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .clocks__rows { display: grid; gap: 0.6rem; min-width: 30rem; }
+    .clocks__row { display: grid; grid-template-columns: var(--label-w) 1fr var(--value-w); align-items: center; gap: 0.75rem; }
+    .clocks__label { display: grid; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .clocks__label strong { font-size: 12px; }
+    .clocks__track { position: relative; height: 1.1rem; border-radius: 0.25rem; background: repeating-linear-gradient(to right, color-mix(in oklab, var(--foreground) 10%, transparent) 0 1px, transparent 1px 20%); }
+    .clocks__bar { position: absolute; top: 0; bottom: 0; border-radius: 0.25rem; background: color-mix(in oklab, var(--foreground) 62%, transparent); }
+    .clocks__value { font-family: var(--font-mono); font-size: 11px; text-align: right; color: var(--foreground); }
+    .clocks__row--phases .clocks__track, .clocks__row--axis .clocks__track { background: none; }
+    .clocks__phase { position: absolute; top: 0; bottom: 0; overflow: hidden; border-bottom: 2px solid var(--phase); background: color-mix(in oklab, var(--phase) 16%, transparent); padding: 0 0.35rem; font-family: var(--font-mono); font-size: 9px; line-height: 1.1rem; white-space: nowrap; text-overflow: ellipsis; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); }
+    .clocks__tick { position: absolute; top: 0; transform: translateX(-50%); font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); }
+    .clocks__tick:first-child { transform: none; }
+    .clocks__tick:last-child { transform: translateX(-100%); }
+    @media (max-width: 639px) { .clocks { --label-w: 6.5rem; --value-w: 3rem; padding: 1rem; } .clocks__rows { min-width: 24rem; } }
+    .clocks figcaption { margin-top: 1rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .ir-guide .code-file { margin: 1.25rem 0; }
+    .ir-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .ir-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    .ir-guide .tok-comment { color: var(--muted-foreground); }
+    .ir-guide .tok-name { font-weight: 600; color: var(--foreground); }
+    .ir-guide .tok-labels { color: var(--primary); }
+
+    .ir-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .ir-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .ir-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .ir-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .ir-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .ir-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .ir-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .ir-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .ir-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .ir-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .ir-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .ir-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .ir-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .ir-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .ir-guide a, .ir-guide .guide-button { transition: none; }
+    }
+</style>

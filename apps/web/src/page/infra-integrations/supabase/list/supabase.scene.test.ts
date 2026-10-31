@@ -202,7 +202,7 @@ describe("supabase list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded),
-			expectView(text("1 of 3 healthy")).toExist(),
+			expectView(text("1 of 3")).toExist(),
 			expectView(text("new-project near its connection limit and 1 more")).toExist(),
 			expectView(text("58 / 60")).toExist(),
 			expectView(text("Healthy")).toExist(),

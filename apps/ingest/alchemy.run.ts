@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { adopt } from "alchemy/AdoptPolicy"
-import * as AWS from "alchemy/AWS"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as AWS from "@alchemy.run/aws"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Output from "alchemy/Output"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Config from "effect/Config"
@@ -48,12 +48,26 @@ const COLLECTOR_DOCKERFILE = resolve(COLLECTOR_CONTEXT, "Dockerfile")
 
 /** Port the gateway binds (`apps/ingest/Dockerfile` EXPOSEs the same). */
 const INGEST_PORT = 3474
+/** The gateway's OTLP/gRPC server (`INGEST_OTLP_GRPC_PORT`), reached through the ALB. */
+const INGEST_GRPC_PORT = 4317
+/** OTLP/gRPC export paths: `/opentelemetry.proto.collector.<signal>.v1.<Signal>Service/Export`. */
+const OTLP_GRPC_PATH = "/opentelemetry.proto.collector.*"
+
+const GIB = 1024 * 1024 * 1024
 
 /**
- * WAL cap, sized to fit the smallest host's NVMe instance store (c7gd.medium, 59 GB).
+ * Where each host type keeps the WAL, and its cap. c7gd hosts mount their NVMe instance
+ * store (59 GB on a medium); a t4g has none, so the WAL shares the 30 GB root volume.
  * The per-lane budget is `INGEST_QUEUE_MAX_BYTES / (WAL_SHARDS * lanes)`.
  */
-const WAL_MAX_BYTES = 48 * 1024 * 1024 * 1024
+const WAL_STORAGE = {
+	"c7gd.large": { disk: "instance-store", maxBytes: 48 * GIB },
+	"c7gd.medium": { disk: "instance-store", maxBytes: 48 * GIB },
+	"t4g.small": { disk: "root-volume", maxBytes: 4 * GIB },
+} as const satisfies Record<
+	MapleStackContext["profile"]["ingest"]["instanceType"],
+	{ disk: "instance-store" | "root-volume"; maxBytes: number }
+>
 
 /**
  * Pinned rather than derived: the gateway defaults to `num_cpus * 2`, which
@@ -64,22 +78,26 @@ const WAL_SHARDS = 4
 /** Where the gateway keeps its WAL inside the container (the binary's default `INGEST_QUEUE_DIR`). */
 const WAL_CONTAINER_DIR = "/var/lib/maple-ingest/wal"
 
-/** The host's instance-store NVMe, mounted by `ec2UserData`. */
+/** The host's instance-store NVMe (mounted by `ec2UserData`) or a root-volume directory. */
 const WAL_HOST_DIR = "/mnt/wal"
 
 /**
- * Boot script for a gateway host (ECS-optimized AL2023). Mounts the NVMe at
- * WAL_HOST_DIR and only THEN joins the cluster, so a host whose disk did not
- * come up never gets a task. The S3 tier covers the disk being wiped on replace.
+ * Boot script for a gateway host (ECS-optimized AL2023). An instance-store host mounts the
+ * NVMe at WAL_HOST_DIR and only THEN joins the cluster, so a host whose disk did not come
+ * up never gets a task. The S3 tier covers the disk being wiped on replace.
  */
-const ec2UserData = (clusterName: string) => `#!/bin/bash
+const ec2UserData = (clusterName: string, disk: "instance-store" | "root-volume") => `#!/bin/bash
 set -euxo pipefail
 
-disk=$(ls /dev/disk/by-id/nvme-Amazon_EC2_NVMe_Instance_Storage_* | grep -v -- -part | head -n1)
-mkfs.xfs -f "$disk"
 mkdir -p ${WAL_HOST_DIR}
+${
+	disk === "instance-store"
+		? `disk=$(ls /dev/disk/by-id/nvme-Amazon_EC2_NVMe_Instance_Storage_* | grep -v -- -part | head -n1)
+mkfs.xfs -f "$disk"
 echo "UUID=$(blkid -s UUID -o value "$disk") ${WAL_HOST_DIR} xfs noatime,nofail 0 2" >> /etc/fstab
-mount ${WAL_HOST_DIR}
+mount ${WAL_HOST_DIR}`
+		: ""
+}
 
 cat >> /etc/ecs/ecs.config <<'CONFIG'
 ECS_CLUSTER=${clusterName}
@@ -208,6 +226,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 		// without one (PR previews) gets alchemy's default HTTP listener on 80, open to all.
 		// The group's `description` must not change: AWS treats it as immutable (a replace).
 		const listenerPort = domains.ingest ? 443 : 80
+		// ALB gRPC needs an HTTPS listener, so a stage without a domain serves OTLP/HTTP only.
+		const serveGrpc = domains.ingest !== undefined
 		const albSources = domains.ingest
 			? (yield* cloudflareIpv4Ranges).map((cidr) => ({
 					cidr,
@@ -247,6 +267,17 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 					referencedGroupId: albSecurityGroup.groupId,
 					description: "ALB to gateway",
 				},
+				...(serveGrpc
+					? [
+							{
+								ipProtocol: "tcp",
+								fromPort: INGEST_GRPC_PORT,
+								toPort: INGEST_GRPC_PORT,
+								referencedGroupId: albSecurityGroup.groupId,
+								description: "ALB to gateway OTLP/gRPC",
+							},
+						]
+					: []),
 			],
 		})
 
@@ -275,8 +306,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			roleName: instanceRole.roleName,
 		})
 
-		// Newest ECS-optimized AL2023 arm64 image. Every deploy launches fresh hosts
-		// (the old task holds the port), so AMI patching rides the deploys.
+		// Newest ECS-optimized AL2023 arm64 image. Every ingest rollout launches fresh hosts
+		// (the old task holds the port), so AMI patching rides the ingest changes.
 		const imageId = AWS.EC2.getAmi({
 			owners: ["amazon"],
 			name: ["al2023-ami-ecs-hvm-*-kernel-6.1-arm64"],
@@ -290,7 +321,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			securityGroupIds: [instanceSecurityGroup.groupId],
 			instanceProfileName: instanceProfile.instanceProfileName,
 			associatePublicIpAddress: true,
-			userData: ec2UserData(clusterName),
+			userData: ec2UserData(clusterName, WAL_STORAGE[instanceType].disk),
 			tags,
 		})
 
@@ -331,6 +362,13 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			capacityProviders: [capacityProvider.name],
 			tags,
 		})
+
+		const revisions = {
+			...(yield* optionalPlain("INGEST_COMMIT_SHA")),
+			...(yield* optionalPlain("COMMIT_SHA")),
+			...(yield* optionalPlain("GITHUB_SHA")),
+		}
+		const ingestRevision = revisions.INGEST_COMMIT_SHA || revisions.COMMIT_SHA || revisions.GITHUB_SHA
 
 		const secret = ecsSecrets(name("ingest"), tags)
 
@@ -536,6 +574,14 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// The shutdown drain (`INGEST_SHUTDOWN_DRAIN_SECS`, default 90) must fit inside this.
 				stopTimeout: 120,
 				mountPoints: [{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR }],
+				// Replaces the mapping alchemy derives from `port`; host mode needs hostPort = containerPort.
+				...(serveGrpc && {
+					portMappings: [INGEST_PORT, INGEST_GRPC_PORT].map((port) => ({
+						containerPort: port,
+						hostPort: port,
+						protocol: "tcp",
+					})),
+				}),
 			},
 
 			desiredCount,
@@ -545,7 +591,20 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			subnets: network.publicSubnetIds,
 			securityGroups: [albSecurityGroup.groupId],
 
-			public: true,
+			// The conditionless rule is the listener's default action, the same ALB, listener
+			// and target group `true` composes. OTLP/gRPC paths go to a gRPC target group.
+			loadBalancer: serveGrpc
+				? {
+						rules: [
+							{},
+							{
+								path: OTLP_GRPC_PATH,
+								forward: `${INGEST_GRPC_PORT}/http`,
+								protocolVersion: "GRPC",
+							},
+						],
+					}
+				: true,
 			// `port` is the CONTAINER port; the listener defaults to 443 with a
 			// certificate. Do not set `listenerPort`: Cloudflare cannot proxy to 3474.
 			port: INGEST_PORT,
@@ -577,6 +636,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			// variable is silently dropped. The `satisfies` below turns that into a type error.
 			env: {
 				INGEST_PORT: String(INGEST_PORT),
+				...(serveGrpc && { INGEST_OTLP_GRPC_PORT: String(INGEST_GRPC_PORT) }),
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 				// Lets the unknown-key 401 name the other region's ingest URL.
 				...(stage.kind === "prd" && { MAPLE_REGION: region }),
@@ -590,7 +650,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// nothing but Cloudflare; a preview's open ALB would let any client set it.
 				...(domains.ingest && { MAPLE_INGEST_TRUST_PROXY_GEO: "true" }),
 
-				INGEST_QUEUE_MAX_BYTES: String(WAL_MAX_BYTES),
+				INGEST_QUEUE_MAX_BYTES: String(WAL_STORAGE[instanceType].maxBytes),
 				INGEST_WAL_SHARDS: String(WAL_SHARDS),
 				// The task role signs these requests; the S3 gateway endpoint keeps them private.
 				INGEST_WAL_S3_BUCKET: walBucketName,
@@ -626,6 +686,10 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(yield* optionalPlain("INGEST_GCP_ORG_MAX_IN_FLIGHT")),
 				...(yield* optionalPlain("INGEST_REQUEST_TIMEOUT_SECS")),
 				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
+				// Customer ingest rules (docs/ingest-rules.md): the gateway defaults to on; set "false" only to
+				// switch rule application off in an emergency.
+				...(yield* optionalPlain("INGEST_RULES_ENABLED")),
+				...(yield* optionalPlain("INGEST_RULES_CACHE_TTL_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
 				// The edge rule matches exact header values only; the gateway refuses these
@@ -644,7 +708,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// 30s instead of the binary's 1s cuts Autumn track calls ~30x.
 				...(yield* optionalPlain("AUTUMN_FLUSH_INTERVAL_SECS", "30")),
 				...(yield* optionalPlain("INGEST_SHUTDOWN_DRAIN_SECS")),
-				...(yield* optionalPlain("COMMIT_SHA", (yield* optionalPlain("GITHUB_SHA")).GITHUB_SHA)),
+				// `INGEST_COMMIT_SHA` (prd) is the image's own revision, so a deploy that leaves
+				// `apps/ingest` alone does not change the task definition and roll the hosts.
+				...(ingestRevision ? { COMMIT_SHA: ingestRevision } : undefined),
 			} satisfies Record<string, string | Output.Output<string>>,
 
 			tags,

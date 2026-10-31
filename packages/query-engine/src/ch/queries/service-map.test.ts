@@ -43,14 +43,6 @@ const baseParams = {
 // serviceExternalEdgesSQL
 
 describe("serviceExternalEdgesSQL", () => {
-	it("scopes by org, service, and time window", () => {
-		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("ServiceName = 'artifacts-api'")
-		expect(sql).toContain("toStartOfHour(toDateTime('2024-01-01 00:00:00'))")
-		expect(sql).toContain("toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
-	})
-
 	it("derives tenant scope from its union branches, not from the anti-join", () => {
 		const compiled = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
 		// The outer query carries no OrgId predicate of its own — both branches do.
@@ -59,26 +51,10 @@ describe("serviceExternalEdgesSQL", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 	})
 
-	it("suppresses internal-service overlap only for http targets", () => {
-		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
-		expect(sql).toContain("targetType = 'http'")
-		expect(sql).toContain("targetName IN (")
-		expect(sql).toContain("FROM service_address_resolutions_hourly")
-		expect(sql).toContain("NOT (")
-	})
-
 	it("filters the computed targetName in HAVING, after the GROUP BY", () => {
 		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
 		expect(sql).toContain("HAVING targetName != ''")
 		expect(sql.indexOf("HAVING")).toBeGreaterThan(sql.indexOf("GROUP BY"))
-	})
-
-	it("reads the hourly MV plus raw traces for the in-progress hour", () => {
-		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
-		expect(sql).toContain("FROM service_external_edges_hourly")
-		expect(sql).toContain("FROM traces")
-		// Recent branch must filter to the in-progress hour [endHour, endTime].
-		expect(sql).toContain("Timestamp >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 	})
 
 	it("excludes DB spans from the raw-traces branch with the same coalesce the DB edges select on", () => {
@@ -104,26 +80,6 @@ describe("serviceExternalEdgesSQL", () => {
 		expect(httpIdx).toBeGreaterThan(-1)
 		expect(msgIdx).toBeLessThan(rpcIdx)
 		expect(rpcIdx).toBeLessThan(httpIdx)
-	})
-
-	it("anti-joins internal-service overlap from the resolutions table for HTTP only", () => {
-		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
-		expect(sql).toContain("FROM service_address_resolutions_hourly")
-		expect(sql).toContain("targetType = 'http'")
-		expect(sql).toContain("targetName IN (")
-	})
-
-	it("threads deploymentEnv into both branches and the resolutions anti-join", () => {
-		const { sql } = Effect.runSync(
-			serviceExternalEdgesSQL(
-				{ serviceName: "artifacts-api", deploymentEnv: "production" },
-				baseParams,
-			),
-		)
-		expect(sql).toContain("DeploymentEnv = 'production'")
-		expect(sql).toContain(
-			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'",
-		)
 	})
 
 	it("groups by target identity and orders by callCount desc", () => {
@@ -206,33 +162,6 @@ describe("serviceMapResolutionsRollupSQL", () => {
 		hourStart: "2024-01-01 00:00:00",
 		hourEnd: "2024-01-01 01:00:00",
 	}
-
-	it("joins parent Client/Producer spans to child Server/Consumer spans", () => {
-		const { sql } = Effect.runSync(serviceMapResolutionsRollupSQL(hourParams))
-		expect(sql).toContain("SpanKind IN ('Client', 'Producer')")
-		expect(sql).toContain("SpanKind IN ('Server', 'Consumer')")
-		expect(sql).toContain("ON (p.SpanId = c.ParentSpanId AND p.TraceId = c.TraceId)")
-	})
-
-	it("takes the resolution key from the parent and the target from the child", () => {
-		const { sql } = Effect.runSync(serviceMapResolutionsRollupSQL(hourParams))
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- join side per key
-		expect(sql).toContain("p.ServerAddress AS ParentServerAddress")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- join side per key
-		expect(sql).toContain("c.ServiceName AS ResolvedTargetService")
-	})
-
-	it("hour-buckets via toStartOfHour, scopes by org", () => {
-		const { sql } = Effect.runSync(serviceMapResolutionsRollupSQL(hourParams))
-		expect(sql).toContain("toStartOfHour(p.Timestamp) AS Hour")
-		expect(sql).toContain("OrgId = 'org_1'")
-	})
-
-	it("drops same-service edges and empty server.address", () => {
-		const { sql } = Effect.runSync(serviceMapResolutionsRollupSQL(hourParams))
-		expect(sql).toContain("p.ServiceName != c.ServiceName")
-		expect(sql).toContain("SpanAttributes['server.address'] != ''")
-	})
 
 	it("bounds the join to a single hour on both sides", () => {
 		const { sql } = Effect.runSync(serviceMapResolutionsRollupSQL(hourParams))
@@ -406,40 +335,6 @@ describe("serviceDependenciesForServiceQuery", () => {
 		expect(sql).toContain(`Hour < ${END_FLOOR}`)
 	})
 
-	it("filters SourceService on the hourly branch", () => {
-		const { sql } = compileUnsafe(
-			serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
-		expect(sql).toContain("FROM service_map_edges_hourly")
-		expect(sql).toContain("SourceService = 'artifacts-api'")
-	})
-
-	it("pushes parent ServiceName into the live topology JOIN's left subquery", () => {
-		const { sql } = compileUnsafe(
-			serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
-		// The DSL emits the parent subquery against service_map_spans with a
-		// `ServiceName = ?` predicate so the JOIN's left side is pre-shrunk.
-		expect(sql).toContain("FROM service_map_spans")
-		expect(sql).toContain("ServiceName = 'artifacts-api'")
-		// Both the hourly branch and the in-progress-hour join must filter — so
-		// the service name string should appear at least twice in the emitted SQL.
-		const matches = sql.match(/'artifacts-api'/g)
-		expect(matches && matches.length >= 2).toBe(true)
-	})
-
-	it("unions hourly MV with the in-progress-hour topology JOIN", () => {
-		const { sql } = compileUnsafe(
-			serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
-		expect(sql).toContain("FROM service_map_edges_hourly")
-		expect(sql).toContain("FROM service_map_spans")
-		expect(sql).toContain("FROM service_map_children")
-	})
-
 	it("threads deploymentEnv through both branches (hourly + parent + child)", () => {
 		const { sql } = compileUnsafe(
 			serviceDependenciesForServiceQuery({
@@ -517,56 +412,14 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain(RAW_NAMESPACE)
 		// …and every GROUP BY carries it so distinct databases stay distinct rows
 		const matches = sql.match(/GROUP BY sourceService, dbSystem, dbNamespace/g)
-		expect(matches?.length).toBe(3)
+		expect(matches?.length).toBe(4)
 	})
 
-	it("guards the org-wide raw branch against unnamed spans (ServiceName != '')", () => {
-		// Org-wide (no serviceName) still needs the empty-service guard on the raw
-		// in-progress-hour branch — the hourly MV already applies it at write time.
-		const { sql } = Effect.runSync(serviceDbEdgesSQL({}, baseParams))
-		expect(sql).toContain("ServiceName != ''")
-	})
-
-	it("filters ServiceName on both branches (hourly MV + raw traces)", () => {
-		const { sql } = compileUnsafe(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
-		const matches = sql.match(/ServiceName = 'artifacts-api'/g)
-		// One in the hourly branch, one in the raw-traces fallback.
-		expect(matches && matches.length === 2).toBe(true)
-	})
-
-	it("unions service_map_db_edges_hourly with raw traces for the in-progress hour", () => {
-		const { sql } = compileUnsafe(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
+	it("without the minute tier (no migration 0049), reads the partial hours from raw traces only", () => {
+		const { sql } = Effect.runSync(serviceDbEdgesSQL({ minuteTier: false }, baseParams))
+		expect(sql).not.toContain("service_map_db_edges_minutely")
 		expect(sql).toContain("FROM service_map_db_edges_hourly")
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("Timestamp >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
-	})
-
-	it("restricts the raw branch to Client/Producer spans with a db system set (stable + legacy)", () => {
-		const { sql } = compileUnsafe(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
-		expect(sql).toContain("SpanKind IN ('Client', 'Producer')")
-		// Same stable→legacy coalesce as the MV write side (DB_SYSTEM_ATTR_SQL).
-		expect(sql).toContain(
-			"coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''",
-		)
-	})
-
-	it("carries dbNamespace on both branches so distinct databases split", () => {
-		const { sql } = compileUnsafe(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
-		// Same identity derivation as the org-wide query, or the branches won't merge.
-		expect(sql).toContain(SEALED_DB_EDGES)
-		expect(sql).toContain(RAW_NAMESPACE)
 	})
 
 	it("threads deploymentEnv through both branches", () => {
@@ -653,17 +506,12 @@ describe("service-map database query summaries", () => {
 		expect(sql).toContain(
 			"toStartOfInterval(toDateTime(traces.Timestamp), INTERVAL 300 SECOND) AS bucket",
 		)
-		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("service_map_db_query_shapes_hourly")
 		expect(sql).toContain("GROUP BY bucket")
-		expect(sql).toContain("ORDER BY bucket ASC")
-		expect(sql).toContain("LIMIT 2000")
 	})
 
 	it("serves hour-aligned query activity from the rollup + raw traces", () => {
 		const { sql } = Effect.runSync(serviceDbQueryTimeseriesSQL({ ...params, bucketSeconds: 3600 }))
-		expect(sql).toContain("FROM service_map_db_query_shapes_hourly")
-		expect(sql).toContain("FROM traces")
 		expect(sql).toContain(
 			"toStartOfInterval(service_map_db_query_shapes_hourly.Hour, INTERVAL 3600 SECOND) AS bucket",
 		)

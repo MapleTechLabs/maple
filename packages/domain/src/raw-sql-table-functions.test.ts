@@ -81,4 +81,80 @@ describe("rawSqlIssue table sources", () => {
 	])("accepts legitimate queries: %s", (sql) => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})
+
+	it.each([
+		"SELECT name FROM system.tables WHERE $__orgFilter",
+		"SELECT name FROM `system`.tables WHERE $__orgFilter",
+		'SELECT name FROM "system".tables WHERE $__orgFilter',
+		"SELECT name FROM `system`.`users` WHERE $__orgFilter",
+		"SELECT name FROM “system”.tables WHERE $__orgFilter",
+		"SELECT name FROM `SyStEm`.tables WHERE $__orgFilter",
+		"SELECT name FROM SYSTEM.tables WHERE $__orgFilter",
+		"SELECT name FROM `system` /* c */ . tables WHERE $__orgFilter",
+		"SELECT name FROM `system` -- c\n.tables WHERE $__orgFilter",
+		"SELECT name FROM `\\x73ystem`.tables WHERE $__orgFilter",
+		"SELECT name FROM `sys\\Ntem`.tables WHERE $__orgFilter",
+		"SELECT * FROM traces t JOIN `system`.users u ON 1 = 1 WHERE $__orgFilter(t)",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanName IN (SELECT name FROM `system`.tables)",
+		'SELECT (SELECT count() FROM "system".processes) AS n FROM traces WHERE $__orgFilter',
+		"SELECT name FROM information_schema.tables WHERE $__orgFilter",
+		"SELECT name FROM `INFORMATION_SCHEMA`.`TABLES` WHERE $__orgFilter",
+		'SELECT name FROM "information_schema".columns WHERE $__orgFilter',
+	])("rejects the system databases however they are quoted: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedStatement")
+	})
+
+	it.each([
+		"SELECT system FROM traces WHERE $__orgFilter",
+		"SELECT `system` FROM traces WHERE $__orgFilter",
+		'SELECT "system", count() AS system FROM traces WHERE $__orgFilter GROUP BY "system"',
+		"SELECT t.system FROM traces t WHERE $__orgFilter(t)",
+		"SELECT t.`system` AS s FROM traces t WHERE $__orgFilter(t)",
+		"SELECT 'system' AS a, 'system.tables' AS b FROM traces WHERE $__orgFilter",
+		"SELECT 1 AS a FROM traces WHERE $__orgFilter -- reads system.tables",
+		"SELECT ServiceName FROM traces WHERE $__orgFilter AND ServiceName = 'system'",
+	])("accepts a column, alias or literal named system: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it.each([
+		"SELECT hasColumnInTable('system', 'tables', 'name') AS h FROM traces WHERE $__orgFilter",
+		"SELECT dictGet('d', 'v', toUInt64(1)) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetOrDefault('d', 'v', 1, 'x') AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetOrNull('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetString('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetUInt64('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictHas('d', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetHierarchy('d', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictIsIn('d', 1, 2) AS v FROM traces WHERE $__orgFilter",
+		"SELECT joinGet('db.j', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT joinGetOrNull('db.j', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT getMacro('shard') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getSetting('max_memory_usage') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getSettingOrDefault('x', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT getServerSetting('path') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getMergeTreeSetting('index_granularity') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getClientHTTPHeader('Authorization') AS v FROM traces WHERE $__orgFilter",
+		"SELECT currentUser() AS u, currentRoles() AS r FROM traces WHERE $__orgFilter",
+		// Spelling does not hide the call.
+		"SELECT DICTGET('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT `dictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT \"hasColumnInTable\"('system', 'tables', 'name') AS h FROM traces WHERE $__orgFilter",
+		"SELECT “getMacro”('shard') AS v FROM traces WHERE $__orgFilter",
+		"SELECT `\\x64ictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGet /* c */ ('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanName = (SELECT getSetting('x'))",
+	])("rejects functions that read outside the query's tables: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	it.each([
+		"SELECT currentDatabase() AS db, timezone() AS tz FROM traces WHERE $__orgFilter",
+		"SELECT dictionary_name, getsetting, user FROM traces WHERE $__orgFilter",
+		"SELECT 'dictGet(1)' AS a FROM traces WHERE $__orgFilter -- getSetting('x')",
+		"SELECT has(ResourceAttributes, 'k') AS h FROM traces WHERE $__orgFilter",
+		"SELECT getSubcolumn(t, 'a') AS a FROM traces WHERE $__orgFilter",
+	])("accepts functions and columns that only read the query's tables: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
 })

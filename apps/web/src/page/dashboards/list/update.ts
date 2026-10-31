@@ -104,10 +104,12 @@ export const listedOf = (model: Model): ReadonlyArray<ListDashboard> | null =>
 	model.dashboards ?? (model.fallback._tag === "Ready" ? model.fallback.dashboards : null)
 
 /** `degraded`: reading the snapshot, so writes are off. */
-export const isDegraded = (model: Model): boolean => model.dashboards === null && model.fallback._tag === "Ready"
+export const isDegraded = (model: Model): boolean =>
+	model.dashboards === null && model.fallback._tag === "Ready"
 
 /** `isError`: neither the live list nor the snapshot could be read. */
-export const isLoadFailed = (model: Model): boolean => model.dashboards === null && model.fallback._tag === "Failed"
+export const isLoadFailed = (model: Model): boolean =>
+	model.dashboards === null && model.fallback._tag === "Failed"
 
 export const isReadOnly = (model: Model): boolean => model.persistenceError !== null || isDegraded(model)
 
@@ -244,10 +246,19 @@ const warningsToast = (warnings: ReadonlyArray<string>): WarningToast => ({
 	description: `${warnings.slice(0, 3).join("\n")}${warnings.length > 3 ? `\n+${warnings.length - 3} more` : ""}`,
 })
 
-/** The editor's pending input committed as tags (`commit`). */
-const failedWrite = (model: Model, message: string): Return => ({
-	model: { ...model, persistenceError: message, isCreating: false },
-})
+/**
+ * A failed write turns the list read-only; the banner says so, so no toast repeats it. A list still
+ * waiting on live sync reads the HTTP snapshot now, so the skeleton resolves instead of waiting out the timer.
+ */
+const failedWrite = (model: Model, message: string, orgId: string): Return => {
+	const next: Model = { ...model, persistenceError: message, isCreating: false }
+	return model.dashboards === null && model.fallback._tag === "Idle"
+		? {
+				model: { ...next, fallback: { _tag: "Loading" } },
+				commands: [FetchDashboardsFallback({ orgId })],
+			}
+		: { model: next }
+}
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -310,7 +321,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 		CompletedCreateDashboard: ({ result }) =>
 			Result.match(result, {
-				onFailure: (error) => toastFailure(failedWrite(model, error).model, error),
+				onFailure: (error) => failedWrite(model, error, context.orgId),
 				onSuccess: (id) => navigateTo({ ...model, isCreating: false }, dashboardHref(id, "edit")),
 			}),
 		ClickedImport: () => (isReadOnly(model) ? { model } : { model, commands: [OpenImportPicker()] }),
@@ -335,7 +346,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					const out = navigation.outMessage
 					return created.warnings.length === 0 || out?._tag !== "RequestedNavigation"
 						? navigation
-						: { ...navigation, outMessage: { ...out, followUpToast: warningsToast(created.warnings) } }
+						: {
+								...navigation,
+								outMessage: { ...out, followUpToast: warningsToast(created.warnings) },
+							}
 				},
 			}),
 		ToggledFavorite: ({ id }) => {
@@ -353,7 +367,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedExportDashboard: () => ({ model }),
 		CompletedDuplicateDashboard: ({ result }) =>
 			Result.match(result, {
-				onFailure: (error) => toastFailure(failedWrite(model, error).model, error),
+				onFailure: (error) => failedWrite(model, error, context.orgId),
 				onSuccess: (created) =>
 					navigateWithToast(model, dashboardHref(created.id), `Duplicated as "${created.name}"`),
 			}),
@@ -375,9 +389,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedDeleteDashboard: ({ result }) =>
 			Result.match(result, {
-				onFailure: (error) => failedWrite(model, error),
+				onFailure: (error) => failedWrite(model, error, context.orgId),
 				onSuccess: (sync) =>
-					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
+					sync === "Behind"
+						? { model, outMessage: behindToast() }
+						: { model: { ...model, persistenceError: null } },
 			}),
 		GotTagEditorMessage: ({ message: inner }) => {
 			const next = TagEditor.update(model.tagEditor, inner)
@@ -398,21 +414,28 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedSaveTags: ({ result }) =>
 			Result.match(result, {
-				onFailure: (error) => failedWrite(model, error),
+				onFailure: (error) => failedWrite(model, error, context.orgId),
 				onSuccess: (sync) =>
-					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
+					sync === "Behind"
+						? { model, outMessage: behindToast() }
+						: { model: { ...model, persistenceError: null } },
 			}),
 		GotTagFilterMessage: ({ message: inner }) => {
 			const next = Combobox.update(model.tagFilter, inner)
 			const commands = Command.mapMessages(next.commands ?? [], (message) =>
 				Message.GotTagFilterMessage({ message }),
 			)
-			if (next.outMessage?._tag !== "ChangedSelection") return { model: { ...model, tagFilter: next.model }, commands }
+			if (next.outMessage?._tag !== "ChangedSelection")
+				return { model: { ...model, tagFilter: next.model }, commands }
 			const tags = next.outMessage.selected
 			// The pick re-renders the list under the popup: nothing stays highlighted; the search keeps focus.
 			const updated = { ...model, tagFilter: { ...next.model, highlighted: null } }
-			const refocus = inner._tag === "ClickedItem" ? [FocusTagSearch({ id: Combobox.inputId(TAG_FILTER_ID) })] : []
-			return { ...navigateSearch(updated, { tags: tags.length === 0 ? undefined : tags }), commands: [...commands, ...refocus] }
+			const refocus =
+				inner._tag === "ClickedItem" ? [FocusTagSearch({ id: Combobox.inputId(TAG_FILTER_ID) })] : []
+			return {
+				...navigateSearch(updated, { tags: tags.length === 0 ? undefined : tags }),
+				commands: [...commands, ...refocus],
+			}
 		},
 		CompletedFocusTagSearch: () => ({ model }),
 	})

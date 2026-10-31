@@ -10,7 +10,6 @@ import {
 	connectorApprovalTenant,
 	connectorTurnTenant,
 	CONNECTOR_TENANT_USER_ID,
-	isConnectorSessionId,
 	originForTenant,
 	decodeChatTurnTenant,
 	encodeChatTurnTenant,
@@ -92,8 +91,8 @@ describe("chat session ids", () => {
 
 	it("keeps colons inside the tab id", () => {
 		// The org is everything before the FIRST colon; a tab id is free to contain more.
-		expect(orgIdFromChatSessionId("org_abc:widget-fix-d1:w2")).toBe("org_abc")
-		expect(tabIdFromChatSessionId("org_abc:widget-fix-d1:w2")).toBe("widget-fix-d1:w2")
+		expect(orgIdFromChatSessionId("org_abc:pr-d1:w2")).toBe("org_abc")
+		expect(tabIdFromChatSessionId("org_abc:pr-d1:w2")).toBe("pr-d1:w2")
 	})
 
 	it("denies ids that carry no resolvable org", () => {
@@ -104,9 +103,9 @@ describe("chat session ids", () => {
 
 	it("derives the mode from the tab prefix", () => {
 		expect(chatModeFromSessionId("o:tab-1")).toBe("default")
-		expect(chatModeFromSessionId("o:alert-inc_1")).toBe("alert")
-		expect(chatModeFromSessionId("o:widget-fix-d1-w2")).toBe("widget-fix")
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
+		expect(chatModeFromSessionId("o:pr-r1")).toBe("pr-review")
+		expect(chatModeFromSessionId("o:prr-r1")).toBe("pr-reply")
 		// A connector thread is an ordinary chat conversation someone is answering in from
 		// elsewhere; what differs is the turn's origin, not the mode.
 		expect(chatModeFromSessionId("o:bot-testchat-c1")).toBe("default")
@@ -115,9 +114,7 @@ describe("chat session ids", () => {
 	it("builds a connector conversation's session id, org and prefix intact", () => {
 		const id = connectorSessionId(orgId("org_abc"), connectorId, conversationKey)
 		expect(id).toBe("org_abc:bot-testchat-c1")
-		expect(isConnectorSessionId(id)).toBe(true)
 		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
-		expect(isConnectorSessionId(makeChatSessionId("org_abc", "tab-1"))).toBe(false)
 	})
 
 	it("refuses an id or key that would blur the tab", () => {
@@ -138,7 +135,7 @@ describe("chat session ids", () => {
 
 	it("recovers the investigation id only for investigate sessions", () => {
 		expect(investigationIdFromChatSessionId("o:inv-abc")).toBe("abc")
-		expect(investigationIdFromChatSessionId("o:alert-abc")).toBeUndefined()
+		expect(investigationIdFromChatSessionId("o:pr-abc")).toBeUndefined()
 	})
 })
 

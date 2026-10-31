@@ -26,6 +26,17 @@ export class LocalServerUnreachableError extends Schema.TaggedError<LocalServerU
 	},
 ) {}
 
+/** The server, or a proxy in front of it, refused the CLI's credentials. */
+export class LocalServerAccessDeniedError extends Schema.TaggedError<LocalServerAccessDeniedError>()(
+	"@maple/cli/LocalServerAccessDeniedError",
+	{
+		url: Schema.String,
+		status: Schema.Number,
+		message: Schema.String,
+		hint: Schema.optionalKey(Schema.String),
+	},
+) {}
+
 /** `/local/query` refused a write, a multi-statement batch, or a table function. */
 export class ReadOnlyQueryError extends Schema.TaggedError<ReadOnlyQueryError>()(
 	"@maple/cli/ReadOnlyQueryError",

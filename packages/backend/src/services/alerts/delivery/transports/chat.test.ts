@@ -19,7 +19,7 @@ import { buildChatAlertBlocks, chatTransport } from "./chat"
 const ORG = Schema.decodeUnknownSync(OrgId)("org_1")
 const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const config: SecretConfigOf<"chat"> = {
 	type: "chat",
@@ -112,10 +112,7 @@ describe("chat alert blocks", () => {
 		)
 		assert.strictEqual(card.fields[1]?.value, "`checkout`")
 		assert.strictEqual(card.imageUrl, "https://charts.localhost/c.png")
-		assert.deepStrictEqual(card.links, [
-			{ label: "Open in Maple", url: LINK, primary: true },
-			{ label: "✨ Ask Maple AI", url: CHAT, primary: false },
-		])
+		assert.deepStrictEqual(card.links, [{ label: "Open in Maple", url: LINK, primary: true }])
 		assert.deepStrictEqual(card.footer, ["\u{1F341} Maple Alerts", "`▁▂▅▇`", "Incident `inc_1`"])
 		assert.strictEqual(card.sentAtMs, 1_700_000_000_000)
 	})

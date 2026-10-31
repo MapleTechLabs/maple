@@ -46,17 +46,30 @@ export const captureOAuthReturn = (env: {
 		return true
 	})
 
+const readStashed = (storage: ReturnStorage) =>
+	Effect.try(() => storage.getItem(KEY)).pipe(Effect.orElseSucceed(() => null))
+
+const decodeFresh = (raw: string, now: number): Option.Option<OAuthCompleteRequest> =>
+	decodeStashed(raw).pipe(
+		Option.filter((stashed) => stashed.savedAt <= now && now - stashed.savedAt <= TTL_MS),
+		Option.flatMap((stashed) => decodeOAuthReturnHash(stashed.hash)),
+	)
+
 /** The stashed return, removed as it is read; none once it is older than its state could be. */
 export const takeOAuthReturn = (
 	storage: ReturnStorage,
 	now: number,
 ): Effect.Effect<Option.Option<OAuthCompleteRequest>> =>
 	Effect.gen(function* () {
-		const raw = yield* Effect.try(() => storage.getItem(KEY)).pipe(Effect.orElseSucceed(() => null))
+		const raw = yield* readStashed(storage)
 		if (raw === null) return Option.none()
 		yield* Effect.try(() => storage.removeItem(KEY)).pipe(Effect.ignore)
-		return decodeStashed(raw).pipe(
-			Option.filter((stashed) => stashed.savedAt <= now && now - stashed.savedAt <= TTL_MS),
-			Option.flatMap((stashed) => decodeOAuthReturnHash(stashed.hash)),
-		)
+		return decodeFresh(raw, now)
 	})
+
+/** The stashed return left in place, for a screen that opens the page which takes it. */
+export const peekOAuthReturn = (
+	storage: ReturnStorage,
+	now: number,
+): Effect.Effect<Option.Option<OAuthCompleteRequest>> =>
+	Effect.map(readStashed(storage), (raw) => (raw === null ? Option.none() : decodeFresh(raw, now)))

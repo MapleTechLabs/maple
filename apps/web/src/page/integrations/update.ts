@@ -4,7 +4,6 @@ import * as Keyed from "../../data/keyed"
 import { requestKey } from "../../data/request-key"
 import { AppRoute, hrefOf } from "../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import { chatConnectorOf, integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
@@ -121,6 +120,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			aws: Keyed.idle(),
 			supabase: Keyed.idle(),
 			hazel: Keyed.idle(),
+			linear: Keyed.idle(),
 			github: Keyed.idle(),
 			chat: Keyed.idle(),
 			scrapeTargets: Keyed.idle(),
@@ -164,7 +164,7 @@ export const routeChanged = (
 				(next) => handleChatCallback(next, true),
 			])
 
-/** The reads an integration's card mounts (Cloudflare's usage). */
+/** The reads an integration's card mounts (Cloudflare's usage, PlanetScale's watch clock). */
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
@@ -172,6 +172,7 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
+	if (integration === "planetscale") return Planetscale.enterPlanetscale(model)
 	return { model }
 }
 
@@ -187,32 +188,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	const s = model.statuses
 	return Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) =>
-			chain(
-				{
-					...model,
-					nowMs,
-					planetscaleCard: {
-						...model.planetscaleCard,
-						watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
-					},
-				},
-				[
-					(next) => gcpBand(next, context),
-					(next) => Supabase.requestMetricsRows(next, context, "Load"),
-				],
-			),
+			chain(Planetscale.withWatchStart({ ...model, nowMs }, nowMs), [
+				(next) => gcpBand(next, context),
+				(next) => Supabase.requestMetricsRows(next, context, "Load"),
+			]),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
 			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
 		CompletedLoadPlanetscale: ({ key, result }) => {
-			const next = accepted(model, {
+			const read = accepted(model, {
 				...s,
 				planetscale: Keyed.accept(s.planetscale, key, result),
 			}).model
-			return integrationOfSearch(next.search.integration) === "planetscale"
-				? Planetscale.ensurePendingPicker(next, context)
-				: { model: next }
+			return chain(read, [
+				(next) => Planetscale.loadedStatus(next),
+				(next) =>
+					integrationOfSearch(next.search.integration) === "planetscale"
+						? Planetscale.ensurePicker(next, context)
+						: { model: next },
+			])
 		},
 		CompletedLoadPlanetscaleDatabases: ({ key, result }) =>
 			accepted(model, {
@@ -228,6 +223,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadAws: ({ key, result }) =>
 			Aws.statusArrived(
 				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
+				context,
 				Aws.connectionsOf(model),
 			),
 		CompletedLoadSupabase: ({ key, result }) => {
@@ -242,6 +238,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
+		CompletedLoadLinear: ({ key, result }) =>
+			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
 		CompletedLoadChat: ({ key, result }) =>
@@ -283,6 +281,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedZoneSort: ({ key }) => CloudflareCard.clickedZoneSort(model, key),
 		ClickedWorkersExpand: () =>
 			CloudflareCard.updateBoard(model, { workersExpanded: !model.cloudflareCard.workersExpanded }),
+		ClickedManageZones: () => CloudflareCard.clickedManageZones(model),
+		GotZoneDialogMessage: ({ message: child }) => CloudflareCard.gotZoneDialog(model, child),
+		ToggledManagedZone: ({ accountId, zoneId }) =>
+			CloudflareCard.toggledManagedZone(model, accountId, zoneId),
+		ToggledWatchNewZones: ({ accountId }) => CloudflareCard.toggledWatchNewZones(model, accountId),
+		ClickedSetAccountZones: ({ accountId, watched }) =>
+			CloudflareCard.clickedSetAccountZones(model, accountId, watched),
+		ChangedManagedZoneSearch: ({ value }) =>
+			CloudflareCard.updateBoard(model, { zoneDraftSearch: value }),
+		SubmittedZoneSettings: () => CloudflareCard.submittedZoneSettings(model),
+		CompletedCloudflareZones: ({ failure }) =>
+			CloudflareCard.completedZoneSettings(model, context, failure),
 		CompletedLoadChartRuntime: () =>
 			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Ready() }),
 		FailedLoadChartRuntime: ({ reason }) =>
@@ -306,7 +316,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Prometheus.completedProbe(model, context, id, failure, success, error),
 		ClickedToggleTarget: ({ id }) => Prometheus.clickedToggle(model, id),
 		CompletedToggle: ({ id, failure }) => Prometheus.completedToggle(model, context, id, failure),
-		ClickedAddTarget: () => Prometheus.clickedAdd(model),
 		ClickedEditTarget: ({ id }) => Prometheus.clickedEdit(model, id),
 		ClickedDeleteTarget: ({ id }) => Prometheus.clickedDelete(model, id),
 		GotTargetMenuMessage: ({ id, message: child }) => Prometheus.gotTargetMenu(model, id, child),
@@ -338,9 +347,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
 		ClickedAwsSetupClose: () => Aws.closeSetup(model),
 		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
-		ClickedAwsSetupMethod: ({ method }) => Aws.setMethod(model, method),
+		CompletedLoadAwsIngest: ({ id, key, result }) => Aws.completedIngest(model, id, key, result),
+		ClickedAwsSetupMethod: ({ part, method }) => Aws.setMethod(model, part, method),
 		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
 		TickedAwsPending: () => Aws.tickedPending(model),
+		TickedAwsWatch: () => Aws.tickedWatch(model, context),
 		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
 			Aws.completedCheck(model, context, id, quiet, connection, failure),
 		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),
@@ -352,6 +363,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
 		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
 		CompletedWriteAwsRemoved: () => ({ model }),
+		ClickedAwsMetrics: ({ id }) => Aws.clickedMetrics(model, id),
+		ClickedAwsMetricsCancel: () => Aws.cancelledMetrics(model),
+		ToggledAwsRegion: ({ id, region }) => Aws.toggledRegion(model, id, region),
+		ToggledAwsNamespace: ({ id, namespace }) => Aws.toggledNamespace(model, id, namespace),
+		SubmittedAwsMetrics: ({ id }) => Aws.submittedMetrics(model, id),
+		CompletedAwsMetricStream: ({ connection, error }) =>
+			Aws.completedMetricStream(model, context, connection, error),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
 		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
@@ -370,50 +388,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
 			}),
-		CompletedFetchWebhookConfig: ({ key, result }) =>
-			Planetscale.updateCard(model, {
-				webhookConfig: Keyed.accept(model.planetscaleCard.webhookConfig, key, result),
-			}),
 		ClickedChangeOrganization: () => Planetscale.clickedChange(model, context),
 		GotPickerDialogMessage: ({ message: child }) => Planetscale.gotPickerDialog(model, child),
 		SelectedOrganization: ({ name }) => Planetscale.updateCard(model, { selectedOrg: name }),
 		GotBranchFieldMessage: ({ field, message: child }) => Planetscale.gotBranchField(model, field, child),
-		ClickedPickerCancel: () =>
-			model.planetscaleCard.pickerDialog.isOpen
-				? Planetscale.clickedPickerCancel(model)
-				: withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
+		ClickedPickerCancel: () => Planetscale.clickedPickerCancel(model),
 		SubmittedOrganization: () => Planetscale.submittedOrganization(model),
 		CompletedSelectOrganization: ({ organization, failure }) =>
 			Planetscale.completedSelect(model, context, organization, failure),
-		ClickedRotateToken: () => Planetscale.updateCard(model, { isRotating: true }),
-		ClickedRotateCancel: () => Planetscale.updateCard(model, { isRotating: false }),
-		GotMetricsTokenMessage: ({ field, message: child }) => Planetscale.gotTokenField(model, field, child),
-		PastedMetricsToken: ({ field, text }) => Planetscale.pastedToken(model, field, text),
-		SubmittedMetricsToken: () => Planetscale.submittedToken(model),
-		CompletedSetMetricsToken: ({ error }) => Planetscale.completedToken(model, context, error),
 		ClickedMetricsDetails: () =>
 			Planetscale.updateCard(model, { isDetailsOpen: !model.planetscaleCard.isDetailsOpen }),
-		ClickedShowWebhookSetup: () => Planetscale.clickedShowWebhook(model, context),
-		GotWebhookCopyMessage: ({ field, message: child }) => {
-			const card = model.planetscaleCard
-			const step = CopyButton.update(field === "url" ? card.urlCopy : card.secretCopy, child)
-			return {
-				model: {
-					...model,
-					planetscaleCard:
-						field === "url"
-							? { ...card, urlCopy: step.model }
-							: { ...card, secretCopy: step.model },
-				},
-				commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotWebhookCopyMessage({ field, message: inner }),
-				),
-			}
-		},
-		TickedPlanetscaleWatch: () => {
-			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
-			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
-		},
+		SelectedPlanetscaleMetricsMethod: ({ method }) =>
+			Planetscale.updateCard(model, { metricsMethod: method, tokenError: null }),
+		GotPlanetscaleTokenField: ({ field, message: child }) =>
+			Planetscale.gotTokenField(model, field, child),
+		SubmittedPlanetscaleToken: () => Planetscale.submittedToken(model),
+		CompletedPlanetscaleToken: ({ failure }) => Planetscale.completedToken(model, context, failure),
+		ClickedPlanetscaleReplaceToken: () =>
+			Planetscale.updateCard(model, { isReplacingToken: !model.planetscaleCard.isReplacingToken }),
+		TickedPlanetscaleWatch: () => Planetscale.refreshWatch(model, context),
+		ClickedPlanetscaleCheckAgain: () => Planetscale.clickedCheckAgain(model, context),
 		CompletedGcpLogVolume: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
 		CompletedGcpFleet: ({ key, result }) =>
@@ -444,15 +438,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotGcpConfigureDialogMessage: ({ message: child }) => Configure.gotConfigureDialog(model, child),
 		GotGcpScopeTypeMessage: ({ message: child }) => Configure.gotScopeType(model, child),
 		GotGcpScopeFieldMessage: ({ field, message: child }) => Configure.gotScopeField(model, field, child),
-		SubmittedGcpScope: () => Configure.submittedScope(model),
 		SubmittedGcpCreate: () => Configure.submittedCreate(model),
-		ClickedGcpConfigureBack: () => Configure.clickedBack(model),
 		ToggledGcpCollect: ({ capability }) => Configure.toggledCollect(model, capability),
 		ClickedGcpLogFilter: () => Configure.clickedLogFilter(model),
-		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, child),
-		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model),
-		ClickedGcpUseOpenTelemetry: () => Configure.clickedUseOpenTelemetry(model),
-		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, runtime),
+		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, context, child),
+		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model, context),
+		ClickedGcpUseOpenTelemetry: () => Configure.clickedUseOpenTelemetry(model, context),
+		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, context, runtime),
 		CompletedGcpCreate: ({ opens, connector, failure }) =>
 			Configure.completedCreate(model, context, opens, connector, failure),
 		ClickedGcpChooseApply: () => Configure.clickedChooseApply(model),
@@ -517,6 +509,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Connect.receivedCallback(model, context, provider, status, text),
 		CompletedOAuthReturn: ({ outcome }) => completedOAuthReturn(model, context, outcome),
 		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Supersede"),
+		ClickedRetryFailedStatuses: () =>
+			chain(
+				model,
+				STATUS_NAMES.filter((name) => {
+					const tag = model.statuses[name].data._tag
+					return tag === "Failure" || tag === "Stale"
+				}).map((name) => (next: Model) => requestStatus(next, context, name, "Supersede")),
+			),
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>
 			model.disconnect.isPending ||

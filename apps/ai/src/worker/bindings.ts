@@ -10,12 +10,19 @@
  * the tool registry touch on their own.
  */
 import { MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Stage } from "alchemy/Stage"
 import { Effect, Layer, Option } from "effect"
+import { securityAuditWorkflowControl } from "../security-audit/workflow-control"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
-import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
+import {
+	McpToolsRateLimit,
+	RateLimitBindingError,
+	type RateLimiter,
+	SecurityAuditWorkflowStarter,
+} from "@maple/backend/platform/bindings"
+import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type ChatSessionNamespace, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
@@ -113,9 +120,11 @@ export const aiPorts = (
 	env: Record<string, unknown>,
 	workersAi: typeof WorkersAiGateway.Service,
 	chatSessions: ChatSessionNamespace,
+	audits: Cloudflare.WorkflowHandle<SecurityAuditWorkflowPayload>,
 ) =>
 	Layer.mergeAll(
 		Layer.succeed(WorkersAiGateway, workersAi),
+		Layer.succeed(SecurityAuditWorkflowStarter, securityAuditWorkflowControl(audits)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		layerMapleDbConnection(env),
 		envPorts(env),

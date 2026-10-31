@@ -19,7 +19,7 @@ import {
 } from "../../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
+import { severityBadge } from "../../errors/kit/severity"
 import { emptyMessage } from "../../../ui/empty"
 import { listRow } from "../../../ui/list-row"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
@@ -106,7 +106,7 @@ const beforeAfter = <M>(
 		[
 			...(before === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-muted-foreground/70")], [format(before), " →"])]),
+				: [h.span([h.Class("text-3xs text-foreground-subtle")], [format(before), " →"])]),
 			h.span(
 				[
 					h.Class(
@@ -145,13 +145,13 @@ const serviceRow = <M>(
 										(impact.environment ? [impact.environment] : undefined),
 								}),
 							),
-							h.Class("inline-flex items-center gap-2 hover:underline"),
+							h.Class("inline-flex items-center gap-2 hover:underline active:underline"),
 						],
 						[
 							serviceDot(h, { serviceName: impact.serviceName }),
 							impact.serviceName,
 							...(impact.environment && !environments?.length
-								? [h.span([h.Class("text-muted-foreground/70")], [impact.environment])]
+								? [h.span([h.Class("text-foreground-subtle")], [impact.environment])]
 								: []),
 							...(impact.health === "healthy"
 								? []
@@ -204,7 +204,7 @@ const serviceRow = <M>(
 				),
 			),
 		],
-		"border-border/60",
+		"border-border-subtle",
 		[h.Key(`${impact.serviceName}:${impact.environment}`)],
 	)
 
@@ -224,7 +224,7 @@ export const deployServices = <M>(
 		{
 			title: "Services",
 			action: h.span(
-				[h.Class("text-2xs text-muted-foreground/70")],
+				[h.Class("text-2xs text-foreground-subtle")],
 				["against the version each replaced"],
 			),
 		},
@@ -281,7 +281,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 			]),
 		])
 	const action = h.span(
-		[h.Class("text-2xs text-muted-foreground/70")],
+		[h.Class("text-2xs text-foreground-subtle")],
 		["since ", h.span([h.Class("font-mono")], [shortReleaseLabel(state.base)])],
 	)
 	if (state._tag === "Loading")
@@ -314,7 +314,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 							[
 								h.Key(commit.sha),
 								h.Class(
-									"flex items-start gap-2.5 border-t border-border/60 px-4 py-2 text-xs first:border-t-0",
+									"flex items-start gap-2.5 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0",
 								),
 							],
 							[
@@ -330,7 +330,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 												h.Href(pr?.url ?? commit.htmlUrl),
 												h.Target("_blank"),
 												h.Rel("noreferrer"),
-												h.Class("truncate text-foreground hover:underline"),
+												h.Class("truncate text-foreground hover:underline active:underline"),
 												h.Title(subject),
 											],
 											[subject],
@@ -354,7 +354,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 								h.span(
 									[
 										h.Class(
-											"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70",
+											"shrink-0 font-mono text-2xs tabular-nums text-foreground-subtle",
 										),
 									],
 									[
@@ -373,7 +373,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 								h.div(
 									[
 										h.Class(
-											"border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground/70",
+											"border-t border-border-subtle px-4 py-2 text-2xs text-foreground-subtle",
 										),
 									],
 									[String(hidden), " older ", pluralize(hidden, "commit"), " not shown"],
@@ -384,23 +384,6 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 			),
 		],
 	)
-}
-
-// Issue severity tones and labels (as in page/errors/kit/severity.ts).
-const SEVERITY = new Map([
-	["critical", { tone: "bg-severity-fatal/12 text-severity-fatal", label: "Critical" }],
-	["high", { tone: "bg-severity-error/12 text-severity-error", label: "High" }],
-	["medium", { tone: "bg-severity-warn/12 text-severity-warn", label: "Medium" }],
-	["low", { tone: "bg-severity-debug/12 text-severity-debug", label: "Low" }],
-])
-
-const severityBadge = <M>(h: HtmlBuilder<M>, severity: string | null): Html => {
-	const known = severity === null ? undefined : SEVERITY.get(severity)
-	return known === undefined
-		? h.span([h.Class(cn("inline-flex h-5", "w-[60px] justify-center")), h.Title("Severity not set")])
-		: badge(h, { variant: "outline", className: cn(known.tone, "w-[60px] justify-center") }, [
-				known.label,
-			])
 }
 
 const issueLine = <M>(
@@ -419,14 +402,14 @@ const issueLine = <M>(
 			? h.span(
 					[h.Class("contents")],
 					[
-						severityBadge(h, issue.severity),
+						severityBadge(h, issue.severity, "w-[60px] justify-center"),
 						h.span(
 							[h.Class("ml-2.5 inline-flex"), h.Title(issue.serviceName)],
 							[serviceDot(h, { serviceName: issue.serviceName })],
 						),
 					],
 				)
-			: severityBadge(h, issue.severity),
+			: severityBadge(h, issue.severity, "w-[60px] justify-center"),
 		title: truncatedText(h, { text: title, className: "font-normal" }),
 		trailing: h.span(
 			[h.Class("contents")],
@@ -445,7 +428,7 @@ const issueLine = <M>(
 					variant: "orDate",
 					mono: true,
 					tooltip: "title",
-					className: "w-14 text-right text-xs text-muted-foreground/70",
+					className: "w-14 text-right text-xs text-foreground-subtle",
 				}),
 			],
 		),
@@ -474,7 +457,7 @@ export const issueList = <M>(
 				[
 					h.Class(
 						options.issues.length === 0
-							? "text-2xs text-muted-foreground/70"
+							? "text-2xs text-foreground-subtle"
 							: options.tone === "error"
 								? "text-2xs font-medium text-severity-error"
 								: options.tone === "warn"

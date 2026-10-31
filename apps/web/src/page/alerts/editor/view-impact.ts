@@ -1,3 +1,4 @@
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { type AlertRulePreviewResponse, UNGROUPED_GROUP_KEY } from "@maple/domain/http"
 import { breachStatsFromPreview, formatBreachDuration } from "@maple/web-data/alerts/breach-stats"
 import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/form-utils"
@@ -19,16 +20,29 @@ import { isEvaluationChanged } from "./plan"
 
 type H = HtmlBuilder<Message>
 
-const figure = (h: H, before: string, after: string, caption: string, tone: "good" | "warn" | "neutral"): Html =>
+const figure = (
+	h: H,
+	before: string,
+	after: string,
+	caption: string,
+	tone: "good" | "warn" | "neutral",
+): Html =>
 	h.div(
 		[],
 		[
 			h.p(
-				[h.Class("flex items-baseline gap-2 text-2xl font-medium tabular-nums")],
+				[h.Class("flex items-baseline gap-2 text-2xl font-semibold tabular-nums")],
 				[
 					h.span([h.Class("text-muted-foreground line-through decoration-1")], [before]),
 					h.span(
-						[h.Class(cn(tone === "good" && "text-severity-info", tone === "warn" && "text-severity-warn"))],
+						[
+							h.Class(
+								cn(
+									tone === "good" && "text-severity-info",
+									tone === "warn" && "text-severity-warn",
+								),
+							),
+						],
 						[after],
 					),
 				],
@@ -67,7 +81,7 @@ export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 				"Before and after · ",
 				String(changes.length),
 				" unsaved ",
-				changes.length === 1 ? "change" : "changes",
+				pluralize(changes.length, "change"),
 			]),
 			replay.isLoading || draft.isLoading
 				? skeleton(h, "h-14 w-full")
@@ -77,7 +91,7 @@ export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 							figure(
 								h,
 								String(before.breachCount),
-								`${after.breachCount} ${after.breachCount === 1 ? "alert" : "alerts"}`,
+								countLabel(after.breachCount, "alert"),
 								delta === 0
 									? "Same number of alerts in this window"
 									: `${Math.abs(delta)} ${delta < 0 ? "fewer" : "more"} than the saved rule`,
@@ -94,16 +108,22 @@ export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 					),
 			h.div(
 				[h.Class("space-y-1")],
-				[fireRail(h, "before", replay.preview, domain, "muted"), fireRail(h, "after", draft.preview, domain, "crit")],
+				[
+					fireRail(h, "before", replay.preview, domain, "muted"),
+					fireRail(h, "after", draft.preview, domain, "crit"),
+				],
 			),
 			h.ul(
 				[h.Class("flex flex-wrap gap-1.5 text-xs")],
 				changes.map((change) =>
 					h.li(
-						[h.Key(change.field), h.Class("rounded-sm border bg-muted/30 px-2 py-1")],
+						[h.Key(change.field), h.Class("rounded-sm border bg-surface-sunken px-2 py-1")],
 						[
 							h.span([h.Class("text-muted-foreground")], [change.field, " "]),
-							h.span([h.Class("font-mono text-muted-foreground line-through")], [change.before]),
+							h.span(
+								[h.Class("font-mono text-muted-foreground line-through")],
+								[change.before],
+							),
 							h.span([h.Class("text-muted-foreground")], [" → "]),
 							h.span([h.Class("font-mono")], [change.after]),
 						],
@@ -132,30 +152,40 @@ const clearedBlock = (
 								String(cleared.length),
 								" open",
 								" ",
-								cleared.length === 1 ? "incident" : "incidents",
+								pluralize(cleared.length, "incident"),
 								" would clear under this edit",
 							],
 						),
 						h.ul(
 							[h.Class("mt-0.5 text-muted-foreground")],
 							[
-								...cleared.slice(0, 3).map((incident) =>
-									h.li(
-										[h.Key(incident.id)],
-										[
-											incident.groupKey === null || incident.groupKey === UNGROUPED_GROUP_KEY
-												? incident.ruleName
-												: incident.groupKey,
-											...(incident.lastObservedValue === null
-												? []
-												: [` at ${formatSignalValue(display, incident.lastObservedValue)}`]),
-										],
+								...cleared
+									.slice(0, 3)
+									.map((incident) =>
+										h.li(
+											[h.Key(incident.id)],
+											[
+												incident.groupKey === null ||
+												incident.groupKey === UNGROUPED_GROUP_KEY
+													? incident.ruleName
+													: incident.groupKey,
+												...(incident.lastObservedValue === null
+													? []
+													: [
+															` at ${formatSignalValue(display, incident.lastObservedValue)}`,
+														]),
+											],
+										),
 									),
-								),
-								...(cleared.length > 3 ? [h.li([], ["and ", String(cleared.length - 3), " more"])] : []),
+								...(cleared.length > 3
+									? [h.li([], ["and ", String(cleared.length - 3), " more"])]
+									: []),
 							],
 						),
-						h.p([h.Class("mt-0.5 text-muted-foreground")], ["Takes effect on the next check after saving."]),
+						h.p(
+							[h.Class("mt-0.5 text-muted-foreground")],
+							["Takes effect on the next check after saving."],
+						),
 					],
 				),
 			]
@@ -182,14 +212,17 @@ const fireRail = (
 		[
 			h.span([h.Class("text-right text-2xs text-muted-foreground")], [label]),
 			h.div(
-				[h.Class("relative h-2 rounded-sm bg-muted/50"), h.AriaLabel(`${label}: ${marks.length} alerts`)],
+				[
+					h.Class("relative h-2 rounded-sm bg-surface-sunken"),
+					h.AriaLabel(`${label}: ${marks.length} alerts`),
+				],
 				marks.map((mark) =>
 					h.span([
 						h.Key(mark.key),
 						h.Class(
 							cn(
-								"absolute inset-y-0 min-w-0.5 rounded-[1px]",
-								tone === "crit" ? "bg-severity-error" : "bg-muted-foreground/60",
+								"absolute inset-y-0 min-w-0.5 rounded-2xs",
+								tone === "crit" ? "bg-severity-error" : "bg-foreground-subtle",
 							),
 						),
 						h.Style({ left: `${mark.left * 100}%`, width: `${mark.width * 100}%` }),

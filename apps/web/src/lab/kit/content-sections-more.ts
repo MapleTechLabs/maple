@@ -30,14 +30,21 @@ const SCROLL_ROWS = Array.from(
 	(_, index) => `span-${String(index + 1).padStart(2, "0")} GET /api/cart`,
 )
 
+/** The chat transcript's user bubble shape (page/investigations/conversation/kit/view-transcript.ts). */
+const USER_BUBBLE = "rounded-lg px-3.5 py-2.5 font-prose text-sm"
+
 const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 	message(h, {}, [
 		messageAvatar(h, [avatarFallback(h, { className: "size-6" }, "M")]),
 		messageContent(h, [
 			messageHeader(h, ["Maple"]),
 			bubbleGroup(h, [
-				bubble(h, { variant: "muted" }, [
-					bubbleContent(h, ["payment-svc errors rose to 4.2% after the 11:40 deploy."]),
+				bubble(h, { variant: "ghost" }, [
+					bubbleContent(
+						h,
+						["payment-svc errors rose to 4.2% after the 11:40 deploy."],
+						"font-prose text-sm",
+					),
 				]),
 			]),
 		]),
@@ -45,7 +52,11 @@ const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 
 const userMessage = <M>(h: HtmlBuilder<M>): Html =>
 	message(h, { align: "end" }, [
-		messageContent(h, [bubble(h, { align: "end" }, [bubbleContent(h, ["Which route is failing?"])])]),
+		messageContent(h, [
+			bubble(h, { variant: "secondary", align: "end" }, [
+				bubbleContent(h, ["Which route is failing?"], USER_BUBBLE),
+			]),
+		]),
 	])
 
 export const conversationSection = <M>(h: HtmlBuilder<M>): Html =>
@@ -54,7 +65,9 @@ export const conversationSection = <M>(h: HtmlBuilder<M>): Html =>
 		kitRow(
 			h,
 			undefined,
-			BUBBLE_VARIANTS.map((variant) => bubble(h, { variant }, [bubbleContent(h, [variant])])),
+			BUBBLE_VARIANTS.map((variant) =>
+				bubble(h, { variant }, [bubbleContent(h, [variant], "rounded-lg")]),
+			),
 		),
 	])
 
@@ -73,7 +86,7 @@ export const traceSection = <M>(h: HtmlBuilder<M>): Html =>
 					traceTitle(h, ["Read logs"]),
 					traceDescription(h, ["query timed out"]),
 				]),
-				traceLine(h, { status: "pending" }, [traceTitle(h, ["Group by route"])]),
+				traceLine(h, { status: "pending" }, [traceIcon(h, []), traceTitle(h, ["Group by route"])]),
 			],
 			"max-w-md",
 		),
