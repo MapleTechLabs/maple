@@ -20,6 +20,8 @@ A half whose names are unset is skipped rather than fatal, as for every connecto
 1. **Create the bot** with the scopes `messages:read`, `messages:write`, `channels:write` (opens
    threads) and `channels:read` (lists the channels an alert can go to), mark it **public**, and
    make it **mentionable**.
+   A bot created before alerts came through it lacks `channels:read`: add it on each instance's
+   bot (US and EU), or its channel list answers `auth` and no Hazel channel can be picked.
 2. **Register the install redirect URIs** on the bot (Edit Application → Install redirect URIs):
    `https://api.maple.dev/oauth/chat/hazel/callback`, plus the equivalent origin of any other
    stage that shares this bot. Hazel compares them exactly.
