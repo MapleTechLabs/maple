@@ -35,6 +35,8 @@ export const createTinybirdProjectRevision = (
 const SKIP_BACKFILL: ReadonlySet<string> = new Set([
 	Datasources.sourceUsageHourly._name,
 	Datasources.serviceMapDbEdgesMinutely._name,
+	Datasources.scannerRequests._name,
+	Datasources.serviceRuntimesHourly._name,
 ])
 
 const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>
