@@ -8,6 +8,9 @@ production prompt stays unchanged until evidence supports promotion. Results so 
 From the repository root:
 
 ```sh
+# Some cases pin commits that only live on a PR's head (rebased or squash-merged); fetch them first.
+git fetch origin pull/1259/head pull/1950/head pull/1972/head pull/2015/head
+
 # Find candidate cases: blames each fix: commit back to the PR that wrote the lines.
 bun run --cwd apps/ai review:eval mine --ref origin/main --since 2026-08-01 --limit 40
 
