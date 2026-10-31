@@ -307,6 +307,7 @@ export function ciActorStatsQuery(opts: CiActorStatsOpts) {
 						(all, next) => (all === undefined ? next : all.or(next)),
 						undefined,
 					)
+				// No repository: an empty `inList` compiles to `1 = 0`, so nothing counts as the default branch.
 				const onDefaultBranch = $.TriggerEvent.eq("push").and(
 					isDefaultBranch ?? CH.inList($.Branch, []),
 				)
