@@ -1,0 +1,289 @@
+import type { Exposure, Runtimes } from "../page/security/telemetry/model"
+
+// Fixtures for the Security Center's Exposure and Runtimes tabs, for `/lab/security` and the page's
+// scene tests. Built relative to `now` so relative times read the same.
+
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+const SIX_HOURS = 6 * HOUR
+
+const at = (nowMs: number, agoMs: number): string => new Date(nowMs - agoMs).toISOString()
+
+export const SAMPLE_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+export const emptyExposureOf = (): Exposure => ({ signatures: [], exposed: [], sources: [], timeline: [] })
+
+/** Scanner traffic over a week: one SPA answering `/.env`, one live actuator, WordPress noise. */
+export const exposureOf = (nowMs: number): Exposure => ({
+	signatures: [
+		{
+			signature: "/.env",
+			service: "api-gateway",
+			requests: 412,
+			answered: 0,
+			sources: 9,
+			lastSeen: at(nowMs, 12 * MINUTE),
+		},
+		{
+			signature: "/.env",
+			service: "marketing-site",
+			requests: 120,
+			answered: 120,
+			sources: 4,
+			lastSeen: at(nowMs, 2 * HOUR),
+		},
+		{
+			signature: "/.git/",
+			service: "api-gateway",
+			requests: 96,
+			answered: 0,
+			sources: 5,
+			lastSeen: at(nowMs, 3 * HOUR),
+		},
+		{
+			signature: "/.aws/",
+			service: "api-gateway",
+			requests: 41,
+			answered: 0,
+			sources: 3,
+			lastSeen: at(nowMs, 5 * HOUR),
+		},
+		{
+			signature: "/id_rsa",
+			service: "api-gateway",
+			requests: 7,
+			answered: 0,
+			sources: 1,
+			lastSeen: at(nowMs, DAY),
+		},
+		{
+			signature: "/actuator/env",
+			service: "payments",
+			requests: 33,
+			answered: 2,
+			sources: 2,
+			lastSeen: at(nowMs, 40 * MINUTE),
+		},
+		{
+			signature: "../",
+			service: "api-gateway",
+			requests: 18,
+			answered: 0,
+			sources: 2,
+			lastSeen: at(nowMs, 2 * DAY),
+		},
+		{
+			signature: "/wp-login.php",
+			service: "marketing-site",
+			requests: 210,
+			answered: 210,
+			sources: 6,
+			lastSeen: at(nowMs, 30 * MINUTE),
+		},
+		{
+			signature: "/xmlrpc.php",
+			service: "marketing-site",
+			requests: 64,
+			answered: 64,
+			sources: 3,
+			lastSeen: at(nowMs, 4 * HOUR),
+		},
+		{
+			signature: "",
+			service: "api-gateway",
+			requests: 640,
+			answered: 602,
+			sources: 5,
+			lastSeen: at(nowMs, 8 * MINUTE),
+		},
+	],
+	exposed: [
+		{
+			service: "marketing-site",
+			host: "www.acme.dev",
+			path: "/.env",
+			signature: "/.env",
+			httpStatus: 200,
+			requests: 120,
+			lastSeen: at(nowMs, 2 * HOUR),
+			sampleTraceId: SAMPLE_TRACE_ID,
+		},
+		{
+			service: "payments",
+			host: "pay.acme.dev",
+			path: "/actuator/env",
+			signature: "/actuator/env",
+			httpStatus: 200,
+			requests: 2,
+			lastSeen: at(nowMs, 40 * MINUTE),
+			sampleTraceId: "0af7651916cd43dd8448eb211c80319c",
+		},
+	],
+	sources: [
+		{
+			clientAddress: "198.51.100.23",
+			requests: 702,
+			signatures: 1,
+			scanner: "ZGrab",
+			userAgent: "Mozilla/5.0 zgrab/0.x",
+			lastSeen: at(nowMs, 8 * MINUTE),
+		},
+		{
+			clientAddress: "203.0.113.77",
+			requests: 318,
+			signatures: 6,
+			scanner: "",
+			userAgent:
+				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			lastSeen: at(nowMs, 12 * MINUTE),
+		},
+		{
+			clientAddress: "192.0.2.140",
+			requests: 214,
+			signatures: 3,
+			scanner: "Nuclei",
+			userAgent:
+				"Mozilla/5.0 (compatible; Nuclei - Open-source project (github.com/projectdiscovery/nuclei))",
+			lastSeen: at(nowMs, 30 * MINUTE),
+		},
+		{
+			clientAddress: "198.51.100.9",
+			requests: 120,
+			signatures: 2,
+			scanner: "Censys",
+			userAgent: "Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)",
+			lastSeen: at(nowMs, 2 * HOUR),
+		},
+		{
+			clientAddress: "2001:db8::4f",
+			requests: 61,
+			signatures: 2,
+			scanner: "",
+			userAgent: "",
+			lastSeen: at(nowMs, 2 * DAY),
+		},
+	],
+	timeline: Array.from({ length: 28 }, (_, index) => index)
+		.filter((index) => index % 3 !== 1)
+		.map((index) => {
+			const bucket = Math.floor(nowMs / SIX_HOURS) * SIX_HOURS - (27 - index) * SIX_HOURS
+			return {
+				bucket: new Date(bucket).toISOString(),
+				requests: 20 + ((index * 37) % 90),
+				answered: (index * 11) % 20,
+			}
+		}),
+})
+
+/** One row per posture: end of life, behind, no version, unknown cycle, no release data, Bun as Node.js, supported, untracked. */
+export const runtimesOf = (nowMs: number): Runtimes => ({
+	runtimes: [
+		{
+			service: "edge-router",
+			environment: "production",
+			runtimeName: "workerd",
+			runtimeVersion: "",
+			executableName: "",
+			sdkLanguage: "nodejs",
+			sdkName: "@microlabs/otel-cf-workers",
+			sdkVersion: "1.0.0",
+			spans: 90_000,
+			lastSeen: at(nowMs, 2 * MINUTE),
+		},
+		{
+			service: "billing-worker",
+			environment: "staging",
+			runtimeName: "cpython",
+			runtimeVersion: "3.12.7",
+			executableName: "",
+			sdkLanguage: "python",
+			sdkName: "opentelemetry",
+			sdkVersion: "1.27.0",
+			spans: 12_000,
+			lastSeen: at(nowMs, 5 * MINUTE),
+		},
+		{
+			service: "payments",
+			environment: "production",
+			runtimeName: "nodejs",
+			runtimeVersion: "v22.4.0",
+			executableName: "node",
+			sdkLanguage: "nodejs",
+			sdkName: "opentelemetry",
+			sdkVersion: "1.26.0",
+			spans: 48_000,
+			lastSeen: at(nowMs, MINUTE),
+		},
+		{
+			service: "inventory",
+			environment: "production",
+			runtimeName: "go",
+			runtimeVersion: "",
+			executableName: "",
+			sdkLanguage: "go",
+			sdkName: "opentelemetry",
+			sdkVersion: "1.31.0",
+			spans: 31_000,
+			lastSeen: at(nowMs, 3 * MINUTE),
+		},
+		{
+			service: "checkout-api",
+			environment: "production",
+			runtimeName: "nodejs",
+			runtimeVersion: "v16.20.2",
+			executableName: "node",
+			sdkLanguage: "nodejs",
+			sdkName: "opentelemetry",
+			sdkVersion: "1.18.1",
+			spans: 64_000,
+			lastSeen: at(nowMs, MINUTE),
+		},
+		{
+			service: "ledger",
+			environment: "production",
+			runtimeName: "OpenJDK Runtime Environment",
+			runtimeVersion: "21.0.2+13",
+			executableName: "",
+			sdkLanguage: "java",
+			sdkName: "opentelemetry",
+			sdkVersion: "1.42.1",
+			spans: 22_000,
+			lastSeen: at(nowMs, 4 * MINUTE),
+		},
+		{
+			service: "search",
+			environment: "production",
+			runtimeName: "nodejs",
+			runtimeVersion: "v23.0.0-nightly",
+			executableName: "node",
+			sdkLanguage: "nodejs",
+			sdkName: "",
+			sdkVersion: "",
+			spans: 4_000,
+			lastSeen: at(nowMs, 20 * MINUTE),
+		},
+		{
+			service: "realtime",
+			environment: "production",
+			runtimeName: "nodejs",
+			runtimeVersion: "v22.6.0",
+			executableName: "bun",
+			sdkLanguage: "nodejs",
+			sdkName: "opentelemetry",
+			sdkVersion: "1.26.0",
+			spans: 8_000,
+			lastSeen: at(nowMs, 6 * MINUTE),
+		},
+	],
+	// Java is absent: its release data could not be read.
+	releases: {
+		nodejs: [
+			{ cycle: "22", isEol: false, eolFrom: "2027-04-30", latest: "22.11.0" },
+			{ cycle: "20", isEol: true, eolFrom: "2026-04-30", latest: "20.18.0" },
+			{ cycle: "16", isEol: true, eolFrom: "2023-09-11", latest: "16.20.2" },
+		],
+		python: [{ cycle: "3.12", isEol: false, eolFrom: "2028-10-31", latest: "3.12.7" }],
+		go: [{ cycle: "1.23", isEol: false, eolFrom: null, latest: "1.23.2" }],
+	},
+})

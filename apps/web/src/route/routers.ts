@@ -148,6 +148,8 @@ const routers = {
 		search(Search.SecurityRunsSearch),
 		Route.mapTo(AppRoute.SecurityRuns),
 	),
+	SecurityExposure: pipe(path("security", "exposure"), Route.mapTo(AppRoute.SecurityExposure)),
+	SecurityRuntimes: pipe(path("security", "runtimes"), Route.mapTo(AppRoute.SecurityRuntimes)),
 	SecurityRun: pipe(
 		path("security", "runs"),
 		slash(schemaSegment("runId", SecurityAuditRunId)),

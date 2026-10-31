@@ -16,6 +16,8 @@ import * as RunPage from "../../page/security/run/model"
 import * as RunUpdate from "../../page/security/run/update"
 import * as TabsPage from "../../page/security/tabs/model"
 import * as TabsUpdate from "../../page/security/tabs/update"
+import * as TelemetryPage from "../../page/security/telemetry/model"
+import * as TelemetryUpdate from "../../page/security/telemetry/update"
 import type { Resources } from "../../platform/resources"
 import { AppRoute } from "../../route"
 import * as Field from "../../ui/field"
@@ -37,6 +39,7 @@ import {
 	targetsOf,
 	unitsOf,
 } from "../security-fixture"
+import { emptyExposureOf, exposureOf, runtimesOf } from "../security-telemetry-fixture"
 
 // Every Security Center state the lab renders, built by sending each page the fixture answers its
 // own requests would get. API Commands are dropped; dialog and select Commands still run.
@@ -62,6 +65,9 @@ export const SCENARIOS = [
 	"finding-triage",
 	"finding-member",
 	"finding-lead",
+	"exposure",
+	"exposure-empty",
+	"runtimes",
 ] as const
 export const Scenario = Schema.Literals(SCENARIOS)
 export type Scenario = typeof Scenario.Type
@@ -290,12 +296,36 @@ const finding = (
 	)
 }
 
+// TELEMETRY
+
+type TelemetryStep = Step<TelemetryPage.Model, TelemetryPage.Message>
+const T = TelemetryPage.Message
+
+const telemetry = (
+	route: Parameters<typeof TelemetryUpdate.init>[0],
+	nowMs: number,
+	answer: (model: TelemetryPage.Model) => TelemetryPage.Message,
+): TelemetryStep => {
+	const entered = TelemetryUpdate.init(route, context)
+	return fold<TelemetryPage.Model, TelemetryPage.Message>(
+		{ model: entered.model, commands: entered.commands ?? [] },
+		(model, message) => TelemetryUpdate.update(model, message, context),
+		[() => T.ReadClock({ nowMs }), answer],
+	)
+}
+
+const exposure = (nowMs: number, data: TelemetryPage.Exposure): TelemetryStep =>
+	telemetry(AppRoute.SecurityExposure(), nowMs, (model) =>
+		T.CompletedFetchExposure({ key: model.exposure.key ?? "", result: Result.succeed(data) }),
+	)
+
 // SCENARIOS
 
 export type Built =
 	| Readonly<{ _tag: "Tabs"; step: TabsStep }>
 	| Readonly<{ _tag: "Run"; step: RunStep }>
 	| Readonly<{ _tag: "Finding"; step: FindingStep }>
+	| Readonly<{ _tag: "Telemetry"; step: TelemetryStep }>
 
 const overviewRoute = AppRoute.Security()
 
@@ -406,5 +436,19 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 			return { _tag: "Finding", step: finding(nowMs, { member: true }) }
 		case "finding-lead":
 			return { _tag: "Finding", step: finding(nowMs, { lead: true }) }
+		case "exposure":
+			return { _tag: "Telemetry", step: exposure(nowMs, exposureOf(nowMs)) }
+		case "exposure-empty":
+			return { _tag: "Telemetry", step: exposure(nowMs, emptyExposureOf()) }
+		case "runtimes":
+			return {
+				_tag: "Telemetry",
+				step: telemetry(AppRoute.SecurityRuntimes(), nowMs, (model) =>
+					T.CompletedFetchRuntimes({
+						key: model.runtimes.key ?? "",
+						result: Result.succeed(runtimesOf(nowMs)),
+					}),
+				),
+			}
 	}
 }
