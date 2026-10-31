@@ -382,6 +382,7 @@ export class CancellationAppEvidenceReader extends Context.Service<
 			rows(query).pipe(Effect.flatMap((result) => Effect.fromNullishOr(result[0])))
 
 		/** One part of the section: null when it fails or is slow, never the end of the section. */
+		/** `name` is the part's span name, written out at each call so it stays a literal. */
 		const part = <A, E>(name: string, read: Effect.Effect<A, E>): Effect.Effect<A | null> =>
 			read.pipe(
 				Effect.timeout(SUB_READ_TIMEOUT),
@@ -394,7 +395,7 @@ export class CancellationAppEvidenceReader extends Context.Service<
 								Effect.as(null),
 							),
 				),
-				Effect.withSpan(`CancellationAppEvidenceReader.${name}`),
+				Effect.withSpan(name),
 			)
 
 		const readIntegrations = ({ orgId, atMs }: CancellationEvidenceInput) =>
@@ -761,17 +762,35 @@ export class CancellationAppEvidenceReader extends Context.Service<
 		) {
 			return yield* Effect.all(
 				{
-					integrations: part("readIntegrations", readIntegrations(input)),
-					onboarding: part("readOnboarding", readOnboarding(input)),
-					alerts: part("readAlerts", readAlerts(input)),
-					anomalies: part("readAnomalies", readAnomalies(input)),
-					investigations: part("readInvestigations", readInvestigations(input)),
-					errorIssues: part("readErrorIssues", readErrorIssues(input)),
-					agentFeedback: part("readAgentFeedback", readAgentFeedback(input)),
-					priorCancellations: part("readPriorCancellations", readPriorCancellations(input)),
-					scrapeTargets: part("readScrapeTargets", readScrapeTargets(input)),
-					apiKeys: part("readApiKeys", readApiKeys(input)),
-					digest: part("readDigest", readDigest(input)),
+					integrations: part(
+						"CancellationAppEvidenceReader.readIntegrations",
+						readIntegrations(input),
+					),
+					onboarding: part("CancellationAppEvidenceReader.readOnboarding", readOnboarding(input)),
+					alerts: part("CancellationAppEvidenceReader.readAlerts", readAlerts(input)),
+					anomalies: part("CancellationAppEvidenceReader.readAnomalies", readAnomalies(input)),
+					investigations: part(
+						"CancellationAppEvidenceReader.readInvestigations",
+						readInvestigations(input),
+					),
+					errorIssues: part(
+						"CancellationAppEvidenceReader.readErrorIssues",
+						readErrorIssues(input),
+					),
+					agentFeedback: part(
+						"CancellationAppEvidenceReader.readAgentFeedback",
+						readAgentFeedback(input),
+					),
+					priorCancellations: part(
+						"CancellationAppEvidenceReader.readPriorCancellations",
+						readPriorCancellations(input),
+					),
+					scrapeTargets: part(
+						"CancellationAppEvidenceReader.readScrapeTargets",
+						readScrapeTargets(input),
+					),
+					apiKeys: part("CancellationAppEvidenceReader.readApiKeys", readApiKeys(input)),
+					digest: part("CancellationAppEvidenceReader.readDigest", readDigest(input)),
 				},
 				// The invocation's pool holds a few connections; leave some to the rest of the review.
 				{ concurrency: 3 },

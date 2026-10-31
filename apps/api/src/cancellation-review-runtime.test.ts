@@ -38,7 +38,7 @@ const message = (body: unknown, attempts = 1) => {
 const batchOf = (entry: { readonly message: unknown }) => ({ messages: [entry.message] }) as never
 
 /** Records each review it is handed; fails, or crashes, every one when asked to. */
-const reviews = (fail: false | "fail" | "die" = false) => {
+const reviews = (fail: false | "fail" | "die" | "interrupt" = false) => {
 	const reviewed: Array<CancellationToReview> = []
 	const layer = Layer.succeed(CancellationReviewService, {
 		review: (cancellation) =>
@@ -48,10 +48,12 @@ const reviews = (fail: false | "fail" | "die" = false) => {
 					)
 				: fail === "die"
 					? Effect.die("a bug")
-					: Effect.sync(() => {
-							reviewed.push(cancellation)
-							return "posted" as const
-						}),
+					: fail === "interrupt"
+						? Effect.interrupt
+						: Effect.sync(() => {
+								reviewed.push(cancellation)
+								return "posted" as const
+							}),
 	})
 	return { reviewed, layer }
 }
@@ -85,6 +87,15 @@ describe("cancellation reviews queue consumer", () => {
 		return Effect.gen(function* () {
 			yield* processCancellationReviewBatch(batchOf(second))
 			assert.deepStrictEqual(second.calls, ["retry:120"])
+		}).pipe(Effect.provide(service.layer))
+	})
+
+	it.effect("retries an interrupted review at once, without backoff", () => {
+		const service = reviews("interrupt")
+		const third = message(job, 3)
+		return Effect.gen(function* () {
+			yield* processCancellationReviewBatch(batchOf(third))
+			assert.deepStrictEqual(third.calls, ["retry:default"])
 		}).pipe(Effect.provide(service.layer))
 	})
 

@@ -68,6 +68,17 @@ describe("normalizeAnswer", () => {
 		}
 	})
 
+	it("keeps a company named only in non-Latin letters", () => {
+		const company = {
+			name: "株式会社サンプル",
+			oneLiner: null,
+			location: null,
+			confidence: "medium" as const,
+			basis: "x",
+		}
+		expect(normalizeAnswer({ ...answer, company }, "m", context).company?.name).toBe("株式会社サンプル")
+	})
+
 	it("drops a low-confidence guess with no company domain or homepage behind it", () => {
 		const company = {
 			name: "Acme",

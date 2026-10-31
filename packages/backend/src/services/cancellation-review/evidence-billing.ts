@@ -10,7 +10,7 @@ import type {
 	CancellationReviewedSubscription,
 } from "@maple/domain/http"
 import { CancellationBillingInterval, CancellationStripeReason } from "@maple/domain/http"
-import { Cause, Context, Effect, Layer, Schema } from "effect"
+import { Option, Cause, Context, Effect, Layer, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { ensureOk } from "@maple/backend/services/billing/autumn-client"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
@@ -80,22 +80,23 @@ const StripeSubscriptions = Schema.Struct({
 					}),
 				),
 			}),
-			discounts: Nullable(
-				Schema.Array(
-					Schema.Struct({
-						end: Nullable(Schema.Number),
-						coupon: Schema.Struct({
-							percentOff: Nullable(Schema.Number),
-							amountOff: Nullable(Schema.Number),
-							duration: Schema.Literals(["once", "repeating", "forever"]),
-						}),
-					}),
-				),
-			),
+			// Read one by one below: a discount this cannot read loses the discount, not the list.
+			discounts: Nullable(Schema.Array(Schema.Unknown)),
 		}),
 	),
 })
 type StripeSubscription = (typeof StripeSubscriptions.Type)["data"][number]
+
+/** An expanded discount whose coupon came embedded; a bare coupon id reads as no discount. */
+const StripeDiscount = Schema.Struct({
+	end: Nullable(Schema.Number),
+	coupon: Schema.Struct({
+		percentOff: Nullable(Schema.Number),
+		amountOff: Nullable(Schema.Number),
+		duration: Schema.Literals(["once", "repeating", "forever"]),
+	}),
+})
+const decodeDiscount = Schema.decodeUnknownOption(StripeDiscount)
 
 const isStripeReason = Schema.is(CancellationStripeReason)
 const isInterval = Schema.is(CancellationBillingInterval)
@@ -111,7 +112,7 @@ const reviewedOf = (sub: StripeSubscription, atMs: number): CancellationReviewed
 		fixed.length > 0 && fixed.every((item) => item.price.unitAmount != null)
 			? fixed.reduce((sum, item) => sum + (item.price.unitAmount ?? 0) * (item.quantity ?? 1), 0)
 			: null
-	const discount = sub.discounts?.[0]
+	const discount = Option.getOrUndefined(decodeDiscount(sub.discounts?.[0]))
 	return {
 		stripeCancellationReason: isStripeReason(reason) ? reason : null,
 		startedDaysBeforeCancel: daysBefore(atMs, sub.startDate),

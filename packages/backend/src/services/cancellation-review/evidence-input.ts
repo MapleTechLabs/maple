@@ -42,11 +42,13 @@ export const daysBeforeCancel = (atMs: number, ms: number): number => Math.trunc
  * addresses, URLs and long tokens (keys, hashes, ids) taken out. Cut before the
  * patterns run, so a huge input never costs more than a short one.
  */
-export const redactText = (value: string, max: number): string =>
-	value
-		.trim()
-		.slice(0, max * 2)
+export const redactText = (value: string, max: number): string => {
+	const trimmed = value.trim()
+	// The cut can split an address or key: the word it cut into is dropped, never half-scrubbed.
+	const cut = trimmed.length > max * 2 ? trimmed.slice(0, max * 2).replace(/\S*$/, "") : trimmed
+	return cut
 		.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]")
 		.replaceAll(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]")
 		.replaceAll(/[A-Za-z0-9_-]{24,}/g, "[token]")
 		.slice(0, max)
+}

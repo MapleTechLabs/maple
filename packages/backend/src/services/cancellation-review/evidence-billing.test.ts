@@ -216,6 +216,17 @@ describe("subscriptionsEvidenceOf", () => {
 		expect(result.reviewed?.interval).toBe("month")
 	})
 
+	it("keeps the subscriptions when a discount's coupon comes back as a bare id", () => {
+		const result = subscriptions([
+			stripeSubscription({
+				canceled_at: CANCELLED_S,
+				discounts: [{ end: null, coupon: "co_123" }],
+			}),
+		])
+		expect(result.reviewed?.discount).toBeNull()
+		expect(result.reviewed?.pricePerIntervalDollars).toBe(39)
+	})
+
 	it("has no price for a plan billed entirely by usage rather than a price of 0", () => {
 		const result = subscriptions([
 			stripeSubscription({

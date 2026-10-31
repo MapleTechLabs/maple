@@ -33,6 +33,10 @@ const retryDelaySeconds = (attempts: number) => 60 * 2 ** (attempts - 1)
 
 const decodeJob = Schema.decodeUnknownEffect(CancellationReviewJob)
 
+/** What became of a message, on its span, so a dropped review can be found by it. */
+const settle = (outcome: "reviewed" | "retried" | "interrupted" | "dropped") =>
+	Effect.annotateCurrentSpan({ "maple.cancellation.queue_outcome": outcome })
+
 /**
  * The cancellation-reviews queue consumer: one review per message. A review
  * that could not finish retries with backoff; any outcome it reached acks. The
@@ -57,8 +61,17 @@ export const processCancellationReviewBatch = (batch: QueueBatch) =>
 								// Any failure, a defect too, goes through the same backoff and drop log:
 								// left to the batch, it would be retried at once until dropped unlogged.
 								Effect.matchCauseEffect({
-									onSuccess: () => Effect.sync(() => message.ack()),
+									onSuccess: () =>
+										settle("reviewed").pipe(
+											Effect.andThen(Effect.sync(() => message.ack())),
+										),
 									onFailure: (cause) => {
+										// The Worker stopping mid-review is not the review failing: back at once.
+										if (Cause.hasInterruptsOnly(cause)) {
+											return settle("interrupted").pipe(
+												Effect.andThen(Effect.sync(() => message.retry())),
+											)
+										}
 										const details = {
 											orgId: job.orgId,
 											planId: job.planId,
@@ -75,12 +88,14 @@ export const processCancellationReviewBatch = (batch: QueueBatch) =>
 													"Cancellation review exhausted its retries; dropped",
 												).pipe(
 													Effect.annotateLogs(details),
+													Effect.andThen(settle("dropped")),
 													Effect.andThen(Effect.sync(() => message.ack())),
 												)
 											: Effect.logWarning(
 													"Cancellation review did not finish; retrying",
 												).pipe(
 													Effect.annotateLogs(details),
+													Effect.andThen(settle("retried")),
 													Effect.andThen(
 														Effect.sync(() =>
 															message.retry({

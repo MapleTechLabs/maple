@@ -92,7 +92,7 @@ const EMPTY = /^(null|none|unknown|n\/a)?$/i
 /** Null for a blank or a written-out placeholder ("null", ": null", "unknown,"); else trimmed. */
 const tidy = (value: string | null | undefined): string | null => {
 	const trimmed = (value ?? "").trim()
-	return EMPTY.test(trimmed.replaceAll(/^[\W_]+|[\W_]+$/g, ""))
+	return EMPTY.test(trimmed.replaceAll(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
 		? null
 		: trimmed.replace(/^[\s:;,.\-–—]+/, "")
 }
