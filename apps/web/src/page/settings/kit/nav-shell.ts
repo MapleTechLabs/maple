@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
@@ -16,21 +17,19 @@ export type NavShellSection<Id extends string> = Readonly<{
 	items: ReadonlyArray<NavShellRow<Id>>
 }>
 
+// The app sidebar's row beside it: same height, type, radius and flush 2px active lane.
 const rowClass = (isActive: boolean) =>
 	cn(
-		"group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors text-left",
+		ROW_LANE,
+		"group flex h-8 items-center gap-2 rounded-lg px-2 text-xs transition-colors text-left",
 		isActive
-			? "bg-accent text-accent-foreground font-medium"
-			: "text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+			? "rounded-l-none bg-accent font-medium text-primary before:bg-primary"
+			: "text-muted-foreground before:bg-transparent hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 	)
 
-const activeIndicator = <M>(h: HtmlBuilder<M>): Html =>
-	h.span([h.AriaHidden(true), h.Class("absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-primary")], [])
-
-const rowChildren = <M>(h: HtmlBuilder<M>, isActive: boolean, name: IconName, label: string) => [
-	...(isActive ? [activeIndicator(h)] : []),
+const rowChildren = <M>(h: HtmlBuilder<M>, name: IconName, label: string) => [
 	icon(h, name, { size: 16, className: "shrink-0" }),
-	label,
+	h.span([h.Class("truncate")], [label]),
 ]
 
 export const navShell = <M, Id extends string>(
@@ -45,7 +44,7 @@ export const navShell = <M, Id extends string>(
 			h.div(
 				[h.Key(section.id), h.Class("flex flex-col gap-1")],
 				[
-					eyebrow(h, { as: "div", className: "px-2.5" }, [section.title]),
+					eyebrow(h, { as: "div", className: "flex h-6 items-center px-2" }, [section.title]),
 					h.div(
 						[h.Class("flex flex-col gap-0.5")],
 						section.items.map((row) => {
@@ -64,7 +63,7 @@ export const navShell = <M, Id extends string>(
 													]
 												: [h.Class(rowClass(isActive))]),
 										],
-										rowChildren(h, isActive, row.icon, row.label),
+										rowChildren(h, row.icon, row.label),
 									)
 								: h.button(
 										[
@@ -73,7 +72,7 @@ export const navShell = <M, Id extends string>(
 											h.Type("button"),
 											h.OnClick(onSelectTab(row.id)),
 										],
-										rowChildren(h, isActive, row.icon, row.label),
+										rowChildren(h, row.icon, row.label),
 									)
 						}),
 					),

@@ -48,7 +48,7 @@ const METRIC_LABELS = new Map<ContainerMetric, string>([
 ])
 
 const rail = (h: H, summary: Summary): Html =>
-	resourceAttributesCard(h, "DockerIcon", [
+	resourceAttributesCard(h, [
 		metaRow(h, { label: "container.name", value: summary.containerName }),
 		metaRow(h, { label: "container.id", value: summary.containerId }),
 		metaRow(h, { label: "container.image.name", value: summary.imageName }),
@@ -62,7 +62,7 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	if (summary !== null) return rail(h, summary)
 	return AsyncData.isLoading(model.summary.data) || AsyncData.isIdle(model.summary.data)
-		? resourceAttributesCardSkeleton(h, "DockerIcon")
+		? resourceAttributesCardSkeleton(h)
 		: undefined
 }
 

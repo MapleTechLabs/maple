@@ -57,14 +57,14 @@ const METRIC_LABELS = new Map<NodeMetric, string>([
 const rightPanel = (h: H, model: Model): Html | undefined => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	if (summary !== null)
-		return resourceAttributesCard(h, "ServerIcon", [
+		return resourceAttributesCard(h, [
 			metaRow(h, { label: "k8s.node.name", value: summary.nodeName }),
 			metaRow(h, { label: "k8s.node.uid", value: summary.nodeUid }),
 			metaRow(h, { label: "k8s.kubelet.version", value: summary.kubeletVersion }),
 			metaRow(h, { label: "container.runtime", value: summary.containerRuntime }),
 		])
 	return AsyncData.isLoading(model.summary.data) || AsyncData.isIdle(model.summary.data)
-		? resourceAttributesCardSkeleton(h, "ServerIcon")
+		? resourceAttributesCardSkeleton(h)
 		: undefined
 }
 

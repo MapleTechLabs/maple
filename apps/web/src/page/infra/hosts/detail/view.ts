@@ -49,9 +49,7 @@ const rightPanel = (h: H, model: Model, inputs: PageViewInputs): Html | undefine
 	const summary = AsyncData.getOrElse(data, () => null)
 	if (summary !== null)
 		return hostMetadataPanel(h, model, summary, model.frame.nowMs, inputs.context.timeZone)
-	return AsyncData.isLoading(data) || AsyncData.isIdle(data)
-		? resourceAttributesCardSkeleton(h, "ServerIcon")
-		: undefined
+	return AsyncData.isLoading(data) || AsyncData.isIdle(data) ? resourceAttributesCardSkeleton(h) : undefined
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
@@ -69,8 +67,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					titleContent: hero.title,
-					actions:
-						headerActions(h, hero.actions, timeControls),
+					actions: headerActions(h, hero.actions, timeControls),
 					rightPanel: rightPanel(h, model, inputs),
 				},
 				[h.div([h.Class("space-y-8")], [hero.body, metricsPanel(h, model, inputs.context.timeZone)])],

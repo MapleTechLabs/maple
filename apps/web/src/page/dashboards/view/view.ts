@@ -276,6 +276,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 											nowMs: model.nowMs ?? 0,
 											timeZone: inputs.context.timeZone,
 										}),
+										rightPanelWidth: "w-80",
 									}
 								: undefined),
 						},

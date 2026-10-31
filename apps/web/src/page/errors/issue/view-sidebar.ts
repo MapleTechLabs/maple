@@ -259,7 +259,7 @@ export const issueSidebar = (
 	const isTerminal = issue.workflowState === "cancelled" || issue.workflowState === "done"
 	const canClaim = issue.leaseHolder === null && !isTerminal
 	return h.div(
-		[h.Class("flex flex-col bg-card/30")],
+		[h.Class("flex flex-col")],
 		[
 			detailRailGroup(h, "Details", [
 				detailRailRow(h, { label: "Status" }, [stateSelect(h, model, issue.workflowState)]),

@@ -54,14 +54,14 @@ export const KIND_LABEL = new Map<WorkloadKind, string>([
 const rightPanel = (h: H, model: Model): Html | undefined => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	if (summary !== null)
-		return resourceAttributesCard(h, "GridIcon", [
+		return resourceAttributesCard(h, [
 			metaRow(h, { label: "kind", value: KIND_LABEL.get(model.kind) }),
 			metaRow(h, { label: `k8s.${model.kind}.name`, value: summary.workloadName }),
 			metaRow(h, { label: "k8s.namespace.name", value: summary.namespace }),
 			metaRow(h, { label: "pods", value: String(summary.podCount) }),
 		])
 	return AsyncData.isLoading(model.summary.data) || AsyncData.isIdle(model.summary.data)
-		? resourceAttributesCardSkeleton(h, "GridIcon")
+		? resourceAttributesCardSkeleton(h)
 		: undefined
 }
 
