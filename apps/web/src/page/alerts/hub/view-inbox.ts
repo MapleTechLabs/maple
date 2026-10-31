@@ -16,7 +16,7 @@ import {
 	blindSpots as deriveBlindSpots,
 	type FireLane,
 	fireLanes,
-	incidentScope,
+	incidentSubline,
 	incidentTitle,
 	incidentValues,
 } from "@maple/web-data/alerts/overview-derive"
@@ -192,13 +192,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 							),
 						],
 					),
-					h.p(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[
-							incident.ruleName,
-							...(incidentScope(incident) !== null ? [` · ${incidentScope(incident)}`] : []),
-						],
-					),
+					h.p([h.Class("truncate text-xs text-muted-foreground")], [incidentSubline(incident)]),
 				],
 			),
 			h.span(
