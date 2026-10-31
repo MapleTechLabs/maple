@@ -278,8 +278,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			)
 		case "warpstream":
 			return { label: "Via Prometheus", variant: "outline" }
-		case "hazel":
-			return fold(statuses.hazel, (status) => connectedOrNot(status.connected), unavailableStatus)
 		case "linear":
 			return fold(
 				statuses.linear,
@@ -553,24 +551,6 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 	)
 }
 
-const hazelOverview = (statuses: Statuses) =>
-	fold(
-		statuses.hazel,
-		(status): IntegrationOverview =>
-			status.connected
-				? {
-						kind: "connected",
-						health: "healthy",
-						stateLabel: "Healthy",
-						context: status.externalUserEmail,
-						stat: "Alert delivery ready",
-						lastSyncLabel: null,
-						issue: null,
-					}
-				: CONNECT,
-		unavailableOverview,
-	)
-
 const linearOverview = (statuses: Statuses) =>
 	fold(
 		statuses.linear,
@@ -680,8 +660,6 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return planetscaleOverview(statuses, nowMs)
 		case "warpstream":
 			return SET_UP
-		case "hazel":
-			return hazelOverview(statuses)
 		case "linear":
 			return linearOverview(statuses)
 		case "github":

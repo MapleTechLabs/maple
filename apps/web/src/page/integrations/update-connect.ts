@@ -17,7 +17,6 @@ type Return = PageReturn<Model, Message>
 
 const STATUS_OF = {
 	cloudflare: "cloudflare",
-	hazel: "hazel",
 	linear: "linear",
 	github: "github",
 	planetscale: "planetscale",
@@ -115,7 +114,6 @@ export const endedGrace = (model: Model, attempt: number): Return =>
 
 const CONNECTED_TITLE = {
 	cloudflare: "Cloudflare account connected",
-	hazel: "Hazel connected",
 	linear: "Linear connected",
 	github: "GitHub connected",
 	planetscale: null,

@@ -77,7 +77,7 @@ Effect.gen(function* () {
 
 - Channel secrets (`integration_key`, `signing_secret`, `webhook_url`, `bot_token`) are write-only: the API never returns them. Pass them as `Redacted` values so they stay out of logs and plan output. Because they cannot be read back, the provider re-sends them on every update.
 - Changing `type` replaces the destination with a new ID.
-- Slack, other chat-connector and Hazel destinations depend on integrations linked in Maple, so manage them in [Notification destinations](/docs/alerting/notification-destinations), not here.
+- Slack and other chat-connector destinations depend on integrations linked in Maple, so manage them in [Notification destinations](/docs/alerting/notification-destinations), not here.
 - Deleting a destination that rules still reference fails with a conflict. When the rules live in the same stack, Alchemy deletes them first.
 
 Outputs: `destinationId` (`dest_…`), `name`, `type`, `enabled`.

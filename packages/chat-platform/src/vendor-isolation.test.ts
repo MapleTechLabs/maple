@@ -55,13 +55,6 @@ const GUARDED_FILES = [
 
 const VENDORS = ["discord", "hazel", "slack", "teams", "telegram", "whatsapp"]
 
-/**
- * Vendor names a guarded file may hold for an integration that is not a chat connector. The
- * catalog lists Hazel's alert-webhook integration, which predates (and is separate from) the Hazel
- * chat connector.
- */
-const OTHER_INTEGRATIONS = new Map([["apps/web/src/page/integrations/catalog.ts", ["hazel"]]])
-
 const SELF = fileURLToPath(import.meta.url)
 
 const sourcesUnder = (dir: string): Array<string> =>
@@ -143,9 +136,7 @@ describe("vendor isolation", () => {
 	}
 
 	it("keeps the files this feature owns elsewhere free of vendor names", () => {
-		const offenders = GUARDED_FILES.flatMap((path) =>
-			offendingLines(join(repoRoot, path), OTHER_INTEGRATIONS.get(path) ?? [], never),
-		)
+		const offenders = GUARDED_FILES.flatMap((path) => offendingLines(join(repoRoot, path), [], never))
 		expect(offenders).toEqual([])
 	})
 

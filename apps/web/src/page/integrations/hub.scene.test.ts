@@ -1,11 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { HazelIntegrationStatus, LinearIntegrationStatus } from "@maple/domain/http"
+import { LinearIntegrationStatus } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { all, expect as expectView, expectAll, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
 import { integrationOfSearch } from "./catalog"
 import { cardStatusOf } from "./derive"
@@ -24,23 +23,28 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
 	messages.reduce((current, message) => pageUpdate(current, message).model, model)
 
-const hazel = (connected: boolean) =>
-	Schema.decodeUnknownSync(HazelIntegrationStatus)({
-		connected,
-		externalUserId: null,
-		externalUserEmail: connected ? "ada@acme.test" : null,
-		connectedByUserId: null,
-		scope: connected ? "openid" : null,
-	})
-
 const entered = (search: Model["search"] = {}) => init({ search }, context).model
 
-const withHazel = (connected: boolean, search: Model["search"] = {}): Model => {
+/** The Hazel chat connector, available and not yet installed. */
+const withHazelConnector = (search: Model["search"]): Model => {
 	const model = entered(search)
+	const connectors = Schema.decodeUnknownSync(V2ChatConnectorList)({
+		object: "chat_connector_list",
+		data: [
+			{
+				id: "hazel",
+				object: "chat_connector",
+				name: "Hazel",
+				available: true,
+				supports_identity: true,
+				workspaces: [],
+			},
+		],
+	})
 	return steps(model, [
-		Message.CompletedLoadHazel({
-			key: model.statuses.hazel.key ?? "",
-			result: Result.succeed(hazel(connected)),
+		Message.CompletedLoadChat({
+			key: model.statuses.chat.key ?? "",
+			result: Result.succeed(connectors),
 		}),
 	])
 }
@@ -53,8 +57,11 @@ const linear = (state: "absent" | "connected" | "revoked") =>
 		revoked: state === "revoked",
 	})
 
-const withLinear = (state: "absent" | "connected" | "revoked"): Model => {
-	const model = entered({ integration: "linear" })
+const withLinear = (
+	state: "absent" | "connected" | "revoked",
+	search: Model["search"] = { integration: "linear" },
+): Model => {
+	const model = entered(search)
 	return steps(model, [
 		Message.CompletedLoadLinear({
 			key: model.statuses.linear.key ?? "",
@@ -78,7 +85,6 @@ describe("integrations hub", () => {
 				"LoadIntegrationsAwsStatus",
 				"LoadIntegrationsSupabaseStatus",
 				"LoadIntegrationsLinearStatus",
-				"LoadIntegrationsHazelStatus",
 				"LoadIntegrationsGithubStatus",
 				"LoadIntegrationsChatConnectors",
 				"LoadIntegrationsScrapeTargets",
@@ -92,48 +98,49 @@ describe("integrations hub", () => {
 		const model = entered()
 		const late = pageUpdate(
 			model,
-			Message.CompletedLoadHazel({ key: "stale", result: Result.succeed(hazel(true)) }),
+			Message.CompletedLoadLinear({ key: "stale", result: Result.succeed(linear("connected")) }),
 		)
-		expect(late.model.statuses.hazel).toEqual(model.statuses.hazel)
+		expect(late.model.statuses.linear).toEqual(model.statuses.linear)
 	})
 
 	test("a write's re-read supersedes the read in flight, so the older answer cannot land last", () => {
 		const model = entered()
-		const preWriteKey = model.statuses.hazel.key ?? ""
-		const retried = pageUpdate(model, Message.ClickedRetryStatus({ name: "hazel" }))
-		expect(names(retried.commands)).toEqual(["LoadIntegrationsHazelStatus"])
+		const preWriteKey = model.statuses.linear.key ?? ""
+		const retried = pageUpdate(model, Message.ClickedRetryStatus({ name: "linear" }))
+		expect(names(retried.commands)).toEqual(["LoadIntegrationsLinearStatus"])
 		const fresh = pageUpdate(
 			retried.model,
-			Message.CompletedLoadHazel({
-				key: retried.model.statuses.hazel.key ?? "",
-				result: Result.succeed(hazel(false)),
+			Message.CompletedLoadLinear({
+				key: retried.model.statuses.linear.key ?? "",
+				result: Result.succeed(linear("absent")),
 			}),
 		).model
 		const late = pageUpdate(
 			fresh,
-			Message.CompletedLoadHazel({ key: preWriteKey, result: Result.succeed(hazel(true)) }),
+			Message.CompletedLoadLinear({ key: preWriteKey, result: Result.succeed(linear("connected")) }),
 		).model
-		expect(Option.map(AsyncData.getData(late.statuses.hazel.data), (status) => status.connected)).toEqual(
-			Option.some(false),
-		)
+		expect(
+			Option.map(AsyncData.getData(late.statuses.linear.data), (status) => status.connected),
+		).toEqual(Option.some(false))
 	})
 
 	test("a connected status lists the integration under Connected; selecting it navigates", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(withHazel(true)),
+			given(withLinear("connected", {})),
 			expectView(text("Connected")).toExist(),
-			expectView(text("ada@acme.test")).toExist(),
+			expectView(text("Acme Eng")).toExist(),
 		)
 		expect(
-			pageUpdate(withHazel(true), Message.ClickedIntegration({ integration: "hazel" })).outMessage,
+			pageUpdate(withLinear("connected", {}), Message.ClickedIntegration({ integration: "linear" }))
+				.outMessage,
 		).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/integrations?integration=hazel", isReplace: false }),
+			PageOutMessage.RequestedNavigation({ url: "/integrations?integration=linear", isReplace: false }),
 		)
 	})
 
 	test("the back button returns to the hub", () => {
-		const model = withHazel(true, { integration: "hazel" })
+		const model = withLinear("connected")
 		expect(pageUpdate(model, Message.ClickedIntegration({ integration: null })).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/integrations", isReplace: false }),
 		)
@@ -209,78 +216,21 @@ describe("integrations hub", () => {
 		expect(integrationOfSearch("chat-discord")).toBe("chat-discord")
 		expect(integrationOfSearch("chat-nope")).toBeNull()
 	})
-})
 
-describe("hazel card", () => {
-	test("not connected shows the connect card; connect starts one attempt at a time", () => {
-		const model = withHazel(false, { integration: "hazel" })
+	test("the hub lists Hazel once, as its chat connector", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(model),
-			expectView(
-				text("Alert destinations will appear here after connecting your workspace."),
-			).toExist(),
+			given(withHazelConnector({})),
+			expectAll(all.role("button", { name: /Hazel/ })).toHaveCount(1),
+			expectView(text(/Add the Maple bot to a Hazel workspace/)).toExist(),
 		)
-		const started = pageUpdate(model, Message.ClickedConnect())
-		expect(started.model.connect.active).toEqual({ provider: "hazel", attempt: 1 })
-		expect(pageUpdate(started.model, Message.ClickedConnect()).model.connect.attempts).toBe(1)
-		const answered = pageUpdate(started.model, Message.SucceededStartConnect({ attempt: 1 }))
-		expect(answered.model.connect.isStarting).toBe(false)
-		expect(names(answered.commands)).toEqual(["LoadIntegrationsHazelStatus"])
-		const closed = pageUpdate(answered.model, Message.ClosedConnectPopup({ attempt: 1 }))
-		expect(closed.model.connect.active).toBeNull()
-	})
-
-	test("a failed start toasts the provider's title and ends the attempt", () => {
-		const started = pageUpdate(withHazel(false, { integration: "hazel" }), Message.ClickedConnect()).model
-		const failed = pageUpdate(
-			started,
-			Message.FailedStartConnect({
-				attempt: 1,
-				title: "Couldn't start Hazel connect flow",
-				description: "nope",
+		expect(
+			pageUpdate(entered(), Message.ClickedIntegration({ integration: "chat-hazel" })).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/integrations?integration=chat-hazel",
+				isReplace: false,
 			}),
-		)
-		expect(failed.model.connect.active).toBeNull()
-		expect(failed.outMessage).toEqual(
-			PageOutMessage.RequestedToast({
-				type: "error",
-				title: "Couldn't start Hazel connect flow",
-				description: "nope",
-			}),
-		)
-	})
-
-	test("disconnect confirms first, sends once, toasts and re-reads the status", () => {
-		const model = withHazel(true, { integration: "hazel" })
-		const opened = pageUpdate(model, Message.ClickedDisconnect()).model
-		expect(opened.disconnect.dialog.isOpen).toBe(true)
-		const confirmed = pageUpdate(opened, Message.ConfirmedDisconnect())
-		expect(names(confirmed.commands)).toContain("DisconnectIntegration")
-		expect(names(pageUpdate(confirmed.model, Message.ConfirmedDisconnect()).commands)).toEqual([])
-		const done = pageUpdate(
-			confirmed.model,
-			Message.CompletedDisconnect({ integration: "hazel", failure: null }),
-		)
-		expect(done.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "success", title: "Hazel disconnected", description: "" }),
-		)
-		expect(names(done.commands)).toEqual(["LoadIntegrationsHazelStatus"])
-	})
-
-	test("a failed status read offers a retry", () => {
-		const model = entered({ integration: "hazel" })
-		const failed = steps(model, [
-			Message.CompletedLoadHazel({
-				key: model.statuses.hazel.key ?? "",
-				result: Result.fail(toLoadFailure("boom")),
-			}),
-		])
-		scene(
-			{ update: pageUpdate, view },
-			given(failed),
-			expectView(text("Couldn't load the Hazel integration")).toExist(),
-			expectView(role("button", { name: /Retry|Try again/ })).toExist(),
 		)
 	})
 })

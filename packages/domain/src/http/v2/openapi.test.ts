@@ -804,7 +804,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		}
 	})
 
-	it("preserves Hazel provisioning failures on alert destination mutations", () => {
+	it("preserves integration lookup failures on alert destination mutations", () => {
 		for (const [method, path] of [
 			["post", "/v2/alerts/destinations"],
 			["patch", "/v2/alerts/destinations/{id}"],

@@ -6796,7 +6796,6 @@
         "enum": [
           "pagerduty",
           "webhook",
-          "hazel-oauth",
           "discord",
           "telegram",
           "google-chat",
@@ -13949,7 +13948,7 @@
       "name": "Alert Deliveries"
     },
     {
-      "description": "Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+      "description": "Notification channels for alert rules: PagerDuty, generic webhooks, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
       "name": "Alert Destinations"
     },
     {

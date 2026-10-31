@@ -13,7 +13,6 @@ import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScal
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
@@ -116,7 +115,6 @@ export const HttpServicesLive = Layer.mergeAll(
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
-	HazelOAuthService.layer,
 	LinearOAuthService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,

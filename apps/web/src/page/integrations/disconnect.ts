@@ -18,17 +18,6 @@ export interface DisconnectSpec {
 
 export const DISCONNECTS = new Map<string, DisconnectSpec>([
 	[
-		"hazel",
-		{
-			title: "Disconnect Hazel",
-			description: "Alerts routed to Hazel stop being delivered until you reconnect.",
-			confirmLabel: "Disconnect",
-			success: "Hazel disconnected",
-			error: "Couldn't disconnect Hazel",
-			refresh: ["hazel"],
-		},
-	],
-	[
 		"linear",
 		{
 			title: "Disconnect Linear",
@@ -105,8 +94,6 @@ const mutation = (integration: string) =>
 		const internal = yield* MapleInternalApiClient
 		const v2 = yield* MapleApiV2Client
 		switch (integration) {
-			case "hazel":
-				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
 			case "linear":
 				return yield* Effect.asVoid(internal.integrations.linearDisconnect())
 			case "github":

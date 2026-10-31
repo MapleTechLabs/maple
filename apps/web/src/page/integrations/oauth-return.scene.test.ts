@@ -77,8 +77,8 @@ describe("a provider return finished by the dashboard", () => {
 
 	test("a refusal with no opener to tell is shown here", () => {
 		const result = finished(
-			opened("hazel"),
-			outcome({ provider: "hazel", status: "error", message: "OAuth state not recognized." }),
+			opened("linear"),
+			outcome({ provider: "linear", status: "error", message: "OAuth state not recognized." }),
 		)
 		expect(result.outMessage?._tag).toBe("RequestedToast")
 		if (result.outMessage?._tag !== "RequestedToast") return

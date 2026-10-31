@@ -6,7 +6,7 @@
  * time the fetch, check `!response.ok`, read the body, hand-concatenate
  * `"<Provider> delivery failed with <status>: <detail>"`. That sentence was
  * written out five separate times, and no arm had a span, so the outbound calls
- * to PagerDuty/Discord/Hazel were invisible.
+ * to PagerDuty/Discord were invisible.
  *
  * Here each provider declares only what is genuinely provider-specific, and
  * `runHttpTransport` owns everything shared: the spans, the timeout, the SSRF
@@ -67,7 +67,7 @@ export interface HttpRequestSpec {
 	 */
 	readonly guarded: boolean
 	/**
-	 * `true` when the URL path itself carries a credential — Discord and Hazel
+	 * `true` when the URL path itself carries a credential: Discord
 	 * webhook URLs embed their delivery token in the path. The runner then
 	 * annotates `server.address` only, never `url.path`.
 	 *
@@ -101,7 +101,7 @@ export interface HttpTransport<Config> {
 	readonly followUps?: (input: RenderInput<Config>) => ReadonlyArray<HttpRequestSpec>
 	/**
 	 * PURE. Give a non-2xx a better message than the generic one. Return null to
-	 * fall through to the runner's default. Only `hazel-oauth` implements this.
+	 * fall through to the runner's default. Only `google-chat` implements this.
 	 */
 	readonly describeStatus?: (status: number) => string | null
 	/**
