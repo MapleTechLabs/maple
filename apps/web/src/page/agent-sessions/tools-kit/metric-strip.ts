@@ -47,7 +47,7 @@ export const selectableTile = <M>(h: HtmlBuilder<M>, options: TileOptions<M>): H
 	})
 
 const sublineText = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
-	h.span([h.Class("inline-flex items-center gap-[5px] font-mono tabular-nums")], children)
+	h.span([h.Class("inline-flex items-center gap-1.5 font-mono tabular-nums")], children)
 
 /** `ToolDeltaValue`: the change in the metric's own unit, graded by `toolDelta`. */
 const deltaValue = <M>(h: HtmlBuilder<M>, change: ToolDelta): Html =>
@@ -62,7 +62,7 @@ const deltaSubline = <M>(h: HtmlBuilder<M>, change: ToolDelta | null, windowLabe
 		? null
 		: sublineText(h, [
 				deltaValue(h, change),
-				h.span([h.Class("text-muted-foreground/60")], ["vs prev ", windowLabel]),
+				h.span([h.Class("text-foreground-subtle")], ["vs prev ", windowLabel]),
 			])
 
 export type MetricStripConfig<M> = Readonly<{
@@ -93,7 +93,7 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 					: sublineText(h, [
 							h.span([], [formatPercent(share)]),
 							h.span(
-								[h.Class("text-muted-foreground/60")],
+								[h.Class("text-foreground-subtle")],
 								["of all ", formatToolCount(config.allSessions), " sessions"],
 							),
 						]),

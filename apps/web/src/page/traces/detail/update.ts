@@ -354,6 +354,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const hierarchy = Keyed.accept(model.hierarchy, key, result)
 			return hierarchy === model.hierarchy ? { model } : onLoaded({ ...model, hierarchy }, context)
 		},
+		ClickedRetryHierarchy: () => requestHierarchy(model, context),
 		CompletedFetchSpanEvents: ({ key, result }) => {
 			const spanEvents = Keyed.accept(model.spanEvents, key, result)
 			const next = withSlot(model, "spanEvents", spanEvents)

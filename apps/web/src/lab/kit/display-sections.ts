@@ -16,13 +16,22 @@ import {
 import { listRow } from "../../ui/list-row"
 import { panel, panelBody, panelHeader } from "../../ui/panel"
 import { statFigure } from "../../ui/stat-figure"
-import { icon } from "../../ui/icon"
+import { type IconName, icon } from "../../ui/icon"
 import { badge } from "../../ui/display"
 import { kitSection } from "./kit-layout"
 
 // The first half of `/lab/kit/display`: surfaces, alerts, empty states and rows.
 
 export const ALERT_VARIANTS = ["default", "info", "ok", "warn", "crit", "done"] as const
+/** Each tone keeps its own glyph, so info and done read apart even where their hues sit close. */
+const ALERT_ICONS = {
+	default: "CircleInfoIcon",
+	info: "CircleInfoIcon",
+	ok: "CircleCheckIcon",
+	warn: "CircleWarningIcon",
+	crit: "CircleXmarkIcon",
+	done: "RadioCheckedIcon",
+} as const satisfies Record<(typeof ALERT_VARIANTS)[number], IconName>
 export const ROWS = [
 	{ service: "checkout-svc", rps: "412", errors: "1.8%", p95: "238 ms" },
 	{ service: "payment-svc", rps: "188", errors: "4.2%", p95: "612 ms" },
@@ -71,7 +80,7 @@ export const alertSection = <M>(h: HtmlBuilder<M>): Html =>
 			[
 				...ALERT_VARIANTS.map((variant) =>
 					alert(h, { variant }, [
-						icon(h, "CircleInfoIcon"),
+						icon(h, ALERT_ICONS[variant]),
 						alertTitle(h, ["Alert ", variant]),
 						alertDescription(h, ["The ingest key was rotated 3 days ago."]),
 					]),
@@ -89,13 +98,17 @@ export const emptySection = <M>(h: HtmlBuilder<M>): Html =>
 		h.div(
 			[h.Class("grid grid-cols-2 gap-6")],
 			[
-				empty(h, [
-					emptyHeader(h, [
-						emptyMedia(h, { variant: "icon" }, [icon(h, "DatabaseIcon")]),
-						emptyTitle(h, ["No traces yet"]),
-						emptyDescription(h, ["Send spans from any OpenTelemetry SDK to see them here."]),
-					]),
-				]),
+				empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyMedia(h, { variant: "icon" }, [icon(h, "DatabaseIcon")]),
+							emptyTitle(h, ["No traces yet"]),
+							emptyDescription(h, ["Send spans from any OpenTelemetry SDK to see them here."]),
+						]),
+					],
+					"rounded-md border border-dashed",
+				),
 				emptyMessage(h, { dashed: true }, ["No dashboards match this filter."]),
 			],
 		),

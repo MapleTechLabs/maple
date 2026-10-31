@@ -38,7 +38,7 @@ export const chip = (h: H, children: Children): Html =>
 	h.span(
 		[
 			h.Class(
-				"inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-xs/5",
+				"inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-sunken px-2 py-0.5 text-xs/5",
 			),
 		],
 		children,
@@ -46,68 +46,47 @@ export const chip = (h: H, children: Children): Html =>
 
 /** One short line at the footer's start: why the action waits, or what closing leaves behind. */
 export const footerNote = (h: H, children: Children): Html =>
-	h.p([h.Class("text-xs/5 text-pretty text-muted-foreground sm:mr-auto sm:self-center")], children)
+	h.p(
+		[h.Class("font-prose text-xs/5 text-pretty text-muted-foreground sm:mr-auto sm:self-center")],
+		children,
+	)
 
 export type StepIndex = 0 | 1 | 2 | 3
 
-/** Where the flow is: done steps are checked, the current one is filled, later ones are outlined. */
+/** Where the flow is, as a text trail like `/sources/new`: done steps checked, the current one underlined. */
 const stepper = (h: H, current: StepIndex): Html =>
 	h.ol(
-		[h.Class("flex items-center gap-3 text-sm")],
-		STEPS.map((label, index) => {
+		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-prose text-xs")],
+		STEPS.flatMap((label, index) => {
 			const done = index < current
 			const active = index === current
-			return h.li(
+			const step = h.li(
 				[
 					...(active ? [h.AriaCurrent("step")] : []),
-					h.Class(cn("flex items-center gap-3", index > 0 && "flex-1")),
-				],
-				[
-					...(index === 0
-						? []
-						: [
-								h.span([
-									h.AriaHidden(true),
-									h.Class(
-										cn("h-px flex-1", done || active ? "bg-foreground/24" : "bg-border"),
-									),
-								]),
-							]),
-					h.span(
-						[h.Class("flex shrink-0 items-center gap-2")],
-						[
-							h.span(
-								[
-									h.AriaHidden(true),
-									h.Class(
-										cn(
-											"flex size-5 items-center justify-center rounded-full text-2xs font-medium tabular-nums",
-											done
-												? "bg-severity-info/16 text-severity-info"
-												: active
-													? "bg-primary text-primary-foreground"
-													: "border border-input text-muted-foreground",
-										),
-									),
-								],
-								[done ? icon(h, "CheckIcon", { size: 12 }) : String(index + 1)],
-							),
-							h.span(
-								[
-									h.Class(
-										active
-											? "font-medium text-foreground"
-											: done
-												? "text-foreground"
-												: "text-muted-foreground",
-									),
-								],
-								[label, ...(done ? [h.span([h.Class("sr-only")], [" (done)"])] : [])],
-							),
-						],
+					h.Class(
+						cn(
+							"inline-flex items-center gap-1.5",
+							active
+								? "font-medium text-foreground underline decoration-primary underline-offset-4"
+								: "text-muted-foreground",
+						),
 					),
 				],
+				[
+					...(done ? [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" })] : []),
+					label,
+					...(done ? [h.span([h.Class("sr-only")], [" (done)"])] : []),
+				],
 			)
+			return index === 0
+				? [step]
+				: [
+						h.li(
+							[h.AriaHidden(true), h.Class("inline-flex text-foreground-subtle")],
+							[icon(h, "ArrowRightIcon", { size: 12 })],
+						),
+						step,
+					]
 		}),
 	)
 
@@ -125,7 +104,7 @@ export const configureHeader = (h: H, title: Children, step: StepIndex | null): 
 					h.span(
 						[
 							h.Class(
-								"flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted/60",
+								"flex size-8 shrink-0 items-center justify-center rounded-md border bg-surface-strong",
 							),
 						],
 						[icon(h, "GoogleCloudIcon", { size: 18 })],
@@ -142,5 +121,6 @@ export const configureHeader = (h: H, title: Children, step: StepIndex | null): 
 export const configurePanel = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
 	DialogView.dialogPanel(h, "dialog", CONFIGURE_DIALOG_ID, children, className)
 
+// The popup reads in the display face; the footer's buttons keep the standard button face.
 export const configureFooter = (h: H, children: ReadonlyArray<Html>): Html =>
-	DialogView.dialogFooter(h, "dialog", children)
+	DialogView.dialogFooter(h, "dialog", children, "font-sans")

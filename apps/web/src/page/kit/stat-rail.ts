@@ -59,6 +59,8 @@ export type StatRailItemOptions<M> = Readonly<{
 	ariaLabel?: string
 	size?: "md" | "sm"
 	hint?: Html | string
+	/** Title the tile like a chart card (the uppercase label eyebrow), for rails above chart grids. */
+	isCardTitle?: boolean
 }>
 
 export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<M>): Html => {
@@ -69,7 +71,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 		(options.delta === undefined || options.delta === ""
 			? undefined
 			: h.span(
-					[h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80")],
+					[h.Class("shrink-0 font-mono text-3xs tabular-nums text-foreground-subtle")],
 					[options.delta],
 				))
 	const body = [
@@ -81,6 +83,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 						h.Class(
 							cn(
 								"truncate text-2xs font-medium transition-colors",
+								options.isCardTitle === true && "uppercase tracking-[0.08em]",
 								isSelected ? "text-primary" : "text-muted-foreground",
 							),
 						),
@@ -141,7 +144,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					shell,
 					"w-full text-left",
 					rowSelectedClass(isSelected),
-					isDisabled ? "cursor-default" : "cursor-pointer hover:bg-muted/25",
+					isDisabled ? "cursor-default" : "cursor-pointer hover:bg-surface-faint active:bg-surface-faint",
 					"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),
@@ -163,9 +166,14 @@ export const statRailItemSkeleton = <M>(h: HtmlBuilder<M>, className?: string): 
 		],
 	)
 
-export const statRailLoading = <M>(h: HtmlBuilder<M>, count = 4, columns?: StatRailColumns): Html =>
+export const statRailLoading = <M>(
+	h: HtmlBuilder<M>,
+	count = 4,
+	columns?: StatRailColumns,
+	className?: string,
+): Html =>
 	statRail(
 		h,
-		{ columns, isBusy: true },
+		{ columns, className, isBusy: true },
 		Array.from({ length: count }, () => statRailItemSkeleton(h)),
 	)

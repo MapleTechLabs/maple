@@ -69,8 +69,8 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 			h.Class(
 				cn(
 					"group/row relative flex h-9 items-center gap-2 pr-3 pl-3 text-sm",
-					"hover:bg-muted/50",
-					"data-focused:bg-muted/40",
+					"hover:bg-surface-sunken active:bg-surface-sunken",
+					"data-focused:bg-surface-sunken",
 					"transition-colors",
 				),
 			),
@@ -94,7 +94,7 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 			h.span(
 				[
 					h.Class(
-						"relative z-10 flex min-w-0 flex-1 items-center gap-1.5 font-medium text-foreground sm:w-[130px] sm:flex-none",
+						"relative z-10 flex min-w-0 flex-1 items-center gap-1.5 font-medium text-foreground sm:w-32 sm:flex-none",
 					),
 				],
 				[
@@ -106,7 +106,7 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 				[
 					h.Class(
 						cn(
-							"relative z-10 w-[110px] shrink-0 whitespace-nowrap text-right font-mono text-xs tabular-nums",
+							"relative z-10 w-28 shrink-0 whitespace-nowrap text-right font-mono text-xs tabular-nums",
 							isLive ? tone.text : "text-muted-foreground",
 						),
 					),
@@ -119,12 +119,12 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 			h.span(
 				[
 					h.Class(
-						"relative z-10 hidden w-[170px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground lg:inline-block",
+						"relative z-10 hidden w-44 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground lg:inline-block",
 					),
 				],
 				[
 					formatSignalValue(incident.signalType, incident.lastObservedValue),
-					h.span([h.Class("text-muted-foreground/50")], [" ← "]),
+					h.span([h.Class("text-foreground-faint")], [" ← "]),
 					formatSignalValue(incident.signalType, incident.baselineMedian),
 				],
 			),
@@ -196,7 +196,7 @@ const linkedIssueChip = <M>(h: HtmlBuilder<M>, issueId: ErrorIssueId): Html =>
 						pill: true,
 						size: "sm",
 						mono: false,
-						className: cn(META_CHIP_CLASS, "z-10 hidden gap-1 sm:inline-flex hover:border-border hover:text-foreground"),
+						className: cn(META_CHIP_CLASS, "z-10 hidden gap-1 sm:inline-flex hover:border-border active:border-border hover:text-foreground active:text-foreground"),
 					}),
 				),
 			),
@@ -204,5 +204,5 @@ const linkedIssueChip = <M>(h: HtmlBuilder<M>, issueId: ErrorIssueId): Html =>
 			h.Href(hrefOf(AppRoute.ErrorIssue({ issueId, search: {} }))),
 			h.Title("Open linked issue"),
 		],
-		[icon(h, "LinkIcon", { size: 11 }), shortIssueId(issueId)],
+		[icon(h, "LinkIcon", { size: 12 }), shortIssueId(issueId)],
 	)

@@ -38,7 +38,7 @@ describe("buildRawSqlDataSource", () => {
 			displayType: "line",
 			granularitySeconds: 60,
 		})
-		expect(result.granularitySeconds).toBe(60)
+		expect(result).toMatchObject({ kind: "raw_sql", granularitySeconds: 60 })
 	})
 
 	it("auto-injects reduceToValue transform for stat widgets", () => {

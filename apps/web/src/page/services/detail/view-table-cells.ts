@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { eyebrowVariants } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
 import { backdropBar } from "../../../ui/meter"
-import { tableCell, tableHead } from "../../../ui/table"
+import { panelHeader } from "../../../ui/panel"
+import { ariaSort, sortButton, tableCell, tableHead } from "../../../ui/table"
 import { Message } from "./message"
 import type { SortState } from "../../kit/table-sort"
 import type { SortTable } from "./model-tabs"
@@ -20,42 +20,6 @@ export const headLabel = (
 	attributes: ReadonlyArray<Attribute<Message>> = [],
 ): Html => tableHead(h, children, cn(eyebrowVariants(), "h-8", className), attributes)
 
-/** `SortableHeader`: the label and the up-down arrow, rotated for ascending. */
-const sortableHeader = (
-	h: H,
-	table: SortTable,
-	sortKey: string,
-	label: string,
-	sort: SortState,
-	className?: string,
-) => {
-	const isActive = sort.key === sortKey
-	return h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedSort({ table, key: sortKey })),
-			h.Class(
-				cn(
-					"inline-flex items-center gap-1 transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
-					className,
-				),
-			),
-		],
-		[
-			label,
-			icon(h, "ArrowUpDownIcon", {
-				size: 10,
-				className: cn(
-					"shrink-0 transition-opacity",
-					isActive ? "opacity-100" : "opacity-40",
-					isActive && sort.dir === "asc" && "rotate-180",
-				),
-			}),
-		],
-	)
-}
-
 /** `SortColumnHead`: right-aligned by default, `aria-sort` on the active column. */
 export const sortColumnHead = (
 	h: H,
@@ -66,6 +30,7 @@ export const sortColumnHead = (
 		sort: SortState
 		align?: "left" | "right"
 		className?: string
+		title?: string
 	}>,
 ): Html => {
 	const isRight = (options.align ?? "right") === "right"
@@ -73,30 +38,38 @@ export const sortColumnHead = (
 	return headLabel(
 		h,
 		[
-			sortableHeader(
+			sortButton(
 				h,
-				options.table,
-				options.sortKey,
-				options.label,
-				options.sort,
-				cn(isRight && "w-full justify-end"),
+				{
+					isActive,
+					direction: options.sort.dir,
+					onClick: Message.ClickedSort({ table: options.table, key: options.sortKey }),
+					align: isRight ? "right" : "left",
+					// The whole head cell stays clickable; row-reverse puts `justify-start` on the right.
+					className: cn(isRight && "w-full justify-start"),
+				},
+				[options.label],
 			),
 		],
 		cn(isRight && "text-right", options.className),
-		isActive ? [h.Attribute("aria-sort", options.sort.dir === "asc" ? "ascending" : "descending")] : [],
+		[
+			...ariaSort(h, isActive, options.sort.dir),
+			...(options.title === undefined ? [] : [h.Title(options.title)]),
+		],
 	)
 }
 
+// Volume and latency bars stay neutral; only errors carry a colour.
 const BAR_TONE = {
-	calls: "bg-severity-info/20",
-	errors: "bg-severity-error/25",
-	latency: "bg-severity-warn/20",
+	calls: "bg-muted",
+	errors: "bg-severity-error-a3",
+	latency: "bg-muted",
 } as const
 
 /** `BarCell`: a numeric cell over a column-tinted distribution bar. */
 export const barCell = (
 	h: H,
-	options: Readonly<{ value: number; max: number; tone: keyof typeof BAR_TONE }>,
+	options: Readonly<{ value: number; max: number; tone: keyof typeof BAR_TONE; className?: string }>,
 	child: Html,
 ): Html =>
 	tableCell(
@@ -106,12 +79,39 @@ export const barCell = (
 				value: options.value,
 				max: options.max,
 				align: "right",
-				className: cn(
-					"opacity-50 transition-opacity group-hover/row:opacity-90",
-					BAR_TONE[options.tone],
-				),
+				className: BAR_TONE[options.tone],
 			}),
 			h.span([h.Class("relative pr-1.5")], [child]),
 		],
-		"relative py-2 text-right align-middle tabular-nums",
+		cn("relative py-2 text-right align-middle tabular-nums", options.className),
 	)
+
+/**
+ * The title row every tab table opens with: its name, the row count, and optional controls.
+ * Loading skeletons pass no count.
+ */
+export const tableTitle = (h: H, options: Readonly<{ title: string; count?: number; action?: Html }>): Html =>
+	panelHeader(h, {
+		title: options.title,
+		scope:
+			options.count === undefined
+				? undefined
+				: h.span(
+						[h.Class("font-mono text-2xs tabular-nums text-foreground-subtle")],
+						[String(options.count)],
+					),
+		action: options.action,
+	})
+
+/** Past 30 days a tab's summaries outlive the raw spans its drill-downs read. */
+export const rangeNote = (h: H, subject: string): Html =>
+	h.p(
+		[h.Class("text-xs text-muted-foreground")],
+		[`${subject} summaries cover the selected range; trace drill-downs show the latest 30 days.`],
+	)
+
+/** A loading table's title and column-header rows, sized like the loaded ones. */
+export const tableSkeletonHead = (h: H, title: string): ReadonlyArray<Html> => [
+	tableTitle(h, { title }),
+	h.div([h.Class("h-8 border-b")]),
+]

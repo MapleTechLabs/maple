@@ -33,6 +33,12 @@ function Publisher({ items }: { items: readonly PlotLegendItem[] | null }) {
 	return <div data-testid="hoisted">{String(hoisted)}</div>
 }
 
+/** Records what the hook answers on every render, including the first. */
+function Recorder({ onAnswer }: { onAnswer: (answer: boolean) => void }) {
+	onAnswer(usePlotLegendSlot(series))
+	return null
+}
+
 function hoisted(container: HTMLElement): string {
 	return container.querySelector("[data-testid='hoisted']")?.textContent ?? ""
 }
@@ -75,13 +81,14 @@ describe("usePlotLegendSlot", () => {
 	it("answers during the first render, not a frame later", () => {
 		// The publish itself is an effect. If the answer were read back out of it
 		// the strip would paint and then withdraw, so this asserts the value is
-		// already correct in the DOM the very first commit produces.
-		const { container } = render(
+		// already correct on the very first render.
+		const answers: boolean[] = []
+		render(
 			<SlotHost>
-				<Publisher items={series} />
+				<Recorder onAnswer={(answer) => answers.push(answer)} />
 			</SlotHost>,
 		)
-		expect(hoisted(container)).not.toBe("")
+		expect(answers[0]).toBe(true)
 	})
 
 	it("carries the dashed flag through to the host", () => {

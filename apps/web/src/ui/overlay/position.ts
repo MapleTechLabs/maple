@@ -204,6 +204,16 @@ const applyCoordinates = (floating: HTMLElement, config: PositionConfig, x: numb
 	floating.style.transform = `translate(${round(x)}px, ${round(y)}px)`
 }
 
+/** Runs `apply` with transitions off and commits the styles before they come back. */
+const withoutTransition = <A>(element: HTMLElement, apply: () => A): A => {
+	const previous = element.style.transition
+	element.style.transition = "none"
+	const result = apply()
+	void element.offsetHeight
+	element.style.transition = previous
+	return result
+}
+
 /**
  * Positions `floating` against the anchor and keeps it there (`autoUpdate`: scroll, resize,
  * layout shift). Emits the rendered side and alignment whenever a flip changes them.
@@ -225,6 +235,7 @@ export const anchorPosition = (
 					side: config.side,
 					align: config.align,
 					isPlacedInstead: false,
+					isPlaced: false,
 					/** Base UI's `mountSide`: the placement asked for; the flip padding keeps `config.side`. */
 					preferredSide: config.side,
 				}
@@ -238,10 +249,16 @@ export const anchorPosition = (
 						middleware: middlewareFor(floating, config),
 					}).then(({ x, y, placement }) => {
 						if (!state.isActive) return
-						const isPlacedInstead = placeInstead(floating)
-						if (!isPlacedInstead) applyCoordinates(floating, config, x, y)
 						const side = sideOf(placement)
-						afterPlace(floating, side)
+						const place = () => {
+							const isPlacedInstead = placeInstead(floating)
+							if (!isPlacedInstead) applyCoordinates(floating, config, x, y)
+							afterPlace(floating, side)
+							return isPlacedInstead
+						}
+						// The first placement jumps there: a positioner that transitions `top`/`left` would slide in from 0,0.
+						const isPlacedInstead = state.isPlaced ? place() : withoutTransition(floating, place)
+						state.isPlaced = true
 						const align = alignOf(placement)
 						if (config.lazyFlip && side !== state.preferredSide) state.preferredSide = side
 						const isSame =

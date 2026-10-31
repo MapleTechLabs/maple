@@ -125,11 +125,10 @@ const UpsertFields = Schema.Struct({
 type UpsertFields = typeof UpsertFields.Type
 
 /** `enabled` always rides along: the upsert reads a missing value as on. */
-const upsert = (email: string, enabled: boolean, fields: UpsertFields) =>
+const upsert = (enabled: boolean, fields: UpsertFields) =>
 	Effect.flatMap(MapleInternalApiClient, (client) =>
 		client.digest.upsertSubscription({
 			payload: new UpsertDigestSubscriptionRequest({
-				email,
 				enabled,
 				...(fields.dayOfWeek !== undefined && { dayOfWeek: fields.dayOfWeek }),
 				...(fields.sendHour !== undefined && { sendHour: fields.sendHour }),
@@ -142,18 +141,18 @@ const upsert = (email: string, enabled: boolean, fields: UpsertFields) =>
 	).pipe(Effect.asVoid, Effect.mapError(toLoadFailure), Effect.result)
 
 const ToggleDigest = Command.define("ToggleDigest", {
-	args: { digest: Schema.Literals(["ops", "web"]), isOn: Schema.Boolean, email: Schema.String, enabled: Schema.Boolean, fields: UpsertFields },
+	args: { digest: Schema.Literals(["ops", "web"]), isOn: Schema.Boolean, enabled: Schema.Boolean, fields: UpsertFields },
 	messages: [Message.CompletedToggle],
-	execute: ({ digest, isOn, email, enabled, fields }) =>
-		Effect.map(upsert(email, enabled, fields), (result) => Message.CompletedToggle({ digest, isOn, result })),
+	execute: ({ digest, isOn, enabled, fields }) =>
+		Effect.map(upsert(enabled, fields), (result) => Message.CompletedToggle({ digest, isOn, result })),
 })
 
 const SaveDigest = Command.define("SaveDigestPreferences", {
-	args: { email: Schema.String, enabled: Schema.Boolean, submitted: DigestDraft },
+	args: { enabled: Schema.Boolean, submitted: DigestDraft },
 	messages: [Message.CompletedSave],
-	execute: ({ email, enabled, submitted }) =>
+	execute: ({ enabled, submitted }) =>
 		Effect.map(
-			upsert(email, enabled, {
+			upsert(enabled, {
 				dayOfWeek: submitted.dayOfWeek,
 				sendHour: submitted.sendHour,
 				timezone: submitted.timezone,
@@ -289,7 +288,7 @@ const toggle = (model: Model, digest: "ops" | "web"): Return => {
 	const fields = digest === "ops" ? firstWrite(model) : { ...firstWrite(model), webAnalyticsEnabled: isOn }
 	return {
 		model: { ...model, ...(digest === "ops" ? { isTogglingOps: true } : { isTogglingWeb: true }) },
-		commands: [ToggleDigest({ digest, isOn, email: model.email, enabled: digest === "ops" ? isOn : enabled, fields })],
+		commands: [ToggleDigest({ digest, isOn, enabled: digest === "ops" ? isOn : enabled, fields })],
 	}
 }
 
@@ -324,7 +323,7 @@ export const update = (model: Model, message: Message): Return =>
 				onSuccess: () => ({ ...refetch(settled), outMessage: toast("success", `${name} turned ${isOn ? "on" : "off"}`) }),
 				onFailure: (error) => ({
 					model: settled,
-					outMessage: toast("error", `Failed to update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`, error.message),
+					outMessage: toast("error", `Couldn't update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`, error.message),
 				}),
 			})
 		},
@@ -340,7 +339,7 @@ export const update = (model: Model, message: Message): Return =>
 			const submitted = draftOf(model)
 			return {
 				model: { ...model, isSaving: true, draft: Draft.submit(model.draft, baselineOf(model)) },
-				commands: [SaveDigest({ email: model.email, enabled: isOpsEnabled(model), submitted })],
+				commands: [SaveDigest({ enabled: isOpsEnabled(model), submitted })],
 			}
 		},
 		CompletedSave: ({ submitted, result }) =>
@@ -355,7 +354,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isSaving: false, draft: Draft.abort(model.draft) },
-					outMessage: toast("error", "Failed to save email preferences", error.message),
+					outMessage: toast("error", "Couldn't save email preferences", error.message),
 				}),
 			}),
 		ClickedPreview: ({ digest }) =>
@@ -368,7 +367,7 @@ export const update = (model: Model, message: Message): Return =>
 						: { model: { ...model, previewing: null }, commands: [OpenPreview({ html })] },
 				onFailure: (error) => ({
 					model: { ...model, previewing: null },
-					outMessage: toast("error", "Failed to generate the preview", error.message),
+					outMessage: toast("error", "Couldn't generate the preview", error.message),
 				}),
 			}),
 	})

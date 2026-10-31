@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Resources } from "../platform/resources"
 import type { AppRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import type { PageSourceRef } from "../shell/source-link"
 import type {
 	PageContext,
 	PageHost,
@@ -24,12 +25,17 @@ import * as AnomaliesList from "./anomalies/list"
 import * as AnomalyDetail from "./anomalies/detail"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
+import * as AlertsUptimeMonitor from "./alerts/uptime-monitor"
+import * as AlertsUptimeNew from "./alerts/uptime-form"
+import * as IngestRuleEditor from "./settings/ingest-rule"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
 import * as DashboardWidget from "./dashboards/widget"
-import * as Chat from "./chat/page"
 import * as CodeReview from "./code-review"
+import * as SecurityFinding from "./security/finding"
+import * as SecurityRun from "./security/run"
+import * as SecurityTabs from "./security/tabs"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraContainer from "./infra/containers/detail"
@@ -47,12 +53,16 @@ import * as InfraOverview from "./infra/overview"
 import * as InfraCloudflare from "./infra-integrations/cloudflare/list"
 import * as InfraCloudflareWorker from "./infra-integrations/cloudflare/worker"
 import * as InfraCloudflareZone from "./infra-integrations/cloudflare/zone"
+import * as InfraAws from "./infra-integrations/aws/list"
+import * as InfraAwsResource from "./infra-integrations/aws/resource"
 import * as InfraGcp from "./infra-integrations/gcp/list"
 import * as InfraGcpWorkload from "./infra-integrations/gcp/workload"
 import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
 import * as InfraPlanetscale from "./infra-integrations/planetscale/list"
 import * as InfraRailway from "./infra-integrations/railway/list"
 import * as InfraRailwayService from "./infra-integrations/railway/service"
+import * as InfraSupabase from "./infra-integrations/supabase/list"
+import * as InfraSupabaseProject from "./infra-integrations/supabase/project"
 import * as Integrations from "./integrations"
 import * as InvestigationDetail from "./investigations/detail"
 import * as InvestigationsList from "./investigations/list"
@@ -77,6 +87,9 @@ import * as Share from "./share"
 import * as SourcesList from "./sources/list"
 import * as SourcesNew from "./sources/new"
 import * as SourceDetail from "./sources/detail"
+import * as StatusPageBuilder from "./status-pages/builder"
+import * as StatusPageEditor from "./status-pages/editor"
+import * as StatusPagesList from "./status-pages/list"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
@@ -99,6 +112,11 @@ export const pages = [
 	AlertsHub.page,
 	AlertIncident.page,
 	AlertRule.page,
+	AlertsUptimeMonitor.page,
+	AlertsUptimeNew.page,
+	StatusPagesList.page,
+	StatusPageBuilder.page,
+	StatusPageEditor.page,
 	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,
@@ -115,8 +133,12 @@ export const pages = [
 	InfraOverview.page,
 	InfraRailway.page,
 	InfraRailwayService.page,
+	InfraSupabase.page,
+	InfraSupabaseProject.page,
 	InfraPlanetscale.page,
 	InfraPlanetscaleDatabase.page,
+	InfraAws.page,
+	InfraAwsResource.page,
 	InfraGcp.page,
 	InfraGcpWorkload.page,
 	InfraCloudflare.page,
@@ -127,6 +149,9 @@ export const pages = [
 	DashboardTemplates.page,
 	DashboardWidget.page,
 	CodeReview.page,
+	SecurityTabs.page,
+	SecurityRun.page,
+	SecurityFinding.page,
 	AgentSessionsList.page,
 	AgentSessionTools.page,
 	AgentSessionTool.page,
@@ -140,6 +165,7 @@ export const pages = [
 	InvestigationsList.page,
 	InvestigationDetail.page,
 	Settings.page,
+	IngestRuleEditor.page,
 	McpPage.page,
 	SourcesList.page,
 	SourcesNew.page,
@@ -149,7 +175,6 @@ export const pages = [
 	ReplayDetail.page,
 	Share.page,
 	Analytics.page,
-	Chat.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */
@@ -309,7 +334,9 @@ export const blockNavigation = (
 		(page) => page.id === current._tag && Option.contains(page.keyOf(route), current.key),
 	)
 	if (isSameInstance) return Option.none()
-	return Option.flatMap(pageById(current._tag), (page) => toHeld(page.blockedNavigation(current, url, context)))
+	return Option.flatMap(pageById(current._tag), (page) =>
+		toHeld(page.blockedNavigation(current, url, context)),
+	)
 }
 
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>
@@ -320,8 +347,24 @@ export const changeContext = (current: PageSlot | null, context: PageContext): P
 				onSome: (page) => toTransition(page.contextChanged(current, context), current),
 			})
 
+export const settleInfraSurfaces = (current: PageSlot | null, context: PageContext): PageTransition =>
+	current === null
+		? unchanged(current)
+		: Option.match(pageById(current._tag), {
+				onNone: () => unchanged(current),
+				onSome: (page) => toTransition(page.infraSurfacesSettled(current, context), current),
+			})
+
 export const pageBreadcrumbs = (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 	Option.match(pageById(slot._tag), { onNone: () => [], onSome: (page) => page.breadcrumbs(slot) })
+
+/** The source the page's data comes from, for the top bar's link. */
+export const pageSource = (slot: PageSlotBase): PageSourceRef | null =>
+	Option.match(pageById(slot._tag), { onNone: () => null, onSome: (page) => page.source(slot) })
+
+/** The page links to its source, so entering it reads the org's sources. */
+export const pageHasSource = (slot: PageSlotBase): boolean =>
+	Option.match(pageById(slot._tag), { onNone: () => false, onSome: (page) => page.hasSource })
 
 export const pageSubscriptions = Subscription.aggregate<PageHost, PageMessage, Resources>()(
 	...pages.map((page) => page.subscriptions),

@@ -189,19 +189,19 @@ const branchNameForFilter = (entry: PlanetScaleSubTarget): string =>
 	entry.labels.planetscale_database_branch_id ??
 	entry.subTargetKey
 
-interface BranchFilters {
+export interface BranchFilters {
 	readonly include: ReadonlyArray<string>
 	readonly exclude: ReadonlyArray<string>
 }
 
 /** Read include/exclude branch globs off the row's `discovery_config_json`. */
-const parseBranchFilters = (discoveryConfigJson: unknown): BranchFilters => {
+export const parseBranchFilters = (discoveryConfigJson: unknown): BranchFilters => {
 	const cfg = decodeDiscoveryConfig(discoveryConfigJson)
 	return { include: cfg?.includeBranches ?? [], exclude: cfg?.excludeBranches ?? [] }
 }
 
 /** exclude wins over include; an empty include list means "all branches". */
-const branchPassesFilters = (name: string, filters: BranchFilters): boolean => {
+export const branchPassesFilters = (name: string, filters: BranchFilters): boolean => {
 	if (filters.exclude.some((pattern) => globToRegExp(pattern).test(name))) return false
 	if (filters.include.length > 0 && !filters.include.some((pattern) => globToRegExp(pattern).test(name)))
 		return false
@@ -233,7 +233,7 @@ export interface PlanetScaleDiscoveryServiceApi {
 export class PlanetScaleDiscoveryService extends Context.Service<
 	PlanetScaleDiscoveryService,
 	PlanetScaleDiscoveryServiceApi
->()("@maple/api/services/PlanetScaleDiscoveryService", {
+>()("@maple/backend/services/PlanetScaleDiscoveryService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		const psOAuth = yield* PlanetScaleOAuthService

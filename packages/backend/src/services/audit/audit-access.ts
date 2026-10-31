@@ -53,7 +53,7 @@ const clip = (value: string): string =>
  * question an auditor asks of such an entry — which person, in which workspace
  * — and it is forensic context, never an identity Maple resolves anything by.
  */
-const originMetadata = (origin: ChatTurnOrigin | undefined) =>
+export const originMetadata = (origin: ChatTurnOrigin | undefined) =>
 	origin?.kind === "connector"
 		? {
 				connector: clip(origin.connectorId),

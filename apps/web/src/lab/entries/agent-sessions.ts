@@ -171,7 +171,11 @@ const listPage = Submodel.defineView<ListModel, ListMessage, ListInputs>((list, 
 										className: "border-b border-border",
 										isOnRoute: false,
 									}),
-									toolbar(h, list, { sessionCount: inputs.rows.length, isWaiting: false }),
+									toolbar(h, list, {
+										sessionCount: inputs.rows.length,
+										totalCount: inputs.tabCounts.sessions,
+										isWaiting: false,
+									}),
 								],
 							),
 						],
@@ -208,8 +212,8 @@ const labButton = (h: HtmlBuilder<Message>, label: string, isActive: boolean, on
 		[
 			h.Class(
 				isActive
-					? "rounded border border-border bg-accent px-2 py-1 text-xs"
-					: "rounded border border-border px-2 py-1 text-xs text-muted-foreground",
+					? "rounded-sm border border-border bg-accent px-2 py-1 text-xs"
+					: "rounded-sm border border-border px-2 py-1 text-xs text-muted-foreground",
 			),
 			h.Type("button"),
 			h.OnClick(onClick),

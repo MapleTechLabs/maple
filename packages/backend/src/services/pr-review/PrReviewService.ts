@@ -40,10 +40,12 @@ import {
 	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_CONFIDENCE_MAX,
 	PR_REVIEW_FAILURE_COPY,
+	PR_REVIEW_FAILURE_NEEDS_FIX,
 	DEFAULT_REVIEWER_MENTION,
 	PrReviewFailureReason,
 	prReviewFailureReason,
 	confidencePrReview,
+	isPrReviewDefectHistory,
 	prReviewConfidenceTone,
 	scorePrReview,
 	type PullRequestCheckAnnotation,
@@ -126,6 +128,7 @@ import {
 	renderFollowUp,
 	renderIgnoredPaths,
 	resolvedByHandle,
+	uncheckedFixes,
 	SEVERITY_RANK,
 	threadForFinding,
 	type TrackedFinding,
@@ -181,6 +184,21 @@ const ACTIVE_STATUSES: ReadonlyArray<PrReviewStatus> = ["queued", "running"]
 /** Automation authors whose pull requests are dependency bumps, not features. */
 const BOT_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions)/i
 
+/** Who started a review: the webhook, the webhook vouched for by a CI approval, or someone by name. */
+type TriggerMode = "automatic" | "approved" | "requested"
+
+/** GitHub associations trusted with what the reviewer reads and posts; on a public repository anyone else is not. */
+const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
+
+export const isTrustedAuthorAssociation = (association: string | undefined): boolean =>
+	association !== undefined && TRUSTED_ASSOCIATIONS.has(association.toUpperCase())
+
+/** Automatic reviews one outside author may get per UTC day across the organization. */
+const OUTSIDE_AUTHOR_DAILY_REVIEWS = 3
+
+/** Repository permissions that make a person a maintainer, whatever the webhook's association says. */
+export const PUSH_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
+
 export interface PrReviewTriggerOutcome {
 	readonly reviewId: PrReviewId | null
 	readonly outcome: "started" | "deferred" | "skipped" | "failed"
@@ -227,6 +245,11 @@ export interface PrReviewServiceApi {
 	 * head that was already reviewed is reviewed again. Never fails, like the webhook entry.
 	 */
 	readonly reviewNow: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
+	/**
+	 * Review a head whose CI someone with write access let go, as the webhook would for a trusted
+	 * author: an outside contributor's pull request is reviewed once a maintainer approves its run.
+	 */
+	readonly onCiApproved: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
 	/**
 	 * Someone ticked or unticked "Before merge" steps on a review comment. Never fails, like the
 	 * webhook entry: a lost tick shows unticked on the next comment, and can be ticked again.
@@ -429,6 +452,8 @@ const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckA
 export interface CarriedFindings {
 	readonly open: ReadonlyArray<TrackedFinding>
 	readonly resolved: ReadonlyArray<TrackedFinding>
+	/** Defects fixed since the last whole-diff pass; they hold confidence at 8. */
+	readonly uncheckedFixes?: number
 }
 
 const NO_CARRIED: CarriedFindings = { open: [], resolved: [] }
@@ -494,6 +519,12 @@ export type PrReviewStatusNotice = typeof PrReviewStatusNotice.Type
 const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
 	`The review of ${sha} could not finish.${reason === undefined ? "" : ` ${PR_REVIEW_FAILURE_COPY[reason]}`}`
 
+/** How to run it again: a key or config problem has to be fixed first, so it is not "try again". */
+const retryHint = (reason: PrReviewFailureReason | undefined, mention: string, where = ""): string =>
+	reason !== undefined && PR_REVIEW_FAILURE_NEEDS_FIX.has(reason)
+		? `Once that is fixed, comment \`${mention} review\`${where} to run it again.`
+		: `Comment \`${mention} review\`${where} to try again.`
+
 /**
  * A review's comment while it has no result: the notice alone, under the review's marker.
  *
@@ -518,10 +549,7 @@ export const withReviewStatus = (
 				"> [!NOTE]",
 				`> ⏳ **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
 			]
-		: [
-				"> [!WARNING]",
-				`> ${failedSentence(sha, notice.reason)} Comment \`${mention} review\` to try again.`,
-			]
+		: ["> [!WARNING]", `> ${failedSentence(sha, notice.reason)} ${retryHint(notice.reason, mention)}`]
 	const status = encodeStatusMarker([STATUS_OPEN, notice.kind, " ", notice.headSha, " -->"])
 	return [marker, status, ...lines, STATUS_CLOSE].join("\n")
 }
@@ -542,7 +570,7 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) =>
 			...run,
 			state: { status: "completed" as const, conclusion: "neutral" as const },
 			title: "Review could not finish",
-			summary: `${failedSentence(sha, reason)} Comment \`${mention} review\` on the pull request to try again.`,
+			summary: `${failedSentence(sha, reason)} ${retryHint(reason, mention, " on the pull request")}`,
 		}),
 		superseded: () => ({
 			...run,
@@ -554,12 +582,16 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) =>
 }
 
 /** The check a push gets once its pull request has used the repository's automatic reviews. */
-const pausedCheckFor = (headSha: string, limit: number, mention: string) => ({
+const pausedCheckFor = (headSha: string, limit: number, mention: string, outsideAuthor: boolean) => ({
 	name: PR_REVIEW_CHECK_NAME,
 	headSha,
 	state: { status: "completed" as const, conclusion: "skipped" as const },
 	title: "Automatic reviews paused",
-	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`${mention} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
+	summary: `${
+		outsideAuthor
+			? "Pull requests from outside contributors get one automatic review."
+			: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes.`
+	} A maintainer can comment \`${mention} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
 })
 
 const SEVERITY_LABEL = {
@@ -721,7 +753,9 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			.join("/")}${line === undefined ? "" : `#L${line}`}`
 	const observable = report.coverage.filter((unit) => unit.instrumented).length
 
-	const confidence = confidencePrReview(report, carried.open, input.partial)
+	const confidence = confidencePrReview(report, carried.open, input.partial, carried.uncheckedFixes ?? 0)
+	// The comment is what people read on every push; inventories and evidence stay on the check run.
+	const comment = input.heading
 
 	// Confidence leads, like the check title: one number, then what decides it and what went in.
 	const lines: Array<string> = []
@@ -729,13 +763,16 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	if (confidence === undefined) {
 		lines.push("**Nothing to review**", "")
 	} else {
-		lines.push(
-			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
-		)
 		// An early end is already the warning below; the reason would only say it again.
-		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
-			lines.push(confidence.reason)
-		lines.push(`<sub>${confidence.factors.join(" · ")}</sub>`, "")
+		const reason =
+			confidence.reason !== undefined && confidence.cappedBy !== "partial"
+				? confidence.reason
+				: undefined
+		lines.push(
+			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}${reason === undefined ? "" : `. ${reason}`}`,
+			`<sub>${confidence.factors.join(" · ")}</sub>`,
+			"",
+		)
 	}
 	if (input.partial)
 		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")
@@ -791,8 +828,10 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 		)
 	}
-	lines.push(...renderTelemetryMarkdown(report.telemetry, { blocking: input.blocking === true }))
-	const checked = report.checked ?? []
+	lines.push(
+		...renderTelemetryMarkdown(report.telemetry, { blocking: input.blocking === true, brief: comment }),
+	)
+	const checked = comment ? [] : (report.checked ?? [])
 	if (checked.length > 0) {
 		lines.push(
 			"<details><summary>What was checked</summary>",
@@ -803,7 +842,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 		)
 	}
-	if (report.coverage.length > 0) {
+	if (!comment && report.coverage.length > 0) {
 		lines.push(
 			`<details><summary>Observability coverage: ${observable} of ${report.coverage.length} changes observable</summary>`,
 			"",
@@ -836,11 +875,22 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	const auditNote = report.findings.some((finding) => finding.checkId !== undefined)
 		? " Check ids refer to Maple's instrumentation audit."
 		: ""
+	const onCheck = comment && hasCheckOnlyDetail(report)
 	lines.push(
-		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention ${input.mention ?? DEFAULT_REVIEWER_MENTION} to ask about one.${auditNote}</sub>`,
+		`<sub>\`${input.headSha.slice(0, 7)}\` · ${onCheck ? `What was checked, coverage and telemetry details are on the ${PR_REVIEW_CHECK_NAME} check. ` : ""}Reply "won't fix" to dismiss a finding, or mention ${input.mention ?? DEFAULT_REVIEWER_MENTION} to ask about one.${auditNote}</sub>`,
 	)
 	return lines.join("\n")
 }
+
+/** Sections only the check run carries; the comment points at it when the review has any. */
+const hasCheckOnlyDetail = (report: PrReviewReport): boolean =>
+	(report.checked?.length ?? 0) > 0 ||
+	report.coverage.length > 0 ||
+	(report.telemetry !== undefined &&
+		(report.telemetry.hotFiles.length > 0 ||
+			report.telemetry.added.length > 0 ||
+			report.telemetry.removed.length > 0 ||
+			report.telemetry.costNotes.some((note) => note.kind === "log")))
 
 /** The check run's summary: the review without a heading, since the check shows its own title. */
 export const renderCheckSummary = (input: ReviewMarkdownInput): string =>
@@ -951,7 +1001,7 @@ export const buildPublication = (input: {
 	const { report } = input
 	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
 	const carried = input.carried ?? NO_CARRIED
-	const confidence = confidencePrReview(report, carried.open, input.partial)
+	const confidence = confidencePrReview(report, carried.open, input.partial, carried.uncheckedFixes ?? 0)
 	const threshold = SEVERITY_RANK[input.minInlineSeverity ?? "warn"]
 	const annotations: Array<PullRequestCheckAnnotation> = report.findings.map((finding) => ({
 		path: finding.path,
@@ -1076,6 +1126,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				title: row.title,
 				status: row.status,
 				commentId: row.commentId ?? null,
+				resolvedSha: row.resolvedSha ?? null,
 			})
 
 			/** Every finding this pull request has had, in handle order. */
@@ -1091,6 +1142,28 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							]),
 					),
 				).pipe(Effect.map((rows) => rows.map(toTracked)))
+
+			/** The pull request's completed reviews, newest first, and whether each read the whole diff. */
+			const loadReviewHistory = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(PrReviews)
+							// The flag alone, read in SQL, so a long-lived pull request never loads its reports.
+							.select(($) => ({
+								headSha: $.headSha,
+								wholeDiff: PG.sql(
+									PG.bool,
+								)`coalesce((${$.reportJson}->>'wholeDiff')::boolean, false)`,
+							}))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.repositoryId.eq(repositoryId),
+								$.number.eq(number),
+								$.status.eq("completed"),
+							])
+							.orderBy(($) => [[$.finishedAt, "desc"]]),
+					),
+				)
 
 			const setFindingStatus = (
 				orgId: OrgId,
@@ -1228,6 +1301,22 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					installation: installation.value,
 					ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
 				})
+			})
+
+			/** Whether a person can push to the repository; an unreadable permission is no. */
+			const canPush = Effect.fn("PrReviewService.canPush")(function* (
+				orgId: OrgId,
+				repo: VcsRepo,
+				login: string | null,
+			) {
+				if (login === null) return false
+				const target = yield* providerFor(orgId, repo)
+				if (Option.isNone(target)) return false
+				const { provider, installation, ref } = target.value
+				const permission = yield* provider
+					.fetchCommenterPermission(installation, ref, login)
+					.pipe(Effect.orElseSucceed(() => "none"))
+				return PUSH_PERMISSIONS.has(permission)
 			})
 
 			/**
@@ -1441,7 +1530,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/** Say on the head's checks that pushes no longer start reviews. Best effort, like every status. */
-			const postPausedCheck = (orgId: OrgId, repo: VcsRepo, headSha: GitCommitSha, limit: number) =>
+			const postPausedCheck = (
+				orgId: OrgId,
+				repo: VcsRepo,
+				headSha: GitCommitSha,
+				limit: number,
+				outsideAuthor: boolean,
+			) =>
 				Effect.gen(function* () {
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
@@ -1449,7 +1544,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* provider.writePullRequestCheck(
 						installation,
 						ref,
-						pausedCheckFor(headSha, limit, provider.reviewerMention),
+						pausedCheckFor(headSha, limit, provider.reviewerMention, outsideAuthor),
 					)
 				}).pipe(
 					Effect.catchCause((cause) =>
@@ -1527,23 +1622,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				baseSha: GitCommitSha | undefined,
 				nowMs: number,
 			) {
-				const previous = yield* dbExecute((db) =>
-					db.run(
-						PG.from(PrReviews)
-							.select("headSha")
-							.where(($) => [
-								$.repositoryId.eq(repo.id),
-								$.number.eq(number),
-								$.status.eq("completed"),
-								$.headSha.neq(headSha),
-							])
-							.orderBy(($) => [[$.finishedAt, "desc"]])
-							.limit(1),
-					),
-				)
-				const previousSha = previous[0]?.headSha
+				const history = yield* loadReviewHistory(orgId, repo.id, number)
+				const previousSha = history.find((review) => review.headSha !== headSha)?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
+				// A defect fixed since the last whole-diff pass: this pass re-reads every file.
+				const recheck = uncheckedFixes(history, tracked) > 0
 				const upstream = yield* providerFor(orgId, repo)
 				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
@@ -1567,8 +1651,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
 					"maple.pr_review.history_rewritten": changes?.rewritten ?? false,
+					"maple.pr_review.recheck": recheck,
 				})
-				return renderFollowUp({ previousSha, changes, open })
+				return renderFollowUp({ previousSha, changes, open, recheck })
 			})
 
 			/** A review of the same pull request still running, whose head this delivery replaces. */
@@ -1891,8 +1976,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const trigger = Effect.fn("PrReviewService.onPullRequestEvent")(function* (
 				orgId: OrgId,
 				job: PullRequestEventJob,
-				requested = false,
+				mode: TriggerMode = "automatic",
 			) {
+				const requested = mode === "requested"
 				const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
 					Effect.annotateCurrentSpan({
 						orgId,
@@ -1976,6 +2062,29 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "bot_author" })
 					return skip("bot_author")
 				}
+				// The automatic review reads org telemetry and posts to the pull request, so on a public
+				// repository it runs only for a trusted author. GitHub reports private org members as
+				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
+				// Webhooks also report them as CONTRIBUTOR on public repositories, so their push access is asked.
+				const outsideAuthor =
+					mode === "automatic" &&
+					!repo.isPrivate &&
+					!isTrustedAuthorAssociation(job.authorAssociation) &&
+					!(yield* canPush(orgId, repo, job.authorLogin))
+				if (outsideAuthor) {
+					const association = job.authorAssociation ?? "absent"
+					if (config.reviewExternalContributors !== true) {
+						yield* annotate("skipped", {
+							"maple.pr_review.skip_reason": "external_author",
+							"vcs.pull_request.author_association": association,
+						})
+						return skip("external_author")
+					}
+					yield* Effect.annotateCurrentSpan({
+						"maple.pr_review.external_author": true,
+						"vcs.pull_request.author_association": association,
+					})
+				}
 				const nowMs = yield* Clock.currentTimeMillis
 				// The delayed copy of a push: start the row it queued, unless a later push replaced it.
 				if (job.deferredReview === true) {
@@ -2009,8 +2118,36 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						config,
 					})
 				}
-				if (config.automaticReviewLimit !== undefined && !requested) {
-					const limit = config.automaticReviewLimit
+				if (outsideAuthor) {
+					// Bounds an outsider opening pull request after pull request; this head of this PR is skipped, so a redelivery stays a duplicate.
+					const authorToday = yield* dbExecute((db) =>
+						db.run(
+							PG.from(PrReviews)
+								.select(() => ({ total: PG.count() }))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.authorLogin.eq(job.authorLogin ?? ""),
+									PG.or(
+										$.repositoryId.neq(repo.id),
+										$.number.neq(job.number),
+										$.headSha.neq(headSha),
+									),
+									$.createdAt.gte(utcDayStart(nowMs)),
+								]),
+						),
+					)
+					if ((authorToday[0]?.total ?? 0) >= OUTSIDE_AUTHOR_DAILY_REVIEWS) {
+						yield* annotate("skipped", {
+							"maple.pr_review.skip_reason": "quota",
+							"maple.pr_review.outside_author_limit": OUTSIDE_AUTHOR_DAILY_REVIEWS,
+						})
+						return skip("quota")
+					}
+				}
+				// An outside author gets one review from pushes, so pushing again cannot spend the org's reviews.
+				const automaticLimit = outsideAuthor ? 1 : config.automaticReviewLimit
+				if (automaticLimit !== undefined && !requested) {
+					const limit = automaticLimit
 					// A head that already has a row is a redelivery or a retry, handled below; pausing
 					// it would overwrite that review's own check.
 					const existingHead = yield* dbExecute((db) =>
@@ -2035,12 +2172,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									$.repositoryId.eq(repo.id),
 									$.number.eq(job.number),
 									$.headSha.neq(headSha),
-									$.status.in_("completed", "failed"),
+									// An outsider's superseded or running review counts too, or pushing mid-run resets the cap.
+									...(outsideAuthor ? [] : [$.status.in_("completed", "failed")]),
 								]),
 						),
 					)
 					if (existingHead[0] === undefined && (earlier[0]?.total ?? 0) >= limit) {
-						yield* postPausedCheck(orgId, repo, headSha, limit)
+						yield* postPausedCheck(orgId, repo, headSha, limit, outsideAuthor)
 						yield* annotate("skipped", {
 							"maple.pr_review.skip_reason": "automatic_limit",
 							"maple.pr_review.automatic_limit": limit,
@@ -2178,8 +2316,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 
+			const onCiApproved: PrReviewServiceApi["onCiApproved"] = (orgId, job) =>
+				trigger(orgId, job, "approved").pipe(
+					Effect.catchCause((cause) =>
+						Effect.logError("[PrReview] approved pull request could not be reviewed").pipe(
+							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
+							Effect.as<PrReviewTriggerOutcome>({ reviewId: null, outcome: "failed" }),
+						),
+					),
+				)
+
 			const reviewNow: PrReviewServiceApi["reviewNow"] = (orgId, job) =>
-				trigger(orgId, job, true).pipe(
+				trigger(orgId, job, "requested").pipe(
 					Effect.catchCause((cause) =>
 						Effect.logError("[PrReview] requested review could not be started").pipe(
 							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
@@ -2488,7 +2636,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							: request.report.verdict,
 				})
 				// Stored capped, so every reader of the row sees the confidence the comment shows.
-				const confidence = confidencePrReview(settled, stillOpen, request.partial === true)
+				// Defects fixed since the last whole-diff pass: nothing has re-read the pull request
+				// around them. A pass that read the whole diff checked every fix up to this head.
+				const unchecked =
+					settled.wholeDiff === true
+						? 0
+						: uncheckedFixes(
+								yield* loadReviewHistory(orgId, review.repositoryId, review.number),
+								tracked,
+							) + resolved.filter(isPrReviewDefectHistory).length
+				const confidence = confidencePrReview(settled, stillOpen, request.partial === true, unchecked)
 				const { confidenceReason: _reason, ...rest } = settled
 				const report =
 					confidence === undefined
@@ -2501,7 +2658,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									? undefined
 									: { confidenceReason: confidence.reason }),
 							})
-				const carried = { open: stillOpen, resolved }
+				const carried = { open: stillOpen, resolved, uncheckedFixes: unchecked }
 				const score = scorePrReview(report, stillOpen).score
 				yield* Effect.annotateCurrentSpan({
 					orgId,
@@ -2520,6 +2677,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.carried_open": stillOpen.length,
 					"maple.pr_review.coverage": report.coverage.length,
 					"maple.pr_review.partial": request.partial === true,
+					"maple.pr_review.whole_diff": settled.wholeDiff === true,
+					"maple.pr_review.unchecked_fixes": unchecked,
 				})
 				// From an active state only. A review superseded while its completion call was in
 				// flight stays `skipped`, and its stale findings never reach the pull request.
@@ -2667,7 +2826,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* postReviewStatus(orgId, reviewId, repo, review.number, {
 						kind: "failed",
 						headSha: review.headSha,
-						reason: "ended_early",
+						reason: request.partialReason ?? "ended_early",
 					})
 				} else {
 					const publication = buildPublication({
@@ -2723,6 +2882,30 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								),
 							{ discard: true },
 						)
+						// Each push posts a new summary; the earlier ones fold away as outdated, so
+						// the pull request reads one review instead of one per push. Losing this only
+						// leaves them open, so a refusal is logged.
+						const hidden = yield* provider.success
+							.hideEarlierComments(installation.value, ref, {
+								number: review.number,
+								prefix: PR_REVIEW_COMMENT_MARKER_PREFIX,
+								keep: publication.summaryComment.marker,
+							})
+							.pipe(
+								Effect.catchCause((cause) =>
+									Effect.logWarning(
+										"[PrReview] could not hide earlier review comments",
+									).pipe(
+										Effect.annotateLogs({
+											orgId,
+											reviewId,
+											cause: summarizeCause(cause),
+										}),
+										Effect.as(0),
+									),
+								),
+							)
+						yield* Effect.annotateCurrentSpan("maple.pr_review.earlier_comments_hidden", hidden)
 					}
 				}
 
@@ -2956,6 +3139,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				reviewModel,
 				onPullRequestEvent,
 				reviewNow,
+				onCiApproved,
 				onMergeStepsTicked,
 				getReview,
 				submitReview,
@@ -2966,11 +3150,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(
-				VcsRepository.layer,
-				VcsProviderRegistry.layer,
-				PrReviewTelemetryService.layer,
-			),
+			Layer.mergeAll(VcsRepository.layer, VcsProviderRegistry.layer, PrReviewTelemetryService.layer),
 		),
 	)
 }

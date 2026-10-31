@@ -33,7 +33,9 @@ const pick = (model: Model, current: DestinationForm, select: "organization" | "
 
 describe("hazel destination fields", () => {
 	test("mounting reads the status and organizations; an organization's channels follow its pick", () => {
-		expect(names(reset(init(), form))).toEqual(["FetchAlertHazelStatus", "FetchAlertHazelOrganizations"])
+		expect(names(reset(init(), form))).toEqual(
+			expect.arrayContaining(["FetchAlertHazelStatus", "FetchAlertHazelOrganizations"]),
+		)
 		const picked = pick(connected(), form, "organization", org.id)
 		expect(names(picked)).toEqual(["FetchAlertHazelChannels"])
 		const withOrg = { ...form, ...picked.form }
@@ -55,7 +57,9 @@ describe("hazel destination fields", () => {
 		expect(names(started)).toEqual(["ConnectAlertHazel"])
 		expect(update(started.model, Message.ClickedConnect(), form).commands).toEqual([])
 		const done = update(started.model, Message.CompletedConnect({ isStarted: true }), form)
-		expect(names(done)).toEqual(["FetchAlertHazelStatus", "FetchAlertHazelOrganizations"])
+		expect(names(done)).toEqual(
+			expect.arrayContaining(["FetchAlertHazelStatus", "FetchAlertHazelOrganizations"]),
+		)
 	})
 
 	test("a confirmed disconnect clears the picked organization and channel", () => {

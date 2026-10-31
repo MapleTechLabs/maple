@@ -2,16 +2,14 @@
 //
 // GitHub Actions runs land as traces under `service.name = github-actions` (CiTraceService): one
 // root SERVER span per workflow run carrying the `cicd.pipeline.*` attributes, one child per job,
-// and step / runner-wait spans under each job. A failed job carries `maple.cicd.failure.reason`
-// from its annotations. Both queries read raw `traces`, scoped to that one service.
+// and step / runner-wait spans under each job. Migration 0047's views keep the runs in `ci_runs`
+// and the jobs in `ci_jobs` with those attributes as columns; every read here goes to them.
 
 import { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { Traces, orgIdParam, utcSecondsParam } from "../tables"
+import { CiJobs, CiRuns, orgIdParam, utcSecondsParam } from "../tables"
 import { timeseriesBucket } from "./query-helpers"
-
-export const CI_TRACES_SERVICE_NAME = "github-actions"
 
 /** `cicd.pipeline.result` values that mean the run broke, as opposed to being cancelled or skipped. */
 export const CI_FAILED_RESULTS = ["failure", "timeout", "error"] as const
@@ -36,39 +34,22 @@ export interface CiRunsOpts {
 	readonly limit?: number
 }
 
-export interface CiRunsOutput {
-	readonly traceId: string
-	readonly pipeline: string
-	readonly runId: string
-	readonly result: string
-	readonly url: string
-	readonly repository: string
-	readonly branch: string
-	readonly revision: string
-	readonly attempt: string
-	readonly trigger: string
-	readonly actor: string
-	readonly pullRequest: string
-	readonly durationMs: number
-	readonly startedAt: DateTime.Utc
-}
-
-/** Workflow runs, newest first: the root span of each CI trace. */
+/** Workflow runs, newest first. `pullRequest` is 0 for a run without one. */
 export function ciRunsQuery(opts: CiRunsOpts) {
-	return from(Traces)
+	return from(CiRuns)
 		.select(($) => ({
 			traceId: $.TraceId,
-			pipeline: $.SpanAttributes.get("cicd.pipeline.name"),
-			runId: $.SpanAttributes.get("cicd.pipeline.run.id"),
-			result: $.SpanAttributes.get("cicd.pipeline.result"),
-			url: $.SpanAttributes.get("cicd.pipeline.run.url.full"),
-			repository: $.ResourceAttributes.get("vcs.repository.name"),
-			branch: $.SpanAttributes.get("vcs.ref.head.name"),
-			revision: $.SpanAttributes.get("vcs.ref.head.revision"),
-			attempt: $.SpanAttributes.get("maple.cicd.run_attempt"),
-			trigger: $.SpanAttributes.get("maple.cicd.trigger_event"),
-			actor: $.SpanAttributes.get("maple.cicd.actor"),
-			pullRequest: $.SpanAttributes.get("vcs.change.id"),
+			pipeline: $.Pipeline,
+			runId: $.RunId,
+			result: $.Result,
+			url: $.Url,
+			repository: $.Repository,
+			branch: $.Branch,
+			revision: $.Revision,
+			attempt: $.Attempt,
+			trigger: $.TriggerEvent,
+			actor: $.Actor,
+			pullRequest: $.PullRequest,
 			durationMs: $.Duration.div(1000000),
 			startedAt: $.Timestamp,
 		}))
@@ -76,17 +57,13 @@ export function ciRunsQuery(opts: CiRunsOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			$.ServiceName.eq(CI_TRACES_SERVICE_NAME),
-			$.ParentSpanId.eq(""),
-			CH.when(opts.pipeline, (v: string) => $.SpanAttributes.get("cicd.pipeline.name").eq(v)),
-			CH.when(opts.repository, (v: string) => $.ResourceAttributes.get("vcs.repository.name").eq(v)),
-			CH.when(opts.branch, (v: string) => $.SpanAttributes.get("vcs.ref.head.name").eq(v)),
-			CH.when(opts.result, (v: string) => $.SpanAttributes.get("cicd.pipeline.result").eq(v)),
-			CH.when(opts.owner, (v: string) => $.ResourceAttributes.get("vcs.owner.name").eq(v)),
-			CH.whenTrue(opts.ranOnly === true, () =>
-				$.SpanAttributes.get("cicd.pipeline.result").neq("skip"),
-			),
-			CH.when(opts.pullRequest, (v: number) => $.SpanAttributes.get("vcs.change.id").eq(String(v))),
+			CH.when(opts.pipeline, (v: string) => $.Pipeline.eq(v)),
+			CH.when(opts.repository, (v: string) => $.Repository.eq(v)),
+			CH.when(opts.branch, (v: string) => $.Branch.eq(v)),
+			CH.when(opts.result, (v: string) => $.Result.eq(v)),
+			CH.when(opts.owner, (v: string) => $.Owner.eq(v)),
+			CH.whenTrue(opts.ranOnly === true, () => $.Result.neq("skip")),
+			CH.when(opts.pullRequest, (v: number) => $.PullRequest.eq(v)),
 			CH.whenTrue(opts.before !== undefined, () =>
 				$.Timestamp.lt(param.dateTime("beforeStartedAt")).or(
 					$.Timestamp.eq(param.dateTime("beforeStartedAt")).and(
@@ -106,38 +83,23 @@ export interface CiFailedJobsOpts {
 	readonly limit?: number
 }
 
-export interface CiFailedJobsOutput {
-	readonly traceId: string
-	readonly job: string
-	readonly result: string
-	readonly reason: string
-	readonly url: string
-	readonly durationMs: number
-}
-
-/**
- * Failed jobs of the given runs, with the failure reason their annotations gave. Jobs are the run
- * span's children that name a task but not a step.
- */
+/** Failed jobs of the given runs, with the failure reason their annotations gave. */
 export function ciFailedJobsQuery(opts: CiFailedJobsOpts) {
-	return from(Traces)
+	return from(CiJobs)
 		.select(($) => ({
 			traceId: $.TraceId,
-			job: $.SpanAttributes.get("cicd.pipeline.task.name"),
-			result: $.SpanAttributes.get("cicd.pipeline.task.run.result"),
-			reason: $.SpanAttributes.get("maple.cicd.failure.reason"),
-			url: $.SpanAttributes.get("cicd.pipeline.task.run.url.full"),
+			job: $.Job,
+			result: $.Result,
+			reason: $.FailureReason,
+			url: $.Url,
 			durationMs: $.Duration.div(1000000),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			$.ServiceName.eq(CI_TRACES_SERVICE_NAME),
 			CH.inList($.TraceId, opts.traceIds),
 			$.StatusCode.eq("Error"),
-			$.SpanAttributes.get("cicd.pipeline.task.name").neq(""),
-			$.SpanAttributes.get("maple.cicd.step.number").eq(""),
 		])
 		.orderBy(["traceId", "asc"])
 		.limit(opts.limit ?? 200)
@@ -196,53 +158,41 @@ export interface CiScopeOpts {
 	readonly pipeline?: string
 }
 
-type TraceColumns = ColumnAccessor<typeof Traces.columns>
+type RunColumns = ColumnAccessor<typeof CiRuns.columns>
+type JobColumns = ColumnAccessor<typeof CiJobs.columns>
 
-const ciScope = ($: TraceColumns, opts: CiScopeOpts) => [
+const ciScope = ($: RunColumns | JobColumns, opts: CiScopeOpts) => [
 	$.OrgId.eq(orgIdParam),
 	$.Timestamp.gte(utcSecondsParam("startTime")),
 	$.Timestamp.lte(utcSecondsParam("endTime")),
-	$.ServiceName.eq(CI_TRACES_SERVICE_NAME),
-	CH.when(opts.owner, (v: string) => $.ResourceAttributes.get("vcs.owner.name").eq(v)),
-	CH.when(opts.repository, (v: string) => $.ResourceAttributes.get("vcs.repository.name").eq(v)),
-	CH.when(opts.pipeline, (v: string) => $.SpanAttributes.get("cicd.pipeline.name").eq(v)),
+	CH.when(opts.owner, (v: string) => $.Owner.eq(v)),
+	CH.when(opts.repository, (v: string) => $.Repository.eq(v)),
+	CH.when(opts.pipeline, (v: string) => $.Pipeline.eq(v)),
 ]
 
-/** Run spans that did something: a skipped run takes a second and would drag every percentile down. */
-const ranRuns = ($: TraceColumns, opts: CiScopeOpts) => [
-	...ciScope($, opts),
-	$.ParentSpanId.eq(""),
-	$.SpanAttributes.get("cicd.pipeline.result").neq("skip"),
-]
+/** Runs that did something: a skipped run takes a second and would drag every percentile down. */
+const ranRuns = ($: RunColumns, opts: CiScopeOpts) => [...ciScope($, opts), $.Result.neq("skip")]
 
-/**
- * Job spans that ran: the run's children that name a task but not a step. A job skipped, or
- * cancelled before a runner took it (a zero-length span), never ran.
- */
-const ranJobs = ($: TraceColumns, opts: CiScopeOpts) => [
+/** Jobs that ran: a job skipped, or cancelled before a runner took it (zero length), never ran. */
+const ranJobs = ($: JobColumns, opts: CiScopeOpts) => [
 	...ciScope($, opts),
-	$.SpanAttributes.get("cicd.pipeline.task.name").neq(""),
-	$.SpanAttributes.get("maple.cicd.step.number").eq(""),
-	$.SpanAttributes.get("cicd.pipeline.task.run.result").neq("skip"),
+	$.Result.neq("skip"),
 	$.Duration.gt(0),
 ]
 
-const runAggregates = ($: TraceColumns) => {
-	const result = $.SpanAttributes.get("cicd.pipeline.result")
-	return {
-		runs: CH.count(),
-		succeeded: CH.countIf(result.eq("success")),
-		failed: CH.countIf(CH.inList(result, CI_FAILED_RESULTS)),
-		cancelled: CH.countIf(result.eq("cancellation")),
-		p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
-		p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
-		totalDurationMs: CH.sum($.Duration).div(1000000),
-	}
-}
+const runAggregates = ($: RunColumns) => ({
+	runs: CH.count(),
+	succeeded: CH.countIf($.Result.eq("success")),
+	failed: CH.countIf(CH.inList($.Result, CI_FAILED_RESULTS)),
+	cancelled: CH.countIf($.Result.eq("cancellation")),
+	p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
+	p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
+	totalDurationMs: CH.sum($.Duration).div(1000000),
+})
 
 /** Run counts and durations over the whole window. */
 export function ciRunTotalsQuery(opts: CiScopeOpts) {
-	return from(Traces)
+	return from(CiRuns)
 		.select(($) => runAggregates($))
 		.where(($) => ranRuns($, opts))
 		.format("JSON")
@@ -250,7 +200,7 @@ export function ciRunTotalsQuery(opts: CiScopeOpts) {
 
 /** Run counts and durations per `bucketSeconds` bucket; empty buckets are absent. */
 export function ciRunSeriesQuery(opts: CiScopeOpts) {
-	return from(Traces)
+	return from(CiRuns)
 		.select(($) => ({ bucket: timeseriesBucket($.Timestamp, false), ...runAggregates($) }))
 		.where(($) => ranRuns($, opts))
 		.groupBy("bucket")
@@ -260,13 +210,13 @@ export function ciRunSeriesQuery(opts: CiScopeOpts) {
 
 /** Per repository and workflow: run counts, durations and the latest run's result. */
 export function ciPipelineStatsQuery(opts: CiScopeOpts & { readonly limit?: number }) {
-	return from(Traces)
+	return from(CiRuns)
 		.select(($) => ({
-			owner: $.ResourceAttributes.get("vcs.owner.name"),
-			repository: $.ResourceAttributes.get("vcs.repository.name"),
-			pipeline: $.SpanAttributes.get("cicd.pipeline.name"),
+			owner: $.Owner,
+			repository: $.Repository,
+			pipeline: $.Pipeline,
 			...runAggregates($),
-			lastResult: CH.argMax($.SpanAttributes.get("cicd.pipeline.result"), $.Timestamp),
+			lastResult: CH.argMax($.Result, $.Timestamp),
 			lastStartedAt: CH.max_($.Timestamp),
 		}))
 		.where(($) => ranRuns($, opts))
@@ -281,25 +231,22 @@ export function ciPipelineStatsQuery(opts: CiScopeOpts & { readonly limit?: numb
  * runner, so the durations include the queue that `p50QueueMs` and `p95QueueMs` break out.
  */
 export function ciJobStatsQuery(opts: CiScopeOpts & { readonly limit?: number }) {
-	return from(Traces)
-		.select(($) => {
-			const result = $.SpanAttributes.get("cicd.pipeline.task.run.result")
-			const queueMs = CH.toFloat64OrZero($.SpanAttributes.get("maple.cicd.queue_duration_ms"))
-			return {
-				owner: $.ResourceAttributes.get("vcs.owner.name"),
-				repository: $.ResourceAttributes.get("vcs.repository.name"),
-				pipeline: $.SpanAttributes.get("cicd.pipeline.name"),
-				job: $.SpanAttributes.get("cicd.pipeline.task.name"),
-				runs: CH.count(),
-				failed: CH.countIf(CH.inList(result, CI_FAILED_RESULTS)),
-				retried: CH.countIf($.SpanAttributes.get("maple.cicd.run_attempt").neq("1")),
-				p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
-				p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
-				totalDurationMs: CH.sum($.Duration).div(1000000),
-				p50QueueMs: CH.quantile(0.5)(queueMs),
-				p95QueueMs: CH.quantile(0.95)(queueMs),
-			}
-		})
+	return from(CiJobs)
+		.select(($) => ({
+			owner: $.Owner,
+			repository: $.Repository,
+			pipeline: $.Pipeline,
+			job: $.Job,
+			runs: CH.count(),
+			failed: CH.countIf(CH.inList($.Result, CI_FAILED_RESULTS)),
+			// 0 when the span carried no attempt: that is a first run, not a rerun.
+			retried: CH.countIf($.Attempt.gt(1)),
+			p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
+			p95DurationMs: CH.quantile(0.95)($.Duration).div(1000000),
+			totalDurationMs: CH.sum($.Duration).div(1000000),
+			p50QueueMs: CH.quantile(0.5)($.QueueMs),
+			p95QueueMs: CH.quantile(0.95)($.QueueMs),
+		}))
 		.where(($) => ranJobs($, opts))
 		.groupBy("owner", "repository", "pipeline", "job")
 		.orderBy(["totalDurationMs", "desc"])
@@ -309,15 +256,79 @@ export function ciJobStatsQuery(opts: CiScopeOpts & { readonly limit?: number })
 
 /** How long jobs waited for a runner over the whole window. */
 export function ciQueueTotalsQuery(opts: CiScopeOpts) {
-	return from(Traces)
-		.select(($) => {
-			const queueMs = CH.toFloat64OrZero($.SpanAttributes.get("maple.cicd.queue_duration_ms"))
-			return {
-				jobs: CH.count(),
-				p50QueueMs: CH.quantile(0.5)(queueMs),
-				p95QueueMs: CH.quantile(0.95)(queueMs),
-			}
-		})
+	return from(CiJobs)
+		.select(($) => ({
+			jobs: CH.count(),
+			p50QueueMs: CH.quantile(0.5)($.QueueMs),
+			p95QueueMs: CH.quantile(0.95)($.QueueMs),
+		}))
 		.where(($) => ranJobs($, opts))
 		.format("JSON")
+}
+
+export interface CiActorStatsOpts extends CiScopeOpts {
+	/** Each repository's default branch, for the default-branch failure rate. */
+	readonly defaultBranches: ReadonlyArray<{
+		readonly owner: string
+		readonly repository: string
+		readonly branch: string
+	}>
+	readonly limit?: number
+}
+
+/**
+ * Per run actor (`maple.cicd.actor`): runs, first-try results, reruns and runner time. Only runs
+ * with a job that ran count: a fork's run waiting for approval spans hours and does nothing. A
+ * job's span covers its wait for a runner, so the queue is taken off its runner time.
+ */
+export function ciActorStatsQuery(opts: CiActorStatsOpts) {
+	const ranJobsPerRun = from(CiJobs)
+		.select(($) => ({
+			TraceId: $.TraceId,
+			runnerMs: CH.sum($.Duration).div(1000000).sub(CH.sum($.QueueMs)),
+		}))
+		.where(($) => ranJobs($, opts))
+		.groupBy("TraceId")
+	return (
+		from(CiRuns)
+			.innerJoinQuery(ranJobsPerRun, "jobs", (run, jobs) => run.TraceId.eq(jobs.TraceId))
+			.select(($) => {
+				// 0 when the span carried no attempt: that is a first run, not a rerun.
+				const firstTry = $.Attempt.lte(1)
+				const passed = $.Result.eq("success")
+				const failed = CH.inList($.Result, CI_FAILED_RESULTS)
+				// One flat OR: chaining `.or()` nests a paren per repository and an org with a few
+				// hundred repositories passes ClickHouse's max_parser_depth (1000).
+				const isDefaultBranch = CH.or(
+					...opts.defaultBranches.map((repo) =>
+						CH.and(
+							$.Owner.eq(repo.owner),
+							$.Repository.eq(repo.repository),
+							$.Branch.eq(repo.branch),
+						),
+					),
+				)
+				// No repository: an empty `inList` compiles to `1 = 0`, so nothing counts as the default branch.
+				const onDefaultBranch = $.TriggerEvent.eq("push").and(
+					isDefaultBranch ?? CH.inList($.Branch, []),
+				)
+				return {
+					actor: $.Actor,
+					runs: CH.count(),
+					firstTryRuns: CH.countIf(firstTry.and(passed.or(failed))),
+					firstTryGreen: CH.countIf(firstTry.and(passed)),
+					reruns: CH.countIf($.Attempt.gt(1)),
+					cancelledRuns: CH.countIf($.Result.eq("cancellation")),
+					runnerMs: CH.sum($.jobs.runnerMs),
+					defaultBranchRuns: CH.countIf(onDefaultBranch.and(passed.or(failed))),
+					defaultBranchFailed: CH.countIf(onDefaultBranch.and(failed)),
+				}
+			})
+			.where(($) => ranRuns($, opts))
+			.groupBy("actor")
+			.orderBy(["runs", "desc"])
+			// Totals are summed from these rows: the cap is far above any team.
+			.limit(opts.limit ?? 5_000)
+			.format("JSON")
+	)
 }

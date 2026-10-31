@@ -15,9 +15,10 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
 	t.dateTime64(precision).brand(CH.dateTime64.schema)
 
 /**
- * The time bucket in `traces`' sort key, and `trace_index.Bucket`. A trace-id
- * read matches `(ServiceName, <this>, TraceId)` against the index, so the
- * expression must stay byte-identical in both places.
+ * The time bucket in the sort keys of `traces` and the service-map span tables,
+ * and `trace_index.Bucket`. A trace-id read matches `(ServiceName, <this>, TraceId)`
+ * (or `(<this>, TraceId)`) against the index, so the expression must stay
+ * byte-identical in all of them.
  */
 export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
 export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
@@ -374,7 +375,9 @@ export type SourceUsageHourlyRow = InferRow<typeof sourceUsageHourly>
 /**
  * Lightweight projection of traces for service map JOIN queries.
  * Pre-extracts deployment.environment from Map columns.
- * Sorted by (OrgId, TraceId, SpanId) to align with the JOIN key.
+ * Sorted by the trace bucket first, so the join's time filters (one rollup
+ * hour, the live branch's partial hours) read only those buckets; trace-id
+ * reads seek through `trace_index` with `inServiceMapSpans`.
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapSpans = defineDatasource("service_map_spans", {
@@ -397,7 +400,7 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "TraceId", "SpanId", "Timestamp"],
+		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "SpanId"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
@@ -407,7 +410,7 @@ export type ServiceMapSpansRow = InferRow<typeof serviceMapSpans>
 /**
  * Server/Consumer spans with ParentSpanId for efficient service map child-side JOIN lookups.
  * Pre-filters to only Server/Consumer spans with a parent at write time,
- * sorted by (OrgId, TraceId, ParentSpanId) to align with the JOIN key.
+ * sorted like `service_map_spans` so the join's time filters prune both sides.
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapChildren = defineDatasource("service_map_children", {
@@ -429,7 +432,7 @@ export const serviceMapChildren = defineDatasource("service_map_children", {
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "TraceId", "ParentSpanId", "Timestamp"],
+		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "ParentSpanId"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
@@ -566,6 +569,51 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 })
 
 export type ServiceMapDbEdgesHourlyRow = InferRow<typeof serviceMapDbEdgesHourly>
+
+/**
+ * Minute-grain twin of `service_map_db_edges_hourly`: the same keys, derivation
+ * and measures the read uses, `Minute` for `Hour`. It drops the hourly table's
+ * Sampled/UnsampledSpanCount (no query reads them) and adds `FirstInsertedAt`. It serves the partial hours at the ends of a map
+ * window, which `serviceDbEdges` used to read from raw `traces` by decoding both
+ * attribute maps of every Client span (24s and 30 GB for one heavy org's 12h map).
+ *
+ * Created without a backfill (`BACKFILL skip`): replaying 30 days of `traces`
+ * through the view is the deploy-time burst we avoid. The read path finds where
+ * this table's coverage starts (`FirstInsertedAt`) and keeps raw `traces` for
+ * anything before it.
+ * 30 days, like the raw tier it replaces: an older window has no raw edges either.
+ */
+export const serviceMapDbEdgesMinutely = defineDatasource("service_map_db_edges_minutely", {
+	tenantColumn: "OrgId",
+	description:
+		"Pre-aggregated per-minute service-to-database edges for the partial hours at the ends of a service map window. Same keys and read measures as service_map_db_edges_hourly, plus FirstInsertedAt. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Minute: utcDateTime(),
+		ServiceName: t.string().lowCardinality(),
+		DbSystem: t.string().lowCardinality(),
+		DbNamespace: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+		CallCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ErrorCount: t.simpleAggregateFunction("sum", t.uint64()),
+		DurationSumMs: t.simpleAggregateFunction("sum", t.float64()),
+		MaxDurationMs: t.simpleAggregateFunction("max", t.float64()),
+		SampleRateSum: t.simpleAggregateFunction("sum", t.float64()),
+		DurationQuantiles: t.aggregateFunction("quantilesTDigestWeighted(0.5, 0.95), UInt64", t.uint32()),
+		// When the view first wrote this org's rows: coverage starts the minute after.
+		// Insert time, not `Minute`: a late span with an old timestamp lands in a minute
+		// whose earlier spans went into `traces` before the view existed.
+		FirstInsertedAt: t.simpleAggregateFunction("min", utcDateTime()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Minute)",
+		sortingKey: ["OrgId", "Minute", "DeploymentEnv", "ServiceName", "DbSystem", "DbNamespace"],
+		ttl: "toDate(Minute) + INTERVAL 30 DAY",
+	}),
+})
+
+export type ServiceMapDbEdgesMinutelyRow = InferRow<typeof serviceMapDbEdgesMinutely>
 
 /**
  * Pre-aggregated hourly database *query shapes* for the service map's database
@@ -1314,6 +1362,88 @@ export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
 
 export type AiCrawlerRequestsRow = InferRow<typeof aiCrawlerRequests>
 
+/** `service.name` of the CI traces the GitHub App's workflow webhooks become. */
+export const CI_SERVICE_NAME = "github-actions"
+
+/**
+ * CI workflow runs: the root span of each `github-actions` trace (CiTraceService), with its
+ * `cicd.*` attributes as columns. Skipped runs are kept; the reads leave them out.
+ * Tiny (one row per run) so it keeps a year, past the raw trace a run links to.
+ */
+export const ciRuns = defineDatasource("ci_runs", {
+	tenantColumn: "OrgId",
+	description:
+		"One row per CI workflow run attempt (the root span of a github-actions trace) with repository, workflow, result, branch, revision and pull request pre-extracted. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
+		TraceId: t.string(),
+		SpanId: t.string(),
+		Owner: t.string().lowCardinality(),
+		Repository: t.string().lowCardinality(),
+		Pipeline: t.string().lowCardinality(),
+		RunId: t.string(),
+		RunNumber: t.uint64(),
+		Attempt: t.uint16(),
+		Result: t.string().lowCardinality(),
+		Duration: t.uint64(),
+		Url: t.string(),
+		Branch: t.string(),
+		Revision: t.string(),
+		TriggerEvent: t.string().lowCardinality(),
+		Actor: t.string().lowCardinality(),
+		/** 0 when the run has no pull request. */
+		PullRequest: t.uint32(),
+		WorkflowPath: t.string().lowCardinality(),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toYYYYMM(Timestamp)",
+		sortingKey: ["OrgId", "Timestamp", "TraceId"],
+		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+	}),
+})
+
+export type CiRunsRow = InferRow<typeof ciRuns>
+
+/**
+ * CI jobs: the run span's children that name a task but not a step. Steps and runner waits are
+ * left out; a job carries its own queue time. Skipped jobs are kept; the reads leave them out.
+ */
+export const ciJobs = defineDatasource("ci_jobs", {
+	tenantColumn: "OrgId",
+	description:
+		"One row per CI job (a child of a github-actions run span) with workflow, job name, result, queue time, runner and failure reason pre-extracted. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
+		TraceId: t.string(),
+		SpanId: t.string(),
+		Owner: t.string().lowCardinality(),
+		Repository: t.string().lowCardinality(),
+		Pipeline: t.string().lowCardinality(),
+		RunId: t.string(),
+		Attempt: t.uint16(),
+		Job: t.string().lowCardinality(),
+		Result: t.string().lowCardinality(),
+		StatusCode: t.string().lowCardinality(),
+		Duration: t.uint64(),
+		QueueMs: t.uint32(),
+		Url: t.string(),
+		FailureReason: t.string(),
+		RunnerName: t.string().lowCardinality(),
+		RunnerLabels: t.string().lowCardinality(),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toYYYYMM(Timestamp)",
+		sortingKey: ["OrgId", "Timestamp", "TraceId"],
+		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+	}),
+})
+
+export type CiJobsRow = InferRow<typeof ciJobs>
+
 /**
  * OpenTelemetry sum/counter metrics datasource
  */
@@ -1867,6 +1997,19 @@ export const serviceOperationsMinutely = defineDatasource("service_operations_mi
 		// `url.path`, so a route template and a raw URL are indistinguishable in
 		// SpanName alone — this is the difference.
 		RoutedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// HTTP measures added by migration 0048, additive for the reason above. Only the
+		// post-0048 view writes HttpClassifiedSpanCount, so a bucket where it is 0
+		// predates the migration and the five below mean UNKNOWN there, not "no errors".
+		// Not backfilled, like 0023. All five count Server spans only (see
+		// `SERVICE_OPERATIONS_HTTP_MEASURES`), matching `service_endpoint_details_hourly`.
+		HttpClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Spans carrying an HTTP response status code; the denominator of the status mix.
+		HttpStatusCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http4xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http5xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// `http.request.body.size` (legacy `http.request_content_length`) where present.
+		RequestBodyBytes: t.simpleAggregateFunction("sum", t.uint64()),
+		RequestBodyCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Minute)",
@@ -1925,6 +2068,13 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 		// `url.path`, so a route template and a raw URL are indistinguishable in
 		// SpanName alone — this is the difference.
 		RoutedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Migration 0048's HTTP measures, summed from the minutely tier; see there.
+		HttpClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		HttpStatusCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http4xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http5xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		RequestBodyBytes: t.simpleAggregateFunction("sum", t.uint64()),
+		RequestBodyCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Hour)",
@@ -1934,6 +2084,68 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 })
 
 export type ServiceOperationsHourlyRow = InferRow<typeof serviceOperationsHourly>
+
+/**
+ * Per-endpoint HTTP detail for the service API tab: status and `error.type` mix,
+ * latency and request-body distributions, top user agents and the slowest request,
+ * per hour. Server spans with a response status only, keyed on the same normalized
+ * SpanName as `service_operations_*` so the two join.
+ *
+ * Cardinality: routes x status codes x error types per (service, env, hour). Routes
+ * are bounded by `service_operations_*` already; codes are a few per route and
+ * `error.type` is the status or an exception class, so expect ~2-5 rows per route
+ * per hour. A service without `http.route` falls back to `url.path` here too.
+ * `UserAgents` holds up to 30 counters per row, so its state grows with the number
+ * of distinct agents per route, not with traffic.
+ *
+ * Single hour-grain tier on purpose: the reads floor the window to whole hours
+ * (deliberately approximate, like `serviceHealthSnapshot`) and nothing splices it.
+ */
+export const serviceEndpointDetailsHourly = defineDatasource("service_endpoint_details_hourly", {
+	tenantColumn: "OrgId",
+	description:
+		"Hourly HTTP server endpoint detail per status code and error.type: counts, latency and request-body t-digests, top user agents and the slowest request. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		ServiceName: t.string().lowCardinality(),
+		Hour: utcDateTime(),
+		DeploymentEnv: t.string().lowCardinality(),
+		// Plain String like `service_operations_*`: a url.path fallback can be high-cardinality.
+		SpanName: t.string(),
+		HttpStatusCode: t.string().lowCardinality(),
+		ErrorType: t.string().lowCardinality(),
+		SpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		EstimatedSpanCount: t.simpleAggregateFunction("sum", t.float64()),
+		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
+		// Only spans that carry a body size feed the digest; read it with `quantilesTDigestIfMerge`.
+		BodySizeQuantiles: t.aggregateFunction("quantilesTDigestIf(0.5, 0.95, 0.99)", t.uint64(), t.uint8()),
+		BodySizeMax: t.simpleAggregateFunction("max", t.uint64()),
+		BodyCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Keeps (value, count, error) per agent, so the merged list carries counts.
+		UserAgents: t.aggregateFunction("approx_top_k(10)", t.string()),
+		SlowestDuration: t.simpleAggregateFunction("max", t.uint64()),
+		SlowestTraceId: t.aggregateFunction("argMax", t.string(), t.uint64()),
+		SlowestTimestamp: t.aggregateFunction("argMax", utcDateTime64(9), t.uint64()),
+		// -1 when the slowest request carried no body size: argMax skips a NULL argument.
+		SlowestBodySize: t.aggregateFunction("argMax", t.int64(), t.uint64()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toYYYYMM(Hour)",
+		sortingKey: [
+			"OrgId",
+			"ServiceName",
+			"Hour",
+			"DeploymentEnv",
+			"SpanName",
+			"HttpStatusCode",
+			"ErrorType",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type ServiceEndpointDetailsHourlyRow = InferRow<typeof serviceEndpointDetailsHourly>
 
 /**
  * Generalized hourly aggregating MV target for traces. Stores partial state

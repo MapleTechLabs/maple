@@ -141,6 +141,8 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 const HEALTH_BY_LEVEL = { crit: "degraded", warn: "elevated", neutral: "healthy" } as const
 export const health = (rate: number) => HEALTH_BY_LEVEL[errorRateLevel(rate)]
 export const HEALTH_COLOR = { healthy: "#2f8f83", elevated: "#d9a21b", degraded: "#c8553d" } as const
+/** The words the 2D map's legend uses for the same three levels, so both maps read alike. */
+export const HEALTH_LABEL = { healthy: "Healthy", elevated: "Degraded", degraded: "Error" } as const
 /** The shared rate format, plus the 3D labels' "/s" suffix, "~" estimate mark and "<0.1" floor. */
 export const formatRate = (rate: number, estimated = false) =>
 	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : formatSharedRate(rate)}/s`

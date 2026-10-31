@@ -4,7 +4,7 @@ import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import * as CopyButton from "../../../ui/copy-button"
 import { type PageContext, type PageReturn, pickCommands } from "../../contract"
-import { deriveMeta } from "../kit/replay-meta"
+import { combineRangeMetas, deriveMeta } from "../kit/replay-meta"
 import { rangeKey, replayRangeInput } from "../kit/replay-range"
 import {
 	FetchDetail,
@@ -17,8 +17,8 @@ import {
 	ResolveClock,
 	ToggleFullscreen,
 } from "./command"
-import { detailOf, manifestTotalMs, playerStatus, realOffsetOf, timelineOf, windowOf } from "./derive"
-import { advance, cacheRange, emptyLoader, planOnce, reportProgress, requestSeek, seedEvents, subscribedRange } from "./loader"
+import { detailOf, manifestTotalMs, playerStatus, realOffsetOf, timelineOf, traceWindowOf, windowOf } from "./derive"
+import { advance, cacheRange, emptyLoader, planOnce, reportProgress, requestSeek, subscribedRange } from "./loader"
 import { Message } from "./message"
 import type { Model, Player } from "./model"
 import { controlValue, type TransportAction } from "../kit/replay-engine-mount"
@@ -72,7 +72,7 @@ const requestEntry = (model: Model, context: PageContext, mode: Keyed.RequestMod
 const requestStudio = (model: Model, context: PageContext): Return => {
 	const session = detailOf(model)
 	if (session === undefined) return { model }
-	const window = windowOf(model)
+	const window = traceWindowOf(model, session)
 	const summariesKey = requestKey(context.orgId, "getSessionTraceSummaries", {
 		data: { traceIds: session.traceIds, ...window },
 	})
@@ -118,7 +118,7 @@ const syncRange = (model: Model, context: PageContext, mode: Keyed.RequestMode =
 			...model,
 			loader: { ...model.loader, range: { key, data: AsyncData.Success({ data: cached }) } },
 		}
-		const advanced = withSeed(model, advance(answered, Option.some(cached)))
+		const advanced = withMeta(model, advance(answered, Option.some(cached)))
 		return rangeKey(subscribedRange(advanced)) === rangeKey(range) ? { model: advanced } : syncRange(advanced, context)
 	}
 	// A failed range is not asked again on every engine tick; the player's retry button refreshes it.
@@ -133,11 +133,11 @@ const syncRange = (model: Model, context: PageContext, mode: Keyed.RequestMode =
 	})
 }
 
-/** After a commit: a new seed resets the player and derives the recording's markers and gaps. */
-const withSeed = (before: Model, after: Model): Model => {
-	if (after.loader.seedVersion === before.loader.seedVersion) return after
-	const seed = seedEvents(after.loader)
-	return { ...after, meta: deriveMeta(seed.length >= 2 ? seed : []) }
+/** After a commit: the recording's markers and gaps, from every range loaded so far. */
+const withMeta = (before: Model, after: Model): Model => {
+	const { originMs, rangeMetas } = after.loader
+	if (rangeMetas === before.loader.rangeMetas || originMs === null) return after
+	return { ...after, meta: combineRangeMetas(originMs, rangeMetas) }
 }
 
 // TRANSPORT
@@ -249,7 +249,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 			const stored: Model = { ...model, loader: { ...model.loader, range, rangeCache: cached } }
 			if (Result.isFailure(result)) return { model: stored }
-			return syncRange(withSeed(model, advance(stored, Option.some(result.success))), context)
+			return syncRange(withMeta(model, advance(stored, Option.some(result.success))), context)
 		},
 		CompletedFetchSpans: ({ traceId, result }) => ({
 			model: { ...model, spans: { ...model.spans, [traceId]: AsyncData.settle(AsyncData.Loading(), result) } },
@@ -262,7 +262,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							...model,
 							player: {
 								...model.player,
-								totalMs,
+								// rrweb only knows the loaded seed; the manifest knows the whole recording.
+								totalMs: manifestTotalMs(model) || totalMs,
 								currentMs: model.loader.seekTargetMs ?? 0,
 								isFinished: false,
 								isPlaying: false,

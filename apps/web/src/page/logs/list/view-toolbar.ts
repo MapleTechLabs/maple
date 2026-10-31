@@ -91,7 +91,7 @@ const columnsPicker = (h: HtmlBuilder<Message>, model: Model, tip: Tip): Html =>
 								h.DataAttribute("slot", "tooltip-trigger"),
 							],
 							[
-								icon(h, "ThumbtackIcon", { size: 13, className: "text-muted-foreground" }),
+								icon(h, "ThumbtackIcon", { size: 14, className: "text-muted-foreground" }),
 								"Columns",
 								...((model.search.columns?.length ?? 0) > 0
 									? [

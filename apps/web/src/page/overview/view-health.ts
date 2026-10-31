@@ -73,7 +73,7 @@ const railAction = <M>(h: HtmlBuilder<M>, slice: SliceSearch, health?: ServiceHe
 		[
 			h.Href(servicesHref(slice, health)),
 			h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`),
-			h.Class("text-muted-foreground/40 transition-colors hover:text-foreground"),
+			h.Class("text-foreground-faint hover:text-foreground active:text-foreground"),
 		],
 		[icon(h, "ArrowRightIcon", { className: "size-3" })],
 	)
@@ -115,8 +115,13 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 			]
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
-		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h)]),
-		onFailure: () => section(h, "mb-4 space-y-3", false, banner),
+		onEmpty: () =>
+			section(h, "mb-4 space-y-3", false, [
+				...banner,
+				statRailLoading(h, 4),
+			]),
+		// An empty section keeps no margin, or the page strip's gap above the usage rail doubles.
+		onFailure: () => section(h, banner.length > 0 ? "mb-4 space-y-3" : "space-y-3", false, banner),
 		onData: ([snapshot, anomalies, alerts]) => {
 			const counts = countByHealth(
 				enrichServices(
@@ -172,7 +177,7 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				[
 					eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
 					h.p(
-						[h.Class("mt-0.5 text-2xs text-muted-foreground/70")],
+						[h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")],
 						["Status reflects active alerts and baseline anomalies."],
 					),
 				],
@@ -181,7 +186,7 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				[
 					h.Href(servicesHref(slice)),
 					h.Class(
-						"text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
+						"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
 					),
 				],
 				["View all services →"],

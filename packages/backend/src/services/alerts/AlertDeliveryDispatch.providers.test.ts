@@ -40,11 +40,21 @@ const dispatchDelivery = (
 const failingChatPost = () =>
 	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
 
+/** These tests send to no Linear destination. */
+const unusedLinear: EffectTransportDeps["linear"] = {
+	request: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	findThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	saveThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+}
+
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const SENT_AT_MS = Date.parse("2026-06-02T00:00:00.000Z")
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat?mode=alert"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDestinationRow => ({
 	id: DESTINATION_ID,
@@ -97,6 +107,7 @@ const contextFor = (secretConfig: DispatchContext["secretConfig"]): DispatchCont
 /** Neither dep may be invoked by these four providers. */
 const noDeps: EffectTransportDeps = {
 	postChatAlert: failingChatPost,
+	linear: unusedLinear,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 }
@@ -151,10 +162,8 @@ describe("dispatchDelivery: pagerduty", () => {
 			assert.strictEqual(body.payload.summary, "Checkout error rate trigger")
 			assert.strictEqual(body.payload.source, "checkout")
 			assert.strictEqual(body.payload.severity, "critical")
-			assert.deepStrictEqual(body.links, [
-				{ href: LINK, text: "Open in Maple" },
-				{ href: CHAT, text: "Ask Maple AI" },
-			])
+			assert.deepStrictEqual(body.links, [{ href: LINK, text: "Open in Maple" }])
+			assert.strictEqual(body.payload.custom_details.chatUrl, CHAT)
 			// custom_details carries RAW numbers, not the formatted strings the chat
 			// providers render — a PagerDuty payload is machine-facing.
 			assert.strictEqual(body.payload.custom_details.value, 0.08)
@@ -307,7 +316,7 @@ describe("dispatchDelivery: telegram", () => {
 	const sent = () =>
 		new Response(JSON.stringify({ ok: true, result: { message_id: 4242 } }), { status: 200 })
 
-	it.effect("posts an HTML message with both links as inline buttons", () =>
+	it.effect("posts an HTML message with an Open in Maple inline button", () =>
 		Effect.gen(function* () {
 			const { calls, fetchFn } = recorder(sent)
 			const result = yield* dispatch(context, fetchFn)
@@ -323,7 +332,7 @@ describe("dispatchDelivery: telegram", () => {
 			assert.include(body.text, "<b>Checkout error rate</b>")
 			assert.deepStrictEqual(
 				body.reply_markup.inline_keyboard[0].map((b: { url: string }) => b.url),
-				[LINK, CHAT],
+				[LINK],
 			)
 			// The token authenticates via the path; it must never also ride in the body.
 			assert.notInclude(call.body, botToken)

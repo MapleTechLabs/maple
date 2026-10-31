@@ -1,4 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { ConfigProvider, Effect, Fiber, Layer, Predicate, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -13,6 +14,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
+import { PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleService, deployRequestTimelineRows } from "./PlanetScaleService"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
@@ -48,19 +50,24 @@ const makeLayer = (testDb: TestDb) => {
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(oauthLive),
 	)
+	const webhooksLive = Layer.effect(PlanetScaleWebhookService, PlanetScaleWebhookService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(oauthLive),
+	)
 	const scrapeTargetsLive = Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
-		Layer.provide(Layer.mergeAll(discoveryLive, oauthLive)),
+		Layer.provide(Layer.mergeAll(discoveryLive, oauthLive, SupabaseOAuthService.layer)),
 	)
 	return Layer.mergeAll(
 		Layer.effect(PlanetScaleService, PlanetScaleService.make).pipe(
 			Layer.provide(FetchHttpClient.layer),
-			Layer.provide(oauthLive),
+			Layer.provide(Layer.mergeAll(webhooksLive, oauthLive)),
 		),
 		Layer.effect(PlanetScaleConnectionService, PlanetScaleConnectionService.make).pipe(
 			Layer.provide(FetchHttpClient.layer),
-			Layer.provide(Layer.mergeAll(scrapeTargetsLive, discoveryLive, oauthLive)),
+			Layer.provide(Layer.mergeAll(scrapeTargetsLive, discoveryLive, webhooksLive, oauthLive)),
 		),
+		webhooksLive,
 		oauthLive,
 	).pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(makeConfig()))
 }
@@ -128,7 +135,10 @@ const connect = (orgId: string) =>
 		const { state } = yield* oauth.startConnect(asOrgId(orgId), asUserId("user_1"), {
 			callbackUrl: "https://api.example.com/api/integrations/planetscale/callback",
 		})
-		yield* oauth.completeConnect("auth-code", state)
+		yield* oauth.completeConnect("auth-code", state, {
+			orgId: asOrgId(orgId),
+			userId: asUserId("user_1"),
+		})
 		yield* connections.finalizeOrgSelection(asOrgId(orgId), { organization: "acme" })
 	})
 

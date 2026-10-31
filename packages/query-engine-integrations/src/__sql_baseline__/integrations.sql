@@ -2167,6 +2167,739 @@ SELECT
         HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS window_traces
 FORMAT JSON
 
+-- builder:aws-infra:awsInfraMetricsSQL:ec2
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:ecs
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:lambda
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.lambda.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:loadBalancers
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:rds
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:sqs
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 7500
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraPresenceSQL:default
+SELECT
+          metric_catalog.MetricName AS metric
+        FROM metric_catalog
+        WHERE metric_catalog.OrgId = 'org_sql_catalog'
+          AND metric_catalog.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization', 'aws.ec2.cpu_utilization', 'aws.ec2.network_in.sum', 'aws.ec2.network_out.sum', 'aws.ec2.status_check_failed', 'aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum', 'aws.application_elb.target_response_time', 'aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory', 'aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum', 'aws.lambda.duration', 'aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message', 'aws.sqs.number_of_messages_sent.sum')
+          AND metric_catalog.Hour >= toStartOfInterval(toDateTime('2026-01-01 10:30:00'), INTERVAL 3600 SECOND)
+          AND metric_catalog.Hour <= '2026-01-03 14:15:00'
+        GROUP BY metric
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:ec2
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:ecs
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:lambda
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:loadBalancers
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:rds
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:sqs
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:ec2
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:ecs
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.service_name'] = 'acme-service_name'
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] = 'acme-cluster_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] = 'acme-service_name'
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] = 'acme-cluster_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:lambda
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+          AND metrics_sum.Attributes['aws.dimension.function_name'] = 'acme-function_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.lambda.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] = 'acme-function_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:loadBalancers
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] = 'acme-load_balancer'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] = 'acme-load_balancer'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:rds
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:sqs
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
 -- builder:billing-usage:dailyProductEventCountQuery:default
 SELECT
           toStartOfInterval(product_events.Timestamp, INTERVAL 86400 SECOND) AS day,
@@ -3673,20 +4406,20 @@ SELECT
           max(points.cpuMax) AS cpuMaxPercent,
           max(points.memMax) AS memMaxPercent,
           max(points.lagMax) AS replicaLagMaxSeconds,
-          maxIf(100 - points.availableBytes / points.capacityBytes * 100, (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
+          maxIf(100 - (points.availableBytes / points.capacityBytes * 100), (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
-          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')) AS totalConnections,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMax,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMax,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')) AS totalConnections,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMax,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS lagMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_capacity_bytes')) AS capacityBytes,
           minIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableBytes,
           countIf(metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch']) = 'main'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
@@ -3704,20 +4437,20 @@ SELECT
           max(points.cpuMax) AS cpuMaxPercent,
           max(points.memMax) AS memMaxPercent,
           max(points.lagMax) AS replicaLagMaxSeconds,
-          maxIf(100 - points.availableBytes / points.capacityBytes * 100, (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
+          maxIf(100 - (points.availableBytes / points.capacityBytes * 100), (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
-          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')) AS totalConnections,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMax,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMax,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')) AS totalConnections,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMax,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS lagMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_capacity_bytes')) AS capacityBytes,
           minIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableBytes,
           countIf(metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -3740,7 +4473,7 @@ SELECT
           sum(metrics_gauge.Value) AS totalConnections
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -3753,12 +4486,12 @@ SELECT
 SELECT
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) AS database,
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch']) AS branch,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMaxPercent,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMaxPercent,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS replicaLagMaxSeconds
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
+          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -3770,7 +4503,7 @@ SELECT
 SELECT
           vol.database AS database,
           vol.branch AS branch,
-          if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - vol.availableBytes / vol.capacityBytes * 100, 0) AS storageUsedPercent,
+          if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - (vol.availableBytes / vol.capacityBytes * 100), 0) AS storageUsedPercent,
           vol.capacityBytes AS storageCapacityBytes,
           vol.availableBytes AS storageAvailableBytes,
           vol.samples AS storageSamples
@@ -3801,7 +4534,7 @@ SELECT
           sum(metrics_gauge.Value) AS totalConnections
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) != ''
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -3813,12 +4546,12 @@ SELECT
 -- builder:planetscale-map:planetscaleGaugesSQL:default
 SELECT
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) AS database,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMaxPercent,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMaxPercent,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS replicaLagMaxSeconds
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
+          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) != ''
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -3829,7 +4562,7 @@ SELECT
 -- builder:planetscale-map:planetscaleStorageSQL:default
 SELECT
           vol.database AS database,
-          max(if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - vol.availableBytes / vol.capacityBytes * 100, 0)) AS storageUsedPercent,
+          max(if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - (vol.availableBytes / vol.capacityBytes * 100), 0)) AS storageUsedPercent,
           sum(vol.samples) AS storageSamples
         FROM (SELECT
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) AS database,
@@ -4115,4 +4848,368 @@ SELECT
         GROUP BY serviceName
         ORDER BY weightedSpanCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectCpuSQL:default
+SELECT
+          buckets.projectRef AS projectRef,
+          ifNull(ifNotFinite(greatest(1 - (sum(buckets.idle) / sum(buckets.total)), 0), 0), 0) AS cpuAvg,
+          ifNull(ifNotFinite(maxIf(1 - (buckets.idle / buckets.total), buckets.total > 0), 0), 0) AS cpuMax
+        FROM (SELECT
+          deltas.projectRef AS projectRef,
+          toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
+          sumIf(deltas.delta, deltas.mode = 'idle') AS idle,
+          sum(deltas.delta) AS total
+        FROM (SELECT
+          metrics_sum.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metricName,
+          metrics_sum.Attributes['mode'] AS mode,
+          metrics_sum.Attributes['device'] AS device,
+          multiIf(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = metrics_sum.TimeUnix, 1, 0) AS isFirst,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName = 'node_cpu_seconds_total'
+          AND metrics_sum.Attributes['supabase_project_ref'] != ''
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 120 SECOND
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00') AS deltas
+        WHERE deltas.t >= '2026-01-01 10:30:00'
+        GROUP BY projectRef, bucket) AS buckets
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectGaugeSeriesSQL:default
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          ifNull(ifNotFinite(avgIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          max(points.memTotal) AS memoryTotal,
+          ifNull(ifNotFinite(maxIf(1 - (points.diskAvailable / points.diskSize), (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsed,
+          max(points.diskSize) AS diskSize,
+          maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
+          ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
+          maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          maxIf(points.maxConnections, points.maxConnectionsSamples > 0) AS maxConnections,
+          ifNull(ifNotFinite(avgIf(points.poolerClients, points.poolerSamples > 0), 0), 0) AS poolerClients,
+          max(points.authUsers) AS authUsers,
+          sum(points.authSamples) AS authSamples,
+          maxIf(points.postgrestPoolMax, points.postgrestPoolMaxSamples > 0) AS postgrestPoolMax,
+          ifNull(ifNotFinite(avgIf(greatest(points.postgrestPoolMax - points.postgrestPoolAvailable, 0), (points.postgrestPoolMaxSamples > 0 AND points.postgrestPoolAvailableSamples > 0)), 0), 0) AS postgrestPoolInUse,
+          maxIf(points.postgrestPoolWaiting, points.postgrestPoolWaitingSamples > 0) AS postgrestPoolWaiting
+        FROM (SELECT
+          metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_gauge.TimeUnix AS t,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemTotal_bytes') AS memTotal,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailable,
+          countIf(metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailableSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_size_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskSize,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailable,
+          countIf((metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailableSamples,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
+          countIf((metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSizeSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
+          countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
+          countIf((metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnectionsSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
+          countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMaxSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailable,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailableSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY projectRef, t) AS points
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectGaugesSQL:default
+SELECT
+          points.projectRef AS projectRef,
+          ifNull(ifNotFinite(avgIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          max(points.memTotal) AS memoryTotal,
+          ifNull(ifNotFinite(maxIf(1 - (points.diskAvailable / points.diskSize), (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsedMax,
+          max(points.diskSize) AS diskSize,
+          maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
+          ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
+          maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          maxIf(points.maxConnections, points.maxConnectionsSamples > 0) AS maxConnections,
+          max(points.t) AS lastSeen
+        FROM (SELECT
+          metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_gauge.TimeUnix AS t,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemTotal_bytes') AS memTotal,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailable,
+          countIf(metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailableSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_size_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskSize,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailable,
+          countIf((metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailableSamples,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
+          countIf((metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSizeSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
+          countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
+          countIf((metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnectionsSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
+          countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMaxSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailable,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailableSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.Attributes['supabase_project_ref'] != ''
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY projectRef, t) AS points
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectRateSeriesSQL:default
+SELECT
+          toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
+          if(1 - (sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0)) < 0, 0, 1 - (sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0))) AS cpu,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_commit_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_commit_total'), 1), 0), 0) AS commitsPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_rollback_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_rollback_total'), 1), 0), 0) AS rollbacksPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_blks_hit_total') / nullIf(sumIf(deltas.delta, deltas.metricName IN ('pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total')), 0) AS cacheHitRatio,
+          sumIf(deltas.delta, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')) / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')), 1), 0), 0) AS networkRxPerSecond,
+          sumIf(deltas.delta, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')) / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')), 1), 0), 0) AS networkTxPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'node_disk_read_bytes_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'node_disk_read_bytes_total'), 1), 0), 0) AS diskReadPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'node_disk_written_bytes_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'node_disk_written_bytes_total'), 1), 0), 0) AS diskWritePerSecond
+        FROM (SELECT
+          metrics_sum.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metricName,
+          metrics_sum.Attributes['mode'] AS mode,
+          metrics_sum.Attributes['device'] AS device,
+          multiIf(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = metrics_sum.TimeUnix, 1, 0) AS isFirst,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('node_cpu_seconds_total', 'pg_stat_database_xact_commit_total', 'pg_stat_database_xact_rollback_total', 'pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total', 'node_network_receive_bytes_total', 'node_network_transmit_bytes_total', 'node_disk_read_bytes_total', 'node_disk_written_bytes_total')
+          AND metrics_sum.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 120 SECOND
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00') AS deltas
+        WHERE deltas.t >= '2026-01-01 10:30:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTopPathsSQL:default
+SELECT
+          logs.LogAttributes['request.method'] AS method,
+          extract(logs.LogAttributes['request.path'], '^[^?#]*') AS path,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY method, path
+        ORDER BY requests DESC, method ASC, path ASC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficSeriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(logs.TimestampTime, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 200 AND 299) AS status2xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 300 AND 399) AS status3xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 400 AND 499) AS status4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS status5xx
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficTotalsSQL:default
+SELECT
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:org
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] != '') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:project
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogsProjectsSummarySQL:default
+SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') AS requests,
+          ifNull(ifNotFinite(countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS requestsPerMinute,
+          countIf((logs.LogAttributes['supabase.log.source'] = 'edge_logs' AND toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599)) AS errors5xx,
+          countIf(logs.SeverityNumber >= 13) AS issueCount,
+          max(logs.Timestamp) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] != ''
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallerSeriesSQL:default
+SELECT
+          traces.ServiceName AS serviceName,
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+          AND traces.ServiceName IN (SELECT
+          callers.serviceName AS serviceName
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100) AS callers)
+        GROUP BY serviceName, bucket
+        ORDER BY serviceName ASC, bucket ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallersSQL:default
+SELECT
+          spans.serviceName AS serviceName,
+          count() AS calls,
+          ifNull(ifNotFinite(count() * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS callsPerMinute,
+          sum(spans.failed) AS errors,
+          ifNull(ifNotFinite(sum(spans.failed) / count(), 0), 0) AS errorRate,
+          ifNull(ifNotFinite(quantile(0.95)(spans.duration) / 1000000, 0), 0) AS p95DurationMs,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/rest/%')) AS rest,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/auth/%')) AS auth,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/storage/%')) AS storage,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/realtime/%')) AS realtime,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/functions/%')) AS functions,
+          countIf(spans.isPostgres = 1) AS postgres,
+          countIf((spans.isPostgres = 0 AND NOT (match(spans.path, '^/(rest|auth|storage|realtime|functions)/')))) AS other
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          traces.Duration AS duration,
+          if(traces.StatusCode = 'Error', 1, 0) AS failed,
+          if(coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql', 1, 0) AS isPostgres,
+          if(traces.SpanAttributes['url.path'] != '', traces.SpanAttributes['url.path'], path(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url']))) AS path
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))) AS spans
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100
         FORMAT JSON

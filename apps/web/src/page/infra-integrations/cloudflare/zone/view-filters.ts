@@ -6,6 +6,8 @@ import {
 } from "../../../../components/infra/cloudflare/filters"
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { Option } from "effect"
+import { sectionOf } from "./derive"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as FilterSections from "../../../../ui/filters/filter-sections"
@@ -112,11 +114,16 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 			),
 		])
 	}
+	// Only the traffic tab draws the detail read's error panel; elsewhere the rail must explain it.
+	const mainFailure =
+		sectionOf(model) === "traffic"
+			? Option.getOrUndefined(AsyncData.getError(model.detail.data))
+			: undefined
 	return AsyncData.match(model.facets.data, {
 		onIdle: () => filterSidebarLoading(h, 6),
 		onLoading: () => filterSidebarLoading(h, 6),
-		onFailure: (failure) => filterSidebarError(h, failure),
-		onStale: ({ error }) => filterSidebarError(h, error),
+		onFailure: (failure) => filterSidebarError(h, failure, undefined, mainFailure),
+		onStale: ({ error }) => filterSidebarError(h, error, undefined, mainFailure),
 		onSuccess: (response) => body(response, false),
 		onRefreshing: (response) => body(response, true),
 	})

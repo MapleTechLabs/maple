@@ -80,7 +80,7 @@ export interface EnvConfig {
 	readonly STRIPE_API_URL: string
 	/**
 	 * Bot token in Maple's OWN Slack workspace, for creating customers' shared support channels
-	 * (scopes `groups:write`, `groups:read`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
+	 * (scopes `channels:manage`, `channels:read`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
 	 * reports the feature unavailable. Unrelated to the chat connector's per-workspace tokens.
 	 */
 	readonly MAPLE_SUPPORT_SLACK_BOT_TOKEN: Option.Option<Redacted.Redacted<string>>
@@ -113,6 +113,8 @@ export interface EnvConfig {
 	readonly HAZEL_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly HAZEL_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly HAZEL_OAUTH_SCOPES: string
+	readonly LINEAR_OAUTH_CLIENT_ID: Option.Option<string>
+	readonly LINEAR_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	/**
 	 * Resolved config for every chat connector the registry ships, keyed by the
 	 * name the connector declared. The catalog stays platform-neutral on purpose:
@@ -161,6 +163,20 @@ export interface EnvConfig {
 	 * poller signs in with it. Unset: nothing is polled.
 	 */
 	readonly MAPLE_GCP_SERVICE_ACCOUNT_KEY: Option.Option<Redacted.Redacted<string>>
+	/**
+	 * Maple's AWS OIDC signing key (PKCS#8 PEM, RSA). Customer roles trust the tokens it signs for
+	 * the `{MAPLE_API_BASE_URL}/oidc/aws` issuer. Unset: AWS cannot be connected.
+	 */
+	readonly MAPLE_AWS_OIDC_SIGNING_KEY: Option.Option<Redacted.Redacted<string>>
+	/**
+	 * Signs device access tokens and App Attest challenges (PKCS#8 PEM, EC P-256). A sibling of the
+	 * AWS key, not the same one. Unset: device credentials can be registered but get no tokens.
+	 */
+	readonly MAPLE_DEVICE_TOKEN_SIGNING_KEY: Option.Option<Redacted.Redacted<string>>
+	/** The iOS app's bundle id; with `APNS_TEAM_ID` it is the App ID App Attest attests to. */
+	readonly MAPLE_IOS_BUNDLE_ID: string
+	/** Accept App Attest's `appattestdevelop` environment (Xcode builds). Never in production. */
+	readonly MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT: boolean
 	readonly CLOUDFLARE_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_SCOPES: string
@@ -191,6 +207,11 @@ export interface EnvConfig {
 	 * request may only name a subset of them.
 	 */
 	readonly PLANETSCALE_OAUTH_SCOPES: string
+	/** Supabase Management API OAuth app. Both unset: the integration reads as not configured. */
+	readonly SUPABASE_OAUTH_CLIENT_ID: Option.Option<string>
+	readonly SUPABASE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	/** Base URL for the Supabase Management API, OAuth endpoints included (overridable for tests). */
+	readonly MAPLE_SUPABASE_API_BASE_URL: string
 }
 
 const portConfig = Config.Number("PORT").pipe(Config.withDefault(3472))
@@ -257,6 +278,8 @@ const envConfig = Config.all({
 		"HAZEL_OAUTH_SCOPES",
 		"openid email profile organizations:read channels:read channel-webhooks:write",
 	),
+	LINEAR_OAUTH_CLIENT_ID: optionalString("LINEAR_OAUTH_CLIENT_ID"),
+	LINEAR_OAUTH_CLIENT_SECRET: optionalRedacted("LINEAR_OAUTH_CLIENT_SECRET"),
 	CHAT_CONNECTOR_CONFIG: chatConnectorConfig,
 	CHAT_CONNECTOR_OUTBOUND_CONFIG: chatConnectorOutboundConfig,
 	SANDBOX_INTERNAL_SERVICE_TOKEN: optionalRedacted("SANDBOX_INTERNAL_SERVICE_TOKEN"),
@@ -272,6 +295,12 @@ const envConfig = Config.all({
 	GITHUB_API_BASE_URL: stringWithDefault("GITHUB_API_BASE_URL", "https://api.github.com"),
 	MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: optionalString("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
 	MAPLE_GCP_SERVICE_ACCOUNT_KEY: optionalRedacted("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
+	MAPLE_AWS_OIDC_SIGNING_KEY: optionalRedacted("MAPLE_AWS_OIDC_SIGNING_KEY"),
+	MAPLE_DEVICE_TOKEN_SIGNING_KEY: optionalRedacted("MAPLE_DEVICE_TOKEN_SIGNING_KEY"),
+	MAPLE_IOS_BUNDLE_ID: stringWithDefault("MAPLE_IOS_BUNDLE_ID", "com.maple.mobile"),
+	MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT: stringWithDefault("MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT", "false").pipe(
+		Config.map((value) => value === "true"),
+	),
 	CLOUDFLARE_OAUTH_CLIENT_ID: optionalString("CLOUDFLARE_OAUTH_CLIENT_ID"),
 	CLOUDFLARE_OAUTH_CLIENT_SECRET: optionalRedacted("CLOUDFLARE_OAUTH_CLIENT_SECRET"),
 	// Cloudflare OAuth scope ids are DOT-delimited (mirroring API-token permission names;
@@ -349,11 +378,16 @@ const envConfig = Config.all({
 	// `invalid_scope` ("The requested scope is invalid, unknown, or malformed").
 	// The resource prefix is load-bearing: the same action name (e.g. `read_backups`,
 	// `read_branches`) exists at multiple resource levels, so an unprefixed scope is
-	// ambiguous. Default = the scopes the Maple OAuth app is provisioned with.
+	// ambiguous. Default = the scopes the Maple OAuth app is provisioned with: a scope the app
+	// lacks fails every authorize, so the app gains a scope before this list does.
+	// `organization:write_databases` lets Maple register its webhook on each database.
 	PLANETSCALE_OAUTH_SCOPES: stringWithDefault(
 		"PLANETSCALE_OAUTH_SCOPES",
-		"user:read_organizations organization:read_organization organization:read_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
+		"user:read_organizations organization:read_organization organization:read_databases organization:write_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
 	),
+	SUPABASE_OAUTH_CLIENT_ID: optionalString("SUPABASE_OAUTH_CLIENT_ID"),
+	SUPABASE_OAUTH_CLIENT_SECRET: optionalRedacted("SUPABASE_OAUTH_CLIENT_SECRET"),
+	MAPLE_SUPABASE_API_BASE_URL: stringWithDefault("MAPLE_SUPABASE_API_BASE_URL", "https://api.supabase.com"),
 })
 
 const makeEnv = Effect.gen(function* () {
@@ -421,6 +455,6 @@ const makeEnv = Effect.gen(function* () {
 	return Env.of(env)
 })
 
-export class Env extends Context.Service<Env, EnvConfig>()("@maple/api/lib/Env") {
+export class Env extends Context.Service<Env, EnvConfig>()("@maple/backend/lib/Env") {
 	static readonly layer = Layer.effect(this, makeEnv)
 }

@@ -15,7 +15,8 @@ import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import type { ResolvedModel } from "../platform/Llm"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
+import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
 import { makeRunUsage } from "./tools"
 
@@ -37,6 +38,9 @@ const ANSWER: ReadonlyArray<Response.StreamPartEncoded> = [
 	},
 ]
 
+/** Placeholder provider clients the scripted model never calls; `runChatTurn` requires them. */
+const llmClients = layerLlm({})
+
 /** A model that answers once, recording the prompt it was sent. */
 const recordingModel = () => {
 	const prompts: Array<Prompt.Prompt> = []
@@ -54,7 +58,7 @@ const recordingModel = () => {
 			Layer.effect(
 				LanguageModel.LanguageModel,
 				LanguageModel.make({
-					generateText: (options) => Effect.succeed([...respond(options)]),
+					generateText: () => Effect.die("the turn streams; generateText is never called"),
 					streamText: (options) => Stream.suspend(() => Stream.fromIterable(respond(options))),
 				}),
 			),
@@ -63,7 +67,10 @@ const recordingModel = () => {
 	return { model, prompts }
 }
 
-const noTools: McpToolExecutorApi = { execute: () => Effect.die("no tool call expected") }
+const noTools: McpToolExecutorApi = {
+	...noRepositoryWarmup,
+	execute: () => Effect.die("no tool call expected"),
+}
 
 const userText = (prompt: Prompt.Prompt): string =>
 	prompt.content
@@ -91,7 +98,7 @@ describe("runChatTurn input", () => {
 				usage: makeRunUsage(),
 				holdsTurn: () => true,
 				append: () => {},
-			}),
+			}).pipe(Effect.provide(llmClients)),
 		)
 
 		assert.lengthOf(prompts, 1)

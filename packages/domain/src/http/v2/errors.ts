@@ -136,6 +136,21 @@ export const V2InvalidCredentials = defineV2Error({
 	identifier: "InvalidCredentialsError",
 })
 
+/**
+ * A `DPoP`-scheme request whose proof is missing or does not verify (RFC 9449 section 7.1). The
+ * response also carries `WWW-Authenticate: DPoP error="invalid_dpop_proof"`.
+ */
+export const V2InvalidDpopProof = defineV2Error({
+	tag: "@maple/http/v2/InvalidDpopProofError",
+	status: 401,
+	code: "invalid_dpop_proof",
+	title: "Invalid DPoP proof",
+	message: "The DPoP proof is missing or invalid.",
+	retry: "never",
+	recovery: "reauthenticate",
+	identifier: "InvalidDpopProofError",
+})
+
 export const V2InsufficientScope = defineV2Error({
 	tag: "@maple/http/v2/InsufficientScopeError",
 	status: 403,
@@ -164,6 +179,21 @@ export const V2OrganizationAccessDenied = defineV2Error({
 	retry: "never",
 	recovery: "request_access",
 	identifier: "OrganizationAccessDeniedError",
+})
+
+/**
+ * A valid session token with no active organization and no `x-maple-org-id` selection.
+ * 403 like `V2OrganizationAccessDenied`: the credential is fine, so clients pick an org, not re-sign-in.
+ */
+export const V2NoActiveOrganization = defineV2Error({
+	tag: "@maple/http/v2/NoActiveOrganizationError",
+	status: 403,
+	code: "no_active_organization",
+	title: "Choose an organization",
+	message: "This session has no active organization. Select an organization and retry.",
+	retry: "never",
+	recovery: "none",
+	identifier: "NoActiveOrganizationError",
 })
 
 export const V2InsufficientPermissions = defineV2Error({

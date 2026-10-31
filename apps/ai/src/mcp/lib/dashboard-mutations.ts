@@ -1,4 +1,5 @@
 import { Clock, Effect, Result, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { randomUUID } from "node:crypto"
 import {
 	DashboardId,
@@ -177,6 +178,7 @@ export const optionalWidgetJson = (description: string) =>
 /** The {@link DashboardRow} every dashboard tool reports. */
 export const toDashboardRow = (dashboard: DashboardDocument): typeof DashboardRow.Type => ({
 	id: dashboard.id,
+	publicId: encodePublicId(PublicIdPrefixes.dashboard, dashboard.id),
 	name: dashboard.name,
 	...(dashboard.description === undefined ? undefined : { description: dashboard.description }),
 	...(dashboard.tags === undefined ? undefined : { tags: [...dashboard.tags] }),

@@ -42,7 +42,7 @@ export const logFilter = (
 	const state = h.DataAttribute(isOpen ? "open" : "closed", "")
 	return h.div(
 		[
-			h.Class("rounded-md border border-border/60 bg-muted/32"),
+			h.Class("rounded-md border border-border-subtle bg-surface-sunken"),
 			state,
 			h.DataAttribute("slot", "collapsible"),
 		],
@@ -89,7 +89,7 @@ export const logFilter = (
 							],
 							[
 								h.div(
-									[h.Class("border-t border-border/60 p-3")],
+									[h.Class("border-t border-border-subtle p-3")],
 									[filterField(h, configure, options)],
 								),
 							],
@@ -110,7 +110,10 @@ const summaryRow = (h: H, mark: Html, term: string, detail: string): Html =>
 		[
 			h.span([h.Class("flex justify-center text-muted-foreground")], [mark]),
 			h.dt([h.Class("text-sm/5 font-medium")], [term]),
-			h.dd([h.Class("col-start-2 text-xs text-pretty text-muted-foreground sm:col-start-3")], [detail]),
+			h.dd(
+				[h.Class("col-start-2 font-prose text-xs text-pretty text-muted-foreground sm:col-start-3")],
+				[detail],
+			),
 		],
 	)
 
@@ -166,10 +169,13 @@ export const filterField = (
 					),
 					summaryRow(
 						h,
-						h.span([h.AriaHidden(true)], ["–"]),
+						// Off reads as off: a cross, not an ambiguous dash; ticked runtimes get a check.
+						choice.runtimes.length === 0
+							? icon(h, "XmarkIcon", { size: 14 })
+							: icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
 						"Application output",
 						choice.runtimes.length === 0
-							? "stdout and stderr, left in Google Cloud"
+							? "Not collected: stdout and stderr stay in Google Cloud"
 							: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`,
 					),
 				],
@@ -177,7 +183,7 @@ export const filterField = (
 			h.p(
 				[
 					h.Class(
-						"flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs/5 text-pretty text-muted-foreground",
+						"flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-prose text-xs/5 text-pretty text-muted-foreground",
 					),
 				],
 				[
@@ -211,7 +217,7 @@ const forwardOutputPrompt = (h: H): Html =>
 		[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1")],
 		[
 			h.span(
-				[h.Class("text-xs/5 text-muted-foreground")],
+				[h.Class("font-prose text-xs/5 text-muted-foreground")],
 				["No way to add OpenTelemetry to a workload?"],
 			),
 			button(
@@ -221,7 +227,7 @@ const forwardOutputPrompt = (h: H): Html =>
 					size: "sm",
 					attributes: [h.OnClick(Message.ClickedGcpForwardOutput())],
 				},
-				["Can't forward via OpenTelemetry"],
+				["Forward application output instead"],
 			),
 		],
 	)

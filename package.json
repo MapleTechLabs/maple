@@ -30,15 +30,16 @@
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
 		"lint": "bun run lint:core && bun run lint:foldkit",
-		"lint:core": "oxlint -c .oxlintrc.effect.json --quiet --ignore-pattern 'apps/web/**' --ignore-pattern 'apps/local-ui/**' alchemy.run.ts scripts apps packages lib examples",
+		"lint:core": "oxlint -c .oxlintrc.effect.json --quiet --ignore-pattern 'apps/web/**' --ignore-pattern 'apps/local-ui/**' alchemy.run.ts scripts test apps packages lib examples",
 		"lint:foldkit": "oxlint -c .oxlintrc.effect.json --quiet apps/web && oxlint -c .oxlintrc.effect.json --quiet apps/local-ui",
-		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts apps packages lib examples",
-		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
-		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser",
+		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts test apps packages lib examples",
+		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts test apps packages lib examples",
+		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser && bun run --cwd apps/scraper bundle",
 		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage ${MAPLE_STAGE:-prd}",
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy:pr": "bun run alchemy:build-deps && alchemy destroy --yes --stage pr-${PR_NUMBER}",
 		"test": "turbo test",
+		"test:alchemy": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy && vitest run --config test/alchemy/vitest.config.mts",
 		"changeset": "changeset",
 		"changeset:version": "changeset version && bun run ./scripts/sync-sdk-versions.ts && bun install --lockfile-only",
 		"changeset:publish": "bun run ./scripts/publish-packages.ts",
@@ -61,66 +62,78 @@
 		"pg": "^8.23.1"
 	},
 	"devDependencies": {
+		"@alchemy.run/aws": "catalog:alchemy",
+		"@alchemy.run/cloudflare": "catalog:alchemy",
+		"@alchemy.run/cloudflare-runtime": "catalog:alchemy",
+		"@alchemy.run/domain": "catalog:alchemy",
+		"@alchemy.run/neon": "catalog:alchemy",
+		"@alchemy.run/planetscale": "catalog:alchemy",
 		"@changesets/cli": "3.0.3",
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/platform-node": "catalog:effect",
-		"@effect/sql-pg": "4.0.4",
-		"@effect/tsgo": "0.48.1",
+		"@effect/sql-pg": "4.1.0",
+		"@effect/tsgo": "0.57.0",
 		"@effect/vitest": "catalog:effect",
-		"@maple-dev/effect-orm": "0.5.0",
+		"@maple-dev/effect-orm": "0.8.0",
 		"@maple/alchemy-portless": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
-		"@oxlint/plugins": "1.86.0",
+		"@oxlint/plugins": "1.89.0",
 		"@types/node": "catalog:tooling",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
-		"knip": "^6.39.0",
+		"knip": "^6.43.0",
 		"oxfmt": "^0.72.0",
-		"oxlint": "1.86.0",
-		"oxlint-tsgolint": "7.0.2003",
-		"portless": "^0.15.7",
+		"oxlint": "1.89.0",
+		"oxlint-tsgolint": "7.0.2005",
+		"portless": "^0.15.12",
 		"tsrs": "0.15.0-ts7.1.0-dev.20260929",
-		"turbo": "^2.11.7",
-		"typescript": "catalog:tooling"
+		"turbo": "^2.11.10",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.4",
-		"@effect/sql-sqlite-do": "4.0.4",
+		"@effect/platform-browser": "4.1.0",
+		"@effect/sql-d1": "4.1.0",
+		"@effect/sql-sqlite-do": "4.1.0",
 		"workerd": "1.20261002.1"
 	},
 	"packageManager": "bun@1.4.0",
 	"catalog": {
-		"vite": "^8.3.2",
-		"vitest": "^5.0.3",
-		"@vitest/browser-playwright": "^5.0.3",
-		"playwright": "^1.63.0"
+		"vite": "^8.3.5",
+		"vitest": "^5.0.5",
+		"@vitest/browser-playwright": "^5.0.5",
+		"playwright": "^1.64.1"
 	},
 	"catalogs": {
 		"alchemy": {
 			"@cloudflare/workers-types": "5.20261005.1",
-			"alchemy": "2.0.0-beta.83"
+			"alchemy": "2.0.0-beta.84",
+			"@alchemy.run/aws": "2.0.0-beta.84",
+			"@alchemy.run/cloudflare": "2.0.0-beta.84",
+			"@alchemy.run/neon": "2.0.0-beta.84",
+			"@alchemy.run/planetscale": "2.0.0-beta.84",
+			"@alchemy.run/domain": "2.0.0-beta.84",
+			"@alchemy.run/cloudflare-runtime": "2.0.0-beta.84"
 		},
 		"charts": {
 			"@tanstack/charts": "1.0.0",
 			"@tanstack/charts-scales": "1.0.0"
 		},
 		"effect": {
-			"@effect/ai-openai-compat": "4.0.4",
-			"@effect/ai-openrouter": "4.0.4",
-			"@effect/atom-react": "4.0.4",
-			"@effect/language-service": "^0.87.4",
-			"@effect/platform-bun": "4.0.4",
-			"@effect/platform-node": "4.0.4",
-			"@effect/vitest": "4.0.4",
-			"effect": "4.0.4"
+			"@effect/ai-openai-compat": "4.1.0",
+			"@effect/ai-openrouter": "4.1.0",
+			"@effect/platform-bun": "4.1.0",
+			"@effect/platform-node": "4.1.0",
+			"@effect/vitest": "4.1.0",
+			"effect": "4.1.0"
 		},
 		"react": {
 			"@types/react": "^19.3.0",
 			"@types/react-dom": "^19.3.0",
-			"react": "^19.3.0",
-			"react-dom": "^19.3.0"
+			"react": "^19.3.1",
+			"react-dom": "^19.3.1"
 		},
 		"tailwind": {
 			"@tailwindcss/vite": "^4.3.3",
@@ -129,21 +142,23 @@
 			"tw-animate-css": "^1.4.0"
 		},
 		"tooling": {
-			"@types/node": "^24.19.1",
+			"@types/node": "^24.19.2",
 			"typescript": "^7.0.2"
 		},
 		"ui": {
-			"@base-ui/react": "^1.8.0",
+			"@base-ui/react": "^1.9.0",
 			"@xyflow/react": "^12.12.0",
 			"class-variance-authority": "^0.7.1",
 			"clsx": "^2.1.1"
 		}
 	},
 	"patchedDependencies": {
-		"@effect/ai-openrouter@4.0.4": "patches/@effect%2Fai-openrouter@4.0.4.patch",
-		"@effect/vitest@4.0.4": "patches/@effect%2Fvitest@4.0.4.patch",
-		"effect@4.0.4": "patches/effect@4.0.4.patch",
+		"@effect/ai-openrouter@4.1.0": "patches/@effect%2Fai-openrouter@4.1.0.patch",
+		"@effect/vitest@4.1.0": "patches/@effect%2Fvitest@4.1.0.patch",
+		"effect@4.1.0": "patches/effect@4.1.0.patch",
 		"@cloudflare/workers-types@5.20261005.1": "patches/@cloudflare%2Fworkers-types@5.20261005.1.patch",
-		"alchemy@2.0.0-beta.83": "patches/alchemy@2.0.0-beta.83.patch"
+		"@alchemy.run/aws@2.0.0-beta.84": "patches/@alchemy.run%2Faws@2.0.0-beta.84.patch",
+		"alchemy@2.0.0-beta.84": "patches/alchemy@2.0.0-beta.84.patch",
+		"@alchemy.run/cloudflare@2.0.0-beta.84": "patches/@alchemy.run%2Fcloudflare@2.0.0-beta.84.patch"
 	}
 }

@@ -12,8 +12,12 @@ import {
 	encodePublicId,
 	MapleApiV2,
 	LIST_LIMIT_DEFAULT,
+	missingReadScopes,
 	paginateArray,
 	PublicIdPrefixes,
+	TELEMETRY_READ_FAMILIES,
+	V2InsufficientPermissions,
+	V2InsufficientScope,
 	V2ParameterInvalid,
 	V2ParameterMissing,
 	V2TimeRangeInvalid,
@@ -31,8 +35,9 @@ import type {
 } from "@maple/domain/http/v2"
 import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
 import type { DashboardId } from "@maple/domain/primitives"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Ref, Schema } from "effect"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
+import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
 import { auditDiff } from "@/routes/v2/audit-changes"
@@ -41,6 +46,53 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
+
+const canReadTelemetry = (scopes: ReadonlyArray<string> | undefined) =>
+	missingReadScopes(scopes, TELEMETRY_READ_FAMILIES).length === 0
+
+/**
+ * A share link serves the board's telemetry to whoever holds it, so a scoped
+ * key must be able to read that telemetry itself to mint or rotate one.
+ */
+const requireShareableScopes = (scopes: ReadonlyArray<string> | undefined) =>
+	canReadTelemetry(scopes)
+		? Effect.void
+		: Effect.fail(
+				V2InsufficientPermissions.make(
+					'Sharing a dashboard requires the "traces:read", "logs:read" and "metrics:read" scopes, because the link serves its telemetry.',
+				),
+			)
+
+type DashboardWidgets = DashboardDocument["widgets"]
+
+/** Every stored raw SQL text on these widgets, tiles and sparklines alike. */
+const rawSqlTexts = (widgets: DashboardWidgets): ReadonlyArray<string> =>
+	widgets.flatMap((widget) =>
+		[widget.dataSource, widget.display?.sparkline?.dataSource].flatMap((dataSource) => {
+			const rawSql = dataSourceRawSql(dataSource)
+			return rawSql === null ? [] : [rawSql.sql]
+		}),
+	)
+
+/**
+ * Raw SQL runs as the org on every read of the board, share links included, so a key that
+ * cannot read the telemetry may only keep SQL the board already had, never add or change it.
+ */
+const requireRawSqlScopes = (
+	scopes: ReadonlyArray<string> | undefined,
+	before: DashboardWidgets,
+	after: DashboardWidgets,
+) => {
+	if (canReadTelemetry(scopes)) return Effect.void
+	const existing = new Set(rawSqlTexts(before))
+	return rawSqlTexts(after).every((sql) => existing.has(sql))
+		? Effect.void
+		: Effect.fail(
+				V2InsufficientScope.make(
+					'Saving raw SQL on a dashboard requires the "traces:read", "logs:read" and "metrics:read" scopes, because the SQL runs with access to that telemetry.',
+				),
+			)
+}
 
 const toV2Dashboard = (dashboard: DashboardDocument): V2Dashboard => ({
 	id: dashboard.id,
@@ -296,6 +348,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 			mode: DashboardShareMode,
 		) =>
 			Effect.gen(function* () {
+				yield* requireShareableScopes(context.tenant.scopes)
 				const created = yield* shares.upsert(
 					context.tenant.orgId,
 					context.tenant.userId,
@@ -324,6 +377,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		const rotateShare = (dashboardId: DashboardId, widgetId: string | null) =>
 			Effect.gen(function* () {
 				const context = yield* openScope(dashboardId, widgetId)
+				yield* requireShareableScopes(context.tenant.scopes)
 				const rotated = yield* shares.rotate(
 					context.tenant.orgId,
 					context.tenant.userId,
@@ -416,6 +470,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								})),
 								window,
 								variableValues: payload.variable_values ?? {},
+								rawSqlAllowed: canReadTelemetry(tenant.scopes),
 							})
 							.pipe(
 								Effect.catchTags({
@@ -443,11 +498,9 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("create", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const dashboard = yield* persistence.create(
-							tenant.orgId,
-							tenant.userId,
-							toPortable(payload),
-						)
+						const portable = toPortable(payload)
+						yield* requireRawSqlScopes(tenant.scopes, [], portable.widgets)
+						const dashboard = yield* persistence.create(tenant.orgId, tenant.userId, portable)
 						yield* recordHttpAudit("dashboard.created", {
 							resourceId: dashboard.id,
 							metadata: { name: dashboard.name },
@@ -463,24 +516,26 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							new Date(yield* Clock.currentTimeMillis).toISOString(),
 						)
 						// Capture the pre-state the mutate callback already reads, for the diff.
-						let previous: DashboardDocument | undefined
+						const previous = yield* Ref.make(Option.none<DashboardDocument>())
 						const dashboard = yield* persistence.mutate(
 							tenant.orgId,
 							tenant.userId,
 							params.id,
 							(current) => {
-								previous = current
-								return Effect.succeed(applyUpdate(current, payload, updatedAt))
+								const next = applyUpdate(current, payload, updatedAt)
+								return Ref.set(previous, Option.some(current)).pipe(
+									Effect.andThen(
+										requireRawSqlScopes(tenant.scopes, current.widgets, next.widgets),
+									),
+									Effect.as(next),
+								)
 							},
 						)
-						const changes =
-							previous === undefined
-								? undefined
-								: dashboardAuditDiff(
-										payload,
-										toV2Dashboard(previous),
-										toV2Dashboard(dashboard),
-									)
+						const changes = Option.match(yield* Ref.get(previous), {
+							onNone: () => undefined,
+							onSome: (before) =>
+								dashboardAuditDiff(payload, toV2Dashboard(before), toV2Dashboard(dashboard)),
+						})
 						yield* recordHttpAudit("dashboard.updated", {
 							resourceId: dashboard.id,
 							changes,
@@ -510,6 +565,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const converted = yield* convertPersesDashboardToPortable(payload.dashboard)
 						const tenant = yield* CurrentTenant.Context
+						yield* requireRawSqlScopes(tenant.scopes, [], converted.dashboard.widgets)
 						const dashboard = yield* persistence.create(
 							tenant.orgId,
 							tenant.userId,
@@ -571,6 +627,19 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("restoreVersion", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						if (!canReadTelemetry(tenant.scopes)) {
+							const current = yield* persistence.get(tenant.orgId, params.id)
+							const version = yield* persistence.getVersion(
+								tenant.orgId,
+								params.id,
+								params.version_id,
+							)
+							yield* requireRawSqlScopes(
+								tenant.scopes,
+								current.widgets,
+								version.snapshot.widgets,
+							)
+						}
 						const dashboard = yield* persistence.restoreVersion(
 							tenant.orgId,
 							tenant.userId,

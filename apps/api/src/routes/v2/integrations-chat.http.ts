@@ -118,7 +118,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						// replayed in the token exchange, and the origin is read from a header
 						// a client can set — so an untrusted one would mint an authorize URL
 						// pointing at a host the caller controls.
-						if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+						if (!isTrustedCallbackOrigin(origin, env)) {
 							yield* Effect.logError("Rejected chat install: untrusted callback origin", {
 								origin,
 							})
@@ -152,7 +152,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						// Same reasoning as the install: the origin is read from a header a
 						// client can set, and it is persisted as the state's redirect URI and
 						// replayed in the token exchange.
-						if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+						if (!isTrustedCallbackOrigin(origin, env)) {
 							yield* Effect.logError("Rejected chat account link: untrusted callback origin", {
 								origin,
 							})

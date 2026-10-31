@@ -8,7 +8,7 @@ export const keyValueListInlineStyles = "flex flex-wrap items-baseline gap-x-4 g
 
 export const keyValueListSplitStyles = "flex flex-col gap-1.5"
 
-export const keyValueListDividedStyles = "gap-y-0 divide-y divide-border/60 [&>div]:py-1.5"
+export const keyValueListDividedStyles = "gap-y-0 divide-y divide-border-subtle [&>div]:py-1.5"
 
 export const keyValueStyles = "min-w-0"
 

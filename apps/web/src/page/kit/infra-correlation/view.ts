@@ -24,7 +24,7 @@ export type ViewInputs = Readonly<{
 }>
 
 const LINK_CLASS =
-	"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground transition-colors hover:text-foreground"
+	"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground hover:text-foreground active:text-foreground"
 
 /** `CorrelationLink`: the matching infra detail route, per kind. */
 const correlationHref = (correlation: InfraCorrelation): string => {
@@ -63,7 +63,7 @@ const section = (h: H, model: Model, correlation: InfraCorrelation, timeZone: st
 							h.span([h.Class("text-xs font-medium text-foreground")], [correlation.title]),
 							h.a(
 								[h.Href(correlationHref(correlation)), h.Class(LINK_CLASS)],
-								["View in Infrastructure", icon(h, "ExternalLinkIcon", { size: 11 })],
+								["View in Infrastructure", icon(h, "ExternalLinkIcon", { size: 12 })],
 							),
 						],
 					),

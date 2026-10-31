@@ -64,8 +64,8 @@ describe("prometheus scrape targets", () => {
 		expect(late.model.prometheusCard.checks).toEqual(selected.model.prometheusCard.checks)
 	})
 
-	test("the add form validates and saves once, then selects the new target", () => {
-		const opened = pageUpdate(loaded(), Message.ClickedAddTarget()).model
+	test("the form validates and saves once, then selects and probes the new target", () => {
+		const opened = loaded()
 		expect(names(pageUpdate(opened, Message.SubmittedTargetForm()).commands)).toEqual([])
 		const filled = steps(opened, [
 			Message.GotFormFieldMessage({
@@ -85,6 +85,7 @@ describe("prometheus scrape targets", () => {
 			Message.CompletedSave({ isEdit: false, id: target.id, failure: null }),
 		)
 		expect(saved.model.prometheusCard.selectedId).toBe(target.id)
+		expect(names(saved.commands)).toContain("ProbeScrapeTarget")
 		expect(saved.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "success",
@@ -95,7 +96,7 @@ describe("prometheus scrape targets", () => {
 	})
 
 	test("an out-of-range interval keeps the form invalid", () => {
-		const opened = pageUpdate(loaded(), Message.ClickedAddTarget()).model
+		const opened = loaded()
 		const invalid = steps(opened, [
 			Message.GotFormFieldMessage({
 				field: "name",
@@ -129,7 +130,8 @@ describe("prometheus scrape targets", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed.model),
-			expectView(role("button", { name: "Test" })).toExist(),
+			expectView(role("button", { name: "Sync now" })).toBeEnabled(),
+			expectView(role("link", { name: "Add another target" })).toExist(),
 		)
 	})
 })

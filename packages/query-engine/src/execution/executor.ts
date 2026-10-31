@@ -18,6 +18,7 @@ import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-orm/
 import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {
+	mergeSettingsClauses,
 	settingsClause,
 	type QueryProfileName,
 	resolveSettings,
@@ -155,6 +156,22 @@ const clientTimeoutMs = (
 	return maxExecutionTimeS !== undefined
 		? maxExecutionTimeS * 1000 + CLIENT_TIMEOUT_BUFFER_MS
 		: MANAGED_QUERY_HARD_TIMEOUT_MS
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null
+
+/**
+ * Whether an ingest row is tagged for `orgId` and no other org: by its `OrgId`
+ * column, or by `resource_attributes.maple_org_id` on raw telemetry rows.
+ */
+const rowBelongsTo = (row: unknown, orgId: string): boolean => {
+	if (!isRecord(row)) return false
+	const tags = [
+		row.OrgId,
+		isRecord(row.resource_attributes) ? row.resource_attributes.maple_org_id : undefined,
+	].filter((tag) => tag !== undefined)
+	return tags.length > 0 && tags.every((tag) => tag === orgId)
 }
 
 /**
@@ -504,7 +521,7 @@ WHERE name = 'enable_full_text_index'`,
 		// re-derives from SQL text which terminal clauses it already carries.
 		const parsed = parseStatement(sql)
 		const statement = withFormat(
-			withSettings(parsed, parsed.settings ?? settingsClause(settings)),
+			withSettings(parsed, mergeSettingsClauses(parsed.settings, settingsClause(settings))),
 			dialect.wireFormat === "in-statement" ? (parsed.format ?? dialect.statementFormat) : undefined,
 		)
 		const finalSql = statement.text
@@ -964,7 +981,7 @@ WHERE name = 'enable_full_text_index'`,
 	const rawSqlQuery = Effect.fn("WarehouseQueryService.rawSqlQuery")(function* (
 		tenant: ExecutionTenant,
 		sql: string,
-		options?: Pick<SqlQueryOptions, "profile" | "context">,
+		options?: Pick<SqlQueryOptions, "profile" | "context" | "settings">,
 	) {
 		// No OrgId assertion here on purpose. This path runs user-authored SQL,
 		// whose isolation is enforced upstream at the credential layer — a
@@ -1190,6 +1207,14 @@ WHERE name = 'enable_full_text_index'`,
 		if (rows.length === 0) return
 
 		const label = `ingest:${datasource}`
+		// Writes skip the DSL's OrgId filter, and some callers forward rows a
+		// per-org warehouse returned, so every row must belong to the writer.
+		if (!rows.every((row) => rowBelongsTo(row, tenant.orgId))) {
+			return yield* new WarehouseScopeError({
+				pipeName: label,
+				message: `Refused to ingest rows whose OrgId is not the writing org (${datasource})`,
+			})
+		}
 		// Writes resolve with purpose "ingest": the host routes them to the managed
 		// Tinybird pipeline, never a per-org BYO ClickHouse READ override (routing
 		// writes through the override 500'd every insert and broke demo-seed

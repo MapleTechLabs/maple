@@ -7,6 +7,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@maple/backend": "workspace:*",
 		"@maple/chat-platform": "workspace:*",
 		"@maple/infra": "workspace:*",
@@ -14,7 +15,6 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@types/node": "catalog:tooling",

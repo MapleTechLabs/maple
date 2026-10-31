@@ -1,4 +1,5 @@
 import { FetchHttpClient } from "effect/http"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -64,6 +65,7 @@ const makeLayer = (testDb: TestDb) => {
 					Layer.provide(oauthLive),
 				),
 				oauthLive,
+				SupabaseOAuthService.layer,
 			),
 		),
 		Layer.provide(testDb.layer),
@@ -117,13 +119,25 @@ describe("ScrapeTargetsService", () => {
 			const other = yield* create("org_2", "node")
 			const sources = () =>
 				Effect.promise(() =>
-					testDb.pglite.query<{ org_id: string; kind: string; platform: string; name: string; target: string }>(
+					testDb.pglite.query<{
+						org_id: string
+						kind: string
+						platform: string
+						name: string
+						target: string
+					}>(
 						`SELECT s.org_id, s.kind, s.platform, s.name, t.id AS target
 						FROM sources s JOIN scrape_targets t ON t.source_id = s.id ORDER BY s.org_id`,
 					),
 				)
 			assert.deepStrictEqual(
-				(yield* sources()).rows.map((row) => [row.org_id, row.kind, row.platform, row.name, row.target]),
+				(yield* sources()).rows.map((row) => [
+					row.org_id,
+					row.kind,
+					row.platform,
+					row.name,
+					row.target,
+				]),
 				[
 					["org_1", "integration", "prometheus", "node", node.id],
 					["org_2", "integration", "prometheus", "node", other.id],
@@ -318,9 +332,10 @@ describe("ScrapeTargetsService", () => {
 
 			// A PlanetScale connection's target leaves its source to the connection's own poller.
 			yield* Effect.promise(() =>
-				testDb.pglite.query("UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1", [
-					worker.id,
-				]),
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1",
+					[worker.id],
+				),
 			)
 			yield* service.recordScrapeResults([
 				{ targetId: worker.id, scrapedAt: 1750000200000, error: "HTTP 500" },
@@ -336,9 +351,7 @@ describe("ScrapeTargetsService", () => {
 			)
 			const before = yield* readSource()
 			yield* TestClock.adjust("2 minutes")
-			yield* service.recordScrapeResults([
-				{ targetId: api.id, scrapedAt: 1750000300000, error: null },
-			])
+			yield* service.recordScrapeResults([{ targetId: api.id, scrapedAt: 1750000300000, error: null }])
 			assert.deepStrictEqual(yield* readSource(), before)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -424,7 +437,14 @@ describe("ScrapeTargetsService", () => {
 				.pipe(Effect.withTracer(recorder.tracer))
 			// 6 targets of one source: 1 UPDATE, 1 SELECT (org and source ids), the source's targets and
 			// poll state, 1 UPDATE of the source, then 1 INSERT (check rows).
-			assert.deepStrictEqual(recorder.verbs(), ["UPDATE", "SELECT", "SELECT", "SELECT", "UPDATE", "INSERT"])
+			assert.deepStrictEqual(recorder.verbs(), [
+				"UPDATE",
+				"SELECT",
+				"SELECT",
+				"SELECT",
+				"UPDATE",
+				"INSERT",
+			])
 
 			const okRow = yield* service.get(orgId, ok.id)
 			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())
@@ -691,6 +711,41 @@ describe("ScrapeTargetsService", () => {
 			const probed = yield* service.probe(orgId, target.id)
 			assert.isFalse(probed.success)
 			assert.strictEqual(probed.lastScrapeError, "Response contained no Prometheus metrics")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("manual probes judge an endless body by a bounded prefix", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const target = yield* service.create(
+				orgId,
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+
+			const pulled = { count: 0 }
+			// 7 bytes per line, so chunk boundaries cut lines and the cap lands mid-line.
+			const chunk = new TextEncoder().encode("up 1.5\n".repeat(10_000))
+			const fetchStub = (async () =>
+				new Response(
+					new ReadableStream<Uint8Array>({
+						pull: (controller) => {
+							pulled.count++
+							controller.enqueue(chunk)
+						},
+					}),
+					{ status: 200 },
+				)) as typeof fetch
+			const probed = yield* service
+				.probe(orgId, target.id)
+				.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
+			assert.isTrue(probed.success)
+			assert.isBelow(pulled.count, 200)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

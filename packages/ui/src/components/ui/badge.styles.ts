@@ -2,7 +2,7 @@ import { cva } from "class-variance-authority"
 import { TONE_SOFT } from "../../lib/tone"
 
 export const badgeVariants = cva(
-	"relative inline-flex max-w-full shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [button&,a&]:cursor-pointer [button&,a&]:pointer-coarse:after:absolute [button&,a&]:pointer-coarse:after:size-full [button&,a&]:pointer-coarse:after:min-h-11 [button&,a&]:pointer-coarse:after:min-w-11",
+	"relative inline-flex max-w-full shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [button&,a&]:cursor-pointer [button&,a&]:pointer-coarse:after:absolute [button&,a&]:pointer-coarse:after:size-full [button&,a&]:pointer-coarse:after:min-h-11 [button&,a&]:pointer-coarse:after:min-w-11",
 	{
 		compoundVariants: [
 			{ class: "px-1.5", pill: true, size: "xs" },
@@ -32,23 +32,26 @@ export const badgeVariants = cva(
 				true: "font-mono tabular-nums",
 			},
 			variant: {
-				default: "bg-primary text-primary-foreground [button&,a&]:hover:bg-primary/90",
-				destructive: "bg-destructive text-white [button&,a&]:hover:bg-destructive/90",
+				default:
+					"bg-primary text-primary-foreground [button&,a&]:hover:bg-primary/90 [button&,a&]:active:bg-primary/90",
+				destructive:
+					"bg-destructive text-white [button&,a&]:hover:bg-destructive/90 [button&,a&]:active:bg-destructive/90",
 				crit: TONE_SOFT.crit,
 				info: TONE_SOFT.info,
 				done: TONE_SOFT.done,
 				// Neutral tinted chip: counts, kinds, quiet metadata.
-				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-muted/80",
+				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-surface-strong [button&,a&]:active:bg-surface-strong",
 				// Bordered meta chip on the page surface: services, environments, reopen markers.
-				meta: "border-border/70 bg-background text-muted-foreground [button&,a&]:hover:bg-muted/50",
+				meta: "border-border-subtle bg-background text-muted-foreground [button&,a&]:hover:bg-surface-sunken [button&,a&]:active:bg-surface-sunken",
 				outline:
-					"border-input bg-background text-foreground dark:bg-input/32 [button&,a&]:hover:bg-accent/50 dark:[button&,a&]:hover:bg-input/48",
-				secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
+					"border-input bg-background text-foreground dark:bg-input/32 [button&,a&]:hover:bg-surface-sunken [button&,a&]:active:bg-surface-sunken dark:[button&,a&]:hover:bg-input/48 dark:[button&,a&]:active:bg-input/48",
+				secondary:
+					"bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90 [button&,a&]:active:bg-secondary/90",
 				ok: TONE_SOFT.ok,
 				warn: TONE_SOFT.warn,
 				// Tiny uppercase label chip (System, Current, Pinned). Sizes itself, so it
 				// resets the size variant; recolour with className.
-				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-wide sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-muted/80 [button&,a&]:hover:text-foreground",
+				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-wide sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-surface-strong [button&,a&]:active:bg-surface-strong [button&,a&]:hover:text-foreground [button&,a&]:active:text-foreground",
 			},
 		},
 	},

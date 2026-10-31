@@ -111,7 +111,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(failed.findings[0]!.detail).toBe("prompt grew 1.0K → 190.0K tokens across the session")
+		expect(failed.findings[0]!.detail).toBe("prompt grew 1K → 190K tokens across the session")
 	})
 
 	it("groups a tool's failures into one finding, counted, with the error text", () => {

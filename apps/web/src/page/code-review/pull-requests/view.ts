@@ -9,9 +9,11 @@ import { skeletonList } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { filtersView } from "../kit/filters-view"
-import { codeReviewLayout, nothingInWindow } from "../kit/layout"
+import { nothingInWindow } from "../../kit/nothing-in-window"
+import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
+import { searchBox } from "../kit/search"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
@@ -26,7 +28,10 @@ const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Object.entries(STATUS_LABELS)
 }))
 
 const isFiltered = (model: Model) =>
-	model.search.repo !== undefined || model.search.author !== undefined || model.search.status !== undefined
+	model.search.repo !== undefined ||
+	model.search.author !== undefined ||
+	model.search.status !== undefined ||
+	model.search.q !== undefined
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.reviews.data, {
@@ -34,7 +39,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load reviews",
+				title: "Couldn't load pull requests",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onData: (response) => {
@@ -74,24 +79,19 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 	})
 
 const statusSelect = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-3")],
-		[
-			h.submodel({
-				slotId: model.statusSelect.id,
-				model: model.statusSelect,
-				view: selectView,
-				toParentMessage: (message: Select.Message) => Message.GotStatusSelectMessage({ message }),
-				viewInputs: {
-					entries: STATUS_ENTRIES,
-					size: "sm",
-					ariaLabel: "Status",
-					className: "w-40",
-					toView: (parts) => h.div([h.Class("contents")], parts),
-				},
-			}),
-		],
-	)
+	h.submodel({
+		slotId: model.statusSelect.id,
+		model: model.statusSelect,
+		view: selectView,
+		toParentMessage: (message: Select.Message) => Message.GotStatusSelectMessage({ message }),
+		viewInputs: {
+			entries: STATUS_ENTRIES,
+			size: "sm",
+			ariaLabel: "Status",
+			className: "w-40",
+			toView: (parts) => h.div([h.Class("contents")], parts),
+		},
+	})
 
 const authorsOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.authors.data), {
@@ -99,25 +99,35 @@ const authorsOf = (model: Model): ReadonlyArray<string> =>
 		onSome: (analytics) => analytics.authors.map((row) => row.author),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	codeReviewLayout(
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const filters = filtersView(h, {
+		frame: model.frame,
+		search: model.search,
+		reviewedOnly: true,
+		kind: "author",
+		options: authorsOf(model),
+		selected: model.search.author,
+		defaultPreset: DEFAULT_PRESET,
+		presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+		toMessage: (message) => Message.GotFrameMessage({ message }),
+		isFailed: AsyncData.isFailure(model.reviews.data),
+	})
+	return codeReviewLayout(
 		{
 			h,
 			active: "pull-requests",
 			search: model.search,
-			nowMs: model.frame.nowMs,
-			timeZone: inputs.context.timeZone,
-			toolbar: filtersView(h, {
-				frame: model.frame,
-				search: model.search,
-				reviewedOnly: true,
-				kind: "author",
-				options: authorsOf(model),
-				selected: model.search.author,
-				defaultPreset: DEFAULT_PRESET,
-				presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
-				toMessage: (message) => Message.GotFrameMessage({ message }),
-			}),
+			toolbar: filters.actions,
+			filters: [
+				searchBox(h, {
+					id: "code-review-pull-requests-search",
+					value: model.searchDraft,
+					placeholder: "Search pull requests…",
+					onInput: (value) => Message.ChangedSearchDraft({ value }),
+				}),
+				...filters.filters,
+				statusSelect(h, model),
+			],
 			overlay: h.submodel({
 				slotId: "code-review-pull-requests-sheet",
 				model: model.sheet,
@@ -126,6 +136,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				toParentMessage: (message: SheetMessage) => Message.GotSheetMessage({ message }),
 			}),
 		},
-		[statusSelect(h, model), content(h, model, inputs.context.timeZone)],
-	),
-)
+		[content(h, model, inputs.context.timeZone)],
+	)
+})

@@ -31,11 +31,16 @@ export type RulesViewConfig<P> = Readonly<{
 	idPrefix: string
 	/** `Date.now()` for the "Expires in" hint. */
 	nowMs: number
-	isDisabled?: boolean
 }>
 
 /** A Base UI field outside a form: never dirty, touched or focused in a capture. */
-const STATIC: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const STATIC: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 const idsOf = (prefix: string, name: string): FieldIds => ({
 	control: `${prefix}-${name}`,
@@ -44,7 +49,11 @@ const idsOf = (prefix: string, name: string): FieldIds => ({
 	description: `${prefix}-${name}-description`,
 })
 
-const signalCard = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, signal: (typeof SIGNALS)[number]): Html => {
+const signalCard = <P>(
+	h: HtmlBuilder<P>,
+	config: RulesViewConfig<P>,
+	signal: (typeof SIGNALS)[number],
+): Html => {
 	const isChecked = config.model.signals.includes(signal.value)
 	const inputId = `${config.idPrefix}-signal-${signal.value}`
 	return h.label(
@@ -53,18 +62,18 @@ const signalCard = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, signal: (t
 			h.Id(Checkbox.labelId(inputId)),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 transition-colors",
-					isChecked ? "border-primary/60 bg-primary/[0.06]" : "hover:bg-muted/30",
+					"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
+					isChecked ? "border-primary/60 bg-primary/[0.06]" : "hover:bg-surface-sunken active:bg-surface-sunken",
 				),
 			),
 		],
 		[
 			...Checkbox.view(h, {
 				model: { isChecked },
-				toParentMessage: () => config.toParentMessage(Message.ToggledSignal({ signal: signal.value })),
+				toParentMessage: () =>
+					config.toParentMessage(Message.ToggledSignal({ signal: signal.value })),
 				id: `${inputId}-root`,
 				inputId,
-				isDisabled: config.isDisabled ?? false,
 				className: "mt-0.5",
 			}),
 			h.span(
@@ -121,7 +130,7 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 				h,
 				{
 					label: "Remove attribute",
-					className: "text-muted-foreground hover:text-foreground shrink-0",
+					className: "text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
 					attributes: [h.OnClick(toParentMessage(Message.ClickedRemoveAttribute({ rowId })))],
 				},
 				[icon(h, "XmarkIcon")],
@@ -133,7 +142,7 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 /** Editable key, value and mode rows, with the first validation problem inline. */
 const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => {
 	const { attributeProblem } = rulesOutcome(config.model)
-	const isDisabled = (config.isDisabled ?? false) || config.model.attributes.length >= MAX_ATTRIBUTES
+	const isDisabled = config.model.attributes.length >= MAX_ATTRIBUTES
 	return h.div(
 		[h.Class("flex flex-col gap-2")],
 		[
@@ -150,11 +159,19 @@ const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html =
 							isDisabled,
 							attributes: [h.OnClick(config.toParentMessage(Message.ClickedAddAttribute()))],
 						},
-						[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Add attribute"],
+						[
+							icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+							"Add attribute",
+						],
 					),
 					...(attributeProblem === null
 						? []
-						: [h.span([h.Class("text-destructive text-xs"), h.Role("alert")], [attributeProblem])]),
+						: [
+								h.span(
+									[h.Class("text-destructive text-xs"), h.Role("alert")],
+									[attributeProblem],
+								),
+							]),
 				],
 			),
 		],
@@ -164,7 +181,6 @@ const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html =
 /** Signals, rate limit, expiry and resource attributes for a push source. */
 export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => {
 	const { model, toParentMessage, idPrefix } = config
-	const isDisabled = config.isDisabled ?? false
 	const { rateLimitValid } = rulesOutcome(model)
 	const existing = model.existing
 	const choices = expiryChoicesOf(model)
@@ -173,18 +189,20 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 	const expiryIds = idsOf(idPrefix, "expires")
 	const attributeIds = idsOf(idPrefix, "attributes")
 	return h.fieldset(
-		[
-			...(isDisabled ? [h.Disabled(true)] : []),
-			h.Class("flex min-w-0 flex-col gap-6 disabled:opacity-60"),
-		],
+		[h.Class("flex min-w-0 flex-col gap-6")],
 		[
 			field(h, { state: STATIC }, [
 				fieldLabel(h, { ids: signalsIds, state: STATIC }, "Signals"),
-				h.div([h.Class("grid gap-2 sm:grid-cols-2")], SIGNALS.map((signal) => signalCard(h, config, signal))),
+				h.div(
+					[h.Class("grid gap-2 sm:grid-cols-2")],
+					SIGNALS.map((signal) => signalCard(h, config, signal)),
+				),
 				fieldDescription(
 					h,
 					{ ids: signalsIds, state: STATIC },
-					model.signals.length === 0 ? "Allow at least one signal." : "Anything else is rejected with a 403.",
+					model.signals.length === 0
+						? "Allow at least one signal."
+						: "Anything else is rejected with a 403.",
 				),
 			]),
 			field(h, { state: STATIC }, [
@@ -193,7 +211,6 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 					inputGroupInput(h, {
 						id: rateIds.control,
 						controlClassName: "font-mono tabular-nums",
-						isDisabled,
 						attributes: [
 							h.Attribute("inputmode", "numeric"),
 							h.Placeholder("No limit"),
@@ -214,7 +231,11 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 			field(h, { state: STATIC }, [
 				fieldLabel(h, { ids: expiryIds, state: STATIC }, "Expires"),
 				ToggleGroup.view(h, {
-					model: toggleModel("Expires", choices.map((choice) => choice.value), model.expiry),
+					model: toggleModel(
+						"Expires",
+						choices.map((choice) => choice.value),
+						model.expiry,
+					),
 					toParentMessage: (message) => toParentMessage(Message.GotExpiryMessage({ message })),
 					variant: "outline",
 					size: "sm",
@@ -233,7 +254,11 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 			]),
 			field(h, { state: STATIC }, [
 				fieldLabel(h, { ids: attributeIds, state: STATIC }, "Resource attributes"),
-				fieldDescription(h, { ids: attributeIds, state: STATIC }, "Written on everything this source sends."),
+				fieldDescription(
+					h,
+					{ ids: attributeIds, state: STATIC },
+					"Written on everything this source sends.",
+				),
 				attributeRows(h, config),
 			]),
 		],

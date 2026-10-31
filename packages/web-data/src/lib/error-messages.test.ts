@@ -154,7 +154,7 @@ describe("displayError", () => {
 			type: "api_error",
 			code: "network_unreachable",
 			title: "Cannot reach Maple API",
-			message: "Check your connection. Data will resume once the API is reachable.",
+			message: "Maple's API is unreachable.",
 			retryable: true,
 			recovery: "retry",
 		})

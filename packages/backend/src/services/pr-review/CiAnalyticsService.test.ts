@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { OrgId, RoleName, UserId, VcsInstallationId, VcsRepositoryId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
@@ -40,10 +41,10 @@ const run = (n: number, result: string, startedAt: number, extra: Record<string,
 	repository: "web",
 	branch: "main",
 	revision: `sha${n}`,
-	attempt: "1",
+	attempt: 1,
 	trigger: "push",
 	actor: "ada",
-	pullRequest: "",
+	pullRequest: 0,
 	durationMs: 60_000,
 	startedAt: wire(startedAt),
 	...extra,
@@ -109,22 +110,82 @@ const withService = <A, E>(
 	})
 
 describe("CiAnalyticsService.analytics", () => {
-	it.effect("reads at most the newest two weeks and fills every bucket of it", () =>
+	it.effect("reads a month whole and fills every bucket of it", () =>
 		withService({}, (service) =>
 			Effect.gen(function* () {
 				const analytics = yield* service.analytics(tenant, {
 					startTime: END - 30 * 24 * HOUR,
 					endTime: END,
 				})
-				assert.strictEqual(analytics.startTime, END - CI_MAX_SPAN_MS)
+				assert.strictEqual(analytics.startTime, END - 30 * 24 * HOUR)
 				assert.strictEqual(analytics.bucketSeconds, 6 * 3600)
-				assert.strictEqual(analytics.series.length, 14 * 4)
+				assert.strictEqual(analytics.series.length, 30 * 4)
 				assert.deepStrictEqual(analytics.series[0]?.p50DurationMs, null)
 				assert.strictEqual(analytics.current.runs, 0)
 				assert.strictEqual(analytics.current.p50QueueMs, null)
 			}),
 		),
 	)
+
+	it.effect("reads two months in daily buckets", () =>
+		withService({}, (service) =>
+			Effect.gen(function* () {
+				const analytics = yield* service.analytics(tenant, {
+					startTime: END - 60 * 24 * HOUR,
+					endTime: END,
+				})
+				assert.strictEqual(analytics.bucketSeconds, 24 * 3600)
+				assert.strictEqual(analytics.series.length, 60)
+			}),
+		),
+	)
+
+	it.effect("compares with the previous period only while the tables still hold it", () =>
+		withService({}, (service, reads) =>
+			Effect.gen(function* () {
+				yield* TestClock.adjust(END)
+				const totalsRead = () => reads.filter((read) => read.context === "ciRunTotals").length
+				yield* service.analytics(tenant, { startTime: END - 90 * 24 * HOUR, endTime: END })
+				assert.strictEqual(totalsRead(), 2)
+				yield* service.analytics(tenant, { startTime: END - 365 * 24 * HOUR, endTime: END })
+				assert.strictEqual(totalsRead(), 3)
+			}),
+		),
+	)
+
+	it.effect("reads at most the newest year, in weekly buckets that cover it", () => {
+		const WEEK = 7 * 24 * HOUR
+		const week = (weeksAgo: number) => Math.floor((END - weeksAgo * WEEK) / WEEK) * WEEK
+		const seriesRow = (weeksAgo: number, failed: number) => ({
+			bucket: wire(week(weeksAgo)),
+			runs: String(failed + 1),
+			succeeded: "1",
+			failed: String(failed),
+			cancelled: "0",
+			p50DurationMs: 60_000,
+			p95DurationMs: 60_000,
+			totalDurationMs: 60_000,
+		})
+		return withService({ ciRunSeries: [seriesRow(40, 2), seriesRow(3, 5)] }, (service) =>
+			Effect.gen(function* () {
+				const analytics = yield* service.analytics(tenant, {
+					startTime: END - 2 * 365 * 24 * HOUR,
+					endTime: END,
+				})
+				assert.strictEqual(analytics.startTime, END - CI_MAX_SPAN_MS)
+				const bucketMs = analytics.bucketSeconds * 1000
+				assert.strictEqual(bucketMs, 7 * 24 * HOUR)
+				const buckets = analytics.series.map((bucket) => bucket.bucket)
+				assert.isAtMost(buckets[0]!, analytics.startTime)
+				assert.isAbove(buckets[buckets.length - 1]! + bucketMs, END - 1)
+				assert.isTrue(buckets.every((bucket, i) => i === 0 || bucket - buckets[i - 1]! === bucketMs))
+				// Each week's row lands in its own bar; the weeks around it stay empty.
+				const failedIn = (weeksAgo: number) =>
+					analytics.series.find((bucket) => bucket.bucket === week(weeksAgo))?.failed
+				assert.deepStrictEqual([failedIn(41), failedIn(40), failedIn(3), failedIn(2)], [0, 2, 5, 0])
+			}),
+		)
+	})
 
 	it.effect("scopes every read to the repository's owner and name", () =>
 		withService({}, (service, reads) =>
@@ -136,8 +197,8 @@ describe("CiAnalyticsService.analytics", () => {
 				})
 				assert.isAbove(reads.length, 0)
 				for (const read of reads) {
-					assert.include(read.sql, "ResourceAttributes['vcs.owner.name'] = 'acme'")
-					assert.include(read.sql, "ResourceAttributes['vcs.repository.name'] = 'web'")
+					assert.include(read.sql, ".Owner = 'acme'")
+					assert.include(read.sql, ".Repository = 'web'")
 				}
 			}),
 		),
@@ -205,11 +266,8 @@ describe("CiAnalyticsService.analytics", () => {
 					})
 					// The red workflow's own runs are read, skipped ones left out.
 					const runsRead = reads.find((read) => read.context === "ciWorkflowRuns")
-					assert.include(runsRead?.sql ?? "", "traces.SpanAttributes['cicd.pipeline.name'] = 'CI'")
-					assert.include(
-						runsRead?.sql ?? "",
-						"traces.ResourceAttributes['vcs.owner.name'] = 'acme'",
-					)
+					assert.include(runsRead?.sql ?? "", "ci_runs.Pipeline = 'CI'")
+					assert.include(runsRead?.sql ?? "", "ci_runs.Owner = 'acme'")
 					assert.include(runsRead?.sql ?? "", "!= 'skip'")
 					const red = analytics.pipelines[0]?.red
 					assert.strictEqual(red?.failedRuns, 2)
@@ -296,7 +354,7 @@ describe("CiAnalyticsService.listRuns", () => {
 		withService(
 			{
 				ciRuns: [
-					run(3, "failure", END - HOUR, { pullRequest: "42", attempt: "2" }),
+					run(3, "failure", END - HOUR, { pullRequest: 42, attempt: 2 }),
 					run(2, "success", END - 2 * HOUR),
 					run(1, "success", END - 3 * HOUR),
 				],
@@ -337,7 +395,7 @@ describe("CiAnalyticsService.listRuns", () => {
 					assert.notInclude(jobsRead?.sql ?? "", traceId(2))
 
 					// A failed run's jobs are read up to the end of the run, not the window.
-					assert.include(jobsRead?.sql ?? "", `traces.Timestamp <= '${wire(END - HOUR + 61_000)}'`)
+					assert.include(jobsRead?.sql ?? "", `ci_jobs.Timestamp <= '${wire(END - HOUR + 61_000)}'`)
 
 					yield* service.listRuns(tenant, {
 						startTime: END - 24 * HOUR,
@@ -346,7 +404,7 @@ describe("CiAnalyticsService.listRuns", () => {
 						cursor: page.nextCursor ?? undefined,
 					})
 					const lastRead = reads.filter((read) => read.context === "ciRuns").at(-1)
-					assert.include(lastRead?.sql ?? "", `traces.TraceId < '${traceId(2)}'`)
+					assert.include(lastRead?.sql ?? "", `ci_runs.TraceId < '${traceId(2)}'`)
 				}),
 		),
 	)

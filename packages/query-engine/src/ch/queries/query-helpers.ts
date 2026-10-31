@@ -99,6 +99,28 @@ export function apdexExprs(
 // Attribute map projection
 
 /**
+ * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
+ * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
+ * shared `getHttpInfo` / `HttpSpanLabel` render identically across surfaces.
+ */
+export const ROOT_SPAN_ATTR_KEYS = [
+	"http.method",
+	"http.request.method",
+	"http.route",
+	"http.target",
+	"http.status_code",
+	"http.response.status_code",
+	"http.url",
+	"url.full",
+	"url.path",
+	"server.address",
+	"net.peer.name",
+	// Mobile screen spans (`ui.screen` / `screen.load`) carry their only useful
+	// identity here — without it every screen trace renders as the bare span name.
+	"screen.name",
+] as const
+
+/**
  * Build a ClickHouse `map()` literal that extracts only the requested attribute
  * keys from a Map column. Selecting the full `SpanAttributes` / `ResourceAttributes`
  * map for every row materializes large per-row JSON — projecting just the keys
@@ -182,6 +204,21 @@ export function inclusionValues(
  */
 export function utcHourFloor(name: string): CH.Expr<DateTime.Utc> {
 	return CH.toStartOfHour(CH.toDateTime(utcSecondsParam(name)))
+}
+
+/**
+ * A time param rounded up to its hour, the exclusive end of an hourly-rollup read: a window
+ * ending on the hour stops there instead of pulling in the hour it ends at.
+ */
+export function utcHourCeil(name: string): CH.Expr<DateTime.Utc> {
+	return CH.toStartOfHour(
+		CH.compileTypedFnCall(
+			"addSeconds",
+			T.dateTime.schema,
+			CH.toDateTime(utcSecondsParam(name)),
+			CH.lit(3599),
+		),
+	)
 }
 
 /**

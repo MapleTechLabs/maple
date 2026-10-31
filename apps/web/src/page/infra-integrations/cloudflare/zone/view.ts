@@ -1,4 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
@@ -10,12 +9,13 @@ import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { skeleton } from "../../../../ui/skeleton"
+import { statusDot } from "../../../../ui/status-dot"
 import * as Tooltip from "../../../../ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink, emptyActions } from "../../../kit/signal-empty-state"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import type { ZoneDetail } from "../data"
 import { ingestEmpty, ingestPhaseOf } from "../ingest"
@@ -59,7 +59,9 @@ const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", "--severity-fatal", "-
 /** The lab's frame: no time controls and no filter chips. */
 export type ZonePageOptions = Readonly<{ isTimed?: boolean; hasFilters?: boolean }>
 
-const header = (h: H, model: Model, hasFilters: boolean): Html => {
+type HeaderParts = Readonly<{ title: Html; actions: ReadonlyArray<Html>; body: Html }>
+
+const header = (h: H, model: Model, hasFilters: boolean): HeaderParts => {
 	const tabs = tabsOf(model)
 	const tab = model.search.tab ?? "traffic"
 	const severity = severityOf(model)
@@ -77,28 +79,11 @@ const header = (h: H, model: Model, hasFilters: boolean): Html => {
 					]
 				: [heroChip(h, ["account ", account.name])]
 	const chips = filterChips(h, model, filters)
-	return pageHero(h, {
+	const hero = pageHeroParts(h, {
 		title: h.span(
 			[h.Class("flex items-center gap-3")],
-			[
-				...(severity === null
-					? []
-					: [h.span([h.AriaHidden(true), h.Class(cn("size-2 shrink-0 rounded-full", severity))])]),
-				model.zoneName,
-			],
+			[...(severity === null ? [] : [statusDot(h, { tone: severity, size: "lg" })]), model.zoneName],
 		),
-		actions:
-			tabs.length > 1
-				? [
-						segmentedSelect(h, {
-							size: "xs",
-							ariaLabel: "Zone view",
-							options: tabs,
-							value: tabs.some((t) => t.value === tab) ? tab : "traffic",
-							onChange: (next) => Message.ClickedTab({ tab: next }),
-						}),
-					]
-				: undefined,
 		meta: [
 			heroChip(h, "zone"),
 			...accountChip,
@@ -106,6 +91,19 @@ const header = (h: H, model: Model, hasFilters: boolean): Html => {
 			...(hasFilters ? [filterPopover(h, model, filters)] : []),
 		],
 	})
+	const actions =
+		tabs.length > 1
+			? [
+					segmentedSelect(h, {
+						size: "xs",
+						ariaLabel: "Zone view",
+						options: tabs,
+						value: tabs.some((t) => t.value === tab) ? tab : "traffic",
+						onChange: (next) => Message.ClickedTab({ tab: next }),
+					}),
+				]
+			: []
+	return { title: hero.title, actions, body: hero.body }
 }
 
 const zoneEmpty = (h: H): Html =>
@@ -244,24 +242,36 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 					className: "max-w-[32ch]",
 					toView: ({ trigger, portal }) => {
 						const body = section(h, model, ctx, (id) => trigger(id))
+						const hero = header(h, model, options.hasFilters !== false)
+						const timeControls =
+							options.isTimed === false
+								? []
+								: [
+										pageTime(h, {
+											search: model.search,
+											defaultPreset: DEFAULT_PRESET,
+											window: model.window,
+											picker: model.timePicker,
+											toPickerMessage: (message) =>
+												Message.GotTimePickerMessage({ message }),
+											onReset: Message.ClickedResetTimeRange(),
+											onReload: Message.ClickedReload(),
+											isReloading: model.isReloading,
+										}),
+									]
+						const headerActions = [...hero.actions, ...timeControls]
 						return dashboardPage(
 							h,
 							{
-								scrollClassName: "gap-6",
+								gap: "lg",
+								titleContent: hero.title,
 								actions:
-									options.isTimed === false
+									headerActions.length === 0
 										? undefined
-										: pageTime(h, {
-												search: model.search,
-												defaultPreset: DEFAULT_PRESET,
-												window: model.window,
-												picker: model.timePicker,
-												toPickerMessage: (message) =>
-													Message.GotTimePickerMessage({ message }),
-												onReset: Message.ClickedResetTimeRange(),
-												onReload: Message.ClickedReload(),
-												isReloading: model.isReloading,
-											}),
+										: h.div(
+												[h.Class("flex flex-wrap items-center gap-2")],
+												headerActions,
+											),
 								rightPanel: zoneRail(h, model, {
 									serviceName: serviceNameOf(model),
 									accountName: account?.name ?? null,
@@ -271,14 +281,14 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 								}),
 							},
 							[
-								header(h, model, options.hasFilters !== false),
+								hero.body,
 								...(account === null || account.zoneError === null || account.zoneError === ""
 									? []
 									: [
 											h.div(
 												[
 													h.Class(
-														"rounded-md bg-severity-error/10 px-3 py-2 text-xs text-foreground",
+														"rounded-md bg-severity-error-a2 px-3 py-2 text-xs text-foreground",
 													),
 												],
 												[

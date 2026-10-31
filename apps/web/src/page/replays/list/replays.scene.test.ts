@@ -116,7 +116,7 @@ describe("replays list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([FetchFirstPage.name, FetchFacets.name])
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchFirstPage.name, FetchFacets.name]))
 	})
 
 	test("a first page for a superseded window is dropped", () => {

@@ -59,6 +59,24 @@ describe("log detail sheet", () => {
 		)
 	})
 
+	test("a megabyte JSON body on an ERROR log builds only previews until expanded, then caps both", () => {
+		const body = JSON.stringify(
+			Object.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`key${i}`, { status: 500 }])),
+		)
+		const huge = open(init("log-detail"), { ...log, severityText: "ERROR", body }, scope).model
+		scene(
+			program,
+			given(huge),
+			...mounted,
+			expectView(text(/"key0"/)).toExist(),
+			expectView(text(/"key19999"/)).not.toExist(),
+			click(role("button", { name: /Show full message/ })),
+			click(role("button", { name: "Show more" })),
+			expectView(text(/"key19999"/)).not.toExist(),
+			expectView(text(/Showing the first .* Copy it to get all of it\./)).toExist(),
+		)
+	})
+
 	test("Close emits Closed", () => {
 		const closed = update(opened(), Message.GotDialogMessage({ message: Dialog.Message.ClickedClose() }))
 		expect(closed.outMessage).toEqual(OutMessage.Closed())

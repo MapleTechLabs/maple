@@ -101,7 +101,7 @@ function StatusBadge({
 	statusCode: string
 }) {
 	const { platform, cacheInfo, httpInfo } = desc
-	const base = "shrink-0 rounded px-1.5 py-0.5 text-3xs font-semibold"
+	const base = "shrink-0 rounded-sm px-1.5 py-0.5 text-3xs font-semibold"
 
 	if (platform?.outcome?.bad) {
 		return (
@@ -125,7 +125,7 @@ function StatusBadge({
 				className={cn(
 					base,
 					"font-mono",
-					code >= 200 && code < 300 && "bg-severity-info/15 text-severity-info",
+					code >= 200 && code < 300 && "bg-severity-info-a2 text-severity-info",
 					code >= 300 && code < 400 && "bg-chart-p50/15 text-chart-p50",
 					tone !== "neutral" && TONE_SOFT[tone],
 					code < 200 && "text-muted-foreground",
@@ -136,10 +136,10 @@ function StatusBadge({
 		)
 	}
 	if (isError) {
-		return <span className={cn(base, "bg-severity-error/15 text-severity-error")}>Error</span>
+		return <span className={cn(base, "bg-severity-error-a2 text-severity-error")}>Error</span>
 	}
 	if (statusCode === "Ok") {
-		return <span className={cn(base, "bg-severity-info/15 text-severity-info")}>OK</span>
+		return <span className={cn(base, "bg-severity-info-a2 text-severity-info")}>OK</span>
 	}
 	return null
 }
@@ -162,17 +162,21 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 				/>
 				<div
 					className={cn(
-						"relative w-[280px] rounded-lg border-2 border-dashed border-muted-foreground/30 bg-card/50",
-						"flex flex-col gap-1 px-3 py-2 transition-all duration-200",
+						"relative w-[280px] rounded-lg border-2 border-dashed border-foreground-faint bg-card/50",
+						"flex flex-col gap-1 px-3 py-2",
 						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
 					)}
 				>
 					<div className="flex items-center gap-1.5 min-w-0 text-2xs">
 						<span className="font-semibold text-muted-foreground">Missing span</span>
 						<span className="flex-1" />
-						<TruncatedId value={span.spanId} kind="span" className="text-muted-foreground/60 truncate" />
+						<TruncatedId
+							value={span.spanId}
+							kind="span"
+							className="text-foreground-subtle truncate"
+						/>
 					</div>
-					<div className="text-3xs italic text-muted-foreground/50">Not ingested or dropped</div>
+					<div className="text-3xs italic text-foreground-faint">Not ingested or dropped</div>
 				</div>
 				<Handle
 					type="source"
@@ -220,16 +224,16 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 
 			<div
 				className={cn(
-					"relative w-[280px] rounded-lg border bg-card shadow-sm transition-all duration-200 hover:shadow-md",
-					isError && "border-severity-error/30 bg-severity-error/5 shadow-severity-error/10",
-					isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-md",
+					"relative w-[280px] rounded-lg border bg-card shadow-raised hover:shadow-popup active:shadow-popup",
+					isError && "border-severity-error-a3 bg-severity-error-a1 shadow-severity-error/10",
+					isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-popup",
 					// Combined groups render as a card stack
 					isCombined &&
 						"before:absolute before:inset-0 before:-z-10 before:translate-x-1.5 before:translate-y-1.5 before:rounded-lg before:border before:bg-card",
 				)}
 			>
 				{isCombined && (
-					<span className="absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-3xs font-semibold tabular-nums text-muted-foreground shadow-sm">
+					<span className="absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-3xs font-semibold tabular-nums text-muted-foreground shadow-raised">
 						×{count}
 					</span>
 				)}
@@ -240,7 +244,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						className={cn(
 							"flex size-6 shrink-0 items-center justify-center rounded-md",
 							isError
-								? "bg-severity-error/15 text-severity-error"
+								? "bg-severity-error-a2 text-severity-error"
 								: cn(category.accent.soft, category.accent.text),
 						)}
 					>
@@ -264,7 +268,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						<div className="flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground">
 							<ServiceDot serviceName={span.serviceName} className="size-1.5" />
 							<span className="truncate">{span.serviceName}</span>
-							<span className="shrink-0 text-muted-foreground/50">·</span>
+							<span className="shrink-0 text-foreground-faint">·</span>
 							<span className="shrink-0">{category.label}</span>
 							<span className="flex-1" />
 							<span className="shrink-0 tabular-nums" title={tooltip}>
@@ -275,7 +279,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 				</div>
 
 				{/* Cost rail: span duration as share of the trace */}
-				<div className="absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-muted/40">
+				<div className="absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-lg-inset bg-surface-sunken">
 					<div
 						className={cn("h-full", isError ? "bg-severity-error" : category.accent.rail)}
 						style={{ width: `${costFraction * 100}%` }}

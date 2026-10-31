@@ -96,7 +96,7 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 						? []
 						: [
 								h.span(
-									[h.Class("hidden max-w-[360px] truncate text-muted-foreground text-xs md:inline")],
+									[h.Class("hidden max-w-90 truncate text-muted-foreground text-xs md:inline")],
 									["per ", summary],
 								),
 							]),

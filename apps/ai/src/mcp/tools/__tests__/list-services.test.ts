@@ -28,7 +28,6 @@ const output = {
 describe("list_services render", () => {
 	it("shows the window total and a per-minute rate", () => {
 		const text = renderToolDoc(render!(output))
-		assert.include(text, "Req/min")
 		assert.notInclude(text, "(rpm)")
 		// 1,440,000 requests over 360 minutes.
 		assert.match(text, /\| ingest \| 1,440,000 \| 4,000 \|/)

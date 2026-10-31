@@ -87,15 +87,29 @@ export const correlationStrips = (
 			h.Style(LINKED_CURSOR_STYLE),
 			h.OnMount(MountLinkedCursor()),
 		],
-		strips.map((strip, index) =>
-			h.div(
+		strips.map((strip, index) => {
+			const { spec, info } = InfraMetricChart.infraMetricModel({
+				rows: strip.rows,
+				unit: strip.unit,
+				seriesLabel: strip.label,
+				showThreshold: strip.threshold,
+				xDomain,
+				seriesColors: strip.colors,
+				theme: ctx.theme,
+				timeZone: ctx.timeZone,
+				gradientPrefix: `gcp-strip-${strip.id}`,
+			})
+			return h.div(
 				[h.Class(cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t"))],
 				[
 					h.div(
-						[h.Class("flex w-[140px] shrink-0 flex-col gap-0.5")],
+						[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
 						[
-							h.span([h.Class("text-xs font-medium text-foreground")], [strip.label]),
-							h.span([h.Class("font-mono text-3xs text-muted-foreground")], [strip.source]),
+							h.span(
+								[h.Class("font-prose text-xs font-medium text-foreground")],
+								[strip.label],
+							),
+							h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
 							h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
 						],
 					),
@@ -103,25 +117,29 @@ export const correlationStrips = (
 						[h.Class("min-w-0 flex-1")],
 						[
 							chart(h, model, `gcp-strip-${strip.id}`, {
-								spec: InfraMetricChart.infraMetricSpec({
-									rows: strip.rows,
-									unit: strip.unit,
-									seriesLabel: strip.label,
-									showThreshold: strip.threshold,
-									xDomain,
-									seriesColors: strip.colors,
-									theme: ctx.theme,
-									timeZone: ctx.timeZone,
-									gradientPrefix: `gcp-strip-${strip.id}`,
-								}),
+								spec,
 								linkedChartId: `lens-gcp-${strip.id}`,
 								height: STRIP_HEIGHT,
 							}),
+							// More than one line on a strip needs a key; one line is named by the label.
+							...(info.series.length > 1
+								? [
+										seriesLegend(h, {
+											swatch: "line",
+											className: "pt-1",
+											items: info.series.map((name) => ({
+												key: name,
+												label: info.labelFor(name),
+												color: info.colors.get(name),
+											})),
+										}),
+									]
+								: []),
 						],
 					),
 				],
-			),
-		),
+			)
+		}),
 	)
 }
 
@@ -156,7 +174,7 @@ export const workloadCharts = (
 			const explore = h.a(
 				[
 					h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
-					h.Class("text-muted-foreground/60 transition-colors hover:text-foreground"),
+					h.Class("text-foreground-subtle hover:text-foreground active:text-foreground"),
 					h.Href(
 						hrefOf(
 							AppRoute.Metric({

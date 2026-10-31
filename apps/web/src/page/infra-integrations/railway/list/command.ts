@@ -1,10 +1,6 @@
-import { RailwayConnectRequest } from "@maple/domain/http"
-import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { IntegrationStatuses } from "../../../../data/integration-statuses"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
-import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import { loadRailwayServices, loadRailwayStatus } from "../data"
 import { Message, RequestMode } from "./message"
 
@@ -49,31 +45,4 @@ export const CompleteReloadSpin = Command.define("CompleteRailwayReloadSpin", {
 	args: { version: Schema.Number },
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
-
-/** `integrations.railwayConnect`; a success revalidates the shared status (`reactivityKeys`). */
-export const ConnectRailway = Command.define("ConnectRailway", {
-	args: { token: Schema.String },
-	messages: [Message.SucceededConnect, Message.FailedConnect],
-	execute: ({ token }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const status = yield* client.integrations.railwayConnect({
-				payload: new RailwayConnectRequest({ token }),
-			})
-			const statuses = yield* IntegrationStatuses
-			const refreshed = yield* Effect.orElseSucceed(statuses.railway({ refresh: true }), () => status)
-			return Message.SucceededConnect({ status: refreshed })
-		}).pipe(
-			Effect.catch((error) => {
-				const presentation = displayError(error)
-				return Effect.succeed(
-					Message.FailedConnect({
-						error: isUnexpectedError(presentation)
-							? "Failed to connect Railway."
-							: presentation.message,
-					}),
-				)
-			}),
-		),
 })

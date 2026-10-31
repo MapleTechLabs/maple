@@ -178,7 +178,7 @@ const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURICom
  * `HttpClient`. As with `AutumnClient`, every returned effect is `R = never`.
  */
 export class StripeClient extends Context.Service<StripeClient, StripeClientApi>()(
-	"@maple/api/services/billing/StripeClient",
+	"@maple/backend/services/billing/StripeClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

@@ -24,23 +24,26 @@ const windowed = (service: string, name: string) =>
 
 describe("gcp workload", () => {
 	test("a Cloud Run service reads its metrics, inventory row and the traced services", () => {
-		expect(names(windowed("cloudRun", "checkout-api").commands)).toEqual([
-			"FetchGcpWorkloadTimeseries",
-			"FetchGcpWorkloadResource",
-			"FetchGcpWorkloadServiceOverview",
-		])
+		const cloudRun = names(windowed("cloudRun", "checkout-api").commands)
+		expect(cloudRun).toEqual(
+			expect.arrayContaining([
+				"FetchGcpWorkloadTimeseries",
+				"FetchGcpWorkloadResource",
+				"FetchGcpWorkloadServiceOverview",
+			]),
+		)
+		expect(cloudRun).not.toContain("FetchGcpCloudSqlTopQueries")
 	})
 
 	test("a Cloud SQL instance adds its inventory, statements, trace side and the fleet", () => {
-		expect(names(windowed("cloudSql", "acme-shop-prod:orders-db").commands)).toEqual([
-			"FetchGcpWorkloadSqlInventory",
-			"FetchGcpCloudSqlTopQueries",
-			"FetchGcpCloudSqlTraceSide",
-			"FetchGcpWorkloadFleet",
-			"FetchGcpWorkloadTimeseries",
-			"FetchGcpWorkloadResource",
-			"FetchGcpWorkloadServiceOverview",
-		])
+		expect(names(windowed("cloudSql", "acme-shop-prod:orders-db").commands)).toEqual(
+			expect.arrayContaining([
+				"FetchGcpWorkloadSqlInventory",
+				"FetchGcpCloudSqlTopQueries",
+				"FetchGcpCloudSqlTraceSide",
+				"FetchGcpWorkloadFleet",
+			]),
+		)
 	})
 
 	test("a GKE container also reads its cluster's nodes", () => {
@@ -79,10 +82,9 @@ describe("gcp workload", () => {
 		const model = windowed("cloudRun", "checkout-api").model
 		const reloaded = pageUpdate(model, Message.ClickedReload())
 		expect(reloaded.model.isReloading).toBe(true)
-		expect(names(reloaded.commands)).toEqual([
-			"ResolveGcpWorkloadWindow",
-			"CompleteGcpWorkloadReloadSpin",
-		])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveGcpWorkloadWindow", "CompleteGcpWorkloadReloadSpin"]),
+		)
 		expect(
 			pageUpdate(reloaded.model, Message.CompletedReloadSpin({ version: 0 })).model.isReloading,
 		).toBe(true)

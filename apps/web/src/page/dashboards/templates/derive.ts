@@ -1,7 +1,6 @@
 import type { V2DashboardTemplate, V2DashboardTemplatePreview } from "@maple/domain/http/v2"
 import { ALL_VALUE, type ResolvedVariable, type VariableValues } from "@maple/query-engine"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import type { IconName } from "../../../ui/icon"
 import type { MetricSeen } from "./model"
 
@@ -45,13 +44,6 @@ export const templateMatches = (template: V2DashboardTemplate, query: string): b
 		template.description.toLowerCase().includes(needle) ||
 		template.tags.some((tag) => tag.toLowerCase().includes(needle))
 	)
-}
-
-/** "12s ago", or `null` when the timestamp is unusable. */
-export const relativeAge = (iso: string | null, now: number): string | null => {
-	if (iso === null) return null
-	const epochMs = toEpochMs(iso)
-	return Number.isFinite(epochMs) ? formatRelativeFrom(epochMs, now) : null
 }
 
 /** Where a gated template sends you to fix the gap (`setupDestination`). */

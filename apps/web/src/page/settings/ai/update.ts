@@ -236,7 +236,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isSavingKey: false },
-					outMessage: toast("error", "Failed to save the key", error.message),
+					outMessage: toast("error", "Couldn't save the key", error.message),
 				}),
 			}),
 		ClickedRemoveKey: () => liftRemoveDialog(model, Dialog.open(model.removeDialog)),
@@ -252,7 +252,7 @@ export const update = (model: Model, message: Message): Return =>
 					commands: [...(closed.commands ?? []), FetchOpenRouterKey()],
 					outMessage: toast("success", "Switched to Maple managed"),
 				}),
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to remove the key", error.message) }),
+				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Couldn't remove the key", error.message) }),
 			})
 		},
 		ClickedAddOn: () => (model.isAttachingAddOn ? { model } : liftAddOnDialog(model, Dialog.open(model.addOnDialog))),
@@ -275,7 +275,7 @@ export const update = (model: Model, message: Message): Return =>
 									toast: { type: "success", title: "Add-on added", description: "" },
 								}),
 							},
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to add the add-on", error.message) }),
+				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Couldn't add the add-on", error.message) }),
 			})
 		},
 		CompletedOpenAddOnCheckout: () => ({ model }),
@@ -299,7 +299,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isToggling: false },
-					outMessage: toast("error", "Failed to update auto-triage settings", error.message),
+					outMessage: toast("error", "Couldn't update auto-triage settings", error.message),
 				}),
 			}),
 		ChangedLimit: ({ field, value }) => ({
@@ -328,7 +328,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isSavingLimits: false },
-					outMessage: toast("error", "Failed to update auto-triage settings", error.message),
+					outMessage: toast("error", "Couldn't update auto-triage settings", error.message),
 				}),
 			}),
 	})

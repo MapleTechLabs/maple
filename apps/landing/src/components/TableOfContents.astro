@@ -11,20 +11,24 @@ interface Props {
     spy?: boolean;
     // Off inside a disclosure whose summary already names the list.
     showLabel?: boolean;
+    // Long reference pages: with `spy`, show h3s only under the section being read.
+    collapse?: boolean;
     class?: string;
 }
 
-const { headings, label = "On this page", maxDepth = 3, spy = true, showLabel = true, class: className } = Astro.props;
-const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
+const { headings, label = "On this page", maxDepth = 3, spy = true, showLabel = true, collapse = false, class: className } = Astro.props;
+const items = headings
+    .filter((h) => h.depth >= 2 && h.depth <= maxDepth)
+    .map((h, i, all) => ({ ...h, section: all.slice(0, i + 1).findLast((x) => x.depth === 2)?.slug ?? "" }));
 ---
 
 {items.length > 0 && (
-    <nav aria-label={label} data-toc-spy={spy ? "" : undefined} class={className}>
+    <nav aria-label={label} data-toc-spy={spy ? "" : undefined} data-toc-collapse={spy && collapse ? "" : undefined} class={className}>
         {showLabel && <p class="mb-3 text-[12px] font-medium text-fg">{label}</p>}
         <ul class="toc-list relative m-0 list-none border-l border-border p-0">
             {spy && <span class="toc-indicator" aria-hidden="true"></span>}
             {items.map((h) => (
-                <li>
+                <li data-toc-section={h.section} class:list={[h.depth === 3 && "toc-sub"]}>
                     <a
                         href={`#${h.slug}`}
                         data-toc-link
@@ -42,6 +46,10 @@ const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
 )}
 
 <style>
+    [data-toc-collapse][data-toc-ready] .toc-sub:not(.is-open) {
+        display: none;
+    }
+
     .toc-link[aria-current="true"] {
         color: var(--foreground);
     }
@@ -82,6 +90,9 @@ const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
             return el ? [{ link, el }] : [];
         });
         const OFFSET = 6 * 16 + 24; // fixed header + breathing room
+        const collapse = nav.hasAttribute("data-toc-collapse");
+        const subs = [...list.querySelectorAll<HTMLElement>("li.toc-sub")];
+        if (collapse) nav.setAttribute("data-toc-ready", "");
 
         let current: HTMLAnchorElement | null = null;
         let ticking = false;
@@ -106,6 +117,10 @@ const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
                 }
             }
             if (next === current) return;
+            if (collapse) {
+                const section = next?.parentElement?.dataset.tocSection;
+                for (const li of subs) li.classList.toggle("is-open", li.dataset.tocSection === section);
+            }
             current?.removeAttribute("aria-current");
             next?.setAttribute("aria-current", "true");
             current = next;

@@ -14,7 +14,14 @@ import * as Popover from "../ui/popover"
 
 export const POPOVER_ID = "shell-connect"
 
-export const CopyField = Schema.Literals(["endpoint", "publicKey", "privateKey", "skill", "mcp"])
+export const CopyField = Schema.Literals([
+	"endpoint",
+	"publicKey",
+	"privateKey",
+	"skill",
+	"mcp",
+	"mcpCommand",
+])
 export type CopyField = typeof CopyField.Type
 
 /** `retainedQueryV2("ingestKeys", "retrieve")`: both keys from one admin-only read. */
@@ -38,6 +45,8 @@ export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
 	/** An overview read is out: a poll waits for it, so a slow answer still lands. */
 	isOverviewInFlight: Schema.Boolean,
+	/** The last overview read failed: the pill says the status is unknown until one succeeds. */
+	isOverviewFailed: Schema.Boolean,
 	/** The overview read sent last, across openings; only its answer counts. */
 	overviewRequest: Schema.Number,
 	copies: Schema.Struct({
@@ -46,6 +55,7 @@ export const Model = Schema.Struct({
 		privateKey: CopyButton.Model,
 		skill: CopyButton.Model,
 		mcp: CopyButton.Model,
+		mcpCommand: CopyButton.Model,
 	}),
 	/** `CopyableField masked`: each key's reveal toggle, reset when the panel unmounts. */
 	isPublicKeyVisible: Schema.Boolean,
@@ -59,6 +69,7 @@ const initCopies = (): Model["copies"] => ({
 	privateKey: CopyButton.init(),
 	skill: CopyButton.init(),
 	mcp: CopyButton.init(),
+	mcpCommand: CopyButton.init(),
 })
 
 export const init = (): Model => ({
@@ -68,6 +79,7 @@ export const init = (): Model => ({
 	services: [],
 	window: null,
 	isOverviewInFlight: false,
+	isOverviewFailed: false,
 	overviewRequest: 0,
 	copies: initCopies(),
 	isPublicKeyVisible: false,
@@ -79,7 +91,11 @@ export const Message = defineMessageUnion({
 	SucceededLoadKeys: { orgId: Schema.String, publicKey: Schema.String, privateKey: Schema.String },
 	FailedLoadKeys: { orgId: Schema.String },
 	ResolvedWindow: { orgId: Schema.String, window: TimeWindow },
-	SucceededLoadOverview: { orgId: Schema.String, request: Schema.Number, services: Schema.Array(ServiceRow) },
+	SucceededLoadOverview: {
+		orgId: Schema.String,
+		request: Schema.Number,
+		services: Schema.Array(ServiceRow),
+	},
 	FailedLoadOverview: { orgId: Schema.String, request: Schema.Number },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the panel is open and the tab shown. */
 	TickedPoll: {},
@@ -175,7 +191,16 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	// The retained keys answer a reopen in the same org; a failure or another org reads again.
 	const keys: Keys = isSameOrg ? model.keys : { _tag: "Loading" }
 	return {
-		model: { ...model, popover: next.model, orgId, keys, services: [], window: null, isOverviewInFlight: false },
+		model: {
+			...model,
+			popover: next.model,
+			orgId,
+			keys,
+			services: [],
+			window: null,
+			isOverviewInFlight: false,
+			isOverviewFailed: false,
+		},
 		commands: [
 			...commands,
 			...(keys._tag === "Ready" ? [] : [FetchKeys({ orgId })]),
@@ -210,7 +235,12 @@ export const update = (model: Model, message: Message, context: Context): Update
 		ResolvedWindow: ({ orgId, window }) =>
 			model.orgId === orgId && model.popover.isOpen
 				? {
-						model: { ...model, window, isOverviewInFlight: true, overviewRequest: model.overviewRequest + 1 },
+						model: {
+							...model,
+							window,
+							isOverviewInFlight: true,
+							overviewRequest: model.overviewRequest + 1,
+						},
 						commands: [
 							FetchOverview({
 								orgId,
@@ -223,11 +253,13 @@ export const update = (model: Model, message: Message, context: Context): Update
 				: { model },
 		SucceededLoadOverview: ({ orgId, request, services }) =>
 			isCurrent(model, orgId, request)
-				? { model: { ...model, services, isOverviewInFlight: false } }
+				? { model: { ...model, services, isOverviewInFlight: false, isOverviewFailed: false } }
 				: { model },
 		// One failed poll keeps the services already found, so the pill does not un-detect them.
 		FailedLoadOverview: ({ orgId, request }) =>
-			isCurrent(model, orgId, request) ? { model: { ...model, isOverviewInFlight: false } } : { model },
+			isCurrent(model, orgId, request)
+				? { model: { ...model, isOverviewInFlight: false, isOverviewFailed: true } }
+				: { model },
 		TickedPoll: () =>
 			model.popover.isOpen && model.window !== null && model.orgId !== null && !model.isOverviewInFlight
 				? { model, commands: [ResolveWindow({ orgId: model.orgId })] }
@@ -241,6 +273,12 @@ export const update = (model: Model, message: Message, context: Context): Update
 		}),
 	})
 
+/** Navigation closes the panel: its links lead elsewhere, and an open panel would hide the page. */
+export const close = (model: Model): UpdateReturn =>
+	model.popover.isOpen
+		? popoverStep(model, Popover.Message.ClickedClose(), { orgId: model.orgId, pinnedNamespace: null })
+		: { model }
+
 /** The 15 s poll runs while the panel is open on a resolved window. */
 export const isPolling = (model: Model): boolean => model.popover.isOpen && model.window !== null
 
@@ -249,4 +287,3 @@ export const isPolling = (model: Model): boolean => model.popover.isOpen && mode
 /** The org's own services: the seeded `demo-` ones do not count as a connection. */
 export const realServices = (model: Model): ReadonlyArray<typeof ServiceRow.Type> =>
 	model.services.filter((row) => !row.serviceName.startsWith("demo-"))
-

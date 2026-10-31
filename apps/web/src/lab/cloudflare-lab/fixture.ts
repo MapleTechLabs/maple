@@ -65,6 +65,7 @@ export const listFrame = (multiAccount: boolean): ListFrame => ({
 	accounts: multiAccount ? cloudflareAccounts(DEMO_ACCOUNT_STATUSES, DEMO_NOW) : [],
 	singleAccountName: ACCOUNT_NAME,
 	banner: null,
+	inPlaceViews: true,
 })
 
 /** One account holding maple.dev: the zone page's plain "account" chip and rail name. */
@@ -157,8 +158,12 @@ export const pinWorker = (model: WorkerModel): WorkerModel => ({
 	releases: loaded(MAPLE_API_RELEASES.map((release) => ({ ...release, serviceName: "maple-api" }))),
 })
 
-/** The pages' own UI Commands (charts, popovers, focus), without their warehouse and API reads. */
+/** The pages' own UI Commands (charts, popovers, focus, Reload's spin), without their warehouse and API reads. */
 export const withoutReads = <M>(
 	commands: ReadonlyArray<Command.Command<M, never, Resources>> | undefined,
 ): ReadonlyArray<Command.Command<M, never, Resources>> =>
-	(commands ?? []).filter((command) => !/^(Resolve|Load|Fetch|Complete)Cloudflare/.test(command.name))
+	(commands ?? []).filter(
+		(command) =>
+			command.name.endsWith("ReloadSpin") ||
+			!/^(Resolve|Load|Fetch|Complete)Cloudflare/.test(command.name),
+	)

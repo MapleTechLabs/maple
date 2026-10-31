@@ -32,6 +32,15 @@ export const MAX_BREAKDOWN_RANGE_SECONDS = 60 * 60 * 24 * 30
  */
 export const MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS = 60 * 60 * 24
 
+/**
+ * Most stored spans a breakdown may read from raw `traces`: ~15s at the ~12M spans/s
+ * measured on prod (2026-10-25), against the aggregation profile's 30s limit.
+ */
+export const MAX_RAW_BREAKDOWN_SPANS = 200_000_000
+
+/** At or under this, even the heaviest org (~31M spans/hour) fits the span budget. */
+export const MIN_SPAN_ESTIMATE_RANGE_SECONDS = 60 * 60 * 3
+
 /** Point budget for a single timeseries response. */
 export const MAX_TIMESERIES_POINTS = 1_500
 
@@ -71,6 +80,23 @@ export function maxRangeSecondsForKind(kind: QueryRangeKind): number {
 		case "timeseries":
 			return MAX_QUERY_RANGE_SECONDS
 	}
+}
+
+export type TimeWindowViolation = "empty" | "too_wide"
+
+/**
+ * Why the API refuses a `[startMs, endMs]` window, or `undefined` when it serves
+ * it. Shared so clients that derive a window from a response (a trace's own
+ * bounds) can be property-tested against the rule the server enforces.
+ */
+export function timeWindowViolation(
+	startMs: number,
+	endMs: number,
+	maxSeconds: number,
+): TimeWindowViolation | undefined {
+	if (!(endMs > startMs)) return "empty"
+	if ((endMs - startMs) / 1000 > maxSeconds) return "too_wide"
+	return undefined
 }
 
 const SECONDS_PER_HOUR = 3600

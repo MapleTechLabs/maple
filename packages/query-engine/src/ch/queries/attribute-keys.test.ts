@@ -26,14 +26,18 @@ describe("attributeKeysQuery", () => {
 		const q = attributeKeysQuery({ scope: "span" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM attribute_keys_hourly")
-		expect(sql).toContain("AttributeKey AS attributeKey")
 		expect(sql).toContain("sum(attribute_keys_hourly.UsageCount) AS usageCount")
 		expect(sql).toContain("AttributeScope = 'span'")
 		expect(sql).toContain("GROUP BY attributeKey")
-		expect(sql).toContain("ORDER BY usageCount DESC")
 		expect(sql).toContain("LIMIT 200")
-		expect(sql).toContain("FORMAT JSON")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
+	})
+
+	it("restricts to the requested keys when given", () => {
+		const q = attributeKeysQuery({ scope: "span", keys: ["messaging.destination.name", "user.id"] })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toMatch(/AttributeKey IN \('messaging\.destination\.name', 'user\.id'\)/)
+		expect(sql).toContain("OrgId = 'org_1'")
 	})
 
 	it("interpolates the scope literal for resource", () => {
@@ -64,14 +68,11 @@ describe("spanAttributeValuesQuery", () => {
 		const q = spanAttributeValuesQuery({ attributeKey: "http.method" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM attribute_values_hourly")
-		expect(sql).toContain("AttributeValue AS attributeValue")
 		expect(sql).toContain("sum(attribute_values_hourly.UsageCount) AS usageCount")
 		expect(sql).toContain("AttributeScope = 'span'")
 		expect(sql).toContain("AttributeKey = 'http.method'")
 		expect(sql).toContain("GROUP BY attributeValue")
-		expect(sql).toContain("ORDER BY usageCount DESC")
 		expect(sql).toContain("LIMIT 50")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("applies custom limit", () => {
@@ -88,11 +89,9 @@ describe("resourceAttributeValuesQuery", () => {
 		const q = resourceAttributeValuesQuery({ attributeKey: "host.name" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM attribute_values_hourly")
-		expect(sql).toContain("AttributeValue AS attributeValue")
 		expect(sql).toContain("AttributeScope = 'resource'")
 		expect(sql).toContain("AttributeKey = 'host.name'")
 		expect(sql).toContain("GROUP BY attributeValue")
-		expect(sql).toContain("ORDER BY usageCount DESC")
 	})
 })
 
@@ -103,7 +102,6 @@ describe("logAttributeValuesQuery", () => {
 		const q = logAttributeValuesQuery({ attributeKey: "user.id" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM attribute_values_hourly")
-		expect(sql).toContain("AttributeValue AS attributeValue")
 		expect(sql).toContain("AttributeScope = 'log'")
 		expect(sql).toContain("AttributeKey = 'user.id'")
 		expect(sql).toContain("LIMIT 50")
@@ -136,7 +134,6 @@ describe("metricScopedAttributeKeysQuery", () => {
 		expect(sql).toContain("MetricName = 'http.server.duration'")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("GROUP BY attributeKey")
-		expect(sql).toContain("ORDER BY usageCount DESC")
 		expect(sql).toContain("LIMIT 200")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
@@ -169,11 +166,9 @@ describe("metricScopedAttributeValuesQuery", () => {
 		})
 		const { sql } = compileUnsafe(q, scopedParams)
 		expect(sql).toContain("FROM metrics_sum")
-		expect(sql).toContain("Attributes['deployment.environment'] AS attributeValue")
 		expect(sql).toContain("MetricName = 'http.server.duration'")
 		expect(sql).toContain("Attributes['deployment.environment'] != ''")
 		expect(sql).toContain("GROUP BY attributeValue")
-		expect(sql).toContain("ORDER BY usageCount DESC")
 		expect(sql).toContain("LIMIT 50")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
@@ -187,6 +182,7 @@ describe("metricScopedAttributeValuesQuery", () => {
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_gauge")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- scope picks the map column; the negated Attributes check pairs with it
 		expect(sql).toContain("ResourceAttributes['cloud.account.id'] AS attributeValue")
 		expect(sql).toContain(
 			"MetricName IN ('gcp.cloud_run.container.instance.count', 'gcp.cloud_sql.cpu.utilization')",
@@ -194,6 +190,42 @@ describe("metricScopedAttributeValuesQuery", () => {
 		expect(sql).not.toMatch(/\bAttributes\['/)
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
+})
+
+// The pickers cap their rows, so the usage order decides which keys survive the LIMIT.
+describe("attribute pickers rank by usage", () => {
+	const pickers: ReadonlyArray<readonly [string, () => string]> = [
+		["attributeKeysQuery", () => compileUnsafe(attributeKeysQuery({ scope: "span" }), baseParams).sql],
+		[
+			"spanAttributeValuesQuery",
+			() => compileUnsafe(spanAttributeValuesQuery({ attributeKey: "http.method" }), baseParams).sql,
+		],
+		[
+			"resourceAttributeValuesQuery",
+			() => compileUnsafe(resourceAttributeValuesQuery({ attributeKey: "host.name" }), baseParams).sql,
+		],
+		[
+			"metricScopedAttributeKeysQuery",
+			() => compileUnsafe(metricScopedAttributeKeysQuery({ metricType: "gauge" }), scopedParams).sql,
+		],
+		[
+			"metricScopedAttributeValuesQuery",
+			() =>
+				compileUnsafe(
+					metricScopedAttributeValuesQuery({
+						metricType: "sum",
+						attributeKey: "deployment.environment",
+					}),
+					scopedParams,
+				).sql,
+		],
+	]
+	for (const [name, compile] of pickers) {
+		it(name, () => {
+			const sql = compile()
+			expect(sql).toContain("ORDER BY usageCount DESC")
+		})
+	}
 })
 
 describe("serviceScopedAttributeKeysQuery", () => {
@@ -221,6 +253,6 @@ describe("serviceScopedAttributeValuesQuery", () => {
 		const q = serviceScopedAttributeValuesQuery({ scope: "span", attributeKey: "http.route" })
 		const { sql } = compileUnsafe(q, { ...baseParams, serviceName: "api" })
 		expect(sql).toContain("ServiceName = 'api'")
-		expect(sql).toContain("['http.route']")
+		expect(sql).toContain("'http.route'")
 	})
 })

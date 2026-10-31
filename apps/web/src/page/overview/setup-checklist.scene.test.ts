@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "../../charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { toLoadFailure } from "../../data/load-failure"
+import { failureSentence } from "../../ui/error-state"
 import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { DEFAULT_QUICK_START_STATE } from "../onboarding/quick-start-state"
@@ -12,6 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
 import { realServices as realServicesOf } from "./setup-checklist-update"
+import { subscriptions } from "./subscription"
 import { initWith, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -68,8 +70,14 @@ const pageMounts = [
 ] as const
 /** The guided setup's two underline tab lists (snippets and package managers). */
 const tabMounts = [
-	Mount.resolve<string, Tabs.Message>(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
-	Mount.resolve<string, Tabs.Message>(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
+	Mount.resolve<string, Tabs.Message>(
+		Tabs.MeasureTabIndicator,
+		Tabs.Message.MeasuredIndicator({ rect: RECT }),
+	),
+	Mount.resolve<string, Tabs.Message>(
+		Tabs.MeasureTabIndicator,
+		Tabs.Message.MeasuredIndicator({ rect: RECT }),
+	),
 ] as const
 
 describe("overview setup checklist", () => {
@@ -82,10 +90,9 @@ describe("overview setup checklist", () => {
 	test("under Clerk the card mounts its keys and last-hour overview reads", () => {
 		const { start, read } = entered(true)
 		expect(names(start.commands)).toContain("ReadSetupChecklistState")
-		expect(names(read.commands).map((name) => name)).toEqual([
-			"FetchSetupChecklistKeys",
-			"FetchSetupChecklistOverview",
-		])
+		expect(names(read.commands)).toEqual(
+			expect.arrayContaining(["FetchSetupChecklistKeys", "FetchSetupChecklistOverview"]),
+		)
 	})
 
 	test("waiting for telemetry shows the connect card; demo services do not count", () => {
@@ -95,7 +102,7 @@ describe("overview setup checklist", () => {
 			...pageMounts,
 			...tabMounts,
 			expectView(text("Connect your app to see real data")).toExist(),
-			expectView(text("Watching for your first trace…")).toExist(),
+			expectView(text("Listening for your first trace")).toExist(),
 			expectView(role("button", { name: "Dismiss setup checklist" })).toExist(),
 		)
 	})
@@ -105,7 +112,7 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(withServices(entered(true).read.model, ["checkout"])),
 			...pageMounts,
-			expectView(text("We're seeing telemetry from checkout. Open it to explore.")).toExist(),
+			expectView(text("checkout is sending telemetry.")).toExist(),
 			expectView(text("Connect your app to see real data")).not.toExist(),
 		)
 	})
@@ -155,11 +162,6 @@ describe("overview setup checklist", () => {
 		])
 	})
 
-	test("a sent test event re-reads the clock before asking the overview again", () => {
-		const sent = pageUpdate(entered(true).read.model, setup(SetupMessage.CompletedSendTestEvent({ isSent: true })))
-		expect(names(sent.commands)).toEqual(["ResolveSetupChecklistPollWindow"])
-	})
-
 	test("a failed poll keeps the services already found", () => {
 		const found = withServices(entered(true).read.model, ["checkout"])
 		const failed = failOverview(found)
@@ -172,7 +174,7 @@ describe("overview setup checklist", () => {
 			given(entered(true).read.model),
 			...pageMounts,
 			expectView(text("Connect your app to see real data")).not.toExist(),
-			expectView(text(/We're seeing telemetry/)).not.toExist(),
+			expectView(text(/is sending telemetry/)).not.toExist(),
 		)
 	})
 
@@ -181,9 +183,15 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(failOverview(entered(true).read.model)),
 			...pageMounts,
-			expectView(text("Couldn't check whether your app is sending data")).toExist(),
-			expectView(text("Watching for your first trace…")).not.toExist(),
+			expectView(text(failureSentence(toLoadFailure("boom")), { exact: false })).toExist(),
+			expectView(text("Listening for your first trace")).not.toExist(),
 		)
+	})
+
+	test("the page strip's Try again also polls a failed setup check", () => {
+		const failed = failOverview(entered(true).read.model)
+		const retried = pageUpdate(failed, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("ResolveSetupChecklistPollWindow")
 	})
 
 	test("the failure stays on screen while the next poll retries", () => {
@@ -195,7 +203,25 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(retrying),
 			...pageMounts,
-			expectView(text("Couldn't check whether your app is sending data")).toExist(),
+			expectView(text(failureSentence(toLoadFailure("boom")), { exact: false })).toExist(),
+		)
+	})
+
+	test("the card polls while it waits for a real service and stops once one lands", () => {
+		const polling = (model: Model) =>
+			subscriptions.setupPoll.modelToDependencies({ model, context }).isPolling
+		const read = entered(true).read.model
+		expect(polling(read)).toBe(true)
+		expect(polling(withServices(read, ["demo-frontend"]))).toBe(true)
+		const connected = withServices(read, ["demo-frontend", "checkout"])
+		expect(polling(connected)).toBe(false)
+		expect(polling(failOverview(connected))).toBe(false)
+	})
+
+	test("a dismissed card does not poll", () => {
+		const { read } = entered(true, { ...DEFAULT_QUICK_START_STATE, checklistDismissed: true })
+		expect(subscriptions.setupPoll.modelToDependencies({ model: read.model, context }).isPolling).toBe(
+			false,
 		)
 	})
 

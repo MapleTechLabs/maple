@@ -39,7 +39,7 @@ Any OpenTelemetry SDK works, in any language. The contract is a set of attribute
 
 | Attribute                        | Notes                                                                                                                                                                                                                                  |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `maple.product_event.name`       | **Required.** The event name. Names starting with `$` are reserved.                                                                                                                                                                    |
+| `maple.product_event.name`       | **Required.** The event name. Avoid a leading `$`; those names are reserved for Maple's SDKs.                                                                                                                                          |
 | `maple.product_event.user_id`    | The signed-in user, matching what you pass to `identify()` in the browser.                                                                                                                                                             |
 | `maple.product_event.group_id`   | Account, workspace or org id.                                                                                                                                                                                                          |
 | `maple.product_event.visitor_id` | The browser visitor cookie value, when the backend has it.                                                                                                                                                                             |
@@ -89,5 +89,5 @@ Deploy the annotation, trigger the step once, and open the resulting trace in **
 
 If the trace appears but no product event does:
 
-- Check that `maple.product_event.name` is set on a span in the trace, and that its value does not start with `$`.
+- Check that `maple.product_event.name` is set to a non-empty value on a span in the trace.
 - Check that the trace was ingested after the annotation was deployed.

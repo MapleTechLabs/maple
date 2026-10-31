@@ -53,9 +53,16 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 					[h.Class("flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground")],
 					[
 						h.span([
-							h.Class(cn("size-2 shrink-0 rounded-xs", item.dashed === true && "border border-dashed")),
+							h.Class(
+								cn(
+									"size-2 shrink-0 rounded-xs",
+									item.dashed === true && "border border-dashed",
+								),
+							),
 							h.Style(
-								item.dashed === true ? { "border-color": item.color } : { "background-color": item.color },
+								item.dashed === true
+									? { "border-color": item.color }
+									: { "background-color": item.color },
 							),
 						]),
 						h.span([h.Class("truncate")], [item.label]),
@@ -65,7 +72,10 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 			...(overflow > 0
 				? [
 						h.span(
-							[h.Class("shrink-0 text-3xs text-muted-foreground"), h.Title(items.map((i) => i.label).join(", "))],
+							[
+								h.Class("shrink-0 text-3xs text-muted-foreground"),
+								h.Title(items.map((i) => i.label).join(", ")),
+							],
 							[`+${overflow}`],
 						),
 					]
@@ -93,7 +103,7 @@ const grip = <M>(h: HtmlBuilder<M>, title: string): Html =>
 			h.AriaLabel(`Move ${title}`),
 			h.DataAttribute("grid-label", title),
 			h.Class(
-				"widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
+				"widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground active:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
 			),
 			h.AriaDescribedBy(GRID_INSTRUCTIONS_ID),
 		],
@@ -125,7 +135,9 @@ export const widgetShell = <M>(
 								},
 								[options.title],
 							),
-							...(options.timeRangeLabel === undefined ? [] : [timeRangeChip(h, options.timeRangeLabel)]),
+							...(options.timeRangeLabel === undefined
+								? []
+								: [timeRangeChip(h, options.timeRangeLabel)]),
 							...(options.legendItems !== undefined && options.legendItems.length >= 2
 								? [headerLegend(h, options.legendItems)]
 								: []),
@@ -170,7 +182,7 @@ export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
 		h.span([h.Class("font-medium")], ["No data in the selected time range"]),
 		h.span(
-			[h.Class("text-3xs text-muted-foreground/70 max-w-full line-clamp-3")],
+			[h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3")],
 			["Widen the time range or check the query's filters."],
 		),
 	])
@@ -194,7 +206,7 @@ const mutedError = <M>(
 						h.span(
 							[
 								h.Class(
-									"text-3xs text-muted-foreground/70 max-w-full text-center line-clamp-3",
+									"text-3xs text-foreground-subtle max-w-full text-center line-clamp-3",
 								),
 							],
 							[state.message],
@@ -207,7 +219,7 @@ const mutedError = <M>(
 							{
 								variant: "outline",
 								size: "xs",
-								className: "mt-1 h-6 gap-1 text-3xs",
+								className: "mt-1 gap-1 text-3xs",
 								attributes: [h.OnClick(narrowRange)],
 							},
 							[icon(h, "ClockIcon"), NARROW_RANGE_LABEL],
@@ -221,7 +233,7 @@ const mutedError = <M>(
 							{
 								variant: "outline",
 								size: "xs",
-								className: "mt-1 h-6 gap-1 text-3xs",
+								className: "mt-1 gap-1 text-3xs",
 								attributes: [h.OnClick(configure)],
 							},
 							[icon(h, "PencilIcon"), "Edit"],
@@ -231,11 +243,11 @@ const mutedError = <M>(
 		],
 	)
 
-/** The red block, its "Details" popover and (decode errors) "Fix with AI". */
+/** The red block and its "Details" popover. */
 const failedState = <M>(
 	h: HtmlBuilder<M>,
 	state: Extract<WidgetDataState, { _tag: "Error" }>,
-	options: Pick<FrameOptions<M>, "fix" | "errorDetails">,
+	options: Pick<FrameOptions<M>, "errorDetails">,
 ): Html =>
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
@@ -257,23 +269,12 @@ const failedState = <M>(
 							[state.message],
 						),
 					]),
-			...(state.message === null || state.message === "" || options.errorDetails === undefined || options.errorDetails === null
+			...(state.message === null ||
+			state.message === "" ||
+			options.errorDetails === undefined ||
+			options.errorDetails === null
 				? []
 				: [options.errorDetails(state.message)]),
-			...(state.kind === "decode" && options.fix !== undefined && options.fix !== null
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "xs",
-								className: "mt-1 h-6 gap-1 text-3xs",
-								attributes: [h.OnClick(options.fix)],
-							},
-							[icon(h, "ChatBubbleSparkleIcon"), "Fix with AI"],
-						),
-					]
-				: []),
 		],
 	)
 
@@ -282,7 +283,6 @@ export type FrameOptions<M> = ShellOptions &
 		state: WidgetDataState
 		loadingSkeleton: Html
 		configure: M | null
-		fix?: M | null | undefined
 		narrowRange?: M | null | undefined
 		errorDetails?: ((message: string) => Html) | null | undefined
 	}>

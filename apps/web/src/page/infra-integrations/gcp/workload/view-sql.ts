@@ -30,7 +30,7 @@ type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 const SHOWN = 5
-const STATEMENT = "w-0 min-w-[260px] flex-1"
+const STATEMENT = "w-0 min-w-64 flex-1"
 const NUMBER = "text-right font-mono text-xs tabular-nums"
 const SUB = "truncate font-mono text-3xs text-muted-foreground"
 const MANY_ROWS = 10_000
@@ -80,7 +80,7 @@ const statementRow = (
 			...(isPeeked ? [h.AriaCurrent("true")] : []),
 			h.Class(
 				cn(
-					"flex w-full items-center gap-4 border-b border-border/40 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+					"flex w-full cursor-pointer items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
 					rowSelectedClass(isPeeked),
 				),
 			),
@@ -96,26 +96,26 @@ const statementRow = (
 					callers(h, traced),
 				],
 			),
-			h.div([h.Class(cn("w-[64px] text-foreground/80", NUMBER))], [formatNumber(row.calls)]),
+			h.div([h.Class(cn("w-16 text-foreground-soft", NUMBER))], [formatNumber(row.calls)]),
 			h.div(
 				[
 					h.Class(
-						cn("w-[72px]", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)),
+						cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)),
 					),
 				],
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
-				[h.Class(cn("w-[72px]", NUMBER, appP95Tone(db, app)))],
+				[h.Class(cn("w-20", NUMBER, appP95Tone(db, app)))],
 				[app === undefined ? EMPTY_VALUE : formatLatency(app)],
 			),
 			h.div(
 				[
 					h.Class(
 						cn(
-							"hidden w-[64px] md:block",
+							"hidden w-16 md:block",
 							NUMBER,
-							(rowsPerCall ?? 0) >= MANY_ROWS ? TONE_TEXT.warn : "text-foreground/80",
+							(rowsPerCall ?? 0) >= MANY_ROWS ? TONE_TEXT.warn : "text-foreground-soft",
 						),
 					),
 				],
@@ -123,11 +123,11 @@ const statementRow = (
 			),
 			h.div([h.Class(cn("w-[56px]", NUMBER, lockTone(row.lockShare)))], [formatPercent(row.lockShare)]),
 			h.div(
-				[h.Class("hidden w-[112px] items-center gap-2 md:flex")],
+				[h.Class("hidden w-28 items-center gap-2 md:flex")],
 				[
 					meter(h, { value: row.executionShare, tone: "neutral", className: "w-14" }),
 					h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground/80")],
+						[h.Class("font-mono text-2xs tabular-nums text-foreground-soft")],
 						[formatPercent(row.executionShare)],
 					),
 				],
@@ -167,12 +167,12 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 			{ ariaLabel: "Top queries", isWaiting },
 			[
 				head(h, "Statement", STATEMENT),
-				head(h, "Calls", "w-[64px]", "right"),
-				head(h, "DB p95", "w-[72px]", "right"),
-				head(h, "App p95", "w-[72px]", "right"),
-				head(h, "Rows", "w-[64px]", "right", "hidden md:flex"),
+				head(h, "Calls", "w-16", "right"),
+				head(h, "DB p95", "w-20", "right"),
+				head(h, "App p95", "w-20", "right"),
+				head(h, "Rows", "w-16", "right", "hidden md:flex"),
 				head(h, "Lock", "w-[56px]", "right"),
-				head(h, "Total time", "w-[112px]", undefined, "hidden md:flex"),
+				head(h, "Total time", "w-28", undefined, "hidden md:flex"),
 				h.span([h.Class(CHEVRON)], []),
 			],
 			[
@@ -199,7 +199,7 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 										[
 											h.Type("button"),
 											h.OnClick(Message.ClickedShowAllQueries()),
-											h.Class("shrink-0 text-primary hover:text-primary/80"),
+											h.Class("shrink-0 text-primary hover:text-primary/80 active:text-primary/80"),
 										],
 										[inputs.showAll ? "Show fewer" : `Show all ${rows.length}`],
 									),
@@ -256,7 +256,7 @@ export const appWaitCallout = (
 			? `The gap is waiting for a connection: ${instanceName} sat at ${Math.round(peak.open)} of ${peak.max}${idle > 0 ? `, and ${idle} of them were idle in transaction` : ""}. Fix the pool, not the query.`
 			: "The time is spent outside the database: the network, or waiting on the connection pool."
 	return h.div(
-		[h.Class("@container rounded-lg border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -300,7 +300,7 @@ export const appWaitCallout = (
 							h.a(
 								[
 									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
+										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
 									),
 									h.Href(
 										hrefOf(

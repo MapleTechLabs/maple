@@ -318,7 +318,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 )
 
 export class EscalationService extends Context.Service<EscalationService, EscalationServiceApi>()(
-	"@maple/api/services/EscalationService",
+	"@maple/backend/services/EscalationService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(NotificationDispatcher.layer))

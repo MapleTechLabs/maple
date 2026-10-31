@@ -20,17 +20,20 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for the Cloudflare Agents SDK in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-cloudflare-agents -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-cloudflare-agents -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the packages
 
 ```bash
-npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/api @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources @opentelemetry/context-async-hooks
+npm install ai@^7.0.106 @ai-sdk/otel @opentelemetry/api \
+  @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-http \
+  @opentelemetry/resources @opentelemetry/context-async-hooks
 ```
 
 What each package does:
@@ -161,7 +164,7 @@ Give each chat its own instance: on the client, pass a chat id as `name` to `use
 
 To keep a call's prompts and replies out of Maple, set `recordInputs: false` and `recordOutputs: false` in its `telemetry`.
 
-## Check that it works
+## Verify
 
 Run `wrangler dev`, send two messages in one chat that trigger a tool call, then open **Agent Sessions** in Maple. You should see one session named after the agent instance with framework **Vercel AI SDK**, one turn per message, and a transcript with the prompts, replies and tool calls. A second chat should show up as a second session.
 
@@ -173,7 +176,7 @@ Run `wrangler dev`, send two messages in one chat that trigger a tool call, then
 - **A sub-agent shows up as its own session.** The context manager isn't registered. Keep the `setGlobalContextManager` line in `telemetry.ts`.
 - **Every span shows up twice.** `registerTelemetry()` ran twice, for example from two entry points that both set it up.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [Vercel AI SDK guide](/docs/agent-tracing/vercel-ai-sdk)

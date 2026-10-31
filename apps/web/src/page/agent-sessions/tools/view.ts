@@ -273,12 +273,18 @@ const timeActions = (h: H, model: Model): Html =>
 export const toolsBody = (h: H, model: Model, options: BodyOptions): Html =>
 	AsyncData.matchData(model.totals.data, {
 		onEmpty: () => loadingView(h),
+		// The loaded view runs edge to edge; the error sits in the page gutter like the Sessions tab.
 		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Failed to load agent tool analytics",
-				onRetry: Message.ClickedReload(),
-			}),
+			h.div(
+				[h.Class("p-4")],
+				[
+					errorState(h, {
+						failure,
+						title: "Couldn't load agent tool analytics",
+						onRetry: Message.ClickedReload(),
+					}),
+				],
+			),
 		onData: () =>
 			model.themeColors === null || model.chartRuntime._tag === "Loading"
 				? loadingView(h)
@@ -292,6 +298,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Agent Sessions",
 					tabs: agentSessionsTabs(h, {
 						active: "tools",
 						search: model.search,

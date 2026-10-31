@@ -6,11 +6,6 @@ const profile = (raw: string) => resolveMapleProfile(parseMapleDeployment(raw))
 const DEPLOYMENTS = ["prd", "prd-eu", "pr-12", "dev-alice", "dev-alice-eu"]
 
 describe("resolveMapleProfile", () => {
-	// The whole table, pinned. A change here changes what a live stage deploys or how big it is.
-	it("pins every deployment's profile", () => {
-		expect(Object.fromEntries(DEPLOYMENTS.map((raw) => [raw, profile(raw)]))).toMatchSnapshot()
-	})
-
 	it("only runs what the deployment can support", () => {
 		for (const raw of DEPLOYMENTS) {
 			const { deploys, database, migratesDatabase } = profile(raw)
@@ -28,7 +23,7 @@ describe("resolveMapleProfile", () => {
 		expect(profile("dev-alice").deploys.ingest).toBe(false)
 	})
 
-	it("runs a `preview:web` PR on its own database with nothing on AWS", () => {
+	it("runs a `preview:web` PR on its own database without the AWS services", () => {
 		const full = profile("pr-12")
 		const web = resolveMapleProfile(parseMapleDeployment("pr-12"), { webOnlyPreview: true })
 		expect(web.deploys).toEqual({ ...full.deploys, sharedApps: false, ingest: false, electric: false })

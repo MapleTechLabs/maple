@@ -198,6 +198,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				title: "Fix the checkout crash",
 				body: "Fixes the crash.",
 				user: { login: "octocat" },
+				author_association: "CONTRIBUTOR",
 				merged: true,
 				merge_commit_sha: SHA,
 				merged_at: "2026-01-02T03:04:05Z",
@@ -222,6 +223,7 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.merged, true)
 			assert.strictEqual(job.mergeCommitSha, SHA)
 			assert.strictEqual(job.authorLogin, "octocat")
+			assert.strictEqual(job.authorAssociation, "CONTRIBUTOR")
 			assert.strictEqual(job.mergedAtMs, Date.parse("2026-01-02T03:04:05Z"))
 		}).pipe(Effect.provide(providerLayer())),
 	)
@@ -985,6 +987,69 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.lengthOf(yield* mapWorkflow("workflow_job", workflowJobBody("queued")), 0)
 			const requested = { ...JSON.parse(workflowRunBody()), action: "requested" }
 			assert.lengthOf(yield* mapWorkflow("workflow_run", JSON.stringify(requested)), 0)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// Approving a fork's held run re-attempts it with the approver as `triggering_actor`; GitHub
+	// sends `in_progress`, then `completed`, and no pull request number for a fork.
+	const approvedForkRun = (action: string, overrides: Record<string, unknown> = {}) =>
+		JSON.stringify({
+			...JSON.parse(
+				workflowRunBody({
+					conclusion: action === "completed" ? "success" : null,
+					triggering_actor: { login: "maintainer", type: "User" },
+					head_repository: { full_name: "octocat/repo" },
+					pull_requests: [],
+					...overrides,
+				}),
+			),
+			action,
+		})
+
+	it.effect("maps a fork run a maintainer approved to a CI approval", () =>
+		Effect.gen(function* () {
+			const started = yield* mapWorkflow("workflow_run", approvedForkRun("in_progress"))
+			assert.strictEqual(started.length, 1)
+			const job = started[0]!
+			if (job.kind !== "pull-request-ci-approved") return assert.fail(`unexpected ${job.kind}`)
+			assert.strictEqual(job.approverLogin, "maintainer")
+			assert.strictEqual(job.authorLogin, "octocat")
+			assert.strictEqual(job.headRepoFullName, "octocat/repo")
+			assert.strictEqual(job.headBranch, "feat/x")
+			assert.strictEqual(job.headSha, SHA)
+			assert.deepStrictEqual(job.pullRequestNumbers, [])
+
+			const finished = yield* mapWorkflow("workflow_run", approvedForkRun("completed"))
+			assert.deepStrictEqual(
+				finished.map((each) => each.kind),
+				["workflow-run", "pull-request-ci-approved"],
+			)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("finds no approval in a run the author started, a held run, or a bot's re-run", () =>
+		Effect.gen(function* () {
+			const kinds = (body: string) =>
+				mapWorkflow("workflow_run", body).pipe(Effect.map((jobs) => jobs.map((job) => job.kind)))
+			assert.deepStrictEqual(
+				yield* kinds(
+					approvedForkRun("in_progress", { triggering_actor: { login: "OctoCat", type: "User" } }),
+				),
+				[],
+			)
+			assert.deepStrictEqual(
+				yield* kinds(approvedForkRun("completed", { conclusion: "action_required" })),
+				["workflow-run"],
+			)
+			assert.deepStrictEqual(
+				yield* kinds(
+					approvedForkRun("in_progress", {
+						triggering_actor: { login: "renovate[bot]", type: "Bot" },
+					}),
+				),
+				[],
+			)
+			assert.deepStrictEqual(yield* kinds(approvedForkRun("in_progress", { event: "push" })), [])
 		}).pipe(Effect.provide(providerLayer())),
 	)
 

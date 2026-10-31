@@ -47,7 +47,7 @@ import {
 	buildScrapeAuthHeaders,
 	TokenCredentialsSchema,
 } from "@maple/backend/services/auth/scrape-auth"
-import { describeHttpClientError, guard, validateExternalUrl } from "@maple/safe-fetch"
+import { describeHttpClientError, guard, readTextPrefix, validateExternalUrl } from "@maple/safe-fetch"
 import { countSamples, parsePrometheusText } from "@maple/prometheus-otlp"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
@@ -56,6 +56,10 @@ import {
 	planetScaleBearerHeader,
 	type PlanetScaleAccessTokenError,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import {
+	SupabaseOAuthService,
+	type SupabaseAccessTokenError,
+} from "@maple/backend/services/auth/SupabaseOAuthService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
 	deleteSourcesOf,
@@ -212,7 +216,10 @@ export interface ScrapeTargetsServiceApi {
 	 */
 	readonly authHeaders: (
 		row: ScrapeTargetCredentials,
-	) => Effect.Effect<Record<string, string>, ScrapeTargetEncryptionError | PlanetScaleAccessTokenError>
+	) => Effect.Effect<
+		Record<string, string>,
+		ScrapeTargetEncryptionError | PlanetScaleAccessTokenError | SupabaseAccessTokenError
+	>
 	readonly recordScrapeResults: (
 		results: ReadonlyArray<{
 			readonly targetId: ScrapeTargetId
@@ -253,8 +260,12 @@ export interface ScrapeTargetsServiceApi {
 		| ScrapeTargetPersistenceError
 		| ScrapeTargetEncryptionError
 		| PlanetScaleAccessTokenError
+		| SupabaseAccessTokenError
 	>
 }
+
+/** A probe parses at most this much of a target's body; the scraper itself reads up to 32 MiB. */
+const PROBE_MAX_BODY_BYTES = 4 * 1024 * 1024
 
 const toPersistenceError = (error: unknown) =>
 	new ScrapeTargetPersistenceError({
@@ -316,7 +327,11 @@ const validateAuthType = (authType: string | undefined) => {
 
 /** Auth types that store no credentials on the row. */
 const isCredentialLessAuthType = (authType: string): boolean =>
-	authType === "none" || authType === "planetscale_oauth"
+	authType === "none" || authType === "planetscale_oauth" || authType === "supabase_oauth"
+
+/** Supabase targets exist only as rows the Supabase integration provisions. */
+const SUPABASE_MANAGED_ONLY =
+	"Supabase scrape targets are managed by the Supabase integration; connect Supabase to scrape a project"
 
 const validateAuthCredentials = (authType: string, authCredentials: string | null | undefined) => {
 	if (isCredentialLessAuthType(authType)) return Effect.void
@@ -582,7 +597,7 @@ const buildDiscoveryConfig = (
 })
 
 export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, ScrapeTargetsServiceApi>()(
-	"@maple/api/services/ScrapeTargetsService",
+	"@maple/backend/services/ScrapeTargetsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -590,6 +605,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const env = yield* Env
 			const discovery = yield* PlanetScaleDiscoveryService
 			const psOAuth = yield* PlanetScaleOAuthService
+			const supabaseOAuth = yield* SupabaseOAuthService
 			// Scoped per hop, so an unread body (non-2xx, PlanetScale) is cancelled on exit.
 			const probeClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient))
 			const encryptionKey = yield* parseEncryptionKey(
@@ -627,17 +643,21 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				)
 			})
 
-			// Managed PlanetScale targets store no credentials — the org's OAuth grant
+			// Managed PlanetScale and Supabase targets store no credentials: the org's OAuth grant
 			// is resolved (and refreshed) at scrape time. Everything else decrypts the
 			// row's stored credentials.
 			const authHeadersForRow = Effect.fn("ScrapeTargetsService.authHeadersForRow")(function* (
 				row: ScrapeTargetCredentials,
 			) {
-				if (row.authType !== "planetscale_oauth") {
-					return yield* buildScrapeAuthHeaders(row, encryptionKey)
+				if (row.authType === "planetscale_oauth") {
+					const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
+					return { Authorization: planetScaleBearerHeader(accessToken) }
 				}
-				const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
-				return { Authorization: planetScaleBearerHeader(accessToken) }
+				if (row.authType === "supabase_oauth") {
+					const { accessToken } = yield* supabaseOAuth.getValidAccessToken(row.orgId)
+					return { Authorization: `Bearer ${accessToken}` }
+				}
+				return yield* buildScrapeAuthHeaders(row, encryptionKey)
 			})
 
 			const list = Effect.fn("ScrapeTargetsService.list")(function* (orgId: OrgId) {
@@ -671,6 +691,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const targetType = request.targetType ?? "prometheus"
+				if (targetType === "supabase" || request.authType === "supabase_oauth") {
+					return yield* new ScrapeTargetValidationError({ message: SUPABASE_MANAGED_ONLY })
+				}
 
 				let url: string
 				let discoveryConfigJson: {
@@ -877,6 +900,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				const existing = yield* requireTarget(orgId, targetId)
 				yield* rejectManaged(existing, options, "edit")
+				if (existing.targetType === "supabase" || request.authType === "supabase_oauth") {
+					return yield* new ScrapeTargetValidationError({ message: SUPABASE_MANAGED_ONLY })
+				}
 				const isPlanetScale = existing.targetType === "planetscale"
 
 				if (isPlanetScale && request.url !== undefined) {
@@ -1137,7 +1163,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 									.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
 									.where(($) => [
 										$.enabled.eq(true),
-										interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
+										interval === undefined
+											? undefined
+											: $.scrapeIntervalSeconds.eq(interval),
 									]),
 							),
 							// A paused source is not scraped. Paused sources are few, so they are read whole.
@@ -1164,7 +1192,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			 */
 			const reportSources = Effect.fnUntraced(function* (
 				db: MapleDb,
-				batchTargets: ReadonlyArray<{ readonly id: ScrapeTargetId; readonly sourceId: SourceId | null }>,
+				batchTargets: ReadonlyArray<{
+					readonly id: ScrapeTargetId
+					readonly sourceId: SourceId | null
+				}>,
 			) {
 				const [first, ...rest] = Arr.dedupe(
 					batchTargets.flatMap((target) => (target.sourceId === null ? [] : [target.sourceId])),
@@ -1398,12 +1429,16 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							// A PlanetScale row's url is its discovery endpoint (JSON); anything else
 							// must parse the way the scraper will, so an HTML 200 doesn't pass.
 							if (row.targetType === "planetscale") return Effect.void
-							return response.text.pipe(
+							return readTextPrefix(response, PROBE_MAX_BODY_BYTES).pipe(
 								Effect.mapError(
 									() =>
 										new ScrapeTargetUpstreamError({
 											message: "Failed to read response body",
 										}),
+								),
+								// A cut body ends mid-line; judge the complete lines before it.
+								Effect.map(({ text, truncated }) =>
+									truncated ? text.slice(0, text.lastIndexOf("\n") + 1) : text,
 								),
 								Effect.flatMap((body) =>
 									countSamples(parsePrometheusText(body).families) > 0
@@ -1488,6 +1523,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(PlanetScaleOAuthService.layer, PlanetScaleDiscoveryService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				PlanetScaleOAuthService.layer,
+				PlanetScaleDiscoveryService.layer,
+				SupabaseOAuthService.layer,
+			),
+		),
 	)
 }

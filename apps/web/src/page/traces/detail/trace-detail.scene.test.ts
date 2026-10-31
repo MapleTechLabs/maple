@@ -1,6 +1,7 @@
 import { OrgId, SpanId, TraceId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "../../../ui/dialog"
 import { MountDialog } from "../../../ui/dialog"
@@ -70,16 +71,14 @@ const loaded = (search = {}) => {
 
 describe("trace detail", () => {
 	test("entry reads the clock and asks for the span hierarchy", () => {
-		expect(names(entered().commands)).toEqual([
-			"ReadTraceDetailClock",
-			"ReadTraceListQuery",
-			"FetchSpanHierarchy",
-		])
+		expect(names(entered().commands)).toEqual(
+			expect.arrayContaining(["ReadTraceDetailClock", "ReadTraceListQuery", "FetchSpanHierarchy"]),
+		)
 	})
 
 	test("an id that is not a trace id renders not found without a request", () => {
 		const invalid = init({ traceId: "  ", search: {} }, context)
-		expect(names(invalid.commands)).toEqual(["ReadTraceDetailClock", "ReadTraceListQuery"])
+		expect(names(invalid.commands)).not.toContain("FetchSpanHierarchy")
 		scene(
 			{ update: pageUpdate, view },
 			given(invalid.model),
@@ -197,5 +196,13 @@ describe("trace detail", () => {
 			Message.GotSpanSheetMessage({ message: Dialog.Message.PressedEscape() }),
 		)
 		expect(urlOf(dismissed)).toBe(`/traces/${TRACE}`)
+	})
+})
+
+describe("trace detail lazy views", () => {
+	test("an unchanged trace reuses its anatomy, callout and flow layers", () => {
+		const flow = loaded({ view: "flow" }).model
+		expect(flow.flow).not.toBeNull()
+		Lazy.expectAllReused({ view, model: flow })
 	})
 })

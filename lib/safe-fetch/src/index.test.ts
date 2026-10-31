@@ -75,6 +75,32 @@ describe("parseExternalUrl", () => {
 		"http://224.0.0.1/",
 		"http://239.255.255.250/",
 		"http://240.0.0.1/",
+		// Container task metadata (169.254.170.2) sits in the link-local range.
+		"http://169.254.170.2/v2/credentials/",
+		"http://[fd00:ec2::254]/",
+		"http://[fd00::1]/",
+		"http://[ff02::1]/",
+		// IPv4-compatible, SIIT, NAT64 local-use and Teredo forms.
+		"http://[::127.0.0.1]/",
+		"http://[::7f00:1]/",
+		"http://[::8.8.8.8]/",
+		"http://[::ffff:0:127.0.0.1]/",
+		"http://[::ffff:0:a9fe:a9fe]/",
+		"http://[64:ff9b:1::7f00:1]/",
+		"http://[64:ff9b:1::8.8.8.8]/",
+		"http://[2001:0:4136:e378:8000:63bf:80ff:fffe]/",
+		"http://[0:0:0:0:0:ffff:7f00:1]/",
+		// Names that only resolve on a private network.
+		"http://db.internal/",
+		"http://ip-10-0-0-1.ec2.internal/",
+		"http://printer.local/",
+		"http://app.localhost/",
+		"http://nas.lan/",
+		"http://router.home.arpa/",
+		"http://api.default.svc.cluster.local/",
+		"http://api.default.svc/",
+		"http://DB.Internal./",
+		"http://internal/",
 	])("rejects private/loopback host: %s", (raw) => {
 		expect(rejects(raw)).toBe(true)
 	})
@@ -99,7 +125,13 @@ describe("parseExternalUrl", () => {
 		"http://198.20.0.1/",
 		"http://223.255.255.255/",
 		"http://[2001:db8::1]/",
-		"http://[2002::1]/",
+		"http://[2002:808:808::1]/",
+		"http://[64:ff9b::808:808]/",
+		"http://[::ffff:8.8.8.8]/",
+		"http://[2606:4700::1111]/",
+		"https://internal.example.com/hook",
+		"https://local.example.com/hook",
+		"https://svc.example.com/hook",
 		// Hostnames that merely start like a blocked range. The IPv4 patterns are
 		// prefix matches, so they are only applied to actual address literals.
 		"https://10.example.com/hook",
@@ -372,6 +404,136 @@ describe("guard", () => {
 			const exit = yield* Fiber.join(fiber)
 			assert.isTrue(Exit.isFailure(exit))
 			assert.isTrue(aborted)
+		}),
+	)
+})
+
+interface SeenHop {
+	readonly url: string
+	readonly method: string | undefined
+	readonly body: string
+	readonly apiKey: string | null
+}
+
+/** Records each hop and answers the first with `status` to `location`, the rest with 200. */
+const redirectOnce = (status: number, location: string) => {
+	const seen: Array<SeenHop> = []
+	const fakeFetch: typeof fetch = async (input, init) => {
+		seen.push({
+			url: urlOf(input),
+			method: init?.method,
+			body: String(init?.body ?? ""),
+			apiKey: new Headers(init?.headers).get("x-api-key"),
+		})
+		return seen.length === 1
+			? new Response(null, { status, headers: { location } })
+			: new Response("ok", { status: 200 })
+	}
+	return { seen, fakeFetch }
+}
+
+const postThroughStrictGuard = (fakeFetch: typeof fetch) =>
+	Effect.flatMap(HttpClient.HttpClient, (client) =>
+		guard(client, { strictRedirects: true }).post("https://api.example.com/x", {
+			headers: { "X-Api-Key": "probe-secret" },
+			body: HttpBody.text("payload"),
+		}),
+	).pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fakeFetch))
+
+const hopsOf = (seen: ReadonlyArray<SeenHop>) =>
+	seen.map((hop) => [hop.url, hop.method, hop.body, hop.apiKey])
+
+describe("guard with strictRedirects", () => {
+	it.effect("drops every configured header and the body on a cross-origin 302", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(302, "https://elsewhere.example/landing")
+			const response = yield* postThroughStrictGuard(fakeFetch)
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(hopsOf(seen), [
+				["https://api.example.com/x", "POST", "payload", "probe-secret"],
+				["https://elsewhere.example/landing", "GET", "", null],
+			])
+		}),
+	)
+
+	it.effect("keeps the caller's own headers across origins while dropping the rest", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ readonly trace: string | null; readonly apiKey: string | null }> = []
+			const fakeFetch: typeof fetch = async (_input, init) => {
+				const headers = new Headers(init?.headers)
+				seen.push({ trace: headers.get("traceparent"), apiKey: headers.get("x-api-key") })
+				return seen.length === 1
+					? new Response(null, {
+							status: 302,
+							headers: { location: "https://elsewhere.example/y" },
+						})
+					: new Response("ok", { status: 200 })
+			}
+			yield* Effect.flatMap(HttpClient.HttpClient, (client) =>
+				guard(client, { strictRedirects: true, ownHeaders: ["Traceparent"] }).get(
+					"https://api.example.com/x",
+					{ headers: { "X-Api-Key": "probe-secret", traceparent: "00-a-b-01" } },
+				),
+			).pipe(
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+			assert.deepStrictEqual(seen, [
+				{ trace: "00-a-b-01", apiKey: "probe-secret" },
+				{ trace: "00-a-b-01", apiKey: null },
+			])
+		}),
+	)
+
+	it.effect("replays a cross-origin 307 as a body-less GET without headers", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "https://elsewhere.example/y")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], ["https://elsewhere.example/y", "GET", "", null])
+		}),
+	)
+
+	it.effect("keeps method, body and headers on a same-origin 307", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "/y")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://api.example.com/y",
+				"POST",
+				"payload",
+				"probe-secret",
+			])
+		}),
+	)
+
+	it.effect("turns a same-origin 303 into a GET that keeps the headers", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(303, "/status")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://api.example.com/status",
+				"GET",
+				"",
+				"probe-secret",
+			])
+		}),
+	)
+
+	it.effect("without the option, forwards non-credential headers cross-origin as before", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "https://elsewhere.example/y")
+			yield* run(fakeFetch, (client) =>
+				client.post("https://api.example.com/x", {
+					headers: { "X-Api-Key": "probe-secret" },
+					body: HttpBody.text("payload"),
+				}),
+			)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://elsewhere.example/y",
+				"POST",
+				"payload",
+				"probe-secret",
+			])
 		}),
 	)
 })

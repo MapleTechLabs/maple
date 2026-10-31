@@ -46,6 +46,8 @@ export interface MapleProfile {
 		readonly collector: boolean
 		/** Self-hosted Electric. Needs a declared database to replicate from, so not on dev. */
 		readonly electric: boolean
+		/** The Prometheus scraper on Fargate, in ingest's VPC. One per instance that scrapes. */
+		readonly scraper: boolean
 		/** The agents' repository sandbox. Dev would pull the multi-gigabyte image. */
 		readonly sandbox: boolean
 		/** Session-replay payloads as R2 objects instead of inline. Flipping this is the rollback lever. */
@@ -58,14 +60,17 @@ export interface MapleProfile {
 		readonly desiredCount: number
 		/** `undefined` keeps a fixed count. */
 		readonly scaling: IngestScaling | undefined
-		/** Graviton with local NVMe for the WAL; the 48 GiB WAL cap must fit the smallest disk. */
-		readonly instanceType: "c7gd.large" | "c7gd.medium"
+		/** Graviton. The c7gd types keep the WAL on local NVMe; a t4g on its root volume (`WAL_STORAGE`). */
+		readonly instanceType: "c7gd.large" | "c7gd.medium" | "t4g.small"
 		/** One task per host: claims the host's vCPU and most of its memory. Change with `instanceType`. */
 		readonly taskSize: TaskSize
 		/** 1 GiB everywhere: the collector config's `memory_limiter` is sized for it. */
 		readonly collectorTaskSize: TaskSize
 		/** Head-sampling of the gateway's own traces, or `undefined` for the default 1.0. */
 		readonly selfTraceSampleRatio: string | undefined
+	}
+	readonly scraper: {
+		readonly taskSize: TaskSize
 	}
 	readonly electric: {
 		readonly taskSize: TaskSize
@@ -91,19 +96,23 @@ const US_PRD: MapleProfile = {
 		ingest: true,
 		collector: true,
 		electric: true,
+		scraper: true,
 		sandbox: true,
 		replayBlobs: true,
 		awsSecurityBaseline: "account",
 	},
 	ingest: {
 		desiredCount: 2,
+		// Two hosts for AZ redundancy; scaling absorbs bursts. On c7gd.large the tasks
+		// peaked at 25% CPU and 6% memory (Oct 2026).
 		scaling: scaling(2, 6),
-		instanceType: "c7gd.large",
-		taskSize: { cpu: 2048, memory: 3072 },
+		instanceType: "c7gd.medium",
+		taskSize: { cpu: 1024, memory: 1536 },
 		collectorTaskSize: { cpu: 512, memory: 1024 },
 		selfTraceSampleRatio: "0.05",
 	},
 	electric: { taskSize: { cpu: 512, memory: 1024 }, dbPoolSize: undefined },
+	scraper: { taskSize: { cpu: 512, memory: 1024 } },
 }
 
 /**
@@ -125,12 +134,12 @@ const EU_PRD: MapleProfile = {
 	electric: { taskSize: { cpu: 512, memory: 1024 }, dbPoolSize: 4 },
 }
 
-/** Non-prd sizing; a preview or dev stage never bursts. */
+/** Non-prd sizing; a preview or dev stage never bursts, so a burstable host with a small WAL. */
 const SMALL_INGEST: MapleProfile["ingest"] = {
 	desiredCount: 1,
 	scaling: undefined,
-	instanceType: "c7gd.large",
-	taskSize: { cpu: 2048, memory: 3072 },
+	instanceType: "t4g.small",
+	taskSize: { cpu: 1024, memory: 1536 },
 	collectorTaskSize: { cpu: 256, memory: 1024 },
 	selfTraceSampleRatio: undefined,
 }
@@ -144,15 +153,18 @@ const PR: MapleProfile = {
 		ingest: true,
 		collector: false,
 		electric: true,
+		// A preview's scrape targets are tested with a local scraper (`bun dev scraper`).
+		scraper: false,
 		sandbox: false,
 		replayBlobs: false,
 		awsSecurityBaseline: "none",
 	},
 	ingest: SMALL_INGEST,
 	electric: { taskSize: { cpu: 256, memory: 512 }, dbPoolSize: undefined },
+	scraper: { taskSize: { cpu: 256, memory: 512 } },
 }
 
-/** `preview:web` PRs: the Workers on their own Neon and Tinybird branches, nothing on AWS. */
+/** `preview:web` PRs: the Workers on their own Neon and Tinybird branches; on AWS, only an IAM user. */
 const PR_WEB: MapleProfile = {
 	...PR,
 	deploys: { ...PR.deploys, sharedApps: false, ingest: false, electric: false },

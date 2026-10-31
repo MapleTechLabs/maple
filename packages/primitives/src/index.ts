@@ -104,6 +104,19 @@ export type ScrapeTargetId = Schema.Schema.Type<typeof ScrapeTargetId>
 export const GcpConnectorId = MapleUuidId("@maple/GcpConnectorId", "GCP Connector ID")
 export type GcpConnectorId = Schema.Schema.Type<typeof GcpConnectorId>
 
+export const SupabaseConnectionId = MapleUuidId("@maple/SupabaseConnectionId", "Supabase Connection ID")
+export type SupabaseConnectionId = Schema.Schema.Type<typeof SupabaseConnectionId>
+
+export const SupabaseProjectId = MapleUuidId("@maple/SupabaseProjectId", "Supabase Project ID")
+export type SupabaseProjectId = Schema.Schema.Type<typeof SupabaseProjectId>
+
+/** Supabase's own project identifier: 20 lowercase letters per the Management API spec. */
+export const SupabaseProjectRef = Schema.String.check(Schema.isPattern(/^[a-z]{20}$/u)).pipe(
+	Schema.brand("@maple/SupabaseProjectRef"),
+	Schema.annotate({ identifier: "@maple/SupabaseProjectRef", title: "Supabase Project Ref" }),
+)
+export type SupabaseProjectRef = Schema.Schema.Type<typeof SupabaseProjectRef>
+
 // Google's project id rules. The id is interpolated into a shell script, so nothing looser.
 export const GcpProjectId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u)).pipe(
 	Schema.brand("@maple/GcpProjectId"),
@@ -117,6 +130,47 @@ export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,
 	Schema.annotate({ identifier: "@maple/GcpResourceNumber", title: "Google Cloud Resource Number" }),
 )
 export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
+
+export const AwsConnectionId = MapleUuidId("@maple/AwsConnectionId", "AWS Connection ID")
+export type AwsConnectionId = Schema.Schema.Type<typeof AwsConnectionId>
+
+// Twelve digits, as AWS prints it. It is interpolated into role ARNs and setup scripts.
+export const AwsAccountId = Schema.String.check(Schema.isPattern(/^[0-9]{12}$/u)).pipe(
+	Schema.brand("@maple/AwsAccountId"),
+	Schema.annotate({ identifier: "@maple/AwsAccountId", title: "AWS Account ID" }),
+)
+export type AwsAccountId = Schema.Schema.Type<typeof AwsAccountId>
+
+/**
+ * What an AWS connection lets Maple read. Each module is its own managed policy on the role, so
+ * turning one on is a stack update, not a reconnect.
+ */
+export const AWS_MODULES = ["observability", "inventory", "security", "cost"] as const
+export const AwsModule = Schema.Literals(AWS_MODULES)
+export type AwsModule = Schema.Schema.Type<typeof AwsModule>
+
+/** A commercial or GovCloud AWS region code, like `us-east-1` or `us-gov-west-1`. */
+export const AwsRegion = Schema.String.check(Schema.isPattern(/^[a-z]{2}(-gov)?-[a-z]+-[0-9]$/u)).pipe(
+	Schema.brand("@maple/AwsRegion"),
+	Schema.annotate({ identifier: "@maple/AwsRegion", title: "AWS Region" }),
+)
+export type AwsRegion = Schema.Schema.Type<typeof AwsRegion>
+
+/** CloudWatch namespaces a connection's metric stream may send. */
+export const AWS_METRIC_NAMESPACES = [
+	"AWS/ECS",
+	"ECS/ContainerInsights",
+	"AWS/ApplicationELB",
+	"AWS/NetworkELB",
+	"AWS/RDS",
+	"AWS/Lambda",
+	"AWS/SQS",
+	"AWS/EC2",
+	"AWS/DynamoDB",
+	"AWS/ApiGateway",
+] as const
+export const AwsMetricNamespace = Schema.Literals(AWS_METRIC_NAMESPACES)
+export type AwsMetricNamespace = Schema.Schema.Type<typeof AwsMetricNamespace>
 
 /** What a Google Cloud connector covers: one project, or everything under a folder or organization. */
 export const GcpScopeType = Schema.Literals(["project", "folder", "organization"])
@@ -148,6 +202,10 @@ export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 /** One MCP OAuth grant: the refresh-token family a connected client rotates through. */
 export const McpConnectionId = MapleUuidId("@maple/McpConnectionId", "MCP Connection ID")
 export type McpConnectionId = Schema.Schema.Type<typeof McpConnectionId>
+
+/** A device-bound (DPoP) credential: one registered public key for one installation and org. */
+export const DeviceCredentialId = MapleUuidId("@maple/DeviceCredentialId", "Device Credential ID")
+export type DeviceCredentialId = Schema.Schema.Type<typeof DeviceCredentialId>
 
 export const AgentFeedbackId = MapleUuidId("@maple/AgentFeedbackId", "Agent Feedback ID")
 export type AgentFeedbackId = Schema.Schema.Type<typeof AgentFeedbackId>
@@ -232,17 +290,113 @@ export const ScrapeAuthType = Schema.Literals([
 	"basic",
 	"token",
 	"planetscale_oauth",
+	"supabase_oauth",
 ]).annotate({
 	identifier: "@maple/ScrapeAuthType",
 	title: "Scrape Auth Type",
 })
 export type ScrapeAuthType = Schema.Schema.Type<typeof ScrapeAuthType>
 
-export const ScrapeTargetType = Schema.Literals(["prometheus", "planetscale"]).annotate({
+export const ScrapeTargetType = Schema.Literals(["prometheus", "planetscale", "supabase"]).annotate({
 	identifier: "@maple/ScrapeTargetType",
 	title: "Scrape Target Type",
 })
 export type ScrapeTargetType = Schema.Schema.Type<typeof ScrapeTargetType>
+
+export const UptimeMonitorId = MapleUuidId("@maple/UptimeMonitorId", "Uptime Monitor ID")
+export type UptimeMonitorId = Schema.Schema.Type<typeof UptimeMonitorId>
+
+export const UptimeMonitorKind = Schema.Literals(["http", "tcp", "dns", "heartbeat"]).annotate({
+	identifier: "@maple/UptimeMonitorKind",
+	title: "Uptime Monitor Kind",
+})
+export type UptimeMonitorKind = Schema.Schema.Type<typeof UptimeMonitorKind>
+
+/** `pending` until the first result, `paused` while disabled. */
+export const UptimeMonitorStatus = Schema.Literals(["pending", "up", "down", "paused"]).annotate({
+	identifier: "@maple/UptimeMonitorStatus",
+	title: "Uptime Monitor Status",
+})
+export type UptimeMonitorStatus = Schema.Schema.Type<typeof UptimeMonitorStatus>
+
+/** Probe cadence for http/tcp/dns monitors: 30s to 1h. */
+export const UptimeIntervalSeconds = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isGreaterThanOrEqualTo(30),
+	Schema.isLessThanOrEqualTo(3600),
+).pipe(
+	Schema.brand("@maple/UptimeIntervalSeconds"),
+	Schema.annotate({ identifier: "@maple/UptimeIntervalSeconds", title: "Uptime Interval Seconds" }),
+)
+export type UptimeIntervalSeconds = Schema.Schema.Type<typeof UptimeIntervalSeconds>
+
+export const StatusPageId = MapleUuidId("@maple/StatusPageId", "Status Page ID")
+export type StatusPageId = Schema.Schema.Type<typeof StatusPageId>
+
+export const StatusPageComponentId = MapleUuidId("@maple/StatusPageComponentId", "Status Page Component ID")
+export type StatusPageComponentId = Schema.Schema.Type<typeof StatusPageComponentId>
+
+export const StatusPageIncidentId = MapleUuidId("@maple/StatusPageIncidentId", "Status Page Incident ID")
+export type StatusPageIncidentId = Schema.Schema.Type<typeof StatusPageIncidentId>
+
+export const StatusPageIncidentUpdateId = MapleUuidId(
+	"@maple/StatusPageIncidentUpdateId",
+	"Status Page Incident Update ID",
+)
+export type StatusPageIncidentUpdateId = Schema.Schema.Type<typeof StatusPageIncidentUpdateId>
+
+/** What a visitor sees per component, worst last. */
+export const StatusPageComponentStatus = Schema.Literals([
+	"operational",
+	"maintenance",
+	"degraded",
+	"partial_outage",
+	"major_outage",
+]).annotate({ identifier: "@maple/StatusPageComponentStatus", title: "Status Page Component Status" })
+export type StatusPageComponentStatus = Schema.Schema.Type<typeof StatusPageComponentStatus>
+
+export const StatusPageIncidentKind = Schema.Literals(["incident", "maintenance"]).annotate({
+	identifier: "@maple/StatusPageIncidentKind",
+	title: "Status Page Incident Kind",
+})
+export type StatusPageIncidentKind = Schema.Schema.Type<typeof StatusPageIncidentKind>
+
+/** Incidents move investigating → identified → monitoring → resolved; maintenance scheduled → in_progress → completed. */
+export const StatusPageIncidentStatus = Schema.Literals([
+	"investigating",
+	"identified",
+	"monitoring",
+	"resolved",
+	"scheduled",
+	"in_progress",
+	"completed",
+]).annotate({ identifier: "@maple/StatusPageIncidentStatus", title: "Status Page Incident Status" })
+export type StatusPageIncidentStatus = Schema.Schema.Type<typeof StatusPageIncidentStatus>
+
+export const StatusPageIncidentImpact = Schema.Literals(["none", "minor", "major", "critical"]).annotate({
+	identifier: "@maple/StatusPageIncidentImpact",
+	title: "Status Page Incident Impact",
+})
+export type StatusPageIncidentImpact = Schema.Schema.Type<typeof StatusPageIncidentImpact>
+
+/** Whether a linked monitor going down opens a page incident: never, as an unpublished draft, or live. */
+export const StatusPageAutoIncidents = Schema.Literals(["off", "draft", "publish"]).annotate({
+	identifier: "@maple/StatusPageAutoIncidents",
+	title: "Status Page Auto Incidents",
+})
+export type StatusPageAutoIncidents = Schema.Schema.Type<typeof StatusPageAutoIncidents>
+
+export const StatusPageUpdateSource = Schema.Literals([
+	"dashboard",
+	"api",
+	"mcp",
+	"auto",
+	"break_glass",
+]).annotate({
+	identifier: "@maple/StatusPageUpdateSource",
+	title: "Status Page Update Source",
+})
+export type StatusPageUpdateSource = Schema.Schema.Type<typeof StatusPageUpdateSource>
 
 export const IngestAttributeMappingId = MapleUuidId(
 	"@maple/IngestAttributeMappingId",
@@ -261,6 +415,9 @@ export const IngestMappingOperation = Schema.Literals(["move", "copy"]).annotate
 	title: "Ingest Mapping Operation",
 })
 export type IngestMappingOperation = Schema.Schema.Type<typeof IngestMappingOperation>
+
+export const IngestRuleId = MapleUuidId("@maple/IngestRuleId", "Ingest Rule ID")
+export type IngestRuleId = Schema.Schema.Type<typeof IngestRuleId>
 
 export const SourceId = MapleUuidId("@maple/SourceId", "Source ID")
 export type SourceId = Schema.Schema.Type<typeof SourceId>
@@ -292,6 +449,8 @@ export const PULL_SOURCE_PLATFORMS = [
 	"railway",
 	"planetscale",
 	"github",
+	"aws",
+	"supabase",
 ] as const
 
 export const PushSourcePlatform = Schema.Literals(PUSH_SOURCE_PLATFORMS).annotate({

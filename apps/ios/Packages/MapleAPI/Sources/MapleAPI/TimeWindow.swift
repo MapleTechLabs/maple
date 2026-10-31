@@ -77,15 +77,21 @@ public struct ResolvedTimeWindow: Hashable, Sendable {
 	public var startTime: String { Self.format(start) }
 	public var endTime: String { Self.format(end) }
 
-	/// The bucket length that gives this window roughly `targetPoints` buckets,
-	/// snapped up to a whole number of minutes: the server's rollup tiers are
-	/// minute-grain, and a whole number of minutes keeps bucket boundaries
-	/// aligned with the window's minute-snapped end. A sparkline on an hour and
-	/// one on a week then carry the same visual density.
+	/// The web dashboard's bucket for this window (`computeBucketSeconds` in
+	/// `packages/query-engine/src/datetime.ts`): the ladder rung nearest
+	/// `range / targetPoints`, stepped finer to keep at least six buckets.
+	/// Sharing the ladder keeps both clients on the same rollup tier and cache key.
 	public func bucketSeconds(targetPoints: Int) -> Int {
-		let raw = end.timeIntervalSince(start) / Double(max(1, targetPoints))
-		return max(60, Int((raw / 60).rounded(.up)) * 60)
+		let range = max(end.timeIntervalSince(start), 1)
+		let raw = max((range / Double(max(1, targetPoints))).rounded(.up), 1)
+		let nearest = Self.bucketLadder.min { abs(Double($0) - raw) < abs(Double($1) - raw) } ?? 60
+		let coarsest = Int((range / 6).rounded(.down))
+		guard nearest > coarsest else { return nearest }
+		return Self.bucketLadder.last { $0 <= coarsest } ?? Self.bucketLadder[0]
 	}
+
+	/// `AUTO_BUCKET_LADDER`: minute- and hour-grain only, so reads stay on the rollups.
+	static let bucketLadder = [60, 120, 300, 900, 1800, 3600, 14400, 86400]
 
 	/// ISO-8601 with fractional seconds, always UTC.
 	///

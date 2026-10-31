@@ -1,7 +1,7 @@
 import { Effect, Queue, Ref, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { pollTicks, type Presence, whenPresent } from "./poll"
+import { backoffPollTicks, pollTicks, type Presence, whenPresent } from "./poll"
 
 /** A presence the test flips, with the change events it would dispatch. */
 const fakePresence = Effect.gen(function* () {
@@ -95,6 +95,27 @@ describe("pollTicks", () => {
 				expect(yield* Ref.get(ticks)).toBe(1)
 				yield* TestClock.adjust("8 seconds")
 				expect(yield* Ref.get(ticks)).toBe(2)
+			}),
+		))
+})
+
+describe("backoffPollTicks", () => {
+	test("ticks at the fast interval for the first ticks, then at the slow one", () =>
+		run(
+			Effect.gen(function* () {
+				const { presence } = yield* fakePresence
+				const ticks = yield* Ref.make(0)
+				const stream = backoffPollTicks("10 seconds", 3, "1 minute", presence)
+				yield* Effect.forkChild(Stream.runForEach(stream, () => Ref.update(ticks, (n) => n + 1)))
+				yield* Effect.yieldNow
+				yield* TestClock.adjust("30 seconds")
+				expect(yield* Ref.get(ticks)).toBe(3)
+				yield* TestClock.adjust("59 seconds")
+				expect(yield* Ref.get(ticks)).toBe(3)
+				yield* TestClock.adjust("1 second")
+				expect(yield* Ref.get(ticks)).toBe(4)
+				yield* TestClock.adjust("2 minutes")
+				expect(yield* Ref.get(ticks)).toBe(6)
 			}),
 		))
 })

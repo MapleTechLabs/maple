@@ -3,6 +3,8 @@
 // `--debug`. Pure so the rules are testable (bin.ts runs at import time).
 
 import { Predicate } from "effect"
+import { SIGN_IN_REQUIRED } from "../server/remote-auth"
+import { isRemoteHttps } from "./local-address"
 
 export interface FailureReport {
 	/** The failure's `_tag`, recorded as `maple.cli.outcome` on the root span. */
@@ -76,6 +78,26 @@ const NOT_MAPLE_STATUSES: ReadonlySet<number | undefined> = new Set([404, 405, 5
 export const isNotMapleServer = (error: unknown): boolean =>
 	NOT_MAPLE_STATUSES.has(numberField(findInChain(error, "@maple/query-engine/LocalQueryFailed"), "status"))
 
+/** Who refused a local query for want of credentials, and with which status. */
+export interface LocalAccessDenial {
+	readonly by: "maple" | "proxy"
+	readonly status: number
+}
+
+/**
+ * Maple's own 401 names itself in its body. Any other 401, 403 or redirect is
+ * a proxy's, but only in front of an https server on another host: on loopback
+ * nothing sits between the CLI and the server.
+ */
+export const localAccessDenial = (error: unknown, baseUrl: string): LocalAccessDenial | undefined => {
+	const failed = findInChain(error, "@maple/query-engine/LocalQueryFailed")
+	const status = numberField(failed, "status")
+	if (status === undefined) return undefined
+	if (status === 401 && stringField(failed, "detail") === SIGN_IN_REQUIRED) return { by: "maple", status }
+	const refused = status === 401 || status === 403 || (status >= 300 && status < 400)
+	return refused && isRemoteHttps(baseUrl) ? { by: "proxy", status } : undefined
+}
+
 /** First line only: warehouse messages can carry a multi-line ClickHouse trace. */
 const firstLine = (message: string): string => {
 	const line = message.split("\n").find((l) => l.trim() !== "") ?? message
@@ -129,6 +151,7 @@ const EXPECTED_TAGS = new Set([
 	"@maple/cli/UsageError",
 	"@maple/cli/NotFoundError",
 	"@maple/cli/LocalServerUnreachableError",
+	"@maple/cli/LocalServerAccessDeniedError",
 	"@maple/cli/ReadOnlyQueryError",
 	"@maple/cli/ServerStateError",
 	"@maple/cli/CheckpointPreconditionError",

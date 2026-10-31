@@ -55,7 +55,7 @@ const peekSummary = (h: H, model: Model, pod: PodRow): Html => {
 	return AsyncData.matchData(data, {
 		onEmpty: () => skeleton(h, "h-[88px] w-full rounded-md"),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load pod metrics", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, { failure, title: "Couldn't load pod metrics", onRetry: Message.ClickedRetrySummary() }),
 		onData: (summary) =>
 			summary === null || summary === undefined
 				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window."])

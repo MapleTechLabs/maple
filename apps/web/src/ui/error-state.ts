@@ -3,7 +3,13 @@ import { Clock, Effect, Queue, Random, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import type { LoadFailure } from "../data/load-failure"
+import {
+	FAILURE_SENTENCE,
+	failureMessage,
+	isTransientOutage,
+	isWarehouseFailure,
+	type LoadFailure,
+} from "../data/load-failure"
 import {
 	isExhausted,
 	postponed,
@@ -21,19 +27,49 @@ export type ErrorStateOptions<M> = Readonly<{
 	failure: LoadFailure
 	title?: string
 	onRetry?: M
-	variant?: "panel" | "row" | "inline"
+	/** Keep the auto-retry but draw no button: a page-level strip already offers Try again. */
+	hidesRetryButton?: boolean
+	/** Replaces the failure's own message, when it names another subject than this one. */
+	message?: string
+	/** `quiet`: one muted line (the title) under a page-level error that already explains it. */
+	variant?: "panel" | "row" | "inline" | "quiet"
+	/** Overrides the glyph `failureKind` derives from the failure. */
+	kind?: FailureKind
+	/** A sentence after the message, e.g. what the failure leaves untouched. */
+	note?: string
+	/** A way forward that does not need the load, drawn beside Try again. */
+	secondaryAction?: Readonly<{ label: string; onClick: M }>
 	className?: string
 }>
+
+/** What the reader can do about it: wait (`outage`), change the request (`fixable`), or get access. */
+export type FailureKind = "outage" | "fixable" | "access"
+
+export const failureKind = (failure: LoadFailure): FailureKind => {
+	if (
+		failure.type === "permission_error" ||
+		failure.type === "authentication_error" ||
+		failure.recovery === "request_access" ||
+		failure.recovery === "reauthenticate"
+	)
+		return "access"
+	if (
+		failure.recovery === "fix_request" ||
+		(failure.type === "invalid_request_error" && !failure.retryable)
+	)
+		return "fixable"
+	return "outage"
+}
 
 const attr = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
 	Object.entries(entries).map(([name, value]) => h.Attribute(name, value))
 
-/** `DroppedSignalGlyph`: a signal line that cuts out, the break, and a dashed trail. */
-const droppedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
+/** The shared 200x56 box: two faint rails the signal runs between. */
+const glyphFrame = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.svg(
 		attr(h, {
-			width: isCompact ? "64" : "176",
-			height: isCompact ? "18" : "50",
+			width: "176",
+			height: "50",
 			viewBox: "0 0 200 56",
 			fill: "none",
 			"aria-hidden": "true",
@@ -62,38 +98,187 @@ const droppedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 					opacity: "0.5",
 				}),
 			),
-			h.polyline(
-				attr(h, {
-					points: "6,32 20,30 32,33 44,28 56,31 68,27 80,31 92,29 104,33 116,30",
-					fill: "none",
-					class: "stroke-muted-foreground",
-					"stroke-width": "2",
-					"stroke-linecap": "round",
-					"stroke-linejoin": "round",
-					opacity: "0.7",
-				}),
-			),
-			h.line(
-				attr(h, {
-					x1: "130",
-					y1: "30",
-					x2: "194",
-					y2: "30",
-					class: "stroke-destructive",
-					"stroke-width": "1.5",
-					"stroke-dasharray": "3 5",
-					"stroke-linecap": "round",
-					opacity: "0.45",
-				}),
-			),
-			h.circle(attr(h, { cx: "118", cy: "30", r: "5.5", class: "fill-destructive", opacity: "0.35" })),
-			h.circle(attr(h, { cx: "118", cy: "30", r: "2.5", class: "fill-destructive" })),
+			...children,
 		],
 	)
 
-/** `SignalBreakTick`: the inline variant's glyph, a signal stub, a break and a dashed trail. */
-const signalBreakTick = <M>(h: HtmlBuilder<M>): Html =>
-	h.svg(attr(h, { width: "12", height: "12", viewBox: "0 0 12 12", fill: "none", "aria-hidden": "true" }), [
+/** `DroppedSignalGlyph`: a signal line that cuts out, the break, and a dashed trail. */
+const droppedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
+	glyphFrame(h, [
+		h.polyline(
+			attr(h, {
+				points: "6,32 20,30 32,33 44,28 56,31 68,27 80,31 92,29 104,33 116,30",
+				fill: "none",
+				class: "stroke-muted-foreground",
+				"stroke-width": "2",
+				"stroke-linecap": "round",
+				"stroke-linejoin": "round",
+				opacity: "0.7",
+			}),
+		),
+		h.line(
+			attr(h, {
+				x1: "130",
+				y1: "30",
+				x2: "194",
+				y2: "30",
+				class: "stroke-severity-error",
+				"stroke-width": "1.5",
+				"stroke-dasharray": "3 5",
+				"stroke-linecap": "round",
+				opacity: "0.45",
+			}),
+		),
+		h.circle(attr(h, { cx: "118", cy: "30", r: "5.5", class: "fill-severity-error", opacity: "0.35" })),
+		h.circle(attr(h, { cx: "118", cy: "30", r: "2.5", class: "fill-severity-error" })),
+	])
+
+/** `NarrowedSignalGlyph`: scattered lines funnelled into one, the request needs narrowing. */
+const narrowedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
+	glyphFrame(h, [
+		...["17", "22.5", "28", "33.5", "39"].map((y) =>
+			h.line(
+				attr(h, {
+					x1: "6",
+					y1: y,
+					x2: "86",
+					y2: y,
+					class: "stroke-muted-foreground",
+					"stroke-width": "1.5",
+					"stroke-linecap": "round",
+					opacity: "0.35",
+				}),
+			),
+		),
+		h.polyline(
+			attr(h, {
+				points: "92,16 108,28 92,40",
+				fill: "none",
+				class: "stroke-muted-foreground",
+				"stroke-width": "2",
+				"stroke-linecap": "round",
+				"stroke-linejoin": "round",
+				opacity: "0.7",
+			}),
+		),
+		h.line(
+			attr(h, {
+				x1: "124",
+				y1: "28",
+				x2: "194",
+				y2: "28",
+				class: "stroke-muted-foreground",
+				"stroke-width": "2",
+				"stroke-linecap": "round",
+				opacity: "0.7",
+			}),
+		),
+		h.circle(attr(h, { cx: "116", cy: "28", r: "5.5", class: "fill-severity-warn", opacity: "0.35" })),
+		h.circle(attr(h, { cx: "116", cy: "28", r: "2.5", class: "fill-severity-warn" })),
+	])
+
+/** `LockedSignalGlyph`: a signal line that stops at a lock, with no trail past it. */
+const lockedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
+	glyphFrame(h, [
+		h.polyline(
+			attr(h, {
+				points: "6,32 20,30 32,33 44,28 56,31 68,27 80,31",
+				fill: "none",
+				class: "stroke-muted-foreground",
+				"stroke-width": "2",
+				"stroke-linecap": "round",
+				"stroke-linejoin": "round",
+				opacity: "0.7",
+			}),
+		),
+		h.path(
+			attr(h, {
+				d: "M93 25 V21 a7 7 0 0 1 14 0 V25",
+				class: "stroke-muted-foreground",
+				"stroke-width": "2",
+				"stroke-linecap": "round",
+			}),
+		),
+		h.rect(
+			attr(h, {
+				x: "88",
+				y: "25",
+				width: "24",
+				height: "15",
+				rx: "3",
+				class: "stroke-muted-foreground",
+				"stroke-width": "2",
+			}),
+		),
+		h.circle(attr(h, { cx: "100", cy: "32.5", r: "2.25", class: "fill-severity-error" })),
+		h.line(
+			attr(h, {
+				x1: "124",
+				y1: "32",
+				x2: "194",
+				y2: "32",
+				class: "stroke-border",
+				"stroke-width": "1.5",
+				"stroke-dasharray": "3 5",
+				"stroke-linecap": "round",
+			}),
+		),
+	])
+
+const glyphFor = <M>(h: HtmlBuilder<M>, kind: FailureKind): Html =>
+	kind === "access"
+		? lockedSignalGlyph(h)
+		: kind === "fixable"
+			? narrowedSignalGlyph(h)
+			: droppedSignalGlyph(h)
+
+const tickAttributes = <M>(h: HtmlBuilder<M>, size: number) =>
+	attr(h, {
+		width: `${size}`,
+		height: `${size}`,
+		viewBox: "0 0 12 12",
+		fill: "none",
+		"aria-hidden": "true",
+	})
+
+/** The inline and row variants' small marks for `fixable` (a funnel) and `access` (a lock). */
+const funnelTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
+	h.svg(tickAttributes(h, size), [
+		h.path(
+			attr(h, {
+				d: "M1.5 2.5h9L7 6.5v3l-2 1v-4z",
+				stroke: "currentColor",
+				"stroke-width": "1.25",
+				"stroke-linejoin": "round",
+			}),
+		),
+	])
+
+const lockTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
+	h.svg(tickAttributes(h, size), [
+		h.path(attr(h, { d: "M4 5.5V4a2 2 0 0 1 4 0v1.5", stroke: "currentColor", "stroke-width": "1.25" })),
+		h.rect(
+			attr(h, {
+				x: "2.5",
+				y: "5.5",
+				width: "7",
+				height: "5",
+				rx: "1",
+				stroke: "currentColor",
+				"stroke-width": "1.25",
+			}),
+		),
+	])
+
+const INLINE_TINT = {
+	outage: "bg-severity-error-a2 text-severity-error",
+	fixable: "bg-severity-warn-a2 text-severity-warn",
+	access: "bg-muted text-muted-foreground",
+} satisfies Record<FailureKind, string>
+
+/** `SignalBreakTick`: the outage mark, a signal stub, a break and a dashed trail. */
+const signalBreakTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
+	h.svg(tickAttributes(h, size), [
 		h.polyline(
 			attr(h, {
 				points: "1,7 3,6 5,7.5 6.5,6",
@@ -119,6 +304,28 @@ const signalBreakTick = <M>(h: HtmlBuilder<M>): Html =>
 			}),
 		),
 	])
+
+/** The kind's mark on its tint: 12px in a 20px chip inline, 16px in a 28px chip in a row. */
+const kindChip = <M>(h: HtmlBuilder<M>, kind: FailureKind, isRow: boolean): Html =>
+	h.span(
+		[
+			h.Class(
+				cn(
+					"flex shrink-0 items-center justify-center rounded-md",
+					isRow ? "size-7" : "size-5",
+					INLINE_TINT[kind],
+				),
+			),
+			h.AriaHidden(true),
+		],
+		[
+			kind === "access"
+				? lockTick(h, isRow ? 16 : 12)
+				: kind === "fixable"
+					? funnelTick(h, isRow ? 16 : 12)
+					: signalBreakTick(h, isRow ? 16 : 12),
+		],
+	)
 
 const alertRegion = <M>(h: HtmlBuilder<M>) => [h.Role("alert"), h.AriaLive("polite"), h.AriaAtomic(true)]
 
@@ -183,6 +390,28 @@ export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry",
 		),
 })
 
+/** A "retry soon" ending ("Retry in a few seconds.", "Try again or reload.") the retry affordance replaces. */
+const RETRY_SOON_ENDING =
+	/\s*(?:Retry|Try again)(?: in a few seconds| in a moment| shortly| when you're ready| or reload)?(?:, or reload if the problem continues)?\.$/
+
+export { FAILURE_SENTENCE }
+
+/** A failure's one sentence: a failing warehouse, a dropped backend and an unknown error read as their class. */
+export const failureSentence = (failure: LoadFailure): string => {
+	if (failure.code === "unexpected_error") return FAILURE_SENTENCE.unknown
+	if (isTransientOutage(failure))
+		return isWarehouseFailure(failure) ? FAILURE_SENTENCE.warehouse : FAILURE_SENTENCE.backend
+	return failureMessage(failure)
+}
+
+/** An auto-retrying failure's message: its own cause, an optional note, then "Retrying automatically…". */
+export const autoRetryMessage = (message: string, note?: string): string =>
+	[
+		message.replace(RETRY_SOON_ENDING, ""),
+		...(note === undefined ? [] : [note]),
+		"Retrying automatically…",
+	].join(" ")
+
 export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>): Html => {
 	const { failure } = options
 	const heading = options.title ?? failure.title
@@ -201,38 +430,85 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					),
 				]
 			: []
-	const message = autoRetry.length > 0 ? `${failure.message} Retrying automatically…` : failure.message
-	const retry = (variant: "ghost" | "outline", className?: string) =>
-		options.onRetry === undefined || !canRetry
+	const ownMessage = options.message ?? failureSentence(failure)
+	const showsRetryButton = onRetry !== undefined && canRetry && options.hidesRetryButton !== true
+	// An auto-retrying failure always says so, quietly, even beside a Try again button.
+	const message =
+		autoRetry.length > 0
+			? autoRetryMessage(ownMessage, options.note)
+			: [
+					canRetry ? ownMessage.replace(RETRY_SOON_ENDING, "") : ownMessage,
+					...(options.note === undefined ? [] : [options.note]),
+				].join(" ")
+	// `className` styles the Try again button itself; `retry`'s styles the button row.
+	const retryButtons = (variant: "ghost" | "outline", className?: string) =>
+		options.onRetry === undefined || !showsRetryButton
 			? []
 			: [
 					button(h, { size: "sm", variant, className, attributes: [h.OnClick(options.onRetry)] }, [
 						"Try again",
 					]),
 				]
+	const { secondaryAction } = options
+	// Drawn in the row's own variant, so it reads as a peer button beside Try again.
+	const secondary = (variant: "ghost" | "outline") =>
+		secondaryAction === undefined
+			? []
+			: [
+					button(h, { size: "sm", variant, attributes: [h.OnClick(secondaryAction.onClick)] }, [
+						secondaryAction.label,
+					]),
+				]
+	const retry = (variant: "ghost" | "outline", className?: string) => {
+		const buttons = [...retryButtons(variant), ...secondary(variant)]
+		return buttons.length === 0
+			? []
+			: [h.div([h.Class(cn("flex flex-wrap items-center gap-2", className))], buttons)]
+	}
 	const variant = options.variant ?? "panel"
+	const kind = options.kind ?? failureKind(failure)
+	const kindAttribute = h.DataAttribute("failure-kind", kind)
+
+	if (variant === "quiet") {
+		return h.div(
+			[
+				h.Class(cn("flex items-center gap-2", options.className)),
+				h.Role("status"),
+				h.Title(message),
+				kindAttribute,
+				...autoRetry,
+			],
+			[
+				h.p(
+					[h.Class("font-prose text-xs text-muted-foreground")],
+					[heading, h.span([h.Class("sr-only")], [`. ${message}`])],
+				),
+				...retryButtons(
+					"ghost",
+					"h-6 px-2 font-prose text-xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-xs",
+				),
+			],
+		)
+	}
 
 	if (variant === "inline") {
 		return h.div(
-			[h.Class(cn("flex flex-col gap-1.5 py-4", options.className)), ...alertRegion(h), ...autoRetry],
+			[
+				h.Class(cn("flex flex-col gap-1.5 py-4", options.className)),
+				...alertRegion(h),
+				kindAttribute,
+				...autoRetry,
+			],
 			[
 				h.div(
 					[h.Class("flex items-center gap-2")],
 					[
-						h.span(
-							[
-								h.Class(
-									"flex size-5 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive",
-								),
-								h.AriaHidden(true),
-							],
-							[signalBreakTick(h)],
-						),
-						h.p([h.Class("text-xs font-medium text-foreground")], [heading]),
+						kindChip(h, kind, false),
+						h.p([h.Class("font-prose text-xs font-medium text-foreground")], [heading]),
 					],
 				),
-				h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
-				...retry("ghost", "-ml-2 h-6 w-fit px-2 text-xs text-muted-foreground hover:text-foreground"),
+				h.p([h.Class("font-prose text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
+				...retry("outline", "mt-1 w-fit"),
 			],
 		)
 	}
@@ -242,20 +518,21 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			[
 				h.Class(
 					cn(
-						"flex flex-wrap items-center gap-x-4 gap-y-3 rounded-md border border-dashed px-4 py-3.5",
+						"flex flex-wrap items-center gap-x-4 gap-y-3 rounded-md border border-dashed px-4 py-4",
 						options.className,
 					),
 				),
 				...alertRegion(h),
+				kindAttribute,
 				...autoRetry,
 			],
 			[
-				droppedSignalGlyph(h, true),
+				kindChip(h, kind, true),
 				h.div(
 					[h.Class("min-w-0 flex-1 basis-56 space-y-0.5")],
 					[
-						h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-						h.p([h.Class("line-clamp-2 text-xs text-muted-foreground")], [message]),
+						h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
+						h.p([h.Class("font-prose line-clamp-2 text-xs text-muted-foreground")], [message]),
 					],
 				),
 				...retry("outline", "shrink-0"),
@@ -263,24 +540,33 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 		)
 	}
 
+	// Fills a short card, but caps at a compact block at the top of a viewport-tall list area.
 	return h.div(
 		[
 			h.Class(
 				cn(
-					"flex h-full flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
+					"flex h-full max-h-70 flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
 					options.className,
 				),
 			),
 			...alertRegion(h),
+			kindAttribute,
 			...autoRetry,
 		],
 		[
-			h.div([h.Class("rounded-md border bg-card/50 px-3 py-2.5")], [droppedSignalGlyph(h, false)]),
+			h.div([h.Class("rounded-md border bg-card/50 p-3")], [glyphFor(h, kind)]),
 			h.div(
-				[h.Class("max-w-xs space-y-1")],
+				[h.Class("max-w-md space-y-1")],
 				[
-					h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-					h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
+					h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
+					h.p(
+						[
+							h.Class(
+								"font-prose text-ui text-balance whitespace-pre-wrap text-muted-foreground",
+							),
+						],
+						[message],
+					),
 				],
 			),
 			...retry("outline"),

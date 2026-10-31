@@ -95,7 +95,7 @@ const productEventRow = (h: HtmlBuilder<Message>, event: ProductEvent): Html => 
 					h.button(
 						[
 							h.Class(
-								`${rowClassName} hover:bg-muted focus-visible:bg-muted focus-visible:outline-none`,
+								`${rowClassName} hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none`,
 							),
 							h.Type("button"),
 							h.OnClick(Message.ClickedProductEvent({ spanId: event.spanId })),
