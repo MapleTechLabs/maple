@@ -14,6 +14,7 @@ import { AlertsSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import * as StatusPages from "../status-pages/list"
 import { ServiceNamespaces } from "./uptime-groups"
 
 // The `/alerts` hub.
@@ -73,5 +74,7 @@ export const Model = Schema.Struct({
 	deletingMonitorId: Schema.NullOr(UptimeMonitorId),
 	confirmDeleteMonitorId: Schema.NullOr(UptimeMonitorId),
 	deleteMonitorDialog: Dialog.Model,
+	/** Status pages tab: its pages, read only while the tab is open, and the create dialog. */
+	statusPages: StatusPages.Model,
 })
 export type Model = typeof Model.Type

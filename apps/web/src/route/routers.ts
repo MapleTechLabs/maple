@@ -96,6 +96,12 @@ const routers = {
 		slash(segment("ruleId")),
 		Route.mapTo(AppRoute.IngestRule),
 	),
+	AlertsStatusPage: pipe(
+		path("alerts", "status-pages"),
+		slash(segment("pageId")),
+		search(Search.AlertsStatusPageSearch),
+		Route.mapTo(AppRoute.AlertsStatusPage),
+	),
 	Anomaly: pipe(
 		path("anomalies"),
 		slash(schemaSegment("incidentId", AnomalyIncidentId)),
@@ -410,6 +416,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.AlertsUptimeMonitor,
 		routers.IngestRuleNew,
 		routers.IngestRule,
+		routers.AlertsStatusPage,
 		routers.DashboardsTemplates,
 		routers.SourcesNew,
 		routers.InfraDiscover,

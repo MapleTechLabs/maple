@@ -25,6 +25,7 @@ import * as AnomaliesList from "./anomalies/list"
 import * as AnomalyDetail from "./anomalies/detail"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
+import * as AlertsStatusPage from "./alerts/status-pages/editor"
 import * as AlertsUptimeMonitor from "./alerts/uptime-monitor"
 import * as AlertsUptimeNew from "./alerts/uptime-form"
 import * as IngestRuleEditor from "./settings/ingest-rule"
@@ -111,6 +112,7 @@ export const pages = [
 	AlertRule.page,
 	AlertsUptimeMonitor.page,
 	AlertsUptimeNew.page,
+	AlertsStatusPage.page,
 	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,

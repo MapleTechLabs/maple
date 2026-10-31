@@ -337,6 +337,11 @@ export const IngestRuleNewSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),
 })
 
+/** `/alerts/status-pages/$pageId`: `tab` is `components`, `incidents` or `settings`. */
+export const AlertsStatusPageSearch = Schema.Struct({
+	tab: Schema.optional(Schema.String),
+})
+
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
 
 export const CodeReviewIssuesSearch = Schema.Struct(CodeReviewIssuesSearchFields)
