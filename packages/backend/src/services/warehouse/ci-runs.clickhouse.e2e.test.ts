@@ -361,6 +361,20 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 		assert.deepStrictEqual(traceIds(await read(CH.ciRunsQuery({ pullRequest: 5 }))), ["r2", "r1"])
 	})
 
+	it("counts actors against an org with hundreds of repositories", async () => {
+		// One clause per default branch: a nested OR chain here passed ClickHouse's max_parser_depth.
+		const defaultBranches = Array.from({ length: 500 }, (_, i) => ({
+			owner: "acme",
+			repository: `repo-${i}`,
+			branch: "main",
+		}))
+		const rows = await read(CH.ciActorStatsQuery({ defaultBranches }))
+		assert.deepStrictEqual(
+			rows.map(({ actor, runs, defaultBranchRuns }) => ({ actor, runs, defaultBranchRuns })),
+			[{ actor: "octocat", runs: 3, defaultBranchRuns: 0 }],
+		)
+	})
+
 	it("finds a workflow's red streak and the failed jobs of its runs", async () => {
 		const ran = await read(CH.ciRunsQuery({ pipeline: "CI", ranOnly: true }))
 		assert.deepStrictEqual(traceIds(ran), ["r5", "r2", "r1"])
