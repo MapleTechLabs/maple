@@ -38,7 +38,7 @@ import {
 	windowCount,
 	windowDays,
 } from "./history"
-import { chevron, statusIcon } from "./icons"
+import { chevron, MAPLE_MARK, statusIcon } from "./icons"
 import { PAGE_SCRIPT } from "./script"
 import { activeIncidents, groupComponents, pastIncidents, upcomingMaintenance } from "./select"
 import { pageStyles } from "./styles"
@@ -250,7 +250,7 @@ const renderFooter = (
 		terms === null ? "" : `<a href="${escapeHtml(terms)}" rel="noopener">Terms of service</a>`,
 	].filter((link) => link !== "")
 	const powered = snapshot.page.showPoweredBy
-		? `<p>Powered by <a href="https://maple.dev" rel="noopener">Maple</a></p>`
+		? `<p class="powered">Powered by <a href="https://maple.dev" rel="noopener">${MAPLE_MARK}Maple</a></p>`
 		: ""
 	return `<footer>${powered}<p class="links">${links.join(" · ")}</p><p id="updated">Updated ${formatAge(nowMs - freshness.updatedAt)}</p></footer>`
 }

@@ -3,6 +3,7 @@ import type {
 	V2StatusPageCreateParams,
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
+import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
 import { Option, Result } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "../../../data/keyed"
@@ -85,7 +86,12 @@ export const canSubmit = (model: Model): boolean =>
 
 // DRAFT
 
-const themeOf = (model: Model) => ({ preset: model.preset, appearance: model.appearance })
+/** The preset carries its own font and corners; the builder offers no other choice of either. */
+const themeOf = (model: Model) => ({
+	preset: model.preset,
+	appearance: model.appearance,
+	...STATUS_PAGE_PRESET_DEFAULTS[model.preset],
+})
 
 /** What the preview reads; `draftComponents` leaves out rows not named yet, which the API refuses. */
 export const previewDraft = (model: Model): StatusPagePreviewParams => ({

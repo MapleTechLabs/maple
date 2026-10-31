@@ -162,11 +162,11 @@ describe("StatusPagesService", () => {
 
 			const unreadable = yield* Effect.flip(
 				service.update(ORG, page.id, {
-					theme: { ...DEFAULT_STATUS_PAGE_THEME, appearance: "light", text: "#777777" },
+					theme: { ...DEFAULT_STATUS_PAGE_THEME, appearance: "light", text: "#757575" },
 				}),
 			)
 			assert.strictEqual(unreadable._tag, "@maple/http/errors/StatusPageValidationError")
-			assert.include(unreadable.message, "4.48:1")
+			assert.include(unreadable.message, "4.49:1")
 			assert.strictEqual((yield* service.get(ORG, page.id)).theme.background, "#0f1115")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -782,7 +782,7 @@ describe("StatusPagesService", () => {
 							},
 							"Unknown uptime monitor upm_",
 						],
-						[{ ...withRenamedPage, theme: { appearance: "light", text: "#777777" } }, "4.48:1"],
+						[{ ...withRenamedPage, theme: { appearance: "light", text: "#757575" } }, "4.49:1"],
 						[
 							{ ...withRenamedPage, components: [{ name: " " }] },
 							"components[0].name is required",
