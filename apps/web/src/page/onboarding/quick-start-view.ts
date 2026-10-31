@@ -1014,7 +1014,6 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 											h.a(
 												[
 													h.Href(card.href),
-													h.AriaLabel(`${card.action}: ${card.title}`),
 													h.Class(
 														"group flex flex-1 flex-col gap-3.5 p-5 outline-none hover:bg-surface-faint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-surface-faint",
 													),
@@ -1155,7 +1154,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 						[h.Class("flex flex-col items-center gap-4")],
 						[
 							h.div(
-								[h.Class("flex items-center gap-2")],
+								[h.Class("flex max-w-full flex-wrap items-center justify-center gap-2")],
 								[
 									backButton(h, "team"),
 									button(
@@ -1166,7 +1165,10 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 												h.OnClick(Message.ClickedContinue({ step: "live" })),
 											],
 										},
-										[`Go to ${orgName}`, icon(h, "ArrowRightIcon", { size: 16 })],
+										[
+											h.span([h.Class("max-w-64 truncate")], [`Go to ${orgName}`]),
+											icon(h, "ArrowRightIcon", { size: 16 }),
+										],
 									),
 								],
 							),

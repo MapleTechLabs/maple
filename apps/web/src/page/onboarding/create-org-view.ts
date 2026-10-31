@@ -383,7 +383,7 @@ export const view = (
 		[h.Class("flex h-dvh overflow-hidden bg-background text-foreground")],
 		[
 			h.div(
-				[h.Class("flex h-dvh w-full shrink-0 flex-col lg:w-[760px]")],
+				[h.Class("flex h-dvh w-full shrink-0 flex-col xl:w-[760px]")],
 				[
 					h.div([h.Class("shrink-0 px-6 py-5 sm:px-12 lg:px-16")], [header(h, email)]),
 					h.div(
@@ -431,7 +431,7 @@ export const view = (
 				],
 			),
 			h.div(
-				[h.Class("relative hidden h-dvh flex-1 border-l border-border bg-sidebar lg:block")],
+				[h.Class("relative hidden h-dvh flex-1 border-l border-border bg-sidebar xl:block")],
 				[
 					h.div(
 						[h.Class("pointer-events-none absolute inset-0 overflow-hidden")],

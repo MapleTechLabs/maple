@@ -75,7 +75,7 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 							),
 							h.span(
 								[h.Class("mt-0.5 block text-xs text-muted-foreground")],
-								[credits(checklist), " in credits when you are done."],
+								["Then claim ", credits(checklist), " in credits."],
 							),
 						],
 					),
@@ -184,7 +184,7 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 											[
 												isClaimed
 													? `${amount} in credits applied. It comes off your next invoice.`
-													: "Finish these within 24 hours of creating your org and we'll credit your balance.",
+													: "Finish these within 24 hours of creating your org, then claim the credits.",
 											],
 										),
 									],

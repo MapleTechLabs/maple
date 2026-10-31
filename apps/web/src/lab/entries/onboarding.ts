@@ -65,6 +65,8 @@ export const Model = Schema.Struct({
 	/** Picking a sample plan stands in for checkout. */
 	hasPlan: Schema.Boolean,
 	isComplete: Schema.Boolean,
+	/** The name sent from the create-org screen, shown by the steps after it. */
+	orgName: Schema.String,
 	/** Bumped by Restart, so every step remounts. */
 	run: Schema.Number,
 })
@@ -107,6 +109,7 @@ export const init = (step: LabStep, run = 0): Model => ({
 	needsRegion: step === "org" || step === "region",
 	hasPlan: quickStartStep(step) !== "plan",
 	isComplete: false,
+	orgName: SAMPLE_ORG.name,
 	run,
 })
 
@@ -195,7 +198,19 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 		case "PickedRegion":
 			return { model: { ...model, createOrg: CreateOrg.update(model.createOrg, message).model } }
 		case "SubmittedCreate":
-			return model.createOrg.name.trim() === "" ? { model } : { model: { ...model, createOrg: null } }
+			return model.createOrg.name.trim() === ""
+				? { model }
+				: {
+						model: {
+							...model,
+							orgName: model.createOrg.name.trim(),
+							createOrg: null,
+							quickStart: {
+								...model.quickStart,
+								region: { ...model.quickStart.region, selected: model.createOrg.region },
+							},
+						},
+					}
 		default:
 			return { model }
 	}
@@ -236,7 +251,7 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 				]),
 			needsRegion: model.needsRegion,
 			hasPlan: model.hasPlan,
-			orgName: "Acme",
+			orgName: model.orgName,
 			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team),
 			planStep: QuickStartTeamView.planStep(
 				h,
