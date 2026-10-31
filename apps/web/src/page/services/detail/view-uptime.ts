@@ -2,6 +2,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
+import { textLink } from "../../../ui/text-link"
 import { monitorHref, newMonitorHref, uptimeTabHref } from "../../alerts/shared/uptime-commands"
 import { displayStatus, formatShare, targetLine, uptimeShare } from "../../alerts/shared/uptime-derive"
 import { recentChecksStrip, uptimePanelBody, uptimeStatusChip } from "../../alerts/shared/uptime-view"
@@ -21,17 +22,9 @@ export const uptimePanel = (h: H, model: Model): Html => {
 	const nowMs = model.nowMs ?? 0
 	return panel(h, {}, [
 		panelHeader(h, {
-			title: h.span(
-				[h.Class("flex items-baseline gap-2")],
-				[
-					"Uptime",
-					h.span([h.Class("text-xs font-normal text-muted-foreground")], ["checked from outside"]),
-				],
-			),
-			action: h.a(
-				[h.Href(uptimeTabHref()), h.Class("text-xs text-primary hover:underline active:underline")],
-				["Open in Alerts"],
-			),
+			title: "Uptime",
+			scope: h.span([h.Class("text-2xs text-foreground-subtle")], ["checked from outside"]),
+			action: textLink(h, { href: uptimeTabHref(), className: "text-xs" }, ["Open in Alerts"]),
 		}),
 		uptimePanelBody(h, [
 			h.ul(
@@ -50,7 +43,9 @@ export const uptimePanel = (h: H, model: Model): Html => {
 											h.a(
 												[
 													h.Href(monitorHref(monitor.id)),
-													h.Class("truncate text-sm hover:underline active:underline"),
+													h.Class(
+														"truncate text-sm hover:underline active:underline",
+													),
 												],
 												[targetLine(monitor, nowMs)],
 											),
@@ -84,13 +79,13 @@ export const uptimePanel = (h: H, model: Model): Html => {
 			),
 			...(model.canCreateUptimeMonitors
 				? [
-						h.a(
-							[
-								h.Href(newMonitorHref({ serviceName: model.serviceName })),
-								h.Class(
-									"mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								href: newMonitorHref({ serviceName: model.serviceName }),
+								className: "mt-3 gap-1.5 text-xs",
+							},
 							[icon(h, "PlusIcon", { size: 14 }), "Add uptime check for this service"],
 						),
 					]

@@ -66,7 +66,12 @@ const methodTone = (method: string): string =>
 			? "text-severity-error"
 			: "text-muted-foreground"
 
-export const methodLabel = <M>(h: HtmlBuilder<M>, method: string, className = "w-10", isTinted = true): Html =>
+export const methodLabel = <M>(
+	h: HtmlBuilder<M>,
+	method: string,
+	className = "w-10",
+	isTinted = true,
+): Html =>
 	h.span(
 		[
 			h.Class(
@@ -318,8 +323,10 @@ const endpointRow = (
 			),
 		],
 		cn(
-			"group/row h-12 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
-			isSelected ? "bg-accent hover:bg-accent active:bg-accent" : "hover:bg-surface-sunken active:bg-surface-sunken",
+			"group/row h-11 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
+			isSelected
+				? "bg-accent hover:bg-accent active:bg-accent"
+				: "hover:bg-surface-sunken active:bg-surface-sunken",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)
@@ -349,7 +356,9 @@ const groupHeaderRow = (
 		tableCell(
 			h,
 			// Muted totals drop the unit to subtle; a toned total keeps it in the tone.
-			text === EMPTY_VALUE ? [emptyValue(h)] : measure(h, text, tone === undefined ? "text-foreground-subtle" : null),
+			text === EMPTY_VALUE
+				? [emptyValue(h)]
+				: measure(h, text, tone === undefined ? "text-foreground-subtle" : null),
 			cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width),
 		)
 	return tableRow(

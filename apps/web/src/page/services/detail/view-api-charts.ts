@@ -27,7 +27,7 @@ export const STATUS_COLORS = {
 const STACK_ORDER = ["5xx", "4xx", "2xx", "unknown"] as const
 
 export const SPARK_TOKENS = {
-	requests: "--chart-p50",
+	requests: "--chart-throughput",
 	client: "--warning",
 	server: "--severity-error",
 	latency: "--chart-p95",
