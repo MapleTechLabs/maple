@@ -105,6 +105,8 @@ import {
 	WebAnalyticsBreakdownsResponse,
 	WebAnalyticsAiReferralsResponse,
 	WebAnalyticsAiCrawlersResponse,
+	SecurityExposureResponse,
+	SecurityRuntimesResponse,
 	ProductEventsFunnelResponse,
 	ProductEventsFunnelBreakdownResponse,
 	ProductEventsFunnelTimingResponse,
@@ -165,6 +167,8 @@ import {
 	withServiceApiFallback,
 } from "@maple/backend/queries/dashboard-reads"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
+import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
+import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-posture"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -328,7 +332,10 @@ const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
 	avgMemoryLimitUtilization: row.avgMemoryLimitUtilization == null ? null : row.avgMemoryLimitUtilization,
 })
 
-const toServiceRuntimeRows = (rows: ReadonlyArray<CH.ServiceRuntimesOutput>, requested: ReadonlyArray<string>) =>
+const toServiceRuntimeRows = (
+	rows: ReadonlyArray<CH.ServiceRuntimesOutput>,
+	requested: ReadonlyArray<string>,
+) =>
 	CH.serviceRuntimeResources(rows, requested).map((row) => ({
 		...row,
 		serviceName: decodeServiceName(row.serviceName),
@@ -338,6 +345,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 	Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
+		const runtimeReleases = yield* RuntimeReleaseCatalog
 		const reads = makeDashboardReads({ warehouse, queryEngine })
 		const { runQuery, runQueryFirst } = reads
 
@@ -1410,7 +1418,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 												Effect.tapCause((cause) =>
 													Effect.logWarning("service map runtimes failed", cause),
 												),
-												Effect.orElseSucceed((): ReadonlyArray<CH.ServiceRuntimesOutput> => []),
+												Effect.orElseSucceed(
+													(): ReadonlyArray<CH.ServiceRuntimesOutput> => [],
+												),
 											),
 										],
 										{ concurrency: 2 },
@@ -1502,7 +1512,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							return new ServiceRuntimesResponse({ data: [] })
 						}
 						const rows = yield* runQuery(Queries.serviceRuntimes, tenant, payload)
-						return new ServiceRuntimesResponse({ data: toServiceRuntimeRows(rows, payload.services) })
+						return new ServiceRuntimesResponse({
+							data: toServiceRuntimeRows(rows, payload.services),
+						})
 					}),
 				)
 				.handle("serviceUsage", ({ payload }) =>
@@ -2563,6 +2575,85 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									crawlers: row.crawlers,
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
+							},
+						})
+					}),
+				)
+				// No raw fallback, like the crawler tab: a cluster without migration 0050 answers 502.
+				.handle("securityExposure", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [signatures, exposed, sources, timeline] = yield* Effect.all(
+							[
+								runQuery(Queries.scannerSignatures, tenant, payload),
+								runQuery(Queries.scannerExposed, tenant, payload),
+								runQuery(Queries.scannerSources, tenant, payload),
+								runQuery(Queries.scannerTimeline, tenant, payload),
+							],
+							{ concurrency: 4 },
+						)
+						return new SecurityExposureResponse({
+							data: {
+								signatures: signatures.map((row) => ({
+									signature: row.signature,
+									service: row.service,
+									requests: row.requests || 0,
+									answered: row.answered || 0,
+									sources: row.sources || 0,
+									lastSeen: DateTime.formatIso(row.lastSeen),
+								})),
+								exposed: exposed.map((row) => ({
+									service: row.service,
+									host: row.host,
+									path: row.path,
+									signature: row.signature,
+									httpStatus: row.httpStatus || 0,
+									requests: row.requests || 0,
+									lastSeen: DateTime.formatIso(row.lastSeen),
+									sampleTraceId: row.sampleTraceId,
+								})),
+								sources: sources.map((row) => ({
+									clientAddress: row.clientAddress,
+									requests: row.requests || 0,
+									signatures: row.signatures || 0,
+									scanner: row.scanner,
+									userAgent: row.userAgent,
+									lastSeen: DateTime.formatIso(row.lastSeen),
+								})),
+								timeline: timeline.map((row) => ({
+									bucket: DateTime.formatIso(row.bucket),
+									requests: row.requests || 0,
+									answered: row.answered || 0,
+								})),
+							},
+						})
+					}),
+				)
+				.handle("securityRuntimes", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const rows = yield* runQuery(Queries.runtimeVersions, tenant, payload)
+						const products = rows.flatMap((row): ReadonlyArray<RuntimeProduct> => {
+							const product = runtimeProductOf(row.runtimeName, row.sdkLanguage)
+							return product === undefined || row.runtimeVersion === "" ? [] : [product]
+						})
+						const releases = yield* runtimeReleases.releases(products)
+						return new SecurityRuntimesResponse({
+							data: {
+								runtimes: rows.map((row) => ({
+									service: row.service,
+									environment: row.environment,
+									runtimeName: row.runtimeName,
+									runtimeVersion: row.runtimeVersion,
+									sdkLanguage: row.sdkLanguage,
+									sdkName: row.sdkName,
+									sdkVersion: row.sdkVersion,
+									spans: row.spans || 0,
+									lastSeen: DateTime.formatIso(row.lastSeen),
+								})),
+								releases,
 							},
 						})
 					}),

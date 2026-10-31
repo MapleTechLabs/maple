@@ -210,6 +210,20 @@ export {
 	type WebAnalyticsAiCrawledPagesOutput,
 } from "./queries/web-analytics-ai"
 
+// Queries — Security Center telemetry (scanner probes, runtime versions)
+export {
+	scannerSignaturesQuery,
+	scannerExposedQuery,
+	scannerSourcesQuery,
+	scannerTimelineQuery,
+	runtimeVersionsQuery,
+	type ScannerSignaturesOutput,
+	type ScannerExposedOutput,
+	type ScannerSourcesOutput,
+	type ScannerTimelineOutput,
+	type RuntimeVersionsOutput,
+} from "./queries/security-telemetry"
+
 // Queries — Product events (funnels over `product_events`)
 export {
 	productEventsFunnelQuery,

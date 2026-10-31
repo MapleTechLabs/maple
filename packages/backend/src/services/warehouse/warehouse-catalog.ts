@@ -55,6 +55,16 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Scanners borrow crawler user agents and mostly get 404s: count pages actually read with `HttpStatus < 400` (0 means the span carried no status).",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0033, never backfilled.",
 	],
+	scanner_requests: [
+		"Server spans that probe for something an application should not serve (`.env`, `.git/`, `/actuator/env`, `phpinfo`, path traversal, `/phpmyadmin`, WordPress paths, known exploit paths) or whose user agent names a scanning tool (ZGrab, Nuclei, Masscan, sqlmap, Censys, ...). ALWAYS prefer this over `traces` + `SpanAttributes['url.path']` for scanner activity.",
+		"`Signature` is the matched path token ('' when only the user agent matched), `Scanner` the tool's name ('' when only the path matched); `Host`, `Path` (no query string), `HttpStatus` (0 = no status), `ClientAddress` and `UserAgent` (cut to 256 characters) are pre-extracted.",
+		"One row per SPAN: count requests as `uniq(TraceId)`. A probe that answered 2xx on a secrets, source-control or debug signature is the one to look at.",
+		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0050, never backfilled.",
+	],
+	service_runtimes_hourly: [
+		"Span counts per (hour, service, environment, `RuntimeName`, `RuntimeVersion`, `SdkLanguage`, `SdkName`, `SdkVersion`), from the resource attributes `process.runtime.*` and `telemetry.sdk.*`. '' where the service sets none. Values cut to 64 characters.",
+		"SummingMergeTree: always `sum(SpanCount)`. Sorting key: `(OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, SdkLanguage, SdkName, SdkVersion)`; filled forward from migration 0050.",
+	],
 	ci_runs: [
 		"One row per CI workflow run attempt: the root span of a `github-actions` trace, with `Owner`, `Repository`, `Pipeline` (workflow name), `Result` (success, failure, timeout, error, cancellation, skip), `Branch`, `Revision`, `PullRequest` (0 = none) and `Attempt` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['cicd.pipeline.*']`.",
 		"`Duration` is NANOSECONDS. Leave out `Result = 'skip'` for durations and success rates: a skipped run did nothing.",

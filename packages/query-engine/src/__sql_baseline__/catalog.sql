@@ -4297,6 +4297,95 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
+-- builder:security-telemetry:runtimeVersionsQuery:default  [4636f2c4]
+SELECT
+          service_runtimes_hourly.ServiceName AS service,
+          service_runtimes_hourly.DeploymentEnv AS environment,
+          service_runtimes_hourly.RuntimeName AS runtimeName,
+          service_runtimes_hourly.RuntimeVersion AS runtimeVersion,
+          service_runtimes_hourly.SdkLanguage AS sdkLanguage,
+          service_runtimes_hourly.SdkName AS sdkName,
+          service_runtimes_hourly.SdkVersion AS sdkVersion,
+          sum(service_runtimes_hourly.SpanCount) AS spans,
+          max(service_runtimes_hourly.Hour) AS lastSeen
+        FROM service_runtimes_hourly
+        WHERE service_runtimes_hourly.OrgId = 'org_sql_catalog'
+          AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_runtimes_hourly.Hour <= '2026-01-03 14:15:00'
+        GROUP BY service, environment, runtimeName, runtimeVersion, sdkLanguage, sdkName, sdkVersion
+        ORDER BY service ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerExposedQuery:default  [e48e74ef]
+SELECT
+          scanner_requests.ServiceName AS service,
+          scanner_requests.Host AS host,
+          scanner_requests.Path AS path,
+          scanner_requests.Signature AS signature,
+          scanner_requests.HttpStatus AS httpStatus,
+          uniq(scanner_requests.TraceId) AS requests,
+          max(scanner_requests.Timestamp) AS lastSeen,
+          any(scanner_requests.TraceId) AS sampleTraceId
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+          AND scanner_requests.Signature IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
+          AND (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)
+        GROUP BY service, host, path, signature, httpStatus
+        ORDER BY lastSeen DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerSignaturesQuery:default  [60ddb44e]
+SELECT
+          scanner_requests.Signature AS signature,
+          scanner_requests.ServiceName AS service,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered,
+          uniqIf(scanner_requests.ClientAddress, scanner_requests.ClientAddress != '') AS sources,
+          max(scanner_requests.Timestamp) AS lastSeen
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY signature, service
+        ORDER BY requests DESC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerSourcesQuery:default  [f31d4a9d]
+SELECT
+          scanner_requests.ClientAddress AS clientAddress,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.Signature, scanner_requests.Signature != '') AS signatures,
+          max(scanner_requests.Scanner) AS scanner,
+          any(scanner_requests.UserAgent) AS userAgent,
+          max(scanner_requests.Timestamp) AS lastSeen
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+          AND scanner_requests.ClientAddress != ''
+        GROUP BY clientAddress
+        ORDER BY requests DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerTimelineQuery:default  [1f52f1f6]
+SELECT
+          toStartOfInterval(scanner_requests.Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
 -- builder:service-api:serviceApiTimeseriesQuery:mergedSubHour  [d9a67a8b]
 SELECT
           endpoint_buckets.bBucket AS bucket,

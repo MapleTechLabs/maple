@@ -52,6 +52,8 @@ import type {
 	WebAnalyticsBreakdownsRequest,
 	WebAnalyticsAiReferralsRequest,
 	WebAnalyticsAiCrawlersRequest,
+	SecurityExposureRequest,
+	SecurityRuntimesRequest,
 } from "@maple/domain/http"
 import { Match } from "effect"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
@@ -1086,6 +1088,57 @@ export const webAnalyticsAiCrawledPages = defineQuery({
 			}),
 			aiCrawlerWindow(payload, orgId),
 		),
+})
+
+// Security Center telemetry. The four exposure reads share one request; each is a small scan of
+// `scanner_requests`.
+const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+export const scannerSignatures = defineQuery({
+	id: "scannerSignatures",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSignaturesQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerExposed = defineQuery({
+	id: "scannerExposed",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerExposedQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerSources = defineQuery({
+	id: "scannerSources",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSourcesQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerTimeline = defineQuery({
+	id: "scannerTimeline",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.scannerTimelineQuery({ bucketSeconds: payload.bucketSeconds }),
+			securityWindow(payload, orgId),
+		),
+})
+
+export const runtimeVersions = defineQuery({
+	id: "runtimeVersions",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityRuntimesRequest, orgId: OrgId) =>
+		CH.compile(CH.runtimeVersionsQuery(), securityWindow(payload, orgId)),
 })
 
 export const podFacets = defineQuery({
