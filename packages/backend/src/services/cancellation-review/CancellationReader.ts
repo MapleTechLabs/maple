@@ -18,11 +18,8 @@ import { AiWorkerFetcher } from "@maple/backend/platform/bindings"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
-/**
- * The review runs inside Autumn's webhook request, which Svix gives up on after
- * 15 seconds, after the other reads. A model slower than this is skipped.
- */
-export const READ_TIMEOUT = Duration.seconds(8)
+/** The review runs on a queue, after its evidence reads; a model slower than this is skipped. */
+export const READ_TIMEOUT = Duration.seconds(60)
 
 export interface CancellationReaderApi {
 	readonly read: (request: CancellationModelRequest) => Effect.Effect<CancellationModelRead | null>

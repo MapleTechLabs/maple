@@ -7,8 +7,9 @@
  * snapshot and named in the report, because a report missing its visit numbers
  * is worth more than no report.
  *
- * It runs inside the Autumn webhook's request. A failure answers 503 and Svix
- * redelivers, which is the only retry there is.
+ * It runs on the `cancellation-reviews` queue, off the Autumn webhook's request.
+ * A `CancellationReviewError` is retried there with backoff; the claim row keeps
+ * a retry, or a second delivery of the webhook, from posting twice.
  */
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -23,14 +24,23 @@ import {
 	VcsInstallations,
 } from "@maple/db/tables"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
-import { BillingCustomerId, CancellationModelRequest, CancellationSnapshot, type OrgId } from "@maple/domain/http"
+import {
+	BillingCustomerId,
+	CancellationAppEvidence,
+	CancellationBillingEvidence,
+	CancellationCompanyEvidence,
+	CancellationModelRequest,
+	CancellationSnapshot,
+	CancellationTelemetryEvidence,
+	type OrgId,
+} from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
-import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AUDIT_ACCESS_ACTION_SUFFIXES, AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { stripeCustomerIdOf } from "@maple/backend/services/billing/billing-profile"
@@ -47,7 +57,6 @@ import { SupportSlackClient } from "@maple/backend/services/support/SupportSlack
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CancellationReader } from "./CancellationReader"
 import {
-	AUDIT_ENTRIES_READ,
 	AUDIT_ENTRIES_SHOWN,
 	SESSIONS_READ,
 	SESSIONS_SHOWN,
@@ -55,9 +64,13 @@ import {
 	TRANSCRIPT_PROBLEMS,
 	auditEntryOf,
 	digestSession,
-	isAuditedChange,
 	stripeFeedbackOf,
 } from "./evidence"
+import { CancellationAppEvidenceReader } from "./evidence-app"
+import { CancellationBillingEvidenceReader } from "./evidence-billing"
+import { CancellationCompanyEvidenceReader } from "./evidence-company"
+import { type CancellationEvidenceInput, EVIDENCE_GRACE_MS, knownAtCancel } from "./evidence-input"
+import { CancellationTelemetryEvidenceReader } from "./evidence-telemetry"
 import { deriveSignals, ruleReason } from "./signals"
 import { buildCancellationMessage, OTHER_ORGS_SHOWN, type OrgLinks, type OtherOrg } from "./slack-message"
 import {
@@ -78,20 +91,23 @@ export interface CancellationToReview extends Omit<PlanCancellation, "orgId"> {
 }
 
 /**
- * How long an unposted review belongs to the delivery that claimed it. A review
- * outlasting Svix's timeout is redelivered while it is still running, and the
- * second delivery must wait rather than post beside it.
+ * How long an unposted review belongs to the delivery that claimed it: past the
+ * longest a review can run (evidence, then the model), so a second delivery
+ * waits rather than posting beside it.
  */
-const CLAIM_LEASE_MS = 2 * 60 * 1000
+const CLAIM_LEASE_MS = 5 * 60 * 1000
 
 /**
- * How long each source only the model reads may take. The review answers Svix
- * within 15 seconds, and the model's own read comes after these.
+ * How long any one source may take; a slow one is left out of the report. Every
+ * read has one, so a review always ends well inside its claim's lease.
  */
-const EVIDENCE_TIMEOUT = "4 seconds"
+const SOURCE_TIMEOUT = "30 seconds"
 
-/** The visit the org cancelled in can start after the cancellation's timestamp is set. */
-const CANCELLATION_SESSION_GRACE_MS = 60 * 60 * 1000
+/** Slack's post, after which the report is out. */
+const SLACK_TIMEOUT = "30 seconds"
+
+/** The org reads every other read waits on get less. */
+const ORG_TIMEOUT = "10 seconds"
 
 /** Members whose other orgs are looked up: one Clerk call each. */
 const OTHER_ORGS_MEMBER_LIMIT = 10
@@ -186,6 +202,10 @@ export class CancellationReviewService extends Context.Service<
 		const auditLog = yield* AuditLogService
 		const stripe = yield* StripeClient
 		const reader = yield* CancellationReader
+		const companyEvidence = yield* CancellationCompanyEvidenceReader
+		const billingEvidence = yield* CancellationBillingEvidenceReader
+		const appEvidence = yield* CancellationAppEvidenceReader
+		const telemetryEvidence = yield* CancellationTelemetryEvidenceReader
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
@@ -203,9 +223,14 @@ export class CancellationReviewService extends Context.Service<
 			}),
 		})
 
-		/** A source that could not be read is `null` in the report, never the end of it. */
-		const optional = <A, E>(name: string, read: Effect.Effect<A, E>): Effect.Effect<A | null> =>
+		/** A source that could not be read in time is `null` in the report, never the end of it. */
+		const optional = <A, E>(
+			name: string,
+			read: Effect.Effect<A, E>,
+			timeout: Duration.Input = SOURCE_TIMEOUT,
+		): Effect.Effect<A | null> =>
 			read.pipe(
+				Effect.timeout(timeout),
 				Effect.map((value): A | null => value),
 				Effect.catchCause((cause) =>
 					Cause.hasInterruptsOnly(cause)
@@ -376,7 +401,7 @@ export class CancellationReviewService extends Context.Service<
 					orgId: ownOrgId,
 					startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
 					// Up to the visit the org cancelled in; later visits are not why it left.
-					endTime: formatWarehouseDateTime(atMs + CANCELLATION_SESSION_GRACE_MS),
+					endTime: formatWarehouseDateTime(atMs + EVIDENCE_GRACE_MS),
 				}),
 				{ profile: "list", context: "cancellationReviewSessions" },
 			)
@@ -403,26 +428,28 @@ export class CancellationReviewService extends Context.Service<
 						? Effect.all([
 								transcript(row, { types: ["navigation"], limit: TRANSCRIPT_PAGES }),
 								transcript(row, { errorsOnly: true, limit: TRANSCRIPT_PROBLEMS }),
-							]).pipe(Effect.map(([pages, problems]) => digestSession(row, pages, problems)))
-						: Effect.succeed(digestSession(row, [], [])),
+							]).pipe(
+								Effect.map(([pages, problems]) => digestSession(atMs, row, pages, problems)),
+							)
+						: Effect.succeed(digestSession(atMs, row, [], [])),
 				{ concurrency: 3 },
 			)
 		})
 
-		/** The org's changes around the cancellation; reads and tool calls are left out. */
+		/**
+		 * The org's changes around the cancellation. Reads and tool calls are left
+		 * out in the query, before the limit; the telemetry section counts them.
+		 */
 		const readAuditLog = (orgId: OrgId, atMs: number) =>
 			auditLog
 				.list(orgId, {
 					sinceMs: atMs - WINDOW_DAYS * DAY_MS,
-					untilMs: atMs + CANCELLATION_SESSION_GRACE_MS,
-					limit: AUDIT_ENTRIES_READ,
+					untilMs: atMs + EVIDENCE_GRACE_MS,
+					excludeActionSuffixes: AUDIT_ACCESS_ACTION_SUFFIXES,
+					limit: AUDIT_ENTRIES_SHOWN,
 					offset: 0,
 				})
-				.pipe(
-					Effect.map((entries) =>
-						entries.filter(isAuditedChange).slice(0, AUDIT_ENTRIES_SHOWN).map(auditEntryOf),
-					),
-				)
+				.pipe(Effect.map((entries) => entries.map((entry) => auditEntryOf(atMs, entry))))
 
 		/** What the customer told Stripe when cancelling; nothing to tell without a Stripe customer. */
 		const readStripeFeedback = (customer: unknown, atMs: number) =>
@@ -435,9 +462,15 @@ export class CancellationReviewService extends Context.Service<
 					),
 			})
 
-		/** Evidence for the model only: a slow source is dropped rather than holding the report. */
-		const evidence = <A, E>(name: string, read: Effect.Effect<A, E>) =>
-			optional(name, read.pipe(Effect.timeout(EVIDENCE_TIMEOUT)))
+		/**
+		 * An evidence section, checked against its schema: a reader that built a
+		 * bad value (a negative count) loses its section, not the whole report.
+		 */
+		const section = <S extends Schema.Top & { readonly DecodingServices: never }>(
+			name: string,
+			schema: S,
+			read: Effect.Effect<S["Type"]>,
+		) => optional(name, read.pipe(Effect.flatMap((value) => Schema.decodeUnknownEffect(schema)(value))))
 
 		/** Orgs the members also belong to: a customer moving to another org is not leaving. */
 		const readOtherOrgs = (orgId: OrgId, people: ReadonlyArray<{ userId: string; email: string }>) =>
@@ -567,6 +600,22 @@ export class CancellationReviewService extends Context.Service<
 				)
 				.pipe(Effect.mapError(failedAt("claim", "Could not claim the cancellation review")))
 
+		/**
+		 * Hands an unposted review back, so the next attempt takes it over at once;
+		 * only while this delivery still holds it (`claimedAt`), never one another
+		 * delivery took over after its lease.
+		 */
+		const releaseClaim = (id: string, claimedAt: number) =>
+			database
+				.execute((db) =>
+					db.run(
+						PG.update(CancellationReviews)
+							.set({ updatedAt: 0 })
+							.where(($) => [$.id.eq(id), $.postedAt.isNull(), $.updatedAt.eq(claimedAt)]),
+					),
+				)
+				.pipe(Effect.ignore)
+
 		const review: CancellationReviewServiceApi["review"] = Effect.fn("CancellationReviewService.review")(
 			function* (job) {
 				const { orgId } = job
@@ -634,12 +683,30 @@ export class CancellationReviewService extends Context.Service<
 				// The moment the org decided, which for a scheduled cancellation is
 				// well before the plan ends.
 				const atMs = job.canceledAt ?? job.receivedAt
-				const ownOrgId = yield* optional("ownOrg", readOwnOrg)
+				// The org and its members first: the company section reads their email domains.
+				const [ownOrgId, org] = yield* Effect.all(
+					[
+						optional("ownOrg", readOwnOrg, ORG_TIMEOUT),
+						optional("org", readOrg(orgId), ORG_TIMEOUT),
+					],
+					{ concurrency: 2 },
+				)
+				const input: CancellationEvidenceInput = {
+					orgId,
+					atMs,
+					autumnCustomer: response,
+					stripeCustomerId: Option.getOrNull(stripeCustomerIdOf(response)),
+					ownOrgId,
+					members: org?.members ?? null,
+				}
 				const [
 					sessions,
 					audit,
 					stripeFeedback,
-					org,
+					company,
+					billingHistory,
+					app,
+					telemetry,
 					ingest,
 					visits,
 					adoption,
@@ -647,11 +714,14 @@ export class CancellationReviewService extends Context.Service<
 					integrations,
 				] = yield* Effect.all(
 					[
-						// First, so their timeouts start with the review rather than in a queue.
-						evidence("sessions", readSessions(orgId, atMs, ownOrgId)),
-						evidence("auditLog", readAuditLog(orgId, atMs)),
-						evidence("stripeFeedback", readStripeFeedback(response, atMs)),
-						optional("org", readOrg(orgId)),
+						// First: the slowest, and the ones the model leans on most.
+						optional("sessions", readSessions(orgId, atMs, ownOrgId)),
+						optional("auditLog", readAuditLog(orgId, atMs)),
+						optional("stripeFeedback", readStripeFeedback(response, atMs)),
+						section("company", CancellationCompanyEvidence, companyEvidence.read(input)),
+						section("billingHistory", CancellationBillingEvidence, billingEvidence.read(input)),
+						section("app", CancellationAppEvidence, appEvidence.read(input)),
+						section("telemetry", CancellationTelemetryEvidence, telemetryEvidence.read(input)),
 						optional("ingest", readIngest(orgId, atMs)),
 						optional("visits", readVisits(orgId, atMs, ownOrgId)),
 						optional("adoption", readAdoption(orgId)),
@@ -659,7 +729,13 @@ export class CancellationReviewService extends Context.Service<
 							"billing",
 							decodeUpstream(CustomerBilling, response).pipe(
 								Effect.map(({ balances, invoices }) =>
-									summarizeBilling({ balances: balances ?? {}, invoices: invoices ?? [] }),
+									summarizeBilling({
+										balances: balances ?? {},
+										// A review run at the plan's end must not read the invoices after the decision.
+										invoices: (invoices ?? []).filter((invoice) =>
+											knownAtCancel(atMs, invoice.createdAt),
+										),
+									}),
 								),
 							),
 						),
@@ -668,7 +744,8 @@ export class CancellationReviewService extends Context.Service<
 							inventory.list(orgId).pipe(Effect.map((listed) => listed.integrations)),
 						),
 					],
-					{ concurrency: 5 },
+					// A Worker keeps six connections open at once, and the sections fan out.
+					{ concurrency: 4 },
 				)
 				const snapshot = new CancellationSnapshot({
 					plan: {
@@ -723,6 +800,10 @@ export class CancellationReviewService extends Context.Service<
 								stripeFeedback,
 								sessions,
 								auditLog: audit,
+								company,
+								billing: billingHistory,
+								app,
+								telemetry,
 							}),
 						),
 					],
@@ -743,9 +824,7 @@ export class CancellationReviewService extends Context.Service<
 										{
 											groupId: orgId,
 											startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
-											endTime: formatWarehouseDateTime(
-												atMs + CANCELLATION_SESSION_GRACE_MS,
-											),
+											endTime: formatWarehouseDateTime(atMs + EVIDENCE_GRACE_MS),
 										},
 									)}`,
 						integrations,
@@ -756,7 +835,15 @@ export class CancellationReviewService extends Context.Service<
 					signals,
 					modelRead,
 					stripeFeedback,
-					unreadEvidence: Object.entries({ sessions, "audit log": audit, Stripe: stripeFeedback })
+					unreadEvidence: Object.entries({
+						sessions,
+						"audit log": audit,
+						Stripe: stripeFeedback,
+						company,
+						"billing history": billingHistory,
+						"app state": app,
+						"telemetry detail": telemetry,
+					})
 						.filter(([, source]) => source === null)
 						.map(([name]) => name),
 				})
@@ -778,6 +865,13 @@ export class CancellationReviewService extends Context.Service<
 								Effect.annotateLogs({ slackError: error.error }),
 								Effect.as(false),
 							),
+						),
+						Effect.timeout(SLACK_TIMEOUT),
+						// A refused or failed post: the retry is this delivery's own and need not wait
+						// out its lease. A timed-out one may still land, so the lease keeps the retry
+						// from posting it twice right away.
+						Effect.tapError((error) =>
+							Cause.isTimeoutError(error) ? Effect.void : releaseClaim(claimed.id, nowMs),
 						),
 						Effect.mapError(failedAt("post", "Could not post the cancellation report to Slack")),
 					)
@@ -810,6 +904,7 @@ export class CancellationReviewService extends Context.Service<
 				yield* Effect.annotateCurrentSpan({
 					"maple.cancellation.reason": reason,
 					"maple.cancellation.model_verdict": modelRead?.verdict ?? "none",
+					"maple.cancellation.model_findings": modelRead?.findings.length ?? 0,
 					// A report can go out missing sections; this is how that shows on the span.
 					"maple.cancellation.unread_sources": Object.entries({
 						org,
@@ -820,6 +915,10 @@ export class CancellationReviewService extends Context.Service<
 						sessions,
 						auditLog: audit,
 						stripeFeedback,
+						company,
+						billingHistory,
+						app,
+						telemetry,
 					})
 						.filter(([, section]) => section === null)
 						.map(([name]) => name)
@@ -850,6 +949,10 @@ export class CancellationReviewService extends Context.Service<
 				AuditLogService.layer,
 				StripeClient.layer,
 				CancellationReader.layer,
+				CancellationCompanyEvidenceReader.layer,
+				CancellationBillingEvidenceReader.layer,
+				CancellationAppEvidenceReader.layer,
+				CancellationTelemetryEvidenceReader.layer,
 			),
 		),
 	)

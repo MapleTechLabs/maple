@@ -9,6 +9,10 @@ import type {
 	CancellationStripeFeedback,
 } from "@maple/domain/http"
 import { DateTime, Effect, Schema } from "effect"
+import { reviewedSubscriptionOf } from "./evidence-billing"
+import { daysBeforeCancel, redactText } from "./evidence-input"
+
+const PROBLEM_CHARS = 200
 
 /** Sessions the model sees, newest first. */
 export const SESSIONS_SHOWN = 20
@@ -17,11 +21,8 @@ export const SESSIONS_READ = 5
 /** The last page visits and problems of a session: its end is where a user gives up. */
 export const TRANSCRIPT_PAGES = 40
 export const TRANSCRIPT_PROBLEMS = 30
-/** Audit entries the model sees, newest first, and how many are read to find them among reads. */
+/** Audit entries the model sees, newest first. */
 export const AUDIT_ENTRIES_SHOWN = 40
-export const AUDIT_ENTRIES_READ = 200
-/** A Stripe cancellation this far from the reviewed one is another cancellation. */
-const SAME_CANCELLATION_MS = 2 * 86_400_000
 
 const OptionalText = Schema.optionalKey(Schema.NullOr(Schema.String))
 
@@ -40,12 +41,21 @@ const StripeSubscriptions = Schema.Struct({
 
 const decodeSubscriptions = Schema.decodeUnknownEffect(StripeSubscriptions)
 
-/** Free text goes to a third-party model: no addresses in it. */
-const redact = (value: string): string => value.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]")
+/** Stripe caps a comment at 5,000 characters; the report quotes far less. */
+const COMMENT_CHARS = 1_000
 
+/**
+ * The customer's own words to Stripe: addresses out, a link kept, since it
+ * may name where they went.
+ */
 const text = (value: string | null | undefined): string | null => {
-	const trimmed = value?.trim()
-	return trimmed ? redact(trimmed) : null
+	const full = value?.trim()
+	// The cut can split an address: the word it cut into is dropped, never half-scrubbed.
+	const cut =
+		full === undefined || full.length <= COMMENT_CHARS
+			? full
+			: full.slice(0, COMMENT_CHARS).replace(/\S*$/, "")
+	return cut ? cut.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]") : null
 }
 
 /**
@@ -57,18 +67,7 @@ const text = (value: string | null | undefined): string | null => {
 export const stripeFeedbackOf = (response: unknown, canceledAtMs: number) =>
 	decodeSubscriptions(response).pipe(
 		Effect.map(({ data }): CancellationStripeFeedback => {
-			const match = data
-				.filter(
-					(sub) =>
-						sub.canceledAt != null &&
-						Math.abs(sub.canceledAt * 1000 - canceledAtMs) <= SAME_CANCELLATION_MS,
-				)
-				// A plan and an add-on cancelled together: the one closest to the reviewed time.
-				.sort(
-					(a, b) =>
-						Math.abs((a.canceledAt ?? 0) * 1000 - canceledAtMs) -
-						Math.abs((b.canceledAt ?? 0) * 1000 - canceledAtMs),
-				)[0]
+			const match = reviewedSubscriptionOf(data, canceledAtMs)
 			return {
 				feedback: text(match?.cancellationDetails?.feedback),
 				comment: text(match?.cancellationDetails?.comment),
@@ -106,8 +105,11 @@ const pagesOf = (events: ReadonlyArray<TranscriptEvent>): ReadonlyArray<string> 
 /** An error event, a console error or a failed request, in a line. */
 const problemOf = (event: TranscriptEvent): string =>
 	event.type === "network"
-		? redact(`${event.netMethod} ${pathOf(event.netUrl)} failed with ${event.netStatus}`)
-		: redact(event.message).slice(0, 200)
+		? redactText(
+				`${event.netMethod} ${pathOf(event.netUrl)} failed with ${event.netStatus}`,
+				PROBLEM_CHARS,
+			)
+		: redactText(event.message, PROBLEM_CHARS)
 
 /**
  * Problems of Maple's own app rather than the customer's: its telemetry SDK
@@ -120,11 +122,13 @@ const isOwnNoise = (event: TranscriptEvent): boolean =>
 
 /** `pages` and `problems` are the session's last events of each kind, oldest first. */
 export const digestSession = (
+	atMs: number,
 	row: SessionRow,
 	pages: ReadonlyArray<TranscriptEvent>,
 	problems: ReadonlyArray<TranscriptEvent>,
 ): CancellationSessionDigest => ({
 	startedAt: DateTime.formatIso(row.startTime),
+	daysBeforeCancel: daysBeforeCancel(atMs, DateTime.toEpochMillis(row.startTime)),
 	durationMs: row.durationMs,
 	quality: row.quality,
 	pageViews: row.pageViews,
@@ -140,15 +144,9 @@ export interface AuditRow {
 	readonly occurredAt: Date
 }
 
-/**
- * Reads, tool calls, SQL runs and refused requests record access, not a
- * change; a dashboard's SQL widgets alone would crowd every change out.
- */
-export const isAuditedChange = (row: AuditRow): boolean =>
-	!/\.(read|called|sql_executed|request)$/.test(row.action)
-
-export const auditEntryOf = (row: AuditRow): CancellationAuditEntry => ({
+export const auditEntryOf = (atMs: number, row: AuditRow): CancellationAuditEntry => ({
 	at: row.occurredAt.toISOString(),
+	daysBeforeCancel: daysBeforeCancel(atMs, row.occurredAt.getTime()),
 	action: row.action,
 	actor: row.actorType,
 	outcome: row.outcome,

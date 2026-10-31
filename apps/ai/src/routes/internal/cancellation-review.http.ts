@@ -10,21 +10,22 @@ import * as AiModel from "effect/ai/Model"
 import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { readCancellation } from "../../cancellation/cancellation-reader"
-import { layerLlm, loadLlmSettings, resolveTriageModel } from "../../platform/Llm"
+import { layerLlm, loadLlmSettings, resolveReviewModel } from "../../platform/Llm"
 import { WorkersAiGateway } from "../../platform/WorkersAiHttpClient"
 import { isValidServiceBearer } from "./service-bearer"
 
 /**
- * The model the read runs on: the triage model, unattended, built once per
- * isolate from the Worker's config on the same AI Gateway binding.
+ * The model the read runs on: the review model, built once per isolate from the
+ * Worker's config on the same AI Gateway binding. One structured answer over a
+ * large JSON input, like a pull request review: on 16 real cancellations the
+ * review default answered in 14 s (median, 43 s at most), where the production
+ * triage model took 46 s (520 s at most).
  */
 export const CancellationModelLive = Layer.unwrap(
 	Effect.gen(function* () {
 		const settings = yield* loadLlmSettings
 		const workersAi = yield* WorkersAiGateway
-		return resolveTriageModel(settings, undefined, true).layer.pipe(
-			Layer.provide(layerLlm(settings, workersAi)),
-		)
+		return resolveReviewModel(settings).layer.pipe(Layer.provide(layerLlm(settings, workersAi)))
 	}),
 )
 

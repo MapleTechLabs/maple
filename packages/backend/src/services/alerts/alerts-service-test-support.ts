@@ -204,6 +204,7 @@ export const stubOrgMembersService = (
 ): (typeof OrgMembersService)["Service"] => ({
 	listMembers: () => Effect.succeed(members),
 	listOrganizationsOf: () => Effect.succeed([]),
+	listMemberActivity: () => Effect.succeed([]),
 	resolveMembers: (_orgId, userIds) => {
 		const byId = new Map(members.map((member) => [member.userId, member]))
 		const resolved: Array<OrgMember> = []

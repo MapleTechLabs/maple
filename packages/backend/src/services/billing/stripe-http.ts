@@ -46,6 +46,7 @@ type StripeRoute =
 	| "createTaxId"
 	| "deleteTaxId"
 	| "listSubscriptions"
+	| "listCharges"
 
 type StripeCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
 
@@ -58,8 +59,10 @@ export interface StripeClientApi {
 		taxId: { readonly type: string; readonly value: string },
 	) => StripeCall
 	readonly deleteTaxId: (stripeCustomerId: string, taxIdId: string) => StripeCall
-	/** The customer's subscriptions in any status, cancelled ones included, newest first. */
+	/** The customer's subscriptions in any status, cancelled ones included, newest first, discounts expanded. */
 	readonly listSubscriptions: (stripeCustomerId: string) => StripeCall
+	/** The customer's latest 20 charges, newest first. Needs Charges read on the key. */
+	readonly listCharges: (stripeCustomerId: string) => StripeCall
 }
 
 const toBillingUpstreamError = (error: unknown) =>
@@ -251,7 +254,20 @@ export class StripeClient extends Context.Service<StripeClient, StripeClientApi>
 						"listSubscriptions",
 						HttpClientRequest.get("/v1/subscriptions").pipe(
 							// 100 is Stripe's page maximum, past any customer's history of plans and add-ons.
-							HttpClientRequest.setUrlParams({ customer: cus, status: "all", limit: "100" }),
+							HttpClientRequest.setUrlParams({
+								customer: cus,
+								status: "all",
+								limit: "100",
+								"expand[]": "data.discounts",
+							}),
+						),
+					),
+
+				listCharges: (cus) =>
+					call(
+						"listCharges",
+						HttpClientRequest.get("/v1/charges").pipe(
+							HttpClientRequest.setUrlParams({ customer: cus, limit: "20" }),
 						),
 					),
 			} satisfies StripeClientApi

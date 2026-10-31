@@ -4,10 +4,15 @@
  *
  * The snapshot is numbers and flags only. Names and addresses stay on the side
  * that posts the report; nothing here identifies a person, so the snapshot is
- * stored as it is.
+ * stored as it is. The evidence sections the model reads besides it are in
+ * `./cancellation-evidence/`.
  */
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { CancellationAppEvidence } from "./cancellation-evidence/app"
+import { CancellationBillingEvidence } from "./cancellation-evidence/billing"
+import { CancellationCompanyEvidence } from "./cancellation-evidence/company"
+import { CancellationTelemetryEvidence } from "./cancellation-evidence/telemetry"
 
 /** A count or a number of days: a whole number, never negative. */
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -126,6 +131,8 @@ export type CancellationStripeFeedback = Schema.Schema.Type<typeof CancellationS
 /** One of the org's browser sessions in Maple's own app, reduced to what a reader skims. */
 export const CancellationSessionDigest = Schema.Struct({
 	startedAt: Schema.String,
+	/** Whole days before the cancellation the session started; 0 the same day, negative after. */
+	daysBeforeCancel: Schema.Int,
 	durationMs: Schema.NullOr(Count),
 	/** `engaged`, `glance`, `idle` or `bounce`. */
 	quality: Schema.String,
@@ -141,6 +148,8 @@ export type CancellationSessionDigest = Schema.Schema.Type<typeof CancellationSe
 /** One audit-log entry of the org, as the reader sees it. */
 export const CancellationAuditEntry = Schema.Struct({
 	at: Schema.String,
+	/** Whole days before the cancellation; 0 the same day. */
+	daysBeforeCancel: Schema.Int,
 	action: Schema.String,
 	/** `user`, `api_key`, ...: the kind, never a name or email, which the model has no use for. */
 	actor: Schema.String,
@@ -148,7 +157,11 @@ export const CancellationAuditEntry = Schema.Struct({
 })
 export type CancellationAuditEntry = Schema.Schema.Type<typeof CancellationAuditEntry>
 
-/** Everything the model reads next to the rules' conclusion. Nothing in it names the org or a person. */
+/**
+ * Everything the model reads next to the rules' conclusion. Nothing in it names
+ * a person; `company` names the business, so the model can say who it is.
+ * Every evidence section is null when it could not be read.
+ */
 export class CancellationModelRequest extends Schema.Class<CancellationModelRequest>(
 	"CancellationModelRequest",
 )({
@@ -158,18 +171,18 @@ export class CancellationModelRequest extends Schema.Class<CancellationModelRequ
 	signals: Schema.Array(Schema.String),
 	/** Null when Stripe could not be read; both fields null when the customer gave nothing. */
 	stripeFeedback: Schema.NullOr(CancellationStripeFeedback),
-	/** Newest first. Null when the sessions could not be read. */
+	/** Newest first. */
 	sessions: Schema.NullOr(Schema.Array(CancellationSessionDigest)),
-	/** Newest first. Null when the audit log could not be read. */
+	/** Changes only, newest first. */
 	auditLog: Schema.NullOr(Schema.Array(CancellationAuditEntry)),
+	company: Schema.NullOr(CancellationCompanyEvidence),
+	billing: Schema.NullOr(CancellationBillingEvidence),
+	app: Schema.NullOr(CancellationAppEvidence),
+	telemetry: Schema.NullOr(CancellationTelemetryEvidence),
 }) {}
 
-/**
- * `agree`: the rules are right and the model has nothing to add, so the report
- * shows nothing. `override`: the evidence points elsewhere. `context`: the
- * rules stand, and the note says what they could not see.
- */
-export const CancellationModelVerdict = Schema.Literals(["agree", "override", "context"])
+/** `agree`: the rules' reason stands. `override`: the evidence shows a different one. */
+export const CancellationModelVerdict = Schema.Literals(["agree", "override"])
 export type CancellationModelVerdict = Schema.Schema.Type<typeof CancellationModelVerdict>
 
 /**
@@ -187,14 +200,35 @@ export const CancellationModelCategory = Schema.Literals([
 ])
 export type CancellationModelCategory = Schema.Schema.Type<typeof CancellationModelCategory>
 
+export const CancellationCompanyConfidence = Schema.Literals(["high", "medium", "low"])
+export type CancellationCompanyConfidence = Schema.Schema.Type<typeof CancellationCompanyConfidence>
+
+/** The model's best guess at who the customer is, from the company evidence. */
+export const CancellationCompanyGuess = Schema.Struct({
+	/** The company's name, or its domain when that is all there is; never a person's name. */
+	name: Schema.String,
+	/** What the company does, in one line; null when nothing says. */
+	oneLiner: Schema.NullOr(Schema.String),
+	/** City and/or country, when the evidence says. */
+	location: Schema.NullOr(Schema.String),
+	confidence: CancellationCompanyConfidence,
+	/** The clues the guess rests on, in a few words. */
+	basis: Schema.String,
+})
+export type CancellationCompanyGuess = Schema.Schema.Type<typeof CancellationCompanyGuess>
+
 export class CancellationModelRead extends Schema.Class<CancellationModelRead>("CancellationModelRead")({
+	/** Null when the evidence says nothing about who the customer is. */
+	company: Schema.NullOr(CancellationCompanyGuess),
+	/** What is unusual about this customer and bears on why it left, stated as fact. At most three; often none. */
+	findings: Schema.Array(Schema.String),
 	verdict: CancellationModelVerdict,
-	/** The reason in a few words, set only on `override`. */
+	/** The override's reason as a label; null on `agree`. */
+	category: Schema.NullOr(CancellationModelCategory),
+	/** The override's reason in a few words; null on `agree`. */
 	reason: Schema.NullOr(Schema.String),
-	/** The override's reason as a label; null unless `override`. Absent on reads stored before it. */
-	category: Schema.optionalKey(Schema.NullOr(CancellationModelCategory)),
-	/** One to three sentences, citing the evidence; null on `agree`. */
-	note: Schema.NullOr(Schema.String),
+	/** The model's opinion on why the customer left, in one or two sentences. */
+	conclusion: Schema.String,
 	/** The model id that answered. */
 	model: Schema.String,
 }) {}
