@@ -103,7 +103,7 @@ export const mapleMcpServerManifest = ({
 export type McpToolSurface =
 	/** The public MCP transport (`mcp/server.ts`). */
 	| "mcp"
-	/** The in-process AI chat agent (`chat/turn-runner.ts`). */
+	/** In-process agent turns: investigations, their follow-ups and pull request review (`chat/turn-runner.ts`). */
 	| "chat"
 	/**
 	 * The chat-platform bot, which runs the same agent engine as `chat` but answers into a channel

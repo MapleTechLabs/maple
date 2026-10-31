@@ -2,6 +2,7 @@ import { Duration, Option, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
 import { Message, type Model } from "./model"
+import { pollTicks } from "../../../data/poll"
 
 /** `POLL_MS`: how often the list refetches while a review is queued or running. */
 const POLL = Duration.seconds(5)
@@ -21,8 +22,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			modelToDependencies: ({ model }) => ({ isActive: isActive(model) }),
 			dependenciesToStream: ({ isActive: active }) =>
 				active
-					? Stream.tick(POLL).pipe(
-							Stream.drop(1),
+					? pollTicks(POLL).pipe(
 							Stream.map(() => Message.TickedPoll()),
 						)
 					: Stream.empty,

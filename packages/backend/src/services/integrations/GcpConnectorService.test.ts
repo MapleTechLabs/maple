@@ -113,6 +113,49 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("connects a scope as its own source and removes the source with the connector", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sources = () =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ kind: string; platform: string; name: string; connector: string | null }>(
+					`SELECT s.kind, s.platform, s.name, c.id AS connector
+					FROM sources s LEFT JOIN gcp_connectors c ON c.source_id = s.id`,
+				),
+			)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
+			// A refused duplicate leaves no source behind.
+			yield* Effect.flip(gcp.create(orgId, userId, projectScope("acme-prod")))
+			assert.deepStrictEqual((yield* sources()).rows, [
+				{ kind: "integration", platform: "gcp", name: "Google Cloud acme-prod", connector: connector.id },
+			])
+
+			yield* gcp.delete(orgId, connector.id)
+			assert.deepStrictEqual((yield* sources()).rows, [])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("forgets the metrics poller's last error once metrics are switched off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sourceError = () =>
+			Effect.promise(() =>
+				queryFirstRow<{ last_poll_error: string | null }>(
+					testDb,
+					"SELECT s.last_poll_error FROM sources s JOIN gcp_connectors c ON c.source_id = s.id",
+				),
+			).pipe(Effect.map((row) => row?.last_poll_error ?? null))
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			yield* Effect.promise(() =>
+				queryFirstRow(testDb, "UPDATE sources SET last_poll_error = 'Permission denied' RETURNING id"),
+			)
+			yield* gcp.update(orgId, connector.id, { metricsEnabled: false })
+			assert.isNull(yield* sourceError())
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
 	it.effect("connects a scope once per organization, whatever its host project", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

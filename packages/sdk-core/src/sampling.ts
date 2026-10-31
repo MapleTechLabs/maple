@@ -13,6 +13,8 @@ export function sessionRoll(sessionId: string): number {
 }
 
 const MAX_56 = 2 ** 56
+/** The largest double below 2^56: `2 ** 56 - 1` rounds up to 2^56, which needs a 15th hex digit. */
+const TOP_56 = MAX_56 - 8
 
 /** 56 bits as the 14-hex-digit form `ot=th`/`ot=rv` use; `th` drops trailing zeros. */
 const hex56 = (value: number): string => value.toString(16).padStart(14, "0")
@@ -22,7 +24,7 @@ const hex56 = (value: number): string => value.toString(16).padStart(14, "0")
  * hex, trailing zeros dropped. Ingest reads it back as the span's weight.
  */
 export function rejectionThreshold(probability: number): string {
-	return hex56(Math.round((1 - probability) * MAX_56)).replace(/0+$/, "") || "0"
+	return hex56(Math.min(TOP_56, Math.round((1 - probability) * MAX_56))).replace(/0+$/, "") || "0"
 }
 
 /**
@@ -30,7 +32,7 @@ export function rejectionThreshold(probability: number): string {
  * so a downstream consistent-probability sampler reaches the same answer.
  */
 export function randomnessValue(roll: number): number {
-	return Math.min(MAX_56 - 1, Math.floor((1 - roll) * MAX_56))
+	return Math.min(TOP_56, Math.floor((1 - roll) * MAX_56))
 }
 
 export interface SamplingDecision {

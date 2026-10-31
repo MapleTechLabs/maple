@@ -1,4 +1,4 @@
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	errorTextTokens,
@@ -16,6 +16,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
+import { linkButton } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
@@ -52,7 +53,13 @@ export const detailOf = (model: Model): ErrorDetail =>
 
 export const differencesOf = (detail: ErrorDetail): ReadonlyMap<string, VariantDifference> => {
 	const found = variantDifferences(detail.variants.map((row) => unwrapToolErrorText(row.message).text))
-	return new Map(detail.variants.flatMap((row, index) => Option.toArray(Option.fromUndefinedOr(found[index])).map((difference) => [row.message, difference] as const)))
+	return new Map(
+		detail.variants.flatMap((row, index) =>
+			Option.toArray(Option.fromUndefinedOr(found[index])).map(
+				(difference) => [row.message, difference] as const,
+			),
+		),
+	)
 }
 
 const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =>
@@ -60,13 +67,15 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 		h.span(
 			[h.Class("contents")],
 			[
-				...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"])] : []),
+				...(index > 0
+					? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])]
+					: []),
 				typeof item === "string" ? h.span([h.Class("text-muted-foreground")], [item]) : item,
 			],
 		),
 	)
 
-const MUTED_HEADING = "font-mono text-lg leading-[26px] font-semibold tracking-[-0.01em] text-muted-foreground"
+const MUTED_HEADING = "font-mono text-lg leading-[26px] font-semibold tracking-tight text-muted-foreground"
 
 const headingOf = (h: H, group: Prepared, text: string): Html => {
 	if (group.fingerprint === UNGROUPED_FINGERPRINT)
@@ -88,14 +97,16 @@ const headingOf = (h: H, group: Prepared, text: string): Html => {
 
 const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 	const { group, timeZone } = inputs
-	const share = formatPercent(inputs.toolFailures > 0 ? group.calls / inputs.toolFailures : 0, { floor: 0.01 })
+	const share = formatPercent(inputs.toolFailures > 0 ? group.calls / inputs.toolFailures : 0, {
+		floor: 0.01,
+	})
 	return facts(h, [
 		h.span(
 			[h.Class("text-foreground")],
-			[formatToolCount(group.calls), " failed call", group.calls === 1 ? "" : "s"],
+			[formatToolCount(group.calls), ` failed ${pluralize(group.calls, "call")}`],
 		),
 		`${share} of failures`,
-		`${formatToolCount(group.sessions)} session${group.sessions === 1 ? "" : "s"}`,
+		`${formatToolCount(group.sessions)} ${pluralize(group.sessions, "session")}`,
 		`first seen ${formatTimestampInTimezone(group.firstSeen, { timeZone })}`,
 		`last seen ${formatTimestampInTimezone(group.lastSeen, { timeZone })}`,
 	])
@@ -107,18 +118,26 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 		[h.Class("flex min-w-0 flex-1 flex-col gap-2.5")],
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/80")],
+				[
+					h.Class(
+						"flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
+					),
+				],
 				[
 					h.span([], [inputs.tool]),
-					h.span([h.Class("text-muted-foreground/40")], ["/"]),
+					h.span([h.Class("text-foreground-faint")], ["/"]),
 					h.span([], ["errors"]),
-					h.span([h.Class("text-muted-foreground/40")], ["/"]),
+					h.span([h.Class("text-foreground-faint")], ["/"]),
 					h.span([], [String(position.index + 1), " of ", String(position.total)]),
 					...(group.errorType === ""
 						? []
 						: [
 								h.span(
-									[h.Class("ml-1 rounded-sm border border-border px-[5px] text-2xs text-muted-foreground/70")],
+									[
+										h.Class(
+											"ml-1 rounded-sm border border-border px-1.5 text-2xs text-foreground-subtle",
+										),
+									],
 									["error.type ", group.errorType],
 								),
 							]),
@@ -126,7 +145,11 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 			),
 			headingOf(h, group, unwrapToolErrorText(group.message).text),
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5")],
+				[
+					h.Class(
+						"flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5",
+					),
+				],
 				headerFacts(h, inputs),
 			),
 		],
@@ -150,9 +173,12 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 			h.div(
 				[h.Class("flex items-baseline justify-between font-mono")],
 				[
-					eyebrow(h, { variant: "mono", className: "leading-3.5" }, ["Failed calls / ", bucket.unit]),
+					eyebrow(h, { variant: "mono", className: "leading-3.5" }, [
+						"Failed calls / ",
+						bucket.unit,
+					]),
 					h.span(
-						[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+						[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 						["max ", formatToolCount(Math.max(0, ...group.spark))],
 					),
 				],
@@ -167,7 +193,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 				className: "h-11 w-[340px] shrink-0",
 			}),
 			h.div(
-				[h.Class("flex justify-between font-mono text-2xs leading-3.5 text-muted-foreground/70")],
+				[h.Class("flex justify-between font-mono text-2xs leading-3.5 text-foreground-subtle")],
 				[
 					h.span([], [windowRangeLabel(range.startMs, range.startMs, timeZone)]),
 					h.span([], [windowRangeLabel(range.endMs, range.endMs, timeZone)]),
@@ -210,7 +236,7 @@ const content = (h: H, model: Model, inputs: ModalInputs): Html => {
 			h.header(
 				[
 					h.Class(
-						"flex shrink-0 items-start gap-8 border-b border-border px-6 pt-5 pb-[18px] max-lg:flex-col max-lg:gap-4",
+						"flex shrink-0 items-start gap-8 border-b border-border px-6 py-5 max-lg:flex-col max-lg:gap-4",
 					),
 				],
 				[
@@ -262,7 +288,7 @@ const errorModal = (h: H, model: Model, inputs: ModalInputs | undefined): Html =
 		},
 	})
 
-const NAV_BUTTON = "text-muted-foreground hover:text-foreground"
+const NAV_BUTTON = "text-muted-foreground hover:text-foreground active:text-foreground"
 
 const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const { position } = inputs
@@ -304,19 +330,26 @@ const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 					className: NAV_BUTTON,
 					attributes: [h.OnClick(Message.ClickedCopyLink())],
 				},
-				[icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", { attributes: [h.AriaHidden(true)] })],
-			),
-			h.a(
 				[
-					h.Href(hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } }))),
-					h.Class(
-						"inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50",
-					),
+					icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", {
+						attributes: [h.AriaHidden(true)],
+					}),
 				],
+			),
+			linkButton(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					className: "font-mono text-2xs sm:text-2xs",
+					href: hrefOf(
+						AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } }),
+					),
+				},
 				[
 					"Open in Sessions",
 					icon(h, "ExternalLinkIcon", {
-						size: 11,
+						size: 12,
 						className: "text-muted-foreground",
 						attributes: [h.AriaHidden(true)],
 					}),

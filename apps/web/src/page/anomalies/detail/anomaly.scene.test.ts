@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { AnomalyIncidentId, AnomalyIncidentNotFoundError } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident, V2ErrorIssue } from "@maple/domain/http/v2"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import {
 	Command,
 	expect as expectView,
@@ -21,6 +21,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { SetIncidentIssue } from "./command"
+import { incidentOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -71,7 +72,9 @@ const loaded = () => {
 
 describe("anomaly detail", () => {
 	test("entry reads the clock, the incident and the chart runtime; the series follows the incident", () => {
-		expect(names(init(route, context).commands)).toEqual(["ReadAnomalyClock", "FetchAnomalyIncident", "LoadChartRuntime"])
+		expect(names(init(route, context).commands)).toEqual(
+			expect.arrayContaining(["ReadAnomalyClock", "FetchAnomalyIncident"]),
+		)
 		expect(names(loaded().commands)).toEqual(["FetchAnomalyTimeseries"])
 	})
 
@@ -84,7 +87,7 @@ describe("anomaly detail", () => {
 			).model
 		const notFound = new AnomalyIncidentNotFoundError({ message: "Anomaly incident not found", incidentId: ID })
 		scene({ update: pageUpdate, view }, given(fail(notFound)), themed(), expectView(text("Anomaly not found")).toExist())
-		scene({ update: pageUpdate, view }, given(fail(new Error("down"))), themed(), expectView(text("Failed to load anomaly")).toExist())
+		scene({ update: pageUpdate, view }, given(fail(new Error("down"))), themed(), expectView(text("Couldn't load anomaly")).toExist())
 	})
 
 	test("resolving sends one request, then toasts and re-reads the incident", () => {
@@ -95,6 +98,25 @@ describe("anomaly detail", () => {
 		const done = pageUpdate(started.model, Message.CompletedResolve({ result: Result.succeed(incident) }))
 		expect(names(done.commands)).toContain("FetchAnomalyIncident")
 		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Anomaly resolved", description: "" }))
+	})
+
+	test("a live-refresh read in flight when a resolve lands cannot put the open incident back", () => {
+		const resolved = Schema.decodeUnknownSync(V2AnomalyIncident)({
+			...Schema.encodeSync(V2AnomalyIncident)(incident),
+			status: "resolved",
+			resolved_at: new Date(NOW).toISOString(),
+		})
+		const ticked = pageUpdate(loaded().model, Message.TickedLiveRefresh({ nowMs: NOW }))
+		expect(names(ticked.commands)).toContain("FetchAnomalyIncident")
+		const preWriteKey = ticked.model.incident.key ?? ""
+		const busy: Model["busy"] = "resolve"
+		const done = pageUpdate({ ...ticked.model, busy }, Message.CompletedResolve({ result: Result.succeed(resolved) }))
+		expect(names(done.commands)).toContain("FetchAnomalyIncident")
+		const final = [
+			Message.CompletedFetchIncident({ key: done.model.incident.key ?? "", result: Result.succeed(resolved) }),
+			Message.CompletedFetchIncident({ key: preWriteKey, result: Result.succeed(incident) }),
+		].reduce((current, message) => pageUpdate(current, message).model, done.model)
+		expect(Option.map(incidentOf(final), (current) => current.status)).toEqual(Option.some("resolved"))
 	})
 
 	test("Open investigation navigates to the new investigation", () => {

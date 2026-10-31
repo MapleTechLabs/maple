@@ -5,13 +5,13 @@ import { resolveColor, type ThemeColors } from "./theme-colors"
 
 // Port of `FixedMetricLegend` (packages/ui/src/components/plot/fixed-metrics.tsx).
 
-/** `FixedMetricLegend`: the always-on swatch strip under a fixed-metric plot. */
+/** `FixedMetricLegend`: the always-on swatch strip; items match the widget header legend. */
 export const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<FixedMetricSeries>): Html =>
 	h.div(
 		[h.Class("flex flex-wrap gap-x-3 gap-y-0.5 pt-2 text-xs")],
 		series.map((entry) =>
 			h.span(
-				[h.Key(entry.key), h.Class("flex items-center gap-1.5 px-1 py-0.5")],
+				[h.Key(entry.key), h.Class("flex min-w-0 items-center gap-1.5 text-foreground")],
 				[
 					h.span([
 						h.Class(

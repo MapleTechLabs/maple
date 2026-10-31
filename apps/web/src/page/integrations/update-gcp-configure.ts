@@ -27,8 +27,14 @@ import {
 	UpdateConnector,
 } from "./gcp-configure"
 import { CAPABILITIES, SCOPE_TYPES } from "./gcp-configure-copy"
-import { chooseChanges, createRequest, isScopeReady } from "./gcp-configure-derive"
-import type { Capability, ConfigureModel, GcpFlags, LogFilterDraft, SetupMethod } from "./gcp-configure-schema"
+import { chooseChanges, createRequest } from "./gcp-configure-derive"
+import type {
+	Capability,
+	ConfigureModel,
+	GcpFlags,
+	LogFilterDraft,
+	SetupMethod,
+} from "./gcp-configure-schema"
 import type { ConfigureTarget } from "./gcp-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -104,7 +110,8 @@ const requestScripts = (model: Model, context: PageContext, mode: Keyed.RequestM
 	const connector = configure === null ? undefined : configureConnector(model, configure)
 	if (configure === null || connector === undefined || configure.opened === null) return { model }
 	// Without the script the sink is the one found when the step opened (`MethodApplyStage`).
-	const sinkExists = configure.method === "script" ? connector.applied_logs_enabled === true : configure.sinkExisted
+	const sinkExists =
+		configure.method === "script" ? connector.applied_logs_enabled === true : configure.sinkExisted
 	const { key, applicationLogs } = scriptsKey(context, connector, configure.filter, sinkExists)
 	return Option.match(Keyed.request(configure.scripts, key, mode), {
 		onNone: () => ({ model }),
@@ -215,18 +222,6 @@ export const gotScopeField = (
 	})),
 })
 
-/** Continue on the scope step: only with a valid scope. */
-export const submittedScope = (model: Model): Return => {
-	const configure = model.gcpCard.configure
-	if (configure === null || configure.step !== "scope" || !isScopeReady(configure)) return { model }
-	return { model: withConfigure(model, () => ({ step: "data" })) }
-}
-
-export const clickedBack = (model: Model): Return =>
-	model.gcpCard.configure?.isCreating === true
-		? { model }
-		: { model: withConfigure(model, () => ({ step: "scope" })) }
-
 export const submittedCreate = (model: Model): Return => {
 	const configure = model.gcpCard.configure
 	if (configure === null || configure.isCreating) return { model }
@@ -243,7 +238,10 @@ export const submittedCreate = (model: Model): Return => {
 }
 
 /** The write settled; `true` when the wizard it was sent from is still the one open. */
-const settleWrite = (model: Model, opens: number): { readonly model: Model; readonly isCurrent: boolean } => ({
+const settleWrite = (
+	model: Model,
+	opens: number,
+): { readonly model: Model; readonly isCurrent: boolean } => ({
 	model: updateGcpCard(model, { pendingWrite: null }).model,
 	isCurrent: model.gcpCard.configure !== null && model.gcpCard.configureOpens === opens,
 })
@@ -252,11 +250,11 @@ const settleWrite = (model: Model, opens: number): { readonly model: Model; read
 const staleWrite = (model: Model, context: PageContext, isSaved: boolean): Return => {
 	const freed = withConfigure(model, () => ({ isCreating: false, isSaving: false }))
 	return isSaved
-		? chain(freed, [(next) => requestStatus(next, context, "gcp", "Refresh"), refreshInventory])
+		? chain(freed, [(next) => requestStatus(next, context, "gcp", "Supersede"), refreshInventory])
 		: { model: freed }
 }
 
-/** A refused scope keeps its message on screen; a created one leads into the run step. */
+/** A refused scope keeps its message on screen; a created one reads its setup for Go live. */
 export const completedCreate = (
 	model: Model,
 	context: PageContext,
@@ -280,8 +278,8 @@ export const completedCreate = (
 	return chain(
 		withConfigure(settled, () => ({ created: connector, target })),
 		[
-			(next) => toMethod(next, false),
-			(next) => requestStatus(next, context, "gcp", "Refresh"),
+			(next) => enterApply(next, context, false),
+			(next) => requestStatus(next, context, "gcp", "Supersede"),
 			refreshInventory,
 		],
 	)
@@ -303,19 +301,27 @@ export const toggledCollect = (model: Model, capability: Capability): Return => 
 	}
 }
 
-const withFilter = (model: Model, patch: (filter: LogFilterDraft) => Partial<LogFilterDraft>): Return => ({
-	model: withConfigure(model, (configure) => ({
+/** A filter changed after the setup was read (the flow's Back): the script is asked for again. */
+const withFilter = (
+	model: Model,
+	context: PageContext,
+	patch: (filter: LogFilterDraft) => Partial<LogFilterDraft>,
+): Return => {
+	const next = withConfigure(model, (configure) => ({
 		filter: { ...configure.filter, ...patch(configure.filter) },
-	})),
-})
+	}))
+	return next.gcpCard.configure?.opened == null ? { model: next } : requestScripts(next, context, "Load")
+}
 
 export const clickedLogFilter = (model: Model): Return => ({
 	model: withConfigure(model, (configure) => ({ isFilterOpen: !configure.isFilterOpen })),
 })
 
-export const clickedForwardOutput = (model: Model): Return => withFilter(model, () => ({ runtimes: [] }))
+export const clickedForwardOutput = (model: Model, context: PageContext): Return =>
+	withFilter(model, context, () => ({ runtimes: [] }))
 
-export const clickedUseOpenTelemetry = (model: Model): Return => withFilter(model, () => ({ runtimes: null }))
+export const clickedUseOpenTelemetry = (model: Model, context: PageContext): Return =>
+	withFilter(model, context, () => ({ runtimes: null }))
 
 /** A runtime's tick flipped in the draft (shared with `/lab/gcp`). */
 export const runtimeToggled = (filter: LogFilterDraft, runtime: GcpLogRuntime): Partial<LogFilterDraft> => {
@@ -327,11 +333,11 @@ export const runtimeToggled = (filter: LogFilterDraft, runtime: GcpLogRuntime): 
 	}
 }
 
-export const toggledRuntime = (model: Model, runtime: GcpLogRuntime): Return =>
-	withFilter(model, (filter) => runtimeToggled(filter, runtime))
+export const toggledRuntime = (model: Model, context: PageContext, runtime: GcpLogRuntime): Return =>
+	withFilter(model, context, (filter) => runtimeToggled(filter, runtime))
 
 /** Keep or replace an existing sink's filter. */
-export const gotFilterMode = (model: Model, message: Select.Message): Return => {
+export const gotFilterMode = (model: Model, context: PageContext, message: Select.Message): Return => {
 	const configure = model.gcpCard.configure
 	if (configure === null) return { model }
 	const step = Select.update(configure.filterMode, message)
@@ -340,9 +346,9 @@ export const gotFilterMode = (model: Model, message: Select.Message): Return => 
 	)
 	const picked = step.outMessage?._tag === "ChangedValue" ? step.outMessage.value : null
 	const next = withConfigure(model, () => ({ filterMode: step.model }))
-	return picked === null
-		? { model: next, commands }
-		: { ...withFilter(next, () => ({ keep: picked === "keep" })), commands }
+	if (picked === null) return { model: next, commands }
+	const filtered = withFilter(next, context, () => ({ keep: picked === "keep" }))
+	return { ...filtered, commands: [...commands, ...(filtered.commands ?? [])] }
 }
 
 const confirmStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -372,8 +378,12 @@ const save = (model: Model): Return => {
 				? { logs_enabled: draft.logs_enabled }
 				: { metrics_enabled: draft.metrics_enabled }
 	return {
-		model: withConfigure(updateGcpCard(model, { pendingWrite: "update" }).model, () => ({ isSaving: true })),
-		commands: [UpdateConnector({ opens: model.gcpCard.configureOpens, id: connector.id, payload, flags: draft })],
+		model: withConfigure(updateGcpCard(model, { pendingWrite: "update" }).model, () => ({
+			isSaving: true,
+		})),
+		commands: [
+			UpdateConnector({ opens: model.gcpCard.configureOpens, id: connector.id, payload, flags: draft }),
+		],
 	}
 }
 
@@ -408,7 +418,7 @@ export const completedUpdate = (
 			model: settled,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to save the change",
+				title: "Couldn't save the change",
 				description: failure.message,
 			}),
 		}
@@ -416,7 +426,7 @@ export const completedUpdate = (
 	const applied = withConfigure(settled, () => ({ asked: flags, confirm: initConfirm() }))
 	return chain(applied, [
 		(next) => toMethod(next, false),
-		(next) => requestStatus(next, context, "gcp", "Refresh"),
+		(next) => requestStatus(next, context, "gcp", "Supersede"),
 		refreshInventory,
 	])
 }
@@ -431,7 +441,11 @@ export const clickedRunEdit = (model: Model): Return => {
 	if (configure === null || connector === undefined) return { model }
 	if (configure.opened !== null)
 		return {
-			model: withConfigure(model, () => ({ opened: null, connectionStage: "method", scripts: Keyed.idle() })),
+			model: withConfigure(model, () => ({
+				opened: null,
+				connectionStage: "method",
+				scripts: Keyed.idle(),
+			})),
 		}
 	return {
 		model: withConfigure(model, () => ({
@@ -490,10 +504,19 @@ export const clickedScriptExpand = (model: Model): Return => ({
 
 /** A newer read that lists the connection replaces what was just saved (`asked.of === saved`). */
 export const statusArrived = (model: Model): Return => {
-	const target = model.gcpCard.configure?.target
+	const configure = model.gcpCard.configure
+	const target = configure?.target
 	const listed =
 		target?._tag === "Connection" && gcpConnectors(model).some((entry) => entry.id === target.id)
-	return listed ? { model: withConfigure(model, () => ({ asked: null })) } : { model }
+	if (listed) return { model: withConfigure(model, () => ({ asked: null })) }
+	// The flow starts with metrics on; a deployment without them turns the switch back off.
+	return target?._tag === "New" && configure?.newFlags.metrics_enabled === true && !metricsAvailable(model)
+		? {
+				model: withConfigure(model, () => ({
+					newFlags: { logs_enabled: true, metrics_enabled: false },
+				})),
+			}
+		: { model }
 }
 
 /** `GcpManualSteps`: one step open at a time; the open one closes on its own click. */
@@ -544,5 +567,5 @@ export const completedConfirmRemoval = (
 				description: failure.message,
 			}),
 		}
-	return chain(settled, [(next) => requestStatus(next, context, "gcp", "Refresh"), refreshInventory])
+	return chain(settled, [(next) => requestStatus(next, context, "gcp", "Supersede"), refreshInventory])
 }

@@ -4,15 +4,13 @@ import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor } from "./dispatcher"
 import { listMcpTools } from "./tool-catalog"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
-import {
-	WarehouseQueryService,
-	type WarehouseQueryServiceApi,
-} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryError } from "@maple/domain"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import {
@@ -258,6 +256,24 @@ describe("MCP dispatcher", () => {
 			}),
 		)
 
+		// A failure message can quote a whole SQL statement; the span keeps a bounded prefix.
+		it.effect("caps the failure message it puts on the span", () =>
+			Effect.gen(function* () {
+				const { spans, tracer } = makeRecordingTracer()
+				const message = `SQL rejected: ${"x".repeat(5_000)}`
+				yield* recordExpectedMcpFailure(
+					{ _tag: "@maple/mcp/errors/McpInvalidInputError", message },
+					"Invalid tool input",
+				).pipe(Effect.withSpan("probe"), Effect.withTracer(tracer))
+
+				const recorded = String(
+					spans.find((s) => s.name === "probe")?.attributes.get("maple.mcp.error.message"),
+				)
+				expect(recorded.length).toBeLessThan(message.length)
+				expect(message.startsWith(recorded)).toBe(true)
+			}),
+		)
+
 		// Expected 4xx (bad parameters, bad credentials) must not be Error spans —
 		// only 5xx is, per CLAUDE.md. Prod was recording `@maple/mcp/decode-error`
 		// and `McpAuthInvalidError` as Error status + exception events.
@@ -272,6 +288,7 @@ describe("MCP dispatcher", () => {
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
+				expect(dispatchSpan.attributes.get("maple.mcp.error.message")).toContain("inspect_trace")
 
 				// The inner registry span still FAILS with the decode error (the typed
 				// error stays in the error channel); the SDK exporter is what turns it
@@ -332,10 +349,10 @@ describe("MCP dispatcher", () => {
 		it.effect("fails the dispatcher span on a real query failure", () =>
 			Effect.gen(function* () {
 				// SAFETY: run_sql reaches only rawSqlQuery on the warehouse; no other method is called.
-				const warehouse = {
+				const warehouse = makeWarehouseServiceStub({
 					rawSqlQuery: () =>
 						Effect.fail(new WarehouseQueryError({ message: "boom", pipeName: "run_sql" })),
-				} as WarehouseQueryServiceApi
+				})
 				const executor = yield* McpToolExecutor.make.pipe(
 					Effect.provide(
 						Context.make(AuditLogService, makeMemoryAuditLog()).pipe(

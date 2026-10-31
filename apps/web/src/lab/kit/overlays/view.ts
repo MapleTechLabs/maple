@@ -1,4 +1,5 @@
 import { OVERLAY_ITEMS } from "../overlay-items"
+import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kitPage, kitSection } from "../kit-layout"
@@ -78,9 +79,12 @@ const itemLink = (h: H, name: OverlayItem, isActive: boolean): Html =>
 		[
 			...(isActive ? [h.AriaCurrent("page")] : []),
 			h.Class(
-				isActive
-					? "font-medium text-foreground active"
-					: "text-muted-foreground hover:text-foreground",
+				cn(
+					"rounded-md border px-2 py-1 font-mono text-xs transition-colors",
+					isActive
+						? "active border-foreground/20 bg-accent font-medium text-foreground"
+						: "border-border text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+				),
 			),
 			...(isActive ? [h.DataAttribute("status", "active")] : []),
 			h.Href(`/lab/kit/overlays?item=${name}`),
@@ -101,7 +105,7 @@ export const view = (model: Model, h: H): Html =>
 				[
 					kitSection(h, "Items", [
 						h.nav(
-							[h.AriaLabel("Overlay items"), h.Class("flex flex-wrap gap-x-3 gap-y-1 text-sm")],
+							[h.AriaLabel("Overlay items"), h.Class("flex flex-wrap gap-1.5")],
 							OVERLAY_ITEMS.map((name) => itemLink(h, name, Option.contains(model.item, name))),
 						),
 					]),

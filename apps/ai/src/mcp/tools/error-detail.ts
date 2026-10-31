@@ -5,7 +5,7 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { bucketLabels, PARTIAL_BUCKET_NOTE } from "../lib/format-query-result"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { ErrorDetailOutput } from "@maple/domain/mcp-outputs"
 import { ErrorIssueId } from "@maple/domain/http"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
@@ -64,11 +64,13 @@ const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (param
 	const rawIssue = params.issue_id?.trim() || (isUuid(rawFingerprint) ? rawFingerprint : "")
 	if (rawIssue !== "") {
 		const parameter = params.issue_id?.trim() ? "issue_id" : "fingerprint"
-		const issueId = yield* decodeIssueId(rawIssue).pipe(
+		const issueId = yield* decodeIssueId(
+			Option.getOrElse(P.internalIdOf("errorIssue", rawIssue), () => rawIssue),
+		).pipe(
 			Effect.mapError(
 				() =>
 					new McpInvalidInputError({
-						message: `Invalid issue_id '${rawIssue}': an issue id is the full UUID from list_error_issues.`,
+						message: `Invalid issue_id '${rawIssue}': an issue id is the full UUID from list_error_issues, or its REST id (iss_…).`,
 						parameter,
 					}),
 			),
@@ -248,7 +250,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				'The error FingerprintHash from find_errors or list_error_issues: a decimal UInt64 string, e.g. "11640295108927840024".',
 			),
 			issue_id: P.optionalText(
-				"An error issue id (UUID) from list_error_issues, instead of fingerprint.",
+				"An error issue id from list_error_issues (its UUID or its REST id, iss_…), instead of fingerprint.",
 			),
 			...WINDOW.fields,
 			service: P.service(),

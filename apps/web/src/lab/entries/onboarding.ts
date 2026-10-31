@@ -5,25 +5,28 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as PricingCardsView from "../../page/onboarding/pricing-cards-view"
 import * as QuickStartTeamView from "../../page/onboarding/quick-start-team-view"
 import * as QuickStartView from "../../page/onboarding/quick-start-view"
-import { button } from "../../ui/button"
+import { button, linkButton } from "../../ui/button"
+import { separator } from "../../ui/display"
+import * as CopyButton from "../../ui/copy-button"
 import { icon } from "../../ui/icon"
 import { defineLabWithFlags } from "../define"
 import { defineMessageUnion } from "foldkit/message"
 import * as PricingCards from "../../page/onboarding/pricing-cards"
 import * as QuickStart from "../../page/onboarding/quick-start"
-import {
-	completeStep,
-	DEFAULT_QUICK_START_STATE,
-	pickedRole,
-	QuickStartState,
-	toggledIntent,
-} from "../../page/onboarding/quick-start-state"
-import { ready, Team, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
+import { ConnectMessage } from "../../page/onboarding/quick-start-connect"
+import { DEFAULT_QUICK_START_STATE, STEP_IDS } from "../../page/onboarding/quick-start-state"
+import { ready, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
 
-// `/lab/onboarding`: click through onboarding with a
-// sample catalog; rename, invites and checkout are simulated, and Restart starts over.
+// `/lab/onboarding`: the real quick-start screen with a sample catalog; checkout, rename and invites are
+// simulated and nothing is saved. `?step=stack` opens a later step, Restart starts over.
 
-const meteredItem = (featureId: string, included: number, amount: number, billingUnits: number, secondaryText: string) =>
+const meteredItem = (
+	featureId: string,
+	included: number,
+	amount: number,
+	billingUnits: number,
+	secondaryText: string,
+) =>
 	new CatalogPlanItem({
 		featureId,
 		included,
@@ -49,123 +52,147 @@ export const PLANS = [
 ]
 
 export const Model = Schema.Struct({
-	/** 1 to 4 are the wizard's steps; 5 is "Preview complete". */
-	step: Schema.Number,
+	quickStart: QuickStart.Model,
+	/** Picking a sample plan stands in for checkout. */
+	hasPlan: Schema.Boolean,
+	isComplete: Schema.Boolean,
 	/** Bumped by Restart, so every step remounts. */
 	run: Schema.Number,
-	state: QuickStartState,
-	workspaceName: Schema.String,
-	invitations: Schema.Array(Schema.String),
-	team: Team,
 })
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	GotStepMessage: { message: QuickStart.Message },
 	ClickedRestart: {},
-	ClickedBackToPlans: {},
 	SimulatedTeamOperation: { message: TeamMessage },
 })
 export type Message = typeof Message.Type
 
-export const init = (initialStep: number): Model => ({
-	step: initialStep,
-	run: 0,
-	state: DEFAULT_QUICK_START_STATE,
-	workspaceName: "Your workspace",
-	invitations: [],
-	team: ready("Your workspace", [], true, null),
+const Step = Schema.Literals(STEP_IDS)
+
+export const init = (step: (typeof STEP_IDS)[number], run = 0): Model => ({
+	quickStart: {
+		...QuickStart.init("lab-onboarding").model,
+		state: { ...DEFAULT_QUICK_START_STATE, activeStep: step },
+		team: ready("Acme", [], true, null),
+	},
+	hasPlan: step !== "plan",
+	isComplete: false,
+	run,
 })
 
 type Return = { readonly model: Model; readonly commands?: ReadonlyArray<Command.Command<Message>> }
 
-const STEP_OF = { role: 1, intent: 2, team: 3, plan: 4 } as const
-
-/** `goTo(step)`: the team step remounts with the name and invitations the preview kept. */
-const goTo = (model: Model, step: number): Model => ({
-	...model,
-	step,
-	team: step === 3 ? ready(model.workspaceName, model.invitations, true, null) : model.team,
-})
-
-const restart = (model: Model): Model =>
-	goTo({ ...init(1), run: model.run + 1 }, 1)
+const withQuickStart = (model: Model, quickStart: QuickStart.Model): Model => ({ ...model, quickStart })
 
 /** The team step's own logic, with the Clerk calls swapped for the simulated ones. */
 const teamStep = (model: Model, message: TeamMessage): Return => {
-	const next = updateTeam(model.team, message)
-	const kept =
-		message._tag === "SucceededTeamOperation"
-			? message.operation === "rename"
-				? { workspaceName: message.value }
-				: { invitations: [...model.invitations, message.value] }
-			: {}
+	const next = updateTeam(model.quickStart.team, message)
 	const operation = next.commands.length === 0 ? null : next.team.pending
 	return {
-		model: { ...model, ...kept, team: next.team },
+		model: withQuickStart(model, { ...model.quickStart, team: next.team }),
 		commands:
 			operation === null
 				? []
 				: [
 						SimulateTeamOperation({
 							operation,
-							value: operation === "rename" ? model.team.name.trim() : model.team.email.trim(),
+							value: operation === "rename" ? next.team.name.trim() : next.team.email.trim(),
 						}),
 					],
 	}
 }
 
+/** The screen's update without its Commands; the sample team stays, as nothing here loads one. */
+const screenStep = (model: Model, message: QuickStart.Message): Model =>
+	withQuickStart(model, {
+		...QuickStart.update(model.quickStart, message, model.hasPlan).model,
+		team: model.quickStart.team,
+	})
+
+/** A snippet's or the agent prompt's copy, run for real: the clipboard needs nothing the lab lacks. */
+const copyStep = (model: Model, snippet: string, message: CopyButton.Message): Return => {
+	const connect = model.quickStart.connect
+	const next = CopyButton.update(connect.snippetCopies[snippet] ?? CopyButton.init(), message)
+	return {
+		model: withQuickStart(model, {
+			...model.quickStart,
+			connect: { ...connect, snippetCopies: { ...connect.snippetCopies, [snippet]: next.model } },
+		}),
+		commands: Command.mapMessages(next.commands ?? [], (child) =>
+			Message.GotStepMessage({
+				message: QuickStart.Message.GotConnectMessage({
+					message: ConnectMessage.GotSnippetCopyMessage({ snippet, message: child }),
+				}),
+			}),
+		),
+	}
+}
+
+/** The screen's own update, minus its saves, analytics and navigation; a sample plan's checkout just succeeds. */
 const stepMessage = (model: Model, message: QuickStart.Message): Return => {
-	const answers = model.state.qualifyAnswers
-	const withAnswers = (qualifyAnswers: typeof answers): Return => ({ model: { ...model, state: { ...model.state, qualifyAnswers } } })
 	switch (message._tag) {
-		case "PickedRole":
-			return withAnswers(pickedRole(answers, message.role, message.role === "other" ? answers.roleDetail : ""))
-		case "ChangedRoleDetail":
-			return withAnswers(pickedRole(answers, "other", message.value))
-		case "ToggledIntent":
-			return withAnswers(toggledIntent(answers, message.intent))
-		case "ClickedContinue": {
-			const isBlocked =
-				(message.step === "role" && (answers.role === null || QuickStart.roleNeedsDetail(model.state))) ||
-				(message.step === "intent" && answers.intents.length === 0)
-			return isBlocked ? { model } : { model: goTo({ ...model, state: completeStep(model.state, message.step) }, STEP_OF[message.step] + 1) }
-		}
-		case "ClickedBack":
-			return { model: goTo(model, STEP_OF[message.to]) }
 		case "GotTeamMessage":
 			return teamStep(model, message.message)
-		// The sample catalog's checkout and the Enterprise contact both end the preview.
+		case "GotConnectMessage":
+			return message.message._tag === "GotSnippetCopyMessage"
+				? copyStep(model, message.message.snippet, message.message.message)
+				: { model: screenStep(model, message) }
 		case "GotPricingMessage":
-			return message.message._tag === "ClickedPlan" || message.message._tag === "ClickedEnterpriseContact"
-				? { model: goTo(model, 5) }
-				: { model }
+			return message.message._tag === "ClickedPlan" ? { model: { ...model, hasPlan: true } } : { model }
+		case "ClickedContinue":
+			if (message.step === "live") return { model: { ...model, isComplete: true } }
+			return { model: screenStep(model, message) }
 		default:
-			return { model }
+			return { model: screenStep(model, message) }
 	}
 }
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotStepMessage: ({ message: child }) => stepMessage(model, child),
-		ClickedRestart: () => ({ model: restart(model) }),
-		ClickedBackToPlans: () => ({ model: goTo(model, 4) }),
+		ClickedRestart: () => ({ model: init("plan", model.run + 1) }),
 		SimulatedTeamOperation: ({ message: child }) => teamStep(model, child),
 	})
 
 // VIEW
 
-/** The wizard's steps 1 to 4, drawn by the screen's own step views. */
-const stepView = Submodel.defineView<Model, QuickStart.Message>((model, h) => {
-	switch (model.step) {
-		case 1:
-			return QuickStartView.roleStep(h, model.state)
-		case 2:
-			return QuickStartView.intentStep(h, model.state)
-		case 3:
-			return QuickStartTeamView.teamStep(h, model.team)
-		default:
-			return QuickStartTeamView.planStep(
+const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
+	PricingCardsView.planCards(h, PLANS, null),
+)
+
+const complete = (h: HtmlBuilder<Message>): Html =>
+	h.div(
+		[h.Class("flex min-h-dvh flex-col items-center justify-center gap-6 px-6 py-16 text-center")],
+		[
+			icon(h, "MapleMark", { size: 56, className: "text-primary" }),
+			h.h1([h.Class("text-2xl font-semibold")], ["Preview complete"]),
+			h.p(
+				[h.Class("max-w-md text-sm text-muted-foreground")],
+				[
+					"In the real flow, the last step opens the app. This preview ends here without creating data.",
+				],
+			),
+			button(h, { attributes: [h.OnClick(Message.ClickedRestart())] }, ["Try it again"]),
+		],
+	)
+
+const stepView = Submodel.defineView<Model, QuickStart.Message>(
+	(model, h) =>
+		QuickStartView.view(h, model.quickStart, {
+			timeZone: "UTC",
+			accountCluster: (label) =>
+				QuickStartView.accountClusterOf(h, [
+					label,
+					// A divider and a ghost button, so only the active step carries an underline.
+					separator(h, "vertical", "h-4"),
+					linkButton(h, { href: "/lab", size: "xs", variant: "ghost" }, ["Exit preview"]),
+				]),
+			needsRegion: false,
+			hasPlan: model.hasPlan,
+			orgName: "Acme",
+			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team),
+			planStep: QuickStartTeamView.planStep(
 				h,
 				false,
 				h.submodel({
@@ -174,71 +201,34 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>((model, h) => {
 					view: plansView,
 					toParentMessage: (message) => QuickStart.Message.GotPricingMessage({ message }),
 				}),
-			)
-	}
-})
-
-const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) => PricingCardsView.planCards(h, PLANS, null))
-
-const complete = (h: HtmlBuilder<Message>): Html =>
-	h.div(
-		[h.Class("flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center")],
-		[
-			icon(h, "MapleMark", { size: 56, className: "text-primary" }),
-			h.h1([h.Class("text-2xl font-semibold")], ["Preview complete"]),
-			h.p(
-				[h.Class("max-w-md text-sm text-muted-foreground")],
-				[
-					"In the real flow, plan selection opens checkout. This preview ends here without creating data or changing your plan.",
-				],
 			),
-			button(h, { attributes: [h.OnClick(Message.ClickedRestart())] }, ["Try it again"]),
-			button(h, { variant: "ghost", attributes: [h.OnClick(Message.ClickedBackToPlans())] }, ["Back to plans"]),
-		],
-	)
+		}) ?? h.empty,
+)
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	QuickStartView.onboardingLayout(
-		h,
-		Math.min(model.step, 4),
-		4,
-		(label) =>
-			QuickStartView.accountClusterOf(h, [
-				label,
-				h.a([h.Href("/lab"), h.Class("text-xs underline underline-offset-4")], ["Exit preview"]),
-			]),
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-center gap-3 border-y px-4 py-2 text-xs text-muted-foreground")],
+	model.isComplete
+		? complete(h)
+		: h.div(
+				[h.Key(String(model.run))],
 				[
-					h.span([], ["Onboarding preview · sample pricing · invites and checkout simulated"]),
-					button(h, { variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedRestart())] }, ["Restart"]),
+					h.submodel({
+						slotId: "lab-onboarding-step",
+						model,
+						view: stepView,
+						toParentMessage: (message) => Message.GotStepMessage({ message }),
+					}),
 				],
-			),
-			QuickStartView.motionStep(
-				h,
-				`${model.run}-${model.step}`,
-				model.step === 5
-					? complete(h)
-					: h.submodel({
-							slotId: "lab-onboarding-step",
-							model,
-							view: stepView,
-							toParentMessage: (message) => Message.GotStepMessage({ message }),
-						}),
-			),
-		],
-	)
+			)
 
-/** `?step=N` opens the preview on a later step. */
-const initialStep = (search: string): number => {
-	const step = Number(new URLSearchParams(search).get("step"))
-	return Number.isInteger(step) && step >= 1 && step <= 5 ? step : 1
-}
+/** `?step=stack` opens the preview on a later step. */
+const initialStep = (search: string): (typeof STEP_IDS)[number] =>
+	Schema.decodeUnknownOption(Step)(new URLSearchParams(search).get("step")).pipe((step) =>
+		step._tag === "Some" ? step.value : "plan",
+	)
 
 export const lab = defineLabWithFlags("Onboarding", {
 	Model,
-	Flags: Schema.Struct({ step: Schema.Number }),
+	Flags: Schema.Struct({ step: Step }),
 	flags: Effect.sync(() => ({ step: initialStep(window.location.search) })),
 	init: (flags) => ({ model: init(flags.step) }),
 	update,
@@ -251,6 +241,8 @@ export const SimulateTeamOperation = Command.define("SimulateOnboardingTeamOpera
 	messages: [Message.SimulatedTeamOperation],
 	execute: ({ operation, value }) =>
 		Effect.succeed(
-			Message.SimulatedTeamOperation({ message: TeamMessage.SucceededTeamOperation({ operation, value }) }),
+			Message.SimulatedTeamOperation({
+				message: TeamMessage.SucceededTeamOperation({ operation, value }),
+			}),
 		),
 })

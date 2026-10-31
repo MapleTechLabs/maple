@@ -3,6 +3,7 @@ import { AsyncData as FoldkitAsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
+import { emptyOnFailure } from "../../../data/enrichment"
 import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -46,12 +47,13 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 	const blocking = FoldkitAsyncData.all([
 		model.overview.data,
 		model.sparklines.data,
-		model.anomalies.data,
-		model.incidents,
+		emptyOnFailure(model.anomalies.data),
+		emptyOnFailure(model.incidents),
 	])
 	return FoldkitAsyncData.matchData(blocking, {
 		onEmpty: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load services", onRetry: Message.ClickedReload() }),
 		// The table paints once its sparklines can: they need the chart runtime and theme colours.
 		onData: ([overview]) =>
 			!isPaintReady(model, overview)
@@ -85,6 +87,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Services",
 					filters: filtersRail(h, model, summaryOf(model), inputs.context.pinnedNamespace),
 					actions: timeControls(h, {
 						search: model.search,

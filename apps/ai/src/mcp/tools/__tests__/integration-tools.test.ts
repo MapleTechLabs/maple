@@ -67,11 +67,11 @@ describe("list_sources", () => {
 		const byName = new Map(output.sources.map((s) => [s.name, s]))
 		expect(byName.get(INTEGRATION_WORLD.failingScrapeTarget)).toMatchObject({
 			platform: "prometheus",
-			delivery: "pull",
+			kind: "integration",
 			status: "failing",
 		})
 		expect(output.sources.find((s) => s.platform === "railway")?.status).toBe("stale")
-		expect(output.sources.find((s) => s.isDefault)).toMatchObject({ delivery: "push", status: "pending" })
+		expect(output.sources.find((s) => s.kind === "default")).toMatchObject({ status: "pending" })
 		expect(output.sources.every((s) => s.id.startsWith("src_"))).toBe(true)
 		expect(output.sources[0]?.status).toBe("failing")
 		expect(JSON.stringify(result.structuredContent)).not.toContain("fixture-secret")

@@ -95,7 +95,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isRolling: false },
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to roll API key",
+						title: "Couldn't roll API key",
 						description: error.message,
 					}),
 				}),

@@ -17,6 +17,6 @@ export const page = definePage(
 		contextChanged,
 		view,
 		subscriptions,
-		breadcrumbs: () => [{ label: "Web Analytics" }],
+		breadcrumbs: () => [{ label: "Web Analytics", isPageHeading: true }],
 	},
 )

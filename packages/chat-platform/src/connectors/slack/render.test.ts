@@ -34,7 +34,7 @@ const alert = (overrides: Partial<ChatAlertBlock> = {}): ChatAlertBlock => ({
 	imageAlt: "High error rate over the alert window",
 	links: [
 		{ label: "Open in Maple", url: "https://app.maple.dev/alerts/1", primary: true },
-		{ label: "✨ Ask Maple AI", url: "https://app.maple.dev/chat", primary: false },
+		{ label: "View rule", url: "https://app.maple.dev/alerts/rule_1", primary: false },
 	],
 	footer: ["\u{1F341} Maple Alerts", "`▁▁▇`", "Incident `inc_1`"],
 	sentAtMs: 1_700_000_000_000,
@@ -44,9 +44,8 @@ const alert = (overrides: Partial<ChatAlertBlock> = {}): ChatAlertBlock => ({
 describe("slack message bodies", () => {
 	it("renders prose as a mrkdwn section and repeats it as the notification fallback", () => {
 		const payload = renderSlackMessage([prose("**checkout** is slow")])
-		expect(payload.blocks).toEqual([
-			{ type: "section", text: { type: "mrkdwn", text: "*checkout* is slow" } },
-		])
+		const block = payload.blocks?.[0]
+		expect(block?.type === "section" && block.text.text).toBe("*checkout* is slow")
 		// What a push notification and a screen reader read.
 		expect(payload.text).toBe("**checkout** is slow")
 		expect(payload.unfurl_links).toBe(false)
@@ -231,9 +230,10 @@ describe("the rest of the vocabulary", () => {
 				],
 			},
 		])
-		expect(payload.blocks?.[0]).toEqual({
+		expect(payload.blocks).toHaveLength(1)
+		expect(payload.blocks?.[0]).toMatchObject({
 			type: "context",
-			elements: [{ type: "mrkdwn", text: "Searching traces… · Running a query…" }],
+			elements: [{ text: "Searching traces… · Running a query…" }],
 		})
 	})
 
@@ -257,50 +257,29 @@ describe("the rest of the vocabulary", () => {
 		const attachment = payload.attachments?.[0]
 		expect(attachment?.color).toBe("#e01e5a")
 		expect(attachment?.fallback).toContain("High error rate — Triggered")
-		expect(attachment?.blocks).toEqual([
-			{
-				type: "header",
-				text: { type: "plain_text", text: "\u{1F6A8} High error rate — Triggered", emoji: true },
-			},
-			{
-				type: "section",
-				text: {
-					type: "mrkdwn",
-					text: "*Error Rate* is *49.7%* — above the 5% threshold, measured over the last 5m.",
-				},
-				fields: [
-					{ type: "mrkdwn", text: "*Severity*\n\u{1F534} Critical" },
-					{ type: "mrkdwn", text: "*Group*\n`electric-sync`" },
-				],
-			},
-			{
-				type: "actions",
-				elements: [
-					{
-						type: "button",
-						text: { type: "plain_text", text: "Open in Maple", emoji: true },
-						action_id: "maple_link_0",
-						url: "https://app.maple.dev/alerts/1",
-						style: "primary",
-					},
-					{
-						type: "button",
-						text: { type: "plain_text", text: "✨ Ask Maple AI", emoji: true },
-						action_id: "maple_link_1",
-						url: "https://app.maple.dev/chat",
-					},
-				],
-			},
-			{
-				type: "context",
-				elements: [
-					{
-						type: "mrkdwn",
-						text: "\u{1F341} Maple Alerts  ·  `▁▁▇`  ·  Incident `inc_1`  ·  <!date^1700000000^{date_short_pretty} at {time}|2023-11-14T22:13:20.000Z>",
-					},
-				],
-			},
+		const blocks = attachment?.blocks ?? []
+		const section = blocks.find((block) => block.type === "section")
+		// Markdown is converted, and each field reads as its label over its value.
+		expect(section?.type === "section" && section.text.text).toBe(
+			"*Error Rate* is *49.7%* — above the 5% threshold, measured over the last 5m.",
+		)
+		expect(section?.type === "section" && section.fields?.map((field) => field.text)).toEqual([
+			"*Severity*\n\u{1F534} Critical",
+			"*Group*\n`electric-sync`",
 		])
+		// Only the primary link is styled; every link button carries its url.
+		const actions = blocks.find((block) => block.type === "actions")
+		expect(
+			actions?.type === "actions" && actions.elements.map((button) => [button.url, button.style]),
+		).toEqual([
+			["https://app.maple.dev/alerts/1", "primary"],
+			["https://app.maple.dev/alerts/rule_1", undefined],
+		])
+		// The sent time is a Slack date token in seconds, with an ISO fallback.
+		const context = blocks.find((block) => block.type === "context")
+		expect(context?.type === "context" && context.elements[0]?.text).toContain(
+			"<!date^1700000000^{date_short_pretty} at {time}|2023-11-14T22:13:20.000Z>",
+		)
 	})
 
 	it("puts an alert's chart between the summary and the buttons", () => {

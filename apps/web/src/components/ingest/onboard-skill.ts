@@ -9,3 +9,12 @@ export function onboardSkillPrompt(ingestUrl: string, ingestKey: string): string
 		`My ingest key is ${ingestKey || "<your-ingest-key>"}.`,
 	].join("\n")
 }
+
+/** maple.dev's "Build with your agent" line, with this org's endpoint and key so nothing is a placeholder. */
+export function agentSetupPrompt(ingestUrl: string, ingestKey: string): string {
+	return [
+		"Add Maple observability to my app: maple.dev/SKILL.md",
+		`My ingest endpoint is ${ingestUrl}.`,
+		...(ingestKey === "" ? [] : [`My ingest key is ${ingestKey}.`]),
+	].join("\n")
+}

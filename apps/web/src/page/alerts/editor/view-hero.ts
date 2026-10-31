@@ -2,23 +2,25 @@ import { breachStatsFromPreview, type BreachStats, formatBreachDuration } from "
 import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { countSkippedWindows, draftThresholds, focusPreviewOnClosestGroups } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Struct } from "effect"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { button } from "../../../ui/button"
 import { card } from "../../../ui/card"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import { stableSlice } from "../../kit/stable-slice"
 import { presetLabel } from "../../kit/time-controls"
 import { alertStatusBadge } from "../shared/badges"
-import { previewIssue, previewPayload, previewStateOf } from "../shared/preview"
+import { previewStateOf } from "../shared/preview"
 import { ruleChart } from "../shared/rule-chart"
 import { conditionSubject, groupBySummary, previewIdentityKey } from "./derive"
-import { windowMsOf } from "./derive-rows"
+import { draftPreviewOf, windowMsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { DryRun, Model } from "./model"
-import { editImpact } from "./view-impact"
+import { editImpact, type ImpactView } from "./view-impact"
 
 // `RuleLiveChartHero`: the evaluator's replay of the
 // draft with the threshold, would-fire bands and the dry-run verdict.
@@ -76,24 +78,14 @@ const dryRunBadge = (h: H, dryRun: DryRun, form: RuleForm): Html => {
 	)
 }
 
-/** The draft's preview as `useAlertRulePreview` reads it. */
-export const draftPreviewOf = (model: Model, form: RuleForm) =>
-	previewStateOf(model.preview, model.previewWindow !== null && hasPayload(model, form), previewIssue(form))
+/** The card's header: the condition, the replay's breaches, the dry run and the range picker. */
+type HeaderView = Pick<Model, "preview" | "previewWindow" | "dryRun" | "timePicker" | "previewPreset" | "isDryRunning">
 
-const hasPayload = (model: Model, form: RuleForm): boolean =>
-	model.previewWindow !== null && previewPayload(form, model.previewWindow)._tag === "Some"
-
-/** Step 2's chart card; the comparison block joins it while editing with unsaved changes. */
-export const liveChartHero = (h: H, model: Model, form: RuleForm, timeZone: string): Html => {
-	const preview = draftPreviewOf(model, form)
-	const thresholds = draftThresholds(form)
-	const displaySignal = displaySignalType(form)
-	const stats = breachStatsFromPreview(preview.preview)
-	const focused = focusPreviewOnClosestGroups(preview.preview)
+const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html => {
+	const stats = breachStatsFromPreview(draftPreviewOf(model, form).preview)
 	const summary = groupBySummary(form)
 	const dryRun = model.dryRun !== null && model.dryRun.key === previewIdentityKey(form) ? model.dryRun : null
-	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
-	const header = h.div(
+	return h.div(
 		[h.Class("flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2")],
 		[
 			h.div(
@@ -104,7 +96,7 @@ export const liveChartHero = (h: H, model: Model, form: RuleForm, timeZone: stri
 						? []
 						: [
 								h.span(
-									[h.Class("hidden max-w-[360px] truncate text-muted-foreground text-xs md:inline")],
+									[h.Class("hidden max-w-90 truncate text-muted-foreground text-xs md:inline")],
 									["per ", summary],
 								),
 							]),
@@ -143,57 +135,90 @@ export const liveChartHero = (h: H, model: Model, form: RuleForm, timeZone: stri
 			),
 		],
 	)
+}
+
+/** The chart with the threshold and would-fire bands, and the notes under it. */
+type ChartView = Pick<Model, "preview" | "previewWindow" | "chart" | "themeColors" | "chartRuntime">
+
+const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Html => {
+	const preview = draftPreviewOf(model, form)
+	const thresholds = draftThresholds(form)
+	const focused = focusPreviewOnClosestGroups(preview.preview)
+	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
+	return h.div(
+		[h.Class("space-y-2 px-4 pt-3 pb-4")],
+		[
+			ruleChart(h, {
+				chartId: "alert-rule-editor-chart",
+				chart: model.chart,
+				toChartMessage: (message) => Message.GotChartMessage({ message }),
+				colors: model.themeColors ?? {},
+				timeZone,
+				preview: focused.preview,
+				showWouldFire: true,
+				threshold: thresholds.threshold,
+				thresholdUpper: thresholds.upper,
+				criticalThreshold: thresholds.critical,
+				comparator: form.comparator,
+				signalType: displaySignalType(form),
+				window: windowMsOf(model),
+				isLoading: preview.isLoading || !isChartReady,
+				error: preview.error,
+			}),
+			...(focused.hiddenGroupCount > 0
+				? [
+						h.p(
+							[h.Class("text-2xs text-muted-foreground")],
+							[
+								"Showing the ",
+								String(focused.shownGroups.length),
+								" groups closest to the threshold ·",
+								" ",
+								String(focused.hiddenGroupCount),
+								" more",
+							],
+						),
+					]
+				: []),
+			...skippedWarning(h, model.preview, form),
+		],
+	)
+}
+
+// Each part is rebuilt only when what it reads changes; `evaluated` skips name, tag and destination edits.
+const headerSlot = createLazy()
+const impactSlot = createLazy()
+const chartSlot = createLazy()
+const headerOf = stableSlice(
+	(model: Model): HeaderView =>
+		Struct.pick(model, ["preview", "previewWindow", "dryRun", "timePicker", "previewPreset", "isDryRunning"]),
+)
+const impactOf = stableSlice(
+	(model: Model): ImpactView =>
+		Struct.pick(model, ["savedForm", "savedPreview", "preview", "previewWindow", "incidents", "editingRuleId"]),
+)
+const chartOf = stableSlice(
+	(model: Model): ChartView =>
+		Struct.pick(model, ["preview", "previewWindow", "chart", "themeColors", "chartRuntime"]),
+)
+
+/** Step 2's chart card; the comparison block joins it while editing with unsaved changes. */
+export const liveChartHero = (h: H, model: Model, form: RuleForm, evaluated: RuleForm, timeZone: string): Html => {
+	const impact = impactSlot(editImpact, [h, impactOf(model), form])
 	return card(
 		h,
 		[
-			header,
-			...(model.savedForm === null ? [] : editImpact(h, model, form, preview)),
-			h.div(
-				[h.Class("space-y-2 px-4 pt-3 pb-4")],
-				[
-					ruleChart(h, {
-						chartId: "alert-rule-editor-chart",
-						chart: model.chart,
-						toChartMessage: (message) => Message.GotChartMessage({ message }),
-						colors: model.themeColors ?? {},
-						timeZone,
-						preview: focused.preview,
-						showWouldFire: true,
-						threshold: thresholds.threshold,
-						thresholdUpper: thresholds.upper,
-						criticalThreshold: thresholds.critical,
-						comparator: form.comparator,
-						signalType: displaySignal,
-						window: windowMsOf(model),
-						isLoading: preview.isLoading || !isChartReady,
-						error: preview.error,
-					}),
-					...(focused.hiddenGroupCount > 0
-						? [
-								h.p(
-									[h.Class("text-2xs text-muted-foreground")],
-									[
-										"Showing the ",
-										String(focused.shownGroups.length),
-										" groups closest to the threshold ·",
-										" ",
-										String(focused.hiddenGroupCount),
-										" more",
-									],
-								),
-							]
-						: []),
-					...skippedWarning(h, model, form),
-				],
-			),
+			headerSlot(header, [h, headerOf(model), evaluated, timeZone]),
+			...(impact === null ? [] : [impact]),
+			chartSlot(chartBody, [h, chartOf(model), evaluated, timeZone]),
 		],
 		"gap-0 overflow-hidden p-0",
 	)
 }
 
 /** `SkippedWindowsWarning`: windows the evaluator would skip can never fire. */
-const skippedWarning = (h: H, model: Model, form: RuleForm): ReadonlyArray<Html> => {
-	const preview = previewStateOf(model.preview, true, null).preview
+const skippedWarning = (h: H, slot: Model["preview"], form: RuleForm): ReadonlyArray<Html> => {
+	const preview = previewStateOf(slot, true, null).preview
 	const skipped = countSkippedWindows(preview)
 	if (skipped.skipped === 0) return []
 	const share = skipped.skipped / Math.max(skipped.total, 1)

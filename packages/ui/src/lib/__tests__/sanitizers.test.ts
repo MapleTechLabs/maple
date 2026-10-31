@@ -97,4 +97,21 @@ describe("validateInternalRedirect", () => {
 			expect(validateInternalRedirect(value)).toBeNull()
 		},
 	)
+
+	it.each([
+		"/\tevil.com",
+		"/%09/evil.com",
+		"/\n/evil.com",
+		"/%0a/evil.com",
+		"/%5cevil.com",
+		"/%2F/evil.com",
+		"/a\\b",
+		"/x%00y",
+	])("rejects control characters and backslashes in %j", (value) => {
+		expect(validateInternalRedirect(value)).toBeNull()
+	})
+
+	it("keeps ordinary percent-encoded paths", () => {
+		expect(validateInternalRedirect("/search?q=a%20b%2Fc")).toBe("/search?q=a%20b%2Fc")
+	})
 })

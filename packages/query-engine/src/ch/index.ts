@@ -32,6 +32,7 @@ export {
 	tracesTimeseriesQuery,
 	canUseAnnualServiceOverview,
 	tracesBreakdownQuery,
+	tracesBreakdownReadsRaw,
 	tracesListQuery,
 	tracesRootListQuery,
 	traceListQuery,
@@ -85,6 +86,7 @@ export {
 
 // Queries — Metrics
 export {
+	metricDeltaExpr,
 	metricsTimeseriesQuery,
 	metricsTimeseriesRateQuery,
 	metricsBreakdownQuery,
@@ -136,6 +138,8 @@ export {
 	sessionReplayEventsQuery,
 	sessionsForTraceQuery,
 	sessionTraceSummariesQuery,
+	MAX_SESSION_TRACE_SUMMARIES,
+	sessionTraceWindow,
 	type SessionReplaysListOpts,
 	type SessionReplaysListOutput,
 	type SessionReplaysFacetsOpts,
@@ -290,6 +294,9 @@ export {
 	serviceApdexTimeseriesQuery,
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
+	traceSpanVolumeByServiceQuery,
+	traceSpanVolumeRowSchema,
+	type TraceSpanVolumeOutput,
 	servicesFacetsQuery,
 	servicePresenceQuery,
 	servicePresenceRowSchema,
@@ -441,6 +448,7 @@ export {
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
+	serviceDbQuerySpansQuery,
 	dbQueryVolumeQuery,
 	dbQueryVolumeRowSchema,
 	type DbQueryVolumeOpts,
@@ -489,6 +497,11 @@ export {
 	serviceWorkloadsSQL,
 	type ServiceWorkloadsOpts,
 	type ServiceWorkloadsOutput,
+	serviceRuntimesSQL,
+	serviceRuntimeResources,
+	type ServiceRuntimeResource,
+	type ServiceRuntimesOpts,
+	type ServiceRuntimesOutput,
 } from "./queries/service-infra"
 
 // Queries — Alerts: removed. Alert evaluation now reuses the dashboard
@@ -525,6 +538,40 @@ export {
 	type ServiceEndpointsSummaryOpts,
 	type ServiceEndpointsSummaryOutput,
 } from "./queries/service-endpoints"
+
+// Queries — Service API tab (HTTP totals/timeseries off the operations splice, and
+// per-endpoint detail off service_endpoint_details_hourly, migration 0048)
+export {
+	serviceApiTimeseriesQuery,
+	serviceApiTimeseriesRowSchema,
+	serviceApiTotalsQuery,
+	serviceApiTotalsRowSchema,
+	serviceEndpointsWithHttpQuery,
+	serviceEndpointsWithHttpRowSchema,
+	type ServiceApiScopeOpts,
+	type ServiceApiTiers,
+	type ServiceApiTimeseriesOpts,
+	type ServiceApiTimeseriesOutput,
+	type ServiceApiTotalsOutput,
+	type ServiceEndpointsWithHttpOpts,
+	type ServiceEndpointsWithHttpOutput,
+} from "./queries/service-api"
+export {
+	ENDPOINT_LATENCY_QUANTILE_LEVELS,
+	serviceEndpointDistributionQuery,
+	serviceEndpointDistributionRowSchema,
+	serviceEndpointSlowestQuery,
+	serviceEndpointSlowestRowSchema,
+	serviceEndpointStatusBreakdownQuery,
+	serviceEndpointStatusBreakdownRowSchema,
+	type ServiceEndpointDetailOpts,
+	type ServiceEndpointDetailsScopeOpts,
+	type ServiceEndpointDistributionOutput,
+	type ServiceEndpointSlowestOpts,
+	type ServiceEndpointSlowestOutput,
+	type ServiceEndpointStatusBreakdownOpts,
+	type ServiceEndpointStatusBreakdownOutput,
+} from "./queries/service-endpoint-details"
 
 // Queries — Alert Checks (historical rule evaluations)
 export {
@@ -650,6 +697,8 @@ export {
 	type WorkloadFacetsOutput,
 	type WorkloadKind,
 	infraPresenceQuery,
+	FILESYSTEM_USED_STATES,
+	PSEUDO_FS_TYPES,
 	type InfraSurface,
 	type InfraPresenceOutput,
 } from "./queries/infra"
@@ -686,18 +735,28 @@ export {
 	type OperationTrafficOutput,
 } from "./queries/pr-review"
 
-// Queries: source usage (hourly spans and logs per source)
+// Queries: AWS ingest (one connection's metric stream by namespace and region)
 export {
-	SOURCE_ID_ATTRIBUTE,
-	sourceUsageQuery,
-	sourceUsageRowSchema,
-	type SourceUsageOutput,
+	AWS_INGEST_RESOURCE_SAMPLE,
+	AWS_METRIC_STREAM_SCOPE,
+	awsIngestQuery,
+	awsIngestRowSchema,
+	type AwsIngestOutput,
+} from "./queries/aws-ingest"
+
+// Queries: source usage (hourly volume and estimated bytes per source)
+export {
+	sourceUsageHourlyQuery,
+	sourceUsageHourlyRowSchema,
+	sourceUsageTotalsQuery,
+	sourceUsageTotalsRowSchema,
+	type SourceUsageHourlyOutput,
+	type SourceUsageTotalsOutput,
 } from "./queries/source-usage"
 
 // Queries — CI pipeline runs (GitHub Actions traces)
 export {
 	CI_FAILED_RESULTS,
-	CI_TRACES_SERVICE_NAME,
 	ciFailedJobsQuery,
 	ciJobStatsQuery,
 	ciPipelineStatsQuery,
@@ -709,9 +768,15 @@ export {
 	ciRunTotalsQuery,
 	ciRunsQuery,
 	type CiFailedJobsOpts,
-	type CiFailedJobsOutput,
 	type CiRedStreak,
 	type CiRunsOpts,
-	type CiRunsOutput,
 	type CiScopeOpts,
 } from "./queries/ci-runs"
+export {
+	uptimeChecksQuery,
+	uptimeChecksRowSchema,
+	uptimePhaseTimingsQuery,
+	uptimePhaseTimingsRowSchema,
+	type UptimeChecksOutput,
+	type UptimePhaseTimingsOutput,
+} from "./queries/uptime"

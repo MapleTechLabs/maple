@@ -10,6 +10,7 @@ import { badge } from "../../../ui/display"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { emptyValue } from "../../../ui/values"
 import { authorLabel } from "../kit/author"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
@@ -30,7 +31,7 @@ const OUTCOME_ICONS = {
 
 const scoreCell = (h: H, value: number | null, out: string): ReadonlyArray<Html | string> =>
 	value === null
-		? [h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])]
+		? [emptyValue(h)]
 		: [String(value), h.span([h.Class("text-muted-foreground")], [out])]
 
 export type RowContext = Readonly<{ selected: string | undefined; nowMs: number; timeZone: string }>
@@ -165,7 +166,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				"hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell",
 			),
 		],
-		cn("cursor-pointer transition-colors hover:bg-muted/40", isSelected && "bg-muted/40"),
+		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", isSelected && "bg-surface-strong"),
 		[h.Key(review.id), h.OnClick(open)],
 	)
 }
@@ -185,7 +186,7 @@ export const reviewTable = (h: H, reviews: ReadonlyArray<CodeReviewListItem>, co
 						tableHead(h, ["Reviewed"], "hidden w-28 px-4 text-right font-normal sm:table-cell"),
 					]),
 				],
-				{ className: "bg-muted/30" },
+				{ className: "bg-surface-sunken" },
 			),
 			tableBody(
 				h,

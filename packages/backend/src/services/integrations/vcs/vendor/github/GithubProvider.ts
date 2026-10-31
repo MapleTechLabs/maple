@@ -114,6 +114,7 @@ const PullRequestPayload = Schema.Struct({
 		title: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		user: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.optionalKey(Schema.String) }))),
+		author_association: Schema.optionalKey(Schema.String),
 		merged: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 		merge_commit_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		merged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -210,6 +211,17 @@ const WorkflowRunPayload = Schema.Struct({
 		run_started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		updated_at: Schema.String,
 		actor: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.optionalKey(Schema.String) }))),
+		triggering_actor: Schema.optionalKey(
+			Schema.NullOr(
+				Schema.Struct({
+					login: Schema.optionalKey(Schema.String),
+					type: Schema.optionalKey(Schema.String),
+				}),
+			),
+		),
+		head_repository: Schema.optionalKey(
+			Schema.NullOr(Schema.Struct({ full_name: Schema.optionalKey(Schema.String) })),
+		),
 		pull_requests: Schema.optionalKey(Schema.Array(Schema.Struct({ number: Schema.Number }))),
 	}),
 	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
@@ -255,6 +267,8 @@ const boundName = (name: string) =>
 	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${name.slice(0, MAX_WORKFLOW_NAME_LENGTH)}...` : name
 
 const decodeWorkflowRun = Schema.decodeUnknownEffect(WorkflowRunPayload)
+// Run triggers that belong to a pull request, so an approval of one vouches for its author.
+const CI_APPROVAL_EVENTS: ReadonlySet<string> = new Set(["pull_request", "pull_request_target"])
 const decodeWorkflowJob = Schema.decodeUnknownEffect(WorkflowJobPayload)
 
 /** A GitHub timestamp as epoch ms, or null when absent or unparseable. */
@@ -439,7 +453,7 @@ const packCommits = (
 	return slices
 }
 export class GithubProvider extends Context.Service<GithubProvider, VcsProviderClient>()(
-	"@maple/api/services/vcs/vendor/github/GithubProvider",
+	"@maple/backend/services/vcs/vendor/github/GithubProvider",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
@@ -755,6 +769,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						title: pr.title ?? null,
 						body: pr.body ?? null,
 						authorLogin: pr.user?.login ?? null,
+						...(pr.author_association === undefined
+							? undefined
+							: { authorAssociation: pr.author_association }),
 						merged,
 						mergeCommitSha: pr.merge_commit_sha ?? null,
 						mergedAtMs,
@@ -899,6 +916,47 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					"vcs.webhook.skip_reason": reason,
 				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
 
+			/**
+			 * A pull request's run that someone other than its author let go: approving a fork's
+			 * workflows re-attempts the held run with the approver as `triggering_actor`, and a re-run
+			 * does the same. A run held for approval completes as `action_required` and is no approval.
+			 */
+			const ciApproval = (payload: typeof WorkflowRunPayload.Type): ReadonlyArray<VcsSyncJob> => {
+				const run = payload.workflow_run
+				if (payload.action !== "in_progress" && payload.action !== "completed") return []
+				if (!CI_APPROVAL_EVENTS.has(run.event) || run.conclusion === "action_required") return []
+				const approver = run.triggering_actor
+				const author = run.actor?.login
+				const headSha = Option.getOrUndefined(decodeGitShaOption(run.head_sha))
+				const headRepoFullName = run.head_repository?.full_name
+				if (
+					approver?.login === undefined ||
+					approver.type === "Bot" ||
+					author === undefined ||
+					approver.login.toLowerCase() === author.toLowerCase() ||
+					headSha === undefined ||
+					!run.head_branch ||
+					headRepoFullName === undefined
+				)
+					return []
+				return [
+					{
+						kind: "pull-request-ci-approved",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						runId: String(run.id),
+						headSha,
+						headBranch: run.head_branch,
+						headRepoFullName,
+						approverLogin: approver.login,
+						authorLogin: author,
+						pullRequestNumbers: (run.pull_requests ?? []).map((pr) => pr.number),
+					},
+				]
+			}
+
 			// A finished workflow run becomes the root span of its CI trace.
 			const mapWorkflowRun = (raw: unknown) =>
 				Effect.gen(function* () {
@@ -909,7 +967,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						"vcs.repository.external_id": String(payload.repository.id),
 						"vcs.webhook.action": payload.action,
 					})
-					if (payload.action !== "completed") return yield* workflowSkip("workflow_not_completed")
+					const approval = ciApproval(payload)
+					yield* Effect.annotateCurrentSpan({ "vcs.workflow.ci_approval": approval.length > 0 })
+					if (payload.action !== "completed") {
+						if (approval.length === 0) return yield* workflowSkip("workflow_not_completed")
+						yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
+						return approval
+					}
 					const startedAtMs = optionalTimestampMs(run.run_started_at ?? run.created_at)
 					const completedAtMs = optionalTimestampMs(run.updated_at)
 					if (startedAtMs === null || completedAtMs === null)
@@ -936,7 +1000,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						startedAtMs,
 						completedAtMs: Math.max(startedAtMs, completedAtMs),
 					}
-					return [job]
+					return [job, ...approval]
 				})
 
 			// A finished job becomes a child span of its run, with a span per step that ran.
@@ -1171,7 +1235,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const fetchPullRequests: VcsProviderClient["fetchPullRequests"] = (installation, repo, opts) =>
 				client
-					.listPullRequests(installation.externalInstallationId, repo.owner, repo.name, opts.limit)
+					.listPullRequests(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						opts.limit,
+						opts.head,
+					)
 					.pipe(
 						Effect.map((prs) => prs.map(normalizePullRequest)),
 						Effect.mapError(toVcsError),
@@ -1241,6 +1311,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					Effect.mapError(toVcsCommitError),
 				)
 
+			// GitHub's `size` is KiB of the packed repository.
+			const repositorySizeBytes: VcsProviderClient["repositorySizeBytes"] = (installation, repo) =>
+				client.getRepositorySizeKib(installation.externalInstallationId, repo.owner, repo.name).pipe(
+					Effect.map((kib) => kib * 1024),
+					Effect.mapError(toVcsCommitError),
+				)
+
 			const normalizeFileStatus = (status: string): PullRequestFile["status"] => {
 				switch (status) {
 					case "added":
@@ -1306,6 +1383,23 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						),
 						Effect.mapError(toVcsError),
 					)
+
+			// Needs `pull_requests: write`, like the comments it hides.
+			const hideEarlierComments: VcsProviderClient["hideEarlierComments"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.minimizeEarlierComments(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.number,
+						input.prefix,
+						input.keep,
+					)
+					.pipe(Effect.mapError(toVcsError))
 
 			const resolveReviewThread: VcsProviderClient["resolveReviewThread"] = (
 				installation,
@@ -1766,6 +1860,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchPullRequestContext,
 				fetchReviewThreads,
 				resolveReviewThread,
+				hideEarlierComments,
 				fetchChangesSince,
 				fetchPullRequestHead,
 				postPullRequestReply,
@@ -1778,6 +1873,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				searchCode,
 				fetchSourceFile,
 				resolveRef,
+				repositorySizeBytes,
 				fetchCloneCredentials,
 				fetchWorkflowJobAnnotations,
 				streamWorkflowJobLog,

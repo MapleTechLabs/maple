@@ -207,7 +207,7 @@ describe("Foldkit phase spans", () => {
 		const navigation = byName(spans, "navigate /settings")
 		expect(byName(spans, "foldkit.view")?.parentSpanId).toBe(navigation?.spanId)
 		expect(navigation?.endTimeUnixNano).toBe(end.toString())
-		expect(attribute(navigation, "app.navigation.interrupted")).toBeUndefined()
+		expect(attribute(navigation, "maple.navigation.interrupted")).toBeUndefined()
 	})
 })
 

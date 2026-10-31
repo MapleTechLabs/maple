@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dialogDescription, dialogHeader, dialogTitle } from "../../ui/dialog-view"
-import { eyebrow } from "../../ui/eyebrow"
+import { detailEyebrow } from "./detail-header"
 
 // `SheetDetailHeader`: a detail sheet's
 // eyebrow kind, title, screen-reader description and meta row.
@@ -9,8 +9,11 @@ import { eyebrow } from "../../ui/eyebrow"
 export type SheetDetailHeaderOptions = Readonly<{
 	/** The sheet Dialog's id: the title and description are its `aria-labelledby`/`describedby`. */
 	dialogId: string
-	kind?: string
+	/** The eyebrow: one kind, or segments joined by a quiet dot. */
+	kind?: string | ReadonlyArray<Html | string | null>
 	title: ReadonlyArray<Html | string>
+	/** Shown beside the title, e.g. a status badge. */
+	adornment?: Html | null
 	description: string
 	meta?: ReadonlyArray<Html>
 	mono?: boolean
@@ -19,22 +22,25 @@ export type SheetDetailHeaderOptions = Readonly<{
 
 export const sheetDetailHeader = <M>(h: HtmlBuilder<M>, options: SheetDetailHeaderOptions): Html => {
 	const isMono = options.mono ?? true
+	const eyebrowNode =
+		options.kind === undefined
+			? null
+			: detailEyebrow(h, typeof options.kind === "string" ? [options.kind] : options.kind)
 	return dialogHeader(
 		h,
 		"sheet",
 		[
-			...(options.kind === undefined
-				? []
-				: [
-						eyebrow(h, { as: "div", className: "flex flex-wrap items-center gap-x-2 gap-y-1" }, [
-							h.span([h.Class("truncate")], [options.kind]),
-						]),
-					]),
+			...(eyebrowNode === null ? [] : [eyebrowNode]),
 			dialogTitle(
 				h,
 				"sheet",
 				options.dialogId,
-				[h.span([h.Class(cn("min-w-0", isMono ? "break-all" : "break-words"))], options.title)],
+				[
+					h.span([h.Class(cn("min-w-0", isMono ? "break-all" : "break-words"))], options.title),
+					...(options.adornment === undefined || options.adornment === null
+						? []
+						: [options.adornment]),
+				],
 				cn("flex flex-wrap items-center gap-2 text-title leading-tight", isMono && "font-mono"),
 			),
 			dialogDescription(h, "sheet", options.dialogId, options.description, "sr-only"),

@@ -4,6 +4,7 @@ import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
+import { collectionLoadFailed } from "../shared/collection-load"
 import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../shared/collections"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -12,6 +13,9 @@ import type { Model } from "./model"
 const CLOCK_TICK = "30 seconds"
 
 const byOrg = { orgId: Schema.String }
+
+/** How long the hub waits on its live rules and incidents before showing the failure. */
+const HUB_LOAD_TIMEOUT_MS = 10_000
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
@@ -30,6 +34,31 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			dependenciesToStream: ({ orgId }) =>
 				incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
 		}),
+		/** Rules and incidents gate the hub: a stopped or stalled stream shows the failure, not a skeleton. */
+		loadFailed: entry(
+			{ orgId: Schema.String, isWatching: Schema.Boolean },
+			{
+				modelToDependencies: ({ model, context }) => ({
+					orgId: context.orgId,
+					isWatching: (model.rules === null || model.incidents === null) && !model.isLoadFailed,
+				}),
+				dependenciesToStream: ({ orgId, isWatching }) =>
+					isWatching
+						? Stream.merge(
+								collectionLoadFailed(
+									`alert_rules:${orgId}`,
+									() => Message.FailedLoadAlerts({ orgId }),
+									HUB_LOAD_TIMEOUT_MS,
+								),
+								collectionLoadFailed(
+									`alert_incidents:${orgId}`,
+									() => Message.FailedLoadAlerts({ orgId }),
+									HUB_LOAD_TIMEOUT_MS,
+								),
+							)
+						: Stream.empty,
+			},
+		),
 		destinations: entry(byOrg, {
 			modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 			dependenciesToStream: ({ orgId }) =>

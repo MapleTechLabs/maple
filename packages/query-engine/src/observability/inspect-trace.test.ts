@@ -58,7 +58,19 @@ const makeExecutor = (
 			opts.probeTimestamp !== undefined &&
 			(lower === undefined || opts.probeTimestamp >= lower) &&
 			(upper === undefined || opts.probeTimestamp < upper)
-		return query.decodeFirstRow(hit ? [{ timestamp: opts.probeTimestamp }] : []).pipe(Effect.orDie)
+		return query
+			.decodeFirstRow(
+				hit
+					? [
+							{
+								traceId: "probe",
+								timestamp: opts.probeTimestamp,
+								endTimestamp: opts.probeTimestamp,
+							},
+						]
+					: [],
+			)
+			.pipe(Effect.orDie)
 	},
 	query: (pipe: string, params: Record<string, unknown>) => {
 		captured.pipeCalls.push({ pipe, params })

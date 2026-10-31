@@ -84,7 +84,11 @@ const whereKey = (isOpen: boolean) =>
 		dismiss: Message.DismissedWhereSuggestions(),
 	})
 
-const suggestionList = (h: H, model: Model, suggestions: ReturnType<typeof whereAutocompleteOf>["suggestions"]): Html =>
+const suggestionList = (
+	h: H,
+	model: Model,
+	suggestions: ReturnType<typeof whereAutocompleteOf>["suggestions"],
+): Html =>
 	suggestionListbox(h, {
 		suggestions,
 		activeIndex: model.whereEditor.activeIndex,
@@ -191,7 +195,7 @@ export const queryControls = (
 			toParentMessage: toGroupBy,
 			viewInputs: {
 				items: [GROUP_BY_NONE_LABEL, SERVICE_KEY, ...scopedKeys(model).map((key) => `attr.${key}`)],
-				placeholder: "Search fields...",
+				placeholder: "Search fields…",
 				emptyText: "",
 				className: "h-8 w-52 text-xs",
 				toView: ({ field, rest }) =>

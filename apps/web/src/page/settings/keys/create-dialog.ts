@@ -35,6 +35,7 @@ export const SCOPE_FAMILIES = [
 	{ id: "scrape_targets", label: "Scrape targets" },
 	{ id: "instrumentation", label: "Recommendations" },
 	{ id: "investigations", label: "Investigations" },
+	{ id: "error_issues", label: "Errors" },
 	{ id: "anomalies", label: "Anomalies" },
 	{ id: "session_replays", label: "Session replays" },
 	{ id: "traces", label: "Traces" },
@@ -42,6 +43,8 @@ export const SCOPE_FAMILIES = [
 	{ id: "metrics", label: "Metrics" },
 	{ id: "services", label: "Services" },
 	{ id: "service_map", label: "Service map" },
+	{ id: "sources", label: "Sources" },
+	{ id: "integrations", label: "Integrations" },
 	{ id: "query", label: "Query" },
 	{ id: "organization", label: "Organization" },
 	{ id: "audit_log", label: "Audit log" },
@@ -107,7 +110,11 @@ export const Message = defineMessageUnion({
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
-	RequestedToast: { type: Schema.Literals(["success", "error"]), title: Schema.String, description: Schema.String },
+	RequestedToast: {
+		type: Schema.Literals(["success", "error"]),
+		title: Schema.String,
+		description: Schema.String,
+	},
 	CreatedKey: { secret: Schema.String },
 })
 export type OutMessage = typeof OutMessage.Type
@@ -196,13 +203,15 @@ const create = (model: Model): Return => {
 	if (!canCreate(model)) return { model }
 	const scopes = restrictedScopes(model)
 	const expiration = model.expiration.value
-	const expiry: ApiKeyCreateOptions = expiration === "never" ? {} : { expiresInSeconds: Number(expiration) * 86_400 }
+	const expiry: ApiKeyCreateOptions =
+		expiration === "never" ? {} : { expiresInSeconds: Number(expiration) * 86_400 }
 	const options: ApiKeyCreateOptions = scopes === undefined ? expiry : { ...expiry, scopes }
 	const payload = buildApiKeyCreatePayload(model.name.value, model.description.value, model.kind, options)
 	return { model: { ...model, isCreating: true }, commands: [CreateApiKey({ kind: model.kind, payload })] }
 }
 
-const field = (current: Field.Model, message: Field.Message): Field.Model => Field.update(current, message).model
+const field = (current: Field.Model, message: Field.Message): Field.Model =>
+	Field.update(current, message).model
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
@@ -220,12 +229,17 @@ export const update = (model: Model, message: Message): Return =>
 			const step = Select.update(model.expiration, child)
 			return {
 				model: { ...model, expiration: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotExpirationMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotExpirationMessage({ message: inner }),
+				),
 			}
 		},
 		ClickedAccessMode: ({ mode }) => ({ model: { ...model, accessMode: mode } }),
 		ClickedAllScopes: ({ level }) => ({
-			model: { ...model, scopeLevels: Object.fromEntries(SCOPE_FAMILIES.map((family) => [family.id, level])) },
+			model: {
+				...model,
+				scopeLevels: Object.fromEntries(SCOPE_FAMILIES.map((family) => [family.id, level])),
+			},
 		}),
 		ClickedClearScopes: () => ({ model: { ...model, scopeLevels: {} } }),
 		ClickedScopeLevel: ({ family, level }) => ({
@@ -246,7 +260,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isCreating: false },
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
-						title: kind === "mcp" ? "Failed to create MCP key" : "Failed to create API key",
+						title: kind === "mcp" ? "Couldn't create MCP key" : "Couldn't create API key",
 						description: error.message,
 					}),
 				}),
@@ -255,7 +269,9 @@ export const update = (model: Model, message: Message): Return =>
 			const step = CopyButton.update(model.secretCopy, child)
 			return {
 				model: { ...model, secretCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotSecretCopyMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotSecretCopyMessage({ message: inner }),
+				),
 			}
 		},
 		ToggledSecretVisible: () => ({ model: { ...model, isSecretVisible: !model.isSecretVisible } }),

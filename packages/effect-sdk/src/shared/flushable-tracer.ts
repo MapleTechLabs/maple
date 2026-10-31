@@ -49,11 +49,11 @@ const MAX_BUFFER = 10_000
 
 export interface SpanBufferOptions extends SpanFilterInput {
 	/**
-	 * Called as each client span starts. The returned check, run as it ends, says why the
-	 * host lost its connection in between (or `undefined` if it did not). A client span
-	 * whose request failed in transport meanwhile exports as `Unset` with the reason in
-	 * `maple.connection_lost`: a hidden, unloading or offline page cancelled the request,
-	 * so nothing in the app failed.
+	 * Called as each span starts. The returned check, run as it ends, says why the
+	 * host lost its connection in between (or `undefined` if it did not). A span that
+	 * failed with an HTTP transport error meanwhile (the client span and any caller that
+	 * passed the error up) exports as `Unset` with the reason in `maple.connection_lost`:
+	 * a hidden, unloading or offline page cancelled the request, so nothing in the app failed.
 	 */
 	readonly watchConnection?: (() => () => string | undefined) | undefined
 }
@@ -113,7 +113,7 @@ export const makeMapleTracer = (
 	const dropSubtree = filter.dropSubtree
 	return Tracer.make({
 		span(spanOptions) {
-			const connectionLost = spanOptions.kind === "client" ? watchConnection?.() : undefined
+			const connectionLost = watchConnection?.()
 			return makeSpan({
 				...spanOptions,
 				sampled: spanOptions.sampled && (dropSubtree === undefined || !dropSubtree(spanOptions.name)),
@@ -131,11 +131,31 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 	const filter = resolveSpanFilter(options)
 	const encode = makeSpanEncoder(filter)
 
-	const exportFn = (span: SpanImpl, connectionLost?: () => string | undefined) => {
+	const push = (span: SpanImpl, connectionLost?: () => string | undefined) => {
 		if (disabled) return
 		if (buffer.length >= MAX_BUFFER) return
 		const otlp = encode(span, connectionLost)
 		if (otlp !== undefined) buffer.push(otlp)
+	}
+
+	// A browser can reject a request between two `pagehide` listeners, before the one noting
+	// the unload has run. Such a transport failure is encoded a task later, or at the next
+	// drain, so the loss is known by then.
+	let unsettled: Array<readonly [SpanImpl, () => string | undefined]> = []
+	const settle = () => {
+		const items = unsettled
+		unsettled = []
+		for (const [span, connectionLost] of items) push(span, connectionLost)
+	}
+	const exportFn = (span: SpanImpl, connectionLost?: () => string | undefined) => {
+		if (disabled) return
+		if (connectionLost !== undefined && connectionLost() === undefined && isTransportFailure(span)) {
+			if (buffer.length + unsettled.length >= MAX_BUFFER) return
+			unsettled.push([span, connectionLost])
+			if (unsettled.length === 1) setTimeout(settle, 0)
+			return
+		}
+		push(span, connectionLost)
 	}
 
 	const tracer = makeMapleTracer(filter, exportFn, options.watchConnection)
@@ -161,6 +181,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		tracerLayer: Layer.succeed(Tracer.Tracer, tracer),
 		captureException,
 		drain: () => {
+			settle()
 			const items = buffer
 			buffer = []
 			return items
@@ -171,9 +192,12 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		},
 		setDisabled: (value) => {
 			disabled = value
-			if (value) buffer = []
+			if (value) {
+				buffer = []
+				unsettled = []
+			}
 		},
-		size: () => buffer.length,
+		size: () => buffer.length + unsettled.length,
 	}
 }
 
@@ -291,6 +315,9 @@ const httpClientFailureReason = (exit: Exit.Exit<unknown, unknown>, reasonTag: s
 	return Predicate.isTagged(error.reason, reasonTag) ? error.reason : undefined
 }
 
+const isTransportFailure = (span: SpanImpl): boolean =>
+	span.status._tag === "Ended" && httpClientFailureReason(span.status.exit, "TransportError") !== undefined
+
 // Effect ends every 4xx client span itself, failed with a synthetic `StatusCodeError`, before
 // the caller has seen the response. Whether the 4xx is a fault is the caller's to say: an
 // unhandled one fails the caller's span too, which carries its own exception.
@@ -302,6 +329,23 @@ const isClientStatus4xx = (self: SpanImpl, exit: Exit.Exit<unknown, unknown>): b
 	}
 	const code = reason.response.status
 	return typeof code === "number" && code >= 400 && code < 500
+}
+
+// Semconv `error.type` for a failed span that has none: the HTTP status code when the response
+// was the failure, else the HttpClientError reason (`TransportError`) or the error's own name.
+const errorTypeOf = (self: SpanImpl, exit: Exit.Exit<unknown, unknown>): string => {
+	const code = self.attributes.get("http.response.status_code")
+	if (typeof code === "number" && code >= 400) return String(code)
+	if (exit._tag === "Success") return "_OTHER"
+	const [reason] = exit.cause.reasons
+	if (reason !== undefined && Cause.isFailReason(reason)) {
+		const error = reason.error
+		if (Predicate.isTagged(error, "HttpClientError") && Predicate.hasProperty(error, "reason")) {
+			const tag = Predicate.hasProperty(error.reason, "_tag") ? error.reason._tag : undefined
+			if (typeof tag === "string") return tag
+		}
+	}
+	return Cause.prettyErrors(exit.cause)[0]?.name || "_OTHER"
 }
 
 const makeOtlpSpan = (
@@ -348,11 +392,9 @@ const makeOtlpSpan = (
 	} else if (status.exit._tag === "Success") {
 		otelStatus = constOtelStatusSuccess
 	} else if (Cause.hasInterruptsOnly(status.exit.cause)) {
-		otelStatus = { code: StatusCode.Ok, message: "Interrupted" }
-		attributes.push(
-			{ key: "span.label", value: { stringValue: "⚠︎ Interrupted" } },
-			{ key: "status.interrupted", value: { boolValue: true } },
-		)
+		// Cancelled, not failed. A status description is reserved for `Error`, so the attribute says it.
+		otelStatus = constOtelStatusSuccess
+		attributes.push({ key: "maple.interrupted", value: { boolValue: true } })
 	} else if (
 		renderedServerError(self) === undefined &&
 		isFullyAnticipated(status.exit.cause, filter.isAnticipated)
@@ -395,6 +437,10 @@ const makeOtlpSpan = (
 				})
 			}
 		}
+	}
+
+	if (otelStatus.code === StatusCode.Error && !self.attributes.has("error.type")) {
+		attributes.push({ key: "error.type", value: { stringValue: errorTypeOf(self, status.exit) } })
 	}
 
 	return {

@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import type { Source } from "@maple/domain/http"
 import { CreateSourceRequest, CurrentTenant, UpdateSourceRequest } from "@maple/domain/http"
 import {
+	AwsConnectionPublicId,
 	GcpConnectorPublicId,
 	MapleApiV2,
 	paginateArray,
@@ -11,17 +12,19 @@ import {
 	timestampOrNull,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import type { V2Source, V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
+import type { V2Source, V2SourceDeleteResponse, V2SourceUpdateParams } from "@maple/domain/http/v2"
+import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
 import { Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { timestampMs } from "@maple/backend/platform/time"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 
 const encodePublicSourceId = Schema.encodeSync(SourcePublicId)
+const decodePublicSourceId = Schema.decodeUnknownOption(SourcePublicId)
 const toIsoTimestamp = (epochMs: number) => timestamp(new Date(epochMs).toISOString())
 
 const adminOnly = (action: string) => () =>
@@ -31,6 +34,8 @@ const decodeScrapeTargetId = Schema.decodeUnknownOption(ScrapeTargetId)
 const decodeGcpConnectorId = Schema.decodeUnknownOption(GcpConnectorId)
 const encodeScrapeTargetId = Schema.encodeSync(ScrapeTargetPublicId)
 const encodeGcpConnectorId = Schema.encodeSync(GcpConnectorPublicId)
+const decodeAwsConnectionId = Schema.decodeUnknownOption(AwsConnectionId)
+const encodeAwsConnectionId = Schema.encodeSync(AwsConnectionPublicId)
 
 /** The id a client can look the integration record up by: its public form where the API has one. */
 export const integrationIdOf = (source: Source): string | null => {
@@ -40,6 +45,8 @@ export const integrationIdOf = (source: Source): string | null => {
 		return Option.match(decodeScrapeTargetId(raw), { onNone: () => raw, onSome: encodeScrapeTargetId })
 	if (source.platform === "gcp")
 		return Option.match(decodeGcpConnectorId(raw), { onNone: () => raw, onSome: encodeGcpConnectorId })
+	if (source.platform === "aws")
+		return Option.match(decodeAwsConnectionId(raw), { onNone: () => raw, onSome: encodeAwsConnectionId })
 	return raw
 }
 
@@ -49,7 +56,8 @@ const toV2Source = (source: Source): V2Source => ({
 	name: source.name,
 	description: source.description,
 	platform: source.platform,
-	is_default: source.isDefault,
+	kind: source.kind,
+	is_default: source.kind === "default",
 	key_prefix: source.keyPrefix,
 	integration_id: integrationIdOf(source),
 	status: source.status,
@@ -93,6 +101,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 	Effect.gen(function* () {
 		const sources = yield* SourcesService
 		const sourceUsage = yield* SourceUsageService
+		const removal = yield* SourceRemovalService
 
 		const adminTenant = (action: string) =>
 			Effect.gen(function* () {
@@ -204,7 +213,35 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 							hour: toIsoTimestamp(bucket.hour),
 							spans: bucket.spans,
 							logs: bucket.logs,
+							metrics: bucket.metrics,
+							bytes: bucket.bytes,
 						})),
+					}
+				}),
+			)
+			.handle("usageSummary", () =>
+				Effect.gen(function* () {
+					const tenant = yield* adminTenant("view")
+					const summary = yield* sourceUsage.summary(tenant)
+					return {
+						object: "source_usage_summary" as const,
+						window_start: toIsoTimestamp(summary.windowStart),
+						window_end: toIsoTimestamp(summary.windowEnd),
+						// The rollup keys on the stamped `src_` id; one that does not decode names no source.
+						data: summary.totals.flatMap((total) =>
+							Option.match(decodePublicSourceId(total.sourceId), {
+								onNone: () => [],
+								onSome: (id) => [
+									{
+										source_id: id,
+										spans: total.spans,
+										logs: total.logs,
+										metrics: total.metrics,
+										bytes: total.bytes,
+									},
+								],
+							}),
+						),
 					}
 				}),
 			)
@@ -223,13 +260,18 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* adminTenant("delete")
-					const deleted = yield* sources.delete(tenant.orgId, params.id)
+					const { source: deleted, cleanupScript } = yield* removal.remove(tenant.orgId, params.id)
 					yield* recordHttpAudit("source.deleted", {
 						resourceId: deleted.id,
-						metadata: { name: deleted.name },
+						metadata: { name: deleted.name, platform: deleted.platform, kind: deleted.kind },
 					})
 
-					return { id: deleted.id, object: "source" as const, deleted: true as const }
+					const response: V2SourceDeleteResponse = {
+						id: deleted.id,
+						object: "source",
+						deleted: true,
+					}
+					return cleanupScript === null ? response : { ...response, cleanup_script: cleanupScript }
 				}),
 			)
 	}),

@@ -1,24 +1,20 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { afterAll, beforeAll, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
 import { Effect, Schema } from "effect"
 import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "../src/server/chdb"
+import { LOCAL_ORG_ID } from "../src/core/executor"
 import { decodeJsonEachRow } from "../src/server/chdb-rows"
+import { describeWithChdb } from "./libchdb-test-support"
 import {
 	type LocalServiceMapRollupDeps,
 	type LocalServiceMapRollupState,
 	ROLLUP_SETTLE_MS,
 	runLocalServiceMapRollupTick,
 } from "../src/server/service-map-rollup"
-
-// Needs a real libchdb; skipped where none is installed.
-const libchdbAvailable =
-	(process.env.MAPLE_LIBCHDB !== undefined && existsSync(process.env.MAPLE_LIBCHDB)) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
 
 const HOUR_MS = 3_600_000
 const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
@@ -37,7 +33,7 @@ const decodeEdges = decodeJsonEachRow(
 	Schema.Struct({ sourceService: Schema.String, targetService: Schema.String, callCount: CH.CHNumber }),
 )
 
-describe.skipIf(!libchdbAvailable)("local service map rollup", () => {
+describeWithChdb("local service map rollup", () => {
 	let root = ""
 	let db: Chdb
 	const nowMs = Date.now()
@@ -91,7 +87,7 @@ describe.skipIf(!libchdbAvailable)("local service map rollup", () => {
 			CH.serviceDependenciesSQL(
 				{},
 				{
-					orgId: "local",
+					orgId: LOCAL_ORG_ID,
 					startTime: iso(currentHourMs - 3 * HOUR_MS).slice(0, 19),
 					endTime: iso(nowMs).slice(0, 19),
 				},

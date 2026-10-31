@@ -1,39 +1,39 @@
 ---
 title: "Notification destinations"
-description: "Route Maple alerts to Slack, email, PagerDuty, Discord, Telegram, Hazel or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
+description: "Route Maple alerts to Slack, email, PagerDuty, Discord, Telegram, Google Chat, Hazel, Linear or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
 group: "Alerting"
 order: 4
 ---
 
 A **notification destination** is where Maple delivers an alert when one of your rules fires. You add a destination once and attach it to any number of [alert rules](/docs/alerting/alert-rules). When a rule opens an incident, Maple sends a `trigger`. When the incident resolves, it sends a `resolve`. See [Incidents](/docs/alerting/incidents) for when each is sent.
 
-Destinations live on the **Destinations** tab of the **Alerts** page. Click **Add destination**, pick a provider, and fill in the **Connection** fields. Only organization admins can add, edit or delete destinations. Provider credentials are encrypted at rest and never returned to the browser after they are saved.
+Destinations live under **Destinations** on the **Routing** tab of the **Alerts** page. Click **New destination** at the top of the page, pick a provider, and fill in the **Connection** fields. You can also create one from **Add destination** while editing a rule. Only organization admins can add, edit or delete destinations. Provider credentials are encrypted at rest and never returned to the browser after they are saved.
 
 ## Sending a test
 
-Every destination has a **Send test** button. It delivers a sample alert through the same code path that delivers real alerts, so it confirms your credentials before you attach the destination to a rule.
+Every destination on the **Routing** tab has a **Test** button. It delivers a sample alert through the same code path that delivers real alerts, so it confirms your credentials before you attach the destination to a rule.
 
-If a test fails, Maple shows the provider's own rejection reason in the toast and on the destination card. For example, a bad PagerDuty key reports `PagerDuty delivery failed with 400: Invalid routing key`.
+If a test fails, Maple shows the provider's own rejection reason in the toast and on the destination's row. For example, a bad PagerDuty key reports `PagerDuty delivery failed with 400: Invalid routing key`.
 
 ## Failed deliveries
 
-A delivery that fails with an error retrying cannot fix, such as a rejected credential, counts against the destination. After 3 such failures in a row, Maple disables the destination and marks it **Disabled** on its card. A successful delivery resets the count. Fix the credential, send a test, and re-enable the destination.
+A delivery that fails with an error retrying cannot fix, such as a rejected credential, counts against the destination. After 3 such failures in a row, Maple disables the destination and marks it **auto-disabled** on the **Routing** tab. A successful delivery resets the count. Fix the credential, send a test, and turn the row's switch back on.
 
 ## Slack
 
 Link your Slack workspace to Maple, then choose the channel alerts go to. Maple posts through the linked workspace's bot. Incoming-webhook URLs are not supported.
 
 1. Open **Settings → Integrations → Slack** and connect your workspace. See the [Slack integration](/docs/integrations/slack).
-2. On the **Destinations** tab, click **Add destination** and pick the linked workspace.
+2. On the **Routing** tab, click **New destination** and pick the linked workspace.
 3. Pick a **Channel** and save.
 
 ## Email
 
 Send alerts by email to members of your Maple organization.
 
-1. Click **Add destination** and pick **Email**.
+1. Click **New destination** and pick **Email**.
 2. Under **Recipients**, select up to 10 members of the organization.
-3. Save, then click **Send test**.
+3. Save, then click **Test** on the destination's row.
 
 Recipients must be members of the organization. Maple looks up each member's email address when you save, so you cannot enter an arbitrary address. To alert a distribution list or an external address, use a [Webhook](#webhook) destination.
 
@@ -51,7 +51,7 @@ To get the right key:
 2. Open the **Integrations** tab.
 3. Click **Add integration** and choose **Events API v2**.
 4. Copy that integration's **Integration Key** (32 characters).
-5. Paste it into Maple's **Integration key** field and click **Send test**.
+5. Paste it into Maple's **Integration key** field, save, and click **Test**.
 
 See PagerDuty's [services and integrations guide](https://support.pagerduty.com/main/docs/services-and-integrations) for screenshots.
 
@@ -67,6 +67,13 @@ Post alerts to a Discord channel through an incoming webhook.
 
 1. In Discord, open **Channel settings → Integrations → Webhooks → New Webhook**.
 2. Copy the webhook URL (`https://discord.com/api/webhooks/...`) into the **Discord webhook URL** field.
+
+## Google Chat
+
+Post alerts to a Google Chat space through an incoming webhook. Each alert is a card with the summary, severity, chart and links back to Maple, and a resolve or reminder replies in the thread its trigger started.
+
+1. In Google Chat, open the space, then **Apps & integrations → Webhooks → Add webhook**. Webhooks are available in Google Workspace accounts; an admin may need to allow them.
+2. Copy the webhook URL (`https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...`) into the **Google Chat webhook URL** field. The `key` and `token` in it are the credential, so treat the URL as a secret.
 
 ## Telegram
 
@@ -93,7 +100,7 @@ To find the ID by hand, post a message in the chat and open `https://api.telegra
 
 When you save, Maple verifies the token and checks that the bot can reach the chat. A valid token pointed at a group the bot was never added to fails at save time, not at the first real alert.
 
-Alerts arrive as a formatted message with **Open in Maple** and **Ask Maple AI** buttons, and the alert chart as the message preview when one is available.
+Alerts arrive as a formatted message with an **Open in Maple** button, and the alert chart as the message preview when one is available.
 
 ## Webhook
 
@@ -108,6 +115,22 @@ The payload, headers, signature verification and retry behavior are in the [aler
 ## Hazel
 
 Connect [Hazel](https://hazel.sh/docs/integrations/maple) through OAuth and pick a workspace channel to route alerts into. See Hazel's [Maple integration guide](https://hazel.sh/docs/integrations/maple).
+
+## Linear
+
+A Linear destination opens an issue in a Linear team instead of posting a message. Connect your Linear workspace first from **Integrations**: Maple installs as its own app, so the issues and comments it creates show Maple as the author. Then add a destination, pick **Linear**, and choose the team.
+
+Maple keeps one issue per alert rule and group, so a noisy rule does not fill your Triage:
+
+- The first `trigger` opens an issue in the team. It lands in Triage when the team uses it, and links back to the incident in Maple.
+- A later `trigger` comments on the same issue: when the rule fires again, or when the incident moves between warning and critical.
+- A `resolve` comments on the issue and leaves it open. Your team closes it when they are done.
+- If the rule fires again within 24 hours of the issue being closed, Maple reopens it. After that, it opens a new issue.
+- `renotify` reminders are not sent to Linear.
+
+To ticket only serious incidents, add the Linear destination to the rule's critical tier only. The **Test** button checks that Maple can reach the team. It does not create an issue.
+
+If Linear stops accepting Maple's access, deliveries fail with a reconnect message. Reconnect from **Integrations**.
 
 ## Next steps
 

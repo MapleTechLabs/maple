@@ -1,5 +1,5 @@
 import { ruleFormIsGrouped } from "@maple/web-data/alerts/form-utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { card } from "../../../ui/card"
 import { eyebrow } from "../../../ui/eyebrow"
 import { settingRow } from "../../../ui/setting-row"
@@ -15,9 +15,8 @@ type H = HtmlBuilder<Message>
 
 const NO_DATA_IDS = { control: "rule-no-data-input", label: "rule-no-data-label", description: "rule-no-data-description" }
 
-export const noiseSection = (h: H, model: Model, form: RuleForm): Html => {
+const noise = (h: H, mounted: Model["mountedForm"], form: RuleForm): Html => {
 	const isGrouped = ruleFormIsGrouped(form)
-	const mounted = model.mountedForm
 	const noiseRow = (
 		id: string,
 		label: string,
@@ -85,3 +84,9 @@ export const noiseSection = (h: H, model: Model, form: RuleForm): Html => {
 		"gap-0 p-0",
 	)
 }
+
+const slot = createLazy()
+
+/** "After it fires"; `form` is the evaluated draft (`evaluatedFormOf`). */
+export const noiseSection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(noise, [h, model.mountedForm, form])

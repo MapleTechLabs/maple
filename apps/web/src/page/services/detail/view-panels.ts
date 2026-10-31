@@ -6,6 +6,7 @@ import * as Chart from "../../../charts/chart"
 import * as Sparkline from "../../../charts/sparkline"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { backdropBar } from "../../../ui/meter"
+import { textLink } from "../../../ui/text-link"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { truncatedText } from "../../../ui/truncated-text"
 import { errorRateValue, latencyValue } from "../../../ui/values"
@@ -32,16 +33,7 @@ export const sectionCard = (
 
 /** `ViewAllButton`: jumps from an Overview card to the full tab. */
 export const viewAllButton = (h: H, onClick: Message): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(onClick),
-			h.Class(
-				"text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-			),
-		],
-		["View all →"],
-	)
+	textLink(h, { className: "text-xs", onClick }, ["View all →"])
 
 const PANEL_LIMIT = 5
 const SPARKLINE_MODEL = Chart.init()
@@ -74,14 +66,14 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 									h.Type("button"),
 									h.OnClick(onViewAll),
 									h.Class(
-										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+										"relative flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 									),
 								],
 								[
 									backdropBar(h, {
 										value: op.estimatedSpanCount,
 										max: maxCalls,
-										className: "bg-severity-info/10",
+										className: "bg-severity-info-a2",
 									}),
 									truncatedText(h, {
 										text: op.spanName,
@@ -120,7 +112,7 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 													chartId: `op-${op.spanName}`,
 													values: op.sparkline.map((point) => point.count),
 													color,
-													className: "h-5 w-[88px]",
+													className: "h-5 w-24",
 													revision: 0,
 													fillOpacity: [0.5, 0.1],
 												},

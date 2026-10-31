@@ -8,6 +8,8 @@ import { formatCompactTimeInTimezone } from "@maple/web-data/lib/timezone-format
 import { Effect } from "effect"
 import { AsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { ROW_LINE_CHARS } from "../../../lib/display-text"
+import { separator } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { errorSectionView } from "../../../ui/error-section"
 import { errorState } from "../../../ui/error-state"
@@ -107,7 +109,7 @@ const logTime = (h: H, timestamp: string, timeZone: string): ReadonlyArray<Html 
 	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
 	const dot = formatted.lastIndexOf(".")
 	if (dot === -1) return [formatted]
-	return [formatted.slice(0, dot), h.span([h.Class("text-muted-foreground/50")], [formatted.slice(dot)])]
+	return [formatted.slice(0, dot), h.span([h.Class("text-foreground-faint")], [formatted.slice(dot)])]
 }
 
 const contextList = (
@@ -129,7 +131,7 @@ const contextList = (
 			const isCurrent = key === selectedKey
 			const cells = [
 				h.span(
-					[h.Class("w-[92px] shrink-0 tabular-nums text-foreground/75")],
+					[h.Class("w-24 shrink-0 tabular-nums text-foreground-soft")],
 					logTime(h, row.timestamp, timeZone),
 				),
 				h.span(
@@ -150,11 +152,11 @@ const contextList = (
 									? "text-foreground"
 									: QUIET_SEVERITIES.has(row.severityText.toUpperCase())
 										? "text-muted-foreground"
-										: "text-foreground/85",
+										: "text-foreground-soft",
 							),
 						),
 					],
-					[row.body.split("\n", 1)[0] ?? ""],
+					[(row.body.split("\n", 1)[0] ?? "").slice(0, ROW_LINE_CHARS)],
 				),
 			]
 			return h.li(
@@ -162,18 +164,18 @@ const contextList = (
 					h.Key(key),
 					...(isCurrent ? [h.AriaCurrent("true"), h.OnMount(CenterContextRow())] : []),
 					h.Style({ "border-left-color": getSeverityColor(row.severityText) }),
-					h.Class("border-b border-l-2 border-b-border/70 font-mono text-xs last:border-b-0"),
+					h.Class("border-b border-l-2 border-b-border-subtle font-mono text-xs last:border-b-0"),
 				],
 				[
 					isCurrent
-						? h.div([h.Class(cn(ROW_CLASS, "bg-primary/8"))], cells)
+						? h.div([h.Class(cn(ROW_CLASS, "bg-primary-a1"))], cells)
 						: h.button(
 								[
 									h.Type("button"),
 									h.Class(
 										cn(
 											ROW_CLASS,
-											"cursor-pointer text-left hover:bg-muted/50 focus-visible:bg-muted/70 focus-visible:outline-none",
+											"cursor-pointer text-left hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:outline-none",
 										),
 									),
 									h.OnClick(Message.ClickedLog({ log: row })),
@@ -210,7 +212,7 @@ export const contextPanel = (
 						[
 							"Surrounding logs",
 							h.span(
-								[h.Class("ml-1 font-normal text-muted-foreground/60")],
+								[h.Class("ml-1 font-normal text-foreground-subtle")],
 								[scoped === undefined ? log.serviceName : `${scoped.key}=${scoped.value}`],
 							),
 						],
@@ -239,7 +241,7 @@ export const contextPanel = (
 						onFailure: (failure) =>
 							errorState(h, {
 								failure,
-								title: "Failed to load surrounding logs",
+								title: "Couldn't load surrounding logs",
 								variant: "inline",
 							}),
 						onData: (merged) => contextList(h, log, merged, timeZone, listClassName),
@@ -282,18 +284,18 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 						? []
 						: [
 								h.div(
-									[h.Class("flex items-center gap-2 px-2 py-0.5 bg-muted/30")],
+									[h.Class("flex items-center gap-2 px-2 py-0.5 bg-surface-sunken")],
 									[
-										h.div([h.Class("h-px flex-1 bg-border")], []),
+										separator(h, "horizontal", "flex-1"),
 										h.span(
 											[
 												h.Class(
-													"text-4xs font-mono text-muted-foreground/60 shrink-0 truncate max-w-[200px]",
+													"text-4xs font-mono text-foreground-subtle shrink-0 truncate max-w-[200px]",
 												),
 											],
 											[spanNames.get(spanChanged) ?? shortId(spanChanged, "span")],
 										),
-										h.div([h.Class("h-px flex-1 bg-border")], []),
+										separator(h, "horizontal", "flex-1"),
 									],
 								),
 							]),
@@ -305,8 +307,8 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 							h.Style({ "border-left-color": getSeverityColor(log.severityText) }),
 							h.Class(
 								cn(
-									"border-l-2 flex items-center gap-1.5 px-2 py-1 text-xs font-mono cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/50 transition-colors",
-									isCurrent && "bg-primary/8",
+									"border-l-2 flex items-center gap-1.5 px-2 py-1 text-xs font-mono cursor-pointer border-b border-border last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken",
+									isCurrent && "bg-primary-a1",
 								),
 							),
 						],
@@ -333,7 +335,7 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 										h.span(
 											[
 												h.Class(
-													"flex max-w-[72px] shrink-0 items-center gap-1 truncate text-3xs text-muted-foreground/60",
+													"flex max-w-[72px] shrink-0 items-center gap-1 truncate text-3xs text-foreground-subtle",
 												),
 											],
 											[
@@ -347,7 +349,7 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 									h.Class(
 										cn(
 											"min-w-0 flex-1 truncate text-2xs",
-											isCurrent ? "text-foreground" : "text-foreground/80",
+											isCurrent ? "text-foreground" : "text-foreground-soft",
 										),
 									),
 								],
@@ -378,7 +380,7 @@ export const traceTimeline = (h: H, model: Model, log: LogRecord): Html | null =
 						? [
 								h.span(
 									[
-										h.Class("ml-1 text-muted-foreground/60"),
+										h.Class("ml-1 text-foreground-subtle"),
 										...(isTruncated
 											? [h.Title(`Showing the first ${TRACE_LOG_LIMIT} logs returned`)]
 											: []),
@@ -392,7 +394,7 @@ export const traceTimeline = (h: H, model: Model, log: LogRecord): Html | null =
 			AsyncData.matchData(model.traceLogs.data, {
 				onEmpty: () => rowSkeleton(h, 5, ["w-10", "w-16"]),
 				onFailure: (failure) =>
-					errorState(h, { failure, title: "Failed to load trace logs", variant: "inline" }),
+					errorState(h, { failure, title: "Couldn't load trace logs", variant: "inline" }),
 				onData: (logs) => timelineRows(h, model, log, logs),
 			}),
 		],

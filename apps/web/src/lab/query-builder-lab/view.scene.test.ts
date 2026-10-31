@@ -29,11 +29,11 @@ describe("query builder lab view", () => {
 			{ update, view },
 			given(model),
 			measured(),
-			expectView(text("Run query to fetch Tinybird data.")).toExist(),
+			expectView(text("Run the query to see results.")).toExist(),
 			expectView(role("textbox", { name: "Where clause for query A" })).toExist(),
 			expectView(role("textbox", { name: "Where clause for query B" })).toExist(),
 			expectView(text("Formula F1 (executed after query runs)")).toExist(),
-			expectView(text("2026-10-01 11:00:00 -> 2026-10-01 12:00:00")).toExist(),
+			expectView(text("2026-10-01 11:00:00 → 2026-10-01 12:00:00")).toExist(),
 		)
 	})
 
@@ -42,7 +42,7 @@ describe("query builder lab view", () => {
 			{ update, view },
 			given({ ...model, queries: model.queries.map((query) => ({ ...query, enabled: false })) }),
 			measured(),
-			click(role("button", { name: "Run Query" })),
+			click(role("button", { name: "Run query" })),
 			expectView(text("No enabled queries to run")).toExist(),
 		)
 	})
@@ -52,7 +52,7 @@ describe("query builder lab view", () => {
 			{ update, view },
 			given(model),
 			measured(),
-			click(role("button", { name: "Add Query" })),
+			click(role("button", { name: "Add query" })),
 			Command.resolve(
 				CreateQuery,
 				Message.CreatedQuery({ query: { ...createQueryDraft(2), id: "q2" } }),

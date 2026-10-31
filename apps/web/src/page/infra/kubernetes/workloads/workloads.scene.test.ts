@@ -1,9 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import * as Frame from "../../kit/frame"
+import * as InstallModal from "../../kit/install-modal"
 import * as WorkloadDetail from "../workload/update"
 import { Message as DetailMessage } from "../workload/message"
 import { Message } from "./message"
@@ -19,11 +20,41 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const resolved = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" })
 
+const NO_INTEGRATIONS = {
+	cloudflare: false,
+	railway: false,
+	planetscale: false,
+	gcp: false,
+	supabase: false,
+	aws: false,
+}
+
+/** The StatefulSet kind with an empty answer for the window. */
+const emptyKind = () => {
+	const entered = pageUpdate(
+		init({ search: { kind: "statefulset" } }, context).model,
+		Message.GotFrameMessage({ message: resolved }),
+	)
+	return pageUpdate(
+		entered.model,
+		Message.CompletedFetchWorkloads({
+			key: entered.model.workloads.key ?? "",
+			result: Result.succeed([]),
+		}),
+	).model
+}
+
 describe("workloads", () => {
 	test("the kind pivot writes the kind and drops a name filter of the old kind", () => {
-		const model = pageUpdate(init({ search: { workloadNames: ["payment-svc"] } }, context).model, Message.GotFrameMessage({ message: resolved })).model
+		const model = pageUpdate(
+			init({ search: { workloadNames: ["payment-svc"] } }, context).model,
+			Message.GotFrameMessage({ message: resolved }),
+		).model
 		expect(pageUpdate(model, Message.ChangedKind({ kind: "job" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/infra/kubernetes/workloads?kind=job", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/kubernetes/workloads?kind=job",
+				isReplace: false,
+			}),
 		)
 	})
 
@@ -40,27 +71,78 @@ describe("workloads", () => {
 	})
 
 	test("the workload page asks for the aggregate series once the breakdown is unticked", () => {
-		const route = { kind: "deployment" as const, workloadName: "payment-svc", search: { namespace: "shop" } }
+		const route = {
+			kind: "deployment" as const,
+			workloadName: "payment-svc",
+			search: { namespace: "shop" },
+		}
 		const entered = WorkloadDetail.init(route, context).model
-		const windowed = WorkloadDetail.update(entered, DetailMessage.GotFrameMessage({ message: resolved }), context).model
-		const aggregate = WorkloadDetail.update(windowed, DetailMessage.ToggledGroupByPod({ isChecked: false }), context)
+		const windowed = WorkloadDetail.update(
+			entered,
+			DetailMessage.GotFrameMessage({ message: resolved }),
+			context,
+		).model
+		const aggregate = WorkloadDetail.update(
+			windowed,
+			DetailMessage.ToggledGroupByPod({ isChecked: false }),
+			context,
+		)
 		expect((aggregate.commands ?? []).map(({ name }) => name)).toEqual(["FetchInfraWorkloadSeries"])
 	})
 	test("an empty kind in a reporting cluster says so, without the install advice", () => {
-		const entered = pageUpdate(init({ search: { kind: "statefulset" } }, context).model, Message.GotFrameMessage({ message: resolved }))
-		const model = pageUpdate(
-			entered.model,
-			Message.CompletedFetchWorkloads({ key: entered.model.workloads.key ?? "", result: Result.succeed([]) }),
-		).model
+		const model = emptyKind()
 		const reporting: PageContext = {
 			...context,
-			infra: { presence: ["k8sPods"], integrations: { cloudflare: false, railway: false, planetscale: false, gcp: false } },
+			infra: {
+				presence: ["k8sPods"],
+				isPresenceFailed: false,
+				integrations: NO_INTEGRATIONS,
+				remembered: undefined,
+			},
 		}
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, { context: reporting })() },
 			given(model),
 			expectView(text("No StatefulSets in this window.")).toExist(),
 			expectView(text("No StatefulSets reporting yet")).not.toExist(),
+		)
+	})
+
+	test("an empty kind waits for the presence probe instead of flashing the install advice", () => {
+		const model = emptyKind()
+		const probing: PageContext = {
+			...context,
+			infra: {
+				presence: null,
+				isPresenceFailed: false,
+				integrations: NO_INTEGRATIONS,
+				remembered: undefined,
+			},
+		}
+		scene(
+			{ update: pageUpdate, view: withViewInputs(pageView, { context: probing })() },
+			given(model),
+			expectView(text("No StatefulSets reporting yet")).not.toExist(),
+			expectView(text("No StatefulSets in this window.")).not.toExist(),
+		)
+		const failed: PageContext = {
+			...context,
+			infra: {
+				presence: null,
+				isPresenceFailed: true,
+				integrations: NO_INTEGRATIONS,
+				remembered: undefined,
+			},
+		}
+		scene(
+			{ update: pageUpdate, view: withViewInputs(pageView, { context: failed })() },
+			given(model),
+			Mount.resolve(InstallModal.MountInstallModal, InstallModal.Message.MountedInstallModal()),
+			Command.resolve(
+				InstallModal.FetchIngestKey,
+				InstallModal.Message.CompletedFetchIngestKey({ result: Result.succeed("maple_sk_test") }),
+			),
+			expectView(text("No StatefulSets reporting yet")).toExist(),
 		)
 	})
 })

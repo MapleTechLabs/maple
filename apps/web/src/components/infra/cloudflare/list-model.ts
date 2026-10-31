@@ -1,4 +1,5 @@
 import { ERROR_RATE_WARN } from "@maple/ui/lib/error-rate"
+import type { Tone } from "@maple/ui/lib/tone"
 
 import type {
 	CloudflareDurableObjectRow,
@@ -26,6 +27,13 @@ export type WorkerScope = (typeof WORKER_SCOPES)[number]
 export type ZoneHealth = "serving5xx" | "mostly4xx" | "ok" | "lowVolume"
 
 /** One rule for the list row and the detail header, so a zone never reads differently on each. */
+export const ZONE_HEALTH_TONE = {
+	serving5xx: "crit",
+	mostly4xx: "warn",
+	ok: "ok",
+	lowVolume: "neutral",
+} as const satisfies Record<ZoneHealth, Tone>
+
 export function classifyZone(requests: number, serverErrorRate: number, clientErrorRate: number): ZoneHealth {
 	if (requests < MIN_RATED_REQUESTS) return "lowVolume"
 	if (serverErrorRate >= ERROR_RATE_WARN) return "serving5xx"
@@ -132,6 +140,12 @@ export function mergeWorkerRows(
 }
 
 export type WorkerHealth = "erroring" | "slow" | "ok"
+
+export const WORKER_HEALTH_TONE = {
+	erroring: "crit",
+	slow: "warn",
+	ok: "ok",
+} as const satisfies Record<WorkerHealth, Tone>
 
 export function workerHealth(row: WorkerListRow): WorkerHealth {
 	if (row.errorRate >= ERROR_RATE_WARN || row.doErrorRate >= ERROR_RATE_WARN) return "erroring"

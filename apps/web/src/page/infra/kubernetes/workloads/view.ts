@@ -3,6 +3,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../../ui/button"
@@ -31,7 +32,13 @@ import { emptyActions, filteredEmpty } from "../../../kit/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
 import { kubernetesViewTabs } from "../../kit/view-tabs"
 import { type Facet, Message, type WorkloadScope } from "./message"
-import { type Model, WORKLOAD_LIST_LIMIT, type WorkloadFacets, type WorkloadKind, type WorkloadRow } from "./model"
+import {
+	type Model,
+	WORKLOAD_LIST_LIMIT,
+	type WorkloadFacets,
+	type WorkloadKind,
+	type WorkloadRow,
+} from "./model"
 import { DEFAULT_PRESET, filtersOf, kindOf } from "./update"
 import { workloadTable, workloadTableLoading } from "./view-table"
 
@@ -68,7 +75,8 @@ const toSections = (message: FilterSections.Message) => Message.GotFilterSection
 
 const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): Html => {
 	const hasFilters = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (!hasFilters && Object.values(facets).every((options) => options.length === 0)) return filterSidebarEmpty(h)
+	if (!hasFilters && Object.values(facets).every((options) => options.length === 0))
+		return filterSidebarEmpty(h)
 	const section = (
 		title: string,
 		facet: Facet,
@@ -100,16 +108,24 @@ const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): 
 const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({ message })
 
 /** The sidebar's presence probe (`useInfraSurfaces()`): any Kubernetes surface means the chart is in. */
-const isClusterReporting = (inputs: PageViewInputs): boolean =>
-	(inputs.context.infra?.presence ?? []).some(
-		(surface) => surface === "k8sPods" || surface === "k8sNodes" || surface === "k8sWorkloads",
-	)
+const isClusterReporting = (presence: ReadonlyArray<string>): boolean =>
+	presence.some((surface) => surface === "k8sPods" || surface === "k8sNodes" || surface === "k8sWorkloads")
+
+/** The probe has not answered yet: install advice would flash before the cluster is known. */
+const isProbePending = (inputs: PageViewInputs): boolean =>
+	inputs.context.infra !== undefined &&
+	inputs.context.infra.presence === null &&
+	!inputs.context.infra.isPresenceFailed
 
 const otherKinds = (h: H, kind: WorkloadKind): ReadonlyArray<Html> =>
 	KIND_OPTIONS.filter((option) => option.value !== kind).map((option) =>
 		button(
 			h,
-			{ variant: "outline", size: "sm", attributes: [h.Key(option.value), h.OnClick(Message.ChangedKind({ kind: option.value }))] },
+			{
+				variant: "outline",
+				size: "sm",
+				attributes: [h.Key(option.value), h.OnClick(Message.ChangedKind({ kind: option.value }))],
+			},
 			["Show ", option.label],
 		),
 	)
@@ -143,16 +159,32 @@ const emptyKind = (h: H, model: Model, kind: WorkloadKind, kindLabel: string): H
 		onAction: toInstall(InstallModal.Message.ClickedOpen()),
 		docs: "kubernetes",
 		extra: otherKinds(h, kind),
-		modal: h.submodel({ slotId: "install-modal", model: model.install, view: InstallModalView.mountedView, toParentMessage: toInstall }),
+		modal: h.submodel({
+			slotId: "install-modal",
+			model: model.install,
+			view: InstallModalView.mountedView,
+			toParentMessage: toInstall,
+		}),
 	})
 
-const workloadList = (h: H, model: Model, workloads: ReadonlyArray<WorkloadRow>, inputs: PageViewInputs): Html => {
+const workloadList = (
+	h: H,
+	model: Model,
+	workloads: ReadonlyArray<WorkloadRow>,
+	inputs: PageViewInputs,
+): Html => {
 	const kind = kindOf(model.search)
 	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
 	const isWaiting = AsyncData.isRefreshing(model.workloads.data)
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (workloads.length === 0 && !hasStructuredFilter)
-		return isClusterReporting(inputs) ? emptyKindInWindow(h, kind, kindLabel) : emptyKind(h, model, kind, kindLabel)
+	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+		(values) => (values?.length ?? 0) > 0,
+	)
+	if (workloads.length === 0 && !hasStructuredFilter) {
+		if (isProbePending(inputs)) return workloadTableLoading(h)
+		return isClusterReporting(inputs.context.infra?.presence ?? [])
+			? emptyKindInWindow(h, kind, kindLabel)
+			: emptyKind(h, model, kind, kindLabel)
+	}
 	const endTime = model.frame.window?.endTime ?? ""
 	const scoped = workloads.map((workload) => ({ workload, scope: scopeOf(workload, endTime) }))
 	const count = (target: WorkloadScope) => scoped.filter((entry) => entry.scope === target).length
@@ -173,14 +205,36 @@ const workloadList = (h: H, model: Model, workloads: ReadonlyArray<WorkloadRow>,
 				noun: kindLabel.slice(0, -1).toLowerCase(),
 				caption: "share of the fleet by its busiest pod's peak",
 				segments: [
-					{ key: "healthy", count: Math.max(workloads.length - saturated - elevated, 0), className: TONE_FILL.ok },
+					{
+						key: "healthy",
+						count: Math.max(workloads.length - saturated - elevated, 0),
+						className: TONE_FILL.ok,
+					},
 					{ key: "elevated", count: elevated, className: TONE_FILL.warn },
 					{ key: "saturated", count: saturated, className: TONE_FILL.crit },
 				],
 				cells: [
-					{ scope: "saturated", label: "Saturated", hint: "a pod ≥90%", value: saturated, tone: "crit" },
-					{ scope: "elevated", label: "Elevated", hint: "a pod ≥60%", value: elevated, tone: "warn" },
-					{ scope: "stale", label: "Stale collector", hint: ">5m", value: count("stale"), tone: "neutral" },
+					{
+						scope: "saturated",
+						label: "Saturated",
+						hint: "a pod ≥90%",
+						value: saturated,
+						tone: "crit",
+					},
+					{
+						scope: "elevated",
+						label: "Elevated",
+						hint: "a pod ≥60%",
+						value: elevated,
+						tone: "warn",
+					},
+					{
+						scope: "stale",
+						label: "Stale collector",
+						hint: ">5m",
+						value: count("stale"),
+						tone: "neutral",
+					},
 				],
 				activeScope: scope,
 				onScopeChange: (next) => Message.ChangedScope({ scope: next }),
@@ -240,7 +294,11 @@ const workloadsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.workloads.data, {
 		onEmpty: () => workloadTableLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load workloads", onRetry: Message.ClickedRetryWorkloads() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load workloads",
+				onRetry: Message.ClickedRetryWorkloads(),
+			}),
 		onData: (workloads) => workloadList(h, model, workloads, inputs),
 	})
 
@@ -255,7 +313,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					title: "Kubernetes",
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+						AsyncData.isFailure(model.workloads.data),
+					),
 					tabs: kubernetesViewTabs(h, "workloads", model.search),
 					filters: filtersRail(h, model, kindLabel.replace(/s$/, "")),
 				},
@@ -268,6 +333,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 const filtersRail = (h: H, model: Model, label: string): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 4),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(
+				h,
+				failure,
+				undefined,
+				Option.getOrUndefined(AsyncData.getError(model.workloads.data)),
+			),
 		onData: (facets) => loadedRail(h, model, facets, label),
 	})

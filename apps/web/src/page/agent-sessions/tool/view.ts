@@ -256,7 +256,7 @@ export const toolDetailBody = (
 ): Html =>
 	AsyncData.matchData(model.totals.data, {
 		onEmpty: () => loadingView(h),
-		onFailure: (failure) => errorState(h, { failure, title: `Failed to load ${model.toolName}` }),
+		onFailure: (failure) => errorState(h, { failure, title: `Couldn't load ${model.toolName}` }),
 		onData: (totals) =>
 			model.themeColors === null || model.chartRuntime._tag === "Loading"
 				? loadingView(h)

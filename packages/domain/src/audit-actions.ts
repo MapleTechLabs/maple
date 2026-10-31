@@ -35,6 +35,7 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.attributeMapping,
 		verbs: ["created", "updated", "deleted"],
 	},
+	ingest_rule: { prefix: PublicIdPrefixes.ingestRule, verbs: ["created", "updated", "deleted"] },
 	dashboard: {
 		prefix: PublicIdPrefixes.dashboard,
 		verbs: ["created", "updated", "deleted", "version_restored"],
@@ -61,12 +62,19 @@ export const AuditResources = {
 		],
 	},
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
+	/** A device-held key registered for the mobile widgets (DPoP); keyed by installation. */
+	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
 	gcp_connector: {
 		prefix: PublicIdPrefixes.gcpConnector,
 		verbs: ["created", "updated", "removal_confirmed", "deleted"],
+	},
+	/** One connected AWS account; the account and its modules are in `metadata`. */
+	aws_connection: {
+		prefix: PublicIdPrefixes.awsConnection,
+		verbs: ["created", "updated", "deleted"],
 	},
 	/** Anything that sends data; a token source's secret is never in `changes`. */
 	source: {
@@ -96,6 +104,8 @@ export const AuditResources = {
 	planetscale_integration: {
 		verbs: ["connect_started", "organization_selected", "metrics_token_set", "disconnected"],
 	},
+	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
+	cloudflare_integration: { verbs: ["zones_updated"] },
 	/**
 	 * Org membership, learned from Clerk's webhook; the web app changes members
 	 * in Clerk directly, so nothing reaches Maple's own API. The member is the
@@ -108,6 +118,36 @@ export const AuditResources = {
 	 */
 	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
+	uptime_monitor: { prefix: PublicIdPrefixes.uptimeMonitor, verbs: ["created", "updated", "deleted"] },
+	/** A public status page; component reorders and break-glass token changes are page-level. */
+	status_page: {
+		prefix: PublicIdPrefixes.statusPage,
+		verbs: [
+			"created",
+			"updated",
+			"deleted",
+			"published",
+			"components_reordered",
+			"config_applied",
+			"break_glass_rotated",
+			"break_glass_revoked",
+		],
+	},
+	status_page_component: {
+		prefix: PublicIdPrefixes.statusPageComponent,
+		verbs: ["created", "updated", "deleted"],
+	},
+	/** A customer-facing incident or maintenance; `update_posted` is a public update on its timeline. */
+	status_page_incident: {
+		prefix: PublicIdPrefixes.statusPageIncident,
+		verbs: ["created", "updated", "deleted", "update_posted"],
+	},
+	/** A person's triage of a security audit finding; target, fingerprint, status and reason in `metadata`. */
+	security_audit_finding: { verbs: ["triaged"] },
+	/** An admin stopping an in-progress security audit run; target and run id in `metadata`. */
+	security_audit_run: { verbs: ["cancelled"] },
+	/** An admin changing the org's audit spend limit or default models; the new values in `metadata`. */
+	security_audit_settings: { verbs: ["updated"] },
 	/**
 	 * Reads of recorded browser sessions, the surface most likely to carry
 	 * end-user data. Recorded by the auth layers from the `AuditedRead` annotation.
@@ -151,20 +191,31 @@ export const AuditResourceLabels = {
 	api: "API",
 	api_key: "API key",
 	attribute_mapping: "Attribute mapping",
+	ingest_rule: "Ingest rule",
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
 	dashboard_share: "Dashboard share",
+	device_credential: "Device credential",
 	error_issue: "Issue",
 	gcp_connector: "Google Cloud connector",
+	aws_connection: "AWS connection",
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
 	mcp_tool: "MCP tool",
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
+	cloudflare_integration: "Cloudflare integration",
 	member: "Member",
 	organization: "Organization",
 	scrape_target: "Scrape target",
+	uptime_monitor: "Uptime monitor",
+	status_page: "Status page",
+	status_page_component: "Status page component",
+	status_page_incident: "Status page incident",
+	security_audit_finding: "Security audit finding",
+	security_audit_run: "Security audit run",
+	security_audit_settings: "Security audit settings",
 	source: "Source",
 	session_replay: "Session replay",
 	support_channel: "Support channel",
@@ -194,6 +245,9 @@ export const AuditActionLabels = {
 	"attribute_mapping.created": "Created attribute mapping",
 	"attribute_mapping.updated": "Updated attribute mapping",
 	"attribute_mapping.deleted": "Deleted attribute mapping",
+	"ingest_rule.created": "Created ingest rule",
+	"ingest_rule.updated": "Updated ingest rule",
+	"ingest_rule.deleted": "Deleted ingest rule",
 	"dashboard.created": "Created dashboard",
 	"dashboard.updated": "Updated dashboard",
 	"dashboard.deleted": "Deleted dashboard",
@@ -206,6 +260,8 @@ export const AuditActionLabels = {
 	"dashboard_share.created": "Shared dashboard",
 	"dashboard_share.rotated": "Rotated dashboard share link",
 	"dashboard_share.deleted": "Removed dashboard share link",
+	"device_credential.registered": "Registered device key",
+	"device_credential.revoked": "Revoked device key",
 	"error_issue.created": "Created issue",
 	"error_issue.state_change": "Changed issue status",
 	"error_issue.assignment": "Assigned issue",
@@ -230,6 +286,9 @@ export const AuditActionLabels = {
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
 	"gcp_connector.deleted": "Removed Google Cloud connector",
+	"aws_connection.created": "Connected AWS",
+	"aws_connection.updated": "Updated AWS connection",
+	"aws_connection.deleted": "Removed AWS connection",
 	"ingest_key.rolled": "Rolled ingest key",
 	"source.created": "Created source",
 	"source.updated": "Updated source",
@@ -247,6 +306,7 @@ export const AuditActionLabels = {
 	"planetscale_integration.organization_selected": "Selected PlanetScale organization",
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
+	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
 	"member.added": "Added member",
 	"member.role_changed": "Changed member role",
 	"member.removed": "Removed member",
@@ -255,6 +315,27 @@ export const AuditActionLabels = {
 	"scrape_target.created": "Created scrape target",
 	"scrape_target.updated": "Updated scrape target",
 	"scrape_target.deleted": "Deleted scrape target",
+	"uptime_monitor.created": "Created uptime monitor",
+	"uptime_monitor.updated": "Updated uptime monitor",
+	"uptime_monitor.deleted": "Deleted uptime monitor",
+	"status_page.created": "Created status page",
+	"status_page.updated": "Updated status page",
+	"status_page.deleted": "Deleted status page",
+	"status_page.published": "Published status page",
+	"status_page.components_reordered": "Reordered status page components",
+	"status_page.config_applied": "Applied status page config",
+	"status_page.break_glass_rotated": "Rotated status page break-glass token",
+	"status_page.break_glass_revoked": "Revoked status page break-glass token",
+	"status_page_component.created": "Created status page component",
+	"status_page_component.updated": "Updated status page component",
+	"status_page_component.deleted": "Deleted status page component",
+	"status_page_incident.created": "Created status page incident",
+	"status_page_incident.updated": "Updated status page incident",
+	"status_page_incident.deleted": "Deleted status page incident",
+	"status_page_incident.update_posted": "Posted status page update",
+	"security_audit_finding.triaged": "Triaged security audit finding",
+	"security_audit_run.cancelled": "Cancelled security audit run",
+	"security_audit_settings.updated": "Updated security audit spend limit and models",
 	"session_replay.read": "Viewed session replay",
 	"support_channel.created": "Created support channel",
 	"support_channel.invite_sent": "Sent support channel invite",

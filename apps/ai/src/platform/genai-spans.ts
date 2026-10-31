@@ -247,8 +247,11 @@ export const messagesJson = (
  * `withPerCallFields` in `./Llm.ts`) the final usage object carries `cost`, and the provider passes
  * the raw usage through on the finish part. Maple never prices tokens itself.
  */
-const reportedCost = (finish: FinishPart): number | undefined => {
-	const cost = finish.metadata?.openrouter?.usage?.cost
+const reportedCost = (finish: FinishPart): number | undefined => reportedCostOf(finish.metadata)
+
+/** The same, from a finish part's metadata, for hosts that price runs through the engine. */
+export const reportedCostOf = (metadata: FinishPart["metadata"] | undefined): number | undefined => {
+	const cost = metadata?.openrouter?.usage?.cost
 	return Predicate.isNumber(cost) && Number.isFinite(cost) && cost >= 0 ? cost : undefined
 }
 
@@ -603,10 +606,13 @@ const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
 		: Option.filter(span.parent, isExecuteToolSpan)
 
 /** A tool failure handed back to the model as the call's result: it retries, the run carries on. */
+/** Handed back to whoever called the tool: the model, or a `run_code` program (`returned-to-caller`). */
+const RETURNED_FAILURES: ReadonlySet<unknown> = new Set(["returned-to-model", "returned-to-caller"])
+
 const isReturnedToolFailure = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): boolean =>
 	Exit.isFailure(exit) &&
 	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX) &&
-	span.attributes.get("effect_agent.tool.failure_handling") === "returned-to-model"
+	RETURNED_FAILURES.has(span.attributes.get("effect_agent.tool.failure_handling"))
 
 /**
  * Export a returned tool failure as `Ok` + `error.type` rather than `Error`, so it stops opening error

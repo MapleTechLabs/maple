@@ -58,8 +58,8 @@ afterEach(() => cleanupTestDbs(createdDbs))
 
 /**
  * The API and the web app sit on sibling hosts of one registrable domain in
- * every real deployment; `isTrustedCallbackOrigin` is what enforces that, so
- * the harness mirrors it (`api.maple.test` / `app.maple.test`).
+ * every real deployment; `isTrustedCallbackOrigin` allows exactly the configured
+ * origins, so the harness configures both (`api.maple.test` / `app.maple.test`).
  */
 const APP_BASE_URL = "https://app.maple.test"
 const API_HOST = "api.maple.test"
@@ -77,6 +77,8 @@ const testConfig = () =>
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 			MAPLE_APP_BASE_URL: APP_BASE_URL,
+			MAPLE_API_BASE_URL: `https://${API_HOST}`,
+			MAPLE_ENVIRONMENT: "production",
 			INTERNAL_SERVICE_TOKEN: "test-internal-token",
 		}),
 	)
@@ -228,8 +230,10 @@ describe("v2 planetscale integration over HTTP", () => {
 		pendingOrgSelection: false,
 		organization: "acme",
 		connectedByUserId: null,
-		detectedPermissions: { readMetricsEndpoints: true },
+		detectedPermissions: { readDatabases: true },
 		metricsAuth: "service_token" as const,
+		apiMetrics: null,
+		webhooks: null,
 		scrapeTarget: {
 			id: Schema.decodeUnknownSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
 			enabled: true,
@@ -269,6 +273,35 @@ describe("v2 planetscale integration over HTTP", () => {
 		// Public ID, not the raw UUID, and no camelCase leakage from the service.
 		expect(body.scrape_target.id).toMatch(/^scrp_/)
 		expect("metricsAuth" in body).toBe(false)
+		await harness.dispose()
+	})
+
+	it("reports metrics API polling and webhook registration in the wire shape", async () => {
+		const harness = makeHarness({
+			connection: {
+				getStatus: () =>
+					Effect.succeed({
+						...connectedStatus,
+						metricsAuth: "api" as const,
+						apiMetrics: { lastPolledAt: Date.parse("2026-08-05T12:05:00.000Z"), lastError: null },
+						webhooks: {
+							state: "pending" as const,
+							registeredDatabases: 1,
+							databases: 2,
+							lastError: null,
+						},
+					}),
+			},
+		})
+		const key = await harness.bootstrapAdminKey()
+
+		const { status, body } = await harness.request("GET", "/v2/integrations/planetscale", key.secret)
+		expect(status).toBe(200)
+		expect(body).toMatchObject({
+			metrics_auth: "api",
+			api_metrics: { last_polled_at: "2026-08-05T12:05:00.000Z", last_error: null },
+			webhooks: { state: "pending", registered_databases: 1, databases: 2, last_error: null },
+		})
 		await harness.dispose()
 	})
 
@@ -537,6 +570,40 @@ describe("v2 planetscale integration over HTTP", () => {
 			state: "abc",
 		})
 		expect(callbackUrl).toBe(`https://${API_HOST}${PLANETSCALE_CALLBACK_PATH}`)
+		await harness.dispose()
+	})
+
+	it("refuses a connect from a sibling host under the same parent domain", async () => {
+		const harness = makeHarness({})
+		const key = await harness.bootstrapAdminKey()
+		const { status } = await harness.request("POST", "/v2/integrations/planetscale/connect", key.secret, {
+			forwardedHost: "evil.maple.test",
+			body: {},
+		})
+		expect(status).toBe(503)
+		await harness.dispose()
+	})
+
+	it("builds the webhook URL from the configured API origin, not forwarded headers", async () => {
+		const harness = makeHarness({
+			connection: {
+				webhookConfig: () =>
+					Effect.succeed({
+						configured: true,
+						path: "/api/integrations/planetscale/webhook/abc",
+						secret: "s",
+					}),
+			},
+		})
+		const key = await harness.bootstrapAdminKey()
+		const { status, body } = await harness.request(
+			"GET",
+			"/v2/integrations/planetscale/webhook_config",
+			key.secret,
+			{ forwardedHost: "evil.example.com" },
+		)
+		expect(status).toBe(200)
+		expect(body.url).toBe(`https://${API_HOST}/api/integrations/planetscale/webhook/abc`)
 		await harness.dispose()
 	})
 

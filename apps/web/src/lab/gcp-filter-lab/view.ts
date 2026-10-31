@@ -36,7 +36,7 @@ const scenarioView = (h: H, scenario: Scenario, state: ScenarioState, index: num
 				[],
 				[
 					h.h2([h.Class("text-sm font-medium")], [scenario.title]),
-					h.p([h.Class("text-xs text-muted-foreground")], [scenario.description]),
+					h.p([h.Class("font-prose text-xs text-muted-foreground")], [scenario.description]),
 				],
 			),
 			h.submodel({

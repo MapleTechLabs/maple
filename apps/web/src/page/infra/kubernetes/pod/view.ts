@@ -11,8 +11,12 @@ import * as Frame from "../../kit/frame"
 import { heroChip } from "../../kit/hero-chip"
 import { k8sChart } from "../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { noMetricsMessage, pageHero } from "../../kit/page-parts"
-import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
+import { noMetricsMessage, pageHeroParts } from "../../kit/page-parts"
+import {
+	metaRow,
+	resourceAttributesCard,
+	resourceAttributesCardSkeleton,
+} from "../../kit/resource-attributes"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { kubernetesViewTabs } from "../../kit/view-tabs"
 import { POD_METRIC_LABELS, type PodMetric, type PodSummary } from "../pod-data"
@@ -35,7 +39,7 @@ const METRIC_OPTIONS: ReadonlyArray<Readonly<{ value: PodMetric; label: string }
 ]
 
 const rail = (h: H, summary: Summary): Html =>
-	resourceAttributesCard(h, "FolderIcon", [
+	resourceAttributesCard(h, [
 		metaRow(h, { label: "k8s.pod.name", value: summary.podName }),
 		metaRow(h, { label: "k8s.namespace.name", value: summary.namespace }),
 		metaRow(h, { label: "k8s.node.name", value: summary.nodeName }),
@@ -51,7 +55,7 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	if (summary !== null) return rail(h, summary)
 	return AsyncData.isLoading(model.summary.data) || AsyncData.isIdle(model.summary.data)
-		? resourceAttributesCardSkeleton(h, "FolderIcon")
+		? resourceAttributesCardSkeleton(h)
 		: undefined
 }
 
@@ -63,14 +67,22 @@ const stats = (h: H, model: Model, summary: Summary): Html =>
 			tone: severityLevel(summary.cpuLimitPct),
 			compact: true,
 		}),
-		statRailItem(h, { eyebrow: "CPU vs request", value: formatPercent(summary.cpuRequestPct), compact: true }),
+		statRailItem(h, {
+			eyebrow: "CPU vs request",
+			value: formatPercent(summary.cpuRequestPct),
+			compact: true,
+		}),
 		statRailItem(h, {
 			eyebrow: "Memory vs limit",
 			value: formatPercent(summary.memoryLimitPct),
 			tone: severityLevel(summary.memoryLimitPct),
 			compact: true,
 		}),
-		statRailItem(h, { eyebrow: "Memory vs request", value: formatPercent(summary.memoryRequestPct), compact: true }),
+		statRailItem(h, {
+			eyebrow: "Memory vs request",
+			value: formatPercent(summary.memoryRequestPct),
+			compact: true,
+		}),
 		podRestartsStat(h, model.restarts.data),
 	])
 
@@ -78,7 +90,11 @@ const summaryArea = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => statRailLoading(h, 5, 5),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load pod metrics", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load pod metrics",
+				onRetry: Message.ClickedRetrySummary(),
+			}),
 		onData: (summary) => (summary === null ? noMetricsMessage(h, "pod") : stats(h, model, summary)),
 	})
 
@@ -88,13 +104,28 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	const metric = model.metric
 	const namespace = model.search.namespace
+	const hero = pageHeroParts(h, {
+		title: h.span([h.Class("font-mono")], [model.podName]),
+		description: "Pod metrics from the kubelet stats receiver; restarts from the cluster receiver.",
+		meta: [
+			...(namespace ? [heroChip(h, ["ns ", namespace])] : []),
+			...(summary?.nodeName ? [heroChip(h, ["node ", summary.nodeName])] : []),
+			...(summary?.qosClass ? [heroChip(h, ["qos ", summary.qosClass])] : []),
+		],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					titleContent: hero.title,
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: kubernetesViewTabs(h, "pods", model.search),
 					rightPanel: rightPanel(h, model),
 				},
@@ -102,16 +133,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h.div(
 						[h.Class("space-y-6")],
 						[
-							pageHero(h, {
-								title: h.span([h.Class("font-mono")], [model.podName]),
-								description:
-									"Pod metrics from the kubelet stats receiver; restarts from the cluster receiver.",
-								meta: [
-									...(namespace ? [heroChip(h, ["ns ", namespace])] : []),
-									...(summary?.nodeName ? [heroChip(h, ["node ", summary.nodeName])] : []),
-									...(summary?.qosClass ? [heroChip(h, ["qos ", summary.qosClass])] : []),
-								],
-							}),
+							hero.body,
 							summaryArea(h, model),
 							h.div(
 								[h.Class("space-y-3")],
@@ -129,7 +151,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										toChart: (message) => Message.GotChartMessage({ metric, message }),
 										chartId: `pod-${metric}`,
 										seriesLabel: POD_METRIC_LABELS.get(metric) ?? metric,
-										showThreshold: metric.startsWith("cpu_") || metric.startsWith("memory_"),
+										showThreshold:
+											metric.startsWith("cpu_") || metric.startsWith("memory_"),
 										theme: model.themeColors,
 										runtime: model.chartRuntime,
 										timeZone: inputs.context.timeZone,

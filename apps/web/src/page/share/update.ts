@@ -10,9 +10,9 @@ import * as Menu from "../../ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
 import { presetLabel } from "../kit/time-controls"
 import { withActiveTab, withSectionCollapsed } from "../../lib/dashboards/section-view-state"
-import { FetchBatch, GoToSignIn, ReadFrame, ResolveClock, ResolveReloadClock, ResolveShare, WaitFlushFrame } from "./command"
+import { DATA_UNAVAILABLE_MESSAGE, FetchBatch, GoToSignIn, ReadFrame, ResolveClock, ResolveReloadClock, ResolveShare, WaitFlushFrame } from "./command"
 import { Message } from "./message"
-import type { Model, SharedDashboard, ShareWindow } from "./model"
+import type { Model, QueuedBatch, SharedDashboard, ShareWindow, WidgetState } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Route = { readonly token: string; readonly search: Model["search"] }
@@ -52,6 +52,16 @@ export const refreshSecondsOf = (model: Model): number => {
 
 const variableValuesOf = (model: Model): Record<string, string> => ({ ...variableValuesFromSearch(model.search) })
 
+/** Queued batches cut down to the widgets still requested under the same key; empty ones drop. */
+const liveBatches = (
+	batches: ReadonlyArray<QueuedBatch>,
+	requested: Model["requested"],
+): ReadonlyArray<QueuedBatch> =>
+	batches.flatMap((batch) => {
+		const requests = batch.requests.filter((request) => requested[request.widgetId] === request.key)
+		return requests.length === 0 ? [] : [{ ...batch, requests }]
+	})
+
 /** `useShareWidgetData`'s effect: every reported widget whose request key moved, in batches of four. */
 const flush = (model: Model): Return => {
 	const share = shareOf(model)
@@ -75,10 +85,11 @@ const flush = (model: Model): Return => {
 		requests: pending.slice(i * BATCH_MAX, (i + 1) * BATCH_MAX),
 	}))
 	const [first, ...rest] = batches
+	const requested = { ...model.requested, ...Object.fromEntries(pending.map((request) => [request.widgetId, request.key])) }
 	return {
 		model: {
 			...model,
-			requested: { ...model.requested, ...Object.fromEntries(pending.map((request) => [request.widgetId, request.key])) },
+			requested,
 			states: {
 				...model.states,
 				...Object.fromEntries(
@@ -87,9 +98,10 @@ const flush = (model: Model): Return => {
 						.map((request) => [request.widgetId, { _tag: "Loading" } as const]),
 				),
 			},
-			queuedBatches: [...model.queuedBatches, ...rest],
+			queuedBatches: [...liveBatches(model.queuedBatches, requested), ...rest],
+			sentBatchId: first === undefined ? model.sentBatchId : model.sentBatchId + 1,
 		},
-		commands: first === undefined ? [] : [FetchBatch({ token: model.token, ...first })],
+		commands: first === undefined ? [] : [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...first })],
 	}
 }
 
@@ -117,6 +129,7 @@ export const init = (route: Route): Return => ({
 		requested: {},
 		isFlushScheduled: false,
 		queuedBatches: [],
+		sentBatchId: 0,
 		states: {},
 		gridWidth: 0,
 		charts: {},
@@ -163,23 +176,29 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		MeasuredGrid: ({ width }) => ({ model: { ...model, gridWidth: width } }),
 		CompletedFlushFrame: () => flush({ ...model, isFlushScheduled: false }),
-		CompletedFetchBatch: ({ keys, states, variables }) => {
-			const [next, ...rest] = model.queuedBatches
-			const isLive = Object.keys(states).some((widgetId) => model.requested[widgetId] === keys[widgetId])
+		CompletedFetchBatch: ({ batchId, keys, states, variables }) => {
+			// Only the batch sent last advances the queue, so a reload's batches never overlap.
+			const isCurrent = batchId === model.sentBatchId
+			const [next, ...rest] = isCurrent ? liveBatches(model.queuedBatches, model.requested) : []
+			// A widget the answer left out settles as a failure instead of loading forever.
+			const missing: WidgetState = { _tag: "Error", message: DATA_UNAVAILABLE_MESSAGE, kind: "runtime" }
+			const settled = { ...Object.fromEntries(Object.keys(keys).map((widgetId) => [widgetId, missing])), ...states }
+			const isLive = Object.keys(settled).some((widgetId) => model.requested[widgetId] === keys[widgetId])
 			return {
 			model: {
 				...model,
-				queuedBatches: rest,
+				queuedBatches: isCurrent ? rest : model.queuedBatches,
+				sentBatchId: next === undefined ? model.sentBatchId : model.sentBatchId + 1,
 				// A batch whose widgets all moved on is skipped whole, its variables included.
 				variables: isLive && variables !== undefined ? variables : model.variables,
 				states: {
 					...model.states,
 					...Object.fromEntries(
-						Object.entries(states).filter(([widgetId]) => model.requested[widgetId] === keys[widgetId]),
+						Object.entries(settled).filter(([widgetId]) => model.requested[widgetId] === keys[widgetId]),
 					),
 				},
 			},
-			commands: next === undefined ? [] : [FetchBatch({ token: model.token, ...next })],
+			commands: next === undefined ? [] : [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...next })],
 			}
 		},
 		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),

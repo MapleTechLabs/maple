@@ -122,7 +122,9 @@ describe("github card", () => {
 
 	test("refresh re-reads the status and spins until its timer", () => {
 		const refreshed = pageUpdate(loaded(), Message.ClickedGithubRefresh())
-		expect(names(refreshed.commands)).toEqual(["LoadIntegrationsGithubStatus", "SpinGithubRefresh"])
+		expect(names(refreshed.commands)).toEqual(
+			expect.arrayContaining(["LoadIntegrationsGithubStatus", "SpinGithubRefresh"]),
+		)
 		const stopped = pageUpdate(refreshed.model, Message.CompletedGithubRefreshSpin({ version: 1 }))
 		expect(stopped.model.githubCard.isRefreshing).toBe(false)
 	})

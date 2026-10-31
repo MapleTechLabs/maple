@@ -3,7 +3,6 @@ import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTi
 import { icon } from "../../ui/icon"
 import { presenceOf } from "../kit/signal-presence"
 import { docsLink, signalEmptyState } from "../kit/signal-empty-state"
-import { MountEmptyState } from "./command"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
@@ -141,13 +140,10 @@ const message = <M>(h: HtmlBuilder<M>, model: Model): Html => {
 	})
 }
 
-/** The empty canvas; its presence request is sent once it painted (`useSignalPresence` on mount). */
+/** The empty canvas: a skeleton until the page-init presence read settles. */
 export const serviceMapEmptyState = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.div(
-		[
-			h.Class("relative flex h-full items-center justify-center overflow-hidden"),
-			h.OnMount(MountEmptyState()),
-		],
+		[h.Class("relative flex h-full items-center justify-center overflow-hidden")],
 		[
 			h.div([
 				h.AriaHidden(true),

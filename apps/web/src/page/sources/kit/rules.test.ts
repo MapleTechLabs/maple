@@ -12,6 +12,7 @@ const source = (fields: Record<string, unknown> = {}) =>
 		name: "Checkout API",
 		description: null,
 		platform: "nodejs",
+		kind: "token",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
 		integration_id: null,

@@ -94,7 +94,7 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 								"group/tab flex shrink-0 items-center gap-1 border-b-2 px-2 py-1 text-xs transition-colors",
 								isActive
 									? "border-primary text-foreground"
-									: "border-transparent text-muted-foreground hover:text-foreground",
+									: "border-transparent text-muted-foreground hover:text-foreground active:text-foreground",
 							),
 						),
 					],

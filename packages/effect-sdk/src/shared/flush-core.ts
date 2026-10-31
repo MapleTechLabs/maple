@@ -7,6 +7,7 @@
 // browser) and its transport (plain `fetch` vs `fetch(keepalive)`); everything
 // downstream of a resolved endpoint lives here.
 import { Effect, Redacted, Result } from "effect"
+import { isMapleIngestEndpoint } from "@maple/browser-session/region"
 import type { LogBuffer, LogRecord } from "./flushable-logger.js"
 import type { MetricBuffer } from "./flushable-metrics.js"
 import type { OtlpSpan, SpanBuffer } from "./flushable-tracer.js"
@@ -70,9 +71,10 @@ export interface FlushTransport {
 /**
  * Turn a resolved resource into ready-to-POST URLs + headers. Shared by all
  * presets. `keyless` is each preset's answer to "no ingest key": the env-driven
- * server and Cloudflare presets treat it as unconfigured and `"disable"`; the
- * browser client's key is auth only, so it `"send"`s without `Authorization`
- * for a proxy in front of the endpoint to complete.
+ * server and Cloudflare presets disable export only against Maple's hosted
+ * ingest, which rejects keyless writes, and send to any other endpoint (a local
+ * `maple start`, a self-hosted collector). The browser client's key is auth
+ * only, so it always `"send"`s without `Authorization` for a proxy to complete.
  */
 export const buildResolved = (
 	r: ResourceInput,
@@ -81,7 +83,7 @@ export const buildResolved = (
 		readonly logsPath?: string | undefined
 		readonly metricsPath?: string | undefined
 		readonly userAgent: string
-		readonly keyless: "disable" | "send"
+		readonly keyless: "disable-at-maple-ingest" | "send"
 	},
 ): Resolved => {
 	// `r.endpoint` is always defined in practice (every resolver falls back to
@@ -107,7 +109,10 @@ export const buildResolved = (
 		resource: makeOtlpResource(r.resource),
 		scope: { name: r.resource.serviceName },
 		headers,
-		noOp: r.ingestKey === undefined && opts.keyless === "disable",
+		noOp:
+			r.ingestKey === undefined &&
+			opts.keyless === "disable-at-maple-ingest" &&
+			isMapleIngestEndpoint(baseUrl),
 	}
 }
 

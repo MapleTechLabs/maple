@@ -5,6 +5,7 @@ import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
+	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
 	QueryBuilderQueryDraftSchema,
 	type AlertComparator,
@@ -63,8 +64,10 @@ const ALERT_TEMPLATES = {
 
 export const CreateAlertRuleParameters = Schema.Struct({
 	name: P.text("Rule name"),
-	destination_ids: P.list(
-		"Destination IDs to notify (use list_alert_destinations to find IDs). Pass an empty list for none.",
+	destination_ids: P.resourceIdList(
+		"alertDestination",
+		"Destination IDs to notify (use list_alert_destinations to find IDs). Pass an empty list for none",
+		{ blankIsEmpty: true },
 	),
 	template: P.optionalOneOf(
 		TEMPLATE_NAMES,
@@ -78,6 +81,10 @@ export const CreateAlertRuleParameters = Schema.Struct({
 		"The value compared against. Units: error_rate and apdex are 0-1 ratios, latency is milliseconds, throughput is requests per minute. Overrides the template's.",
 	),
 	window_minutes: P.optionalNumber("Evaluation window in minutes (default: 5)"),
+	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
+		ALERT_EVALUATION_INTERVALS,
+		'Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit (or pass "auto") to derive it: a fifth of the window, 1 to 5.',
+	),
 	services: P.optionalList("Service names to scope the alert to"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (e.g. 'production'). Omit for all environments. Ignored for builder_query / raw_query, which filter inside their own query.",
@@ -226,6 +233,9 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 		comparator,
 		threshold,
 		windowMinutes: params.window_minutes ?? 5,
+		...(params.evaluation_interval_minutes == null
+			? undefined
+			: { evaluationIntervalMinutes: params.evaluation_interval_minutes }),
 		destinationIds: params.destination_ids,
 		...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
 		...(services === undefined ? undefined : { serviceNames: services }),

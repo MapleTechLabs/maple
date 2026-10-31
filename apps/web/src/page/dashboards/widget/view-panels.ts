@@ -94,7 +94,7 @@ export const funnelPanel = (h: H, model: Model, state: EditorState): ReadonlyArr
 											windowRow(h, model, "funnel", funnel.windowSeconds, {
 												label: "Window",
 												ariaLabel: "Conversion window",
-												className: "h-8 w-[160px] text-xs",
+												className: "h-8 w-40 text-xs",
 												hint: "the whole chain must complete within this long of step 1",
 											}),
 										]
@@ -143,7 +143,7 @@ const pathsAddOns = (h: H, model: Model, paths: EditorState["paths"]): ReadonlyA
 					label: "Within",
 					ariaLabel: "Window",
 					size: "sm",
-					className: "w-[160px]",
+					className: "w-40",
 					hint: "of the anchor",
 				}),
 			]

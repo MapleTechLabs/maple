@@ -31,7 +31,7 @@ import {
 	type DesiredTable,
 } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Clock, Config, Effect, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { EdgeCacheService } from "@maple/cache"

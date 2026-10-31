@@ -18,6 +18,7 @@ import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-orm/
 import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {
+	mergeSettingsClauses,
 	settingsClause,
 	type QueryProfileName,
 	resolveSettings,
@@ -114,7 +115,7 @@ const sqlClientCacheKey = (config: ResolvedWarehouseConfig): string =>
 		? `tinybird:${config.host}:${config.token}`
 		: `${config.kind}:${config.url}:${config.username}:${config.password}:${config.database}`
 
-// Only retry transient upstream failures (5xx, 408, 429, network blips). Non-transient
+// Only retry transient upstream failures (5xx, 408, rate-limit 429s, network blips). Non-transient
 // errors (auth, config, schema_drift, query) re-fail immediately — there's nothing to
 // recover from by trying again. Caps at 2 retries (3 attempts total) to bound worst-case
 // tail latency: at concurrency=4 in the alerting tick, a fully-degraded warehouse can
@@ -122,8 +123,16 @@ const sqlClientCacheKey = (config: ResolvedWarehouseConfig): string =>
 // `Schedule.max` recurs only while every schedule does, so `recurs(2)` is the cap.
 const TRANSIENT_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("100 millis", 2.0), Schedule.recurs(2)])
 
+// A 429 naming a daily or quota limit ("daily request limit exceeded (1000/day)") cannot
+// clear within the backoff, so retrying only adds latency. vCPU limits can clear and still retry.
+const PLAN_LIMIT_429 = /\bdaily\b[^.]*\blimit\b|\/day\)|\bquota\b/i
+const VCPU_429 = /\bvCPU\b/i
+
+const isPlanLimit429 = (error: WarehouseUpstreamError) =>
+	error.upstreamStatus === 429 && PLAN_LIMIT_429.test(error.message) && !VCPU_429.test(error.message)
+
 const isTransientUpstreamError = (error: unknown): error is WarehouseUpstreamError =>
-	error instanceof WarehouseUpstreamError
+	error instanceof WarehouseUpstreamError && !isPlanLimit429(error)
 
 // Client-side ceiling for a single query attempt. Tinybird's server-side
 // `max_execution_time` is not always honored — when its query queue is saturated
@@ -147,6 +156,22 @@ const clientTimeoutMs = (
 	return maxExecutionTimeS !== undefined
 		? maxExecutionTimeS * 1000 + CLIENT_TIMEOUT_BUFFER_MS
 		: MANAGED_QUERY_HARD_TIMEOUT_MS
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null
+
+/**
+ * Whether an ingest row is tagged for `orgId` and no other org: by its `OrgId`
+ * column, or by `resource_attributes.maple_org_id` on raw telemetry rows.
+ */
+const rowBelongsTo = (row: unknown, orgId: string): boolean => {
+	if (!isRecord(row)) return false
+	const tags = [
+		row.OrgId,
+		isRecord(row.resource_attributes) ? row.resource_attributes.maple_org_id : undefined,
+	].filter((tag) => tag !== undefined)
+	return tags.length > 0 && tags.every((tag) => tag === orgId)
 }
 
 /**
@@ -496,7 +521,7 @@ WHERE name = 'enable_full_text_index'`,
 		// re-derives from SQL text which terminal clauses it already carries.
 		const parsed = parseStatement(sql)
 		const statement = withFormat(
-			withSettings(parsed, parsed.settings ?? settingsClause(settings)),
+			withSettings(parsed, mergeSettingsClauses(parsed.settings, settingsClause(settings))),
 			dialect.wireFormat === "in-statement" ? (parsed.format ?? dialect.statementFormat) : undefined,
 		)
 		const finalSql = statement.text
@@ -956,7 +981,7 @@ WHERE name = 'enable_full_text_index'`,
 	const rawSqlQuery = Effect.fn("WarehouseQueryService.rawSqlQuery")(function* (
 		tenant: ExecutionTenant,
 		sql: string,
-		options?: Pick<SqlQueryOptions, "profile" | "context">,
+		options?: Pick<SqlQueryOptions, "profile" | "context" | "settings">,
 	) {
 		// No OrgId assertion here on purpose. This path runs user-authored SQL,
 		// whose isolation is enforced upstream at the credential layer — a
@@ -1182,6 +1207,14 @@ WHERE name = 'enable_full_text_index'`,
 		if (rows.length === 0) return
 
 		const label = `ingest:${datasource}`
+		// Writes skip the DSL's OrgId filter, and some callers forward rows a
+		// per-org warehouse returned, so every row must belong to the writer.
+		if (!rows.every((row) => rowBelongsTo(row, tenant.orgId))) {
+			return yield* new WarehouseScopeError({
+				pipeName: label,
+				message: `Refused to ingest rows whose OrgId is not the writing org (${datasource})`,
+			})
+		}
 		// Writes resolve with purpose "ingest": the host routes them to the managed
 		// Tinybird pipeline, never a per-org BYO ClickHouse READ override (routing
 		// writes through the override 500'd every insert and broke demo-seed

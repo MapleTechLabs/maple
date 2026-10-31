@@ -123,7 +123,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const { model, form } = inputs
 	if (form.chatWorkspaceId === null)
 		return h.div(
-			[h.Class("space-y-2 rounded-md border border-dashed border-border/60 p-3")],
+			[h.Class("space-y-2 rounded-md border border-dashed border-border-subtle p-3")],
 			[
 				h.p(
 					[h.Class("text-xs text-muted-foreground")],

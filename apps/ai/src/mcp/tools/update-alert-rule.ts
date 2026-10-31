@@ -7,6 +7,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
 import {
+	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
 	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
@@ -33,24 +34,36 @@ import * as P from "../lib/params"
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 
 export const UpdateAlertRuleParameters = Schema.Struct({
-	rule_id: P.optionalText("Alert rule ID to update (use list_alert_rules to find IDs)"),
-	rule_ids: P.optionalList(
-		'Apply the same change to several rules in one call instead of rule_id; ["*"] means every rule. name cannot be set in bulk.',
+	rule_id: P.optionalResourceId("alertRule", "Alert rule ID to update (use list_alert_rules to find IDs)"),
+	rule_ids: P.optionalResourceIdList(
+		"alertRule",
+		'Apply the same change to several rules in one call instead of rule_id; ["*"] means every rule. name cannot be set in bulk',
 	),
 	name: P.optionalText("New rule name"),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
 	threshold: P.optionalNumber("Threshold value. E.g. 0.05 for 5% error rate, 1000 for 1s latency"),
 	window_minutes: P.optionalNumber("Evaluation window in minutes"),
+	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
+		ALERT_EVALUATION_INTERVALS,
+		'Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit to keep the current one; pass "auto" to derive it from the window (a fifth, 1 to 5). Any edit also clears a slowdown the scheduler applied.',
+	),
 	services: P.optionalList("Service scope (replaces the current one; an empty list means all services)"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (replaces the current scope; pass an empty list for all environments). Ignored for builder_query / raw_query.",
 	),
 	enabled: P.optionalFlag("Whether the rule is enabled"),
-	destination_ids: P.optionalList(
+	destination_ids: P.optionalResourceIdList(
+		"alertDestination",
 		"Destination IDs to notify (replaces the current destinations; use list_alert_destinations to find IDs)",
 	),
-	add_destination_ids: P.optionalList("Destination IDs to add, keeping the current ones"),
-	remove_destination_ids: P.optionalList("Destination IDs to remove, keeping the rest"),
+	add_destination_ids: P.optionalResourceIdList(
+		"alertDestination",
+		"Destination IDs to add, keeping the current ones",
+	),
+	remove_destination_ids: P.optionalResourceIdList(
+		"alertDestination",
+		"Destination IDs to remove, keeping the rest",
+	),
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
 		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql.",
@@ -138,6 +151,14 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 		thresholds,
 		breachesOutOf: current.breachesOutOf,
 		windowMinutes: params.window_minutes ?? current.windowMinutes,
+		// Omitted keeps the picked interval, unless the window shrinks below it: then the window's own.
+		evaluationIntervalMinutes:
+			params.evaluation_interval_minutes !== undefined
+				? params.evaluation_interval_minutes
+				: current.evaluationIntervalMinutes !== null &&
+					  current.evaluationIntervalMinutes > (params.window_minutes ?? current.windowMinutes)
+					? null
+					: current.evaluationIntervalMinutes,
 		minimumSampleCount: params.minimum_sample_count ?? current.minimumSampleCount,
 		consecutiveBreachesRequired: params.consecutive_breaches ?? current.consecutiveBreachesRequired,
 		consecutiveHealthyRequired: params.consecutive_healthy ?? current.consecutiveHealthyRequired,

@@ -304,8 +304,8 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 const ATTEMPT_CLASS = new Map<AlertDeliveryEventDocument["status"], string>([
 	["success", "bg-severity-info"],
 	["failed", "bg-severity-error"],
-	["queued", "bg-muted-foreground/40"],
-	["processing", "bg-muted-foreground/40"],
+	["queued", "bg-foreground-faint"],
+	["processing", "bg-foreground-faint"],
 ])
 
 // TODO(tooltip): the strip's hover tooltip ("Last N attempts delivered") is not drawn yet.
@@ -323,7 +323,7 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 					),
 				],
 				[...recent].reverse().map((event) =>
-					h.span([h.Key(event.id), h.Class(cn("w-1 rounded-[1px]", ATTEMPT_CLASS.get(event.status)))]),
+					h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
 				),
 			)
 
@@ -333,7 +333,7 @@ const deliveryLog = (h: H, model: Model, inputs: RoutingInputs): Html =>
 	AsyncData.match(model.routingDeliveries.data, {
 		onIdle: () => logSkeleton(h),
 		onLoading: () => logSkeleton(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load delivery history" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load delivery history" }),
 		onRefreshing: (events) => logTable(h, model, inputs, events),
 		onStale: ({ data }) => logTable(h, model, inputs, data),
 		onSuccess: (events) => logTable(h, model, inputs, events),
@@ -373,11 +373,11 @@ const logTable = (
 	return table(h, {}, [
 		tableHeader(h, [
 			tableRow(h, [
-				tableHead(h, ["Status"], "w-[150px]"),
-				tableHead(h, ["Event"], "w-[128px]"),
-				tableHead(h, ["Destination"], "w-[240px]"),
+				tableHead(h, ["Status"], "w-36"),
+				tableHead(h, ["Event"], "w-32"),
+				tableHead(h, ["Destination"], "w-60"),
 				tableHead(h, ["Detail"]),
-				tableHead(h, ["Time"], "w-[88px] text-right"),
+				tableHead(h, ["Time"], "w-24 text-right"),
 			]),
 		]),
 		tableBody(
@@ -386,7 +386,7 @@ const logTable = (
 				tableRow(h, [
 					h.td(
 						[
-							h.Attribute("class", cn(tableCellStyles, "bg-muted/30 py-1.5")),
+							h.Attribute("class", cn(tableCellStyles, "bg-surface-sunken py-1.5")),
 							h.Attribute("colspan", "5"),
 							h.DataAttribute("slot", "table-cell"),
 						],
@@ -394,7 +394,7 @@ const logTable = (
 							eyebrow(h, { className: "flex items-center gap-2" }, [
 								group.label,
 								h.span(
-									[h.Class("tracking-normal normal-case text-muted-foreground/60 tabular-nums")],
+									[h.Class("tracking-normal normal-case text-foreground-subtle tabular-nums")],
 									[String(group.events.length), " ", pluralize(group.events.length, "attempt")],
 								),
 							]),

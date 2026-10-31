@@ -10,6 +10,7 @@ import { emptyMessage } from "../../ui/empty"
 import { panel, panelHeader } from "../../ui/panel"
 import { searchInput } from "../../ui/search-input"
 import { statusDot } from "../../ui/status-dot"
+import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { truncatedText } from "../../ui/truncated-text"
 import { columnHead } from "../infra/kit/data-table"
@@ -116,7 +117,7 @@ const resourceRow = (
 			[
 				h.Class(
 					cn(
-						"hidden w-[190px] min-w-0 shrink-0 self-center text-2xs @lg:block",
+						"hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block",
 						status.detailClass,
 					),
 				),
@@ -124,7 +125,7 @@ const resourceRow = (
 			detailView(h, status.detail),
 		),
 		h.div(
-			[h.Class("flex w-[124px] shrink-0 items-center justify-end gap-2.5 self-center")],
+			[h.Class("flex w-32 shrink-0 items-center justify-end gap-2.5 self-center")],
 			[
 				...(hasData && usage !== null ? [sparkline(h, model, name, usage)] : []),
 				h.span(
@@ -135,7 +136,7 @@ const resourceRow = (
 		),
 	]
 	const rowClass =
-		"group flex items-start gap-3 border-b border-border/40 px-3 py-2 transition-colors last:border-0"
+		"group flex items-start gap-3 border-b border-border-subtle px-3 py-2 transition-colors last:border-0"
 	return zoneLink
 		? h.a(
 				[
@@ -143,7 +144,7 @@ const resourceRow = (
 					h.Class(
 						cn(
 							rowClass,
-							"hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+							"hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 						),
 					),
 				],
@@ -209,9 +210,9 @@ export const zoneBoard = (
 				onSort: Message.ClickedZoneSort({ key }),
 			},
 		})
-	return panel(h, { className: cn("@container border-border/60", className) }, [
+	return panel(h, { className: cn("@container border-border-subtle", className) }, [
 		panelHeader(h, {
-			className: "gap-2 border-border/60 pl-4 pr-2.5",
+			className: "gap-2 border-border-subtle pl-4 pr-2.5",
 			children: [
 				h.h3([h.Class("text-sm font-semibold")], ["Zones"]),
 				ToggleGroup.view(h, {
@@ -221,21 +222,39 @@ export const zoneBoard = (
 					size: "xs",
 					className: "ml-auto gap-1.5",
 					items: [
-						countChip(h, "all", "All", decorated.length),
+						countChipItem(h, { value: "all", label: "All", count: decorated.length }),
 						...CHIP_ORDER.filter((kind) => counts(kind) > 0).map((kind) =>
-							countChip(h, kind, STATUS_META[kind].label, counts(kind), STATUS_META[kind].tone),
+							countChipItem(h, {
+								value: kind,
+								label: STATUS_META[kind].label,
+								count: counts(kind),
+								tone: STATUS_META[kind].tone,
+							}),
 						),
 					],
 				}),
 				searchInput(h, {
 					id: "cloudflare-zone-search",
-					className: "w-full sm:w-[170px]",
+					className: "w-full sm:w-44",
 					value: card.zoneSearch,
 					placeholder: "Filter zones…",
 					onInput: (value) => Message.ChangedZoneSearch({ value }),
 					onClear: Message.ChangedZoneSearch({ value: "" }),
 					attributes: [h.AriaLabel("Filter zones by name")],
 				}),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "xs",
+						isDisabled: !model.isAdmin,
+						attributes: [
+							h.OnClick(Message.ClickedManageZones()),
+							...(model.isAdmin ? [] : [h.Title("Only org admins can change zones")]),
+						],
+					},
+					["Manage zones"],
+				),
 			],
 		}),
 		...(banner === null ? [] : [h.div([h.Class("px-3 pt-3")], [banner])]),
@@ -243,12 +262,12 @@ export const zoneBoard = (
 			[h.Class("flex flex-col")],
 			[
 				h.div(
-					[h.Class("flex items-center gap-3 border-b border-border/60 px-3 py-2")],
+					[h.Class("flex items-center gap-3 border-b border-border-subtle px-3 py-2")],
 					[
 						h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0")]),
 						head("Zone", "name", "min-w-0 flex-1", {}),
-						head("Status", "status", "w-[190px]", { hidden: "hidden @lg:flex" }),
-						head("24h requests", "requests", "w-[124px]", { align: "right" }),
+						head("Status", "status", "w-48", { hidden: "hidden @lg:flex" }),
+						head("24h requests", "requests", "w-32", { align: "right" }),
 					],
 				),
 				sorted.length === 0
@@ -288,14 +307,14 @@ export const workersCard = (
 	const scripts = workerServices.toSorted((a, b) => b.totalRequests - a.totalRequests)
 	const expanded = model.cloudflareCard.workersExpanded
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
-	return panel(h, { className: "h-fit border-border/60 lg:w-72 lg:shrink-0 xl:w-80" }, [
+	return panel(h, { className: "h-fit border-border-subtle lg:w-72 lg:shrink-0 xl:w-80" }, [
 		panelHeader(h, {
-			className: "border-border/60 py-3",
+			className: "border-border-subtle py-3",
 			children: [h.h3([h.Class("text-sm font-semibold")], ["Workers"])],
 			action: h.a(
 				[
 					h.Href(hrefOf(AppRoute.ServiceMap({ search: {} }))),
-					h.Class("text-xs text-muted-foreground transition-colors hover:text-foreground"),
+					h.Class("text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
 				],
 				["View on map →"],
 			),
@@ -303,7 +322,7 @@ export const workersCard = (
 		...(aggregate.kind === "issue" || aggregate.kind === "no-data"
 			? [
 					h.div(
-						[h.Class(cn("border-b border-border/40 px-4 py-2 text-2xs", aggregate.detailClass))],
+						[h.Class(cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass))],
 						detailView(h, aggregate.detail),
 					),
 				]
@@ -326,7 +345,7 @@ export const workersCard = (
 							h.div(
 								[
 									h.Class(
-										"flex items-center justify-between gap-3 border-b border-border/40 py-2.5 last:border-0",
+										"flex items-center justify-between gap-3 border-b border-border-subtle py-2.5 last:border-0",
 									),
 								],
 								[
@@ -365,7 +384,7 @@ export const workersCard = (
 											variant: "link",
 											size: "xs",
 											className:
-												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground",
+												"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
 											attributes: [h.OnClick(Message.ClickedWorkersExpand())],
 										},
 										[
@@ -380,24 +399,3 @@ export const workersCard = (
 				),
 	])
 }
-
-const countChip = (
-	h: H,
-	value: string,
-	label: string,
-	count: number,
-	tone?: ZoneStatusInfo["tone"],
-): ToggleGroup.ToggleGroupItem => ({
-	value,
-	label,
-	className:
-		"group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs",
-	children: [
-		...(tone === undefined ? [] : [statusDot(h, { tone })]),
-		label,
-		h.span(
-			[h.Class("tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground")],
-			[String(count)],
-		),
-	],
-})

@@ -57,8 +57,20 @@ describe("toInputSchema nullable-union collapse", () => {
 	it("leaves a non-nullable union alone", () => {
 		const schema = toInputSchema(Schema.Struct({ a: Schema.Union([Schema.String, Schema.Number]) }))
 		const properties = schema.properties as Record<string, Record<string, unknown>>
-		expect(Array.isArray(properties.a?.anyOf)).toBe(true)
-		expect((properties.a?.anyOf as unknown[]).length).toBe(2)
+		const types = (properties.a?.anyOf as Array<{ type?: string }>).map((member) => member.type)
+		expect(types).toContain("string")
+		expect(types).toContain("number")
+		expect(types).not.toContain("null")
+	})
+
+	it("drops the null branch from a flattened optional union", () => {
+		const schema = toInputSchema(
+			Schema.Struct({ a: Schema.optional(Schema.Union([Schema.Literal("x"), Schema.Number])) }),
+		)
+		const properties = schema.properties as Record<string, Record<string, unknown>>
+		const types = (properties.a?.anyOf as Array<{ type?: string }>).map((member) => member.type)
+		expect(types).toContain("number")
+		expect(types).not.toContain("null")
 	})
 
 	it("still marks optional parameters as not required", () => {

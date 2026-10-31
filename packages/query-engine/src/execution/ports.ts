@@ -7,6 +7,7 @@ import type {
 	WarehouseConfigError,
 	WarehouseQueryRequest,
 	WarehouseQueryResponse,
+	WarehouseScopeError,
 	WarehouseSettingsRouteError,
 	WarehouseTokenRouteError,
 	WarehouseValidationError,
@@ -222,7 +223,7 @@ export interface WarehouseQueryServiceApi {
 	readonly rawSqlQuery: (
 		tenant: ExecutionTenant,
 		sql: string,
-		options?: Pick<SqlQueryOptions, "profile" | "context">,
+		options?: Pick<SqlQueryOptions, "profile" | "context" | "settings">,
 	) => Effect.Effect<
 		ReadonlyArray<Record<string, unknown>>,
 		WarehouseExecutionError | RawSqlValidationError
@@ -287,7 +288,7 @@ export interface WarehouseQueryServiceApi {
 		tenant: ExecutionTenant,
 		datasource: string,
 		rows: ReadonlyArray<T>,
-	) => Effect.Effect<void, WarehouseClassifiedError>
+	) => Effect.Effect<void, WarehouseClassifiedError | WarehouseScopeError>
 	/**
 	 * Present this service as the package-level `WarehouseExecutor` for a given
 	 * tenant — the single managed-warehouse implementation of that interface.

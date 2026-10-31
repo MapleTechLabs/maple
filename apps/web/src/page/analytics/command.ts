@@ -98,8 +98,10 @@ export const FetchTraceSamples = define(
 )
 
 export const LoadSignalPresence = Command.define("LoadAnalyticsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 export const CompleteReloadSpin = Command.define("CompleteAnalyticsReloadSpin", {

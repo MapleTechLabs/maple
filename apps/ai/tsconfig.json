@@ -1,6 +1,5 @@
 {
-	"include": ["src/**/*.ts", "src/**/*.tsx"],
-	"exclude": ["src/**/*.test.ts"],
+	"include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
 	"compilerOptions": {
 		"customConditions": ["bun"],
 		"ignoreDeprecations": "6.0",

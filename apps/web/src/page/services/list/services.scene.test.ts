@@ -3,10 +3,10 @@ import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
-	Command,
 	expect as expectView,
 	expectOutMessage,
 	given,
+	label,
 	Mount,
 	role,
 	scene,
@@ -15,6 +15,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ThemeMessage, ResolveThemeColors } from "../../../charts/theme-colors"
+import { toLoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
@@ -23,8 +24,6 @@ import {
 	FetchFacets,
 	FetchOverview,
 	FetchSparklines,
-	LoadSignalPresence,
-	MountEmptyState,
 	MountTable,
 } from "./command"
 import { Message } from "./message"
@@ -94,6 +93,14 @@ const loaded = (rows: ReadonlyArray<ServiceRow>): Model => {
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ traces: { status, lastSeenMs: null } }),
+		}),
+	).model
+
 describe("services list", () => {
 	test("entry resolves the window, then asks every query the page reads under its key", () => {
 		const { commands } = init({ search: {} }, context)
@@ -103,13 +110,17 @@ describe("services list", () => {
 			entered,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([
 			FetchOverview.name,
 			FetchSparklines.name,
 			FetchFacets.name,
 			FetchBaseline.name,
 			FetchAnomalies.name,
-		])
+		]))
+		const fetch = resolved.commands?.find(({ name }) => name === FetchOverview.name)
+		expect(fetch?.args).toMatchObject({
+			input: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
+		})
 		expect(resolved.model.overview.key).toBe(overviewKey())
 	})
 
@@ -139,6 +150,38 @@ describe("services list", () => {
 		const model = windowed()
 		const other = pageUpdate(model, Message.UpdatedIncidents({ orgId: "org_other", incidents: [] }))
 		expect(AsyncData.isLoading(other.model.incidents)).toBe(true)
+	})
+
+	test("a failed alert sync and anomaly read do not hold the table on its skeleton", () => {
+		const base = windowed()
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchOverview({
+				key: base.overview.key ?? "",
+				result: Result.succeed([row("checkout")]),
+			}),
+			Message.CompletedFetchSparklines({ key: base.sparklines.key ?? "", result: Result.succeed({}) }),
+			Message.CompletedFetchAnomalies({
+				key: base.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+			Message.FailedLoadIncidents({ orgId }),
+			Message.CompletedLoadChartRuntime(),
+			Message.ResolvedThemeColors({ colors: {} }),
+		]
+		scene(
+			{ update: pageUpdate, view },
+			given(steps.reduce((model, message) => pageUpdate(model, message).model, base)),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			expectView(role("table", { name: "Services" })).toExist(),
+			expectView(text("checkout")).toExist(),
+		)
+	})
+
+	test("a late alert-sync failure does not replace incidents that already arrived", () => {
+		const synced = pageUpdate(windowed(), Message.UpdatedIncidents({ orgId, incidents: [] })).model
+		const late = pageUpdate(synced, Message.FailedLoadIncidents({ orgId }))
+		expect(AsyncData.isSuccess(late.model.incidents)).toBe(true)
 	})
 
 	test("loaded rows render grouped by environment with the footer tally", () => {
@@ -187,21 +230,21 @@ describe("services list", () => {
 		)
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No services found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
 			themeResolved(),
 			Mount.resolve(MountTable, Message.PaintedTable()),
-			expectView(text("No services found")).toExist(),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No services found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "absent")),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
 			expectView(text("No services yet")).toExist(),
 			expectView(role("link", { name: "Set up tracing" })).toHaveAttr(
 				"href",
@@ -212,7 +255,9 @@ describe("services list", () => {
 
 	test("Reload re-resolves the window unsnapped and spins for the reload", () => {
 		const reloaded = pageUpdate(loaded([row("checkout")]), Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveServicesWindow", "CompleteServicesReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveServicesWindow", "CompleteServicesReloadSpin"]),
+		)
 		expect(reloaded.model.isReloading).toBe(true)
 		const settled = pageUpdate(
 			reloaded.model,

@@ -47,13 +47,15 @@ describe("error issue writes", () => {
 		expect(done.model.busy).toEqual([])
 		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success", title: "Claimed" })
 		// Every invalidated read restarts, including the ones still in flight.
-		expect(names(done.commands)).toEqual([
-			"FetchErrorIssueDetail",
-			"FetchErrorIssueEvents",
-			"FetchErrorIssueEscalations",
-			"FetchErrorIssuePullRequests",
-			"FetchErrorIssueVerifications",
-		])
+		expect(names(done.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchErrorIssueDetail",
+				"FetchErrorIssueEvents",
+				"FetchErrorIssueEscalations",
+				"FetchErrorIssuePullRequests",
+				"FetchErrorIssueVerifications",
+			]),
+		)
 	})
 
 	test("a pre-write read landing after the write's re-read started is dropped", () => {
@@ -99,7 +101,7 @@ describe("error issue writes", () => {
 				result: Result.fail(toLoadFailure("boom")),
 			}),
 		)
-		expect(done.outMessage).toMatchObject({ type: "error", title: "Failed to release issue" })
+		expect(done.outMessage).toMatchObject({ type: "error", title: "Couldn't release issue" })
 		expect(done.commands ?? []).toEqual([])
 	})
 

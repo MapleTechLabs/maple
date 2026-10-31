@@ -9,7 +9,7 @@ import { Duration, Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { serverUrl } from "../lib/local-address"
-import { Chdb, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"
+import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"
 import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
 import {
@@ -521,6 +521,7 @@ export const writeBackupConfig = (path: string, sourceDataDir?: string): void =>
     <allowed_disk>${sourceDataDir ? "src" : "default"}</allowed_disk>
     <allowed_path>backups</allowed_path>
   </backups>${sourceDisk}
+${MERGE_TREE_CONFIG_XML}
 </clickhouse>
 `,
 		{ mode: 0o600 },

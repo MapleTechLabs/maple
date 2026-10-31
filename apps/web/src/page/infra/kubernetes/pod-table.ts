@@ -1,5 +1,10 @@
-import { formatWholePercent } from "../../../components/infra/format"
-import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "../../../components/infra/pod-restarts"
+import { formatCores, formatWholePercent } from "../../../components/infra/format"
+import {
+	formatRestarts,
+	podKey,
+	type PodRestartSummary,
+	restartTone,
+} from "../../../components/infra/pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
@@ -9,7 +14,14 @@ import { AppRoute, hrefOf } from "../../../route"
 import { middleTruncate } from "../../../ui/middle-truncate"
 import { skeleton } from "../../../ui/skeleton"
 import { avgPeak } from "../kit/avg-peak"
-import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skeletonRows } from "../kit/data-table"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	headSort,
+	ROW_LINK_CLASS,
+	skeletonRows,
+} from "../kit/data-table"
 import type { SortDir } from "../../kit/table-sort"
 import { meterRows } from "../kit/meter-rows"
 import { metaLine } from "../kit/meta-line"
@@ -42,31 +54,38 @@ const metaTitle = (pod: PodRow, workload: Readonly<{ kind: string; name: string 
 		.filter(Boolean)
 		.join(" · ")
 
-/** `formatCores`: comparable cores across a fleet's magnitudes. */
-const formatCores = (cores: number): string => {
-	if (!Number.isFinite(cores) || cores === 0) return "0"
-	if (cores >= 10) return cores.toFixed(0)
-	if (cores >= 1) return cores.toFixed(2)
-	return cores.toFixed(3)
-}
-
-const columns = <M>(h: HtmlBuilder<M>, sort: Sort, onSort: ((key: PodSortKey) => M) | undefined): ReadonlyArray<Html> => {
+const columns = <M>(
+	h: HtmlBuilder<M>,
+	sort: Sort,
+	onSort: ((key: PodSortKey) => M) | undefined,
+): ReadonlyArray<Html> => {
 	const head = (key: PodSortKey) =>
 		onSort === undefined || sort === null
 			? { isActive: sort !== null && sort.key === key, dir: sort?.dir ?? "desc" }
 			: headSort(sort, key, onSort)
 	return [
-		columnHead(h, { label: "Pod", sort: head("podName"), width: "w-0 flex-1 min-w-[260px]" }),
-		columnHead(h, { label: "Peak saturation", sort: head("saturation"), width: "w-[176px]", hidden: "hidden md:flex" }),
-		columnHead(h, { label: "CPU cores", sort: head("cpuUsage"), align: "right", width: "w-[132px]", hidden: "hidden lg:flex" }),
+		columnHead(h, { label: "Pod", sort: head("podName"), width: "w-0 flex-1 min-w-64" }),
+		columnHead(h, {
+			label: "Peak saturation",
+			sort: head("saturation"),
+			width: "w-44",
+			hidden: "hidden md:flex",
+		}),
+		columnHead(h, {
+			label: "CPU cores",
+			sort: head("cpuUsage"),
+			align: "right",
+			width: "w-32",
+			hidden: "hidden lg:flex",
+		}),
 		columnHead(h, {
 			label: "Mem of limit",
 			sort: head("memoryLimitPct"),
 			align: "right",
-			width: "w-[120px]",
+			width: "w-32",
 			hidden: "hidden lg:flex",
 		}),
-		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-[100px]" }),
+		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-24" }),
 	]
 }
 
@@ -76,14 +95,17 @@ export const podTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		{ ariaLabel: "Pods" },
 		columns(h, null, undefined),
 		skeletonRows(h, 6, () => [
-			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")]),
 			h.div(
-				[h.Class("hidden w-[176px] space-y-1.5 md:block")],
-				[skeleton(h, "h-2.5 w-[176px]"), skeleton(h, "h-2.5 w-[176px]")],
+				[h.Class("w-0 min-w-64 flex-1")],
+				[skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")],
 			),
-			skeleton(h, "hidden h-3 w-[132px] lg:block"),
-			skeleton(h, "hidden h-3 w-[120px] lg:block"),
-			skeleton(h, "h-3 w-[100px]"),
+			h.div(
+				[h.Class("hidden w-44 space-y-1.5 md:block")],
+				[skeleton(h, "h-2.5 w-44"), skeleton(h, "h-2.5 w-44")],
+			),
+			skeleton(h, "hidden h-3 w-32 lg:block"),
+			skeleton(h, "hidden h-3 w-32 lg:block"),
+			skeleton(h, "h-3 w-24"),
 		]),
 	)
 
@@ -93,7 +115,12 @@ const restartMarker = <M>(h: HtmlBuilder<M>, summary: PodRestartSummary | undefi
 	const label = [formatRestarts(summary.restarts), summary.lastTerminatedReason].filter(Boolean).join(" · ")
 	return h.span(
 		[
-			h.Class(cn("shrink-0 text-2xs font-medium", TONE_TEXT[restartTone(summary.restarts, summary.lastTerminatedReason)])),
+			h.Class(
+				cn(
+					"shrink-0 text-2xs font-medium",
+					TONE_TEXT[restartTone(summary.restarts, summary.lastTerminatedReason)],
+				),
+			),
 			h.Title(`${label} in this window, ${summary.totalRestarts} in total`),
 		],
 		[label],
@@ -138,7 +165,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],
@@ -147,10 +174,18 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 								text: pod.podName,
 								tail: 12,
 								mono: true,
-								className: "text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+								className:
+									"text-xs font-medium text-foreground transition-colors group-hover:text-primary",
 							}),
-							hostStatusBadge(h, { quiet: true, lastSeen: pod.lastSeen, referenceMs: inputs.referenceTime }),
-							restartMarker(h, Option.getOrUndefined(Option.map(inputs.restarts, (map) => map.get(key)))),
+							hostStatusBadge(h, {
+								quiet: true,
+								lastSeen: pod.lastSeen,
+								referenceMs: inputs.referenceTime,
+							}),
+							restartMarker(
+								h,
+								Option.getOrUndefined(Option.map(inputs.restarts, (map) => map.get(key))),
+							),
 						],
 					),
 					metaLine(
@@ -167,7 +202,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 				],
 			),
 			h.div(
-				[h.Class("hidden w-[176px] md:block")],
+				[h.Class("hidden w-44 md:block")],
 				[
 					meterRows(h, [
 						{ label: "CPU", fraction: pod.cpuLimitPctPeak },
@@ -175,13 +210,22 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 					]),
 				],
 			),
-			h.div([h.Class("hidden w-[132px] text-right lg:block")], [avgPeak(h, { avg: pod.cpuUsage, peak: pod.cpuUsagePeak, format: formatCores })]),
 			h.div(
-				[h.Class("hidden w-[120px] text-right lg:block")],
-				[avgPeak(h, { avg: pod.memoryLimitPct, peak: pod.memoryLimitPctPeak, format: formatWholePercent })],
+				[h.Class("hidden w-32 text-right lg:block")],
+				[avgPeak(h, { avg: pod.cpuUsage, peak: pod.cpuUsagePeak, format: formatCores })],
 			),
 			h.div(
-				[h.Class("w-[100px] text-right")],
+				[h.Class("hidden w-32 text-right lg:block")],
+				[
+					avgPeak(h, {
+						avg: pod.memoryLimitPct,
+						peak: pod.memoryLimitPctPeak,
+						format: formatWholePercent,
+					}),
+				],
+			),
+			h.div(
+				[h.Class("w-24 text-right")],
 				[
 					relativeTime(h, {
 						value: pod.lastSeen,
@@ -196,10 +240,16 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 	)
 }
 
-export const podTable = <M>(h: HtmlBuilder<M>, pods: ReadonlyArray<PodRow>, inputs: PodTableInputs<M>): Html =>
+export const podTable = <M>(
+	h: HtmlBuilder<M>,
+	pods: ReadonlyArray<PodRow>,
+	inputs: PodTableInputs<M>,
+): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Pods", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }, inputs.onSort),
-		pods.length === 0 ? [dataTableEmpty(h, ["No pods match your filter."])] : pods.map((pod) => podRow(h, pod, inputs)),
+		pods.length === 0
+			? [dataTableEmpty(h, ["No pods match your filter."])]
+			: pods.map((pod) => podRow(h, pod, inputs)),
 	)

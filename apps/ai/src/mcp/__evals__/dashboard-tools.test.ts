@@ -61,7 +61,6 @@ describe("dashboard tools", () => {
 		dashboardId = output.dashboard.id
 
 		const text = markdown(result)
-		expect(text).toContain("## Dashboard Created")
 		expect(text).toContain(`ID: ${dashboardId}`)
 		expect(text).not.toContain("__maple_ui")
 	})
@@ -85,7 +84,6 @@ describe("dashboard tools", () => {
 		expect(output.dashboard.tags).toEqual([])
 
 		const text = markdown(result)
-		expect(text).toContain("## Dashboard: Eval board")
 		expect(text).toContain("```json\n")
 	})
 

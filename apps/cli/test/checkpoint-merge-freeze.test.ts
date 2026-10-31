@@ -1,24 +1,19 @@
-import { describe, it } from "@effect/vitest"
+import { it } from "@effect/vitest"
 import { ok, strictEqual } from "node:assert"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Chdb } from "../src/server/chdb"
 import { validateCheckpointDataDir } from "../src/server/checkpoints"
 import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
-
-// Needs a real libchdb; skipped where none is installed.
-const libchdbAvailable =
-	process.env.MAPLE_LIBCHDB !== undefined ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
+import { describeWithChdb } from "./libchdb-test-support"
 
 const countRows = (db: Chdb, table: string): number => {
 	const line = db.query(`SELECT count() AS n FROM ${table}`).trim()
 	return Number(JSON.parse(line).n)
 }
 
-describe.skipIf(!libchdbAvailable)("row counts across chDB opens", () => {
+describeWithChdb("row counts across chDB opens", () => {
 	it("keeps expired rows through a merge while TTL merges are stopped", () => {
 		const root = mkdtempSync(join(tmpdir(), "maple-ttl-freeze-"))
 		const db = Chdb.open({ dataDir: join(root, "data"), schemaSql: "SELECT 1", bootstrapSchema: false })

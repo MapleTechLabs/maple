@@ -54,6 +54,7 @@ import {
 	Option,
 	Ref,
 	Schema,
+	Semaphore,
 } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
@@ -62,6 +63,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { timestampMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import {
 	capBusiestLogSeries,
 	ERROR_SPIKE_MIN_COUNT,
@@ -120,7 +122,12 @@ const DETECTOR_STATE_FETCH_CHUNK = 500
 const RETENTION_PHASE_EVERY_N_TICKS = 36
 const TICK_CADENCE_MS = 5 * 60 * 1000
 const ERROR_SPIKE_BASELINE_CACHE_BUCKET = "anomaly-errbase"
-/** KV buckets for the cached 7-day matched-hours baselines (golden + logs). */
+/**
+ * Read deadline for the cached 7-day baselines. A miss is a 300-400ms warehouse query, so
+ * waiting out a queued read is cheaper; at the 40ms default ~1 read in 5 was lost (2026-10-25).
+ */
+const BASELINE_CACHE_READ_TIMEOUT_MS = 250
+/** Edge-cache buckets for the cached 7-day matched-hours baselines (golden + logs). */
 const GOLDEN_BASELINE_CACHE_BUCKET = "anomaly-goldenbase"
 const LOG_BASELINE_CACHE_BUCKET = "anomaly-logbase"
 /** Active-org discovery window — covers the in-progress hour plus the prior one
@@ -132,6 +139,13 @@ const ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS = 2 * HOUR_MS
 const ANOMALY_ACTIVE_ORGS_CACHE_BUCKET = "anomaly-active-orgs"
 const ANOMALY_ACTIVE_ORGS_CACHE_KEY = "active"
 const ANOMALY_ACTIVE_ORGS_CACHE_TTL_S = 6 * 60 * 60
+const BASELINE_CACHE_TTL_S = 60 * 60
+/**
+ * Warehouse queries and baseline cache I/O in flight at once across the whole tick.
+ * The lane is its own invocation with six outbound connections; four leave two for
+ * its Postgres pool. At 12 (4 orgs x 3 detectors) queries queued in the Worker for 20s.
+ */
+const ANOMALY_OUTBOUND_PERMITS = 4
 export const makePersistenceError = makePersistenceErrorMapper(
 	AnomalyPersistenceError,
 	"Anomaly persistence failure",
@@ -156,6 +170,31 @@ const parseRowFingerprints = (row: AnomalyIncidentRow): IncidentFingerprintEntry
 interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
 	readonly fingerprintHash: string
 	readonly deploymentEnv: string
+}
+
+/** Cached as JSON, so hours are epoch ms rather than `DateTime.Utc`. */
+interface GoldenBaselineRow {
+	readonly hourMs: number
+	readonly serviceName: string
+	readonly deploymentEnv: string
+	readonly requestCount: number
+	readonly errorCount: number
+	readonly p95Ms: number
+}
+
+interface LogBaselineRow {
+	readonly hourMs: number
+	readonly serviceName: string
+	readonly deploymentEnv: string
+	readonly errorLogCount: number
+}
+
+/** An org's three cached 7-day baselines, read before its detectors fan out. */
+interface CachedBaselines {
+	readonly key: string
+	readonly golden: Option.Option<ReadonlyArray<GoldenBaselineRow>>
+	readonly logs: Option.Option<ReadonlyArray<LogBaselineRow>>
+	readonly errorSpikes: Option.Option<ReadonlyArray<ErrorSpikeBaselineEntry>>
 }
 
 interface AnomalyTickResult {
@@ -243,16 +282,73 @@ export interface AnomalyDetectionServiceApi {
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
-	Database | WarehouseQueryService | EdgeCacheService
+	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
+	const orgChSettings = yield* OrgClickHouseSettingsService
 	const edgeCache = yield* EdgeCacheService
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
 	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
+
+	// Built with the service, which the alerting lane builds once per invocation.
+	const outboundPermits = yield* Semaphore.make(ANOMALY_OUTBOUND_PERMITS)
+	const withOutboundPermit = <A, E, R>(effect: Effect.Effect<A, E, R>) => outboundPermits.withPermit(effect)
+
+	/** A read that times out, is skipped or fails counts as a miss. */
+	const readBaseline = <A>(bucket: string, key: string) =>
+		withOutboundPermit(
+			edgeCache.rawGetDetailed<ReadonlyArray<A>>(bucket, key, {
+				readTimeoutMs: BASELINE_CACHE_READ_TIMEOUT_MS,
+			}),
+		).pipe(
+			Effect.map((read) => read.value),
+			Effect.orElseSucceed(() => Option.none<ReadonlyArray<A>>()),
+		)
+
+	/** The prefetched baseline, or compute it and cache it for the rest of the hour. */
+	const baselineOrCompute = <A, E, R>(
+		bucket: string,
+		key: string,
+		cached: Option.Option<ReadonlyArray<A>>,
+		compute: Effect.Effect<ReadonlyArray<A>, E, R>,
+	): Effect.Effect<ReadonlyArray<A>, E, R> =>
+		Option.match(cached, {
+			onSome: Effect.succeed,
+			onNone: () =>
+				compute.pipe(
+					Effect.tap((rows) =>
+						withOutboundPermit(edgeCache.rawPut(bucket, key, rows, BASELINE_CACHE_TTL_S)).pipe(
+							Effect.ignore({ log: "Warn", message: "Anomaly baseline cache write failed" }),
+						),
+					),
+				),
+		})
+
+	const readCachedBaselines = Effect.fn("AnomalyDetectionService.readCachedBaselines")(function* (
+		orgId: OrgId,
+		nowMs: number,
+	) {
+		const key = `${orgId}:${Math.floor(nowMs / HOUR_MS)}`
+		const [golden, logs, errorSpikes] = yield* Effect.all(
+			[
+				readBaseline<GoldenBaselineRow>(GOLDEN_BASELINE_CACHE_BUCKET, key),
+				readBaseline<LogBaselineRow>(LOG_BASELINE_CACHE_BUCKET, key),
+				readBaseline<ErrorSpikeBaselineEntry>(ERROR_SPIKE_BASELINE_CACHE_BUCKET, key),
+			],
+			{ concurrency: 3 },
+		)
+		yield* Effect.annotateCurrentSpan({
+			"maple.anomaly.baseline_hits":
+				Number(Option.isSome(golden)) +
+				Number(Option.isSome(logs)) +
+				Number(Option.isSome(errorSpikes)),
+		})
+		return { key, golden, logs, errorSpikes } satisfies CachedBaselines
+	})
 
 	const isoFromEpoch = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
 
@@ -874,32 +970,30 @@ const make: Effect.Effect<
 		tenant: TenantContext,
 		nowMs: number,
 		currentHourStartMs: number,
+		cached: CachedBaselines,
 	) {
 		const hoursOfDay = CH.matchedHoursOfDay(new Date(nowMs).getUTCHours())
-		const hourBucket = Math.floor(nowMs / HOUR_MS)
 
 		// The 7-day matched-hours baseline only changes when the hour rolls over,
-		// so compute it once per org per hour and share the blob from KV. Only the
+		// so compute it once per org per hour and share the blob from the edge cache. Only the
 		// in-progress hour is fetched fresh each tick (a single-hour scan) — this
 		// cuts the heavy 7-day scan from 12×/hour to 1×/hour per org.
-		const { value: baselineRows } = yield* edgeCache.getOrCompute(
-			{
-				bucket: GOLDEN_BASELINE_CACHE_BUCKET,
-				key: `${tenant.orgId}:${hourBucket}`,
-				ttlSeconds: 3600,
-			},
+		const baselineRows = yield* baselineOrCompute(
+			GOLDEN_BASELINE_CACHE_BUCKET,
+			cached.key,
+			cached.golden,
 			Effect.gen(function* () {
 				const compiled = CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay }), {
 					orgId: tenant.orgId,
 					startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS),
 					endTime: formatWarehouseDateTime(currentHourStartMs),
 				})
-				const rows = yield* warehouse
-					.compiledQuery(tenant, compiled, {
+				const rows = yield* withOutboundPermit(
+					warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "anomalyTraceSignalsBaseline",
-					})
-					.pipe(Effect.mapError(makePersistenceError))
+					}),
+				).pipe(Effect.mapError(makePersistenceError))
 				// `Hour <= currentHourStart` includes the in-progress hour; drop it so
 				// the cached blob is purely sealed baseline.
 				return rows
@@ -920,12 +1014,12 @@ const make: Effect.Effect<
 			startTime: formatWarehouseDateTime(currentHourStartMs),
 			endTime: formatWarehouseDateTime(nowMs),
 		})
-		const currentRows = yield* warehouse
-			.compiledQuery(tenant, currentCompiled, {
+		const currentRows = yield* withOutboundPermit(
+			warehouse.compiledQuery(tenant, currentCompiled, {
 				profile: "list",
 				context: "anomalyTraceSignalsCurrent",
-			})
-			.pipe(Effect.mapError(makePersistenceError))
+			}),
+		).pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
 			hourMs: DateTime.toEpochMillis(r.hour),
 			serviceName: r.serviceName,
@@ -967,30 +1061,28 @@ const make: Effect.Effect<
 		tenant: TenantContext,
 		nowMs: number,
 		currentHourStartMs: number,
+		cached: CachedBaselines,
 	) {
 		const hoursOfDay = CH.matchedHoursOfDay(new Date(nowMs).getUTCHours())
-		const hourBucket = Math.floor(nowMs / HOUR_MS)
 
 		// Same split as fetchGoldenSeries: cache the sealed 7-day baseline per
 		// hour, fetch only the in-progress hour fresh.
-		const { value: baselineRows } = yield* edgeCache.getOrCompute(
-			{
-				bucket: LOG_BASELINE_CACHE_BUCKET,
-				key: `${tenant.orgId}:${hourBucket}`,
-				ttlSeconds: 3600,
-			},
+		const baselineRows = yield* baselineOrCompute(
+			LOG_BASELINE_CACHE_BUCKET,
+			cached.key,
+			cached.logs,
 			Effect.gen(function* () {
 				const compiled = CH.compile(CH.anomalyLogVolumeQuery({ hoursOfDay }), {
 					orgId: tenant.orgId,
 					startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS),
 					endTime: formatWarehouseDateTime(currentHourStartMs),
 				})
-				const rows = yield* warehouse
-					.compiledQuery(tenant, compiled, {
+				const rows = yield* withOutboundPermit(
+					warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "anomalyLogVolumeBaseline",
-					})
-					.pipe(Effect.mapError(makePersistenceError))
+					}),
+				).pipe(Effect.mapError(makePersistenceError))
 				return rows
 					.map((r) => ({
 						hourMs: DateTime.toEpochMillis(r.hour),
@@ -1007,12 +1099,12 @@ const make: Effect.Effect<
 			startTime: formatWarehouseDateTime(currentHourStartMs),
 			endTime: formatWarehouseDateTime(nowMs),
 		})
-		const currentRows = yield* warehouse
-			.compiledQuery(tenant, currentCompiled, {
+		const currentRows = yield* withOutboundPermit(
+			warehouse.compiledQuery(tenant, currentCompiled, {
 				profile: "list",
 				context: "anomalyLogVolumeCurrent",
-			})
-			.pipe(Effect.mapError(makePersistenceError))
+			}),
+		).pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
 			hourMs: DateTime.toEpochMillis(r.hour),
 			serviceName: r.serviceName,
@@ -1038,18 +1130,19 @@ const make: Effect.Effect<
 	const fetchErrorSpikes = Effect.fn("AnomalyDetectionService.fetchErrorSpikes")(function* (
 		tenant: TenantContext,
 		nowMs: number,
+		cached: CachedBaselines,
 	) {
 		const currentCompiled = CH.compile(CH.anomalyErrorSpikeCurrentQuery({}), {
 			orgId: tenant.orgId,
 			startTime: DateTime.makeUnsafe(nowMs - SPIKE_WINDOW_MS),
 			endTime: DateTime.makeUnsafe(nowMs),
 		})
-		const currentRows = yield* warehouse
-			.compiledQuery(tenant, currentCompiled, {
+		const currentRows = yield* withOutboundPermit(
+			warehouse.compiledQuery(tenant, currentCompiled, {
 				profile: "list",
 				context: "anomalyErrorSpikeCurrent",
-			})
-			.pipe(Effect.mapError(makePersistenceError))
+			}),
+		).pipe(Effect.mapError(makePersistenceError))
 
 		const observations = currentRows.map((r) => ({
 			fingerprintHash: r.fingerprintHash,
@@ -1063,27 +1156,24 @@ const make: Effect.Effect<
 		}
 
 		// The 7d baseline blob is expensive relative to the tick cadence, so it
-		// is computed once per hour per org and shared from KV (one query, one
+		// is computed once per hour per org and shared from the edge cache (one query, one
 		// blob — deliberately NOT the bucket cache, which fans out).
-		const hourBucket = Math.floor(nowMs / HOUR_MS)
-		const { value: baselineRows } = yield* edgeCache.getOrCompute(
-			{
-				bucket: ERROR_SPIKE_BASELINE_CACHE_BUCKET,
-				key: `${tenant.orgId}:${hourBucket}`,
-				ttlSeconds: 3600,
-			},
+		const baselineRows = yield* baselineOrCompute(
+			ERROR_SPIKE_BASELINE_CACHE_BUCKET,
+			cached.key,
+			cached.errorSpikes,
 			Effect.gen(function* () {
 				const baselineCompiled = CH.compile(CH.anomalyErrorSpikeBaselineQuery({}), {
 					orgId: tenant.orgId,
 					startTime: DateTime.makeUnsafe(nowMs - BASELINE_WINDOW_MS),
 					endTime: DateTime.makeUnsafe(Math.floor(nowMs / HOUR_MS) * HOUR_MS),
 				})
-				const rows = yield* warehouse
-					.compiledQuery(tenant, baselineCompiled, {
+				const rows = yield* withOutboundPermit(
+					warehouse.compiledQuery(tenant, baselineCompiled, {
 						profile: "list",
 						context: "anomalyErrorSpikeBaseline",
-					})
-					.pipe(Effect.mapError(makePersistenceError))
+					}),
+				).pipe(Effect.mapError(makePersistenceError))
 				return rows.map((r): ErrorSpikeBaselineEntry => ({
 					fingerprintHash: r.fingerprintHash,
 					deploymentEnv: r.deploymentEnv,
@@ -1206,11 +1296,14 @@ const make: Effect.Effect<
 		// not at the outer per-org `Effect.forEach`: the route is per-org, so
 		// warming at the outer level would resolve the wrong org's config.
 		yield* warehouse.warmRoute(tenant)
+		// Baseline reads go first: queued behind the fan-out's warehouse queries they
+		// time out, and a timed-out read recomputes the 7-day scan.
+		const cachedBaselines = yield* readCachedBaselines(orgId, nowMs)
 		const [goldenSeries, logSeries, spikes] = yield* Effect.all(
 			[
-				fetchGoldenSeries(tenant, nowMs, currentHourStartMs),
-				fetchLogSeries(tenant, nowMs, currentHourStartMs),
-				fetchErrorSpikes(tenant, nowMs),
+				fetchGoldenSeries(tenant, nowMs, currentHourStartMs, cachedBaselines),
+				fetchLogSeries(tenant, nowMs, currentHourStartMs, cachedBaselines),
+				fetchErrorSpikes(tenant, nowMs, cachedBaselines),
 			],
 			{ concurrency: 3 },
 		)
@@ -2099,6 +2192,12 @@ const make: Effect.Effect<
 			const activeOrgs = yield* resolveActiveOrgs([...candidates], nowMs)
 			const orgsToProcess = [...candidates].filter((org) => activeOrgs.has(org) || mustProcess.has(org))
 
+			// One batched read warms the org warehouse-config memo before the fan-out
+			// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
+			yield* orgChSettings
+				.primeRuntimeConfigs(orgsToProcess)
+				.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime anomaly tick runtime configs" }))
+
 			const orgFailures = yield* Ref.make(0)
 			const emptyStats = {
 				seriesEvaluated: 0,
@@ -2114,7 +2213,7 @@ const make: Effect.Effect<
 					Effect.gen(function* () {
 						// Orgs whose warehouse rejected queries with an auth/config-class
 						// error are parked (see warehouse-org-quarantine.ts).
-						if (yield* isOrgWarehouseQuarantined(edgeCache, org)) {
+						if (yield* withOutboundPermit(isOrgWarehouseQuarantined(edgeCache, org))) {
 							yield* Effect.logInfo("Skipping org with quarantined warehouse").pipe(
 								Effect.annotateLogs({ orgId: org }),
 							)
@@ -2201,6 +2300,8 @@ const make: Effect.Effect<
 export class AnomalyDetectionService extends Context.Service<
 	AnomalyDetectionService,
 	AnomalyDetectionServiceApi
->()("@maple/api/services/AnomalyDetectionService", { make }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+>()("@maple/backend/services/AnomalyDetectionService", { make }) {
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, OrgClickHouseSettingsService.layer)),
+	)
 }

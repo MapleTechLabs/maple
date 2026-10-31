@@ -61,6 +61,8 @@ export interface DispatchContext {
 	readonly windowMinutes: number
 	readonly value: number | null
 	readonly sampleCount: number | null
+	/** Uptime rules only: the failing check's error, snapshotted with the event. */
+	readonly detail?: string | null
 	/**
 	 * User-customized notification template (title + Markdown body, optional
 	 * per-destination overrides). `null`/absent → the built-in hardcoded format.

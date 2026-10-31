@@ -11,6 +11,7 @@ import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
+	insertTestSource,
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
@@ -229,20 +230,30 @@ const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attr
 	return value?.stringValue ?? value?.intValue
 }
 
+// Installation 42 of `org_ci` with its source, as VcsRepository.upsertInstallation writes it.
+const seedInstallation = (testDb: TestDb, options: { readonly paused?: boolean } = {}) =>
+	Effect.promise(async () => {
+		const sourceId = await insertTestSource(testDb, { orgId: "org_ci", platform: "github", name: "GitHub octo" })
+		if (options.paused === true) {
+			await executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = $1", [sourceId])
+		}
+		await executeSql(
+			testDb,
+			`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login,
+				account_type, external_account_id, installed_by_user_id, created_at, updated_at, source_id)
+			VALUES ('00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization',
+				'1', 'user_1', now(), now(), $1)`,
+			[sourceId],
+		)
+	})
+
 describe("CiTraceService", () => {
 	it.live("stamps the installation's pull source on CI spans and logs", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: Array<IngestCall> = []
 		const logCalls: Array<OtlpLogsRequest> = []
 		return Effect.gen(function* () {
-			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login,
-						account_type, external_account_id, installed_by_user_id, created_at, updated_at)
-					VALUES ('00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization', '1', 'user_1', now(), now())`,
-				),
-			)
+			yield* seedInstallation(testDb)
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowRun(orgId, run)
 			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable([stamped(123, "hello")]))
@@ -250,7 +261,7 @@ describe("CiTraceService", () => {
 			const source = yield* Effect.promise(() =>
 				queryFirstRow<{ id: string; name: string }>(
 					testDb,
-					"SELECT id, name FROM sources WHERE platform = 'github' AND integration_id = '00000000-0000-4000-8000-000000000042'",
+					"SELECT id, name FROM sources WHERE platform = 'github'",
 				),
 			)
 			assert.strictEqual(source!.name, "GitHub octo")
@@ -264,6 +275,19 @@ describe("CiTraceService", () => {
 					?.value.stringValue,
 				expected,
 			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
+	})
+
+	it.live("drops CI spans and logs while the installation's source is paused", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const logCalls: Array<OtlpLogsRequest> = []
+		return Effect.gen(function* () {
+			yield* seedInstallation(testDb, { paused: true })
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable([stamped(123, "hello")]))
+			assert.deepStrictEqual([calls.length, logCalls.length], [0, 0])
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
 	})
 

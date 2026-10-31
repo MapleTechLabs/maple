@@ -18,6 +18,8 @@ import {
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
 	normalizePrReviewFinding,
+	overlongFinding,
+	PR_REVIEW_FINDING_WORDS,
 	normalizePrReviewSubmission,
 	normalizeTriageSubmission,
 	PR_REVIEW_MAX_FINDINGS,
@@ -32,6 +34,7 @@ import {
 	PrReviewReplySubmission,
 	PrReviewReport,
 	PrReviewSubmission,
+	type PrReviewFailureReason,
 	type PrReviewVerdict,
 	SubmitDiagnosisRequest,
 	SubmitPrReviewRequest,
@@ -50,10 +53,17 @@ import {
 	MapleToolFailure,
 	summarizeToolFailure,
 	type ToolUiPayload,
+	type UiSource,
 } from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { mergeSavedFindings } from "@maple/backend/services/pr-review/findings"
+import {
+	type ChildFindings,
+	childFindingsRefusal,
+	childFindingsToFile,
+	unaccountedChildFindings,
+} from "./review-child-findings"
 import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
 import { makeReviewLedger, type ReviewLedger } from "./review-ledger"
 
@@ -124,11 +134,22 @@ export interface RunUsage {
 	cacheRead: number
 	/** The same calls as AI credit charges, in Autumn's exclusive pools; see {@link recordCharge}. */
 	readonly charges: Array<Mutable<AiModelSpend>>
+	/**
+	 * The part of the totals above that the run's child agents (`review_files`) spent, as the engine
+	 * reports each one ending. Their calls are charged with the run's own.
+	 */
+	readonly delegated: { modelCalls: number; input: number; output: number; costMicrousd: number }
 }
 
 type Mutable<A> = { -readonly [K in keyof A]: A[K] }
 
-export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0, charges: [] })
+export const makeRunUsage = (): RunUsage => ({
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	charges: [],
+	delegated: { modelCalls: 0, input: 0, output: 0, costMicrousd: 0 },
+})
 
 /**
  * Below every long-context tier models.dev lists (the smallest is 32k). Autumn picks a model's
@@ -329,7 +350,8 @@ export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 		"Record your review of THIS pull request. Call it once, after you have " +
 		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, before-merge steps, coverage, line-anchored findings and the " +
 		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
-		"pass that location in telemetryDismissals. It " +
+		"pass that location in telemetryDismissals. A warning or critical a review_files child reported is either " +
+		"filed or listed in childDismissals with the reason it does not hold. It " +
 		"persists the review and posts it to the pull request. A refusal says what to do before calling " +
 		"it again; once it answers that the review is recorded, stop.",
 	parameters: PrReviewSubmission,
@@ -353,6 +375,16 @@ export const recordFindingTool = Tool.make(RECORD_FINDING, {
 	failureMode: "return",
 })
 
+/** Length refusals one pass gets from `record_finding` before it saves what it is given. */
+const MAX_LENGTH_REFUSALS = 4
+
+const overlongRefusal = (overlong: ReadonlyArray<string>) =>
+	[
+		`Not saved: ${overlong.length === 1 ? "a finding is" : `${overlong.length} findings are`} too long for an inline comment.`,
+		...overlong.map((item) => `- ${item}`),
+		`Rewrite ${overlong.length === 1 ? "it" : "them"}: the body in at most ${PR_REVIEW_FINDING_WORDS.body} words says what goes wrong, on what input, and what the user sees; the fix goes only in suggestion (at most ${PR_REVIEW_FINDING_WORDS.suggestion} words) or replacement, never in the body. Then call again.`,
+	].join("\n")
+
 /** What the model reads back after a `record_finding` call. */
 const recordAnswer = (outcome: ReturnType<ReviewLedger["record"]>, count: number): string => {
 	switch (outcome) {
@@ -374,6 +406,8 @@ export const savedFindingsRequest = (input: {
 	readonly unreviewed: ReadonlyArray<string>
 	readonly modelName: string
 	readonly usage: RunUsage
+	/** Why the pass stopped, told to the pull request in place of a generic early end. */
+	readonly reason?: PrReviewFailureReason
 }): SubmitPrReviewRequest =>
 	new SubmitPrReviewRequest({
 		report: new PrReviewReport({
@@ -387,6 +421,7 @@ export const savedFindingsRequest = (input: {
 		inputTokens: input.usage.input,
 		outputTokens: input.usage.output,
 		partial: true,
+		...(input.reason === undefined ? undefined : { partialReason: input.reason }),
 	})
 
 /**
@@ -408,6 +443,8 @@ export const buildReviewCompletion = (
 	coverage?: ReviewCoverage,
 	/** Findings saved with `record_finding`; the turn's own, or this run's when none is passed. */
 	ledger: ReviewLedger = makeReviewLedger(),
+	/** What this pass's `review_files` children reported. Unaccounted warnings are refused once. */
+	childFindings?: ChildFindings,
 ) => {
 	const reviewId = prReviewForSession(sessionId)
 	if (reviewId === undefined) return undefined
@@ -417,6 +454,10 @@ export const buildReviewCompletion = (
 	const toolkit = Toolkit.make(reviewTool, recordFindingTool)
 	let submitted = false
 	let refusedUnread = false
+	let refusedChildren = false
+	let refusedLong = false
+	// Bounded, so a model that cannot shorten a finding still files it rather than looping.
+	let lengthRefusals = 0
 	// Once only: a second call with files still unread is the agent submitting anyway. A close-out
 	// files what it has and a not_applicable verdict reads nothing, so neither is held.
 	const unreadToRefuse = (verdict: PrReviewVerdict): ReadonlyArray<string> => {
@@ -435,10 +476,52 @@ export const buildReviewCompletion = (
 					Effect.andThen(Effect.fail(new MapleToolFailure({ message: unreadRefusal(unread) }))),
 				)
 			}
-			const saved = ledger.findings()
+			const unaccounted =
+				childFindings === undefined
+					? []
+					: unaccountedChildFindings(
+							childFindings.all(),
+							// Deduplicated as the report is, so a finding saved and repeated counts once.
+							mergeSavedFindings(ledger.findings(), normalized.report.findings),
+							normalized.childDismissals,
+						)
+			// A close-out is not refused, but still files what the children found.
+			if (unaccounted.length > 0 && !partial && !refusedChildren) {
+				refusedChildren = true
+				return Effect.annotateCurrentSpan(
+					"maple.pr_review.unaccounted_child_findings",
+					unaccounted.length,
+				).pipe(
+					Effect.andThen(
+						Effect.fail(new MapleToolFailure({ message: childFindingsRefusal(unaccounted) })),
+					),
+				)
+			}
+			// Once only, and never for a close-out: a second call keeps what it was given.
+			const overlong =
+				partial || refusedLong
+					? []
+					: normalized.report.findings.flatMap((finding) => overlongFinding(finding) ?? [])
+			if (overlong.length > 0) {
+				refusedLong = true
+				return Effect.annotateCurrentSpan("maple.pr_review.overlong_findings", overlong.length).pipe(
+					Effect.andThen(Effect.fail(new MapleToolFailure({ message: overlongRefusal(overlong) }))),
+				)
+			}
+			// Refused once already: a peer's warning stands unless the reviewer says why it does not.
+			const childFiled = childFindingsToFile(unaccounted)
+			const saved = [...ledger.findings(), ...childFiled]
 			const unreviewed =
 				normalized.report.verdict === "not_applicable" ? [] : (coverage?.unread() ?? [])
 			const report = withSavedFindings(normalized.report, saved, unreviewed)
+			const childPosted = childFiled.filter((child) =>
+				report.findings.some(
+					(finding) =>
+						finding.path === child.path &&
+						finding.line === child.line &&
+						finding.title === child.title,
+				),
+			).length
 			return submitReview(
 				tenant.orgId,
 				reviewId,
@@ -462,6 +545,21 @@ export const buildReviewCompletion = (
 						"maple.pr_review.unreviewed_files": unreviewed.length,
 						"maple.pr_review.verdict": report.verdict,
 						"maple.pr_review.resolved": resolved.length,
+						"maple.pr_review.child_findings": childFindings?.all().length ?? 0,
+						"maple.pr_review.child_findings_filed_unaccounted": childPosted,
+						// Unpostable, or cut by the report's finding cap.
+						"maple.pr_review.child_findings_dropped": unaccounted.length - childPosted,
+						"maple.pr_review.child_dismissals": normalized.childDismissals.length,
+						...(normalized.childDismissals.length > 0
+							? {
+									"maple.pr_review.child_dismissal_reasons": normalized.childDismissals
+										.map(
+											(dismissal) =>
+												`${dismissal.path}:${dismissal.line}: ${dismissal.reason}`,
+										)
+										.join("\n"),
+								}
+							: undefined),
 					}),
 				),
 				Effect.tap(() => Effect.sync(() => (submitted = true))),
@@ -484,6 +582,15 @@ export const buildReviewCompletion = (
 						message:
 							"Not saved: a finding needs a path and a positive new-side line from a hunk you read, and an observability finding needs its audit check id.",
 					}),
+				)
+			}
+			const overlong = overlongFinding(finding)
+			if (overlong !== undefined && lengthRefusals < MAX_LENGTH_REFUSALS) {
+				lengthRefusals++
+				return Effect.annotateCurrentSpan("maple.pr_review.record_outcome", "overlong").pipe(
+					Effect.andThen(
+						Effect.fail(new MapleToolFailure({ message: overlongRefusal([overlong]) })),
+					),
 				)
 			}
 			const outcome = ledger.record(finding)
@@ -550,6 +657,8 @@ const withSavedFindings = (
  */
 export const buildDiagnosisCompletion = (
 	sessionId: string,
+	/** The turn's message id: a later turn's diagnosis supersedes this one's. */
+	messageId: string,
 	tenant: TenantContext,
 	origin: ChatTurnOrigin,
 	submitDiagnosis: SubmitDiagnosis,
@@ -587,6 +696,7 @@ export const buildDiagnosisCompletion = (
 								inputTokens: usage.input,
 								outputTokens: usage.output,
 								...(partial ? { partial: true } : undefined),
+								turnId: messageId,
 							}),
 						).pipe(
 							Effect.tap(() =>
@@ -633,7 +743,7 @@ export const buildChatToolkit = (
 	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
 	onAnswer?: (tool: string, answer: string) => void,
-	onUi?: (toolCallId: string, ui: ToolUiPayload) => void,
+	onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,

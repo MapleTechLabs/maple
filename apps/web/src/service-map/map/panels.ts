@@ -115,6 +115,7 @@ export const serviceMapBackground = <M>(h: HtmlBuilder<M>, model: Model): Html =
 const MINIMAP_WIDTH = 200
 const MINIMAP_HEIGHT = 150
 const MINIMAP_OFFSET = 5
+const MINIMAP_MASK = "oklch(0.15 0 0 / 0.8)"
 
 export interface MiniMapNode extends Rect {
 	readonly fill: string
@@ -180,8 +181,10 @@ export const serviceMapMiniMap = <M>(
 	return h.div(
 		[
 			h.Class(
-				"react-flow__panel bottom right react-flow__minimap pointer-events-none !bg-muted/50 !border-border max-sm:hidden",
+				"react-flow__panel bottom right react-flow__minimap pointer-events-none !bg-surface-sunken !border-border max-sm:hidden",
 			),
+			// The stylesheet's mask rule beats a `fill` attribute, so the dark mask goes through its variable.
+			h.Style({ "--xy-minimap-mask-background-color-props": MINIMAP_MASK }),
 		],
 		[
 			h.svg(
@@ -197,12 +200,22 @@ export const serviceMapMiniMap = <M>(
 					rects,
 					h.path([
 						h.Class("react-flow__minimap-mask"),
-						h.Attribute("fill", "oklch(0.15 0 0 / 0.8)"),
+						h.Attribute("fill", MINIMAP_MASK),
 						h.Attribute("fill-rule", "evenodd"),
 						h.Attribute(
 							"d",
 							`M${x},${y}h${viewWidth}v${viewHeight}h${-viewWidth}z M${view.x},${view.y}h${view.width}v${view.height}h${-view.width}z`,
 						),
+					]),
+					// The viewport outline, kept at 1px whatever the minimap's scale.
+					h.rect([
+						h.Class("fill-none stroke-foreground/60"),
+						h.Attribute("x", String(view.x)),
+						h.Attribute("y", String(view.y)),
+						h.Attribute("width", String(view.width)),
+						h.Attribute("height", String(view.height)),
+						h.Attribute("stroke-width", "1"),
+						h.Attribute("vector-effect", "non-scaling-stroke"),
 					]),
 				],
 			),

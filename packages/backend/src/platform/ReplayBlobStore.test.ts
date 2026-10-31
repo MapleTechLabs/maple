@@ -103,6 +103,22 @@ describe("ReplayBlobStore.hydrate", () => {
 		}),
 	)
 
+	it.live("drops a chunk whose object is not valid gzip rather than failing the request", () =>
+		Effect.gen(function* () {
+			const bucket = fakeBucket({
+				"v1/org_1/sess_1/00000000.json.gz": new TextEncoder().encode("not gzip"),
+				"v1/org_1/sess_1/00000001.json.gz": yield* gzip(events),
+			})
+			const result = yield* runWithBucket(bucket, (store) =>
+				store.hydrate("org_1", "sess_1", [
+					{ chunkSeq: 0, events: "" },
+					{ chunkSeq: 1, events: "" },
+				]),
+			)
+			expect(result).toEqual([{ chunkSeq: 1, events }])
+		}),
+	)
+
 	it.live("preserves chunk order despite concurrent fetches", () =>
 		Effect.gen(function* () {
 			const objects: Record<string, Uint8Array> = {}
