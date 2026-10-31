@@ -1,5 +1,6 @@
 /** Output schemas for the traces and logs MCP tools. */
 import { Schema } from "effect"
+import { PlatformSummary } from "../cloud-platform"
 import { OutputPagination, OutputTimeRange } from "./shared"
 
 const StringMap = Schema.Record(Schema.String, Schema.String)
@@ -152,6 +153,19 @@ export const InspectSpanOutput = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	found: Schema.Boolean,
+	/** The span row's own fields, as `inspect_trace` reports them; absent when not found. */
+	spanName: Schema.optionalKey(Schema.String),
+	/** The stored SpanName when `spanName` is a rewritten display name. */
+	rawSpanName: Schema.optionalKey(Schema.String),
+	serviceName: Schema.optionalKey(Schema.String),
+	spanKind: Schema.optionalKey(Schema.String),
+	durationMs: Schema.optionalKey(Schema.Number),
+	startTime: Schema.optionalKey(Schema.String),
+	/** OpenTelemetry span status (`Ok`, `Error`, `Unset`), separate from any HTTP status. */
+	statusCode: Schema.optionalKey(Schema.String),
+	statusMessage: Schema.optionalKey(Schema.String),
+	/** The platform the span ran on, read from its span and resource attributes. */
+	platform: Schema.optionalKey(PlatformSummary),
 	attributes: StringMap,
 	resourceAttributes: StringMap,
 	/** Present for AI agent spans. */

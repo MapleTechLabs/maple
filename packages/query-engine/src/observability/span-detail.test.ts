@@ -63,4 +63,20 @@ describe("spanDetail", () => {
 			assert.lengthOf(sqls, 1)
 		}),
 	)
+
+	it.effect("returns the stored name, status and timing beside the attributes", () =>
+		Effect.gen(function* () {
+			const result = yield* run([])
+			assert.deepStrictEqual(result.span, {
+				spanName: "GET /orders",
+				rawSpanName: "GET",
+				serviceName: "api",
+				spanKind: "Server",
+				durationMs: 12,
+				startTime: "2026-03-20 08:00:00.000",
+				statusCode: "Unset",
+				statusMessage: "",
+			})
+		}),
+	)
 })
