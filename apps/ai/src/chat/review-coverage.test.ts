@@ -69,7 +69,7 @@ describe("makeReviewCoverage", () => {
 		)
 		nothing.observe("pr_changed_files", listing)
 		assert.deepEqual(nothing.unread(), [])
-		assert.isFalse(coverage.wholeDiff)
+		assert.isFalse(coverage.wholeDiff())
 	})
 
 	it("owes the pass after an unchecked fix every file, whatever changed since", () => {
@@ -86,7 +86,15 @@ describe("makeReviewCoverage", () => {
 		)
 		coverage.observe("pr_changed_files", listing)
 		assert.lengthOf(coverage.unread(), 3)
-		assert.isTrue(coverage.wholeDiff)
+		assert.isTrue(coverage.wholeDiff())
+	})
+
+	// Without a listing nothing is due, so an empty unread list proves nothing was checked.
+	it("is no whole-diff read until a file listing arrives", () => {
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		assert.isFalse(coverage.wholeDiff())
+		coverage.observe("pr_changed_files", listing)
+		assert.isTrue(coverage.wholeDiff())
 	})
 })
 

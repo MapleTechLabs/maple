@@ -1148,7 +1148,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				dbExecute((db) =>
 					db.run(
 						PG.from(PrReviews)
-							.select("headSha", "reportJson")
+							// The flag alone, read in SQL, so a long-lived pull request never loads its reports.
+							.select(($) => ({
+								headSha: $.headSha,
+								wholeDiff: PG.sql(
+									PG.bool,
+								)`coalesce((${$.reportJson}->>'wholeDiff')::boolean, false)`,
+							}))
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.repositoryId.eq(repositoryId),
@@ -1156,13 +1162,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								$.status.eq("completed"),
 							])
 							.orderBy(($) => [[$.finishedAt, "desc"]]),
-					),
-				).pipe(
-					Effect.map((rows) =>
-						rows.map((row) => ({
-							headSha: row.headSha,
-							wholeDiff: row.reportJson?.wholeDiff === true,
-						})),
 					),
 				)
 

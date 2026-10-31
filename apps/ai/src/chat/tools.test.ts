@@ -171,7 +171,7 @@ describe("buildReviewCompletion", () => {
 		const coverage = (unread: ReadonlyArray<string>, wholeDiff = true): ReviewCoverage => ({
 			observe: () => {},
 			unread: () => unread,
-			wholeDiff,
+			wholeDiff: () => wholeDiff,
 		})
 		const recording = () => {
 			const filed: Array<unknown> = []
@@ -457,7 +457,7 @@ describe("record_finding", () => {
 			MODEL_NAME,
 			partial,
 			undefined,
-			{ observe: () => {}, unread: () => unread, wholeDiff: true },
+			{ observe: () => {}, unread: () => unread, wholeDiff: () => true },
 			ledger,
 		)
 		assert.isDefined(completion)
