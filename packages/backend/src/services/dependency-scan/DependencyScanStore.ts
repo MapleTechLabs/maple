@@ -116,8 +116,8 @@ export interface DependencyScanStoreApi {
 	/** Most severe first, then most recently updated. */
 	readonly listFindings: (input: {
 		readonly orgId: OrgId
-		readonly repositoryId?: VcsRepositoryId
-		readonly status?: DependencyFindingStatus
+		readonly repositoryId?: VcsRepositoryId | undefined
+		readonly status?: DependencyFindingStatus | undefined
 		readonly limit: number
 	}) => Effect.Effect<ReadonlyArray<DependencyFindingRow>, DependencyScanPersistenceError>
 	readonly getFinding: (input: {

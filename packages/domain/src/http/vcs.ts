@@ -740,6 +740,22 @@ export const PullRequestHead = Schema.Struct({
 })
 export type PullRequestHead = Schema.Schema.Type<typeof PullRequestHead>
 
+/** What started a dependency scan; only a scan of the tracked branch head reconciles findings. */
+export const DependencyScanTrigger = Schema.Literals(["push", "schedule", "manual", "production"])
+export type DependencyScanTrigger = typeof DependencyScanTrigger.Type
+
+// Scan one repository's lockfiles. Without `commitSha` the scanner reads the tracked branch's
+// head at scan time, so a push's truncated commit list never decides what is scanned.
+export const DependencyScanJob = Schema.Struct({
+	kind: Schema.Literal("dependency-scan"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	trigger: DependencyScanTrigger,
+	commitSha: Schema.optionalKey(GitCommitSha),
+})
+export type DependencyScanJob = Schema.Schema.Type<typeof DependencyScanJob>
+
 export const VcsSyncJob = Schema.Union([
 	InstallationSyncJob,
 	SyncCommitsJob,
@@ -752,6 +768,7 @@ export const VcsSyncJob = Schema.Union([
 	PullRequestCiApprovedJob,
 	WorkflowRunJob,
 	WorkflowJobJob,
+	DependencyScanJob,
 ])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 

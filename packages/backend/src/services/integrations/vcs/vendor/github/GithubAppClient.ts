@@ -358,6 +358,29 @@ const GithubApiGitTreeListing = Schema.Struct({
 	),
 })
 
+/** A recursive listing; `size` is set on blobs only, `truncated` when GitHub cut the listing short. */
+const GithubApiRecursiveTree = Schema.Struct({
+	sha: Schema.String,
+	truncated: Schema.Boolean,
+	tree: Schema.Array(
+		Schema.Struct({
+			path: Schema.String,
+			type: Schema.String,
+			sha: Schema.String,
+			size: Schema.optionalKey(Schema.Number),
+		}),
+	),
+})
+export type GithubRecursiveTree = typeof GithubApiRecursiveTree.Type
+
+const GithubApiBlob = Schema.Struct({
+	sha: Schema.String,
+	size: Schema.Number,
+	encoding: Schema.String,
+	content: Schema.String,
+})
+export type GithubBlob = typeof GithubApiBlob.Type
+
 const GithubApiReviewCommentList = Schema.Array(
 	Schema.Struct({
 		id: Schema.Number,
@@ -562,6 +585,8 @@ const decodeCreatedComment = Schema.decodeUnknownEffect(GithubApiCreatedComment)
 const decodeCollaboratorPermission = Schema.decodeUnknownEffect(GithubApiCollaboratorPermission)
 const decodeGitCommit = Schema.decodeUnknownEffect(GithubApiGitCommit)
 const decodeGitTreeListing = Schema.decodeUnknownEffect(GithubApiGitTreeListing)
+const decodeRecursiveTree = Schema.decodeUnknownEffect(GithubApiRecursiveTree)
+const decodeBlob = Schema.decodeUnknownEffect(GithubApiBlob)
 const decodeComparison = Schema.decodeUnknownEffect(GithubApiComparison)
 const decodeReviewThreads = Schema.decodeUnknownEffect(GithubReviewThreadsResponse)
 const decodeMutation = Schema.decodeUnknownEffect(GithubMutationResponse)
@@ -2136,6 +2161,50 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			/** Every entry under a commit's tree in one call; GitHub truncates past 100,000 entries or 7 MB. */
+			const getRecursiveTree = Effect.fn("GithubAppClient.getRecursiveTree")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				treeish: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(treeish)}?recursive=1`,
+				)
+				if (!isOk(response)) return yield* failure(response, "Read tree", "repository")
+				return yield* decodeRecursiveTree(yield* parseJson(response, "Read tree")).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected tree payload", cause }),
+					),
+				)
+			})
+
+			/** One blob by its sha; unlike the contents API it serves files up to 100 MB. */
+			const getBlob = Effect.fn("GithubAppClient.getBlob")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				sha: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(sha)}`,
+				)
+				if (!isOk(response)) return yield* failure(response, "Read blob", "repository")
+				return yield* decodeBlob(yield* parseJson(response, "Read blob")).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected blob payload", cause }),
+					),
+				)
+			})
+
 			// An Actions job id is its check run id. Reading annotations needs only `checks: read`,
 			// which the App's `checks: write` covers. Paging stops at the first page holding a failure:
 			// that is what CI traces want, and warnings before it should not hide it.
@@ -2407,6 +2476,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,
+				getRecursiveTree,
+				getBlob,
 				listCheckRunAnnotations,
 				streamJobLog,
 				canReadActions,

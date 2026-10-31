@@ -3,7 +3,7 @@
  * commit, matches the packages against OSV advisories, and follows each match as a finding.
  */
 import { Schema } from "effect"
-import { GitCommitSha, VcsRepositoryId } from "./http/vcs"
+import { DependencyScanTrigger, GitCommitSha, VcsRepositoryId } from "./http/vcs"
 import { UserId } from "./primitives"
 import { AdvisorySeverity, PackageEcosystem } from "./package-advisories"
 import { SecurityAuditFindingStatus } from "./security-audit"
@@ -21,9 +21,7 @@ export const DependencyFindingId = Schema.String.check(Schema.isPattern(/^[0-9a-
 )
 export type DependencyFindingId = Schema.Schema.Type<typeof DependencyFindingId>
 
-/** What started a scan; only a default-branch head reconciles findings. */
-export const DependencyScanTrigger = Schema.Literals(["push", "schedule", "manual", "production"])
-export type DependencyScanTrigger = typeof DependencyScanTrigger.Type
+export { DependencyScanTrigger }
 
 export const DependencyScanStatus = Schema.Literals(["running", "completed", "failed"])
 export type DependencyScanStatus = typeof DependencyScanStatus.Type
@@ -78,7 +76,7 @@ export type DependencyFindingStatus = SecurityAuditFindingStatus
 export const DependencyFindingTriageStatus = Schema.Literals(["open", "dismissed", "accepted_risk"])
 export type DependencyFindingTriageStatus = typeof DependencyFindingTriageStatus.Type
 
-/** A finding on the wire; timestamps are epoch ms. */
+/** A finding on the wire, the row as it is; timestamps are epoch ms. */
 export const DependencyFinding = Schema.Struct({
 	id: DependencyFindingId,
 	repositoryId: VcsRepositoryId,
@@ -88,21 +86,21 @@ export const DependencyFinding = Schema.Struct({
 	advisoryId: Schema.String,
 	aliases: Schema.Array(Schema.String),
 	severity: AdvisorySeverity,
-	summary: Schema.optionalKey(Schema.String),
+	summary: Schema.NullOr(Schema.String),
 	/** The installed versions the advisory affects. */
 	versions: Schema.Array(Schema.String),
-	fixedIn: Schema.optionalKey(Schema.String),
+	fixedIn: Schema.NullOr(Schema.String),
 	relation: DependencyRelation,
 	status: DependencyFindingStatus,
 	firstSeenScanId: DependencyScanId,
 	lastSeenScanId: DependencyScanId,
 	firstSeenSha: GitCommitSha,
 	lastSeenSha: GitCommitSha,
-	fixedScanId: Schema.optionalKey(DependencyScanId),
-	fixedSha: Schema.optionalKey(GitCommitSha),
-	statusReason: Schema.optionalKey(Schema.String),
-	statusChangedBy: Schema.optionalKey(UserId),
-	statusChangedAt: Schema.optionalKey(Schema.Finite),
+	fixedScanId: Schema.NullOr(DependencyScanId),
+	fixedSha: Schema.NullOr(GitCommitSha),
+	statusReason: Schema.NullOr(Schema.String),
+	statusChangedBy: Schema.NullOr(UserId),
+	statusChangedAt: Schema.NullOr(Schema.Finite),
 	createdAt: Schema.Finite,
 	updatedAt: Schema.Finite,
 })
