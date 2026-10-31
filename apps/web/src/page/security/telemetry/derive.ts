@@ -220,9 +220,9 @@ const STATUS_RANK = {
 
 type RuntimeRow = Runtimes["runtimes"][number]
 
-/** What OSV knows about a row's runtime version. */
+/** The known advisories for a row's runtime version. */
 export type RuntimeVulnerabilities =
-	/** No version to look up, or a runtime OSV does not cover (Bun, Deno, Workers). */
+	/** No version to look up: none sent, an untracked runtime (Workers), or Bun and Deno posing as Node.js. */
 	| { readonly status: "not_covered" }
 	/** The advisory read failed. */
 	| { readonly status: "unavailable"; readonly key: string }

@@ -2601,7 +2601,7 @@ export const RuntimeReleaseRow = Schema.Struct({
 /** A known vulnerability in a runtime version (`RuntimeAdvisory` in `@maple/domain/runtime-advisories`). */
 export const RuntimeAdvisoryRow = Schema.Struct({
 	id: Schema.String,
-	osvId: Schema.String,
+	url: Schema.String,
 	summary: Schema.NullOr(Schema.String),
 	severity: Schema.Literals(ADVISORY_SEVERITIES),
 	fixedIn: Schema.NullOr(Schema.String),
