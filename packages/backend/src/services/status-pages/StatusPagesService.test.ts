@@ -131,6 +131,24 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("merges partial theme edits onto the stored theme, so two edits keep both fields", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("partial-theme")
+			yield* Effect.all(
+				[
+					service.update(ORG, page.id, { theme: { preset: "mono" } }),
+					service.update(ORG, page.id, { theme: { radius: "lg" } }),
+				],
+				{ concurrency: "unbounded" },
+			)
+			const { theme } = yield* service.get(ORG, page.id)
+			assert.strictEqual(theme.preset, "mono")
+			assert.strictEqual(theme.radius, "lg")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("refuses a slug another org already uses, on create and on rename", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

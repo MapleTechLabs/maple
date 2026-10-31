@@ -73,7 +73,8 @@ export interface UpdateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
-	readonly theme?: StatusPageTheme
+	/** Merged onto the stored theme under the page's row lock, so concurrent partial edits both land. */
+	readonly theme?: Partial<StatusPageTheme>
 	readonly showPoweredBy?: boolean
 	readonly autoIncidents?: StatusPageAutoIncidents
 }
@@ -430,19 +431,25 @@ const loadIncidents = Effect.fnUntraced(function* (
 	}))
 })
 
-const findPage = (db: MapleDb, orgId: OrgId, pageId: StatusPageId) =>
-	db
-		.run(
-			PG.from(StatusPages)
-				.select()
-				.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)])
-				.limit(1),
-		)
+/** `lock` holds the row until commit, for a read-modify-write such as a partial theme merge. */
+const findPage = (
+	db: MapleDb,
+	orgId: OrgId,
+	pageId: StatusPageId,
+	options: { readonly lock: boolean } = { lock: false },
+) => {
+	const query = PG.from(StatusPages)
+		.select()
+		.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)])
+		.limit(1)
+	return db
+		.run(options.lock ? query.forUpdate() : query)
 		.pipe(
 			Effect.flatMap((rows) =>
 				rows[0] === undefined ? Effect.fail(pageNotFound(pageId)) : Effect.succeed(rows[0]),
 			),
 		)
+}
 
 const findComponent = (db: MapleDb, orgId: OrgId, componentId: StatusPageComponentId) =>
 	db
@@ -663,12 +670,17 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					patch.logoUrl === undefined
 						? undefined
 						: yield* validateHttpsUrl(patch.logoUrl, "Logo URL")
-				const theme = patch.theme === undefined ? undefined : yield* validateTheme(patch.theme)
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecuteSlug(slug ?? "")((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const current = yield* findPage(db, orgId, pageId)
+							const current = yield* findPage(db, orgId, pageId, {
+								lock: patch.theme !== undefined,
+							})
+							const theme =
+								patch.theme === undefined
+									? undefined
+									: yield* validateTheme({ ...current.theme, ...patch.theme })
 							if (slug !== undefined) yield* ensureSlugFree(db, slug, pageId)
 							// The old slug route stays at the edge until the publisher drains this.
 							if (slug !== undefined && slug !== current.slug)

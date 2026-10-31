@@ -225,9 +225,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
 						// Omitted theme fields keep the page's current values.
-						...(payload.theme === undefined
-							? undefined
-							: { theme: { ...current.theme, ...payload.theme } }),
+						...(payload.theme === undefined ? undefined : { theme: payload.theme }),
 						...(payload.show_powered_by === undefined
 							? undefined
 							: { showPoweredBy: payload.show_powered_by }),

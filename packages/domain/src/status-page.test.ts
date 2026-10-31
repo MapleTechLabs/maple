@@ -469,6 +469,17 @@ describe("themeContrastIssue", () => {
 		expect(issue).toMatch(/^Text on cards/u)
 	})
 
+	it("flags a card that keeps text readable but washes out the status labels", () => {
+		// Black text reads on #7a7a7a, but the preset's green and red on it fall near 1.3:1.
+		const issue = themeContrastIssue({
+			...DEFAULT_STATUS_PAGE_THEME,
+			appearance: "light",
+			text: "#000000",
+			card: "#7a7a7a",
+		})
+		expect(issue).toMatch(/^Status labels/u)
+	})
+
 	it("accepts #767676 on white, just over the line", () => {
 		expect(
 			themeContrastIssue({

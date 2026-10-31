@@ -408,6 +408,8 @@ const formatRatio = (ratio: number): string => {
 	return `${shown.toFixed(2)}:1`
 }
 
+const STATUS_COLOR_TOKENS = ["ok", "degraded", "partial", "major", "maint"] as const
+
 /** Why the theme's text would be hard to read (below WCAG AA 4.5:1), or null when it is readable. */
 export const themeContrastIssue = (theme: StatusPageTheme): string | null => {
 	const issues = visibleThemeTokens(resolveStatusPageTheme(theme)).flatMap((tokens) => {
@@ -419,6 +421,17 @@ export const themeContrastIssue = (theme: StatusPageTheme): string | null => {
 			]
 		if (onCard < STATUS_PAGE_MIN_CONTRAST)
 			return [`Text on cards has a contrast of ${formatRatio(onCard)}; it needs at least 4.5:1.`]
+		// Status colours come from the preset, so an overridden card or background can wash them out.
+		const statusRatio = Math.min(
+			...STATUS_COLOR_TOKENS.flatMap((key) => [
+				contrastRatio(tokens[key], tokens.bg),
+				contrastRatio(tokens[key], tokens.card),
+			]),
+		)
+		if (statusRatio < STATUS_PAGE_MIN_CONTRAST)
+			return [
+				`Status labels have a contrast of ${formatRatio(statusRatio)} on this background or card; they need at least 4.5:1.`,
+			]
 		return []
 	})
 	return issues[0] ?? null
