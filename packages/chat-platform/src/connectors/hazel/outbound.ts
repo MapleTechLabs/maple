@@ -84,6 +84,12 @@ const Users = Schema.Struct({
 	),
 })
 
+/** Who an id is, as far as the model's context names them. */
+interface Person {
+	readonly displayName: string
+	readonly isBot: boolean
+}
+
 /** The ids a message mentions, so the context can name them rather than show markup. */
 const MENTION = /@\[userId:([0-9a-f-]{36})\]/gu
 
@@ -167,7 +173,9 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
 					attempt(bearer, operation, route, request).pipe(
 						Effect.catchTag("@maple/chat-platform/connectors/hazel/RateLimited", (limited) =>
-							count >= MAX_RATE_LIMIT_ATTEMPTS
+							// History is CONTEXT read before the turn starts: waiting out a rate limit
+							// there delays the answer for background the model can do without.
+							count >= MAX_RATE_LIMIT_ATTEMPTS || operation === "history"
 								? Effect.fail(
 										failed(operation, "Hazel kept rate limiting this message", {
 											status: 429,
@@ -235,9 +243,12 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		})
 
 		/** The people behind `ids` in the workspace; an id Hazel does not know is simply absent. */
-		const people = (workspaceId: string, ids: ReadonlyArray<string>) =>
+		const people = (
+			workspaceId: string,
+			ids: ReadonlyArray<string>,
+		): Effect.Effect<ReadonlyMap<string, Person>, ChatOutboundError> =>
 			ids.length === 0
-				? Effect.succeed(new Map<string, { readonly displayName: string; readonly isBot: boolean }>())
+				? Effect.succeed(new Map<string, Person>())
 				: send(
 						"history",
 						"/organizations/{organization_id}/users",
@@ -319,7 +330,10 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 						messages.flatMap((message) => [message.authorId, ...mentionedIds(message.content)]),
 					),
 				]
-				const names = yield* people(target.workspaceId, ids)
+				// Names are best effort: a page with "Someone" in it beats no context at all.
+				const names = yield* people(target.workspaceId, ids).pipe(
+					Effect.orElseSucceed((): ReadonlyMap<string, Person> => new Map()),
+				)
 				return Arr.getSomes(
 					messages.map((message): Option.Option<ChatHistoryMessage> => {
 						const at = Date.parse(message.createdAt)

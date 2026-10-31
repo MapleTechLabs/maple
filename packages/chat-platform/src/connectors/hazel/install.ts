@@ -9,7 +9,7 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { API_BASE, BOT_ID_CONFIG, BOT_TOKEN_CONFIG, INSTALL_URL } from "./api"
+import { API_BASE, API_HOST, BOT_ID_CONFIG, BOT_TOKEN_CONFIG, INSTALL_URL } from "./api"
 import { HAZEL_CONNECTOR_ID } from "./id"
 
 /**
@@ -37,6 +37,35 @@ const authorizeUrl = (input: ChatInstallStart) =>
 		hazelInstallUrl(botId, { state: input.state, redirectUri: input.redirectUri }),
 	)
 
+/** The redemption POST, as one client span on the service map. */
+const redeem = Effect.fn("Hazel.request", { kind: "client" })(function* (
+	token: string,
+	code: string,
+	redirectUri: string,
+) {
+	yield* Effect.annotateCurrentSpan({
+		"peer.service": "hazel",
+		"http.request.method": "POST",
+		"server.address": API_HOST,
+		"url.template": "/bot-installs/token",
+	})
+	const client = yield* HttpClient.HttpClient
+	const response = yield* client
+		.execute(
+			HttpClientRequest.post(`${API_BASE}/bot-installs/token`, {
+				headers: { accept: "application/json", authorization: `Bearer ${token}` },
+			}).pipe(HttpClientRequest.bodyJsonUnsafe({ code, redirectUri })),
+		)
+		// The message only: the request carries the bot token.
+		.pipe(
+			Effect.mapError((error) =>
+				installFailed(`Hazel install redemption failed: ${error.reason._tag}`),
+			),
+		)
+	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+	return response
+})
+
 const installFailed = (message: string) => new ChatInstallFailed({ connector: HAZEL_CONNECTOR_ID, message })
 
 /**
@@ -53,19 +82,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const code = input.params.get("code")
 	if (code === null) return yield* Effect.fail(installFailed("Hazel's callback carried no install code"))
 	const token = yield* requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_TOKEN_CONFIG)
-	const client = yield* HttpClient.HttpClient
-	const response = yield* client
-		.execute(
-			HttpClientRequest.post(`${API_BASE}/bot-installs/token`, {
-				headers: { accept: "application/json", authorization: `Bearer ${token}` },
-			}).pipe(HttpClientRequest.bodyJsonUnsafe({ code, redirectUri: input.redirectUri })),
-		)
-		// The message only: the request carries the bot token.
-		.pipe(
-			Effect.mapError((error) =>
-				installFailed(`Hazel install redemption failed: ${error.reason._tag}`),
-			),
-		)
+	const response = yield* redeem(token, code, input.redirectUri)
 	if (response.status === 400) {
 		return yield* Effect.fail(
 			installFailed("Hazel refused the install code: it expired or was already used"),

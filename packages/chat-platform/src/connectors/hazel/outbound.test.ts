@@ -221,6 +221,45 @@ describe("hazel transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("keeps the history when the names cannot be read, and never waits out a 429 for it", () => {
+		const page = JSON.stringify({
+			data: [
+				{
+					id: "m1",
+					authorId: ADA,
+					content: "is checkout ok?",
+					createdAt: "2026-10-31T10:00:00.000Z",
+				},
+			],
+			has_more: false,
+		})
+		const http = stub([
+			[
+				"/messages",
+				[
+					{ status: 200, body: page },
+					{ status: 429, body: JSON.stringify({ retryAfterMs: 5000 }) },
+				],
+			],
+			["/organizations/", { status: 403, body: "" }],
+		])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			const history = yield* transport.history(target, { limit: 20, before: "m3" })
+			expect(history).toEqual([
+				{
+					displayName: "Someone",
+					isBot: false,
+					text: "is checkout ok?",
+					at: Date.parse("2026-10-31T10:00:00.000Z"),
+				},
+			])
+			const limited = yield* Effect.flip(transport.history(target, { limit: 20, before: "m3" }))
+			expect(limited.status).toBe(429)
+			expect(http.seen.filter((request) => request.url.includes("/messages?"))).toHaveLength(2)
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect("whispers by mentioning the person who pressed", () => {
 		const http = stub([["/messages", { status: 200, body: JSON.stringify({ data: { id: "m9" } }) }]])
 		return Effect.gen(function* () {
