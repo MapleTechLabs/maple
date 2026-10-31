@@ -1,5 +1,16 @@
 # @maple/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- ee8d5de: Maple Local inserts OTLP exports that arrive together in one statement per table, instead of one statement each. Five traces exports sent at once now each answer in about the time one takes alone, where before each waited for the inserts ahead of it. An export still answers only after its rows are committed, and a query reads every row queued before it.
+- Updated dependencies [534647e]
+- Updated dependencies [ef33c0d]
+- Updated dependencies [41da0c2]
+- Updated dependencies [13abd6c]
+    - @maple-dev/effect-sdk@0.13.0
+
 ## 0.3.0
 
 ### Minor Changes

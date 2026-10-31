@@ -13,6 +13,11 @@ export interface ReviewCoverage {
 	readonly observe: (tool: string, answer: string) => void
 	/** Reviewed files with a patch whose diff no `pr_file_diff` answer has shown yet, in listing order. */
 	readonly unread: () => ReadonlyArray<string>
+	/**
+	 * The kickoff names no narrower scope and a file listing arrived: every reviewed file was due,
+	 * not only what changed since. Without a listing nothing is due, so nothing was checked.
+	 */
+	readonly wholeDiff: () => boolean
 }
 
 /**
@@ -26,15 +31,18 @@ export const makeReviewCoverage = (kickoff: string): ReviewCoverage => {
 		(scope === undefined || scope.includes(path)) && !pathIgnored(path, ignored)
 	const due = new Set<string>()
 	const read = new Set<string>()
+	let listed = false
 	return {
 		observe: (tool, answer) => {
 			if (tool === "pr_changed_files") {
+				listed = true
 				for (const path of reviewablePathsInListing(answer)) if (inScope(path)) due.add(path)
 			} else if (tool === "pr_file_diff") {
 				for (const path of pathsInDiffAnswer(answer)) read.add(path)
 			}
 		},
 		unread: () => [...due].filter((path) => !read.has(path)),
+		wholeDiff: () => scope === undefined && listed,
 	}
 }
 
