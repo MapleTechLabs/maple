@@ -34,6 +34,9 @@ export interface ScannerSignaturesOutput {
 	readonly lastSeen: DateTime.Utc
 }
 
+/** Most signature rows returned: about fifty signatures for each of a hundred probed services. */
+export const SCANNER_SIGNATURES_MAX_ROWS = 5000
+
 /** Requests per probe signature and service. Bounded: a few dozen signatures per service. */
 export function scannerSignaturesQuery(): CHQuery<any, ScannerSignaturesOutput, any> {
 	return from(ScannerRequests)
@@ -49,7 +52,7 @@ export function scannerSignaturesQuery(): CHQuery<any, ScannerSignaturesOutput, 
 		.where(scannerWhere)
 		.groupBy("signature", "service")
 		.orderBy(["requests", "desc"])
-		.limit(500)
+		.limit(SCANNER_SIGNATURES_MAX_ROWS)
 		.format("JSON")
 }
 

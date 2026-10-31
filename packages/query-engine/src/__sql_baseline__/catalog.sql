@@ -4353,7 +4353,7 @@ SELECT
           AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY signature, service
         ORDER BY requests DESC
-        LIMIT 500
+        LIMIT 5000
         FORMAT JSON
 
 -- builder:security-telemetry:scannerSourcesQuery:default  [5b760c49]
