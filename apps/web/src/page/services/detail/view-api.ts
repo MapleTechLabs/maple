@@ -346,7 +346,12 @@ const groupHeaderRow = (
 		http5xxCount: sum((endpoint) => endpoint.http5xxCount),
 	})
 	const cell = (text: string, width: string, tone?: string) =>
-		tableCell(h, [text === EMPTY_VALUE ? emptyValue(h) : text], cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width))
+		tableCell(
+			h,
+			// Muted totals drop the unit to subtle; a toned total keeps it in the tone.
+			text === EMPTY_VALUE ? [emptyValue(h)] : measure(h, text, tone === undefined ? "text-foreground-subtle" : null),
+			cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width),
+		)
 	return tableRow(
 		h,
 		[
