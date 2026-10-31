@@ -1,4 +1,4 @@
-import type { ResolvedStatusPageTheme } from "@maple/domain/status-page"
+import type { ResolvedStatusPageTheme, StatusPageThemePreset } from "@maple/domain/status-page"
 import { tokenVariables } from "./theme"
 
 /** The colour scheme: both sets behind the media query in auto, one forced set otherwise. */
@@ -65,7 +65,7 @@ section.list{margin-top:32px}
 .panel-head h2{font-size:16px;font-weight:500;margin:0;color:var(--fg);text-transform:none;letter-spacing:0}
 .pager{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
 .pager button{display:inline-grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:calc(var(--radius)/2);background:none;color:var(--muted);cursor:pointer}
-.pager button:hover:not(:disabled){color:var(--link);background:color-mix(in srgb,var(--primary) 12%,transparent)}
+.pager button:hover:not(:disabled){color:var(--fg);background:color-mix(in srgb,var(--primary) 12%,transparent)}
 .pager button:disabled{opacity:.35;cursor:default}
 .pager svg path,.cal-panel svg path{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 button:focus-visible,a:focus-visible{outline:2px solid var(--link);outline-offset:2px}
@@ -116,10 +116,14 @@ button{font:inherit;font-weight:500;padding:10px 16px;border-radius:calc(var(--r
 `
 
 /** Each preset's card shadow, from its shadcn theme. */
-export const presetStyles = `
-[data-preset=default]{--shadow:0px 1px 2px 0px rgba(0,0,0,0.18)}
-[data-preset=maple]{--shadow:none}
-[data-preset=mono]{--shadow:none}
-[data-preset=midnight]{--shadow:0px 4px 10px 0px rgba(45,45,83,0.12)}
-[data-preset=paper]{--shadow:2px 3px 5px 0px rgba(58,51,44,0.12)}
-`
+const PRESET_SHADOW = {
+	default: "0px 1px 2px 0px rgba(0,0,0,0.18)",
+	maple: "none",
+	mono: "none",
+	midnight: "0px 4px 10px 0px rgba(45,45,83,0.12)",
+	paper: "2px 3px 5px 0px rgba(58,51,44,0.12)",
+} as const satisfies Record<StatusPageThemePreset, string>
+
+/** The page's own preset shadow; nothing of the other presets ships. */
+export const presetStyles = (preset: StatusPageThemePreset): string =>
+	`:root{--shadow:${PRESET_SHADOW[preset]}}`

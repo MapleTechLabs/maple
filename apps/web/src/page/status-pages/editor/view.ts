@@ -162,7 +162,7 @@ const tabs = (h: H, model: Model, page: V2StatusPage): Html => {
 
 /** Over a draft's editor: nothing is public yet, and Publish page in the header changes that. */
 const draftCallout = (h: H): Html =>
-	alert(h, { variant: "info", size: "sm" }, [
+	alert(h, { variant: "info", size: "sm", role: "status" }, [
 		icon(h, "LockIcon"),
 		alertTitle(h, ["This page is a draft"]),
 		alertDescription(h, [

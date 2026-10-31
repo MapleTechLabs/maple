@@ -682,13 +682,15 @@ describe("page theme", () => {
 		expect(css).toContain("--bg:#000000")
 		expect(css).toContain("--radius:8px")
 		expect(css).toMatch(/--font:ui-sans-serif/u)
-		expect(html).toContain(`<html lang="en" data-preset="default">`)
+		expect(styleOf(html)).toContain(":root{--shadow:0px 1px 2px 0px rgba(0,0,0,0.18)}")
 	})
 
-	it("marks the page with its preset, which sets that preset's card shadow", () => {
-		const html = renderPage(themed({ ...DEFAULT_STATUS_PAGE_THEME, preset: "paper" }), live, FIXTURE_NOW)
-		expect(html).toContain(`<html lang="en" data-preset="paper">`)
-		expect(styleOf(html)).toMatch(/\[data-preset=paper\]\{--shadow:[^}]+\}/u)
+	it("ships only the page's own preset shadow", () => {
+		const css = (preset: "default" | "maple") =>
+			styleOf(renderPage(themed({ ...DEFAULT_STATUS_PAGE_THEME, preset }), live, FIXTURE_NOW))
+		expect(css("default")).toContain(":root{--shadow:0px 1px 2px 0px rgba(0,0,0,0.18)}")
+		expect(css("maple")).toContain(":root{--shadow:none}")
+		expect(css("maple")).not.toContain("rgba(0,0,0,0.18)")
 	})
 
 	it("shows a monogram in the brand colour when the page has no logo", () => {

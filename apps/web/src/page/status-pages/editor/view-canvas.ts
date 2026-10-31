@@ -381,7 +381,8 @@ export const canvas = (h: H, model: Model, page: V2StatusPage, time: TimeInputs)
 		],
 		[
 			h.div(
-				[h.Class("min-w-0 lg:sticky lg:top-0")],
+				// Only the short list pins; a tall panel scrolls with the page to its buttons.
+				[h.Class(cn("min-w-0", panel.length === 0 && "lg:sticky lg:top-0"))],
 				panel.length === 0 ? [onThisPage(h, model)] : panel,
 			),
 			h.div([h.Class("min-w-0")], [previewColumn(h, model, page)]),

@@ -52,15 +52,14 @@ export const renderDocument = (input: {
 }): string => {
 	const nonce = nonceAttr(input.options)
 	const description = input.snapshot.page.description
-	// The preset sets its shadow in `presetStyles`; its colours come in as tokens.
-	const preset = safeTheme(input.snapshot.page.theme).preset
+	const theme = safeTheme(input.snapshot.page.theme)
 	return [
-		`<!doctype html><html lang="en" data-preset="${preset}"><head><meta charset="utf-8">`,
+		`<!doctype html><html lang="en"><head><meta charset="utf-8">`,
 		`<meta name="viewport" content="width=device-width,initial-scale=1">`,
 		`<title>${escapeHtml(input.title)}</title>`,
 		description === null ? "" : `<meta name="description" content="${escapeHtml(description)}">`,
 		input.head ?? "",
-		`<style${nonce}>${baseStyles(resolveSafeTheme(input.snapshot.page.theme))}${input.styles}${presetStyles}</style>`,
+		`<style${nonce}>${baseStyles(resolveSafeTheme(theme))}${input.styles}${presetStyles(theme.preset)}</style>`,
 		`</head><body${input.bodyAttrs ?? ""}><main class="wrap">`,
 		input.body,
 		`</main>`,

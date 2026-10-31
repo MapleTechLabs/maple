@@ -354,6 +354,14 @@ describe("resolveStatusPageTheme", () => {
 		expect(Math.min(...fills)).toBeGreaterThanOrEqual(4.5)
 	})
 
+	it("fills the brand colour with a custom accent, with readable text on it", () => {
+		for (const accent of ["#a5b4fc", "#1e3a8a"]) {
+			const resolved = resolveStatusPageTheme({ ...theme, accent })
+			expect(resolved.light.primary).toBe(accent)
+			expect(contrastRatio(resolved.light.primaryFg, accent)).toBeGreaterThanOrEqual(4.5)
+		}
+	})
+
 	it("tints the status banner visibly in every preset and mode while text on it stays AA", () => {
 		const themes: ReadonlyArray<StatusPageTheme> = [
 			...StatusPageThemePreset.literals.map((preset) => ({ ...theme, preset })),
