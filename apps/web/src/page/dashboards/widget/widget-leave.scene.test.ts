@@ -1,15 +1,18 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Schema } from "effect"
-import { describe, expect, test } from "vitest"
+import { Effect, Option, Schema } from "effect"
+import { beforeAll, describe, expect, test } from "vitest"
 import { AppRoute } from "../../../route"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { blockNavigation, type PageSlot } from "../../registry"
+import { blockNavigation, type PageSlot, loadEveryPage } from "../../registry"
 import { SaveWidget } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
 import { init } from "./update"
+
+// Pages enter only once their code is loaded (`loadPageCode`); these tests drive loaded pages.
+beforeAll(() => Effect.runPromise(loadEveryPage))
 
 // `useBlocker`: a link, Back or the breadcrumb away from unsaved edits asks first.
 
@@ -42,7 +45,13 @@ const opened = () =>
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 	])
 
-const slotOf = (model: Model): PageSlot => ({ _tag: "DashboardWidget", key: "dash_leave/note", orgId, instance: 1, model })
+const slotOf = (model: Model): PageSlot => ({
+	_tag: "DashboardWidget",
+	key: "dash_leave/note",
+	orgId,
+	instance: 1,
+	model,
+})
 const away = AppRoute.Services({ search: {} })
 const isHeld = (model: Model, route: AppRoute = away) =>
 	Option.isSome(blockNavigation(slotOf(model), route, "/services", context))

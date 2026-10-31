@@ -1,21 +1,13 @@
 import { definePage } from "../../../contract"
-import { kubernetesBreadcrumbs } from "../../kit/view-tabs"
 import { Message } from "./message"
 import { Model } from "./model"
-import { contextChanged, init, routeChanged, update } from "./update"
-import { view } from "./view"
+import { pageCode } from "../../../code"
 
 /** `/infra/kubernetes/workloads`: the workloads of one kind. Search changes arrive as `routeChanged`. */
-export const page = definePage(
+export const entry = definePage(
 	"InfraKubernetesWorkloads",
 	{ Model, Message },
-	{
-		routes: ["InfraKubernetesWorkloads"],
-		init,
-		update,
-		routeChanged,
-		contextChanged,
-		view,
-		breadcrumbs: (model) => kubernetesBreadcrumbs("workloads", model.search),
-	},
+	{ routes: ["InfraKubernetesWorkloads"] },
 )
+
+export const page = entry.lazy(pageCode.InfraKubernetesWorkloads)

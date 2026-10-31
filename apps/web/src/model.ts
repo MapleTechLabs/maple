@@ -9,6 +9,7 @@ import { RootToastAction } from "./page/contract"
 import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
+import { LoadFailure } from "./data/load-failure"
 import { AppRoute } from "./route"
 import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
@@ -30,6 +31,14 @@ export const ClerkPhase = defineTaggedUnion({
 })
 export type ClerkPhase = typeof ClerkPhase.Type
 
+/** The routed page's code (`page/registry.ts`): loading before its first entry, or failed to load. */
+export const PageCode = defineTaggedUnion({
+	Ready: {},
+	Loading: { pageId: Schema.String },
+	Failed: { pageId: Schema.String, failure: LoadFailure },
+})
+export type PageCode = typeof PageCode.Type
+
 export const Model = Schema.Struct({
 	route: AppRoute,
 	session: Session,
@@ -45,6 +54,8 @@ export const Model = Schema.Struct({
 	toastRootActions: Schema.Record(Schema.String, RootToastAction),
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
+	/** The route's page while its code loads (the page stays `null` until then), or why it did not. */
+	pageCode: PageCode,
 	/** Page instances built so far; the next build is stamped `pageInstances + 1`. */
 	pageInstances: Schema.Number,
 	/** Pages left recently, newest first: going back revives one with its last data (`parkPages`). */

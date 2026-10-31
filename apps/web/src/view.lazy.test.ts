@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { Lazy } from "foldkit/test"
 import { fromString } from "foldkit/url"
@@ -8,16 +8,19 @@ import { describe, expect, test, vi } from "vitest"
 // The shell's favorites listener targets `window` at import; nothing here touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
 import type { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageCode, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
-import { pages } from "./page/registry"
+import { pages, loadEveryPage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
 import * as Toast from "./ui/toast"
 import { settle } from "./update"
 import { view } from "./view"
+
+// Pages enter only once their code is loaded (`loadPageCode`); the sample models below are built at import.
+await Effect.runPromise(loadEveryPage)
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const NOW = Date.parse("2026-10-01T12:00:00Z")
@@ -116,6 +119,7 @@ const entered = (path: string): Model =>
 		toastActions: {},
 		toastRootActions: {},
 		page: null,
+		pageCode: PageCode.Ready(),
 		pageInstances: 0,
 		parkedPages: [],
 		onboarding: null,

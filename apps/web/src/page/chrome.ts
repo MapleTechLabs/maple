@@ -1,9 +1,11 @@
 import { pageContentStyles } from "@maple/ui/styles/ui/page-layout"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { LoadFailure } from "../data/load-failure"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import { linkButton } from "../ui/button"
+import { errorState } from "../ui/error-state"
 import { icon } from "../ui/icon"
 import { skeleton, skeletonList } from "../ui/skeleton"
 import { dashboardPage, pageBody } from "./kit/dashboard-page"
@@ -54,6 +56,14 @@ export const placeholderContent = <Message>(h: HtmlBuilder<Message>): Html =>
 			],
 		),
 	])
+
+/** The route's page code did not load: a dropped connection, or a deploy that replaced it. */
+export const pageCodeFailedContent = <Message>(
+	h: HtmlBuilder<Message>,
+	failure: LoadFailure,
+	onReload: Message,
+): Html =>
+	dashboardPage(h, {}, [errorState(h, { failure, title: "Couldn't load this page", onRetry: onReload })])
 
 /** An unknown path inside the shell: a dashed card at the top under a title, like a missing log. */
 export const notFoundContent = <Message>(h: HtmlBuilder<Message>): Html =>

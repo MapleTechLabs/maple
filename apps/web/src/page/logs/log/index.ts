@@ -1,18 +1,9 @@
 import { definePage } from "../../contract"
-import { Message, Model } from "./model"
-import { init, update } from "./update"
-import { breadcrumbsOf, view } from "./view"
+import { Message } from "./model"
+import { Model } from "./model"
+import { pageCode } from "../../code"
 
 /** `/logs/$logId`: one instance per log key, so picking another log mounts a fresh page. */
-export const page = definePage(
-	"Log",
-	{ Model, Message },
-	{
-		routes: ["Log"],
-		key: (route) => route.logId,
-		init,
-		update,
-		view,
-		breadcrumbs: breadcrumbsOf,
-	},
-)
+export const entry = definePage("Log", { Model, Message }, { routes: ["Log"], key: (route) => route.logId })
+
+export const page = entry.lazy(pageCode.Log)

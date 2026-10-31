@@ -2,7 +2,8 @@ import { DashboardWidgetSchema } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Array, Option, Schema, Stream } from "effect"
-import { Command, Submodel, Subscription, type Update } from "foldkit"
+import { Command, Submodel, type Subscription, type Update } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { IntegrationFlags } from "../data/infra-surfaces"
 import type { Resources } from "../platform/resources"
@@ -136,11 +137,16 @@ type RouteOf<Tags extends RouteTag> = Extract<AppRoute, { readonly _tag: Tags }>
 
 // SPEC (what a page module provides)
 
-export interface PageSpec<Tags extends RouteTag, Model, Message> {
+/** What the registry knows of a page from the start (`index.ts`); the rest loads on first use. */
+export interface PageEntrySpec<Tags extends RouteTag> {
 	/** The routes this page renders. */
 	readonly routes: ReadonlyArray<Tags>
 	/** The instance survives a navigation while this stays equal (default: the route tag). */
 	readonly key?: (route: RouteOf<Tags>) => string
+}
+
+/** The page's code (`implementation.ts`), imported on first entry or link intent. */
+export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly init: (route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/**
 	 * The requests warmed on link intent: the same fetch Commands
@@ -221,6 +227,100 @@ export interface PageStep<Slot, Wrapped> {
 	readonly outMessage: Option.Option<PageOutMessage>
 }
 
+/** A page's slot in the root Model. */
+export interface PageSlotOf<Id extends string, Model> extends PageSlotBase {
+	readonly _tag: Id
+	readonly model: Model
+}
+
+/** A page's Message, stamped with its instance. */
+export interface PageMessageOf<Id extends string, Message> extends PageMessageBase {
+	readonly _tag: Id
+	readonly message: Message
+}
+
+/** A page Subscription's dependencies: its `entry` fields' values, carried by a registry slot. */
+export const PageSubscriptionDependencies = Schema.Record(Schema.String, Schema.Unknown)
+export type PageSubscriptionDependencies = typeof PageSubscriptionDependencies.Type
+
+/** One of a page's Subscriptions, as the registry's slot of the same index runs it. */
+export interface PageSubscription<Wrapped> {
+	/** `None` when `slot` is another page's. */
+	readonly dependenciesOf: (
+		slot: PageSlotBase,
+		context: PageContext,
+	) => Option.Option<PageSubscriptionDependencies>
+	readonly isSameDependencies: (
+		left: PageSubscriptionDependencies,
+		right: PageSubscriptionDependencies,
+	) => boolean
+	/** Its stream for one instance; the Messages are stamped with it. */
+	readonly streamOf: (
+		dependencies: PageSubscriptionDependencies,
+		instance: Pick<PageSlotBase, "key" | "orgId" | "instance">,
+	) => Stream.Stream<Wrapped, never, Resources>
+}
+
+export type PageEmbed<Wrapped> = <ParentMessage>(
+	h: HtmlBuilder<ParentMessage>,
+	slotId: string,
+	slot: PageSlotBase,
+	inputs: PageViewInputs,
+	toParentMessage: (message: Wrapped) => ParentMessage,
+) => Html
+
+/** A page's code, erased to what the registry and root consume. */
+export interface PageImplementation<Slot, Wrapped> {
+	readonly init: (
+		route: AppRoute,
+		context: PageContext,
+		instance: number,
+	) => Option.Option<PageStep<Slot, Wrapped>>
+	readonly preload: (
+		route: AppRoute,
+		context: PageContext,
+		nowMs: number,
+	) => Option.Option<ReadonlyArray<Command.Command<Wrapped, never, Resources>>>
+	readonly update: (
+		slot: PageSlotBase,
+		message: PageMessageBase,
+		context: PageContext,
+	) => Option.Option<PageStep<Slot, Wrapped>>
+	readonly routeChanged: (
+		slot: PageSlotBase,
+		route: AppRoute,
+		context: PageContext,
+	) => Option.Option<PageStep<Slot, Wrapped>>
+	readonly isRevivable: boolean
+	readonly revive: (
+		slot: PageSlotBase,
+		route: AppRoute,
+		context: PageContext,
+		instance: number,
+	) => Option.Option<PageStep<Slot, Wrapped>>
+	readonly blockedNavigation: (
+		slot: PageSlotBase,
+		url: string,
+		context: PageContext,
+	) => Option.Option<PageStep<Slot, Wrapped>>
+	readonly contextChanged: (
+		slot: PageSlotBase,
+		context: PageContext,
+	) => Option.Option<PageStep<Slot, Wrapped>>
+	readonly infraSurfacesSettled: (
+		slot: PageSlotBase,
+		context: PageContext,
+	) => Option.Option<PageStep<Slot, Wrapped>>
+	readonly breadcrumbs: (slot: PageSlotBase) => ReadonlyArray<BreadcrumbEntry>
+	readonly hasSource: boolean
+	readonly source: (slot: PageSlotBase) => PageSourceRef | null
+	/** The page's view, embedded by the root under `slotId` (its boundary for this instance). */
+	readonly embedView: PageEmbed<Wrapped>
+	/** The page's top-bar actions, embedded by the shell's top bar; nothing for most pages. */
+	readonly embedTopbarActions: PageEmbed<Wrapped>
+	readonly subscriptions: ReadonlyArray<PageSubscription<Wrapped>>
+}
+
 /**
  * The page lives in the root Model as `{ _tag: id, key, orgId, model }`, its Messages as
  * `{ _tag: id, key, orgId, message }`: an older instance's late Messages are dropped centrally.
@@ -233,10 +333,10 @@ export const definePage = <
 >(
 	id: Id,
 	schemas: { readonly Model: ModelSchema; readonly Message: MessageSchema },
-	spec: PageSpec<Tags, ModelSchema["Type"], MessageSchema["Type"]>,
+	spec: PageEntrySpec<Tags>,
 ) => {
-	type Model = ModelSchema["Type"]
-	type Message = MessageSchema["Type"]
+	type SlotType = PageSlotOf<Id, ModelSchema["Type"]>
+	type WrappedType = PageMessageOf<Id, MessageSchema["Type"]>
 	const Slot = Schema.TaggedStruct(id, {
 		key: Schema.String,
 		orgId: Schema.String,
@@ -249,20 +349,70 @@ export const definePage = <
 		instance: Schema.Number,
 		message: schemas.Message,
 	})
-	type SlotType = {
-		readonly _tag: Id
-		readonly key: string
-		readonly orgId: string
-		readonly instance: number
-		readonly model: Model
+	const ownsRoute = (route: AppRoute): route is RouteOf<Tags> =>
+		Array.some(spec.routes, (tag) => tag === route._tag)
+	const routeKey = (route: RouteOf<Tags>) => (spec.key ? spec.key(route) : route._tag)
+	const keyOf = (route: AppRoute): Option.Option<string> =>
+		ownsRoute(route) ? Option.some(routeKey(route)) : Option.none()
+	return {
+		id,
+		schemas,
+		Slot,
+		Wrapped,
+		ownsRoute,
+		routeKey,
+		keyOf,
+		/** The registered page: this entry, its code behind `load` (`() => import("./implementation")`). */
+		lazy: (
+			load: () => Promise<{ readonly implementation: PageImplementation<SlotType, WrappedType> }>,
+		): LazyPage<Id, typeof Slot, typeof Wrapped, SlotType, WrappedType> => ({
+			id,
+			Slot,
+			Wrapped,
+			keyOf,
+			loadModule: load,
+		}),
 	}
-	type WrappedType = {
-		readonly _tag: Id
-		readonly key: string
-		readonly orgId: string
-		readonly instance: number
-		readonly message: Message
-	}
+}
+
+/** A page as `index.ts` declares it: schemas, routes and key, but none of its code. */
+export interface PageEntry<
+	Id extends string,
+	Tags extends RouteTag,
+	ModelSchema extends Schema.Top,
+	MessageSchema extends Schema.Top,
+> {
+	readonly id: Id
+	readonly schemas: { readonly Model: ModelSchema; readonly Message: MessageSchema }
+	readonly ownsRoute: (route: AppRoute) => route is RouteOf<Tags>
+	readonly routeKey: (route: RouteOf<Tags>) => string
+}
+
+/** What the registry holds for every page from the start; `load` brings its code. */
+export interface LazyPage<Id extends string, SlotSchema, WrappedSchema, Slot, Wrapped> {
+	readonly id: Id
+	readonly Slot: SlotSchema
+	readonly Wrapped: WrappedSchema
+	/** The instance key for `route`, or `None` when this page does not render it. */
+	readonly keyOf: (route: AppRoute) => Option.Option<string>
+	/** `implementation.ts`, through `pageCode` (`page/code.ts`): boot.ts may have started it already. */
+	readonly loadModule: () => Promise<{ readonly implementation: PageImplementation<Slot, Wrapped> }>
+}
+
+/** The page's code (`implementation.ts`): `implementPage(entry, { init, update, view, ... })`. */
+export const implementPage = <
+	const Id extends string,
+	Tags extends RouteTag,
+	ModelSchema extends Schema.Top,
+	MessageSchema extends Schema.Top,
+>(
+	entry: PageEntry<Id, Tags, ModelSchema, MessageSchema>,
+	spec: PageSpec<Tags, ModelSchema["Type"], MessageSchema["Type"]>,
+): PageImplementation<PageSlotOf<Id, ModelSchema["Type"]>, PageMessageOf<Id, MessageSchema["Type"]>> => {
+	type Message = MessageSchema["Type"]
+	type SlotType = PageSlotOf<Id, ModelSchema["Type"]>
+	type WrappedType = PageMessageOf<Id, Message>
+	const { id, ownsRoute, routeKey: keyOf } = entry
 
 	// Ids are unique across the registry, so a matching tag is this page's slot or Message.
 	const isOwnSlot = (slot: PageSlotBase): slot is SlotType => slot._tag === id
@@ -270,14 +420,11 @@ export const definePage = <
 	/** The Message was produced by this very instance, not an older one of the same page. */
 	const isForInstance = (slot: PageSlotBase, message: PageMessageBase) =>
 		message.key === slot.key && message.orgId === slot.orgId && message.instance === slot.instance
-	const ownsRoute = (route: AppRoute): route is RouteOf<Tags> =>
-		Array.some(spec.routes, (tag) => tag === route._tag)
 	const wrapFor =
 		(key: string, orgId: string, instance: number) =>
 		(message: Message): WrappedType => ({ _tag: id, key, orgId, instance, message })
-	const keyOf = (route: RouteOf<Tags>) => (spec.key ? spec.key(route) : route._tag)
 
-	const isOwnPageMessage = Schema.is(schemas.Message)
+	const isOwnPageMessage = Schema.is(entry.schemas.Message)
 	/** A toast's action is the page's own Message; it travels wrapped, like every page Message. */
 	const wrapOut =
 		(wrap: (message: Message) => WrappedType) =>
@@ -293,7 +440,7 @@ export const definePage = <
 		key: string,
 		instance: number,
 		context: PageContext,
-		result: PageReturn<Model, Message>,
+		result: PageReturn<ModelSchema["Type"], Message>,
 	): PageStep<SlotType, WrappedType> => {
 		const wrap = wrapFor(key, context.orgId, instance)
 		return {
@@ -303,61 +450,60 @@ export const definePage = <
 		}
 	}
 
-	/**
-	 * Each Subscription restarts per instance and stamps its Messages with that instance's key and
-	 * org, so a Message queued by an older instance's stream is dropped like a late Command result.
-	 */
-	const stamped = Subscription.make<PageHost, WrappedType, Resources>()((entry) =>
-		Object.fromEntries(
-			Object.entries(spec.subscriptions ?? {}).map(([name, inner]) => [
-				name,
-				entry(
-					{
-						maybeInstance: Schema.Option(
-							Schema.Struct({
-								key: Schema.String,
-								orgId: Schema.String,
-								instance: Schema.Number,
-								inner: inner.dependenciesSchema,
-							}),
-						),
-					},
-					{
-						modelToDependencies: (host) => ({
-							maybeInstance:
-								host.page !== null && host.context !== null && isOwnSlot(host.page)
-									? Option.some({
-											key: host.page.key,
-											orgId: host.page.orgId,
-											instance: host.page.instance,
-											inner: inner.modelToDependencies({
-												model: host.page.model,
-												context: host.context,
-											}),
-										})
-									: Option.none(),
-						}),
-						dependenciesToStream: ({ maybeInstance }) =>
-							Option.match(maybeInstance, {
-								onNone: () => Stream.empty,
-								onSome: ({ key, orgId, instance, inner: dependencies }) =>
-									Stream.map(
-										inner.dependenciesToStream(dependencies, () => dependencies),
-										wrapFor(key, orgId, instance),
-									),
-							}),
-					},
+	/** Each runs in the registry's subscription slot of the same index while this page is open. */
+	const subscriptions = Object.values(spec.subscriptions ?? {}).map(
+		(inner): PageSubscription<WrappedType> => ({
+			dependenciesOf: (slot, context) =>
+				isOwnSlot(slot)
+					? Option.some(inner.modelToDependencies({ model: slot.model, context }))
+					: Option.none(),
+			isSameDependencies: inner.keepAliveEquivalence ?? Schema.toEquivalence(inner.dependenciesSchema),
+			streamOf: (dependencies, { key, orgId, instance }) =>
+				Stream.map(
+					inner.dependenciesToStream(dependencies, () => dependencies),
+					wrapFor(key, orgId, instance),
 				),
-			]),
-		),
+		}),
+	)
+
+	/** The page's own view under its own boundary. */
+	const hostView = Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>((slot, inputs, h) =>
+		isOwnSlot(slot)
+			? h.submodel({
+					slotId: id,
+					model: slot.model,
+					view: spec.view,
+					viewInputs: {
+						context: inputs.context,
+						isMobile: inputs.isMobile ?? false,
+						isBelowSm: inputs.isBelowSm ?? false,
+						isBelowLg: inputs.isBelowLg ?? false,
+					},
+					toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
+				})
+			: null,
+	)
+	const hostTopbarActions = Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>(
+		(slot, inputs, h) => {
+			const actions = spec.topbarActions
+			return isOwnSlot(slot) && actions !== undefined
+				? h.submodel({
+						slotId: `${id}:topbar`,
+						model: slot.model,
+						view: actions,
+						viewInputs: {
+							context: inputs.context,
+							isMobile: inputs.isMobile ?? false,
+							isBelowSm: inputs.isBelowSm ?? false,
+							isBelowLg: inputs.isBelowLg ?? false,
+						},
+						toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
+					})
+				: null
+		},
 	)
 
 	return {
-		id,
-		Slot,
-		Wrapped,
-		keyOf: (route: AppRoute): Option.Option<string> =>
-			ownsRoute(route) ? Option.some(keyOf(route)) : Option.none(),
 		init: (route: AppRoute, context: PageContext, instance: number) =>
 			ownsRoute(route)
 				? Option.some(step(keyOf(route), instance, context, spec.init(route, context)))
@@ -437,46 +583,10 @@ export const definePage = <
 		hasSource: spec.source !== undefined,
 		source: (slot: PageSlotBase): PageSourceRef | null =>
 			isOwnSlot(slot) && spec.source !== undefined ? spec.source(slot.model) : null,
-		/** The root embeds this; it renders the page's own view under its own boundary. */
-		hostView: Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>((slot, inputs, h) =>
-			isOwnSlot(slot)
-				? h.submodel({
-						slotId: id,
-						model: slot.model,
-						view: spec.view,
-						viewInputs: {
-							context: inputs.context,
-							isMobile: inputs.isMobile ?? false,
-							isBelowSm: inputs.isBelowSm ?? false,
-							isBelowLg: inputs.isBelowLg ?? false,
-						},
-						toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
-					})
-				: null,
-		),
-		/** The page's top-bar actions, embedded by the shell's top bar; nothing for most pages. */
-		hostTopbarActions: Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>(
-			(slot, inputs, h) => {
-				const actions = spec.topbarActions
-				return isOwnSlot(slot) && actions !== undefined
-					? h.submodel({
-							slotId: `${id}:topbar`,
-							model: slot.model,
-							view: actions,
-							viewInputs: {
-								context: inputs.context,
-								isMobile: inputs.isMobile ?? false,
-								isBelowSm: inputs.isBelowSm ?? false,
-								isBelowLg: inputs.isBelowLg ?? false,
-							},
-							toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
-						})
-					: null
-			},
-		),
-		/** Keys are prefixed with the page id: Subscription keys share one namespace. */
-		subscriptions: Object.fromEntries(
-			Object.entries(stamped).map(([key, entry]) => [`${id}.${key}`, entry]),
-		),
+		embedView: (h, slotId, slot, inputs, toParentMessage) =>
+			h.submodel({ slotId, model: slot, view: hostView, viewInputs: inputs, toParentMessage }),
+		embedTopbarActions: (h, slotId, slot, inputs, toParentMessage) =>
+			h.submodel({ slotId, model: slot, view: hostTopbarActions, viewInputs: inputs, toParentMessage }),
+		subscriptions,
 	}
 }

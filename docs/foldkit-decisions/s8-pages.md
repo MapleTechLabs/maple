@@ -16,7 +16,8 @@ leave (Hazel). Adding one touches the root in exactly one place: an entry in `pa
 | `derive.ts`                  | Pure derivations of the legacy component logic (grouping, health, deploy info)                       |
 | `view.ts`, `view-*.ts`       | `view = Submodel.defineView<Model, Message, PageViewInputs>` and its parts                           |
 | `subscription.ts`            | Live queries, keyed on `context`                                                                     |
-| `index.ts`                   | `export const page = definePage("Id", { Model, Message }, { routes, init, ... })`                    |
+| `index.ts`                   | `entry = definePage("Id", { Model, Message }, { routes, key? })`, `page = entry.lazy(...)`           |
+| `implementation.ts`          | `implementation = implementPage(entry, { init, update, view, subscriptions, ... })`                  |
 | `*.scene.test.ts`            | Scene tests of the update logic                                                                      |
 
 Shared pieces live in `page/kit/` (layout, time controls and picker, empty states, presence) and
@@ -29,6 +30,10 @@ Shared pieces live in `page/kit/` (layout, time controls and picker, empty state
   the Model. A new org builds a new instance; a pin or zone change calls `contextChanged`.
 - **Routes.** `definePage(id, schemas, { routes: ["Services"], key? })`. The instance survives while
   `key(route)` (default: the tag) is unchanged; a search change arrives as `routeChanged`.
+- **Lazy code.** Only `index.ts` (schemas, routes, key) loads with the app. `implementation.ts` loads
+  on first entry or link intent (`loadPageCode`); until then the root shows the page skeleton. Keep
+  `model.ts` and `message.ts` free of view and update imports, or they pull the page back into startup.
+  The open page's Subscriptions run in the registry's slots (`page.0` ... `page.23`), one per entry.
 - **Out.** The page never touches the URL or shell state. It returns a `PageOutMessage`:
   `RequestedNavigation({ url, isReplace })` (build the URL with `hrefOf(AppRoute.X({ search }))`,
   the same TanStack search encoding legacy writes) or `RequestedNamespacePin`.
@@ -37,20 +42,20 @@ Shared pieces live in `page/kit/` (layout, time controls and picker, empty state
   breadcrumbs via the spec's `breadcrumbs(model)`.
 
 ```ts
-export const page = definePage(
-	"ServicesList",
-	{ Model, Message },
-	{
-		routes: ["Services"],
-		init,
-		update,
-		routeChanged,
-		contextChanged,
-		view,
-		subscriptions,
-		breadcrumbs: () => [{ label: "Services" }],
-	},
-)
+// index.ts
+export const entry = definePage("ServicesList", { Model, Message }, { routes: ["Services"] })
+export const page = entry.lazy(() => import("./implementation"))
+
+// implementation.ts
+export const implementation = implementPage(entry, {
+	init,
+	update,
+	routeChanged,
+	contextChanged,
+	view,
+	subscriptions,
+	breadcrumbs: () => [{ label: "Services" }],
+})
 ```
 
 ## Data (S6 applied)

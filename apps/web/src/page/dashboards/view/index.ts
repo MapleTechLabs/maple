@@ -1,32 +1,13 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
-import { subscriptions } from "./subscription"
-import { init, routeChanged, update } from "./update"
-import { view } from "./view"
+import { pageCode } from "../../code"
 
 /** `/dashboards/$dashboardId`: one instance per dashboard; `mode=edit` and view params are search. */
-export const page = definePage(
+export const entry = definePage(
 	"DashboardView",
 	{ Model, Message },
-	{
-		routes: ["Dashboard"],
-		key: (route) => route.dashboardId,
-		init,
-		update,
-		routeChanged,
-		view,
-		subscriptions,
-		breadcrumbs: (model) => [
-			{ label: "Dashboards", href: "/dashboards" },
-			{
-				label:
-					model.status === "Loading"
-						? "Loading…"
-						: model.document === null
-							? "Not found"
-							: model.document.name,
-			},
-		],
-	},
+	{ routes: ["Dashboard"], key: (route) => route.dashboardId },
 )
+
+export const page = entry.lazy(pageCode.DashboardView)

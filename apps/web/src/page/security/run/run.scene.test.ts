@@ -21,7 +21,7 @@ import {
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
 import { eventsOf as eventLogOf, openFindingOf, phasesOf } from "./derive"
-import { subscriptions } from "./index"
+import { subscriptions } from "./implementation"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"

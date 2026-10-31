@@ -1,25 +1,13 @@
-import { definePage, pickCommands } from "../../contract"
+import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
-import { subscriptions } from "./subscription"
-import { contextChanged, init, routeChanged, update } from "./update"
-import { breadcrumbs, view } from "./view"
+import { pageCode } from "../../code"
 
 /** `/traces/$traceId`: one instance per trace; `spanId`, `view` and `t` arrive as `routeChanged`. */
-export const page = definePage(
+export const entry = definePage(
 	"TraceDetail",
 	{ Model, Message },
-	{
-		routes: ["Trace"],
-		key: (route) => route.traceId,
-		init,
-		/** `warmAtoms([getSpanHierarchyResultAtom({ traceId, timestamp: t })])` in the route loader. */
-		preload: (route, context) => pickCommands(init(route, context), ["FetchSpanHierarchy"]),
-		update,
-		routeChanged,
-		contextChanged,
-		view,
-		subscriptions,
-		breadcrumbs,
-	},
+	{ routes: ["Trace"], key: (route) => route.traceId },
 )
+
+export const page = entry.lazy(pageCode.TraceDetail)

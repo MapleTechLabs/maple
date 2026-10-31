@@ -1,4 +1,4 @@
-import { Array, Option, Predicate, Schema } from "effect"
+import { Array, Effect, Option, Predicate, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import type { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -6,14 +6,16 @@ import type { Resources } from "../platform/resources"
 import type { AppRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import type { PageSourceRef } from "../shell/source-link"
-import type {
-	PageContext,
-	PageHost,
-	PageMessageBase,
-	PageOutMessage,
-	PageSlotBase,
-	PageStep,
-	PageViewInputs,
+import {
+	PageSubscriptionDependencies,
+	type PageContext,
+	type PageHost,
+	type PageImplementation,
+	type PageMessageBase,
+	type PageOutMessage,
+	type PageSlotBase,
+	type PageStep,
+	type PageViewInputs,
 } from "./contract"
 import * as AgentSessionsList from "./agent-sessions/list"
 import * as AgentSession from "./agent-sessions/session"
@@ -96,6 +98,7 @@ import * as TracesList from "./traces/list"
 /**
  * Every page, registered once. Adding a page: import its module and append `X.page` below;
  * that is the only shared file a page touches. Shell routes without a page render the placeholder.
+ * Only each page's schemas, routes and key load with the app; its code loads on first use.
  */
 export const pages = [
 	ServicesList.page,
@@ -188,6 +191,70 @@ export type PageSlot = typeof PageSlot.Type
 export const PageMessage = Schema.Union(pages.map((page) => page.Wrapped))
 export type PageMessage = typeof PageMessage.Type
 
+type LoadedPage = PageImplementation<PageSlot, PageMessage>
+
+/**
+ * Page code loaded so far, by id. `loadPageCode` fills it before its Message is dispatched, and
+ * `update` and `view` read it: a page's slot exists only once its code is here (s2 "Lazy view registry").
+ */
+const loadedPages = new Map<string, LoadedPage>()
+
+const loadedPage = (id: string): Option.Option<LoadedPage> => Option.fromNullishOr(loadedPages.get(id))
+
+const pageOfRoute = (route: AppRoute) => Array.findFirst(pages, (page) => Option.isSome(page.keyOf(route)))
+
+/** The page rendering `route` while its code is not loaded: the root loads it, then enters. */
+export const unloadedPageOf = (route: AppRoute): Option.Option<string> =>
+	Option.filter(
+		Option.map(pageOfRoute(route), (page) => page.id),
+		(id) => !loadedPages.has(id),
+	)
+
+export class PageLoadError extends Schema.TaggedError<PageLoadError>()("@maple/web/PageLoadError", {
+	message: Schema.String,
+	pageId: Schema.String,
+	cause: Schema.Defect(),
+}) {}
+
+/** More than any page declares: a page's i-th Subscription runs in slot i while it is open. */
+const PAGE_SUBSCRIPTION_SLOTS = 24
+
+/** Imports a page's code once; a loaded page answers at once. */
+export const loadPageCode = (id: string): Effect.Effect<void, PageLoadError> =>
+	Option.match(
+		Array.findFirst(pages, (page) => page.id === id && !loadedPages.has(id)),
+		{
+			onNone: () => Effect.void,
+			onSome: (page) =>
+				Effect.tryPromise({
+					try: (): Promise<LoadedPage> => page.loadModule().then((module) => module.implementation),
+					catch: (cause) =>
+						new PageLoadError({ message: `The ${id} page failed to load`, pageId: id, cause }),
+				}).pipe(
+					Effect.flatMap((implementation) =>
+						implementation.subscriptions.length > PAGE_SUBSCRIPTION_SLOTS
+							? Effect.fail(
+									new PageLoadError({
+										message: `The ${id} page has more Subscriptions than PAGE_SUBSCRIPTION_SLOTS`,
+										pageId: id,
+										cause: undefined,
+									}),
+								)
+							: Effect.sync(() => {
+									loadedPages.set(id, implementation)
+								}),
+					),
+				),
+		},
+	)
+
+/** Every page's code: Scene tests and a dev reload that restores a Model with a page in it. */
+export const loadEveryPage: Effect.Effect<void, PageLoadError> = Effect.forEach(
+	pages,
+	(page) => loadPageCode(page.id),
+	{ concurrency: "unbounded", discard: true },
+)
+
 /** The page slot after a transition, with the Commands and OutMessage that came with it. */
 export interface PageTransition {
 	readonly slot: PageSlot | null
@@ -204,8 +271,6 @@ const unchanged = (slot: PageSlot | null): PageTransition => ({
 const toTransition = (step: Option.Option<PageStep<PageSlot, PageMessage>>, fallback: PageSlot | null) =>
 	Option.match(step, { onNone: () => unchanged(fallback), onSome: (found): PageTransition => found })
 
-const pageById = (id: string) => Array.findFirst(pages, (page) => page.id === id)
-
 /**
  * Route entry: keep the instance when its key and org are unchanged (it gets `routeChanged`),
  * otherwise revive a parked instance of the route's page or build it, as instance `nextInstance`.
@@ -218,20 +283,22 @@ export const enterRoute = (
 	parked: ReadonlyArray<PageSlot> = [],
 ): PageTransition =>
 	Option.match(
-		Array.findFirst(pages, (page) => Option.isSome(page.keyOf(route))),
+		Option.flatMap(pageOfRoute(route), (entry) =>
+			Option.map(loadedPage(entry.id), (page) => ({ entry, page })),
+		),
 		{
 			onNone: () => unchanged(null),
-			onSome: (page) => {
+			onSome: ({ entry, page }) => {
 				const isSameInstance =
 					current !== null &&
-					current._tag === page.id &&
+					current._tag === entry.id &&
 					current.orgId === context.orgId &&
-					Option.contains(page.keyOf(route), current.key)
+					Option.contains(entry.keyOf(route), current.key)
 				if (isSameInstance) return toTransition(page.routeChanged(current, route, context), current)
 				const revived = Option.flatMap(
 					Array.findFirst(
 						parked,
-						(slot) => slot._tag === page.id && Option.contains(page.keyOf(route), slot.key),
+						(slot) => slot._tag === entry.id && Option.contains(entry.keyOf(route), slot.key),
 					),
 					(slot): Option.Option<PageStep<PageSlot, PageMessage>> =>
 						page.revive(slot, route, context, nextInstance),
@@ -275,7 +342,7 @@ export const parkPages = (
 	const isLeft =
 		left !== null &&
 		pageIdentity(left) !== pageIdentity(entered) &&
-		Array.some(pages, (page) => page.id === left._tag && page.isRevivable) &&
+		Option.exists(loadedPage(left._tag), (page) => page.isRevivable) &&
 		!hasLoadInFlight(left.model)
 	const sameSlot = (a: PageSlotBase, b: PageSlotBase) => a._tag === b._tag && a.key === b.key
 	return [...(isLeft ? [left] : []), ...parked]
@@ -291,7 +358,7 @@ export const preloadRoute = (
 	nowMs: number,
 ): ReadonlyArray<Command.Command<PageMessage, never, Resources>> =>
 	Option.getOrElse(
-		Array.findFirst(pages, (page) => Option.isSome(page.keyOf(route))).pipe(
+		Option.flatMap(pageOfRoute(route), (entry) => loadedPage(entry.id)).pipe(
 			Option.flatMap(
 				(page): Option.Option<ReadonlyArray<Command.Command<PageMessage, never, Resources>>> =>
 					page.preload(route, context, nowMs),
@@ -311,7 +378,7 @@ export const updatePage = (
 ): PageTransition =>
 	current === null
 		? unchanged(current)
-		: Option.match(pageById(message._tag), {
+		: Option.match(loadedPage(message._tag), {
 				onNone: () => unchanged(current),
 				onSome: (page) => toTransition(page.update(current, message, context), current),
 			})
@@ -334,7 +401,7 @@ export const blockNavigation = (
 		(page) => page.id === current._tag && Option.contains(page.keyOf(route), current.key),
 	)
 	if (isSameInstance) return Option.none()
-	return Option.flatMap(pageById(current._tag), (page) =>
+	return Option.flatMap(loadedPage(current._tag), (page) =>
 		toHeld(page.blockedNavigation(current, url, context)),
 	)
 }
@@ -342,7 +409,7 @@ export const blockNavigation = (
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>
 	current === null
 		? unchanged(current)
-		: Option.match(pageById(current._tag), {
+		: Option.match(loadedPage(current._tag), {
 				onNone: () => unchanged(current),
 				onSome: (page) => toTransition(page.contextChanged(current, context), current),
 			})
@@ -350,24 +417,91 @@ export const changeContext = (current: PageSlot | null, context: PageContext): P
 export const settleInfraSurfaces = (current: PageSlot | null, context: PageContext): PageTransition =>
 	current === null
 		? unchanged(current)
-		: Option.match(pageById(current._tag), {
+		: Option.match(loadedPage(current._tag), {
 				onNone: () => unchanged(current),
 				onSome: (page) => toTransition(page.infraSurfacesSettled(current, context), current),
 			})
 
 export const pageBreadcrumbs = (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
-	Option.match(pageById(slot._tag), { onNone: () => [], onSome: (page) => page.breadcrumbs(slot) })
+	Option.match(loadedPage(slot._tag), { onNone: () => [], onSome: (page) => page.breadcrumbs(slot) })
 
 /** The source the page's data comes from, for the top bar's link. */
 export const pageSource = (slot: PageSlotBase): PageSourceRef | null =>
-	Option.match(pageById(slot._tag), { onNone: () => null, onSome: (page) => page.source(slot) })
+	Option.match(loadedPage(slot._tag), { onNone: () => null, onSome: (page) => page.source(slot) })
 
 /** The page links to its source, so entering it reads the org's sources. */
 export const pageHasSource = (slot: PageSlotBase): boolean =>
-	Option.match(pageById(slot._tag), { onNone: () => false, onSome: (page) => page.hasSource })
+	Option.match(loadedPage(slot._tag), { onNone: () => false, onSome: (page) => page.hasSource })
 
-export const pageSubscriptions = Subscription.aggregate<PageHost, PageMessage, Resources>()(
-	...pages.map((page) => page.subscriptions),
+const SlotInstance = Schema.Struct({
+	page: Schema.String,
+	key: Schema.String,
+	orgId: Schema.String,
+	instance: Schema.Number,
+	inner: PageSubscriptionDependencies,
+})
+type SlotInstance = typeof SlotInstance.Type
+const SlotDependencies = { maybeInstance: Schema.Option(SlotInstance) }
+type SlotDependencies = Schema.Struct.Type<typeof SlotDependencies>
+
+const subscriptionAt = (id: string, index: number) =>
+	Option.flatMap(loadedPage(id), (page) => Option.fromNullishOr(page.subscriptions[index]))
+
+const slotInstanceOf = (host: PageHost, index: number): Option.Option<SlotInstance> => {
+	const { page: slot, context } = host
+	if (slot === null || context === null) return Option.none()
+	return Option.flatMap(subscriptionAt(slot._tag, index), (subscription) =>
+		Option.map(subscription.dependenciesOf(slot, context), (inner) => ({
+			page: slot._tag,
+			key: slot.key,
+			orgId: slot.orgId,
+			instance: slot.instance,
+			inner,
+		})),
+	)
+}
+
+const isSameSlotInstance = (index: number) =>
+	Option.makeEquivalence<SlotInstance>(
+		(left, right) =>
+			left.page === right.page &&
+			left.key === right.key &&
+			left.orgId === right.orgId &&
+			left.instance === right.instance &&
+			Option.exists(subscriptionAt(left.page, index), (subscription) =>
+				subscription.isSameDependencies(left.inner, right.inner),
+			),
+	)
+
+/**
+ * The open page's Subscriptions, one per slot. A slot restarts on a new instance or when its
+ * Subscription's own dependencies change, and stamps its Messages with the instance.
+ */
+export const pageSubscriptions = Subscription.make<PageHost, PageMessage, Resources>()((entry) =>
+	Object.fromEntries(
+		Array.makeBy(PAGE_SUBSCRIPTION_SLOTS, (index) => {
+			const isSame = isSameSlotInstance(index)
+			return [
+				`page.${index}`,
+				entry(SlotDependencies, {
+					modelToDependencies: (host): SlotDependencies => ({
+						maybeInstance: slotInstanceOf(host, index),
+					}),
+					keepAliveEquivalence: (left: SlotDependencies, right: SlotDependencies) =>
+						isSame(left.maybeInstance, right.maybeInstance),
+					dependenciesToStream: ({ maybeInstance }: SlotDependencies) =>
+						Option.match(
+							Option.flatMap(maybeInstance, (instance) =>
+								Option.map(subscriptionAt(instance.page, index), (subscription) =>
+									subscription.streamOf(instance.inner, instance),
+								),
+							),
+							{ onNone: () => Stream.empty, onSome: (stream) => stream },
+						),
+				}),
+			]
+		}),
+	),
 )
 
 /** The page's view boundary: a new instance (another org on the same route, too) mounts afresh. */
@@ -380,16 +514,9 @@ export const viewPage = <ParentMessage>(
 	inputs: PageViewInputs,
 	toParentMessage: (message: PageMessage) => ParentMessage,
 ): Html =>
-	Option.match(pageById(slot._tag), {
+	Option.match(loadedPage(slot._tag), {
 		onNone: () => h.empty,
-		onSome: (page) =>
-			h.submodel({
-				slotId: pageSlotId(slot),
-				model: slot,
-				view: page.hostView,
-				viewInputs: inputs,
-				toParentMessage,
-			}),
+		onSome: (page) => page.embedView(h, pageSlotId(slot), slot, inputs, toParentMessage),
 	})
 
 /** The active page's top-bar actions (`DashboardPage topbarActions`), or nothing. */
@@ -399,14 +526,8 @@ export const viewPageTopbarActions = <ParentMessage>(
 	inputs: PageViewInputs,
 	toParentMessage: (message: PageMessage) => ParentMessage,
 ): Html =>
-	Option.match(pageById(slot._tag), {
+	Option.match(loadedPage(slot._tag), {
 		onNone: () => h.empty,
 		onSome: (page) =>
-			h.submodel({
-				slotId: `page-topbar:${pageIdentity(slot)}`,
-				model: slot,
-				view: page.hostTopbarActions,
-				viewInputs: inputs,
-				toParentMessage,
-			}),
+			page.embedTopbarActions(h, `page-topbar:${pageIdentity(slot)}`, slot, inputs, toParentMessage),
 	})

@@ -1,0 +1,17 @@
+import { implementPage } from "../../../contract"
+import { entry } from "./index"
+import { subscriptions } from "./subscription"
+import { contextChanged, init, routeChanged, update } from "./update"
+import { view } from "./view"
+import { platformSource } from "../../../../shell/source-link"
+
+export const implementation = implementPage(entry, {
+	init,
+	update,
+	routeChanged,
+	contextChanged,
+	view,
+	subscriptions,
+	source: () => platformSource("supabase"),
+	breadcrumbs: () => [{ label: "Infrastructure", href: "/infra" }, { label: "Supabase" }],
+})

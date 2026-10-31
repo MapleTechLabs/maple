@@ -10,6 +10,7 @@ import { fromString as urlFromString, toString as urlToString, type Url } from "
 import {
 	CheckSession,
 	LoadCustomer,
+	LoadPageCode,
 	WaitCustomerGrace,
 	HoldPreloads,
 	ReleaseReads,
@@ -28,7 +29,7 @@ import {
 	WriteSessionTimeRange,
 } from "./command"
 import { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageCode, Session } from "./model"
 import { isRedirectOnlyRoute, rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
 import {
@@ -55,6 +56,7 @@ import {
 	pageSource,
 	preloadRoute,
 	type PageTransition,
+	unloadedPageOf,
 	updatePage,
 } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -420,11 +422,58 @@ const loadPage: Step = (model) =>
 					: { ...left, model: modifyFields(left.model, { parkedPages: () => [] }) }
 			},
 			onSome: (context) =>
-				applyPage(
-					enterRoute(model.page, model.route, context, model.pageInstances + 1, model.parkedPages),
-				)(model),
+				Option.match(unloadedPageOf(model.route), {
+					onSome: (pageId) => awaitPageCode(model, pageId),
+					onNone: () =>
+						applyPage(
+							enterRoute(
+								model.page,
+								model.route,
+								context,
+								model.pageInstances + 1,
+								model.parkedPages,
+							),
+						)(
+							model.pageCode._tag === "Ready"
+								? model
+								: modifyFields(model, { pageCode: () => PageCode.Ready() }),
+						),
+				}),
 		},
 	)
+
+const isAwaitingPageCode = (model: Model, pageId: string) =>
+	model.pageCode._tag !== "Ready" && model.pageCode.pageId === pageId
+
+/**
+ * The route's page has no code yet: the open page is left and its code loaded, once (`Failed` waits
+ * for Reload). Its held reads stay held until the next page enters and releases what it does not read.
+ */
+const awaitPageCode = (model: Model, pageId: string): UpdateReturn => {
+	const left =
+		model.page === null
+			? model
+			: modifyFields(model, {
+					page: () => null,
+					parkedPages: (parked) => parkPages(parked, model.page, null),
+				})
+	return isAwaitingPageCode(model, pageId)
+		? { model: left }
+		: {
+				model: modifyFields(left, { pageCode: () => PageCode.Loading({ pageId }) }),
+				commands: [LoadPageCode({ pageId, preloadHref: null })],
+			}
+}
+
+/** A page's code arrived: the route waiting on it enters, and the link that asked runs its preload. */
+const loadedPageCode = (pageId: string, preloadHref: string | null, nowMs: number): Step =>
+	Update.combine([
+		(model: Model) =>
+			model.pageCode._tag === "Loading" && model.pageCode.pageId === pageId
+				? loadPage(modifyFields(model, { pageCode: () => PageCode.Ready() }))
+				: { model },
+		(model: Model) => (preloadHref === null ? { model } : preloadLink(model, preloadHref, nowMs)),
+	])
 
 // ONBOARDING
 
@@ -938,26 +987,32 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 				() => hovered,
 			)
 			const route = urlToAppRoute(url)
-			return Option.map(pageContextOf(modifyFields(model, { route: () => route })), (context) =>
-				preloadRoute(route, context, nowMs),
-			)
+			return Option.map(pageContextOf(modifyFields(model, { route: () => route })), (context) => ({
+				route,
+				context,
+			}))
 		}),
 		{
 			onNone: () => ({ model }),
-			onSome: (commands) => {
-				const keys = Preload.keysOf(commands)
-				return {
-					model,
-					commands: [
-						...commands.map(
-							Command.mapMessage((message) => Message.GotPreloadMessage({ message })),
-						),
-						...(keys.length === 0 ? [] : [HoldPreloads({ keys })]),
-					],
-				}
-			},
+			onSome: ({ route, context }) =>
+				Option.match(unloadedPageOf(route), {
+					// The page's code first, as the router loaded a route's chunk before its loader.
+					onSome: (pageId) => ({ model, commands: [LoadPageCode({ pageId, preloadHref: href })] }),
+					onNone: () => preloadPageReads(model, preloadRoute(route, context, nowMs)),
+				}),
 		},
 	)
+
+const preloadPageReads = (model: Model, commands: ReturnType<typeof preloadRoute>): UpdateReturn => {
+	const keys = Preload.keysOf(commands)
+	return {
+		model,
+		commands: [
+			...commands.map(Command.mapMessage((message) => Message.GotPreloadMessage({ message }))),
+			...(keys.length === 0 ? [] : [HoldPreloads({ keys })]),
+		],
+	}
+}
 
 /** A new URL: the route and the page it enters. The remembered window joined in `navigateTo`, never here. */
 const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
@@ -1017,6 +1072,13 @@ const foldMessage = (model: Model, message: Message) =>
 		FailedCheckSession: () => signedOut(model),
 		ChangedSelfHostedSession: () => ({ model, commands: [CheckSession()] }),
 		CompletedSaveSessionToken: () => ({ model, commands: [CheckSession()] }),
+		CompletedLoadPageCode: ({ pageId, preloadHref, nowMs }) =>
+			loadedPageCode(pageId, preloadHref, nowMs)(model),
+		FailedLoadPageCode: ({ pageId, failure }) =>
+			model.pageCode._tag === "Loading" && model.pageCode.pageId === pageId
+				? { model: modifyFields(model, { pageCode: () => PageCode.Failed({ pageId, failure }) }) }
+				: { model },
+		ClickedReloadPage: () => ({ model, commands: [LoadExternal({ href: hrefOf(model.route) })] }),
 		CompletedLoadClerk: ({ snapshot }) =>
 			appliedClerkSnapshot(snapshot, true)(modifyFields(model, { clerk: () => ClerkPhase.Loaded() })),
 		FailedLoadClerk: ({ message }) =>

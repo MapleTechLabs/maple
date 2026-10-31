@@ -1,22 +1,13 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
-import { subscriptions } from "./subscription"
-import { init, routeChanged, update } from "./update"
-import { breadcrumbsOf, view } from "./view"
+import { pageCode } from "../../code"
 
 /** `/sources/$sourceId`: one instance per source; a tab link is a `routeChanged`. */
-export const page = definePage(
+export const entry = definePage(
 	"SourceDetail",
 	{ Model, Message },
-	{
-		routes: ["Source"],
-		key: (route) => route.sourceId,
-		init,
-		update,
-		routeChanged,
-		view,
-		subscriptions,
-		breadcrumbs: breadcrumbsOf,
-	},
+	{ routes: ["Source"], key: (route) => route.sourceId },
 )
+
+export const page = entry.lazy(pageCode.SourceDetail)

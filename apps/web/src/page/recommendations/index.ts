@@ -1,19 +1,13 @@
 import { definePage } from "../contract"
 import { Message } from "./message"
 import { Model } from "./model"
-import { init, update } from "./update"
-import { breadcrumbsOf, view } from "./view"
+import { pageCode } from "../code"
 
 /** `/recommendations/$recommendationKey`: one instance per recommendation. */
-export const page = definePage(
+export const entry = definePage(
 	"Recommendation",
 	{ Model, Message },
-	{
-		routes: ["Recommendation"],
-		key: (route) => route.recommendationKey,
-		init,
-		update,
-		view,
-		breadcrumbs: breadcrumbsOf,
-	},
+	{ routes: ["Recommendation"], key: (route) => route.recommendationKey },
 )
+
+export const page = entry.lazy(pageCode.Recommendation)

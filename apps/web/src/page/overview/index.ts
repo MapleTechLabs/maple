@@ -1,23 +1,9 @@
 import { definePage } from "../contract"
 import { Message } from "./message"
 import { Model } from "./model"
-import { subscriptions } from "./subscription"
-import { contextChanged, init, revive, routeChanged, update } from "./update"
-import { view } from "./view"
+import { pageCode } from "../code"
 
 /** `/`: the Overview home page. One instance per org; search changes arrive as `routeChanged`. */
-export const page = definePage(
-	"Overview",
-	{ Model, Message },
-	{
-		routes: ["Home"],
-		init,
-		update,
-		routeChanged,
-		revive,
-		contextChanged,
-		view,
-		subscriptions,
-		breadcrumbs: () => [{ label: "Overview", isPageHeading: true }],
-	},
-)
+export const entry = definePage("Overview", { Model, Message }, { routes: ["Home"] })
+
+export const page = entry.lazy(pageCode.Overview)

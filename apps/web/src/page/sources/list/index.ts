@@ -1,18 +1,9 @@
 import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
-import { init, update } from "./update"
-import { view } from "./view"
+import { pageCode } from "../../code"
 
 /** `/sources`: every source the org sends from. */
-export const page = definePage(
-	"SourcesList",
-	{ Model, Message },
-	{
-		routes: ["Sources"],
-		init,
-		update,
-		view,
-		breadcrumbs: () => [{ label: "Sources", isPageHeading: true }],
-	},
-)
+export const entry = definePage("SourcesList", { Model, Message }, { routes: ["Sources"] })
+
+export const page = entry.lazy(pageCode.SourcesList)
