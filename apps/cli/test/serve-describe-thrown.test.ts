@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strictEqual } from "node:assert"
-import { describeThrown } from "../src/server/serve"
+import { describeThrown } from "@maple/local-server/serve"
 
 // Production carried 94 spans reading exactly `Error: {}` at `POST /v1/traces`:
 // one issue, no message, no type, no stack past the span name. Every case below

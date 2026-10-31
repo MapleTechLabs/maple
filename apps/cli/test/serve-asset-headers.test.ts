@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strictEqual } from "node:assert"
-import { type AssetResolver, serveAsset } from "../src/server/serve"
+import { type AssetResolver, serveAsset } from "@maple/local-server/serve"
 
 // The local server hands out the dashboard shell; it must not be frameable or run injected script.
 const assets: AssetResolver = (path) =>

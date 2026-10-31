@@ -8,9 +8,8 @@ import { Clock, Context, Effect, Exit, Layer, Metric, Result, Schema, type Scope
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
 import { gunzipSync } from "node:zlib"
-import { TelemetryLayer } from "../core/telemetry"
-import { connectionHostForBindHost, isLoopbackHostname, serverUrl } from "../lib/local-address"
-import { MAPLE_VERSION } from "../version"
+import { connectionHostForBindHost, isLoopbackHostname, serverUrl } from "./local-address"
+import { MAPLE_VERSION } from "./version"
 import {
 	acquireChdb,
 	type Chdb,
@@ -74,6 +73,7 @@ import {
 import { applyLocalIngestRules, localIngestRulesPath, makeLocalIngestRulesSource } from "./ingest-rules"
 import { localServiceMapRollupLoop } from "./service-map-rollup"
 import { ensureStoreMarkerDurable, storeHasData } from "./store-version"
+import { describeError, errnoCode } from "./store-errors"
 import {
 	ensureMaintenanceToken,
 	maintenanceTokenMatches,
@@ -108,6 +108,8 @@ export interface ServerOptions {
 	readonly assets?: AssetResolver
 	/** Ingest key and access token; omit for an open loopback server. */
 	readonly auth?: RemoteAuth
+	/** Host-owned request instrumentation. The embedded runtime never enables cloud exporters itself. */
+	readonly telemetryLayer?: Layer.Layer<never>
 }
 
 export class ServerBindError extends Schema.TaggedError<ServerBindError>()("@maple/cli/ServerBindError", {
@@ -121,6 +123,22 @@ export class LocalServerConfigError extends Schema.TaggedError<LocalServerConfig
 	"@maple/cli/LocalServerConfigError",
 	{ message: Schema.String, source: Schema.String },
 ) {}
+
+/** Fail fast when the port is taken. Not atomic (the real bind can still lose
+ *  a race), but it keeps a busy port from costing a reset or a wipe. */
+export const ensurePortFree = (hostname: string, port: number): Effect.Effect<void, ServerBindError> =>
+	Effect.try({
+		try: () => Bun.listen({ hostname, port, socket: { data() {} } }).stop(true),
+		catch: (error) =>
+			new ServerBindError({
+				hostname,
+				port,
+				message:
+					errnoCode(error) === "EADDRINUSE"
+						? `port ${port} on ${hostname} is already in use; choose another with --port, or stop whatever holds it`
+						: `cannot bind ${hostname}:${port}: ${describeError(error)}`,
+			}),
+	})
 
 /** Vite dev server origins for apps/local-ui (`vite --port 4319`), which proxies here. */
 export const LOCAL_UI_DEV_ORIGINS = [
@@ -1730,7 +1748,9 @@ export const startServer = (
 			),
 		)
 		const runtime = yield* Effect.acquireRelease(
-			Effect.sync(() => ManagedRuntime.make(Layer.mergeAll(TelemetryLayer, eventingLayer))),
+			Effect.sync(() =>
+				ManagedRuntime.make(Layer.mergeAll(options.telemetryLayer ?? Layer.empty, eventingLayer)),
+			),
 			(rt) => Effect.promise(() => rt.dispose()),
 		)
 		const services = yield* runtime.contextEffect.pipe(

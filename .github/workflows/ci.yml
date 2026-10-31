@@ -77,6 +77,7 @@ jobs:
                       cli:
                         - *base
                         - 'apps/cli/**'
+                        - 'packages/local-server/**'
                         - 'apps/local-ui/**'
                         # local-ui renders apps/web's source modules.
                         - 'apps/web/src/**'
@@ -95,6 +96,7 @@ jobs:
                       archive:
                         - *base
                         - 'apps/cli/**'
+                        - 'packages/local-server/**'
                         - 'apps/local-ui/**'
                         - 'scripts/build-local-binary.sh'
                         - 'scripts/gen-ui-embed.ts'

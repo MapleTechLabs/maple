@@ -8,7 +8,7 @@ import {
 	durableWrite,
 	durableWriteFileSync,
 	ensurePrivateDirectory,
-} from "../src/server/durable-files"
+} from "@maple/local-server/durable-files"
 
 const withRoot = async (run: (root: string) => Promise<void>): Promise<void> => {
 	const root = mkdtempSync(join(tmpdir(), "maple-durable-files-test-"))

@@ -19,14 +19,17 @@ import {
 	generationManifestPath,
 	generationRoot,
 	nextMidnightUtc,
-} from "../src/server/archives/paths"
-import { promoteGeneration, selectActiveGeneration } from "../src/server/archives/generation"
-import { type ArchiveGenerationManifest, parseArchiveActivePointer } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { rebuildCatalog } from "../src/server/archives/listing"
-import { planArchiveGc, runArchiveGc, verifyCompletedGcInvariants } from "../src/server/archives/gc"
-import { writeInitialIntent, type GcOperationIntent } from "../src/server/archives/journal"
+} from "@maple/local-server/archives/paths"
+import { promoteGeneration, selectActiveGeneration } from "@maple/local-server/archives/generation"
+import {
+	type ArchiveGenerationManifest,
+	parseArchiveActivePointer,
+} from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { rebuildCatalog } from "@maple/local-server/archives/listing"
+import { planArchiveGc, runArchiveGc, verifyCompletedGcInvariants } from "@maple/local-server/archives/gc"
+import { writeInitialIntent, type GcOperationIntent } from "@maple/local-server/archives/journal"
 
 // Hostile unit tests for archive garbage collection (Gate 3b). These cover the
 // deterministic deletion-set logic, keep-N retention, fail-closed on

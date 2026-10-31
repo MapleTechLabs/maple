@@ -12,8 +12,8 @@
 import { mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
 
 // A traces-shaped table with an added Nullable(String) column to expose the
 // NULL-vs-sentinel-string collision generically.

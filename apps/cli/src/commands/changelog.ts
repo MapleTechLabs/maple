@@ -6,7 +6,7 @@ import { stripV } from "../core/update"
 import { CliUsageError } from "../lib/errors"
 import { chosenFormat, printJson } from "../lib/output"
 import { bold } from "../lib/style"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 
 const VERSION_RE = /^v?\d+\.\d+\.\d+$/
 

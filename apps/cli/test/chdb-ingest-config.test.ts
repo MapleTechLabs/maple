@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Chdb, writeIngestConfig } from "../src/server/chdb"
+import { Chdb, writeIngestConfig } from "@maple/local-server/chdb"
 import { describeWithChdb } from "./libchdb-test-support"
 
 // chDB silently ignores `--merge_tree.*` arguments, so the only proof the ingest

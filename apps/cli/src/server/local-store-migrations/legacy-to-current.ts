@@ -1,16 +1,12 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash } from "node:crypto"
 import { Schema } from "effect"
-import { decodeJsonEachRow, decodeJsonObjectRows } from "../chdb-rows"
-import {
-	LOCAL_SCHEMA_V1_MANIFEST,
-	LOCAL_SCHEMA_V1_SQL,
-	LEGACY_LOCAL_SCHEMA,
-	LOCAL_SCHEMA_V1,
-} from "../schema-identity"
-import { assertPhysicalSchema } from "../schema-physical"
+import { decodeJsonEachRow, decodeJsonObjectRows } from "@maple/local-server/chdb-rows"
+import { LEGACY_LOCAL_SCHEMA, LOCAL_SCHEMA_V1 } from "@maple/local-server/schema-identity"
+import { LOCAL_SCHEMA_V1_MANIFEST, LOCAL_SCHEMA_V1_SQL } from "../schema-snapshots"
+import { assertPhysicalSchema } from "@maple/local-server/schema-physical"
 import { strictDecoder, UnsignedDecimal } from "./journal-codecs"
-import type { LocalSchemaColumn } from "../schema-manifest"
+import type { LocalSchemaColumn } from "@maple/local-server/schema-manifest"
 import type {
 	LocalStoreMigrationModule,
 	MigrationModuleContext,

@@ -32,68 +32,6 @@ export class ServerOptionError extends Schema.TaggedError<ServerOptionError>()(
 	},
 ) {}
 
-/** The dirty-store policy in force when the store turned out to be unclean. */
-export const DirtyStorePolicy = Schema.Literals(["fail", "restore-checkpoint", "reset"])
-
-/**
- * The store was left open by a server that died without closing chDB. Reopening
- * it can crash chDB natively, so startup refuses.
- *
- * `checkpointAvailable` is the field worth grouping on: without a checkpoint
- * there is nothing to restore and the only way forward is `--reset`, which is a
- * materially different user experience from the recoverable case.
- */
-export class LocalStoreDirtyError extends Schema.TaggedError<LocalStoreDirtyError>()(
-	"@maple/cli/LocalStoreDirtyError",
-	{
-		dataDir: Schema.String,
-		policy: DirtyStorePolicy,
-		checkpointAvailable: Schema.Boolean,
-		message: Schema.String,
-	},
-) {}
-
-/** The store was written by a different chDB build; loading it would SIGTRAP. */
-export class LocalStoreIncompatibleError extends Schema.TaggedError<LocalStoreIncompatibleError>()(
-	"@maple/cli/LocalStoreIncompatibleError",
-	{
-		dataDir: Schema.String,
-		storeBuild: Schema.String,
-		currentBuild: Schema.String,
-		message: Schema.String,
-	},
-) {}
-
-/** The store was bootstrapped from an older bundled schema and needs migrating. */
-export class LocalStoreSchemaStaleError extends Schema.TaggedError<LocalStoreSchemaStaleError>()(
-	"@maple/cli/LocalStoreSchemaStaleError",
-	{ dataDir: Schema.String, message: Schema.String },
-) {}
-
-/**
- * The store's marker records a schema version newer than this build knows: a
- * downgrade. Distinct from a stale schema because the remedy is reinstalling
- * the newer maple, never a reset.
- */
-export class LocalStoreFromNewerMapleError extends Schema.TaggedError<LocalStoreFromNewerMapleError>()(
-	"@maple/cli/LocalStoreFromNewerMapleError",
-	{
-		dataDir: Schema.String,
-		storeSchemaVersion: Schema.Number,
-		currentSchemaVersion: Schema.Number,
-		message: Schema.String,
-	},
-) {}
-
-/** Which part of the local-store migration journal the command was doing. */
-export const MigrationPhase = Schema.Literals(["read-journal", "resume", "preserve"])
-
-/** An unfinished schema migration blocks startup, or its journal is unreadable. */
-export class LocalStoreMigrationError extends Schema.TaggedError<LocalStoreMigrationError>()(
-	"@maple/cli/LocalStoreMigrationError",
-	{ dataDir: Schema.String, phase: MigrationPhase, message: Schema.String },
-) {}
-
 /** Why no checkpoint could be selected: none was ever taken, another build took it, or the registry is unusable. */
 export const CheckpointUnavailableReason = Schema.Literals(["none", "other_build", "unusable"])
 
@@ -121,12 +59,6 @@ export class BackgroundServerSpawnError extends Schema.TaggedError<BackgroundSer
 export class BackgroundServerTimeoutError extends Schema.TaggedError<BackgroundServerTimeoutError>()(
 	"@maple/cli/BackgroundServerTimeoutError",
 	{ logPath: Schema.String, timeoutMs: Schema.Number, message: Schema.String },
-) {}
-
-/** A PID, discovery, or legacy state file beside the data dir could not be read or written. */
-export class ServerStateFileError extends Schema.TaggedError<ServerStateFileError>()(
-	"@maple/cli/ServerStateFileError",
-	{ path: Schema.String, message: Schema.String },
 ) {}
 
 /** The detached child exited before it was ready; its own error is in the log. */

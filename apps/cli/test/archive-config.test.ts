@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strictEqual, throws } from "node:assert"
-import { DEFAULT_ARCHIVE_TUNING, resolveArchiveTuning } from "../src/server/archives/config"
+import { DEFAULT_ARCHIVE_TUNING, resolveArchiveTuning } from "@maple/local-server/archives/config"
 
 const base = { archiveDir: "/tmp/archive", scratchRoot: "/tmp/scratch" }
 

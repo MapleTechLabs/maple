@@ -2,7 +2,7 @@ import { strictEqual, ok } from "node:assert"
 import { describe, it } from "vitest"
 import { Effect, ManagedRuntime } from "effect"
 import { Maple } from "@maple-dev/effect-sdk/server"
-import { observeEventing } from "../src/server/eventing/telemetry"
+import { observeEventing } from "@maple/local-server/eventing/telemetry"
 
 describe("eventing metric export", () => {
 	it("exports eventing counters through the CLI's server SDK layer", async () => {

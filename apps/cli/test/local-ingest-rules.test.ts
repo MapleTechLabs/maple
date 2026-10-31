@@ -6,8 +6,8 @@ import {
 	applyLocalIngestRules,
 	makeLocalIngestRulesSource,
 	parseLocalIngestRules,
-} from "../src/server/ingest-rules"
-import { encodeLogs, encodeTraces } from "../src/server/otlp/encode"
+} from "@maple/local-server/ingest-rules"
+import { encodeLogs, encodeTraces } from "@maple/local-server/otlp/encode"
 
 const rules = parseLocalIngestRules(
 	JSON.stringify([
