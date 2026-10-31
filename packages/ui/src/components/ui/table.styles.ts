@@ -9,7 +9,9 @@ export const tableStyles =
 export const tableHeaderStyles =
 	"[&_tr]:border-b [&_tr]:hover:bg-transparent in-data-[variant=bare]:[&_tr]:border-0"
 
-export const tableHeaderStickyStyles = "sticky top-0 z-10 bg-background"
+// A collapsed table's row border scrolls away under a sticky header, so the rule is an inset shadow.
+export const tableHeaderStickyStyles =
+	"sticky top-0 z-10 bg-background [&_tr]:border-0 [&_th]:shadow-[inset_0_-1px_0_var(--color-border)]"
 
 export const tableBodyStyles =
 	"relative in-data-[variant=card]:rounded-xl in-data-[variant=card]:shadow-xs/5 before:pointer-events-none before:absolute before:inset-px not-in-data-[variant=card]:before:hidden before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/8%)] [&_tr:last-child]:border-0 in-data-[variant=card]:*:[tr]:border-0 in-data-[variant=card]:*:[tr]:*:[td]:border-b in-data-[variant=card]:*:[tr]:*:[td]:bg-card in-data-[variant=card]:*:[tr]:first:*:[td]:first:rounded-ss-xl in-data-[variant=card]:*:[tr]:*:[td]:first:border-s in-data-[variant=card]:*:[tr]:first:*:[td]:border-t in-data-[variant=card]:*:[tr]:last:*:[td]:last:rounded-ee-xl in-data-[variant=card]:*:[tr]:*:[td]:last:border-e in-data-[variant=card]:*:[tr]:first:*:[td]:last:rounded-se-xl in-data-[variant=card]:*:[tr]:last:*:[td]:first:rounded-es-xl in-data-[variant=card]:*:[tr]:hover:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-black)_2%)] in-data-[variant=card]:*:[tr]:data-[state=selected]:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-black)_4%)] dark:in-data-[variant=card]:*:[tr]:data-[state=selected]:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-white)_4%)] dark:in-data-[variant=card]:*:[tr]:hover:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-white)_2%)]"
@@ -17,8 +19,10 @@ export const tableBodyStyles =
 export const tableFooterStyles =
 	"border-t in-data-[variant=card]:border-none bg-transparent not-in-data-[variant=card]:bg-[color-mix(in_srgb,var(--card),var(--color-black)_2%)] font-medium dark:not-in-data-[variant=card]:bg-[color-mix(in_srgb,var(--card),var(--color-white)_2%)] [&>tr]:last:border-b-0"
 
+// Body rows divide on the subtle hairline so the header rule reads as the stronger line. The hover is
+// unprefixed so a row's own `hover:bg-*` merges over it (card rows paint their cells instead).
 export const tableRowStyles =
-	"relative border-b in-data-[variant=bare]:border-0 in-data-[variant=bare]:hover:bg-transparent not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-black)_2%)] not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] dark:not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] dark:not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-white)_2%)]"
+	"relative border-b border-border-subtle in-data-[slot=table-header]:border-border in-data-[variant=bare]:border-0 in-data-[variant=bare]:hover:bg-transparent hover:bg-surface-sunken data-[state=selected]:bg-surface-strong in-data-[variant=card]:hover:bg-transparent in-data-[variant=card]:data-[state=selected]:bg-transparent"
 
 // Column labels share the eyebrow overline token (size, case, tracking, colour) with list headers.
 export const tableHeadStyles =
@@ -37,3 +41,15 @@ export const tableRowLinkStyles =
 
 // Lifts a control inside a linked row above the overlay so it keeps its own clicks.
 export const tableRowLinkLiftStyles = "relative z-10"
+
+// Sortable column label: keeps the head's case and tracking (buttons reset both). The arrow slot is
+// always reserved so activating a column never shifts its label; right-aligned heads put the arrow
+// first so the label's edge lines up with the numbers under it.
+export const tableSortButtonStyles =
+	"group/sort inline-flex max-w-full items-center gap-1 rounded-xs [letter-spacing:inherit] [text-transform:inherit] text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[active]:text-foreground data-[align=right]:flex-row-reverse"
+
+export const tableSortIconStyles =
+	"size-2.5 shrink-0 transition-[opacity,rotate] duration-150 ease-out"
+
+export const tableSortIdleIconStyles =
+	"opacity-0 group-hover/sort:opacity-60 group-focus-visible/sort:opacity-60"

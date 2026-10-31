@@ -8,7 +8,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { icon, type IconName } from "../../../ui/icon"
 import { loadingMoreRow } from "../../../ui/list-footer"
-import { rowLink, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { ariaSort, rowLink, sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { servicePills } from "../../../ui/trace-badges"
 import type { DetectedModel } from "../kit/detected-models"
@@ -143,41 +143,24 @@ const hint = (h: H, className: string, children: ReadonlyArray<Html | string>): 
 /** `SortableHeader`; a column with a hint renders its button as a tooltip trigger. */
 const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 	const key = column.sort?.key ?? "startTime"
-	const isActive = sort.sortBy === key
-	return h.button(
-		[
-			h.Class(
-				cn(
-					"inline-flex items-center gap-1 transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
-				),
-			),
-			...(column.sort?.hint === true ? triggerAttributes(h) : []),
-			h.Type("button"),
-			h.OnClick(Message.ClickedSort({ key })),
-		],
+	return sortButton(
+		h,
+		{
+			isActive: sort.sortBy === key,
+			direction: sort.sortDir,
+			onClick: Message.ClickedSort({ key }),
+			attributes: column.sort?.hint === true ? triggerAttributes(h) : [],
+		},
 		[
 			column.header,
 			...(column.subLabel === undefined
 				? []
 				: [
 						h.span(
-							[
-								h.Class(
-									"ml-0.5 whitespace-nowrap text-3xs font-normal text-foreground-subtle",
-								),
-							],
+							[h.Class("whitespace-nowrap font-normal normal-case text-foreground-subtle")],
 							[column.subLabel],
 						),
 					]),
-			icon(h, "ArrowUpDownIcon", {
-				size: 10,
-				className: cn(
-					"shrink-0 transition-opacity",
-					isActive ? "opacity-100" : "opacity-40",
-					isActive && sort.sortDir === "asc" && "rotate-180",
-				),
-			}),
 		],
 	)
 }
@@ -194,14 +177,7 @@ const header = (h: H, sort: Sort): Html =>
 						column.sort === undefined ? [column.header] : [sortableHeader(h, column, sort)],
 						cn("px-2", column.responsive),
 						[
-							...(column.sort?.key === sort.sortBy
-								? [
-										h.Attribute(
-											"aria-sort",
-											sort.sortDir === "asc" ? "ascending" : "descending",
-										),
-									]
-								: []),
+							...ariaSort(h, column.sort?.key === sort.sortBy, sort.sortDir),
 							...(column.width === undefined ? [] : [h.Style({ width: `${column.width}px` })]),
 						],
 					),

@@ -1,9 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { eyebrowVariants } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
 import { backdropBar } from "../../../ui/meter"
-import { tableCell, tableHead } from "../../../ui/table"
+import { ariaSort, sortButton, tableCell, tableHead } from "../../../ui/table"
 import { Message } from "./message"
 import type { SortState } from "../../kit/table-sort"
 import type { SortTable } from "./model-tabs"
@@ -19,43 +18,6 @@ export const headLabel = (
 	className?: string,
 	attributes: ReadonlyArray<Attribute<Message>> = [],
 ): Html => tableHead(h, children, cn(eyebrowVariants(), "h-8", className), attributes)
-
-/** `SortableHeader`: the label and the up-down arrow, rotated for ascending. */
-const sortableHeader = (
-	h: H,
-	table: SortTable,
-	sortKey: string,
-	label: string,
-	sort: SortState,
-	className?: string,
-) => {
-	const isActive = sort.key === sortKey
-	return h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedSort({ table, key: sortKey })),
-			h.Class(
-				cn(
-					// Buttons reset text-transform, so restate the eyebrow's uppercase.
-					"inline-flex items-center gap-1 whitespace-nowrap uppercase transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
-					className,
-				),
-			),
-		],
-		[
-			label,
-			icon(h, "ArrowUpDownIcon", {
-				size: 10,
-				className: cn(
-					"shrink-0 transition-opacity",
-					isActive ? "opacity-100" : "opacity-40",
-					isActive && sort.dir === "asc" && "rotate-180",
-				),
-			}),
-		],
-	)
-}
 
 /** `SortColumnHead`: right-aligned by default, `aria-sort` on the active column. */
 export const sortColumnHead = (
@@ -75,20 +37,22 @@ export const sortColumnHead = (
 	return headLabel(
 		h,
 		[
-			sortableHeader(
+			sortButton(
 				h,
-				options.table,
-				options.sortKey,
-				options.label,
-				options.sort,
-				cn(isRight && "w-full justify-end"),
+				{
+					isActive,
+					direction: options.sort.dir,
+					onClick: Message.ClickedSort({ table: options.table, key: options.sortKey }),
+					align: isRight ? "right" : "left",
+					// The whole head cell stays clickable; row-reverse puts `justify-start` on the right.
+					className: cn(isRight && "w-full justify-start"),
+				},
+				[options.label],
 			),
 		],
 		cn(isRight && "text-right", options.className),
 		[
-			...(isActive
-				? [h.Attribute("aria-sort", options.sort.dir === "asc" ? "ascending" : "descending")]
-				: []),
+			...ariaSort(h, isActive, options.sort.dir),
 			...(options.title === undefined ? [] : [h.Title(options.title)]),
 		],
 	)
