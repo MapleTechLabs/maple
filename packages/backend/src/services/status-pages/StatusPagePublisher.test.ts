@@ -5,7 +5,7 @@ import { decodeStatusPageSnapshotJson, StatusPageKeys, utcDay } from "@maple/dom
 import { StatusPageId } from "@maple/domain/primitives"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { STATUS_PAGE_SWEEP_BATCH, StatusPagePublisher } from "./StatusPagePublisher"
-import { StatusPageStore, type InMemoryStatusPageStore } from "./StatusPageStore"
+import { StatusPageStore, type InMemoryStatusPageStore, type StatusPageStoreApi } from "./StatusPageStore"
 import {
 	bumpRevision,
 	cleanupRows,
@@ -30,13 +30,15 @@ const withPublisher = <A, E>(
 		readonly store: InMemoryStatusPageStore
 		readonly publisher: StatusPagePublisher["Service"]
 	}) => Effect.Effect<A, E>,
+	/** Wraps the store the publisher sees, to land a concurrent change mid-publish. */
+	wrap: (api: StatusPageStoreApi, testDb: TestDb) => StatusPageStoreApi = (api) => api,
 ) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(NOW)
 		const testDb = createTestDb(trackedDbs)
 		const store = yield* StatusPageStore.makeInMemory
 		const layer = StatusPagePublisher.layer.pipe(
-			Layer.provide(Layer.succeed(StatusPageStore, store.api)),
+			Layer.provide(Layer.succeed(StatusPageStore, wrap(store.api, testDb))),
 			Layer.provide(testDb.layer),
 		)
 		return yield* StatusPagePublisher.use((publisher) => body({ testDb, store, publisher })).pipe(
@@ -119,6 +121,84 @@ describe("StatusPagePublisher.publish", () => {
 			}),
 		),
 	)
+
+	it.effect("rewrites a slug route lost at the edge even when the content is unchanged", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-route" })
+				yield* publisher.publish(pageId)
+				yield* store.api.deleteRoutes({ slug: "acme-route", hostnames: [] })
+
+				yield* bumpRevision(testDb, pageId)
+				yield* TestClock.adjust("1 minute")
+				assert.isFalse((yield* publisher.publish(pageId)).written)
+				assert.strictEqual((yield* store.contents).kv.get(StatusPageKeys.slug("acme-route")), pageId)
+			}),
+		),
+	)
+
+	it.effect("clears the hash when a concurrent publish advanced first, so the next one rewrites", () => {
+		const pageId = newPageId()
+		const race = { armed: false }
+		return withPublisher(
+			({ testDb, publisher }) =>
+				Effect.gen(function* () {
+					yield* seedPage(testDb, { id: pageId, slug: "acme-race", revision: 3 })
+					yield* publisher.publish(pageId)
+					yield* seedComponent(testDb, {
+						id: crypto.randomUUID(),
+						pageId,
+						name: "API",
+						position: 0,
+					})
+					yield* bumpRevision(testDb, pageId)
+					race.armed = true
+					yield* publisher.publish(pageId)
+					const row = yield* readPage(testDb, pageId)
+					assert.isNull(row?.published_hash)
+					// Bumped, so the next sweep publishes it again.
+					assert.strictEqual(row?.revision, "5")
+				}),
+			(api, testDb) => ({
+				...api,
+				// The other publish lands its revision between our edge write and our compare-and-set.
+				putSnapshot: (id, json) =>
+					(race.armed
+						? Effect.promise(() =>
+								executeSql(
+									testDb,
+									"UPDATE status_pages SET published_revision = 9 WHERE id = $1",
+									[id],
+								),
+							)
+						: Effect.void
+					).pipe(Effect.andThen(api.putSnapshot(id, json))),
+			}),
+		)
+	})
+
+	it.effect("takes back its edge writes when the page is deleted mid-publish", () => {
+		const pageId = newPageId()
+		return withPublisher(
+			({ testDb, store, publisher }) =>
+				Effect.gen(function* () {
+					yield* seedPage(testDb, { id: pageId, slug: "acme-gone" })
+					const exit = yield* Effect.exit(publisher.publish(pageId))
+					assert.isTrue(Exit.isFailure(exit))
+					const { kv } = yield* store.contents
+					assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
+					assert.isFalse(kv.has(StatusPageKeys.slug("acme-gone")))
+				}),
+			(api, testDb) => ({
+				...api,
+				putSnapshot: (id, json) =>
+					Effect.promise(() =>
+						executeSql(testDb, "DELETE FROM status_pages WHERE id = $1", [id]),
+					).pipe(Effect.andThen(api.putSnapshot(id, json))),
+			}),
+		)
+	})
 
 	it.effect("records the store failure and leaves published_revision behind", () =>
 		withPublisher(({ testDb, store, publisher }) =>

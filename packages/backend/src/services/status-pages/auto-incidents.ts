@@ -87,6 +87,10 @@ export const openForAlertIncident = (db: MapleDb, input: OpenForAlertIncidentInp
 		)
 		if (rows.length === 0) return 0
 		const pages = groupByPage(rows)
+		// Two ticks opening the same alert incident would both miss `existing`; this serializes them.
+		yield* db.execute(
+			Orm.sql`select pg_advisory_xact_lock(hashtext(${input.alertIncidentId}), hashtext('status_page_auto_incident'))`,
+		)
 		const existing = yield* db.run(
 			PG.from(StatusPageIncidents)
 				.select(($) => ({ pageId: $.pageId }))

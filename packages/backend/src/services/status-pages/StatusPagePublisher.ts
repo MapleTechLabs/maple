@@ -110,9 +110,18 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				// What a visitor sees: a bump or a stale republish with no visible change writes nothing.
 				const hash = yield* sha256Hex(JSON.stringify({ ...snapshot, generatedAt: 0, revision: 0 }))
 				const written = hash !== current.publishedHash
+				const routes = { slug: snapshot.page.slug, hostnames: [] }
 				if (written) {
 					yield* store.putSnapshot(pageId, JSON.stringify(snapshot)).pipe(
-						Effect.andThen(store.putRoutes(pageId, { slug: snapshot.page.slug, hostnames: [] })),
+						Effect.andThen(store.putRoutes(pageId, routes)),
+						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
+					)
+				} else {
+					// The hash covers content only, so a route lost at the edge is checked for on its own.
+					yield* store.readSlugRoute(routes.slug).pipe(
+						Effect.flatMap((routedTo) =>
+							routedTo === pageId ? Effect.void : store.putRoutes(pageId, routes),
+						),
 						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
 					)
 				}
@@ -136,17 +145,28 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				)
 				if (advanced.length === 0) {
 					// A concurrent publish got further; ours may have overwritten its snapshot, so go again.
-					yield* dbExecute((db) =>
+					// Clearing the hash makes that next publish rewrite the body even if it builds the same.
+					const [still] = yield* dbExecute((db) =>
 						db.run(
 							PG.update(StatusPages)
 								.set({
 									publishedAt: nowMs,
 									publishAttemptedAt: nowMs,
 									lastPublishError: null,
+									...(written ? { publishedHash: null } : undefined),
 								})
-								.where(($) => [$.id.eq(pageId)]),
+								.where(($) => [$.id.eq(pageId)])
+								.returning("id"),
 						),
 					)
+					if (still === undefined) {
+						// Deleted mid-publish, maybe after its cleanup drained: take back what we wrote.
+						if (written) yield* cleanEdge({ pageId, slug: routes.slug, deleteSnapshot: true })
+						return yield* new StatusPageGoneError({
+							message: `Status page ${pageId} not found`,
+							pageId,
+						})
+					}
 					if (written) yield* dbExecute((db) => bumpPage(db, current.orgId, pageId))
 				}
 				yield* Effect.annotateCurrentSpan({
@@ -160,7 +180,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 			 * Removes one cleanup's edge data; a slug another live page now uses is left alone. A page that
 			 * still exists keeps its snapshot: its delete never committed (an org purge that failed later on).
 			 */
-			const cleanEdge = (row: StatusPageCleanupRow) =>
+			const cleanEdge = (row: Pick<StatusPageCleanupRow, "pageId" | "slug" | "deleteSnapshot">) =>
 				Effect.gen(function* () {
 					const alive = yield* dbExecute((db) =>
 						db.run(

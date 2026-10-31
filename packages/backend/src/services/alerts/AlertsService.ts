@@ -675,12 +675,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							.pipe(
 								Effect.timeout(STATUS_PAGE_SYNC_TIMEOUT),
 								Effect.asVoid,
-								Effect.catch((error) =>
+								// A defect too: a status page sync must never abort the alert tick.
+								Effect.catchCause((cause) =>
 									Effect.logWarning("Status page auto incident sync failed").pipe(
 										Effect.annotateLogs({
 											orgId: context.orgId,
 											"maple.alert.incident_id": context.alertIncidentId,
-											"error.message": summarizeCause(Cause.fail(error)),
+											"error.message": summarizeCause(cause),
 										}),
 									),
 								),
