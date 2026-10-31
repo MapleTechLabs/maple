@@ -257,21 +257,24 @@ export const addPickerStep = (model: Model, message: PickerMessage): Return => {
 	}
 }
 
+/** A monitored URL goes straight onto the page, with any rows already ticked beside it. */
 export const addMonitorCreated = (
 	model: Model,
 	result: Result.Result<V2UptimeMonitor, LoadFailure>,
 ): Return =>
 	Result.match(result, {
-		onSuccess: (monitor): Return => ({
-			model: {
+		onSuccess: (monitor): Return => {
+			const next = {
 				...model,
 				monitors: {
 					...model.monitors,
 					data: AsyncData.map(model.monitors.data, (monitors) => [...monitors, monitor]),
 				},
 				addPicker: monitorCreated(model.addPicker, monitor),
-			},
-		}),
+			}
+			// Closed or replaced while the monitor was created: keep the monitor, add nothing.
+			return next.panel?._tag === "Add" ? submitAdd(next) : { model: next }
+		},
 		onFailure: (failure): Return => ({
 			model: { ...model, addPicker: monitorFailed(model.addPicker, failure.message) },
 		}),
@@ -290,15 +293,29 @@ export const submitAdd = (model: Model): Return => {
 			}
 }
 
+/** Closes the Add panel and hands focus back to the list; a panel opened since stays open. */
+const settleAdd = (model: Model, context: PageContext): Return => {
+	const isAddOpen = model.panel?._tag === "Add"
+	const next = reread(
+		{ ...model, isAddingComponents: false, panel: isAddOpen ? null : model.panel },
+		context,
+	)
+	return isAddOpen
+		? {
+				...next,
+				commands: [...(next.commands ?? []), FocusEditorElement({ id: "status-page-on-this-page" })],
+			}
+		: next
+}
+
 export const addedComponents = (
 	model: Model,
 	result: Result.Result<ReadonlyArray<V2StatusPageComponent>, LoadFailure>,
 	context: PageContext,
-): Return => {
-	const settled = { ...model, isAddingComponents: false }
-	return Result.match(result, {
+): Return =>
+	Result.match(result, {
 		onSuccess: (added): Return => ({
-			...reread({ ...settled, panel: null }, context),
+			...settleAdd(model, context),
 			outMessage: toast(
 				"success",
 				added.length === 1 ? "Component added" : `${added.length} components added`,
@@ -308,8 +325,7 @@ export const addedComponents = (
 		// Some may have been created before the failure, so the panel closes rather than offer a
 		// retry that would add them twice; the re-read lists what landed.
 		onFailure: (addFailure): Return => ({
-			...reread({ ...settled, panel: null }, context),
+			...settleAdd(model, context),
 			outMessage: errorToast("Couldn't add every component", addFailure),
 		}),
 	})
-}

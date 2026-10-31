@@ -466,6 +466,17 @@ describe("renderPage layout", () => {
 		expect(pageDataOf(html).entries[0]?.title).toBe(title)
 	})
 
+	it("credits Maple with its mark, and drops both when the page hides the credit", () => {
+		const page = makeSnapshot().page
+		const footer = (showPoweredBy: boolean) =>
+			footerOf(renderPage(makeSnapshot({ page: { ...page, showPoweredBy } }), live, FIXTURE_NOW))
+		expect(footer(true)).toMatch(
+			/Powered by <a href="https:\/\/maple.dev" rel="noopener"><svg class="maple-mark"[^>]*aria-hidden="true">/u,
+		)
+		expect(footer(false)).not.toContain("maple-mark")
+		expect(footer(false)).not.toContain("Powered by")
+	})
+
 	it("shows the privacy and terms links only when set, and only over https", () => {
 		const page = makeSnapshot().page
 		const footer = (privacyUrl: string | null, termsUrl: string | null) =>
@@ -668,9 +679,26 @@ describe("page theme", () => {
 		const css = styleOf(html)
 		expect(html).not.toContain("opacity:0")
 		expect(html).not.toContain("alert(1)")
-		expect(css).toContain("--bg:#0a0a0a")
+		expect(css).toContain("--bg:#000000")
 		expect(css).toContain("--radius:8px")
 		expect(css).toMatch(/--font:ui-sans-serif/u)
+		expect(html).toContain(`<html lang="en" data-preset="default">`)
+	})
+
+	it("marks the page with its preset, which sets that preset's card shadow", () => {
+		const html = renderPage(themed({ ...DEFAULT_STATUS_PAGE_THEME, preset: "paper" }), live, FIXTURE_NOW)
+		expect(html).toContain(`<html lang="en" data-preset="paper">`)
+		expect(styleOf(html)).toMatch(/\[data-preset=paper\]\{--shadow:[^}]+\}/u)
+	})
+
+	it("shows a monogram in the brand colour when the page has no logo", () => {
+		const html = renderPage(
+			themed({ ...DEFAULT_STATUS_PAGE_THEME, preset: "midnight" }),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(html).toMatch(/<span class="mono-mark" aria-hidden="true">[A-Z]<\/span>/u)
+		expect(styleOf(html)).toContain("--primary:#6e56cf")
 	})
 })
 

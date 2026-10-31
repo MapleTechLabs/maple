@@ -298,13 +298,13 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 		],
 		[
 			h.div(
-				[h.Class("flex items-center gap-2")],
+				[h.Class("flex flex-wrap items-center gap-2")],
 				[
 					input(h, {
 						id,
 						size: "sm",
 						type: "url",
-						className: "min-w-48 flex-1",
+						className: "min-w-0 flex-1 basis-48",
 						controlClassName: "font-mono",
 						isDisabled: options.isDisabled === true || picker.isCreatingMonitor,
 						attributes: [
@@ -328,7 +328,8 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 						},
 						["Monitor it"],
 					),
-					...(options.monitors.length === 0
+					// Without rows the URL field is all the picker shows, so it stays open.
+					...(picker.rows.length === 0
 						? []
 						: [
 								button(

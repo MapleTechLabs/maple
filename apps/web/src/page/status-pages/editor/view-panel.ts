@@ -9,7 +9,6 @@ import * as Checkbox from "../../../ui/checkbox"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
 import {
@@ -47,14 +46,27 @@ const frame = (
 	h.aside(
 		[
 			h.AriaLabelledBy(PANEL_TITLE_ID),
-			h.Class("flex min-w-0 flex-col gap-5 rounded-lg border bg-background p-4 lg:sticky lg:top-0"),
+			h.Class("flex min-w-0 flex-col gap-5 rounded-lg border bg-background p-4"),
 		],
 		[
 			h.div(
-				[h.Class("flex items-start justify-between gap-3")],
+				[h.Class("flex flex-col items-start gap-3")],
 				[
+					button(
+						h,
+						{
+							size: "xs",
+							variant: "ghost",
+							className: "-ml-2",
+							attributes: [
+								h.AriaLabel(`Close ${options.label}`),
+								h.OnClick(Message.ClickedClosePanel()),
+							],
+						},
+						[icon(h, "ArrowLeftIcon"), "On this page"],
+					),
 					h.div(
-						[h.Class("flex min-w-0 flex-col gap-1")],
+						[h.Class("flex min-w-0 max-w-full flex-col gap-1")],
 						[
 							eyebrow(h, {}, [options.kind]),
 							h.h2(
@@ -67,15 +79,6 @@ const frame = (
 							),
 							...(options.status === undefined ? [] : [options.status]),
 						],
-					),
-					iconButton(
-						h,
-						{
-							label: `Close ${options.label}`,
-							size: "icon-xs",
-							attributes: [h.OnClick(Message.ClickedClosePanel())],
-						},
-						[icon(h, "XmarkIcon")],
 					),
 				],
 			),
@@ -648,7 +651,7 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 
 export const addPanel = (h: H, model: Model): Html => {
 	const count = checkedRows(model.addPicker).length
-	return frame(h, { kind: "Add", title: "Add components", label: "Add components" }, [
+	return frame(h, { kind: "Add", title: "Add monitors", label: "Add monitors" }, [
 		pickerView(h, {
 			picker: model.addPicker,
 			monitors: monitorsOf(model),
@@ -666,7 +669,8 @@ export const addPanel = (h: H, model: Model): Html => {
 					{
 						size: "sm",
 						isLoading: model.isAddingComponents,
-						isDisabled: count === 0 || hasRowIssues(model.addPicker),
+						isDisabled:
+							count === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor,
 						attributes: [h.OnClick(Message.ClickedSubmitAdd())],
 					},
 					[count <= 1 ? "Add component" : `Add ${count} components`],

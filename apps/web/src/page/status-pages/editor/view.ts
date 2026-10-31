@@ -5,7 +5,8 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../data/load-failure"
-import { button, linkButton } from "../../../ui/button"
+import { alert, alertDescription, alertTitle } from "../../../ui/alert"
+import { button } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
@@ -18,7 +19,8 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { statusPageHref, statusPagesHref } from "../shared/commands"
+import { linkTabStrip } from "../../kit/underline-tabs"
+import { type EditorView, statusPageHref, statusPagesHref } from "../shared/commands"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -32,10 +34,10 @@ import { PAGE_MENU_ID, resolveView } from "./update"
 import { canvas } from "./view-canvas"
 import { jsonTab } from "./view-json"
 import { addressLine, liveView } from "./view-live"
-import { breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
+import { appearanceView, breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
 
-// `/status-pages/$pageId`: the header, then the page as the editor, its Settings, its JSON, or the
-// screen right after it went live.
+// `/status-pages/$pageId`: the header and tabs, then the page as the editor, its Appearance, its
+// Settings, its JSON, or the screen right after it went live.
 
 type H = HtmlBuilder<Message>
 
@@ -81,8 +83,6 @@ const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry>
 		// A draft is not public, and without a status domain there is no address to open.
 		isDisabled: page.draft || model.publicBaseUrl === "",
 	},
-	{ _tag: "Item", value: "settings", label: "Settings", icon: "GearIcon" },
-	{ _tag: "Item", value: "json", label: "JSON", icon: "BracketsCurlyIcon" },
 	...(model.isAdmin
 		? ([
 				{ _tag: "Item", value: "break-glass", label: "Break-glass token", icon: "KeyIcon" },
@@ -92,43 +92,37 @@ const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry>
 		: []),
 ]
 
+const publishButton = (h: H, model: Model): Html =>
+	button(
+		h,
+		{
+			size: "sm",
+			isLoading: model.isPublishing,
+			attributes: [h.OnClick(Message.ClickedPublish())],
+		},
+		[icon(h, "PaperPlaneIcon"), "Publish page"],
+	)
+
+/** A draft's next step is publishing it, so Publish leads and Post incident steps back. */
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
-	const view = resolveView(model.search.view)
+	const canPublish = model.isAdmin && page.draft
+	// The composer opens beside the page, so Post incident lives on the Page tab.
+	const isPageView = resolveView(model.search.view) === "page"
 	return detailActions(h, [
-		...(view === "page"
-			? []
-			: [
-					linkButton(h, { size: "sm", variant: "ghost", href: statusPageHref(page.id) }, [
-						icon(h, "ArrowLeftIcon"),
-						"Back to page",
-					]),
-				]),
-		...(model.isAdmin && page.draft
+		...(isPageView
 			? [
 					button(
 						h,
 						{
 							size: "sm",
-							variant: "outline",
-							isLoading: model.isPublishing,
-							attributes: [h.OnClick(Message.ClickedPublish())],
-						},
-						[icon(h, "PaperPlaneIcon"), "Publish"],
-					),
-				]
-			: []),
-		...(view === "page"
-			? [
-					button(
-						h,
-						{
-							size: "sm",
+							variant: canPublish ? "outline" : "default",
 							attributes: [h.OnClick(Message.ClickedNewIncident({ kind: "incident" }))],
 						},
 						[icon(h, "PlusIcon"), "Post incident"],
 					),
 				]
 			: []),
+		...(canPublish ? [publishButton(h, model)] : []),
 		rowActionsMenu(h, {
 			slotId: PAGE_MENU_ID,
 			model: model.pageMenu,
@@ -138,6 +132,43 @@ const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 		}),
 	])
 }
+
+const TAB_LABELS = {
+	page: "Page",
+	appearance: "Appearance",
+	settings: "Settings",
+	json: "JSON",
+} as const satisfies Record<"page" | Exclude<EditorView, "live">, string>
+
+const TABS = (["page", "appearance", "settings", "json"] as const).map((view) => ({
+	view,
+	label: TAB_LABELS[view],
+}))
+
+const tabs = (h: H, model: Model, page: V2StatusPage): Html => {
+	const current = resolveView(model.search.view)
+	return linkTabStrip(
+		h,
+		"Status page views",
+		TABS.map((tab) => ({
+			key: tab.view,
+			href: statusPageHref(page.id, tab.view === "page" ? undefined : tab.view),
+			label: tab.label,
+			isCurrent: current === tab.view,
+			isRouteActive: current === tab.view,
+		})),
+	)
+}
+
+/** Over a draft's editor: nothing is public yet, and Publish page in the header changes that. */
+const draftCallout = (h: H): Html =>
+	alert(h, { variant: "info", size: "sm" }, [
+		icon(h, "LockIcon"),
+		alertTitle(h, ["This page is a draft"]),
+		alertDescription(h, [
+			"Visitors can't see it yet. Add your monitors, pick a look in Appearance, then click Publish page.",
+		]),
+	])
 
 /** The reads the page view waits on: statuses need monitors and incidents too. */
 const canvasRead = (model: Model): { failure: Option.Option<LoadFailure>; isReady: boolean } => ({
@@ -151,6 +182,8 @@ const canvasRead = (model: Model): { failure: Option.Option<LoadFailure>; isRead
 const body = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html => {
 	const view = resolveView(model.search.view)
 	switch (view) {
+		case "appearance":
+			return appearanceView(h, model, page)
 		case "settings":
 			return settingsView(h, model, page)
 		case "live":
@@ -177,10 +210,18 @@ const body = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html =>
 				})
 			if (!read.isReady)
 				return h.div(
-					[h.Class("grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]"), h.AriaBusy(true)],
+					[
+						h.Class(
+							"grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)]",
+						),
+						h.AriaBusy(true),
+					],
 					[skeleton(h, "h-48 w-full"), skeleton(h, "h-[560px] w-full")],
 				)
-			return canvas(h, model, page, { nowMs: model.nowMs ?? 0, timeZone })
+			const editor = canvas(h, model, page, { nowMs: model.nowMs ?? 0, timeZone })
+			return model.isAdmin && page.draft
+				? h.div([h.Class("flex flex-col gap-4")], [draftCallout(h), editor])
+				: editor
 		}
 	}
 }
@@ -239,6 +280,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 						],
 					}),
 					actions: headerActions(h, model, page),
+					tabs: tabs(h, model, page),
 					gap: "md",
 				},
 				[body(h, model, page, timeZone)],
@@ -294,11 +336,8 @@ export const breadcrumbsOf = (model: Model) => {
 		{ label: "Status pages", href: statusPagesHref() },
 		...(page === undefined
 			? []
-			: view === "settings" || view === "json"
-				? [
-						{ label: page.name, href: statusPageHref(page.id) },
-						{ label: view === "settings" ? "Settings" : "JSON" },
-					]
-				: [{ label: page.name }]),
+			: view === "page" || view === "live"
+				? [{ label: page.name }]
+				: [{ label: page.name, href: statusPageHref(page.id) }, { label: TAB_LABELS[view] }]),
 	]
 }

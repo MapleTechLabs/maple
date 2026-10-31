@@ -217,7 +217,7 @@ describe("the page as the editor", () => {
 		)
 	})
 
-	test("a component picked in the On this page list opens in the panel with its fields", () => {
+	test("a component picked in the On this page list opens in its place, and Back returns to the list", () => {
 		const target = component(2, { name: "API", group: "Core", manual_status: "degraded" })
 		scene(
 			{ update: pageUpdate, view },
@@ -226,7 +226,10 @@ describe("the page as the editor", () => {
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
 			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
-			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-pressed", "true"),
+			expectView(role("navigation", { name: "On this page" })).not.toExist(),
+			click(role("button", { name: "Close component" })),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-pressed", "false"),
 		)
 	})
 
@@ -396,6 +399,21 @@ describe("the page as the editor", () => {
 		])
 	})
 
+	test("a monitor created from a URL goes onto the page at once, unless the Add panel closed meanwhile", () => {
+		const monitor = downMonitor()
+		const adding = pageUpdate(loaded(), Message.ClickedAddComponent()).model
+		const created = Message.CompletedCreateMonitor({ result: Result.succeed(monitor) })
+		expect(pageUpdate(adding, created).commands).toMatchObject([
+			{
+				name: "AddStatusPageComponents",
+				args: { components: [{ name: monitor.name, monitor_id: monitor.id }] },
+			},
+		])
+		const closed = pageUpdate({ ...adding, panel: null }, created)
+		expect(names(closed.commands)).not.toContain("AddStatusPageComponents")
+		expect(closed.model.addPicker.isCreatingMonitor).toBe(false)
+	})
+
 	test("a failed add closes the panel, so a retry cannot add the components that did land twice", () => {
 		const adding = pageUpdate(loaded(), Message.ClickedAddComponent()).model
 		const failed = pageUpdate(
@@ -414,7 +432,7 @@ describe("the page as the editor", () => {
 			{ update: pageUpdate, view },
 			given(selected(1, { isAdmin: false })),
 			expectView(text("Component 1")).toExist(),
-			expectView(role("button", { name: "Add component" })).not.toExist(),
+			expectView(role("button", { name: "Add monitor" })).not.toExist(),
 			expectView(role("button", { name: "Move Component 1 down" })).not.toExist(),
 			expectView(role("button", { name: "Remove from page" })).not.toExist(),
 			expectView(role("textbox", { name: "Shown as" })).toBeDisabled(),
@@ -460,7 +478,6 @@ describe("incidents in the panel", () => {
 			expectView(text("Draft, not public")).toExist(),
 			expectView(role("button", { name: "Publish" })).toExist(),
 			expectView(role("button", { name: "Resolve" })).toExist(),
-			expectView(role("button", { name: "Old outage" })).toExist(),
 		)
 		expect(
 			pageUpdate(model, Message.ClickedPublishIncident({ incidentId: incidentId(1) })).commands,
@@ -582,6 +599,22 @@ describe("incidents in the panel", () => {
 	})
 })
 
+describe("header", () => {
+	test("Post incident is offered on the Page tab only, where its composer opens", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(role("button", { name: "Post incident" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "appearance" })),
+			expectView(role("button", { name: "Post incident" })).not.toExist(),
+			expectView(role("link", { name: "Appearance" })).toHaveAttr("aria-current", "page"),
+		)
+	})
+})
+
 describe("drafts", () => {
 	test("a draft page says it is not public and offers Publish, which goes to the live screen", () => {
 		const model = loaded({ page: statusPage({ draft: true, published_at: null }) })
@@ -590,7 +623,8 @@ describe("drafts", () => {
 			given(model),
 			expectView(text("Draft, not public")).toExist(),
 			expectView(text("Draft. Nothing is public until you publish.")).toExist(),
-			expectView(role("button", { name: "Publish" })).toExist(),
+			expectView(text("This page is a draft")).toExist(),
+			expectView(role("button", { name: "Publish page" })).toExist(),
 		)
 		const publishing = pageUpdate(model, Message.ClickedPublish())
 		expect(names(publishing.commands)).toEqual(["PublishStatusPage"])
@@ -691,11 +725,11 @@ describe("live screen", () => {
 	})
 })
 
-describe("settings view", () => {
+describe("settings and appearance views", () => {
 	test("an edit raises the save bar, and a bad color blocks the save", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded({ tab: "appearance" })),
 			expectView(text("Unsaved changes")).not.toExist(),
 			type(role("textbox", { name: "Accent" }), "teal"),
 			expectView(text("Unsaved changes")).toExist(),
@@ -730,7 +764,13 @@ describe("settings view", () => {
 					payload: {
 						name: "Acme Status",
 						slug: "acme-status",
-						theme: { ...DEFAULT_STATUS_PAGE_THEME, preset: "paper", accent: "#1a2b3c" },
+						theme: {
+							...DEFAULT_STATUS_PAGE_THEME,
+							preset: "paper",
+							font: "serif",
+							radius: "sm",
+							accent: "#1a2b3c",
+						},
 						show_powered_by: false,
 						auto_incidents: "publish",
 						website_url: null,
@@ -741,7 +781,13 @@ describe("settings view", () => {
 			},
 		])
 		const saved = statusPage({
-			theme: { ...DEFAULT_STATUS_PAGE_THEME, preset: "paper", accent: "#1a2b3c" },
+			theme: {
+				...DEFAULT_STATUS_PAGE_THEME,
+				preset: "paper",
+				font: "serif",
+				radius: "sm",
+				accent: "#1a2b3c",
+			},
 			show_powered_by: false,
 			auto_incidents: "publish",
 			privacy_url: "https://acme.example/privacy",
@@ -756,7 +802,7 @@ describe("settings view", () => {
 	test("Auto disables the colour overrides but not the accent", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded({ tab: "appearance" })),
 			expectView(role("textbox", { name: "Background" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Text" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Accent" })).toBeEnabled(),
@@ -768,11 +814,11 @@ describe("settings view", () => {
 	test("an unreadable text colour shows its contrast and blocks the save", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded({ tab: "appearance" })),
 			inside(role("group", { name: "Mode" }), click(role("button", { name: "Light" }))),
-			type(role("textbox", { name: "Text" }), "#777777"),
+			type(role("textbox", { name: "Text" }), "#757575"),
 			expectView(
-				text("Text on the background has a contrast of 4.48:1; it needs at least 4.5:1."),
+				text("Text on the background has a contrast of 4.49:1; it needs at least 4.5:1."),
 			).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
 		)
@@ -784,7 +830,7 @@ describe("settings view", () => {
 			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "settings" })),
+			given(loaded({ tab: "appearance" })),
 			// Scripts page the bars; without `allow-same-origin` the page still reaches nothing of ours.
 			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
 			tap(({ html }) => {
@@ -875,10 +921,8 @@ describe("json view", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "json" })),
-			expectView(role("link", { name: "Back to page" })).toHaveAttr(
-				"href",
-				`/status-pages/${PUBLIC_ID}`,
-			),
+			expectView(role("link", { name: "Page" })).toHaveAttr("href", `/status-pages/${PUBLIC_ID}`),
+			expectView(role("link", { name: "JSON" })).toHaveAttr("aria-current", "page"),
 			expectView(selector("pre")).toContainText('"slug": "acme-status"'),
 			expectView(selector("pre")).toContainText(`"id": "${publicComponentId(2)}"`),
 			expectView(selector("pre")).toContainText('"auto_incidents": "draft"'),

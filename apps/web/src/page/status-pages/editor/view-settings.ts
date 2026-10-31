@@ -294,7 +294,13 @@ const dangerZone = (h: H): Html =>
 		]),
 	])
 
-export const settingsView = (h: H, model: Model, page: V2StatusPage): Html => {
+/** Settings and Appearance edit one form: each shows its sections beside the preview, one save bar. */
+const formView = (
+	h: H,
+	model: Model,
+	page: V2StatusPage,
+	sections: (form: SettingsForm) => ReadonlyArray<Html>,
+): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	const hasIssues = hasSettingsIssues(form)
 	return h.div(
@@ -311,11 +317,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html => {
 										"Only org admins can change a status page. You can still post incident updates.",
 									]),
 								]),
-						pageSection(h, model, form),
-						appearanceSection(h, model, form),
-						behaviourSection(h, model, form),
-						breakGlassSection(h, model, page),
-						...(model.isAdmin ? [dangerZone(h)] : []),
+						...sections(form),
 					]),
 					previewPanel(h, model, page, form),
 				],
@@ -344,6 +346,17 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html => {
 		],
 	)
 }
+
+export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
+	formView(h, model, page, (form) => [
+		pageSection(h, model, form),
+		behaviourSection(h, model, form),
+		breakGlassSection(h, model, page),
+		...(model.isAdmin ? [dangerZone(h)] : []),
+	])
+
+export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>
+	formView(h, model, page, (form) => [appearanceSection(h, model, form)])
 
 export const breakGlassDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {

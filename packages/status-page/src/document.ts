@@ -1,7 +1,7 @@
 import type { StatusPageSnapshot } from "@maple/domain/status-page"
 import { escapeHtml, safeUrl } from "./escape"
-import { baseStyles } from "./styles"
-import { resolveSafeTheme } from "./theme"
+import { baseStyles, presetStyles } from "./styles"
+import { resolveSafeTheme, safeTheme } from "./theme"
 
 export interface RenderOptions {
 	/** CSP nonce for the inline style and script; omitted for static copies. */
@@ -27,7 +27,12 @@ export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOption
 	const name = escapeHtml(snapshot.page.name)
 	const logo = safeUrl(snapshot.page.logoUrl, ["https:"])
 	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])
-	const mark = logo === null ? name : `<img src="${escapeHtml(logo)}" alt="${name}">`
+	// Without a logo, a monogram in the theme's brand colour stands in for one.
+	const initial = escapeHtml(Array.from(snapshot.page.name.trim())[0]?.toUpperCase() ?? "")
+	const mark =
+		logo === null
+			? `<span class="mono-mark" aria-hidden="true">${initial}</span>${name}`
+			: `<img src="${escapeHtml(logo)}" alt="${name}">`
 	const site =
 		website === null
 			? ""
@@ -47,13 +52,15 @@ export const renderDocument = (input: {
 }): string => {
 	const nonce = nonceAttr(input.options)
 	const description = input.snapshot.page.description
+	// The preset sets its shadow in `presetStyles`; its colours come in as tokens.
+	const preset = safeTheme(input.snapshot.page.theme).preset
 	return [
-		`<!doctype html><html lang="en"><head><meta charset="utf-8">`,
+		`<!doctype html><html lang="en" data-preset="${preset}"><head><meta charset="utf-8">`,
 		`<meta name="viewport" content="width=device-width,initial-scale=1">`,
 		`<title>${escapeHtml(input.title)}</title>`,
 		description === null ? "" : `<meta name="description" content="${escapeHtml(description)}">`,
 		input.head ?? "",
-		`<style${nonce}>${baseStyles(resolveSafeTheme(input.snapshot.page.theme))}${input.styles}</style>`,
+		`<style${nonce}>${baseStyles(resolveSafeTheme(input.snapshot.page.theme))}${input.styles}${presetStyles}</style>`,
 		`</head><body${input.bodyAttrs ?? ""}><main class="wrap">`,
 		input.body,
 		`</main>`,

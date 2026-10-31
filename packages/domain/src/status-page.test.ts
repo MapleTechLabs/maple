@@ -19,6 +19,7 @@ import {
 	pageFreshness,
 	sha256Base64Url,
 	STATUS_PAGE_STALE_AFTER_MS,
+	StatusPageThemePreset,
 	type StatusPageOverlayEntry,
 	type StatusPageSnapshot,
 	uptimePercent,
@@ -343,9 +344,19 @@ describe("contrastRatio", () => {
 describe("resolveStatusPageTheme", () => {
 	const theme = { ...DEFAULT_STATUS_PAGE_THEME }
 
+	it("keeps text on every preset's brand fill readable at AA", () => {
+		const fills = StatusPageThemePreset.literals.flatMap((preset) => {
+			const resolved = resolveStatusPageTheme({ ...theme, preset })
+			return [resolved.light, resolved.dark].map((tokens) =>
+				contrastRatio(tokens.primaryFg, tokens.primary),
+			)
+		})
+		expect(Math.min(...fills)).toBeGreaterThanOrEqual(4.5)
+	})
+
 	it("tints the status banner visibly in every preset and mode while text on it stays AA", () => {
 		const themes: ReadonlyArray<StatusPageTheme> = [
-			...(["default", "mono", "midnight", "paper"] as const).map((preset) => ({ ...theme, preset })),
+			...StatusPageThemePreset.literals.map((preset) => ({ ...theme, preset })),
 			// A custom pale card with mid-grey text: the tint backs off to stay readable.
 			{ ...theme, appearance: "light", card: "#ffffff", text: "#595959" },
 		]
@@ -361,7 +372,7 @@ describe("resolveStatusPageTheme", () => {
 				].map((tint) => ({ tint, fg: tokens.fg, card: tokens.card })),
 			)
 		})
-		expect(tints).toHaveLength(50)
+		expect(tints).toHaveLength((StatusPageThemePreset.literals.length + 1) * 10)
 		for (const { tint, fg, card } of tints) {
 			expect(contrastRatio(fg, tint)).toBeGreaterThanOrEqual(4.5)
 			expect(tint).not.toBe(card)
@@ -463,7 +474,7 @@ describe("theme readability", () => {
 	})
 
 	it("keeps every preset's status text readable on its background and cards", () => {
-		const presets = ["default", "mono", "midnight", "paper"] as const
+		const presets = StatusPageThemePreset.literals
 		const worst = presets.flatMap((preset) => {
 			const resolved = resolveStatusPageTheme(theme({ preset }))
 			return [resolved.light, resolved.dark].flatMap((tokens) =>
@@ -477,7 +488,7 @@ describe("theme readability", () => {
 })
 
 describe("themeContrastIssue", () => {
-	const presets = ["default", "mono", "midnight", "paper"] as const
+	const presets = StatusPageThemePreset.literals
 	const appearances = ["auto", "light", "dark"] as const
 
 	it("passes every preset in every appearance", () => {

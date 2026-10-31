@@ -29,8 +29,8 @@ import type { Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
 
-// The page itself as the editor: "On this page" beside the preview, the panel beside both. Below
-// `lg` they stack: the list, the open panel, then the preview.
+// The page itself as the editor: a sidebar beside the preview. The sidebar lists what is on the
+// page; an opened component, incident or Add takes its place. Below `lg` the sidebar stacks on top.
 
 type H = HtmlBuilder<Message>
 
@@ -113,9 +113,7 @@ const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
 	h.span(
 		[
 			h.AriaHidden(true),
-			h.Class(
-				cn("inline-block size-2 shrink-0 rounded-xs", TONE_FILL[COMPONENT_STATUS_TONE[status]]),
-			),
+			h.Class(cn("inline-block size-2 shrink-0 rounded-xs", TONE_FILL[COMPONENT_STATUS_TONE[status]])),
 		],
 		[],
 	)
@@ -256,7 +254,7 @@ const onThisPage = (h: H, model: Model): Html => {
 			h.Id("status-page-on-this-page"),
 			h.Tabindex(-1),
 			h.AriaLabel("On this page"),
-			h.Class("flex min-w-0 flex-col gap-5 outline-none lg:sticky lg:top-0"),
+			h.Class("flex min-w-0 flex-col gap-5 outline-none"),
 		],
 		[
 			h.div(
@@ -264,7 +262,10 @@ const onThisPage = (h: H, model: Model): Html => {
 				[
 					eyebrow(h, { as: "h2", className: "px-2" }, ["On this page"]),
 					components.length === 0
-						? h.p([h.Class("px-2 text-xs text-muted-foreground")], ["No components yet."])
+						? h.p(
+								[h.Class("px-2 text-xs text-muted-foreground")],
+								["Nothing yet. Add a monitor and visitors see its status and uptime."],
+							)
 						: h.ul(
 								[h.AriaLabel("Components"), h.Class("flex flex-col gap-0.5")],
 								components.map((component, index) =>
@@ -280,11 +281,11 @@ const onThisPage = (h: H, model: Model): Html => {
 									h,
 									{
 										size: "sm",
-										variant: "ghost",
-										className: "justify-start",
+										variant: "outline",
+										className: "mt-1.5",
 										attributes: [h.OnClick(Message.ClickedAddComponent())],
 									},
-									[icon(h, "PlusIcon"), "Add component"],
+									[icon(h, "PlusIcon"), "Add monitor"],
 								),
 							]
 						: []),
@@ -369,18 +370,15 @@ export const canvas = (h: H, model: Model, page: V2StatusPage, time: TimeInputs)
 	return h.div(
 		[
 			h.Class(
-				cn(
-					"grid items-start gap-6",
-					panel.length === 0
-						? "lg:grid-cols-[13rem_minmax(0,1fr)]"
-						: "lg:grid-cols-[13rem_minmax(0,1fr)_20rem] xl:grid-cols-[14rem_minmax(0,1fr)_24rem]",
-				),
+				"grid items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)]",
 			),
 		],
 		[
-			h.div([h.Class("lg:order-1")], [onThisPage(h, model)]),
-			...panel.map((child) => h.div([h.Class("lg:order-3")], [child])),
-			h.div([h.Class("min-w-0 lg:order-2")], [previewColumn(h, model, page)]),
+			h.div(
+				[h.Class("min-w-0 lg:sticky lg:top-0")],
+				panel.length === 0 ? [onThisPage(h, model)] : panel,
+			),
+			h.div([h.Class("min-w-0")], [previewColumn(h, model, page)]),
 		],
 	)
 }

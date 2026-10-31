@@ -368,7 +368,7 @@ export const AlertsStatusPageSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 })
 
-/** `/status-pages/$pageId`: `view` is `settings`, `json` or `live`; none is the page itself. */
+/** `/status-pages/$pageId`: `view` is `appearance`, `settings`, `json` or `live`; none is the page itself. */
 export const StatusPageSearch = Schema.Struct({
 	view: Schema.optional(Schema.String),
 })

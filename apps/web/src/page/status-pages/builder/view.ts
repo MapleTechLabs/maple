@@ -1,5 +1,9 @@
 import { StatusPageComponentId, StatusPageId } from "@maple/domain"
-import { DEFAULT_STATUS_PAGE_THEME, StatusPageSlug } from "@maple/domain/status-page"
+import {
+	DEFAULT_STATUS_PAGE_THEME,
+	STATUS_PAGE_PRESET_DEFAULTS,
+	StatusPageSlug,
+} from "@maple/domain/status-page"
 import { previewSnapshot } from "@maple/status-page"
 import { Schema } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -167,7 +171,12 @@ const draftDocument = (model: Model): string => {
 			termsUrl: null,
 			showPoweredBy: true,
 			theme: previewTheme(
-				{ ...DEFAULT_STATUS_PAGE_THEME, preset: model.preset, appearance: model.appearance },
+				{
+					...DEFAULT_STATUS_PAGE_THEME,
+					...STATUS_PAGE_PRESET_DEFAULTS[model.preset],
+					preset: model.preset,
+					appearance: model.appearance,
+				},
 				model.previewScheme,
 			),
 		},
