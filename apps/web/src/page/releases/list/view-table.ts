@@ -1,5 +1,5 @@
 import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
-import { EMPTY_VALUE, formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
@@ -17,7 +17,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { serviceDot } from "../../../ui/values"
+import { emptyValue, serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
@@ -44,7 +44,7 @@ const baselineShift = (h: H, value: number, baseline: number | undefined, format
 const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html | null => {
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0))
-		return h.span([h.Class("font-mono text-xs text-foreground-faint")], [EMPTY_VALUE])
+		return emptyValue(h, "font-mono text-xs")
 	return h.span(
 		[h.Class("inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums")],
 		[

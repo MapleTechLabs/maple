@@ -13,7 +13,7 @@ import { meter } from "../../../ui/meter"
 import { skeletonSlowNote } from "../../../ui/skeleton"
 import { panel, panelHeader } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { ROW_LINK_LIFT, rowLink, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import {
 	formatElapsed,
@@ -240,7 +240,8 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 				h.span(
 					[
 						h.Key(severity),
-						h.Class("inline-flex items-center gap-1.5"),
+						// Lifted over the row link so its title still shows on hover.
+						h.Class(cn("inline-flex items-center gap-1.5", ROW_LINK_LIFT)),
 						h.Title(countTitle(counts[severity], severity, unverified)),
 					],
 					[
@@ -296,7 +297,7 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 		[h.Class("flex min-w-0 flex-col items-start gap-1")],
 		[
 			runStatusBadge(h, run),
-			h.span([h.Class("max-w-56 truncate text-xs text-muted-foreground"), h.Title(detail)], [detail]),
+			h.span([h.Class(cn("max-w-56 truncate text-xs text-muted-foreground", ROW_LINK_LIFT)), h.Title(detail)], [detail]),
 		],
 	)
 }
@@ -333,7 +334,7 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
  */
 const metaLine = (h: H, parts: ReadonlyArray<string>, title: string): Html =>
 	h.span(
-		[h.Class("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground"), h.Title(title)],
+		[h.Class(cn("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)), h.Title(title)],
 		parts.map((part, index) =>
 			h.span(
 				[
@@ -365,8 +366,10 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 		h,
 		[
 			tableCell(h, [
-				h.a(
-					[h.Href(href), h.Class("flex min-w-0 items-center gap-2.5")],
+				// The name is the row's link, stretched over the whole row.
+				rowLink(
+					h,
+					{ href, className: "flex min-w-0 items-center gap-2.5" },
 					[
 						icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
 						h.span(
@@ -400,16 +403,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 			),
 			tableCell(
 				h,
-				[
-					h.a(
-						[
-							h.Href(href),
-							h.AriaLabel(`Open ${target.repository}`),
-							h.Class("text-muted-foreground hover:text-foreground active:text-foreground"),
-						],
-						[icon(h, "ChevronRightIcon", { size: 14 })],
-					),
-				],
+				[icon(h, "ChevronRightIcon", { size: 14, className: "text-muted-foreground" })],
 				"w-8",
 			),
 		],
@@ -427,7 +421,7 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 				[severityLegend(h), "One audit runs per target at a time"],
 			),
 		}),
-		table(h, { variant: "bare", ariaLabel: "Audit targets" }, [
+		table(h, { ariaLabel: "Audit targets" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Repository"]),

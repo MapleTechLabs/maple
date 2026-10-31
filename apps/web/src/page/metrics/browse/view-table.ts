@@ -1,4 +1,4 @@
-import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -16,7 +16,7 @@ import {
 } from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { emptyValue, serviceDot } from "../../../ui/values"
 import { metricTypeBadge, type MetricRow } from "../shared"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -98,7 +98,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				h,
 				[
 					metric.serviceName === ""
-						? h.span([h.Class("text-xs text-muted-foreground")], [EMPTY_VALUE])
+						? emptyValue(h, "text-xs")
 						: badge(
 								h,
 								{

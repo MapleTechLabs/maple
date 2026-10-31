@@ -502,6 +502,7 @@ const endpointsTable = (
 		theme,
 		selected: model.search.endpoint,
 		slowest: slowestEndpoint(visible),
+		isOneMethod: new Set(visible.map((endpoint) => endpoint.method)).size === 1,
 	}
 	const column = (sortKey: string, label: string, className: string, align?: "left", title?: string) =>
 		sortColumnHead(h, {

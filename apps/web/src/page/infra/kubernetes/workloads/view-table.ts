@@ -1,11 +1,11 @@
 import { restartTone } from "../../../../components/infra/pod-restarts"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { skeleton } from "../../../../ui/skeleton"
 import { truncatedText } from "../../../../ui/truncated-text"
+import { emptyValue } from "../../../../ui/values"
 import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skeletonRows } from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
@@ -58,7 +58,7 @@ export const workloadTableLoading = (h: H): Html =>
 const replicaCell = (h: H, workload: WorkloadRow, kind: WorkloadKind): Html => {
 	const desired = workload.desiredReplicas
 	const ready = workload.readyReplicas
-	if (desired === null || ready === null) return h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
+	if (desired === null || ready === null) return emptyValue(h)
 	const tone: Tone =
 		kind === "job"
 			? workload.failedPods > 0

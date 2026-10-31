@@ -20,7 +20,7 @@ import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import { tableCell, tableRow } from "../../../ui/table"
 import { truncatedText } from "../../../ui/truncated-text"
-import { latencyValue } from "../../../ui/values"
+import { emptyValue, latencyValue, measure, NIL_VALUE } from "../../../ui/values"
 import { callsPerSecond } from "./derive"
 import { knownStatusMix, serverShare, type StatusMix } from "./derive-api"
 import { Message } from "./message"
@@ -53,6 +53,8 @@ export type RowContext = Readonly<{
 	theme: ThemeColors | null
 	selected: string | undefined
 	slowest: string | null
+	/** Every listed endpoint uses one method, so its tint would repeat on every row and say nothing. */
+	isOneMethod: boolean
 }>
 
 /** `methodTone`: only the mutating verbs are tinted. */
@@ -63,8 +65,19 @@ const methodTone = (method: string): string =>
 			? "text-severity-error"
 			: "text-muted-foreground"
 
-export const methodLabel = <M>(h: HtmlBuilder<M>, method: string, className = "w-10"): Html =>
-	h.span([h.Class(cn("shrink-0 text-2xs font-medium uppercase", methodTone(method), className))], [method])
+export const methodLabel = <M>(h: HtmlBuilder<M>, method: string, className = "w-10", isTinted = true): Html =>
+	h.span(
+		[
+			h.Class(
+				cn(
+					"shrink-0 text-2xs font-medium uppercase",
+					isTinted ? methodTone(method) : "text-muted-foreground",
+					className,
+				),
+			),
+		],
+		[method],
+	)
 
 const COLLAPSED_COPY = {
 	unrouted: {
@@ -106,12 +119,11 @@ export const statusMixBar = <M>(h: HtmlBuilder<M>, mix: StatusMix | null, classN
 				],
 	)
 
-/** A share as the table prints it: zero is muted, anything else toned. */
+/** A share as the table prints it: zero and unknown in the nil grey, anything else toned. */
 const shareText = (h: H, share: number | null, tone: string): Html =>
-	h.span(
-		[h.Class(share === null || share === 0 ? "text-muted-foreground" : tone)],
-		[share === null ? "—" : formatErrorRate(share)],
-	)
+	share === null
+		? emptyValue(h)
+		: h.span([h.Class(share === 0 ? NIL_VALUE : tone)], [formatErrorRate(share)])
 
 const rateText = (endpoint: Endpoint, seconds: number) =>
 	formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))
@@ -158,6 +170,7 @@ const endpointRow = (
 								endpoint.method,
 								// Narrow screens drop the method unless a sibling shares the route.
 								isRouteShared ? "w-9 md:w-10" : "hidden w-10 md:inline-block",
+								!context.isOneMethod,
 							),
 							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
 								...(head.length > 0
@@ -282,9 +295,13 @@ const endpointRow = (
 			tableCell(
 				h,
 				[
-					endpoint.requestBodyCount === 0
-						? "—"
-						: formatBytes(endpoint.requestBodyBytes / endpoint.requestBodyCount),
+					...(endpoint.requestBodyCount === 0
+						? [emptyValue(h)]
+						: measure(
+								h,
+								formatBytes(endpoint.requestBodyBytes / endpoint.requestBodyCount),
+								"text-foreground-subtle",
+							)),
 				],
 				cn(numeric, "py-0 pr-0 text-muted-foreground", COLUMN.body),
 			),
@@ -328,7 +345,7 @@ const groupHeaderRow = (
 		http5xxCount: sum((endpoint) => endpoint.http5xxCount),
 	})
 	const cell = (text: string, width: string, tone?: string) =>
-		tableCell(h, [text], cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width))
+		tableCell(h, [text === "—" ? emptyValue(h) : text], cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width))
 	return tableRow(
 		h,
 		[
