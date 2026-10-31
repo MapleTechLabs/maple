@@ -1,0 +1,878 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
+import LanguageTabs from "../../components/docs/LanguageTabs.astro";
+import LanguageTab from "../../components/docs/LanguageTab.astro";
+
+const pageTitle = "Edge observability: what it is and how to set it up | Maple";
+const pageDescription =
+    "What edge observability means for edge functions and edge sites, and an OpenTelemetry Collector setup that buffers telemetry while a site is offline.";
+const published = "2026-10-19";
+const updatedLabel = "October 20, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const toc = [
+    { depth: 2, slug: "definition", text: "Edge observability, defined" },
+    { depth: 3, slug: "two-edges", text: "Serverless edge and edge sites" },
+    { depth: 3, slug: "constraints", text: "Constraints at the edge" },
+    { depth: 2, slug: "collector", text: "A Collector at every edge site" },
+    { depth: 3, slug: "pipeline", text: "The pipeline, stage by stage" },
+    { depth: 3, slug: "gateways", text: "Regional gateways" },
+    { depth: 3, slug: "tools", text: "Edge observability tools" },
+    { depth: 2, slug: "config", text: "The edge Collector config" },
+    { depth: 3, slug: "buffering", text: "Buffer while offline" },
+    { depth: 3, slug: "volume", text: "Cut volume before the uplink" },
+    { depth: 3, slug: "site-identity", text: "Tag every signal with its site" },
+    { depth: 3, slug: "run", text: "Run and test it" },
+    { depth: 2, slug: "edge-kubernetes", text: "Edge Kubernetes and containers" },
+    { depth: 2, slug: "cloudflare-workers", text: "Cloudflare Workers and edge functions" },
+    { depth: 2, slug: "in-maple", text: "Edge observability in Maple" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
+
+// One color per job the edge Collector does, reused by the badges, the diagram,
+// the pipeline steps and the stripes on the config.
+const concepts = {
+    identify: { name: "Identify", color: "var(--chart-2)" },
+    reduce: { name: "Reduce", color: "var(--chart-5)" },
+    buffer: { name: "Buffer", color: "var(--chart-3)" },
+} as const;
+type Concept = keyof typeof concepts;
+const neutral = "var(--muted-foreground)";
+
+const constraints: { title: string; body: string; answer: string; concept?: Concept }[] = [
+    { title: "The uplink drops", body: "Links go down for minutes or days. By default a Collector exporter retries a failed batch for five minutes and then drops it.", answer: "Buffer", concept: "buffer" },
+    { title: "Bandwidth is metered", body: "Cellular and satellite uplinks are slow and often billed per gigabyte, so volume has to be cut at the site, before the data crosses the link.", answer: "Reduce", concept: "reduce" },
+    { title: "Hundreds of sites", body: "Near-identical sites can't be told apart unless each one reports its ID. Ship one config everywhere and inject only the identity.", answer: "Identify", concept: "identify" },
+    { title: "Little memory", body: "The Collector shares a small box with the workload it watches. Without a ceiling, a burst of telemetry can get either of them killed by the kernel's out-of-memory killer.", answer: "memory_limiter" },
+    { title: "Runtimes that vanish", body: "An edge function lives for one request. Telemetry still in memory when its isolate is evicted is lost, unless the platform exports it.", answer: "Platform export" },
+    { title: "Clocks drift", body: "Spans keep the device's timestamps, buffered ones too. A clock that is seconds off puts site spans out of order against the cloud services they call.", answer: "NTP or chrony" },
+];
+
+const pipeline: { component: string; body: string; concept?: Concept }[] = [
+    { component: "memory_limiter", body: "First in every pipeline. Close to its limit it refuses new data with an error that tells senders to retry later, so the Collector stays under a fixed memory ceiling." },
+    { component: "resourcedetection, resource/site", body: "Add the host name and the site's ID to everything that passes through, so applications never need to know which site they run at.", concept: "identify" },
+    { component: "filter/noise", body: "Drop health-check spans and debug logs before they cost anything to send or store.", concept: "reduce" },
+    { component: "probabilistic_sampler", body: "Keep a fixed share of traces, chosen by trace ID, so all spans of a kept trace are kept together.", concept: "reduce" },
+    { component: "batch", body: "Group data into fewer, larger requests, which saves per-request overhead on a slow link.", concept: "reduce" },
+    { component: "otlphttp/maple with sending_queue", body: "Write each batch to a queue on local disk and send from there. While the uplink is down, batches wait in the queue, across Collector restarts.", concept: "buffer" },
+];
+
+// The tested config, split where its job changes so each part can carry its color.
+const configParts: [Concept | null, string][] = [
+    [null, `extensions:
+    health_check:
+        endpoint: 127.0.0.1:13133`],
+    ["buffer", `    file_storage/queue:
+        directory: /var/lib/otelcol/queue
+        create_directory: true
+        timeout: 10s
+        compaction:
+            directory: /var/lib/otelcol/queue
+            on_start: true
+            on_rebound: true`],
+    [null, `
+receivers:
+    otlp:
+        protocols:
+            grpc:
+                endpoint: 0.0.0.0:4317
+            http:
+                endpoint: 0.0.0.0:4318
+    hostmetrics:
+        collection_interval: 60s
+        scrapers:
+            cpu:
+                metrics:
+                    system.cpu.utilization:
+                        enabled: true
+            memory:
+                metrics:
+                    system.memory.utilization:
+                        enabled: true
+            filesystem:
+                metrics:
+                    system.filesystem.utilization:
+                        enabled: true
+            load: {}
+            network: {}
+
+processors:
+    memory_limiter:
+        check_interval: 1s
+        limit_mib: 200
+        spike_limit_mib: 40`],
+    ["identify", `    resourcedetection:
+        detectors: [env, system]
+    resource/site:
+        attributes:
+            - key: acme.site.id
+              value: \${env:SITE_ID}
+              action: upsert
+            - key: acme.site.region
+              value: \${env:SITE_REGION}
+              action: upsert
+            - key: deployment.environment.name
+              value: production
+              action: insert`],
+    ["reduce", `    filter/noise:
+        trace_conditions:
+            - span.attributes["http.route"] == "/healthz"
+            - span.attributes["url.path"] == "/healthz"
+        log_conditions:
+            - log.severity_number > SEVERITY_NUMBER_UNSPECIFIED and log.severity_number < SEVERITY_NUMBER_INFO
+    probabilistic_sampler:
+        mode: proportional
+        sampling_percentage: 25
+    batch:
+        send_batch_size: 2048
+        send_batch_max_size: 4096
+        timeout: 10s`],
+    [null, `
+exporters:
+    otlphttp/maple:
+        # EU organizations: https://ingest.eu.maple.dev
+        endpoint: https://ingest.maple.dev`],
+    ["reduce", `        compression: gzip`],
+    [null, `        timeout: 30s
+        headers:
+            authorization: Bearer \${env:MAPLE_INGEST_KEY}`],
+    ["buffer", `        sending_queue:
+            enabled: true
+            storage: file_storage/queue
+            queue_size: 5000
+            num_consumers: 2
+        retry_on_failure:
+            enabled: true
+            initial_interval: 10s
+            max_interval: 5m
+            max_elapsed_time: 0`],
+    [null, `
+service:
+    extensions: [health_check, file_storage/queue]
+    pipelines:
+        traces:
+            receivers: [otlp]
+            processors: [memory_limiter, resourcedetection, resource/site, filter/noise, probabilistic_sampler, batch]
+            exporters: [otlphttp/maple]
+        metrics:
+            receivers: [otlp, hostmetrics]
+            processors: [memory_limiter, resourcedetection, resource/site, batch]
+            exporters: [otlphttp/maple]
+        logs:
+            receivers: [otlp]
+            processors: [memory_limiter, resourcedetection, resource/site, filter/noise, batch]
+            exporters: [otlphttp/maple]`],
+];
+const configHtml = configParts
+    .map(([concept, code]) => (concept ? `<span class="cfg-part" style="--c: ${concepts[concept].color}">${highlight(code, "yaml")}</span>` : highlight(code, "yaml")))
+    .join("\n");
+
+const runCommand = `otelcol-contrib validate --config edge-site.yaml
+
+SITE_ID=store-0142 SITE_REGION=eu-west \\
+MAPLE_INGEST_KEY=YOUR_INGEST_KEY \\
+otelcol-contrib --config edge-site.yaml`;
+
+const tailSamplingConfig = `processors:
+    tail_sampling:
+        decision_wait: 10s
+        num_traces: 5000
+        policies:
+            - name: errors
+              type: status_code
+              status_code:
+                  status_codes: [ERROR]
+            - name: slow
+              type: latency
+              latency:
+                  threshold_ms: 1000
+            - name: baseline
+              type: probabilistic
+              probabilistic:
+                  sampling_percentage: 5`;
+
+const helmCommand = `kubectl create namespace maple
+kubectl -n maple create secret generic maple-ingest-key \\
+  --from-literal=ingest-key=YOUR_INGEST_KEY
+
+helm upgrade --install maple-k8s-infra \\
+  oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra \\
+  --namespace maple \\
+  --set maple.ingestKey.existingSecret.name=maple-ingest-key \\
+  --set maple.ingestKey.existingSecret.key=ingest-key \\
+  --set-string global.clusterName=store-0142
+# EU organizations add:
+#   --set-string maple.ingest.endpoint=https://ingest.eu.maple.dev`;
+
+const wranglerConfig = `// wrangler.jsonc
+{
+    "observability": {
+        "traces": {
+            "enabled": true,
+            "destinations": ["maple-traces"],
+            "head_sampling_rate": 0.1,
+            "persist": false
+        },
+        "logs": {
+            "enabled": true,
+            "destinations": ["maple-logs"]
+        }
+    }
+}`;
+
+const queueSettings = [
+    ["sending_queue.storage", "file_storage/queue", "The queue lives on disk instead of in memory, so it survives a restart or a power cut."],
+    ["queue_size", "5000", "Maximum batches held. With batches of up to 4,096 items, that is up to about 20 million spans, points or log records. A full queue drops new data."],
+    ["retry_on_failure.max_elapsed_time", "0", "Never give up on a batch. The default of 300s drops it after five minutes of failures."],
+    ["max_interval", "5m", "Caps the wait between retries, so a site starts sending within five minutes of its link returning."],
+    ["num_consumers", "2", "Parallel senders. The default is 10; fewer is gentler on a thin uplink."],
+    ["compaction.on_rebound", "true", "Shrinks the queue file on disk after a backlog drains."],
+];
+
+const siteAttributes = [
+    ["acme.site.id", "store-0142", "SITE_ID at the Collector (custom)"],
+    ["acme.site.region", "eu-west", "SITE_REGION at the Collector (custom)"],
+    ["host.name", "gw-0142", "resourcedetection, system detector"],
+    ["deployment.environment.name", "production", "resource/site, unless the app sets it"],
+    ["service.name", "pos-api", "The application's SDK"],
+];
+
+const runNotes = [
+    ["The queue directory must be writable", "by the user the Collector runs as. On a fresh Docker volume the first start failed with <code>permission denied</code> until the volume was owned by that user."],
+    ["Set limit_mib to what the box can spare", "200 MiB with a 40 MiB spike allowance suits a gateway with 1 GB of RAM or more. <code>limit_percentage</code> works instead where memory sizes vary."],
+    ["Bind the OTLP receivers to the LAN", "They accept unauthenticated data on 4317 and 4318 and forward it under the site's key. Use the site LAN's interface address instead of <code>0.0.0.0</code>, and firewall both ports from other networks."],
+    ["The ingest key is regional", "An EU organization's key sent to <code>ingest.maple.dev</code> gets a <code>401</code>, which the exporter does not retry. Set the EU endpoint before rollout."],
+    ["Host metrics from a container", "need the host's root filesystem mounted and <code>root_path</code> set on <code>hostmetrics</code>, or they describe the container."],
+    ["Older releases use other names", "The filter syntax here is the current one; older releases use <code>traces: span:</code> and <code>logs: log_record:</code>. 0.163.1 warns that <code>otlphttp</code>, <code>resourcedetection</code> and <code>hostmetrics</code> are now <code>otlp_http</code>, <code>resource_detection</code> and <code>host_metrics</code>; the old names still run."],
+];
+
+const faqs = [
+    {
+        question: "What is edge computing observability?",
+        answer:
+            "Edge computing observability, or edge observability, is collecting traces, metrics and logs from code that runs outside a central cloud region and getting them to the backend that holds the rest of your telemetry. The edge can be a CDN function such as a Cloudflare Worker, or a site you run yourself: a store, a factory, a vessel or a small Kubernetes cluster.",
+    },
+    {
+        question: "Why is observability harder at the edge?",
+        answer:
+            "Edge sites lose their uplink, pay for bandwidth and run on small machines, and there are often hundreds of them. Edge functions live for one request and have no host to run an agent on. Telemetry has to be buffered locally, cut down before it leaves the site, and tagged with the site it came from.",
+    },
+    {
+        question: "How do I buffer telemetry when an edge site goes offline?",
+        answer:
+            "Run an OpenTelemetry Collector at the site and give its exporter a sending queue stored on disk by the file_storage extension. Set retry_on_failure.max_elapsed_time to 0 so batches are retried until the link returns, and size queue_size and the disk for the longest outage you want to survive. The queue survives Collector restarts and drains when the uplink comes back.",
+    },
+    {
+        question: "How do I observe Cloudflare Workers?",
+        answer:
+            "Turn on Workers tracing and logs in the Worker's Wrangler config and point them at OTLP destinations created under Workers & Pages, Observability, Destinations in the Cloudflare dashboard. Cloudflare records handler, fetch and binding spans without an SDK. Request counts, errors and CPU time are not part of that export; they come from Cloudflare's analytics API.",
+    },
+    {
+        question: "Which observability tools work for edge apps?",
+        answer:
+            "For edge sites, the OpenTelemetry Collector (the contrib distribution) does the collection, buffering, sampling and filtering, and any backend that accepts OTLP can receive the data. For edge functions, use the platform's own exporter where one exists, such as Cloudflare Workers Observability, or an OpenTelemetry SDK that flushes before the function's runtime ends.",
+    },
+    {
+        question: "What are the four pillars of observability?",
+        answer:
+            "Lists vary. Most start with metrics, logs and traces and add either events or continuous profiles as the fourth. OpenTelemetry is adding profiles as a signal next to the other three. For edge workloads, traces, metrics and logs cover most questions.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Edge observability, explained",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: "2026-10-20",
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/edge-observability`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Edge observability" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Edge</span>
+                    <span>10 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Edge observability, explained
+                </h1>
+                <p class="mt-7 max-w-[56ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    What changes when code runs at the edge, and a tested OpenTelemetry Collector setup that keeps telemetry through an outage.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime="2026-10-20">Updated {updatedLabel}</time>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={toc} class="sticky top-28" />
+            </aside>
+
+            <article class="edge-guide min-w-0">
+                <section id="definition" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Definition</p>
+                    <h2>Edge observability, defined</h2>
+
+                    <p>
+                        A retailer runs 400 shops, each with a till, a few sensors and a 4G router that drops out when the weather turns. A website runs a small function in a data center near each visitor, and the function is gone milliseconds after it answers. <strong>Edge observability</strong> is collecting traces, metrics and logs from code like this, which runs outside your main cloud region, and getting them to the same backend as the rest of your telemetry. In the cloud that data crosses a fast network that rarely fails; at the edge the link can be down for hours and every gigabyte sent costs money, so a default setup loses the data from the very outage you need to debug. By the end of this guide you'll have a Collector config for each site that survives a dead uplink, plus setups for edge Kubernetes and Cloudflare Workers.
+                    </p>
+
+                    <div class="guide-callout guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Run one OpenTelemetry Collector at each edge site. Edge functions have no host for one, so the platform exports for them.</li>
+                            <li>A Collector exporter retries a failed batch for five minutes and then drops it. Put its sending queue on disk to keep data through longer outages.</li>
+                            <li>Filter and sample at the site, before data crosses a metered uplink.</li>
+                            <li>Add a site ID to every signal, or hundreds of identical sites can't be told apart.</li>
+                            <li>Cloudflare Workers export traces and logs over OTLP, but no metrics, and don't pass trace context to services outside Cloudflare.</li>
+                        </ul>
+                    </div>
+
+                    <h3 id="two-edges" class="scroll-mt-24">Serverless edge and edge sites</h3>
+                    <p>
+                        "The edge" names two different places, and they need different setups. At the serverless edge the platform collects for you. At an edge site you run the collection yourself, on hardware at the site.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Serverless edge</th><th>Edge sites</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Examples</td><td>Cloudflare Workers and other CDN functions</td><td>Stores, factories, vessels, cell sites, small Kubernetes clusters</td></tr>
+                                <tr><td>Collection runs</td><td>In the platform</td><td>In an OpenTelemetry Collector on site</td></tr>
+                                <tr><td>Connectivity</td><td>Always online to the provider</td><td>Drops, metered, or both</td></tr>
+                                <tr><td>Buffering</td><td>The platform's job</td><td><span class="type-badge" style={`--type: ${concepts.buffer.color}`}>Buffer</span> A queue on local disk</td></tr>
+                                <tr><td>Volume control</td><td>A head sampling rate in config</td><td><span class="type-badge" style={`--type: ${concepts.reduce.color}`}>Reduce</span> Filtering and sampling in the Collector</td></tr>
+                                <tr><td>Location identity</td><td>The data center on each span (<code>cloudflare.colo</code> on Workers)</td><td><span class="type-badge" style={`--type: ${concepts.identify.color}`}>Identify</span> A site ID added to every signal</td></tr>
+                                <tr><td>Infrastructure metrics</td><td>The provider's analytics API</td><td>Host, kubelet and cluster receivers in the Collector</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 id="constraints" class="scroll-mt-24">Constraints at the edge</h3>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Cloud</th><th>Edge site</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Network</td><td>Data center links to the backend</td><td>Shop broadband, cellular or satellite</td></tr>
+                                <tr><td>Connectivity</td><td>Always on</td><td>Down for minutes or days</td></tr>
+                                <tr><td>Data volume</td><td>Sent in full, paid for at the backend</td><td>Every gigabyte over the uplink costs money</td></tr>
+                                <tr><td>Processing</td><td>In a central Collector or the backend</td><td>In a Collector at the site, before the uplink</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Each constraint below carries the part of the setup that handles it. The colored ones are jobs of the edge site Collector, and the rest of this guide uses the same colors for them.
+                    </p>
+                    <div class="guide-checklist">
+                        {constraints.map((c) => (
+                            <div>
+                                <h4>{c.title}</h4>
+                                <p>{c.body}</p>
+                                <span class="type-badge" style={`--type: ${c.concept ? concepts[c.concept].color : neutral}`}>{c.answer}</span>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section id="collector" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Architecture</p>
+                    <h2>A Collector at every edge site</h2>
+                    <p>
+                        At an edge site you own the hardware, so run one <a href="/opentelemetry">OpenTelemetry</a> Collector there. The Collector is a single program that receives telemetry, processes it and sends it on. Applications at the site send to it over the local network using OTLP, the OpenTelemetry protocol, on port 4317 (gRPC) or 4318 (HTTP). It reads the host's CPU, memory and disk itself, and it is the only process at the site that talks to the outside world.
+                    </p>
+
+                    <figure class="edge-flow" aria-label="An edge site, store-0142, runs apps that send OTLP to a Collector. The Collector tags each signal with the site ID, filters, samples and batches it, and writes batches to a queue on disk. The uplink from the queue to an optional regional gateway and on to Maple is down. A chart below shows the queue size: flat while online, rising steadily while the uplink is down, unaffected by a Collector restart, and draining back to zero once the link returns.">
+                        <svg viewBox="0 0 760 384" aria-hidden="true">
+                            <defs>
+                                <marker id="edge-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                    <path d="M0,0 L8,4 L0,8 z" class="edge-flow__head" />
+                                </marker>
+                            </defs>
+
+                            <rect x="1" y="1" width="440" height="178" rx="10" class="edge-flow__site" />
+                            <text x="18" y="27" class="edge-flow__title">Edge site</text>
+                            <text x="96" y="27" class="edge-flow__mono">store-0142</text>
+
+                            <rect x="16" y="62" width="96" height="84" rx="8" class="edge-flow__box" />
+                            <text x="64" y="98" text-anchor="middle" class="edge-flow__title">Apps</text>
+                            <text x="64" y="118" text-anchor="middle" class="edge-flow__mono">POS, sensors</text>
+                            <line x1="112" y1="104" x2="146" y2="104" marker-end="url(#edge-arrow)" class="edge-flow__line" />
+                            <text x="129" y="94" text-anchor="middle" class="edge-flow__mono edge-flow__mono--small">OTLP</text>
+
+                            <rect x="152" y="52" width="170" height="104" rx="8" class="edge-flow__box" />
+                            <text x="237" y="76" text-anchor="middle" class="edge-flow__title">Collector</text>
+                            <rect x="164" y="88" width="146" height="22" rx="4" class="edge-flow__chip" style={`--c: ${concepts.identify.color}`} />
+                            <text x="237" y="103" text-anchor="middle" class="edge-flow__chip-text" style={`--c: ${concepts.identify.color}`}>tag site.id</text>
+                            <rect x="164" y="118" width="146" height="22" rx="4" class="edge-flow__chip" style={`--c: ${concepts.reduce.color}`} />
+                            <text x="237" y="133" text-anchor="middle" class="edge-flow__chip-text" style={`--c: ${concepts.reduce.color}`}>filter, sample, batch</text>
+                            <line x1="322" y1="104" x2="346" y2="104" marker-end="url(#edge-arrow)" class="edge-flow__line" />
+
+                            <rect x="352" y="62" width="76" height="84" rx="8" class="edge-flow__box edge-flow__box--queue" />
+                            <text x="390" y="98" text-anchor="middle" class="edge-flow__title">Queue</text>
+                            <text x="390" y="118" text-anchor="middle" class="edge-flow__mono edge-flow__mono--queue">on disk</text>
+
+                            <line x1="428" y1="104" x2="520" y2="104" marker-end="url(#edge-arrow)" class="edge-flow__line edge-flow__line--down" />
+                            <line x1="466" y1="96" x2="482" y2="112" class="edge-flow__cross" />
+                            <line x1="482" y1="96" x2="466" y2="112" class="edge-flow__cross" />
+                            <text x="474" y="86" text-anchor="middle" class="edge-flow__mono">uplink</text>
+                            <text x="474" y="132" text-anchor="middle" class="edge-flow__mono edge-flow__mono--down">offline</text>
+
+                            <rect x="526" y="62" width="100" height="84" rx="8" class="edge-flow__box edge-flow__box--dashed" />
+                            <text x="576" y="98" text-anchor="middle" class="edge-flow__title">Gateway</text>
+                            <text x="576" y="118" text-anchor="middle" class="edge-flow__mono">optional</text>
+                            <line x1="626" y1="104" x2="652" y2="104" marker-end="url(#edge-arrow)" class="edge-flow__line" />
+
+                            <rect x="658" y="62" width="101" height="84" rx="8" class="edge-flow__box edge-flow__box--backend" />
+                            <text x="708" y="98" text-anchor="middle" class="edge-flow__title">Maple</text>
+                            <text x="708" y="118" text-anchor="middle" class="edge-flow__mono">OTLP/HTTP</text>
+
+                            <text x="0" y="226" class="edge-flow__mono edge-flow__mono--queue">otelcol_exporter_queue_size</text>
+                            <text x="760" y="226" text-anchor="end" class="edge-flow__mono">batches waiting on disk</text>
+                            <rect x="200" y="238" width="300" height="122" class="edge-flow__offline" />
+                            <line x1="380" y1="262" x2="380" y2="360" class="edge-flow__restart" />
+                            <polygon points="0,356 200,356 500,262 580,356 760,356 760,360 0,360" class="edge-flow__area" />
+                            <polyline points="0,356 200,356 500,262 580,356 760,356" class="edge-flow__queue" />
+                            <text x="386" y="334" class="edge-flow__mono">Collector restart:</text>
+                            <text x="386" y="350" class="edge-flow__mono">queue kept</text>
+                            <text x="512" y="262" class="edge-flow__mono">link back: backlog drains</text>
+                            <line x1="0" y1="360" x2="760" y2="360" class="edge-flow__axis" />
+                            <text x="100" y="378" text-anchor="middle" class="edge-flow__mono">online</text>
+                            <text x="350" y="378" text-anchor="middle" class="edge-flow__mono edge-flow__mono--down">uplink down</text>
+                            <text x="670" y="378" text-anchor="middle" class="edge-flow__mono">online</text>
+                        </svg>
+                    </figure>
+                    <p class="guide-caption">While the uplink is down, the Collector keeps accepting data and writes each batch to the queue on disk. A restart doesn't empty it. When the link returns, the backlog drains and the queue falls back to zero.</p>
+
+                    <h3 id="pipeline" class="scroll-mt-24">The pipeline, stage by stage</h3>
+                    <p>
+                        Inside the Collector, every signal passes through the same stages in this order. Each one is a component you name in the config in <a href="#config">section 03</a>.
+                    </p>
+                    <ol class="guide-steps">
+                        {pipeline.map((p, index) => (
+                            <li style={`--c: ${p.concept ? concepts[p.concept].color : neutral}`}>
+                                <span>{String(index + 1).padStart(2, "0")}</span>
+                                <div><h4><code>{p.component}</code></h4><p>{p.body}</p></div>
+                            </li>
+                        ))}
+                    </ol>
+
+                    <h3 id="gateways" class="scroll-mt-24">Regional gateways</h3>
+                    <p>
+                        Large fleets sometimes add a gateway tier: one Collector per region that every site in the region exports to. It is worth running when you need a single egress point per region, or want the backend's ingest key kept off site hardware. Without one of those reasons, export from each site directly. A gateway is one more machine that can be down, which is why it is dashed in the diagram.
+                    </p>
+
+                    <h3 id="tools" class="scroll-mt-24">Edge observability tools</h3>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Tool</th><th>What it is</th><th>License</th><th>At the edge</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a></td><td>Receives, processes and exports traces, metrics and logs</td><td>Open source (Apache 2.0)</td><td>Exporter queue on disk (<code>file_storage</code>, contrib build) and a memory ceiling (<code>memory_limiter</code>). Used in this guide.</td></tr>
+                                <tr><td><a href="https://docs.fluentbit.io/manual/administration/buffering-and-storage" target="_blank" rel="noopener noreferrer">Fluent Bit</a></td><td>Lightweight forwarder for logs, metrics and traces, a CNCF graduated project</td><td>Open source (Apache 2.0)</td><td>Buffers to the filesystem, with a size cap per output that drops the oldest data first</td></tr>
+                                <tr><td><a href="https://vector.dev/docs/architecture/buffering-model/" target="_blank" rel="noopener noreferrer">Vector</a></td><td>Observability data pipeline, maintained by Datadog</td><td>Open source (MPL 2.0)</td><td>Disk buffers that survive restarts and crashes</td></tr>
+                                <tr><td><a href="https://docs.px.dev/installing-pixie/requirements/" target="_blank" rel="noopener noreferrer">Pixie</a></td><td>Kubernetes observability from eBPF probes, no code changes, a CNCF sandbox project</td><td>Open source (Apache 2.0)</td><td>Needs Kubernetes 1.21+, Linux kernel 4.14+ and at least 1 GiB of memory per node</td></tr>
+                                <tr><td>Backend</td><td>Stores and queries what every site sends: Maple or any other OTLP backend</td><td>Varies</td><td>Receives OTLP over HTTP; the site's Collector does the buffering</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="guide-caption">Facts from each project's own documentation, last verified October 31, 2026.</p>
+                </section>
+
+                <section id="config" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Config</p>
+                    <h2>The edge Collector config</h2>
+                    <p>
+                        This config runs on the site's gateway machine with <a href="https://github.com/open-telemetry/opentelemetry-collector-releases/releases" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib</a> (<code>otelcol-contrib</code>), the distribution that includes the file storage, filter and sampling components. It exports to Maple. For another OTLP/HTTP backend, change the endpoint and the header.
+                    </p>
+
+                    <div class="code-file">
+                        <div class="code-file__head">
+                            <p class="code-file__name">edge-site.yaml</p>
+                            <div class="code-file__legend">
+                                {Object.values(concepts).map((c) => <span class="type-badge" style={`--type: ${c.color}`}>{c.name}</span>)}
+                            </div>
+                        </div>
+                        <pre><code set:html={configHtml} /></pre>
+                    </div>
+
+                    <h3 id="buffering" class="scroll-mt-24"><span class="type-dot" style={`--type: ${concepts.buffer.color}`}></span>Buffer while offline</h3>
+                    <p>
+                        How long a site can stay offline without losing data comes down to the exporter's queue and retry settings:
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Setting</th><th>Value</th><th>Effect</th></tr>
+                            </thead>
+                            <tbody>
+                                {queueSettings.map(([setting, value, effect]) => (
+                                    <tr><td><code>{setting}</code></td><td><code>{value}</code></td><td>{effect}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Size the queue from your own numbers: the site's telemetry per hour, times the longest outage you want to ride out, on a disk with room for it. Even with the queue, data is lost when:
+                    </p>
+                    <ul>
+                        <li>A crash loses what the <code>batch</code> processor holds in memory, up to its <code>timeout</code> (10 seconds here), before it reaches the queue.</li>
+                        <li>A full queue drops new data, counted in <code>otelcol_exporter_enqueue_failed_spans</code>, <code>_metric_points</code> and <code>_log_records</code>.</li>
+                        <li>A non-retryable error drops the batch. The exporter retries <code>429</code> and <code>503</code>; most other <code>4xx</code> responses, such as a bad ingest key, are final.</li>
+                    </ul>
+                    <p>
+                        Watch the backlog through the Collector's own metric <code>otelcol_exporter_queue_size</code>, the number of batches waiting, plotted in the diagram above. A queue that stays above zero means the site is offline or its uplink can't keep up.
+                    </p>
+
+                    <h3 id="volume" class="scroll-mt-24"><span class="type-dot" style={`--type: ${concepts.reduce.color}`}></span>Cut volume before the uplink</h3>
+                    <p>
+                        Data dropped at the site never crosses the uplink and is never stored. The config cuts volume at these points:
+                    </p>
+                    <ul>
+                        <li><code>filter/noise</code> removes data nobody queries: health checks and debug logs. It is exact and cheap, so it runs before sampling.</li>
+                        <li><code>probabilistic_sampler</code> in <code>proportional</code> mode keeps 25% of traces and writes the sampling rate into each span's <code>tracestate</code> (<code>ot=th:c</code> for 25%). A backend that reads it can scale counts back up. Maple does, so throughput and error rate still estimate the full traffic (<a href="/docs/concepts/sampling-throughput">sampling and throughput</a>).</li>
+                        <li><code>compression: gzip</code> on the exporter. Telemetry is repetitive and compresses well.</li>
+                        <li><code>collection_interval: 60s</code> on host metrics sends half the data points of a 30-second interval.</li>
+                    </ul>
+                    <p>
+                        Tail sampling decides after a trace has finished, so it can keep every error and every slow request plus a small share of the rest. It needs all spans of a trace in one Collector and holds traces in memory for <code>decision_wait</code>, which costs RAM a small gateway may not have. For a site whose traces stay local, add this processor in place of <code>probabilistic_sampler</code>:
+                    </p>
+                    <div class="code-file">
+                        <div class="code-file__head"><p class="code-file__name">tail_sampling (optional)</p></div>
+                        <pre><code set:html={`<span class="cfg-part" style="--c: ${concepts.reduce.color}">${highlight(tailSamplingConfig, "yaml")}</span>`} /></pre>
+                    </div>
+                    <p>
+                        The tail sampler writes no rate into <code>tracestate</code>, so a backend counts each kept span once and request counts from these traces lean toward errors and slow requests. For exact request metrics, count every span before sampling with the Collector's span metrics connector, as the <a href="/docs/concepts/sampling-throughput#exact-counts-with-spanmetrics">SpanMetrics section</a> of Maple's sampling docs shows.
+                    </p>
+
+                    <h3 id="site-identity" class="scroll-mt-24"><span class="type-dot" style={`--type: ${concepts.identify.color}`}></span>Tag every signal with its site</h3>
+                    <p>
+                        A <strong>resource attribute</strong> describes what produced a piece of telemetry, such as the service or the host, and is attached to every span, metric and log from it. OpenTelemetry has no standard attribute for a physical site, so define your own and set it in one place: the <code>resource/site</code> processor stamps it on everything the site's Collector forwards.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Attribute</th><th>Example</th><th>Set by</th></tr>
+                            </thead>
+                            <tbody>
+                                {siteAttributes.map(([attribute, example, source]) => (
+                                    <tr><td><code>{attribute}</code></td><td><code>{example}</code></td><td>{source}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Prefix custom attributes with your company's name (<code>acme.</code> here) so they can't collide with a future OpenTelemetry convention. The site keys use <code>upsert</code>, which overwrites, so an application with a stale setting can't report itself as another site. The environment uses <code>insert</code>, which only fills it in when the application left it empty.
+                    </p>
+
+                    <h3 id="run" class="scroll-mt-24">Run and test it</h3>
+                    <p>
+                        Save the config as <code>edge-site.yaml</code>, validate it, and start the Collector with the site's identity and your ingest key in the environment:
+                    </p>
+                    <pre><code set:html={highlight(runCommand, "shell")} /></pre>
+
+                    <div class="guide-tested">
+                        <p class="guide-kicker">Tested on otelcol-contrib 0.163.1</p>
+                        <p>
+                            Run in Docker with the container's network cut, the Collector accepted spans, logs and host metrics and queued them while the exporter retried. After a <code>SIGKILL</code> and a restart on the same volume with the network back, the queued data was delivered. The filter dropped the <code>/healthz</code> span and the debug log, and kept a log with no severity set.
+                        </p>
+                    </div>
+
+                    <div class="guide-notes">
+                        {runNotes.map(([title, body]) => (
+                            <div><h4>{title}</h4><p set:html={body} /></div>
+                        ))}
+                    </div>
+                </section>
+
+                <section id="edge-kubernetes" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Edge Kubernetes</p>
+                    <h2>Edge Kubernetes and containers</h2>
+                    <p>
+                        Many edge sites run a small Kubernetes distribution such as k3s on one to three nodes. Container observability there covers the same signals as in a cloud cluster: node and pod CPU and memory against requests and limits, pod phases and node conditions, and the traces of the workloads inside.
+                    </p>
+                    <p>
+                        Maple's <code>maple-k8s-infra</code> Helm chart works on k3s, kind and k0s without cert-manager. It runs a Collector on every node for host, kubelet and pod metrics, with OTLP receivers on <code>:4317</code> and <code>:4318</code> for apps in the cluster, and one more for cluster-wide metrics. Install it at each site with the site as the cluster name:
+                    </p>
+                    <pre><code set:html={highlight(helmCommand, "shell")} /></pre>
+                    <p>
+                        The chart sets <code>k8s.cluster.name</code> from <code>global.clusterName</code>, which is the site identity for these sites. Its exporter keeps the Collector's default queue in memory with a five-minute retry, which covers short drops; a long outage or a pod restart loses the backlog. At a site that goes offline for hours, send application telemetry through a standalone Collector with the disk queue from <a href="#config">section 03</a>.
+                    </p>
+                    <p>
+                        On a single box that runs Docker without Kubernetes, the <a href="/docs/infrastructure/docker">Docker agent</a> collects per-container metrics and logs, and the <a href="/docs/infrastructure/hosts">Hosts</a> Collector config covers the machine itself.
+                    </p>
+                </section>
+
+                <section id="cloudflare-workers" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Serverless edge</p>
+                    <h2>Cloudflare Workers and other edge functions</h2>
+                    <p>
+                        An edge function has no host to run a Collector on and no disk to buffer to. A Worker that exports from its own code with an OpenTelemetry SDK must pass the final flush to <code>ctx.waitUntil()</code>, which keeps the runtime alive until the export finishes. Otherwise the last spans can be lost when the request ends.
+                    </p>
+                    <p>
+                        Cloudflare Workers can also record and export telemetry with no SDK. <a href="https://developers.cloudflare.com/workers/observability/traces/" target="_blank" rel="noopener noreferrer">Workers tracing</a> creates spans for handler invocations, outbound <code>fetch</code> calls, binding calls such as KV and R2, and Durable Object RPC. <a href="https://developers.cloudflare.com/workers/observability/opentelemetry-export/" target="_blank" rel="noopener noreferrer">OpenTelemetry export</a> sends those traces and the Worker's logs over OTLP to destinations you create in the Cloudflare dashboard. A Worker opts in through its Wrangler config:
+                    </p>
+                    <pre><code set:html={highlight(wranglerConfig, "jsonc")} /></pre>
+                    <p>
+                        <code>head_sampling_rate</code> is the share of invocations recorded, from 0 to 1, default 1. <code>persist: false</code> sends data only to the destinations, without also storing it in Cloudflare. As of October 2026:
+                    </p>
+                    <ul>
+                        <li>Automatic tracing is in beta, and span and attribute names can change.</li>
+                        <li>Metrics are not part of the export. Request counts, errors and CPU time come from Cloudflare's analytics API.</li>
+                        <li>Trace context is not passed to services outside Cloudflare, so a backend the Worker calls starts its own trace.</li>
+                        <li>Some spans show 0 ms. As a Spectre mitigation, the runtime only advances its clock on I/O, so CPU work between two I/O calls has no duration.</li>
+                        <li>Each span carries <code>cloudflare.colo</code>, the data center that ran it: the location identity at the serverless edge.</li>
+                    </ul>
+                </section>
+
+                <section id="in-maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · In Maple</p>
+                    <h2>Edge observability in Maple</h2>
+                    <p>
+                        Maple receives OTLP over HTTP, so both kinds of edge send to the same endpoint: <code>https://ingest.maple.dev</code>, or <code>https://ingest.eu.maple.dev</code> for EU organizations. Each needs a private ingest key (<code>maple_sk_…</code>) from <strong>Settings → Ingestion</strong>.
+                    </p>
+
+                    <LanguageTabs label="Kind of edge" group="maple-guide-edge-kind" tabs={[{ id: "edge-sites", label: "Edge sites" }, { id: "workers", label: "Cloudflare Workers" }]}>
+                        <LanguageTab id="edge-sites">
+                            <ol class="guide-steps">
+                                <li>
+                                    <span>01</span>
+                                    <div><h4>Start the Collector at a site</h4><p>Run the config from section 03 with the site's <code>SITE_ID</code> and your key. The gateway appears under <strong>Infrastructure → Hosts</strong> within about a minute, keyed on <code>host.name</code>, with CPU, memory and disk.</p>
+                                        <figure class="guide-figure"><img src="/screenshots/guides/edge-observability-01-hosts.webp" data-zoomable alt="The Hosts page row for the edge gateway gw-0142: Linux, arm64, CPU, memory and disk usage bars, 15-minute load and last-seen time." width="2340" height="324" loading="lazy" /></figure></div>
+                                </li>
+                                <li>
+                                    <span>02</span>
+                                    <div><h4>Filter by site</h4><p>In <strong>Explore → Traces</strong>, click <strong>Advanced Filter</strong> and enter <code>resource.acme.site.id = "store-0142"</code> to see one site's traces. Every span's <strong>Resource Attributes</strong> list the site ID and region.</p>
+                                        <figure class="guide-figure"><img src="/screenshots/guides/edge-observability-02-site-filter.webp" data-zoomable alt="The traces list with the advanced filter resource.acme.site.id = &quot;store-0142&quot; applied: every trace comes from the site's pos-api service." width="1814" height="1250" loading="lazy" /></figure></div>
+                                </li>
+                                <li>
+                                    <span>03</span>
+                                    <div><h4>Edge Kubernetes sites</h4><p>Sites installed with the Helm chart carry the site as the cluster name: filter with <code>resource.k8s.cluster.name = "store-0142"</code>.</p></div>
+                                </li>
+                            </ol>
+                        </LanguageTab>
+                        <LanguageTab id="workers">
+                            <ol class="guide-steps">
+                                <li>
+                                    <span>01</span>
+                                    <div><h4>Create two destinations</h4><p>In Cloudflare, open <strong>Workers &amp; Pages → Observability → Destinations</strong>. Add a Traces destination named <code>maple-traces</code> for <code>https://ingest.maple.dev/v1/traces</code> and a Logs destination named <code>maple-logs</code> for <code>/v1/logs</code>, each with an <code>Authorization: Bearer</code> header carrying the key. OTLP export needs the Workers Paid plan.</p></div>
+                                </li>
+                                <li>
+                                    <span>02</span>
+                                    <div><h4>Reference them and deploy</h4><p>Add the <code>observability</code> block from section 05 to the Worker's Wrangler config and run <code>wrangler deploy</code>. Each request becomes a trace, and a span's <strong>Cloudflare Worker</strong> panel shows the script, CPU and wall time, and edge location.</p></div>
+                                </li>
+                                <li>
+                                    <span>03</span>
+                                    <div><h4>Add Worker metrics</h4><p>Connect <strong>Integrations → Cloudflare</strong> with OAuth. Maple polls Workers invocations, errors and CPU time every 5 minutes, and a traced Worker gets a <strong>Cloudflare edge</strong> section on the service map.</p></div>
+                                </li>
+                            </ol>
+                        </LanguageTab>
+                    </LanguageTabs>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Step-by-step docs for each edge</h3>
+                        <p>Prerequisites, verification and troubleshooting for each path, including EU endpoints.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/guides/instrumentation-cloudflare-workers" class="guide-button guide-button--primary">Cloudflare Workers</a>
+                            <a href="/docs/integrations/cloudflare" class="guide-button">Cloudflare integration</a>
+                            <a href="/docs/infrastructure/kubernetes" class="guide-button">Kubernetes</a>
+                            <a href="/docs/infrastructure/hosts" class="guide-button">Hosts</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector/blob/main/exporter/exporterhelper/README.md" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: exporter queue and retry settings</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/storage/filestorage" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: file_storage extension</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: memory_limiter processor</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/probabilisticsamplerprocessor" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: probabilistic_sampler processor</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: tail_sampling processor</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: filter processor</a></li>
+                        <li><a href="https://developers.cloudflare.com/workers/observability/traces/" target="_blank" rel="noopener noreferrer">Cloudflare: Workers traces</a> (last verified October 19, 2026)</li>
+                        <li><a href="https://developers.cloudflare.com/workers/observability/opentelemetry-export/" target="_blank" rel="noopener noreferrer">Cloudflare: Workers OpenTelemetry export</a> (last verified October 19, 2026)</li>
+                        <li><a href="/docs/guides/instrumentation-cloudflare-workers">Maple docs: Cloudflare Workers instrumentation</a></li>
+                        <li><a href="/docs/concepts/sampling-throughput">Maple docs: Sampling and throughput estimation</a></li>
+                        <li><a href="/docs/infrastructure/hosts">Maple docs: Hosts</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .edge-guide { max-width: 46rem; font-family: var(--font-display); }
+    .edge-guide section + section { margin-top: 5.5rem; }
+    .edge-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .edge-guide .guide-eyebrow span { color: var(--primary); }
+    .edge-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .edge-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .edge-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .edge-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .edge-guide > section > ul { display: grid; gap: 0.6rem; margin: 0 0 1.4rem; padding-left: 1.2rem; list-style: disc; font-size: 16px; line-height: 1.65; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .edge-guide > section > ul li::marker { color: var(--muted-foreground); }
+    .edge-guide strong { font-weight: 600; color: var(--foreground); }
+    .edge-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .edge-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .edge-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .edge-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .edge-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .edge-guide .guide-takeaways { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--primary); border-radius: 0.5rem; background: color-mix(in oklab, var(--primary) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .edge-guide .guide-takeaways ul { margin: 0.7rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 14px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .edge-guide .guide-takeaways li + li { margin-top: 0.35rem; }
+    .edge-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
+    /* One color per job of the edge Collector: set --type on badges and dots, --c on config parts and steps. */
+    .edge-guide .type-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--type) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--type) 14%, transparent); padding: 0.1rem 0.55rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--type) 70%, var(--foreground)); white-space: nowrap; }
+    .edge-guide .type-dot { width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--type); box-shadow: 0 0 0 4px color-mix(in oklab, var(--type) 18%, transparent); }
+
+    .edge-guide .guide-table { margin: 1.5rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .edge-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .edge-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .edge-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: top; }
+    .edge-guide td:first-child { color: var(--foreground); }
+    .edge-guide td + td { border-left: 1px solid var(--border); }
+    .edge-guide td .type-badge { margin-right: 0.35rem; }
+    .edge-guide tbody tr:last-child td { border-bottom: 0; }
+
+    .edge-guide .guide-checklist { display: grid; gap: 1px; margin: 1.5rem 0 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .edge-guide .guide-checklist > div { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .edge-guide .guide-checklist p { flex: 1; margin: 0 0 0.35rem; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+
+    .edge-flow { margin: 2rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .edge-flow svg { display: block; width: 100%; min-width: 600px; height: auto; }
+    .edge-flow__site { fill: none; stroke: var(--border); stroke-dasharray: 5 4; }
+    .edge-flow__box { fill: var(--background); stroke: var(--border); }
+    .edge-flow__box--queue { stroke: color-mix(in oklab, var(--chart-3) 70%, transparent); fill: color-mix(in oklab, var(--chart-3) 10%, var(--background)); }
+    .edge-flow__box--dashed { stroke-dasharray: 4 3; }
+    .edge-flow__box--backend { stroke: color-mix(in oklab, var(--primary) 60%, transparent); }
+    .edge-flow__chip { fill: color-mix(in oklab, var(--c) 16%, transparent); stroke: color-mix(in oklab, var(--c) 55%, transparent); }
+    .edge-flow__chip-text { fill: color-mix(in oklab, var(--c) 70%, var(--foreground)); font-family: var(--font-mono); font-size: 10.5px; }
+    .edge-flow__title { fill: var(--foreground); font-family: var(--font-display); font-size: 15px; font-weight: 550; }
+    .edge-flow__mono { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+    .edge-flow__mono--small { font-size: 9.5px; }
+    .edge-flow__mono--queue { fill: color-mix(in oklab, var(--chart-3) 75%, var(--foreground)); }
+    .edge-flow__mono--down { fill: var(--destructive); }
+    .edge-flow__line { stroke: var(--muted-foreground); stroke-width: 1.5; }
+    .edge-flow__line--down { stroke: var(--destructive); stroke-dasharray: 5 4; }
+    .edge-flow__cross { stroke: var(--destructive); stroke-width: 2.5; stroke-linecap: round; }
+    .edge-flow__head { fill: var(--muted-foreground); }
+    .edge-flow__offline { fill: color-mix(in oklab, var(--destructive) 9%, transparent); }
+    .edge-flow__restart { stroke: var(--muted-foreground); stroke-dasharray: 3 3; }
+    .edge-flow__area { fill: color-mix(in oklab, var(--chart-3) 22%, transparent); }
+    .edge-flow__queue { fill: none; stroke: var(--chart-3); stroke-width: 2; stroke-linejoin: round; }
+    .edge-flow__axis { stroke: var(--border); }
+
+    .edge-guide .code-file { margin: 1.25rem 0 1.5rem; }
+    .edge-guide .code-file__head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.5rem; }
+    .edge-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .edge-guide .code-file__legend { display: flex; gap: 0.4rem; padding-bottom: 0.4rem; }
+    .edge-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    /* A stripe down the left of every line in a colored part of a config; keys take the part's color. */
+    .edge-guide .cfg-part { -webkit-box-decoration-break: clone; box-decoration-break: clone; margin-left: -1.1rem; border-left: 2px solid var(--c); padding: 0.28em 0 0.28em calc(1.1rem - 2px); }
+    .edge-guide .cfg-part .tok-name { color: color-mix(in oklab, var(--c) 72%, var(--foreground)); }
+    .edge-guide .tok-comment { color: var(--muted-foreground); }
+    .edge-guide .tok-name { color: var(--foreground); }
+    .edge-guide .tok-labels { color: color-mix(in oklab, var(--chart-4) 75%, var(--foreground)); }
+    .edge-guide .tok-value { color: color-mix(in oklab, var(--primary) 75%, var(--foreground)); }
+    .edge-guide .tok-fn { color: color-mix(in oklab, var(--chart-4) 70%, var(--foreground)); }
+
+    .edge-guide .guide-steps { margin: 1.5rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .edge-guide .guide-steps li { --c: var(--primary); display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .edge-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--c) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--c) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: color-mix(in oklab, var(--c) 75%, var(--foreground)); }
+    .edge-guide .guide-steps h4 code { font-size: 12px; }
+    .edge-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
+    .edge-guide .guide-figure { margin: 1rem 0 0; }
+    .edge-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .edge-guide .lt { margin: 1.5rem 0; }
+    .edge-guide .lt .guide-steps { margin: 0; border-top: 0; }
+
+    .edge-guide .guide-tested { margin: 1.5rem 0; border: 1px solid var(--border); border-left: 2px solid var(--success); border-radius: 0.5rem; background: color-mix(in oklab, var(--success) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .edge-guide .guide-tested .guide-kicker { color: var(--success); }
+    .edge-guide .guide-tested p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .edge-guide .guide-notes { display: grid; gap: 1px; margin: 1.5rem 0 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .edge-guide .guide-notes > div { background: var(--background); padding: 1rem 1.2rem; }
+    .edge-guide .guide-notes p { margin: 0.35rem 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+
+    .edge-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .edge-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .edge-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .edge-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .edge-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .edge-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .edge-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .edge-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .edge-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .edge-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .edge-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .edge-guide .guide-notes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .edge-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .edge-guide a, .edge-guide .guide-button { transition: none; }
+    }
+</style>

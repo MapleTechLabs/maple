@@ -19,7 +19,8 @@ export type GuideLang =
     | "shell"
     | "python-logging"
     | "loguru-output"
-    | "otel-debug";
+    | "otel-debug"
+    | "jsonc";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -232,6 +233,14 @@ const otelDebug = (code: string) =>
         })
         .join("\n");
 
+const jsonc = (code: string) =>
+    tokenize(code, [
+        [/\/\/.*/y, (m) => span("comment", m[0])],
+        [/"[^"\n]*"(?=\s*:)/y, (m) => span("name", m[0])],
+        [/"[^"\n]*"/y, (m) => span("labels", m[0])],
+        [/\b(?:true|false|null|\d+(?:\.\d+)?)\b/y, (m) => span("value", m[0])],
+    ]);
+
 export const highlight = (code: string, lang: GuideLang) =>
     ({
         exposition,
@@ -252,4 +261,5 @@ export const highlight = (code: string, lang: GuideLang) =>
         "python-logging": pythonLogging,
         "loguru-output": loguruOutput,
         "otel-debug": otelDebug,
+        jsonc,
     })[lang](code);
