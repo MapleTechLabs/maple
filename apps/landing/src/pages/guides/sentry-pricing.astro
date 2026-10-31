@@ -29,6 +29,7 @@ const toc = [
     { depth: 2, slug: "plans", text: "Plans and prices" },
     { depth: 3, slug: "business", text: "Team or Business" },
     { depth: 3, slug: "seer", text: "Seer add-on" },
+    { depth: 3, slug: "discounts", text: "Discounts" },
     { depth: 2, slug: "free-plan", text: "The free plan" },
     { depth: 3, slug: "free-limits", text: "Free plan limits" },
     { depth: 3, slug: "self-hosted", text: "Self-hosted Sentry" },
@@ -281,13 +282,25 @@ const articleJsonLd = {
             </aside>
 
             <article class="pricing-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        Before you add Sentry to an app, you want to know whether it stays free and what it costs once it doesn't. Sentry is an error tracking and performance monitoring service: a small library in your app reports crashes and slow requests, and Sentry groups them into issues with the stack trace attached. It's free for one developer: the Developer plan costs $0 for 5,000 errors and 5 million spans a month, and drops new errors past that until the month resets. Paid plans start at $29 a month and bill errors, spans, replays and logs above the plan's allowance at separate rates, so one noisy release can raise the bill. By the end you can estimate your own monthly bill and know which settings keep it down.
+                    </p>
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Developer is $0 for one user, with 5,000 errors, 5M spans and 50 replays a month.</li>
+                            <li>Team is $29 a month ($26 billed annually) and Business $89 ($80); both include 50,000 errors and 5M spans.</li>
+                            <li>Business charges about twice the Team rate for each error and span above the included volume.</li>
+                            <li>Reserved volume costs 20% less than pay-as-you-go for errors, spans, replays and attachments.</li>
+                            <li>Once the pay-as-you-go budget runs out, new data is dropped until the billing cycle resets.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="plans" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Plans</p>
                     <h2>Sentry plans and prices</h2>
-
-                    <div class="guide-answer">
-                        <p>Sentry charges a flat monthly price for the plan, then a separate price for each kind of data you send beyond what the plan includes. Errors, spans, session replays and logs each have their own allowance and their own rate.</p>
-                    </div>
 
                     <div class="guide-table">
                         <table>
@@ -328,6 +341,13 @@ const articleJsonLd = {
                     <p>
                         Seer, Sentry's AI debugging agent, is a separate subscription on Team and Business at <strong>$40 per active contributor per month</strong>. An active contributor is anyone who opens two or more pull requests in a month against a repository connected to Sentry with a Seer feature turned on. Seer is billed on its own line and does not draw from the pay-as-you-go budget.
                     </p>
+
+                    <h3 id="discounts" class="scroll-mt-24">Discounts</h3>
+                    <ul class="guide-list">
+                        <li>Annual billing takes about 10% off: Team is $26 a month instead of $29, Business $80 instead of $89.</li>
+                        <li>Open-source projects and nonprofits can apply for a <a href="https://www.sentry.help/en/articles/13965064-do-i-qualify-for-a-sponsored-account" target="_blank" rel="noopener noreferrer">sponsored account</a>.</li>
+                        <li><a href="https://sentry.io/for/startups/apply/" target="_blank" rel="noopener noreferrer">Sentry for Startups</a> gives up to $5,000 in credits for 12 months to companies founded in the last 2 years, with under $5M raised and new to paying for Sentry.</li>
+                    </ul>
                     <p class="guide-verified">
                         Verified {verified} against <a href="https://sentry.io/pricing/" target="_blank" rel="noopener noreferrer">sentry.io/pricing</a> and <a href="https://docs.sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry's pricing docs</a>, which round the per-unit prices.
                     </p>
@@ -649,6 +669,8 @@ const articleJsonLd = {
                     <ul>
                         <li><a href="https://sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry: Pricing (verified {verified})</a></li>
                         <li><a href="https://docs.sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry docs: Pricing and billing</a></li>
+                        <li><a href="https://www.sentry.help/en/articles/13965064-do-i-qualify-for-a-sponsored-account" target="_blank" rel="noopener noreferrer">Sentry help: Do I qualify for a sponsored account? (verified 2026-10-31)</a></li>
+                        <li><a href="https://sentry.io/for/startups/apply/" target="_blank" rel="noopener noreferrer">Sentry for Startups (verified 2026-10-31)</a></li>
                         <li><a href="https://docs.sentry.io/pricing/quotas/" target="_blank" rel="noopener noreferrer">Sentry docs: Quota management</a></li>
                         <li><a href="https://docs.sentry.io/pricing/quotas/spike-protection/" target="_blank" rel="noopener noreferrer">Sentry docs: Spike protection</a></li>
                         <li><a href="https://docs.sentry.io/platforms/javascript/session-replay/" target="_blank" rel="noopener noreferrer">Sentry docs: Session replay for JavaScript</a></li>
@@ -674,7 +696,7 @@ const articleJsonLd = {
     .pricing-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .pricing-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .pricing-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .pricing-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-note, .guide-verified), .pricing-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .pricing-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-note, .guide-verified) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .pricing-guide .guide-note, .pricing-guide .guide-verified { margin: -0.75rem 0 1.5rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
     .pricing-guide .guide-verified { margin-top: 0; }
     .pricing-guide strong { font-weight: 600; color: var(--foreground); }
@@ -682,8 +704,9 @@ const articleJsonLd = {
     .pricing-guide pre { margin: 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0 0.5rem 0.5rem 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .pricing-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .pricing-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .pricing-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .pricing-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .pricing-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pricing-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .pricing-guide .guide-takeaways li::marker { color: var(--primary); }
     .pricing-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
     .pricing-guide .guide-list { margin: 0 0 1.5rem; padding-left: 1.2rem; list-style: disc; font-size: 16px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .pricing-guide .guide-list li + li { margin-top: 0.35rem; }
