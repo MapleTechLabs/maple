@@ -217,6 +217,7 @@ export {
 	scannerSourcesQuery,
 	scannerTimelineQuery,
 	SCANNER_TIMELINE_MAX_BUCKETS,
+	SCANNER_SIGNATURES_MAX_ROWS,
 	runtimeVersionsQuery,
 	type ScannerSignaturesOutput,
 	type ScannerExposedOutput,
