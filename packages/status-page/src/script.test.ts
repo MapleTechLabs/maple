@@ -60,7 +60,8 @@ describe("page script logic", () => {
 			expect(logic.state(counts(bar))).toBe(state)
 			expect(logic.tip(bar.day, counts(bar))).toBe(dayTitle(bar, state))
 		}
-		for (const percent of [100, 99.999, 99.97, 99.9, 50, 0]) {
+		// 624 of 625 up is 99.84, which float error puts just below it.
+		for (const percent of [100, 99.999, 99.97, 99.9, (624 / 625) * 100, 50, 0]) {
 			expect(logic.pct(percent)).toBe(formatPercent(percent))
 		}
 	})

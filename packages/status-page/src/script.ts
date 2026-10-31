@@ -11,7 +11,7 @@ function fday(d){var p=d.split("-");return M[p[1]-1]+" "+(+p[2])+", "+p[0]}
 function bounds(len,pg){var to=len-pg*90;return{from:to-90,to:to}}
 function state(c){return!c||c[0]===0?"none":c[2]>0?"down":c[1]>0?"degraded":"ok"}
 function tip(d,c){var s=state(c);return fday(d)+": "+(s==="none"?"No data":s==="ok"?"No downtime, "+c[0]+" checks":s==="degraded"?c[1]+" of "+c[0]+" checks failed":"Down during "+c[2]+" of "+c[0]+" checks")}
-function pct(p){return(Math.floor(p*100)/100).toFixed(2).replace(/\\.?0+$/,"")+"%"}
+function pct(p){return(Math.floor(+(p*100).toFixed(6))/100).toFixed(2).replace(/\\.?0+$/,"")+"%"}
 function cells(y,m){var lead=(new Date(Date.UTC(y,m-1,1)).getUTCDay()+6)%7,n=new Date(Date.UTC(y,m,0)).getUTCDate(),t=Math.ceil((lead+n)/7)*7,r=[];for(var i=0;i<t;i++){var d=i-lead+1;r.push(d>=1&&d<=n?d:0)}return r}
 function mback(d,b){var p=d.split("-"),i=p[0]*12+(p[1]-1)-b;return Math.floor(i/12)+"-"+pad(i%12+1)}
 `
