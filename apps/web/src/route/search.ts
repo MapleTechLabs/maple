@@ -6,6 +6,8 @@ import {
 	CiBranchName,
 	CiPipelineName,
 	CiRunResult,
+	CodeReviewSortDir,
+	CodeReviewSortKey,
 	IssueKind,
 	PrReviewCategory,
 	PrReviewFindingStatus,
@@ -119,6 +121,8 @@ const CodeReviewListSearchFields = {
 	...CodeReviewSearchFields,
 	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
 	q: Schema.optional(Schema.String),
+	sortBy: Schema.optional(CodeReviewSortKey),
+	sortDir: Schema.optional(CodeReviewSortDir),
 	review: Schema.optional(PrReviewId),
 }
 
