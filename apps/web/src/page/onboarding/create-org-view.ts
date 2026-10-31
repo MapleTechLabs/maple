@@ -225,7 +225,12 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 				[
 					...(model.errorMessage === null
 						? []
-						: [h.p([h.Class(cn("text-xs", TONE_TEXT.crit))], [model.errorMessage])]),
+						: [
+								h.p(
+									[h.Role("alert"), h.Class(cn("text-xs", TONE_TEXT.crit))],
+									[model.errorMessage],
+								),
+							]),
 					button(
 						h,
 						{

@@ -51,7 +51,6 @@ const regionCard = (h: H, choice: RegionChoice, region: Region): Html => {
 		label: card.name,
 		title: card.name,
 		description: card.place,
-
 		media: regionFlag(
 			h,
 			region,

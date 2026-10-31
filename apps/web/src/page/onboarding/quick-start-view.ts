@@ -1014,8 +1014,9 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 											h.a(
 												[
 													h.Href(card.href),
+													h.AriaLabel(`${card.action}: ${card.title}`),
 													h.Class(
-														"group flex flex-1 flex-col gap-3.5 p-5 outline-none transition-colors duration-150 hover:bg-surface-faint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-surface-faint motion-reduce:transition-none",
+														"group flex flex-1 flex-col gap-3.5 p-5 outline-none hover:bg-surface-faint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-surface-faint",
 													),
 												],
 												[
@@ -1040,7 +1041,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 													h.span(
 														[
 															h.Class(
-																"mt-auto flex items-center gap-1.5 text-ui text-muted-foreground transition-colors duration-150 group-hover:text-foreground motion-reduce:transition-none",
+																"mt-auto flex items-center gap-1.5 text-ui text-muted-foreground group-hover:text-foreground",
 															),
 														],
 														[

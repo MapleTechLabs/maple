@@ -90,7 +90,7 @@ const toolRow = (h: H, tool: Tool): Html =>
 					href: tool.href,
 					variant: "outline",
 					size: "sm",
-					className: "max-sm:ml-[3.375rem]",
+					className: "max-sm:ml-13.5",
 					attributes: [
 						h.Target("_blank"),
 						h.Rel("noopener"),

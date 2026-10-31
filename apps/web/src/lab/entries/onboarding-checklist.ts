@@ -127,7 +127,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 
 export const lab = defineLabWithFlags("Onboarding checklist", {
 	Model,
-	Flags: Schema.Struct({ nowMs: Schema.Number }),
+	Flags: Model,
 	flags: Effect.sync(() => ({ nowMs: Date.now() })),
 	init: (flags) => ({ model: { nowMs: flags.nowMs } }),
 	update: (model) => ({ model }),

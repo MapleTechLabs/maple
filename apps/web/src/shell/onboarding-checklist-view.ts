@@ -124,7 +124,7 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep): Html =>
 							h.span(
 								[
 									h.Class(
-										"size-4 shrink-0 rounded-full border border-dashed border-foreground-faint transition-colors group-hover:border-solid group-hover:border-foreground",
+										"size-4 shrink-0 rounded-full border border-dashed border-foreground-faint group-hover:border-solid group-hover:border-foreground",
 									),
 									h.AriaHidden(true),
 								],
@@ -184,7 +184,7 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 											[
 												isClaimed
 													? `${amount} in credits applied. It comes off your next invoice.`
-													: "Finish these within 24 hours of creating your org and we credit your balance.",
+													: "Finish these within 24 hours of creating your org and we'll credit your balance.",
 											],
 										),
 									],
