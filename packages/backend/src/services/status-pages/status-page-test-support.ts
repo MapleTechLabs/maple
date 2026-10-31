@@ -26,13 +26,14 @@ export const seedPage = (
 		readonly publishedRevision?: number
 		readonly publishedAt?: number | null
 		readonly publishAttemptedAt?: number | null
+		readonly draft?: boolean
 	},
 ) =>
 	sql(
 		testDb,
 		`INSERT INTO status_pages (id, org_id, name, slug, auto_incidents, break_glass_token_sha256,
-			revision, published_revision, published_at, created_by, created_at, updated_at, publish_attempted_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)`,
+			revision, published_revision, published_at, created_by, created_at, updated_at, publish_attempted_at, draft)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13)`,
 		[
 			input.id,
 			ORG,
@@ -48,6 +49,7 @@ export const seedPage = (
 			input.publishAttemptedAt === undefined || input.publishAttemptedAt === null
 				? null
 				: iso(input.publishAttemptedAt),
+			input.draft ?? false,
 		],
 	)
 
@@ -232,6 +234,18 @@ export const readPage = (testDb: TestDb, pageId: string) =>
 				publish_attempted_at::text
 			 FROM status_pages WHERE id = $1`,
 			[pageId],
+		),
+	)
+
+/** Rows in the page, component and edge-cleanup tables, to show a read wrote nothing. */
+export const tableCounts = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ pages: number; components: number; cleanups: number }>(
+			testDb,
+			`SELECT (SELECT count(*) FROM status_pages)::int AS pages,
+				(SELECT count(*) FROM status_page_components)::int AS components,
+				(SELECT count(*) FROM status_page_cleanups)::int AS cleanups`,
+			[],
 		),
 	)
 

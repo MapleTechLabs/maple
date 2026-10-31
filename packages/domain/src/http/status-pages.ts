@@ -156,6 +156,8 @@ export const StatusPageRecord = Schema.Struct({
 	showPoweredBy: Schema.Boolean,
 	autoIncidents: StatusPageAutoIncidents,
 	breakGlassTokenSuffix: Schema.NullOr(Schema.String),
+	/** Not public until published; the publisher skips a draft. */
+	draft: Schema.Boolean,
 	revision: Schema.Number,
 	publishedRevision: Schema.Number,
 	publishedAt: Schema.NullOr(Schema.Number),

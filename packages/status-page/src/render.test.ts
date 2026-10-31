@@ -674,8 +674,33 @@ describe("page theme", () => {
 	})
 })
 
+describe("editor preview render", () => {
+	const snapshot = makeSnapshot({
+		incidents: [makeIncident("inc-1", { componentIds: [fixtureComponentId(0)] })],
+	})
+
+	it("tags components and incidents with their ids only when the preview flag is set", () => {
+		const html = renderPage(snapshot, live, FIXTURE_NOW, { preview: true })
+		expect(html).toContain(`data-component-id="${fixtureComponentId(0)}"`)
+		expect(html).toContain(`data-incident-id="inc-1"`)
+		const publicHtml = renderPage(snapshot, live, FIXTURE_NOW)
+		expect(publicHtml).not.toMatch(/data-(component|incident)-id=/u)
+	})
+
+	it("adds nothing else: without the ids the preview is the public page", () => {
+		const preview = renderPage(snapshot, live, FIXTURE_NOW, { preview: true })
+		expect(preview.replaceAll(/ data-(component|incident)-id="[^"]*"/gu, "")).toBe(
+			renderPage(snapshot, live, FIXTURE_NOW),
+		)
+	})
+})
+
 describe("previewSnapshot", () => {
 	const base = makeSnapshot()
+	const withoutDays = (index: number) => {
+		const { days: _days, ...component } = base.components[index]!
+		return component
+	}
 
 	it("derives statuses from monitors, overrides and active incidents, with empty bars", () => {
 		const incident = makeIncident("inc-1", { componentIds: [fixtureComponentId(1)], impact: "major" })
@@ -683,9 +708,9 @@ describe("previewSnapshot", () => {
 			pageId: base.pageId,
 			page: { ...base.page, theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: "#123abc" } },
 			components: [
-				{ ...base.components[0]!, monitorStatus: "down", manualStatus: null },
-				{ ...base.components[1]!, monitorStatus: "up", manualStatus: null },
-				{ ...base.components[2]!, monitorStatus: null, manualStatus: "degraded" },
+				{ ...withoutDays(0), monitorStatus: "down", manualStatus: null },
+				{ ...withoutDays(1), monitorStatus: "up", manualStatus: null },
+				{ ...withoutDays(2), monitorStatus: null, manualStatus: "degraded" },
 			],
 			incidents: makeSnapshot({ incidents: [incident] }).incidents,
 			nowMs: FIXTURE_NOW,
@@ -702,5 +727,21 @@ describe("previewSnapshot", () => {
 		const html = renderPage(snapshot, { _tag: "live", updatedAt: FIXTURE_NOW }, FIXTURE_NOW)
 		expect(html).toContain("--link:#123abc")
 		expect(rowOf(html, snapshot.components[0]!.id)).toContain(`<span class="uptime">No data</span>`)
+	})
+})
+
+describe("previewSnapshot with history", () => {
+	it("shows the days it is given for a monitored component", () => {
+		const base = makeSnapshot()
+		const days = base.components[0]!.days
+		const snapshot = previewSnapshot({
+			pageId: base.pageId,
+			page: base.page,
+			components: [{ ...base.components[0]!, monitorStatus: "up", manualStatus: null, days }],
+			incidents: [],
+			nowMs: FIXTURE_NOW,
+		})
+		expect(snapshot.components[0]?.days).toEqual(days)
+		expect(renderPage(snapshot, live, FIXTURE_NOW)).toContain("100% uptime")
 	})
 })

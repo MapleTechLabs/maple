@@ -3,7 +3,14 @@ import { Effect, Exit, Layer } from "effect"
 import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, utcDay } from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
-import { StatusPageSnapshotBuilder, toSnapshot, type SnapshotInput } from "./StatusPageSnapshotBuilder"
+import {
+	DRAFT_PAGE_ID,
+	draftComponentId,
+	StatusPageSnapshotBuilder,
+	toSnapshot,
+	toStatusPageDraft,
+	type SnapshotInput,
+} from "./StatusPageSnapshotBuilder"
 import {
 	DAY_MS,
 	newPageId,
@@ -14,6 +21,7 @@ import {
 	seedIncident,
 	seedMonitor,
 	seedPage,
+	tableCounts,
 } from "./status-page-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -504,6 +512,145 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			assert.strictEqual(yield* builder.probesSeenAt(NOW, ORG), NOW - 600_000)
 			// Another org's fresh probe never vouches for a silent org.
 			assert.strictEqual(yield* builder.probesSeenAt(NOW, OrgId.make("org_silent")), null)
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+})
+
+describe("toStatusPageDraft", () => {
+	it("falls back for a blank name, an invalid slug, an unreadable theme and non-https links", () => {
+		const draft = toStatusPageDraft({
+			name: "  ",
+			slug: "Not A Slug",
+			website_url: "javascript:alert(1)",
+			privacy_url: "https://acme.example/privacy",
+			theme: { appearance: "light", text: "#777777", background: "#ffffff" },
+			components: [{ name: " API ", group: " " }],
+		})
+		assert.strictEqual(draft.page.name, "Status page")
+		assert.strictEqual(draft.page.slug, "preview")
+		assert.deepStrictEqual(draft.page.theme, DEFAULT_STATUS_PAGE_THEME)
+		assert.isNull(draft.page.websiteUrl)
+		assert.strictEqual(draft.page.privacyUrl, "https://acme.example/privacy")
+		assert.deepStrictEqual(draft.components, [
+			{
+				name: "API",
+				description: null,
+				groupName: null,
+				monitorId: null,
+				manualStatus: null,
+				showUptime: true,
+			},
+		])
+	})
+
+	it("keeps a valid slug and a readable theme", () => {
+		const draft = toStatusPageDraft({
+			name: "Acme",
+			slug: "acme-status",
+			theme: { preset: "midnight", accent: "#A5B4FC" },
+			components: [],
+		})
+		assert.strictEqual(draft.page.slug, "acme-status")
+		assert.deepStrictEqual(draft.page.theme, {
+			...DEFAULT_STATUS_PAGE_THEME,
+			preset: "midnight",
+			accent: "#a5b4fc",
+		})
+	})
+})
+
+describe("StatusPageSnapshotBuilder.buildDraft", () => {
+	const draftOf = (components: ReadonlyArray<{ name: string; monitor_id?: UptimeMonitorId }>) =>
+		toStatusPageDraft({ name: "Acme", slug: "acme-preview", components })
+
+	it.effect("builds bars and statuses from the org's real monitor data, in request order", () => {
+		const testDb = createTestDb(trackedDbs)
+		const monitorId = UptimeMonitorId.make(crypto.randomUUID())
+		return Effect.gen(function* () {
+			yield* seedMonitor(testDb, { id: monitorId, status: "down" })
+			yield* seedDaily(testDb, {
+				monitorId,
+				day: utcDay(NOW),
+				checks: 10,
+				failures: 4,
+				downChecks: 4,
+				lastCheckAt: NOW - 30_000,
+			})
+			yield* seedDaily(testDb, {
+				monitorId,
+				day: utcDay(NOW - DAY_MS),
+				checks: 8,
+				failures: 0,
+				downChecks: 0,
+				lastCheckAt: NOW - DAY_MS,
+			})
+			const builder = yield* StatusPageSnapshotBuilder
+			const snapshot = yield* builder.buildDraft(
+				ORG,
+				draftOf([{ name: "Docs" }, { name: "API", monitor_id: monitorId }]),
+				NOW,
+			)
+			assert.strictEqual(snapshot.pageId, DRAFT_PAGE_ID)
+			assert.strictEqual(snapshot.revision, 0)
+			assert.isNull(snapshot.breakGlassTokenSha256)
+			assert.deepStrictEqual(snapshot.incidents, [])
+			assert.deepStrictEqual(
+				snapshot.components.map((c) => [c.id, c.name, c.status, c.monitored]),
+				[
+					[draftComponentId(0), "Docs", "operational", false],
+					[draftComponentId(1), "API", "major_outage", true],
+				],
+			)
+			const days = snapshot.components[1]?.days ?? []
+			assert.lengthOf(days, 365)
+			assert.deepStrictEqual(days.at(-1), {
+				day: utcDay(NOW),
+				checks: 10,
+				failures: 4,
+				downChecks: 4,
+			})
+			assert.deepStrictEqual(days.at(-2), {
+				day: utcDay(NOW - DAY_MS),
+				checks: 8,
+				failures: 0,
+				downChecks: 0,
+			})
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+
+	it.effect("refuses another org's monitor", () => {
+		const testDb = createTestDb(trackedDbs)
+		const foreign = UptimeMonitorId.make(crypto.randomUUID())
+		return Effect.gen(function* () {
+			yield* seedMonitor(testDb, { id: foreign, status: "down", orgId: "org_somebody_else" })
+			const builder = yield* StatusPageSnapshotBuilder
+			const error = yield* Effect.flip(
+				builder.buildDraft(ORG, draftOf([{ name: "API", monitor_id: foreign }]), NOW),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/StatusPageValidationError")
+			assert.include(error.message, "upm_")
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+
+	it.effect("writes nothing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const pageId = newPageId()
+		const monitorId = UptimeMonitorId.make(crypto.randomUUID())
+		return Effect.gen(function* () {
+			yield* seedPage(testDb, { id: pageId, slug: "acme-existing", revision: 2 })
+			yield* seedMonitor(testDb, { id: monitorId, status: "up" })
+			yield* seedComponent(testDb, {
+				id: crypto.randomUUID(),
+				pageId,
+				name: "API",
+				position: 0,
+				monitorId,
+			})
+			const before = yield* tableCounts(testDb)
+			const builder = yield* StatusPageSnapshotBuilder
+			yield* builder.buildDraft(ORG, draftOf([{ name: "API", monitor_id: monitorId }]), NOW)
+			assert.deepStrictEqual(yield* tableCounts(testDb), before)
+			assert.strictEqual((yield* builder.build(pageId, NOW)).revision, 2)
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 })

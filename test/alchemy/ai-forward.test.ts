@@ -35,7 +35,7 @@ const TestMapleStack = Layer.effect(
 			...deployment,
 			domains: resolveMapleDomains(deployment),
 			profile: resolveMapleProfile(deployment),
-			urls: { api: "", ingest: "", electricSync: "" },
+			urls: { api: "", ingest: "", electricSync: "", status: "" },
 			workerDev: () => undefined,
 			devEnv: undefined,
 			db: undefined,

@@ -3,8 +3,12 @@ import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
-import { MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { MapleApiV2, UptimeMonitorPublicId } from "@maple/domain/http/v2"
+import { UptimeMonitorId, type StatusPageId } from "@maple/domain/primitives"
+import { utcDay } from "@maple/domain/status-page"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPagePublishDbError } from "@maple/backend/services/status-pages/publish-errors"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
@@ -52,7 +56,21 @@ const testConfig = () =>
 		}),
 	)
 
-const makeHarness = () => {
+/** A publisher that records the pages it was asked to publish, or fails every publish. */
+const fakePublisher = (published: Array<StatusPageId>, options: { readonly fail?: boolean } = {}) =>
+	Layer.succeed(StatusPagePublisher, {
+		publish: (pageId) =>
+			options.fail === true
+				? Effect.fail(new StatusPagePublishDbError({ message: "edge down" }))
+				: Effect.sync(() => {
+						published.push(pageId)
+						return { pageId, revision: 1, written: true }
+					}),
+		sweep: () => Effect.die("unused"),
+		heartbeat: () => Effect.void,
+	})
+
+const makeHarness = (publisher?: Layer.Layer<StatusPagePublisher>) => {
 	const testDb = createTestDb(createdDbs)
 	const audit = makeMemoryAuditLog()
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -77,6 +95,7 @@ const makeHarness = () => {
 		Layer.provideMerge(Layer.succeed(AuditLogService, audit)),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
+		Layer.provideMerge(publisher ?? Layer.empty),
 	)
 	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const runtime = ManagedRuntime.make(servicesLive)
@@ -108,10 +127,13 @@ const makeHarness = () => {
 	const auditEntries = (action: string) =>
 		Effect.runPromise(audit.list(ORG, { action, limit: 100, offset: 0 }))
 
+	const sql = (text: string, params: ReadonlyArray<unknown>) => executeSql(testDb, text, [...params])
+
 	return {
 		request,
 		bootstrapKey,
 		auditEntries,
+		sql,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -119,10 +141,13 @@ const makeHarness = () => {
 	}
 }
 
-const withHarness = (body: (harness: ReturnType<typeof makeHarness>) => Promise<void>) =>
+const withHarness = (
+	body: (harness: ReturnType<typeof makeHarness>) => Promise<void>,
+	publisher?: Layer.Layer<StatusPagePublisher>,
+) =>
 	Effect.runPromise(
 		Effect.acquireUseRelease(
-			Effect.sync(makeHarness),
+			Effect.sync(() => makeHarness(publisher)),
 			(harness) => Effect.promise(() => body(harness)),
 			(harness) => Effect.promise(() => harness.dispose()),
 		),
@@ -690,6 +715,153 @@ describe("v2 status pages", () => {
 				const refused = await harness.request("PUT", path, member, { ...read.body, name: "Member" })
 				expect(refused.status).toBe(403)
 				expect((await harness.request("GET", path, token)).body.name).toBe("Acme")
+			}))
+	})
+
+	describe("builder", () => {
+		const NOW_DAY = utcDay(Date.now())
+		const encodeMonitor = Schema.encodeSync(UptimeMonitorPublicId)
+
+		/** A monitor of `orgId` with its state and one day of checks; returns its `upm_` id. */
+		const seedMonitor = async (
+			harness: ReturnType<typeof makeHarness>,
+			orgId: OrgId,
+			status: "up" | "down",
+		) => {
+			const id = crypto.randomUUID()
+			await harness.sql(
+				`INSERT INTO uptime_monitors (id, org_id, name, kind, config_json, created_by, created_at, updated_at)
+				 VALUES ($1, $2, 'API', 'heartbeat', '{"type":"heartbeat","graceSeconds":60}', $3, now(), now())`,
+				[id, orgId, USER],
+			)
+			await harness.sql(
+				`INSERT INTO uptime_monitor_states (monitor_id, org_id, status, recent_json, updated_at)
+				 VALUES ($1, $2, $3, '[]', now())`,
+				[id, orgId, status],
+			)
+			await harness.sql(
+				`INSERT INTO uptime_monitor_daily (monitor_id, day, org_id, checks, failures, down_checks, last_check_at)
+				 VALUES ($1, $2, $3, 12, 3, 3, now())`,
+				[id, NOW_DAY, orgId],
+			)
+			return encodeMonitor(UptimeMonitorId.make(id))
+		}
+
+		it("creates a page with its components, published at once or as a draft", async () => {
+			const published: Array<StatusPageId> = []
+			await withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const monitor = await seedMonitor(harness, ORG, "up")
+				const live = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme",
+					slug: "acme-built",
+					components: [
+						{ name: "API", monitor_id: monitor },
+						{ name: "Docs", group: "Web" },
+					],
+					publish: true,
+				})
+				expect(live.status).toBe(200)
+				expect(live.body.draft).toBe(false)
+				const components = await harness.request(
+					"GET",
+					`/v2/status_pages/${live.body.id}/components`,
+					token,
+				)
+				expect(
+					components.body.data.map((c: { name: string; monitor_id: string | null }) => [
+						c.name,
+						c.monitor_id,
+					]),
+				).toEqual([
+					["API", monitor],
+					["Docs", null],
+				])
+				expect(published).toHaveLength(1)
+
+				const draft = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme draft",
+					slug: "acme-built-draft",
+					publish: false,
+				})
+				expect(draft.body.draft).toBe(true)
+				expect(published).toHaveLength(1)
+				const publish = await harness.request(
+					"POST",
+					`/v2/status_pages/${draft.body.id}/publish`,
+					token,
+				)
+				expect(publish.body.outcome).toBe("published")
+				expect(published).toHaveLength(2)
+				expect(
+					(await harness.request("GET", `/v2/status_pages/${draft.body.id}`, token)).body.draft,
+				).toBe(false)
+			}, fakePublisher(published))
+		})
+
+		it("keeps a created page when the publish after it fails", () =>
+			withHarness(
+				async (harness) => {
+					const { secret: token } = await harness.bootstrapKey()
+					const created = await harness.request("POST", "/v2/status_pages", token, {
+						name: "Acme",
+						slug: "acme-publish-fails",
+						components: [{ name: "API" }],
+						publish: true,
+					})
+					expect(created.status).toBe(200)
+					expect(created.body).toMatchObject({ draft: false, published_revision: 0 })
+					expect(
+						(await harness.request("GET", `/v2/status_pages/${created.body.id}`, token)).status,
+					).toBe(200)
+				},
+				fakePublisher([], { fail: true }),
+			))
+
+		it("creates nothing when a component names another org's monitor", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const foreign = await seedMonitor(harness, OTHER_ORG, "up")
+				const refused = await harness.request("POST", "/v2/status_pages", token, {
+					name: "Acme",
+					slug: "acme-foreign",
+					components: [{ name: "API", monitor_id: foreign }],
+				})
+				expect(refused.status).toBe(400)
+				expect(refused.body.error.message).toContain(foreign)
+				expect((await harness.request("GET", "/v2/status_pages", token)).body.data).toEqual([])
+			}))
+
+		it("previews a draft for a member from real uptime history, writing nothing", () =>
+			withHarness(async (harness) => {
+				const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
+				const monitor = await seedMonitor(harness, ORG, "down")
+				const preview = await harness.request("POST", "/v2/status_pages/preview", member, {
+					name: "",
+					slug: "Half typed",
+					components: [{ name: "Docs" }, { name: "API", monitor_id: monitor }],
+				})
+				expect(preview.status).toBe(200)
+				expect(preview.body.page).toMatchObject({ name: "Status page", slug: "preview" })
+				expect(preview.body.revision).toBe(0)
+				const [docs, api] = preview.body.components
+				expect([docs.name, docs.status, docs.days]).toEqual(["Docs", "operational", []])
+				expect([api.name, api.status]).toEqual(["API", "major_outage"])
+				expect(api.days.at(-1)).toEqual({ day: NOW_DAY, checks: 12, failures: 3, downChecks: 3 })
+				expect((await harness.request("GET", "/v2/status_pages", member)).body.data).toEqual([])
+			}))
+
+		it("refuses to preview another org's monitor", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const foreign = await seedMonitor(harness, OTHER_ORG, "down")
+				const refused = await harness.request("POST", "/v2/status_pages/preview", token, {
+					name: "Acme",
+					slug: "acme",
+					components: [{ name: "API", monitor_id: foreign }],
+				})
+				expect(refused.status).toBe(400)
+				expect(refused.body.error.code).toBe("status_page_invalid")
 			}))
 	})
 })

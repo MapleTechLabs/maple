@@ -9,6 +9,7 @@ import {
 	resolveStatusPageTheme,
 	type StatusPageTheme,
 	themeContrastIssue,
+	isListedIncident,
 	dayState,
 	deriveComponentStatus,
 	fillDays,
@@ -535,5 +536,35 @@ describe("themeContrastIssue", () => {
 		expect(
 			themeContrastIssue({ ...DEFAULT_STATUS_PAGE_THEME, background: "#ffffff", text: "#fefefe" }),
 		).toBeNull()
+	})
+})
+
+describe("isListedIncident", () => {
+	const NOW = Date.UTC(2026, 9, 1)
+	const maintenance = {
+		published: true,
+		kind: "maintenance",
+		status: "scheduled",
+		resolvedAt: null,
+	} as const
+
+	it("lists scheduled maintenance until its window ends, then hides it though it was never resolved", () => {
+		expect(isListedIncident({ ...maintenance, scheduledEnd: NOW + 60_000 }, NOW)).toBe(true)
+		expect(isListedIncident({ ...maintenance, scheduledEnd: NOW - 60_000 }, NOW)).toBe(false)
+	})
+
+	it("never lists a draft", () => {
+		expect(
+			isListedIncident(
+				{
+					published: false,
+					kind: "incident",
+					status: "investigating",
+					scheduledEnd: null,
+					resolvedAt: null,
+				},
+				NOW,
+			),
+		).toBe(false)
 	})
 })

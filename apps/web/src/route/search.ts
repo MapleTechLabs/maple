@@ -337,9 +337,14 @@ export const IngestRuleNewSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),
 })
 
-/** `/alerts/status-pages/$pageId`: `tab` is `components`, `incidents` or `settings`. */
+/** The retired `/alerts/status-pages/$pageId`: `tab` picks the view its redirect opens. */
 export const AlertsStatusPageSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
+})
+
+/** `/status-pages/$pageId`: `view` is `settings`, `json` or `live`; none is the page itself. */
+export const StatusPageSearch = Schema.Struct({
+	view: Schema.optional(Schema.String),
 })
 
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)

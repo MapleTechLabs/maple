@@ -74,6 +74,7 @@ import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "./status-pages.http"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { HttpV2SessionReplaysLive } from "./session-replays.http"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
@@ -187,7 +188,7 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2UptimeMonitorsLive.pipe(Layer.provide(uptimeMonitors)),
 		// Real service: it needs only the Database every harness already provides.
 		Layer.mergeAll(HttpV2StatusPagesLive, HttpV2StatusPageIncidentsLive).pipe(
-			Layer.provide(StatusPagesService.layer),
+			Layer.provide(Layer.mergeAll(StatusPagesService.layer, StatusPageSnapshotBuilder.layer)),
 		),
 		HttpV2InstrumentationRecommendationsLive,
 		HttpV2InstrumentationAuditLive,

@@ -91,6 +91,7 @@ const toPageRow = (page: StatusPageRecord): typeof StatusPageRow.Type => ({
 	name: page.name,
 	slug: page.slug,
 	autoIncidents: page.autoIncidents,
+	draft: page.draft,
 	revision: page.revision,
 	publishedRevision: page.publishedRevision,
 	publishedAt: isoOrNull(page.publishedAt),
@@ -270,11 +271,13 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 									page.name,
 									page.slug,
 									page.id,
-									page.publishedAt === null
-										? "not yet"
-										: page.publishedRevision < page.revision
-											? `${page.publishedAt} (change pending)`
-											: page.publishedAt,
+									page.draft
+										? "draft, not public"
+										: page.publishedAt === null
+											? "not yet"
+											: page.publishedRevision < page.revision
+												? `${page.publishedAt} (change pending)`
+												: page.publishedAt,
 									page.lastPublishError ?? "-",
 								]),
 							),
@@ -347,7 +350,8 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				freshness: {
 					state: freshness._tag,
 					updatedAt: freshness.updatedAt === null ? null : iso(freshness.updatedAt),
-					publishPending: page.publishedRevision < page.revision,
+					// A draft is never published, so nothing is pending for it.
+					publishPending: !page.draft && page.publishedRevision < page.revision,
 				},
 			}
 		}),
@@ -378,7 +382,10 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					["Slug", output.page.slug],
 					["Id", output.page.id],
 					["Overall", output.overallStatus],
-					["Published", output.page.publishedAt ?? "not yet"],
+					[
+						"Published",
+						output.page.draft ? "draft, not public" : (output.page.publishedAt ?? "not yet"),
+					],
 					[
 						"Change pending",
 						output.freshness.publishPending ? "yes, publishes within a minute" : "no",

@@ -1,5 +1,5 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, Struct } from "effect"
 import {
 	StatusPageAutoIncidents,
 	StatusPageComponentId,
@@ -17,6 +17,7 @@ import {
 	StatusPageThemeAppearance,
 	StatusPageThemeFont,
 	StatusPageThemePreset,
+	StatusPageSnapshot,
 	StatusPageThemeRadius,
 } from "../../status-page"
 import {
@@ -155,6 +156,7 @@ const statusPageExample = {
 	show_powered_by: true,
 	auto_incidents: "draft",
 	break_glass_token_suffix: null,
+	draft: false,
 	revision: 4,
 	published_revision: 4,
 	published_at: "2026-07-15T09:12:00.000Z",
@@ -186,6 +188,10 @@ export const V2StatusPage = Schema.Struct({
 	break_glass_token_suffix: Schema.NullOr(Schema.String).annotate({
 		description: "Last 6 characters of the break-glass token, or `null` when none is issued.",
 	}),
+	draft: Schema.Boolean.annotate({
+		description:
+			"True while the page is a draft: it is not public until `POST /v2/status_pages/{id}/publish`.",
+	}),
 	revision: Schema.Number.annotate({ description: "Bumped by every change a visitor could see." }),
 	published_revision: Schema.Number.annotate({
 		description: "The revision now served. Behind `revision` until the next publish.",
@@ -206,25 +212,6 @@ export const V2StatusPage = Schema.Struct({
 	examples: [wireExample(statusPageExample)],
 })
 export type V2StatusPage = Schema.Schema.Type<typeof V2StatusPage>
-
-export const V2StatusPageCreateParams = Schema.Struct({
-	name: NonEmptyString.annotate({ description: "Page title. Required.", examples: ["Acme Status"] }),
-	slug: slugField,
-	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	privacy_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	terms_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	theme: Schema.optionalKey(V2StatusPageThemeParams),
-	show_powered_by: Schema.optionalKey(Schema.Boolean),
-	auto_incidents: Schema.optionalKey(autoIncidentsField),
-}).annotate({
-	identifier: "StatusPageCreateParams",
-	title: "Status page create parameters",
-	description: "Request body for creating a status page.",
-	examples: [wireExample({ name: "Acme Status", slug: "acme-status" })],
-})
-export type V2StatusPageCreateParams = Schema.Schema.Type<typeof V2StatusPageCreateParams>
 
 export const V2StatusPageUpdateParams = Schema.Struct({
 	name: Schema.optionalKey(NonEmptyString),
@@ -457,12 +444,7 @@ export const StatusPageConfigTheme = Schema.Struct({
 	examples: [wireExample(themeExample)],
 })
 
-export const StatusPageConfigComponent = Schema.Struct({
-	id: Schema.optionalKey(
-		StatusPageComponentPublicId.annotate({
-			description: "An existing component of this page (`stc_…`) to update. Omit to add a new one.",
-		}),
-	),
+const draftComponentFields = {
 	name: NonEmptyString.annotate({ examples: ["API"] }),
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	group: Schema.optionalKey(
@@ -477,6 +459,15 @@ export const StatusPageConfigComponent = Schema.Struct({
 	show_uptime: Schema.optionalKey(
 		Schema.Boolean.annotate({ description: "Whether the page shows its uptime bars. Default `true`." }),
 	),
+}
+
+export const StatusPageConfigComponent = Schema.Struct({
+	id: Schema.optionalKey(
+		StatusPageComponentPublicId.annotate({
+			description: "An existing component of this page (`stc_…`) to update. Omit to add a new one.",
+		}),
+	),
+	...draftComponentFields,
 }).annotate({
 	identifier: "StatusPageConfigComponent",
 	title: "Status page config component",
@@ -484,8 +475,48 @@ export const StatusPageConfigComponent = Schema.Struct({
 })
 export type StatusPageConfigComponent = Schema.Schema.Type<typeof StatusPageConfigComponent>
 
+/** A component not saved yet: a config component without `id`. */
+export const StatusPageDraftComponent = Schema.Struct(draftComponentFields).annotate({
+	identifier: "StatusPageDraftComponent",
+	title: "Status page draft component",
+	description: "A new component; its place in the list is its position on the page.",
+})
+export type StatusPageDraftComponent = Schema.Schema.Type<typeof StatusPageDraftComponent>
+
 /** Most components one page may have; the config and a single create both refuse more. */
 export const MAX_STATUS_PAGE_COMPONENTS = 200
+
+export const V2StatusPageCreateParams = Schema.Struct({
+	name: NonEmptyString.annotate({ description: "Page title. Required.", examples: ["Acme Status"] }),
+	slug: slugField,
+	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	privacy_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	terms_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	theme: Schema.optionalKey(V2StatusPageThemeParams),
+	show_powered_by: Schema.optionalKey(Schema.Boolean),
+	auto_incidents: Schema.optionalKey(autoIncidentsField),
+	components: Schema.optionalKey(
+		Schema.Array(StatusPageDraftComponent)
+			.check(Schema.isMaxLength(MAX_STATUS_PAGE_COMPONENTS))
+			.annotate({
+				description: `The page's components, in display order (at most ${MAX_STATUS_PAGE_COMPONENTS}), created with the page in one write.`,
+			}),
+	),
+	publish: Schema.optionalKey(
+		Schema.Boolean.annotate({
+			description:
+				"`true` publishes the page right after it is created; `false` creates it as a draft, not public until `POST /v2/status_pages/{id}/publish`. Omitted, the page is public and published within a minute.",
+		}),
+	),
+}).annotate({
+	identifier: "StatusPageCreateParams",
+	title: "Status page create parameters",
+	description: "Request body for creating a status page.",
+	examples: [wireExample({ name: "Acme Status", slug: "acme-status" })],
+})
+export type V2StatusPageCreateParams = Schema.Schema.Type<typeof V2StatusPageCreateParams>
 
 export const StatusPageConfig = Schema.Struct({
 	version: Schema.optionalKey(
@@ -520,6 +551,37 @@ export const StatusPageConfig = Schema.Struct({
 	examples: [wireExample(configExample)],
 })
 export type StatusPageConfig = Schema.Schema.Type<typeof StatusPageConfig>
+
+/** A config as typed so far: name and slug may still be blank or invalid, the preview falls back. */
+export const StatusPagePreviewParams = Schema.Struct({
+	...Struct.omit(StatusPageConfig.fields, ["version", "name", "slug", "components"]),
+	name: Schema.String.annotate({
+		description: "Page title; blank previews as `Status page`.",
+		examples: ["Acme Status"],
+	}),
+	slug: Schema.String.annotate({
+		description: "The page's address as typed; an invalid one previews as `preview`.",
+		examples: ["acme-status"],
+	}),
+	components: Schema.Array(StatusPageDraftComponent)
+		.check(Schema.isMaxLength(MAX_STATUS_PAGE_COMPONENTS))
+		.annotate({
+			description: `Every component, in display order (at most ${MAX_STATUS_PAGE_COMPONENTS}).`,
+		}),
+}).annotate({
+	identifier: "StatusPagePreviewParams",
+	title: "Status page preview parameters",
+	description:
+		"A status page config not saved yet. The preview fills in defaults and falls back to the default theme when the theme is invalid or hard to read.",
+	examples: [
+		wireExample({
+			name: "Acme Status",
+			slug: "acme-status",
+			components: [{ name: "API", monitor_id: "upm_YofPTrK9782DWwcnXhpcCw" }],
+		}),
+	],
+})
+export type StatusPagePreviewParams = Schema.Schema.Type<typeof StatusPagePreviewParams>
 
 /** Optional text as the service stores it: trimmed, blank as `null`. */
 const textOrNull = (value: string | null | undefined): string | null => {
@@ -920,7 +982,21 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			OpenApi.annotations({
 				identifier: "createStatusPage",
 				summary: "Create a status page",
-				description: `Creates a status page; it is published within a minute. ${adminNote}`,
+				description: `Creates a status page with its components in one write. It is published within a minute, right away with \`publish: true\`, or created as a draft with \`publish: false\`. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("preview", "/preview", {
+			payload: StatusPagePreviewParams,
+			success: StatusPageSnapshot,
+			error: [V2ParameterInvalid.schema, validation, persistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "previewStatusPage",
+				summary: "Preview a status page",
+				description:
+					"Builds the snapshot a draft config would publish, from your organization's real uptime history. Writes nothing. Requires the `status_pages:read` scope.",
 			}),
 		),
 	)
@@ -974,7 +1050,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			OpenApi.annotations({
 				identifier: "publishStatusPage",
 				summary: "Publish a status page",
-				description: `Publishes the page now instead of within the minute. ${adminNote}`,
+				description: `Publishes the page now instead of within the minute, making a draft public first. ${adminNote}`,
 			}),
 		),
 	)

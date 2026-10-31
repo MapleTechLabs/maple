@@ -679,6 +679,31 @@ export const isActiveIncident = (incident: {
 }): boolean =>
 	incident.kind === "incident" ? incident.status !== "resolved" : incident.status === "in_progress"
 
+/**
+ * Whether a visitor sees the incident at `nowMs`: active, upcoming maintenance, or recently resolved.
+ * The publisher and the editor's preview share it, so the preview never lists what the page hides.
+ */
+export const isListedIncident = (
+	incident: {
+		readonly published: boolean
+		readonly kind: StatusPageIncidentKind
+		readonly status: StatusPageIncidentStatus
+		readonly scheduledEnd: number | null
+		readonly resolvedAt: number | null
+	},
+	nowMs: number,
+): boolean => {
+	if (!incident.published) return false
+	if (isActiveIncident(incident)) return true
+	if (incident.kind === "maintenance" && incident.status === "scheduled") {
+		return incident.scheduledEnd !== null && incident.scheduledEnd > nowMs
+	}
+	return (
+		incident.resolvedAt !== null &&
+		incident.resolvedAt >= nowMs - STATUS_PAGE_INCIDENT_HISTORY_DAYS * 86_400_000
+	)
+}
+
 /** What an active incident or maintenance does to the components it names. */
 export const incidentComponentStatus = (incident: {
 	readonly kind: StatusPageIncidentKind

@@ -14,7 +14,6 @@ import type { AppRoute } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import * as StatusPages from "../status-pages/list"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
@@ -115,21 +114,6 @@ const requestMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMod
 	})
 }
 
-/** The Status pages tab reads its pages only while it is open. */
-const requestStatusPages = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
-	if (resolveTab(model.search.tab) !== "status-pages") return { model, commands: [] }
-	return liftStatusPages(model, StatusPages.request(model.statusPages, context, mode))
-}
-
-/** The tab's step as the hub's: its Commands wrapped, its navigation and toasts passed up. */
-const liftStatusPages = (model: Model, step: StatusPages.Return) => ({
-	model: { ...model, statusPages: step.model },
-	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotStatusPagesMessage({ message }),
-	),
-	outMessage: step.outMessage,
-})
-
 /** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
 const refreshDeliveries = (model: Model, context: PageContext) => {
 	const overview = requestDeliveries(model, context, "Refresh")
@@ -170,21 +154,18 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deletingMonitorId: null,
 		confirmDeleteMonitorId: null,
 		deleteMonitorDialog: Dialog.init(DELETE_MONITOR_DIALOG_ID, "alert-dialog"),
-		statusPages: StatusPages.init(),
 	}
 	const deliveries = requestDeliveries(model, context, "Load")
 	const routing = requestRoutingDeliveries(deliveries.model, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
-	const statusPages = requestStatusPages(monitors.model, context, "Load")
 	return {
-		model: statusPages.model,
+		model: monitors.model,
 		commands: [
 			ReadHubClock(),
 			FetchHubSession({ orgId: context.orgId }),
 			...deliveries.commands,
 			...routing.commands,
 			...monitors.commands,
-			...statusPages.commands,
 		],
 	}
 }
@@ -192,11 +173,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: HubRoute, context: PageContext): Return => {
 	const routing = requestRoutingDeliveries({ ...model, search: route.search }, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
-	const statusPages = requestStatusPages(monitors.model, context, "Load")
-	return {
-		model: statusPages.model,
-		commands: [...routing.commands, ...monitors.commands, ...statusPages.commands],
-	}
+	return { model: monitors.model, commands: [...routing.commands, ...monitors.commands] }
 }
 
 const navigate = (search: Model["search"]): PageOutMessage =>
@@ -560,8 +537,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedConfirmDeleteMonitor: () => confirmDeleteMonitor(model),
-		GotStatusPagesMessage: ({ message: child }) =>
-			liftStatusPages(model, StatusPages.update(model.statusPages, child, context)),
 		GotDeleteMonitorDialogMessage: ({ message: child }) =>
 			model.deletingMonitorId !== null
 				? { model }

@@ -15,6 +15,7 @@ const overrideKeys = [
 	"VITE_INGEST_URL",
 	"VITE_MAPLE_SELF_INGEST_URL",
 	"VITE_ELECTRIC_SYNC_URL",
+	"VITE_STATUS_PAGE_BASE_URL",
 	"VITE_MAPLE_REGION",
 	"VITE_MAPLE_REGION_APP_URLS",
 	"VITE_MAPLE_AUTH_MODE",
@@ -107,6 +108,7 @@ export default defineConfig(({ mode, command }) => {
 		process.env.VITE_API_BASE_URL ??= siblingUrl("api")
 		process.env.VITE_INGEST_URL ??= siblingUrl("ingest")
 		process.env.VITE_ELECTRIC_SYNC_URL ??= siblingUrl("electric-sync")
+		process.env.VITE_STATUS_PAGE_BASE_URL ??= siblingUrl("status")
 	}
 	process.env.VITE_MAPLE_AUTH_MODE ||= env.MAPLE_AUTH_MODE?.trim() || "self_hosted"
 	process.env.VITE_CLERK_PUBLISHABLE_KEY ||= env.CLERK_PUBLISHABLE_KEY?.trim() || ""

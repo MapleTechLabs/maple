@@ -8,10 +8,16 @@ export interface RenderOptions {
 	readonly nonce?: string
 	/** Prefix of the page's own links: `""` on its own host, `/s/<slug>` on a shared one. */
 	readonly basePath?: string
+	/** The dashboard's editor preview: components and incidents carry ids it can select by. Never public. */
+	readonly preview?: boolean
 }
 
 export const nonceAttr = (options: RenderOptions): string =>
 	options.nonce === undefined ? "" : ` nonce="${escapeHtml(options.nonce)}"`
+
+/** ` data-<kind>-id="<id>"` on a preview render, nothing on the public page. */
+export const previewIdAttr = (options: RenderOptions, kind: "component" | "incident", id: string): string =>
+	options.preview === true ? ` data-${kind}-id="${escapeHtml(id)}"` : ""
 
 export const pageHref = (options: RenderOptions, path: string): string =>
 	escapeHtml(`${options.basePath ?? ""}${path}`)

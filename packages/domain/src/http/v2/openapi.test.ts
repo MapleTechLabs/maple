@@ -269,6 +269,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/status_page_incidents",
 			"POST /v2/status_page_incidents/{id}/updates",
 			"POST /v2/status_pages",
+			"POST /v2/status_pages/preview",
 			"POST /v2/status_pages/{id}/components",
 			"POST /v2/status_pages/{id}/components/reorder",
 			"POST /v2/status_pages/{id}/publish",

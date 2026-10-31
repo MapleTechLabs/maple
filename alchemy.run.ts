@@ -101,6 +101,7 @@ const devEnv = devApps
 			MAPLE_APP_BASE_URL: Portless.routeUrl("web"),
 			MAPLE_ELECTRIC_SYNC_URL: Portless.routeUrl("electric-sync"),
 			MAPLE_INGEST_URL: Portless.routeUrl("ingest"),
+			MAPLE_STATUS_PAGE_BASE_URL: Portless.routeUrl("status"),
 		}
 	: undefined
 
@@ -223,7 +224,7 @@ const MapleStackLive = Layer.effect(
 		const allDomains = resolveMapleDomains(deployment)
 		// Without ingest and Electric their hostnames would resolve nowhere.
 		const domains = webOnlyPreview
-			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync }
+			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync, status: allDomains.status }
 			: allDomains
 		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
 		const context: MapleStackContext = {
@@ -240,6 +241,9 @@ const MapleStackLive = Layer.effect(
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
+				status:
+					devEnv?.MAPLE_STATUS_PAGE_BASE_URL ??
+					(yield* resolveUrl(domains.status, "MAPLE_STATUS_PAGE_BASE_URL")),
 			},
 			workerDev,
 			devEnv,

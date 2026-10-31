@@ -11,6 +11,7 @@ import {
 	lastDays,
 	STATUS_PAGE_WINDOW_DAYS,
 	STATUS_PAGE_SNAPSHOT_VERSION,
+	type StatusPageDayBar,
 	type StatusPageSnapshot,
 	type StatusPageSnapshotIncident,
 	type StatusPageSnapshotPage,
@@ -25,12 +26,14 @@ export interface PreviewComponent {
 	readonly manualStatus: StatusPageComponentStatus | null
 	readonly showUptime: boolean
 	readonly monitored: boolean
+	/** The monitor's real history, oldest first; one window of empty bars when absent. */
+	readonly days?: ReadonlyArray<StatusPageDayBar>
 }
 
 /**
  * A snapshot of what the page would look like with the editor's draft, for the dashboard
- * preview. Monitored components get one window of empty bars: the preview shows shape, not
- * history. The calendar marks the incidents passed in.
+ * preview. Monitored components show the `days` given, or one window of empty bars without
+ * them. The calendar marks the incidents passed in.
  */
 export const previewSnapshot = (input: {
 	readonly pageId: StatusPageId
@@ -75,7 +78,7 @@ export const previewSnapshot = (input: {
 				}),
 				showUptime: component.showUptime,
 				monitored: component.monitored,
-				days: component.showUptime && component.monitored ? emptyDays : [],
+				days: component.showUptime && component.monitored ? (component.days ?? emptyDays) : [],
 			}
 		}),
 		incidents: input.incidents,

@@ -18,6 +18,8 @@ export const StatusPageRow = Schema.Struct({
 	name: Schema.String,
 	slug: Schema.String,
 	autoIncidents: StatusPageAutoIncidents,
+	/** A draft is not public until it is published. */
+	draft: Schema.Boolean,
 	revision: Schema.Number,
 	publishedRevision: Schema.Number,
 	/** ISO timestamp of the last publish; null before the first one. */

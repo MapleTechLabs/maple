@@ -58,6 +58,7 @@ import { ScrapeTargetsService } from "@maple/backend/services/integrations/Scrap
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
+import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
@@ -132,6 +133,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
 	StatusPagesService.layer,
+	// Read-only: previews of unsaved pages.
+	StatusPageSnapshotBuilder.layer,
 	// Needs the `StatusPageStore` port, which only the deployed Worker binds.
 	StatusPagePublisher.layer,
 	PlanetScaleConnectionService.layer,
