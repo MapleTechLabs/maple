@@ -19,4 +19,3 @@ export default Alchemy.Stack(
 		return { api: api.url, jobs: jobs.url, endpoint: local.endpoint, dashboard: local.dashboardUrl }
 	}),
 )
-// temporary reload
