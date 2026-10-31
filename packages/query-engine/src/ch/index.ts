@@ -757,6 +757,7 @@ export {
 // Queries — CI pipeline runs (GitHub Actions traces)
 export {
 	CI_FAILED_RESULTS,
+	ciActorStatsQuery,
 	ciFailedJobsQuery,
 	ciJobStatsQuery,
 	ciPipelineStatsQuery,
@@ -767,6 +768,7 @@ export {
 	ciRunsSpanMs,
 	ciRunTotalsQuery,
 	ciRunsQuery,
+	type CiActorStatsOpts,
 	type CiFailedJobsOpts,
 	type CiRedStreak,
 	type CiRunsOpts,

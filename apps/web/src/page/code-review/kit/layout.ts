@@ -7,7 +7,7 @@ import type { WindowSearch } from "./frame"
 
 // `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
 
-export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "issues" | "settings"
+export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "team" | "issues" | "settings"
 
 export type CarriedSearch = WindowSearch & Readonly<{ repo?: string; author?: string }>
 
@@ -20,6 +20,7 @@ const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; ico
 		icon: "PullRequestIcon",
 	},
 	{ tab: "ci", path: "/code-review/ci", label: "CI", icon: "PlayRotateClockwiseIcon" },
+	{ tab: "team", path: "/code-review/team", label: "Team", icon: "UsersIcon" },
 	{ tab: "issues", path: "/code-review/issues", label: "Issues", icon: "CircleWarningIcon" },
 	{ tab: "settings", path: "/code-review/settings", label: "Settings", icon: "GearIcon" },
 ]
@@ -47,6 +48,8 @@ const hrefFor = (tab: CodeReviewTab, search: Readonly<Record<string, string | un
 			return hrefOf(AppRoute.CodeReviewPullRequests({ search }))
 		case "ci":
 			return hrefOf(AppRoute.CodeReviewCi({ search }))
+		case "team":
+			return hrefOf(AppRoute.CodeReviewTeam({ search }))
 		case "issues":
 			return hrefOf(AppRoute.CodeReviewIssues({ search }))
 		case "settings":

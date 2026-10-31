@@ -18281,6 +18281,160 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	UsersIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M7 4H9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 10H9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 6L11 8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 6L5 8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17.5 4H18.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17.5 9H18.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20.5 6L20.5 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15.5 6L15.5 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 14H11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 13H20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M1 18V20H15V18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 18H22V15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 16H3.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M13 16H13.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	XmarkIcon: [
 		"svg",
 		[
