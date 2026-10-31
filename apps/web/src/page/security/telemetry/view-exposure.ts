@@ -136,19 +136,20 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 
 const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	const totals = exposureTotals(exposure)
+	const floor = totals.isSignaturesCapped ? "+" : ""
 	const exposedCount = exposedRows(exposure).length
 	const catchAllCount = catchAllServices(exposure).length
 	const plus = isExposedCapped(exposure) ? "+" : ""
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Probe requests",
-			value: count(totals.probeRequests),
+			value: `${count(totals.probeRequests)}${floor}`,
 			spark: timelineValues(exposure, clock.nowMs, TIMELINE_BUCKET_SECONDS, 28),
 			subline: "paths only scanners ask for",
 		}),
 		statRailItem(h, {
 			eyebrow: "Scanner requests",
-			value: count(totals.scannerRequests),
+			value: `${count(totals.scannerRequests)}${floor}`,
 			compact: true,
 			subline: "named tools on ordinary paths",
 		}),
@@ -162,7 +163,7 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 		}),
 		statRailItem(h, {
 			eyebrow: "Services probed",
-			value: String(totals.servicesProbed),
+			value: `${totals.servicesProbed}${floor}`,
 			compact: true,
 			subline:
 				exposedCount > 0

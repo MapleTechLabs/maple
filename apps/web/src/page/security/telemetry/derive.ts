@@ -28,11 +28,16 @@ export const EXPOSED_SHOWN = 50
 /** True when the exposed list hit the query's cap, so its length is a floor. */
 export const isExposedCapped = (exposure: Exposure): boolean => exposure.exposed.length >= EXPOSED_SHOWN
 
+/** The signature query returns at most this many (signature, service) rows, busiest first. */
+export const SIGNATURES_SHOWN = 5000
+
 export interface ExposureTotals {
 	readonly probeRequests: number
 	readonly scannerRequests: number
 	readonly sources: number
 	readonly isSourcesCapped: boolean
+	/** The signature rows hit the query's cap, so request and service totals are floors. */
+	readonly isSignaturesCapped: boolean
 	readonly servicesProbed: number
 }
 
@@ -44,6 +49,7 @@ export const exposureTotals = (exposure: Exposure): ExposureTotals => {
 		scannerRequests: sum(scanners.map((row) => row.requests)),
 		sources: exposure.sources.length,
 		isSourcesCapped: exposure.sources.length >= SOURCES_SHOWN,
+		isSignaturesCapped: exposure.signatures.length >= SIGNATURES_SHOWN,
 		servicesProbed: distinct(probes.map((row) => row.service)),
 	}
 }

@@ -126,6 +126,22 @@ describe("security telemetry tabs", () => {
 		)
 	})
 
+	test("a full signature list reads its totals as floors", () => {
+		const data = exposureOf(NOW)
+		const row = data.signatures[0]!
+		const signatures = Array.from({ length: 5000 }, (_, index) => ({
+			...row,
+			service: `svc-${index}`,
+			requests: 1,
+		}))
+		scene(
+			{ update: pageUpdate, view },
+			given(withExposure({ ...data, signatures })),
+			expectView(text("5K+")).toExist(),
+			expectView(text("5000+")).toExist(),
+		)
+	})
+
 	test("a full exposed list reads as a floor", () => {
 		const data = exposureOf(NOW)
 		const row = data.exposed[0]!
