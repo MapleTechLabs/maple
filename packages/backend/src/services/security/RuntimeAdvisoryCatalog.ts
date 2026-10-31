@@ -26,7 +26,9 @@ const REQUEST_TIMEOUT = "3 seconds"
 const SUMMARY_MAX_LENGTH = 160
 /** OSV reads per request; cached versions do not count, so a cold cache costs at most three rounds. */
 const MAX_READS = 24
-const CONCURRENCY = 8
+/** Versions consulted per request, cached or not, so a tenant with hundreds stays bounded. */
+const MAX_VERSIONS = 96
+const CONCURRENCY = 16
 
 const OsvEvent = Schema.Struct({
 	introduced: Schema.optionalKey(Schema.String),
@@ -101,12 +103,12 @@ class RuntimeAdvisoryReadSkipped extends Schema.TaggedError<RuntimeAdvisoryReadS
 export interface RuntimeAdvisoryReadResult {
 	/** Advisories per `advisoryKey`. A version whose read failed or was skipped is absent. */
 	readonly advisories: Record<string, ReadonlyArray<RuntimeAdvisory>>
-	/** Versions left unread because the request spent its read budget; a later request reads them. */
+	/** Versions left unread: past `MAX_VERSIONS`, or past the read budget (a later request reads those). */
 	readonly skipped: ReadonlyArray<string>
 }
 
 export interface RuntimeAdvisoryCatalogApi {
-	/** Every cached version is served; at most `MAX_READS` misses are read, in `targets` order. */
+	/** The first `MAX_VERSIONS` distinct versions in `targets` order are served; at most `MAX_READS` of them are read. */
 	readonly advisories: (targets: ReadonlyArray<AdvisoryTarget>) => Effect.Effect<RuntimeAdvisoryReadResult>
 }
 
@@ -205,16 +207,21 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 		) {
 			const distinct = [...new Map(targets.map((target) => [advisoryKey(target), target])).values()]
 			const budget = yield* Ref.make(MAX_READS)
-			const reads = yield* Effect.forEach(distinct, (target) => advisoriesFor(target, budget), {
-				concurrency: CONCURRENCY,
-			})
+			const reads = yield* Effect.forEach(
+				distinct.slice(0, MAX_VERSIONS),
+				(target) => advisoriesFor(target, budget),
+				{ concurrency: CONCURRENCY },
+			)
 			return {
 				advisories: Object.fromEntries(
 					reads.flatMap((read) =>
 						read._tag === "read" && read.value !== null ? [[read.key, read.value] as const] : [],
 					),
 				),
-				skipped: reads.flatMap((read) => (read._tag === "skipped" ? [read.key] : [])),
+				skipped: [
+					...reads.flatMap((read) => (read._tag === "skipped" ? [read.key] : [])),
+					...distinct.slice(MAX_VERSIONS).map(advisoryKey),
+				],
 			} satisfies RuntimeAdvisoryReadResult
 		})
 

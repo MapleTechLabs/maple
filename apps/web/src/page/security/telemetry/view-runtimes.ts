@@ -150,7 +150,9 @@ const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 			return h.span(
 				[
 					h.Class("text-xs text-muted-foreground"),
-					h.Title("Too many versions to read at once; it is read on a later visit"),
+					h.Title(
+						"Not read on this visit: each visit checks the 96 busiest versions and reads up to 24 new ones",
+					),
 				],
 				["Not checked yet"],
 			)

@@ -140,4 +140,19 @@ describe("RuntimeAdvisoryCatalog", () => {
 			assert.strictEqual(requests.length, 26)
 		}).pipe(Effect.provide(catalogWith(requests)))
 	})
+
+	it.effect("consults at most 96 versions a request and reports the rest as skipped", () => {
+		const requests: Array<string> = []
+		const targets = Array.from({ length: 100 }, (_, index) => ({
+			product: "nodejs" as const,
+			version: `20.${index}.0`,
+		}))
+		return Effect.gen(function* () {
+			const catalog = yield* RuntimeAdvisoryCatalog
+			const result = yield* catalog.advisories(targets)
+			assert.strictEqual(requests.length, 24)
+			assert.strictEqual(result.skipped.length, 76)
+			assert.include(result.skipped, "nodejs@20.99.0")
+		}).pipe(Effect.provide(catalogWith(requests)))
+	})
 })
