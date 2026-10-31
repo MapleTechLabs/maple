@@ -293,4 +293,51 @@ describe("hazel transport", () => {
 			})
 		}).pipe(Effect.provide(http.layer))
 	})
+
+	it.effect("lists the channels the bot can post in as alert destinations", () => {
+		const http = stub([
+			[
+				"/organizations/",
+				{
+					status: 200,
+					body: JSON.stringify({
+						data: [
+							{ id: CHANNEL, name: "incidents", private: true },
+							{ id: THREAD, name: "general", private: false },
+						],
+					}),
+				},
+			],
+		])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			expect(yield* transport.destinations(ORG)).toEqual([
+				{ id: CHANNEL, name: "incidents", private: true },
+				{ id: THREAD, name: "general", private: false },
+			])
+			expect(http.seen[0]?.url).toBe(`https://api.hazel.sh/api/v1/organizations/${ORG}/bot-channels`)
+			expect(http.seen[0]?.headers.authorization).toBe("Bearer hzl_bot_token")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("fails the listing as the bot's grant when Hazel refuses it", () => {
+		const http = stub([["/organizations/", { status: 403, body: "" }]])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			const refused = yield* Effect.flip(transport.destinations(ORG))
+			expect(refused).toMatchObject({ operation: "destinations", reason: "auth", status: 403 })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("fails the listing when Hazel answers with something other than channels", () => {
+		const http = stub([["/organizations/", { status: 200, body: JSON.stringify({ data: [{ id: 1 }] }) }]])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			const unreadable = yield* Effect.flip(transport.destinations(ORG))
+			expect(unreadable).toMatchObject({
+				operation: "destinations",
+				message: "Hazel answered with no list of channels",
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
 })
