@@ -16,7 +16,8 @@ describe("scannerTimelineBucketSeconds", () => {
 	})
 
 	it("widens a bucket too fine for the window so the newest buckets are not cut", () => {
-		// 30 days in at most 2000 buckets.
-		expect(scannerTimelineBucketSeconds(request(1))).toBe(Math.ceil((30 * 86400) / 2000))
+		const bucket = scannerTimelineBucketSeconds(request(1))
+		// Epoch-aligned buckets: an unaligned 30-day window touches at most ceil(window / bucket) + 1.
+		expect(Math.ceil((30 * 86400) / bucket) + 1).toBeLessThanOrEqual(2000)
 	})
 })

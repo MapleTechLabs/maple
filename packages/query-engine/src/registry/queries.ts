@@ -1122,11 +1122,14 @@ export const scannerSources = defineQuery({
 		CH.compile(CH.scannerSourcesQuery(), securityWindow(payload, orgId)),
 })
 
-/** The requested bucket, widened so the window never needs more buckets than the query returns. */
+/**
+ * The requested bucket, widened so the window never needs more buckets than the query returns. Buckets
+ * sit on the epoch grid, so a window can straddle one more than its length divided by the bucket.
+ */
 export const scannerTimelineBucketSeconds = (payload: SecurityExposureRequest): number => {
 	const requested = payload.bucketSeconds ?? 3600
 	const windowMs = parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)
-	return Math.max(requested, Math.ceil(windowMs / 1000 / CH.SCANNER_TIMELINE_MAX_BUCKETS))
+	return Math.max(requested, Math.ceil(windowMs / 1000 / (CH.SCANNER_TIMELINE_MAX_BUCKETS - 1)))
 }
 
 export const scannerTimeline = defineQuery({
