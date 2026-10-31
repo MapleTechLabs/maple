@@ -9,7 +9,16 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import {
+	ariaSort,
+	sortButton,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "../../../ui/table"
 import { emptyValue } from "../../../ui/values"
 import { authorLabel } from "../kit/author"
 import { relativeTime } from "../../kit/relative-time"
@@ -174,38 +183,20 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 
 export type Sort = Readonly<{ sortBy: CodeReviewSortKey; sortDir: CodeReviewSortDir }>
 
-/** A header that sorts the list; the arrow points the active direction. */
+/** A header that sorts the list. */
 const sortableHead = (h: H, label: string, key: CodeReviewSortKey, sort: Sort, className: string): Html => {
 	const isActive = sort.sortBy === key
 	return tableHead(
 		h,
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ClickedSort({ key })),
-					h.Class(
-						cn(
-							"inline-flex items-center gap-1 transition-colors",
-							isActive ? "text-foreground" : "hover:text-foreground active:text-foreground",
-						),
-					),
-				],
-				[
-					label,
-					icon(h, "ArrowUpDownIcon", {
-						size: 10,
-						className: cn(
-							"shrink-0 transition-opacity",
-							isActive ? "opacity-100" : "opacity-40",
-							isActive && sort.sortDir === "asc" && "rotate-180",
-						),
-					}),
-				],
+			sortButton(
+				h,
+				{ isActive, direction: sort.sortDir, onClick: Message.ClickedSort({ key }), align: "right" },
+				[label],
 			),
 		],
 		className,
-		isActive ? [h.Attribute("aria-sort", sort.sortDir === "asc" ? "ascending" : "descending")] : [],
+		ariaSort(h, isActive, sort.sortDir),
 	)
 }
 
