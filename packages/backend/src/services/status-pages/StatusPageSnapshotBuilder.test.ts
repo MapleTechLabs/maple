@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer } from "effect"
-import { StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
+import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
 import { utcDay } from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { StatusPageSnapshotBuilder, toSnapshot, type SnapshotInput } from "./StatusPageSnapshotBuilder"
@@ -8,6 +8,7 @@ import {
 	DAY_MS,
 	newPageId,
 	NOW,
+	ORG,
 	seedComponent,
 	seedDaily,
 	seedIncident,
@@ -296,6 +297,34 @@ describe("StatusPageSnapshotBuilder.build", () => {
 
 			const missing = yield* Effect.exit(builder.build(newPageId(), NOW))
 			assert.isTrue(Exit.isFailure(missing))
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+
+	it.effect("reads the probe pulse across orgs, or for one org only when asked", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const builder = yield* StatusPageSnapshotBuilder
+			const ours = crypto.randomUUID()
+			const theirs = crypto.randomUUID()
+			yield* seedMonitor(testDb, { id: ours, status: "up" })
+			yield* seedMonitor(testDb, { id: theirs, status: "up", orgId: "org_other" })
+			const daily = (monitorId: string, lastCheckAt: number, orgId: string = ORG) =>
+				seedDaily(testDb, {
+					monitorId,
+					day: utcDay(NOW),
+					checks: 1,
+					failures: 0,
+					downChecks: 0,
+					lastCheckAt,
+					orgId,
+				})
+			yield* daily(ours, NOW - 600_000)
+			yield* daily(theirs, NOW - 1_000, "org_other")
+
+			assert.strictEqual(yield* builder.probesSeenAt(NOW), NOW - 1_000)
+			assert.strictEqual(yield* builder.probesSeenAt(NOW, ORG), NOW - 600_000)
+			// Another org's fresh probe never vouches for a silent org.
+			assert.strictEqual(yield* builder.probesSeenAt(NOW, OrgId.make("org_silent")), null)
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 })

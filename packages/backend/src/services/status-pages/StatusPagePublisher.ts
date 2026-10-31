@@ -1,8 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { StatusPageCleanups, StatusPages, UptimeMonitorDaily, UptimeMonitors } from "@maple/db/tables"
+import { StatusPageCleanups, StatusPages } from "@maple/db/tables"
 import type { StatusPageCleanupRow } from "@maple/db/tables"
 import type { StatusPageId } from "@maple/domain/primitives"
-import { utcDay } from "@maple/domain/status-page"
 import { Clock, Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -18,7 +17,6 @@ export const STATUS_PAGE_SWEEP_BATCH = 100
 /** Edge cleanups one sweep drains at most, oldest first. */
 export const STATUS_PAGE_CLEANUP_BATCH = 50
 const SWEEP_CONCURRENCY = 4
-const DAY_MS = 86_400_000
 
 export interface StatusPagePublishResult {
 	readonly pageId: StatusPageId
@@ -241,23 +239,8 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 			})
 
 			const heartbeat = Effect.fn("StatusPagePublisher.heartbeat")(function* (nowMs: number) {
-				// The daily counters fold in every scheduled check; their PK (monitor, day) serves this
-				// per enabled monitor. Heartbeat monitors are excluded: their misses are not probes.
-				const [seen] = yield* dbExecute((db) =>
-					db.run(
-						PG.from(UptimeMonitorDaily, "d")
-							.innerJoin(UptimeMonitors, "m", (d, m) =>
-								d.monitorId.eq(m.id).and(d.orgId.eq(m.orgId)),
-							)
-							.select(($) => ({ at: PG.max($.lastCheckAt) }))
-							.where(($) => [
-								$.m.enabled.eq(true),
-								$.m.kind.neq("heartbeat"),
-								PG.inList($.day, [utcDay(nowMs), utcDay(nowMs - DAY_MS)]),
-							]),
-					),
-				)
-				yield* store.putHeartbeat({ at: nowMs, probesSeenAt: seen?.at ?? null })
+				const probesSeenAt = yield* builder.probesSeenAt(nowMs)
+				yield* store.putHeartbeat({ at: nowMs, probesSeenAt })
 			})
 
 			const sweep = Effect.fn("StatusPagePublisher.sweep")(function* (nowMs: number) {

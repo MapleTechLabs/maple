@@ -14005,6 +14005,14 @@
       "name": "Uptime Monitors"
     },
     {
+      "description": "Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",
+      "name": "Status Pages"
+    },
+    {
+      "description": "Customer-facing incidents and scheduled maintenance on your status pages, separate from internal alert incidents.",
+      "name": "Status Page Incidents"
+    },
+    {
       "description": "Automatically detected instrumentation improvements — attribute renames toward canonical semantic conventions, double emissions, and naming violations. List them, and dismiss or reopen individual recommendations.",
       "name": "Instrumentation Recommendations"
     },
