@@ -399,19 +399,32 @@ describe("the page as the editor", () => {
 		])
 	})
 
-	test("a monitor created from a URL goes onto the page at once, unless the Add panel closed meanwhile", () => {
+	test("a monitor created from a URL goes onto the page at once, unless that Add panel closed meanwhile", () => {
 		const monitor = downMonitor()
 		const adding = pageUpdate(loaded(), Message.ClickedAddComponent()).model
-		const created = Message.CompletedCreateMonitor({ result: Result.succeed(monitor) })
+		const created = Message.CompletedCreateMonitor({
+			session: adding.addSession,
+			result: Result.succeed(monitor),
+		})
 		expect(pageUpdate(adding, created).commands).toMatchObject([
 			{
 				name: "AddStatusPageComponents",
 				args: { components: [{ name: monitor.name, monitor_id: monitor.id }] },
 			},
 		])
-		const closed = pageUpdate({ ...adding, panel: null }, created)
-		expect(names(closed.commands)).not.toContain("AddStatusPageComponents")
-		expect(closed.model.addPicker.isCreatingMonitor).toBe(false)
+		const closed = pageUpdate(adding, Message.ClickedClosePanel()).model
+		expect(names(pageUpdate(closed, created).commands)).not.toContain("AddStatusPageComponents")
+		// Reopened before the first monitor arrived: the new panel's picker stays its own.
+		const reopened = pageUpdate(closed, Message.ClickedAddComponent()).model
+		const late = pageUpdate(reopened, created)
+		expect(names(late.commands)).not.toContain("AddStatusPageComponents")
+		expect(late.model.addPicker).toEqual(reopened.addPicker)
+		// And a late add from the first panel does not close the reopened one.
+		const settled = pageUpdate(
+			reopened,
+			Message.CompletedAddComponents({ session: adding.addSession, result: Result.succeed([]) }),
+		)
+		expect(settled.model.panel).toEqual(reopened.panel)
 	})
 
 	test("a failed add closes the panel, so a retry cannot add the components that did land twice", () => {
@@ -419,6 +432,7 @@ describe("the page as the editor", () => {
 		const failed = pageUpdate(
 			{ ...adding, isAddingComponents: true },
 			Message.CompletedAddComponents({
+				session: adding.addSession,
 				result: Result.fail(toLoadFailure(new Error("second create refused"))),
 			}),
 		)

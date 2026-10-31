@@ -31,7 +31,8 @@ export const Panel = Schema.Union([
 	Schema.TaggedStruct("Component", { componentId: StatusPageComponentId }),
 	Schema.TaggedStruct("Incident", { incidentId: StatusPageIncidentId }),
 	Schema.TaggedStruct("Compose", {}),
-	Schema.TaggedStruct("Add", {}),
+	/** `session` tells this opening of Add from earlier ones whose writes are still in flight. */
+	Schema.TaggedStruct("Add", { session: Schema.Number }),
 ])
 export type Panel = typeof Panel.Type
 
@@ -71,6 +72,8 @@ export const Model = Schema.Struct({
 	isReordering: Schema.Boolean,
 	addPicker: Picker,
 	isAddingComponents: Schema.Boolean,
+	/** The last Add session opened; each opening takes the next number. */
+	addSession: Schema.Number,
 	// Incidents
 	incidentForm: IncidentForm,
 	isCreatingIncident: Schema.Boolean,

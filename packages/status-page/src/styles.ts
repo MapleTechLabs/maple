@@ -92,6 +92,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--link);outline-offse
 button.day{border:1.5px solid var(--c);background:none;color:var(--fg);cursor:pointer;padding:0}
 button.day[aria-expanded=true]{background:var(--tint)}
 .day.today{font-weight:700;background:var(--primary);color:var(--primary-fg)}
+.day.today[aria-expanded=true]{background:var(--primary)}
 .t-degraded{--c:var(--degraded);--tint:var(--degraded-tint)}.t-partial_outage{--c:var(--partial);--tint:var(--partial-tint)}.t-major_outage{--c:var(--major);--tint:var(--major-tint)}.t-maintenance{--c:var(--maint);--tint:var(--maint-tint)}.t-notice{--c:var(--muted);--tint:var(--card)}
 .cal-panel{border-top:1px solid var(--line);padding:14px 16px}
 .cal-panel h3{font-size:14px;font-weight:500;margin:0 0 8px}
