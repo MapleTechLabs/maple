@@ -427,6 +427,16 @@ describe("the page as the editor", () => {
 		expect(settled.model.panel).toEqual(reopened.panel)
 	})
 
+	test("the Add panel is locked while a pasted URL is being monitored", () => {
+		const adding = pageUpdate(loaded(), Message.ClickedAddComponent()).model
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...adding, addPicker: { ...adding.addPicker, isCreatingMonitor: true } }),
+			expectView(role("button", { name: "Add a component without a monitor" })).toBeDisabled(),
+			expectView(role("button", { name: "Add component" })).toBeDisabled(),
+		)
+	})
+
 	test("Add does not reopen while an earlier add is still saving", () => {
 		const saving = { ...loaded(), isAddingComponents: true }
 		expect(pageUpdate(saving, Message.ClickedAddComponent()).model.panel).toBeNull()
