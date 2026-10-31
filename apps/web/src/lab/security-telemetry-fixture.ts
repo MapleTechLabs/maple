@@ -209,7 +209,7 @@ export const exposureOf = (nowMs: number): Exposure => ({
 		}),
 })
 
-/** One row per posture: end of life, behind, no version, unknown cycle, no release data, Bun as Node.js, supported, untracked. */
+/** One row per posture (end of life, behind, no version, unknown cycle, no release data, Bun as Node.js, supported, untracked) and per advisory state. */
 export const runtimesOf = (nowMs: number): Runtimes => ({
 	runtimes: [
 		{
@@ -297,6 +297,18 @@ export const runtimesOf = (nowMs: number): Runtimes => ({
 			lastSeen: at(nowMs, 20 * MINUTE),
 		},
 		{
+			service: "notifications",
+			environment: "production",
+			runtimeName: "cpython",
+			runtimeVersion: "3.13.1",
+			executableName: "",
+			sdkLanguage: "python",
+			sdkName: "opentelemetry",
+			sdkVersion: "1.27.0",
+			spans: 2_000,
+			lastSeen: at(nowMs, 9 * MINUTE),
+		},
+		{
 			service: "realtime",
 			environment: "production",
 			runtimeName: "nodejs",
@@ -377,5 +389,6 @@ export const runtimesOf = (nowMs: number): Runtimes => ({
 		],
 		"nodejs@23.0.0": [],
 	},
-	advisoriesSkipped: [],
+	// Past the request's read budget.
+	advisoriesSkipped: ["python@3.13.1"],
 })

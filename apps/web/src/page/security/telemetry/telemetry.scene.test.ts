@@ -172,6 +172,7 @@ describe("security telemetry tabs", () => {
 			"payments",
 			"checkout-api",
 			"inventory",
+			"notifications",
 			"search",
 			"ledger",
 			"realtime",
@@ -210,6 +211,9 @@ describe("security telemetry tabs", () => {
 			expectView(role("link", { name: "CVE-2025-0938" })).toBeAbsent(),
 			expectView(text("1 medium")).toExist(),
 			expectView(text("None known")).toExist(),
+			// Java's advisory read failed; Python 3.13 was past the read budget.
+			expectView(text("Unavailable")).toExist(),
+			expectView(text("Not checked yet")).toExist(),
 			expectView(role("link", { name: "OSV.dev" })).toExist(),
 		)
 	})
