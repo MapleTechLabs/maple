@@ -265,3 +265,68 @@ export function ciQueueTotalsQuery(opts: CiScopeOpts) {
 		.where(($) => ranJobs($, opts))
 		.format("JSON")
 }
+
+export interface CiActorStatsOpts extends CiScopeOpts {
+	/** Each repository's default branch, for the default-branch failure rate. */
+	readonly defaultBranches: ReadonlyArray<{
+		readonly owner: string
+		readonly repository: string
+		readonly branch: string
+	}>
+	readonly limit?: number
+}
+
+/**
+ * Per run actor (`maple.cicd.actor`): runs, first-try results, reruns and runner time. Only runs
+ * with a job that ran count: a fork's run waiting for approval spans hours and does nothing. A
+ * job's span covers its wait for a runner, so the queue is taken off its runner time.
+ */
+export function ciActorStatsQuery(opts: CiActorStatsOpts) {
+	const ranJobsPerRun = from(CiJobs)
+		.select(($) => ({
+			TraceId: $.TraceId,
+			runnerMs: CH.sum($.Duration).div(1000000).sub(CH.sum($.QueueMs)),
+		}))
+		.where(($) => ranJobs($, opts))
+		.groupBy("TraceId")
+	return (
+		from(CiRuns)
+			.innerJoinQuery(ranJobsPerRun, "jobs", (run, jobs) => run.TraceId.eq(jobs.TraceId))
+			.select(($) => {
+				// 0 when the span carried no attempt: that is a first run, not a rerun.
+				const firstTry = $.Attempt.lte(1)
+				const passed = $.Result.eq("success")
+				const failed = CH.inList($.Result, CI_FAILED_RESULTS)
+				const isDefaultBranch = opts.defaultBranches
+					.map((repo) =>
+						$.Owner.eq(repo.owner)
+							.and($.Repository.eq(repo.repository))
+							.and($.Branch.eq(repo.branch)),
+					)
+					.reduce<CH.Condition | undefined>(
+						(all, next) => (all === undefined ? next : all.or(next)),
+						undefined,
+					)
+				const onDefaultBranch = $.TriggerEvent.eq("push").and(
+					isDefaultBranch ?? CH.inList($.Branch, []),
+				)
+				return {
+					actor: $.Actor,
+					runs: CH.count(),
+					firstTryRuns: CH.countIf(firstTry.and(passed.or(failed))),
+					firstTryGreen: CH.countIf(firstTry.and(passed)),
+					reruns: CH.countIf($.Attempt.gt(1)),
+					cancelledRuns: CH.countIf($.Result.eq("cancellation")),
+					runnerMs: CH.sum($.jobs.runnerMs),
+					defaultBranchRuns: CH.countIf(onDefaultBranch.and(passed.or(failed))),
+					defaultBranchFailed: CH.countIf(onDefaultBranch.and(failed)),
+				}
+			})
+			.where(($) => ranRuns($, opts))
+			.groupBy("actor")
+			.orderBy(["runs", "desc"])
+			// Totals are summed from these rows: the cap is far above any team.
+			.limit(opts.limit ?? 5_000)
+			.format("JSON")
+	)
+}

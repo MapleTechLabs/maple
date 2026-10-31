@@ -40,6 +40,7 @@ export const AppRoute = defineRouteUnion({
 	StatusPage: { pageId: Schema.String, search: Search.StatusPageSearch },
 	Anomaly: { incidentId: AnomalyIncidentId },
 	CodeReviewCi: { search: Search.CodeReviewCiSearch },
+	CodeReviewTeam: { search: Search.CodeReviewTeamSearch },
 	CodeReviewIssues: { search: Search.CodeReviewIssuesSearch },
 	CodeReviewPullRequests: { search: Search.CodeReviewPullRequestsSearch },
 	CodeReviewSettings: {},

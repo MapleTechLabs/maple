@@ -122,6 +122,28 @@ const CodeReviewListSearchFields = {
 	review: Schema.optional(PrReviewId),
 }
 
+/** The Team scorecard's sort column; `person` is by login. */
+export const CodeReviewTeamSort = Schema.Literals([
+	"person",
+	"merged",
+	"mergeTime",
+	"fixRate",
+	"criticalPerPr",
+	"firstTryGreen",
+	"rerunRate",
+	"shippedClean",
+	"ciTime",
+])
+export type CodeReviewTeamSort = typeof CodeReviewTeamSort.Type
+
+const CodeReviewTeamSearchFields = {
+	repo: Schema.optional(VcsRepositoryId),
+	...TimeRangeSearchFields,
+	sort: Schema.optional(CodeReviewTeamSort),
+	/** Ranked: people with enough pull requests, numbered by the sort column. */
+	ranked: BooleanParam,
+}
+
 const CodeReviewCiSearchFields = {
 	...CodeReviewSearchFields,
 	pipeline: Schema.optional(CiPipelineName),
@@ -348,6 +370,8 @@ export const StatusPageSearch = Schema.Struct({
 })
 
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
+
+export const CodeReviewTeamSearch = Schema.Struct(CodeReviewTeamSearchFields)
 
 export const CodeReviewIssuesSearch = Schema.Struct(CodeReviewIssuesSearchFields)
 

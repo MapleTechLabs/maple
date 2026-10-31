@@ -407,6 +407,37 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
+-- builder:ci-runs:ciActorStatsQuery:allWorkflows  [d856dc60]
+SELECT
+          ci_runs.Actor AS actor,
+          count() AS runs,
+          countIf((ci_runs.Attempt <= 1 AND (ci_runs.Result = 'success' OR ci_runs.Result IN ('failure', 'timeout', 'error')))) AS firstTryRuns,
+          countIf((ci_runs.Attempt <= 1 AND ci_runs.Result = 'success')) AS firstTryGreen,
+          countIf(ci_runs.Attempt > 1) AS reruns,
+          countIf(ci_runs.Result = 'cancellation') AS cancelledRuns,
+          sum(jobs.runnerMs) AS runnerMs,
+          countIf(((ci_runs.TriggerEvent = 'push' AND ((ci_runs.Owner = 'acme' AND ci_runs.Repository = 'web') AND ci_runs.Branch = 'main')) AND (ci_runs.Result = 'success' OR ci_runs.Result IN ('failure', 'timeout', 'error')))) AS defaultBranchRuns,
+          countIf(((ci_runs.TriggerEvent = 'push' AND ((ci_runs.Owner = 'acme' AND ci_runs.Repository = 'web') AND ci_runs.Branch = 'main')) AND ci_runs.Result IN ('failure', 'timeout', 'error'))) AS defaultBranchFailed
+        FROM ci_runs
+        INNER JOIN (SELECT
+          ci_jobs.TraceId AS TraceId,
+          sum(ci_jobs.Duration) / 1000000 - sum(ci_jobs.QueueMs) AS runnerMs
+        FROM ci_jobs
+        WHERE ci_jobs.OrgId = 'org_sql_catalog'
+          AND ci_jobs.Timestamp >= '2026-01-01 10:30:00'
+          AND ci_jobs.Timestamp <= '2026-01-03 14:15:00'
+          AND ci_jobs.Result != 'skip'
+          AND ci_jobs.Duration > 0
+        GROUP BY TraceId) AS jobs ON ci_runs.TraceId = jobs.TraceId
+        WHERE ci_runs.OrgId = 'org_sql_catalog'
+          AND ci_runs.Timestamp >= '2026-01-01 10:30:00'
+          AND ci_runs.Timestamp <= '2026-01-03 14:15:00'
+          AND ci_runs.Result != 'skip'
+        GROUP BY actor
+        ORDER BY runs DESC
+        LIMIT 5000
+        FORMAT JSON
+
 -- builder:ci-runs:ciFailedJobsQuery:default  [fc2d17c0]
 SELECT
           ci_jobs.TraceId AS traceId,

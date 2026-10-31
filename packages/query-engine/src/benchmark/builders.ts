@@ -1864,6 +1864,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.ciQueueTotalsQuery({}), window),
 	},
 	{
+		module: "ci-runs",
+		name: "ciActorStatsQuery",
+		label: "allWorkflows",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciActorStatsQuery({
+					defaultBranches: [{ owner: "acme", repository: "web", branch: "main" }],
+				}),
+				window,
+			),
+	},
+	{
 		module: "pr-review",
 		name: "operationTrafficHourlyQuery",
 		label: "allServices",

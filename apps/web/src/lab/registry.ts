@@ -235,6 +235,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/code-review-team",
+		title: "Code review team",
+		description:
+			"The Code Review Team tab over a month of a seven-person fixture team: KPIs, highlights, the scorecard against the team median and the Ranked view.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/service-api",
 		title: "Service API tab",
 		description:

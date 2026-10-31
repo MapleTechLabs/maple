@@ -121,6 +121,11 @@ const routers = {
 		search(Search.CodeReviewCiSearch),
 		Route.mapTo(AppRoute.CodeReviewCi),
 	),
+	CodeReviewTeam: pipe(
+		path("code-review", "team"),
+		search(Search.CodeReviewTeamSearch),
+		Route.mapTo(AppRoute.CodeReviewTeam),
+	),
 	CodeReviewIssues: pipe(
 		path("code-review", "issues"),
 		search(Search.CodeReviewIssuesSearch),

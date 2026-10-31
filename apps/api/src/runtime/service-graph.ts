@@ -96,6 +96,7 @@ import { TelemetryReadService } from "@maple/backend/services/warehouse/Telemetr
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
+import { CodeReviewTeamService } from "@maple/backend/services/pr-review/CodeReviewTeamService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
@@ -193,6 +194,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SourceRemovalService.layer,
 	PrReviewAnalyticsService.layer,
 	CiAnalyticsService.layer,
+	CodeReviewTeamService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,
