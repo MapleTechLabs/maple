@@ -1,6 +1,7 @@
 import type { StatusPageSnapshot } from "@maple/domain/status-page"
-import { escapeHtml, safeColor, safeUrl } from "./escape"
+import { escapeHtml, safeUrl } from "./escape"
 import { baseStyles } from "./styles"
+import { resolveSafeTheme } from "./theme"
 
 export interface RenderOptions {
 	/** CSP nonce for the inline style and script; omitted for static copies. */
@@ -46,7 +47,7 @@ export const renderDocument = (input: {
 		`<title>${escapeHtml(input.title)}</title>`,
 		description === null ? "" : `<meta name="description" content="${escapeHtml(description)}">`,
 		input.head ?? "",
-		`<style${nonce}>${baseStyles(safeColor(input.snapshot.page.brandColor))}${input.styles}</style>`,
+		`<style${nonce}>${baseStyles(resolveSafeTheme(input.snapshot.page.theme))}${input.styles}</style>`,
 		`</head><body${input.bodyAttrs ?? ""}><main class="wrap">`,
 		input.body,
 		`</main>`,

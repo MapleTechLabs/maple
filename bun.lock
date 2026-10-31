@@ -334,6 +334,7 @@
         "@maple/ingest-rules": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
+        "@maple/status-page": "workspace:*",
         "@maple/ui": "workspace:*",
         "@maple/web-data": "workspace:*",
         "@maple/widgets": "workspace:*",

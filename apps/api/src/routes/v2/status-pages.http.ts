@@ -27,7 +27,7 @@ import type {
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
 } from "@maple/domain/primitives"
-import { isActiveIncident } from "@maple/domain/status-page"
+import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
 import { Effect, Option } from "effect"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -50,7 +50,7 @@ export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	description: page.description,
 	website_url: page.websiteUrl,
 	logo_url: page.logoUrl,
-	brand_color: page.brandColor,
+	theme: page.theme,
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
 	break_glass_token_suffix: page.breakGlassTokenSuffix,
@@ -109,7 +109,7 @@ const pageAuditDiff = auditDiff({
 		"description",
 		"website_url",
 		"logo_url",
-		"brand_color",
+		"theme",
 		"show_powered_by",
 		"auto_incidents",
 	],
@@ -191,9 +191,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
-						...(payload.brand_color === undefined
+						...(payload.theme === undefined
 							? undefined
-							: { brandColor: payload.brand_color }),
+							: { theme: { ...DEFAULT_STATUS_PAGE_THEME, ...payload.theme } }),
 						...(payload.show_powered_by === undefined
 							? undefined
 							: { showPoweredBy: payload.show_powered_by }),
@@ -224,9 +224,8 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
-						...(payload.brand_color === undefined
-							? undefined
-							: { brandColor: payload.brand_color }),
+						// Omitted theme fields keep the page's current values.
+						...(payload.theme === undefined ? undefined : { theme: payload.theme }),
 						...(payload.show_powered_by === undefined
 							? undefined
 							: { showPoweredBy: payload.show_powered_by }),

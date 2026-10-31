@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import {
 	StatusPageComponentId,
 	StatusPageComponentStatus,
@@ -88,13 +88,363 @@ export const StatusPageSnapshotIncident = Schema.Struct({
 })
 export type StatusPageSnapshotIncident = Schema.Schema.Type<typeof StatusPageSnapshotIncident>
 
+// --- Theme ---
+
+export const StatusPageThemePreset = Schema.Literals(["default", "mono", "midnight", "paper"])
+export type StatusPageThemePreset = Schema.Schema.Type<typeof StatusPageThemePreset>
+export const StatusPageThemeAppearance = Schema.Literals(["auto", "light", "dark"])
+export type StatusPageThemeAppearance = Schema.Schema.Type<typeof StatusPageThemeAppearance>
+export const StatusPageThemeRadius = Schema.Literals(["none", "sm", "md", "lg"])
+export type StatusPageThemeRadius = Schema.Schema.Type<typeof StatusPageThemeRadius>
+export const StatusPageThemeFont = Schema.Literals(["sans", "serif", "mono"])
+export type StatusPageThemeFont = Schema.Schema.Type<typeof StatusPageThemeFont>
+
+export const STATUS_PAGE_HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/u
+/** `#rrggbb`: the only colour form a theme stores, so nothing else can reach a stylesheet. */
+export const StatusPageHexColor = Schema.String.check(Schema.isPattern(STATUS_PAGE_HEX_COLOR_PATTERN))
+
+export const StatusPageTheme = Schema.Struct({
+	preset: StatusPageThemePreset,
+	appearance: StatusPageThemeAppearance,
+	/** Links and highlights; applies in every appearance. */
+	accent: Schema.NullOr(StatusPageHexColor),
+	/** The overrides below apply only when the appearance is forced to light or dark. */
+	background: Schema.NullOr(StatusPageHexColor),
+	text: Schema.NullOr(StatusPageHexColor),
+	card: Schema.NullOr(StatusPageHexColor),
+	border: Schema.NullOr(StatusPageHexColor),
+	radius: StatusPageThemeRadius,
+	font: StatusPageThemeFont,
+})
+export type StatusPageTheme = Schema.Schema.Type<typeof StatusPageTheme>
+
+export const DEFAULT_STATUS_PAGE_THEME: StatusPageTheme = {
+	preset: "default",
+	appearance: "auto",
+	accent: null,
+	background: null,
+	text: null,
+	card: null,
+	border: null,
+	radius: "md",
+	font: "sans",
+}
+
+/** The colour overrides a forced appearance takes; Auto ignores them. */
+export const STATUS_PAGE_THEME_COLOR_FIELDS = ["background", "text", "card", "border"] as const
+
+/** Concrete CSS tokens for one colour scheme. */
+export interface StatusPageThemeTokens {
+	readonly bg: string
+	readonly fg: string
+	readonly muted: string
+	readonly line: string
+	readonly card: string
+	readonly link: string
+	readonly ok: string
+	readonly degraded: string
+	readonly partial: string
+	readonly major: string
+	readonly maint: string
+	readonly none: string
+}
+
+/** A scheme's tokens as rendered: `secondary` colours the site name and footer links. */
+export interface ResolvedStatusPageThemeTokens extends StatusPageThemeTokens {
+	readonly secondary: string
+}
+
+export interface ResolvedStatusPageTheme {
+	/** `auto` follows the visitor's scheme with both sets; `light`/`dark` forces that one set. */
+	readonly appearance: StatusPageThemeAppearance
+	/** The custom accent, or null; also folded into each set's `link`. */
+	readonly accent: string | null
+	readonly light: ResolvedStatusPageThemeTokens
+	readonly dark: ResolvedStatusPageThemeTokens
+	readonly radiusPx: number
+	readonly fontStack: string
+}
+
+const PRESET_TOKENS = {
+	default: {
+		light: {
+			bg: "#ffffff",
+			fg: "#0a0a0a",
+			muted: "#666666",
+			line: "#eaeaea",
+			card: "#fafafa",
+			link: "#0a0a0a",
+			ok: "#11813b",
+			degraded: "#aa5d05",
+			partial: "#c3490a",
+			major: "#dc2626",
+			maint: "#2563eb",
+			none: "#e5e5e5",
+		},
+		dark: {
+			bg: "#0a0a0a",
+			fg: "#ededed",
+			muted: "#a1a1a1",
+			line: "#262626",
+			card: "#111111",
+			link: "#ededed",
+			ok: "#22c55e",
+			degraded: "#f59e0b",
+			partial: "#f97316",
+			major: "#ef4444",
+			maint: "#3b82f6",
+			none: "#2a2a2a",
+		},
+	},
+	mono: {
+		light: {
+			bg: "#ffffff",
+			fg: "#111111",
+			muted: "#6b6b6b",
+			line: "#d4d4d4",
+			card: "#f4f4f4",
+			link: "#111111",
+			ok: "#3d7a56",
+			degraded: "#91651d",
+			partial: "#ac552a",
+			major: "#b33a3a",
+			maint: "#4b6a99",
+			none: "#e0e0e0",
+		},
+		dark: {
+			bg: "#000000",
+			fg: "#f2f2f2",
+			muted: "#9a9a9a",
+			line: "#303030",
+			card: "#0c0c0c",
+			link: "#f2f2f2",
+			ok: "#5fae7f",
+			degraded: "#d0a14e",
+			partial: "#d47e52",
+			major: "#d86464",
+			maint: "#7a98c6",
+			none: "#262626",
+		},
+	},
+	midnight: {
+		light: {
+			bg: "#f5f7fb",
+			fg: "#0f172a",
+			muted: "#556079",
+			line: "#dbe1ec",
+			card: "#ffffff",
+			link: "#4338ca",
+			ok: "#15803d",
+			degraded: "#b45309",
+			partial: "#c2410c",
+			major: "#b91c1c",
+			maint: "#1d4ed8",
+			none: "#dfe4ee",
+		},
+		dark: {
+			bg: "#0b1020",
+			fg: "#e6e9f2",
+			muted: "#8e99b3",
+			line: "#1f2a44",
+			card: "#10172d",
+			link: "#a5b4fc",
+			ok: "#34d399",
+			degraded: "#fbbf24",
+			partial: "#fb923c",
+			major: "#f87171",
+			maint: "#60a5fa",
+			none: "#1c2540",
+		},
+	},
+	paper: {
+		light: {
+			bg: "#fbf8f1",
+			fg: "#2b2620",
+			muted: "#6c6356",
+			line: "#e6dcc8",
+			card: "#f4eee1",
+			link: "#9a3f12",
+			ok: "#3c7839",
+			degraded: "#936016",
+			partial: "#a95323",
+			major: "#b23a2c",
+			maint: "#3f6497",
+			none: "#e7dfcf",
+		},
+		dark: {
+			bg: "#1b1814",
+			fg: "#ece5d8",
+			muted: "#a59b8a",
+			line: "#36302a",
+			card: "#231f1a",
+			link: "#e7a274",
+			ok: "#7bb36f",
+			degraded: "#d9a548",
+			partial: "#dc8653",
+			major: "#de6b5b",
+			maint: "#7d9ccc",
+			none: "#2e2924",
+		},
+	},
+} as const satisfies Record<
+	StatusPageThemePreset,
+	{ readonly light: StatusPageThemeTokens; readonly dark: StatusPageThemeTokens }
+>
+
+const RADIUS_PX = { none: 0, sm: 4, md: 8, lg: 14 } as const satisfies Record<StatusPageThemeRadius, number>
+
+const FONT_STACKS = {
+	sans: 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif',
+	serif: 'ui-serif,Georgia,Cambria,"Times New Roman",Times,serif',
+	mono: "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace",
+} as const satisfies Record<StatusPageThemeFont, string>
+
+const hexChannels = (hex: string): readonly [number, number, number] => [
+	Number.parseInt(hex.slice(1, 3), 16),
+	Number.parseInt(hex.slice(3, 5), 16),
+	Number.parseInt(hex.slice(5, 7), 16),
+]
+
+/** `weight` of `a` mixed into `b`, as `#rrggbb`. */
+const mixHex = (a: string, b: string, weight: number): string => {
+	const [ar, ag, ab] = hexChannels(a)
+	const [br, bg, bb] = hexChannels(b)
+	const channel = (x: number, y: number) =>
+		Math.round(x * weight + y * (1 - weight))
+			.toString(16)
+			.padStart(2, "0")
+	return `#${channel(ar, br)}${channel(ag, bg)}${channel(ab, bb)}`
+}
+
+/** WCAG 2 relative luminance of a `#rrggbb` colour. */
+export const relativeLuminance = (hex: string): number => {
+	const [r, g, b] = hexChannels(hex).map((value) => {
+		const c = value / 255
+		return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+	})
+	return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0)
+}
+
+/** WCAG 2 contrast ratio, 1 to 21. */
+export const contrastRatio = (a: string, b: string): number => {
+	const [light, dark] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x)
+	return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05)
+}
+
+/** The most-blended mix of `fg` into `bg` (from 62% up to 100%) that keeps AA on `bg` and `card`. */
+const readableMix = (fg: string, bg: string, card: string): string =>
+	MUTED_WEIGHTS.map((weight) => mixHex(fg, bg, weight)).find(
+		(muted) =>
+			contrastRatio(muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
+			contrastRatio(muted, card) >= STATUS_PAGE_MIN_CONTRAST,
+	) ?? fg
+
+const MUTED_WEIGHTS = Array.from({ length: 39 }, (_, step) => 0.62 + step * 0.01)
+
+const withOverrides = (tokens: StatusPageThemeTokens, theme: StatusPageTheme): StatusPageThemeTokens => {
+	const bg = theme.background ?? tokens.bg
+	const fg = theme.text ?? tokens.fg
+	const card = theme.card ?? tokens.card
+	// Muted text follows a custom text or background, blended toward it only as far as stays readable.
+	const presetReads =
+		contrastRatio(tokens.muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
+		contrastRatio(tokens.muted, card) >= STATUS_PAGE_MIN_CONTRAST
+	const muted =
+		theme.background === null && theme.text === null && presetReads
+			? tokens.muted
+			: readableMix(fg, bg, card)
+	return {
+		...tokens,
+		bg,
+		fg,
+		muted,
+		card,
+		line: theme.border ?? tokens.line,
+	}
+}
+
+/**
+ * Links take the accent only where it stays readable on that mode's background; else the text
+ * colour. The site name and footer links take it too, else the muted colour.
+ */
+const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): ResolvedStatusPageThemeTokens =>
+	accent === null || contrastRatio(accent, tokens.bg) < STATUS_PAGE_MIN_CONTRAST
+		? { ...tokens, secondary: tokens.muted }
+		: { ...tokens, link: accent, secondary: accent }
+
+/**
+ * The concrete tokens a theme renders with. Auto takes the preset and accent only; a forced
+ * appearance also takes the colour overrides for that mode. Status colours always come from the preset.
+ */
+export const resolveStatusPageTheme = (theme: StatusPageTheme): ResolvedStatusPageTheme => {
+	const preset = PRESET_TOKENS[theme.preset]
+	const accent = theme.accent?.toLowerCase() ?? null
+	const forced = (mode: "light" | "dark") =>
+		theme.appearance === mode ? withOverrides(preset[mode], theme) : preset[mode]
+	return {
+		appearance: theme.appearance,
+		accent,
+		light: withAccent(forced("light"), accent),
+		dark: withAccent(forced("dark"), accent),
+		radiusPx: RADIUS_PX[theme.radius],
+		fontStack: FONT_STACKS[theme.font],
+	}
+}
+
+/** The token sets a visitor can actually see. */
+export const visibleThemeTokens = (
+	resolved: ResolvedStatusPageTheme,
+): ReadonlyArray<ResolvedStatusPageThemeTokens> =>
+	resolved.appearance === "auto"
+		? [resolved.light, resolved.dark]
+		: [resolved.appearance === "light" ? resolved.light : resolved.dark]
+
+export const STATUS_PAGE_MIN_CONTRAST = 4.5
+
+/** Two decimals, never rounded up to a passing 4.50. */
+const formatRatio = (ratio: number): string => {
+	const rounded = Math.round(ratio * 100) / 100
+	const shown = rounded >= STATUS_PAGE_MIN_CONTRAST && ratio < STATUS_PAGE_MIN_CONTRAST ? 4.49 : rounded
+	return `${shown.toFixed(2)}:1`
+}
+
+const STATUS_COLOR_TOKENS = ["ok", "degraded", "partial", "major", "maint"] as const
+
+/** Why the theme's text would be hard to read (below WCAG AA 4.5:1), or null when it is readable. */
+export const themeContrastIssue = (theme: StatusPageTheme): string | null => {
+	const issues = visibleThemeTokens(resolveStatusPageTheme(theme)).flatMap((tokens) => {
+		const onBackground = contrastRatio(tokens.fg, tokens.bg)
+		const onCard = contrastRatio(tokens.fg, tokens.card)
+		if (onBackground < STATUS_PAGE_MIN_CONTRAST)
+			return [
+				`Text on the background has a contrast of ${formatRatio(onBackground)}; it needs at least 4.5:1.`,
+			]
+		if (onCard < STATUS_PAGE_MIN_CONTRAST)
+			return [`Text on cards has a contrast of ${formatRatio(onCard)}; it needs at least 4.5:1.`]
+		// Status colours come from the preset, so an overridden card or background can wash them out.
+		const statusRatio = Math.min(
+			...STATUS_COLOR_TOKENS.flatMap((key) => [
+				contrastRatio(tokens[key], tokens.bg),
+				contrastRatio(tokens[key], tokens.card),
+			]),
+		)
+		if (statusRatio < STATUS_PAGE_MIN_CONTRAST)
+			return [
+				`Status labels have a contrast of ${formatRatio(statusRatio)} on this background or card; they need at least 4.5:1.`,
+			]
+		return []
+	})
+	return issues[0] ?? null
+}
+
 export const StatusPageSnapshotPage = Schema.Struct({
 	name: Schema.String,
 	slug: StatusPageSlug,
 	description: Schema.NullOr(Schema.String),
 	websiteUrl: Schema.NullOr(Schema.String),
 	logoUrl: Schema.NullOr(Schema.String),
-	brandColor: Schema.NullOr(Schema.String),
+	// Snapshots published before themes existed carry none; they render the default until republished.
+	theme: StatusPageTheme.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(DEFAULT_STATUS_PAGE_THEME))),
 	showPoweredBy: Schema.Boolean,
 })
 export type StatusPageSnapshotPage = Schema.Schema.Type<typeof StatusPageSnapshotPage>

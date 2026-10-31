@@ -14,6 +14,7 @@ import {
 	UptimeMonitorId,
 	UserId,
 } from "../primitives"
+import { StatusPageTheme } from "../status-page"
 import { HttpTaggedError } from "./error-policy"
 
 export class StatusPageNotFoundError extends HttpTaggedError<StatusPageNotFoundError>()(
@@ -129,7 +130,7 @@ export const StatusPageRecord = Schema.Struct({
 	description: Schema.NullOr(Schema.String),
 	websiteUrl: Schema.NullOr(Schema.String),
 	logoUrl: Schema.NullOr(Schema.String),
-	brandColor: Schema.NullOr(Schema.String),
+	theme: StatusPageTheme,
 	showPoweredBy: Schema.Boolean,
 	autoIncidents: StatusPageAutoIncidents,
 	breakGlassTokenSuffix: Schema.NullOr(Schema.String),

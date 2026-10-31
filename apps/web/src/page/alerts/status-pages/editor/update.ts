@@ -53,6 +53,7 @@ import {
 	savedSettings,
 	saveSettings,
 	togglePoweredBy,
+	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
 
@@ -94,6 +95,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		settingsEdits: null,
 		isSavingSettings: false,
 		settingsFailure: null,
+		previewScheme: "light",
 		isPublishing: false,
 		breakGlassDialog: Dialog.init("status-page-break-glass", "alert-dialog"),
 		breakGlassAction: null,
@@ -131,14 +133,17 @@ const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
 		CompletedFetchPage: ({ key, result }) => ({
 			model: { ...model, page: Keyed.accept(model.page, key, result) },
+			commands: [ReadEditorClock()],
 		}),
 		CompletedFetchComponents: ({ key, result }) => ({
 			model: { ...model, components: Keyed.accept(model.components, key, result) },
 		}),
 		CompletedFetchIncidents: ({ key, result }) => ({
 			model: { ...model, incidents: Keyed.accept(model.incidents, key, result) },
+			commands: [ReadEditorClock()],
 		}),
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
@@ -205,6 +210,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// Settings
 		ChangedSetting: ({ field, value }) => changeSetting(model, field, value),
 		ToggledPoweredBy: () => togglePoweredBy(model),
+		PickedThemePreset: ({ preset }) => changeTheme(model, { preset }),
+		PickedThemeAppearance: ({ appearance }) => changeTheme(model, { appearance }),
+		ChangedThemeColor: ({ field, value }) => changeTheme(model, { [field]: value }),
+		PickedThemeRadius: ({ radius }) => changeTheme(model, { radius }),
+		PickedThemeFont: ({ font }) => changeTheme(model, { font }),
+		PickedPreviewScheme: ({ scheme }) => ({ model: { ...model, previewScheme: scheme } }),
 		ClickedDiscardSettings: () => ({ model: { ...model, settingsEdits: null, settingsFailure: null } }),
 		ClickedSaveSettings: () => saveSettings(model),
 		CompletedSaveSettings: ({ result }) => savedSettings(model, result),

@@ -341,7 +341,8 @@ export const incidentDialog = (h: H, model: Model, timeZone: string): Html => {
 				[h.Class("flex flex-col gap-4")],
 				[
 					textField(h, {
-						id: "status-page-incident-title",
+						// Not `<slot>-title`: the dialog heading already uses that id.
+						id: "status-page-incident-title-field",
 						label: "Title",
 						value: form.title,
 						placeholder: isMaintenance ? "Database upgrade" : "Elevated API errors",
