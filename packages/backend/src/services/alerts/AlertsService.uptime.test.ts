@@ -384,6 +384,53 @@ describe("AlertsService uptime rules", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 	})
 
+	it.effect("a missed heartbeat counts as a down check and marks the pages showing it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_uptime_heartbeat_page")
+			const { monitorId } = yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Nightly backup",
+				serviceName: "backup-job",
+				destinationIds: [],
+				config: { _tag: "heartbeat", schedule: { _tag: "interval", seconds: 300 }, graceSeconds: 60 },
+				status: "up",
+				lastPingAt: DEFAULT_CLOCK_EPOCH_MS,
+			})
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO status_pages (id, org_id, name, slug, created_by, created_at, updated_at)
+					 VALUES ('11111111-1111-4111-8111-111111111111', $1, 'Acme', 'acme', 'user_1', now(), now())`,
+					[orgId],
+				).then(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO status_page_components (id, org_id, page_id, name, monitor_id, created_at, updated_at)
+						 VALUES ('22222222-2222-4222-8222-222222222222', $1, '11111111-1111-4111-8111-111111111111', 'Backups', $2, now(), now())`,
+						[orgId, monitorId],
+					),
+				),
+			)
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + 7 * 60_000)
+			yield* alerts.runSchedulerTick()
+			const page = yield* Effect.promise(() =>
+				queryFirstRow<{ revision: string }>(testDb, "select revision::text from status_pages"),
+			)
+			const daily = yield* Effect.promise(() =>
+				queryFirstRow<{ checks: number; down_checks: number }>(
+					testDb,
+					"select checks, down_checks from uptime_monitor_daily where monitor_id = $1",
+					[monitorId],
+				),
+			)
+			assert.strictEqual(page?.revision, "2")
+			assert.deepStrictEqual(daily, { checks: 1, down_checks: 1 })
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
+
 	it.effect(
 		"the generic rule APIs refuse to create, edit or delete uptime rules and do not list them",
 		() => {
