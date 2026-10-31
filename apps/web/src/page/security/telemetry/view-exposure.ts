@@ -176,13 +176,18 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 
 // CATCH-ALL ROUTES
 
+const CATCH_ALL_COPY =
+	"These services answer almost every probe path with a success, which usually means they serve the same page for any path. Their answered probes are left out above."
+
 const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 	panel(h, {}, [
 		panelHeader(h, { title: "Likely catch-all routes" }),
 		h.p(
 			[h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")],
 			[
-				"These services answer almost every probe path with a success, which usually means they serve the same page for any path. Their answered probes are left out above. Open one sample to confirm nothing real is served.",
+				services.some((entry) => entry.sampleTraceId !== "")
+					? `${CATCH_ALL_COPY} Open a sample trace to confirm nothing real is served.`
+					: `${CATCH_ALL_COPY} Check one response to confirm nothing real is served.`,
 			],
 		),
 		h.ul(
@@ -363,7 +368,7 @@ const exposureEmpty = (h: H): Html =>
 
 export const telemetryLoading = (h: H): ReadonlyArray<Html> => [
 	h.div(
-		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("grid grid-cols-2 gap-px md:grid-cols-4")],
+		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("grid grid-cols-2 gap-px xl:grid-cols-4")],
 		Array.from({ length: 4 }, () => placeholder(h, "h-24")),
 	),
 	placeholder(h, "h-64 w-full"),
