@@ -11,6 +11,7 @@ import {
 	SyncRailwayOutput,
 } from "@maple/domain/mcp-outputs"
 import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/domain/http"
+import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ScrapeIntervalSeconds } from "@maple/domain/primitives"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
@@ -85,7 +86,9 @@ const resolveTarget = (
 			Effect.flatMap((service) => service.list(orgId)),
 			Effect.mapError(queryError(tool)),
 		)
-		const matches = targets.targets.filter((target) => target.id === ref || target.name === ref)
+		// The REST id (scrp_…) names the same target as its UUID.
+		const id = decodePublicId(PublicIdPrefixes.scrapeTarget, ref) ?? ref
+		const matches = targets.targets.filter((target) => target.id === id || target.name === ref)
 		const [target] = matches
 		if (target === undefined) {
 			return yield* new McpInvalidInputError({

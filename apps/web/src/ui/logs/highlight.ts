@@ -43,7 +43,7 @@ export const highlightedText = <Message>(
 							[
 								rowClass(
 									h,
-									"rounded-xs bg-primary/30 px-px text-foreground [text-decoration:inherit]",
+									"rounded-xs bg-primary-a3 px-px text-foreground [text-decoration:inherit]",
 								),
 							],
 							[segment.text],

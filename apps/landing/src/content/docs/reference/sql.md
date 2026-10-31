@@ -22,16 +22,17 @@ Every query **must** contain `$__orgFilter`. It expands to your organization's f
 
 ## Macros
 
-| Macro                | Expands to                                                    |
-| -------------------- | ------------------------------------------------------------- |
-| `$__orgFilter`       | Your organization filter. Required.                           |
-| `$__timeFilter(col)` | `col >= <start> AND col <= <end>` for the selected time range |
-| `$__timeGroup(col)`  | `toStartOfInterval(col, INTERVAL <bucket> SECOND)`            |
-| `$__startTime`       | The range start, as a `DateTime`                              |
-| `$__endTime`         | The range end, as a `DateTime`                                |
-| `$__interval_s`      | The bucket width in seconds, an integer of at least 1         |
+| Macro                 | Expands to                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| `$__orgFilter`        | Your organization filter. Required.                                                  |
+| `$__orgFilter(alias)` | The organization filter on a table alias, for joins (`t.OrgId = …`)                  |
+| `$__timeFilter(col)`  | `col >= <start> AND col <= <end>` for the selected time range (alerts use `< <end>`) |
+| `$__timeGroup(col)`   | `toStartOfInterval(col, INTERVAL <bucket> SECOND)`                                   |
+| `$__startTime`        | The range start, as a `DateTime`                                                     |
+| `$__endTime`          | The range end, as a `DateTime`                                                       |
+| `$__interval_s`       | The bucket width in seconds, an integer of at least 1                                |
 
-The argument to `$__timeFilter` and `$__timeGroup` must be a plain column name. Any other `$__name` is an error. When a widget has no explicit granularity, buckets target about 30 points with a 5-minute minimum.
+The argument to `$__timeFilter` and `$__timeGroup` must be a column name, optionally table-qualified (`t.Timestamp`). Any other `$__name` is an error. When a widget has no explicit granularity, buckets target about 30 points with a 5-minute minimum.
 
 On dashboards, variables are written `$name` or `${name}` and are substituted as quoted string literals. A variable set to **All** becomes a comma-separated list, so use it with `IN`:
 
@@ -106,7 +107,7 @@ All four metric tables share `ServiceName`, `MetricName`, `MetricDescription`, `
 - **Status and span kind are Title Case.** `StatusCode = 'Error'` matches; `'ERROR'` does not.
 - **Hourly rollups use `Hour`, not `Timestamp`.** Snap your range with `toStartOfHour`, or a window shorter than an hour returns nothing.
 - **Rollup columns are aggregate states.** Read `SimpleAggregateFunction` columns with `sum(...)` and `AggregateFunction` columns with the matching `…Merge(...)`.
-- **Filter on the sort key first.** `traces` is sorted by service and span name, so adding `ServiceName = '…'` makes a query dramatically cheaper.
+- **Filter on the sort key first.** `traces` is sorted by service, then a 5-minute time bucket and trace ID, so `ServiceName = '…'` plus a tight time range makes a query far cheaper.
 
 ## Result shapes for charts
 
@@ -138,19 +139,20 @@ A query is a single `SELECT` or `WITH` statement. A trailing `;` is fine, and a 
 - More than one statement.
 - Any write or DDL keyword: `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `TRUNCATE`, `RENAME`, `ATTACH`, `DETACH`, `CREATE`, `GRANT`, `REVOKE`, `OPTIMIZE`, `SYSTEM`, `KILL`, and `INTO OUTFILE`.
 - A `SETTINGS` clause.
-- Table functions that reach outside Maple, such as `url`, `file`, `s3`, `remote`, `mysql`, `postgresql` and `dictionary`.
+- Any table function except `numbers` and `generateSeries`.
+- Reading `system` tables, and functions that read server configuration or files (such as `file`).
 
 A rejected query returns `400` with one of these codes: `MissingOrgFilter`, `InvalidMacro`, `UnresolvedMacro`, `DisallowedStatement`, `DisallowedFunction`, `MultipleStatements`, `ResourceLimit`.
 
 ## Limits
 
-| Limit               | Value                                                                  |
-| ------------------- | ---------------------------------------------------------------------- |
-| Query text          | 32,768 characters                                                      |
-| Rows returned       | 1,000. More is an error, not a silent cut: aggregate or add a `LIMIT`. |
-| Result size         | 5 MB of JSON, 64,000 characters per cell                               |
-| Execution time      | 10 seconds for dashboards and `run_sql`, 5 seconds for alerts          |
-| Raw-SQL alert rules | Must use `$__timeFilter(…)`                                            |
+| Limit               | Value                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Query text          | 32,768 characters                                                                                                                          |
+| Rows returned       | 1,000. More is an error, not a silent cut: aggregate or add a `LIMIT`.                                                                     |
+| Result size         | 5 MB of JSON, 64,000 characters per cell                                                                                                   |
+| Execution time      | 10 seconds for dashboards and `run_sql`; 5 to 25 seconds for alerts, by [check interval](/docs/alerting/rule-evaluation#query-time-limits) |
+| Raw-SQL alert rules | Must use `$__timeFilter(…)`                                                                                                                |
 
 Your query is wrapped in an outer `LIMIT`, so `WITH TOTALS`, `LIMIT BY` and `WITH FILL` in the outermost query are discarded.
 

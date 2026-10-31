@@ -7,6 +7,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { emptyOnFailure } from "../../data/enrichment"
 import type { LoadFailure } from "../../data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { card } from "../../ui/card"
@@ -40,7 +41,11 @@ export type HealthData = readonly [
 
 /** `Result.all([snapshot, anomalies, alertIncidents])`. */
 export const healthData = (model: Model): AsyncData.AsyncData<HealthData, LoadFailure> =>
-	AsyncData.all([model.snapshot.data, model.anomalies.data, model.incidents])
+	AsyncData.all([
+		model.snapshot.data,
+		emptyOnFailure(model.anomalies.data),
+		emptyOnFailure(model.incidents),
+	])
 
 export type SliceSearch = Readonly<{
 	startTime: string | undefined
@@ -68,7 +73,7 @@ const railAction = <M>(h: HtmlBuilder<M>, slice: SliceSearch, health?: ServiceHe
 		[
 			h.Href(servicesHref(slice, health)),
 			h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`),
-			h.Class("text-muted-foreground/40 transition-colors hover:text-foreground"),
+			h.Class("text-foreground-faint hover:text-foreground active:text-foreground"),
 		],
 		[icon(h, "ArrowRightIcon", { className: "size-3" })],
 	)
@@ -90,22 +95,33 @@ export type HealthOverviewInputs = Readonly<{
 	nowMs: number
 }>
 
-/** `ServiceHealthOverview`: the banner always; the rail loading, absent on error, counted on success. */
+/** `ServiceHealthOverview`: the banner once alerts are known; the rail loading, absent on error, counted on success. */
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
 	const open = incidents.filter((incident) => incident.status === "open")
 	const rules = AsyncData.getOrElse(model.rules, () => [])
-	const banner = alertFiringHero(h, {
-		openCount: open.length,
-		criticalCount: open.filter((incident) => incident.severity === "critical").length,
-		warningCount: open.filter((incident) => incident.severity === "warning").length,
-		rulesEnabled: rules.filter((enabled) => enabled).length,
-		rulesTotal: rules.length,
-	})
+	// "All clear" claims to know: without live alerts (loading or sync down) the banner stays out.
+	const isAlertsKnown = AsyncData.isSuccess(model.incidents) && AsyncData.isSuccess(model.rules)
+	const banner = !isAlertsKnown
+		? []
+		: [
+				alertFiringHero(h, {
+					openCount: open.length,
+					criticalCount: open.filter((incident) => incident.severity === "critical").length,
+					warningCount: open.filter((incident) => incident.severity === "warning").length,
+					rulesEnabled: rules.filter((enabled) => enabled).length,
+					rulesTotal: rules.length,
+				}),
+			]
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
-		onEmpty: () => section(h, "mb-4 space-y-3", false, [banner, statRailLoading(h)]),
-		onFailure: () => section(h, "mb-4 space-y-3", false, [banner]),
+		onEmpty: () =>
+			section(h, "mb-4 space-y-3", false, [
+				...banner,
+				statRailLoading(h, 4),
+			]),
+		// An empty section keeps no margin, or the page strip's gap above the usage rail doubles.
+		onFailure: () => section(h, banner.length > 0 ? "mb-4 space-y-3" : "space-y-3", false, banner),
 		onData: ([snapshot, anomalies, alerts]) => {
 			const counts = countByHealth(
 				enrichServices(
@@ -118,7 +134,7 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 			const tone = (health: ServiceHealth, active: "ok" | "warn" | "crit") =>
 				counts[health] > 0 ? active : "neutral"
 			return section(h, "mb-4 space-y-3", AsyncData.isRefreshing(data), [
-				banner,
+				...banner,
 				statRail(h, {}, [
 					statRailItem(h, {
 						eyebrow: "Services",
@@ -161,7 +177,7 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				[
 					eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
 					h.p(
-						[h.Class("mt-0.5 text-2xs text-muted-foreground/70")],
+						[h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")],
 						["Status reflects active alerts and baseline anomalies."],
 					),
 				],
@@ -170,7 +186,7 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				[
 					h.Href(servicesHref(slice)),
 					h.Class(
-						"text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
+						"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
 					),
 				],
 				["View all services →"],
@@ -182,26 +198,33 @@ const MAX_ROWS = 7
 
 export type HealthListInputs = HealthOverviewInputs &
 	Readonly<{
-		/** The services empty state, with its presence-driven copy and paint Mount. */
+		/** The services empty state, with its presence-driven copy. */
 		emptyState: Html
+		/** The org never sent traces: the empty state shows without waiting on the snapshot. */
+		isNeverReceived: boolean
 	}>
 
 /** `ServiceHealthList`: up to seven rows, worst first, under the section header. */
 export const healthList = <M>(
 	h: HtmlBuilder<M>,
-	{ model, slice, nowMs, emptyState }: HealthListInputs,
+	{ model, slice, nowMs, emptyState, isNeverReceived }: HealthListInputs,
 ): Html => {
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
 		onEmpty: () =>
-			section(h, "mt-4 space-y-3", false, [
-				listHeader(h, slice),
-				card(
-					h,
-					[skeletonList(h, { rows: 4, rowClassName: "h-6", gap: "2", className: "p-4" })],
-					"overflow-hidden p-0",
-				),
-			]),
+			isNeverReceived
+				? section(h, "mt-4 space-y-3", false, [
+						listHeader(h, slice),
+						card(h, [emptyState], "overflow-hidden p-0"),
+					])
+				: section(h, "mt-4 space-y-3", false, [
+						listHeader(h, slice),
+						card(
+							h,
+							[skeletonList(h, { rows: 4, rowClassName: "h-6", gap: "2", className: "p-4" })],
+							"overflow-hidden p-0",
+						),
+					]),
 		onFailure: (failure) =>
 			section(h, "mt-4 space-y-3", false, [listHeader(h, slice), errorState(h, { failure })]),
 		onData: ([snapshot, anomalies, alerts]) => {

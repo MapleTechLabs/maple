@@ -7,9 +7,11 @@ import {
 	DiscordAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	HazelOAuthAlertDestinationConfig,
+	LinearAlertDestinationConfig,
 	AlertDestinationNotFoundError,
 	PagerDutyAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
+	GoogleChatAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import type {
@@ -35,6 +37,7 @@ const toV2Destination = (doc: AlertDestinationDocument): V2AlertDestination => (
 	member_user_ids: doc.memberUserIds,
 	...(doc.chatConnector === undefined ? undefined : { chat_connector: doc.chatConnector }),
 	...(doc.chatWorkspaceId === undefined ? undefined : { chat_workspace_id: doc.chatWorkspaceId }),
+	...(doc.linearTeamId === undefined ? undefined : { linear_team_id: doc.linearTeamId }),
 	last_tested_at: doc.lastTestedAt,
 	last_test_error: doc.lastTestError,
 	created_at: doc.createdAt,
@@ -95,6 +98,13 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				chatId: params.chat_id,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
+		case "google-chat":
+			return new GoogleChatAlertDestinationConfig({
+				type: "google-chat",
+				name: params.name,
+				webhookUrl: params.webhook_url,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
 		case "email":
 			return new EmailAlertDestinationConfig({
 				type: "email",
@@ -108,6 +118,13 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				name: params.name,
 				workspaceId: params.workspace_id,
 				channelId: params.channel_id,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "linear":
+			return new LinearAlertDestinationConfig({
+				type: "linear",
+				name: params.name,
+				teamId: params.team_id,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
 	}
@@ -177,6 +194,12 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				...(params.bot_token !== undefined ? { botToken: params.bot_token } : undefined),
 				...(params.chat_id !== undefined ? { chatId: params.chat_id } : undefined),
 			}
+		case "google-chat":
+			return {
+				type: "google-chat",
+				...shared,
+				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
+			}
 		case "email":
 			return {
 				type: "email",
@@ -190,6 +213,12 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				type: "chat",
 				...shared,
 				...(params.channel_id !== undefined ? { channelId: params.channel_id } : undefined),
+			}
+		case "linear":
+			return {
+				type: "linear",
+				...shared,
+				...(params.team_id !== undefined ? { teamId: params.team_id } : undefined),
 			}
 	}
 }
@@ -223,6 +252,7 @@ export const destinationAuditDiff = auditDiff({
 		"hazel_organization_logo_url",
 		"hazel_channel_id",
 		"hazel_channel_name",
+		"team_id",
 	],
 })
 

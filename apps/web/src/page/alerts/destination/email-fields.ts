@@ -44,7 +44,7 @@ export const FetchEmailMembers = Command.define("FetchAlertEmailMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) =>
-			clerkTry("Failed to load members", () =>
+			clerkTry("Couldn't load members", () =>
 				organization.getMemberships({ initialPage: 1, pageSize: PAGE_SIZE }),
 			),
 		),

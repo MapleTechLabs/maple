@@ -42,7 +42,7 @@ const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownCombob
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load metric data" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load metric data" }),
 		onData: (rows) =>
 			rows.length === 0
 				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
@@ -110,7 +110,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 	AsyncData.matchData(model.breakdown.data, {
 		onEmpty: () => skeletonList(h, { rows: 5, rowClassName: "h-6", gap: "2" }),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load breakdown", variant: "inline" }),
+			errorState(h, { failure, title: "Couldn't load breakdown", variant: "inline" }),
 		onData: (rows) => {
 			if (rows.length === 0)
 				return emptyMessage(h, {}, ["No values for this attribute in the selected range."])
@@ -123,7 +123,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 							h.Key(row.name),
 							h.Type("button"),
 							h.Class(
-								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left transition-colors hover:bg-accent",
+								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-accent active:bg-accent",
 							),
 							h.OnClick(Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name })),
 						],
@@ -132,7 +132,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 								value: row.value,
 								max,
 								className:
-									"inset-y-0.5 left-0 bg-primary/10 transition-colors group-hover:bg-primary/15",
+									"inset-y-0.5 left-0 bg-primary-a2 transition-colors group-hover:bg-primary-a3",
 							}) ?? h.empty,
 							h.span([h.Class("sr-only")], ["Filter to ", filterKey, " = "]),
 							truncatedText(h, {
@@ -170,7 +170,7 @@ export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): H
 				toParentMessage: toBreakdownKey,
 				viewInputs: {
 					items: [SERVICE_KEY, ...attributeKeyNames(model)],
-					placeholder: "Break down by...",
+					placeholder: "Break down by…",
 					emptyText: "",
 					className: "h-7 w-52 text-xs",
 					toView: ({ field, rest }) => h.div([h.Class("contents")], [field, ...rest]),
@@ -187,7 +187,7 @@ const attributesList = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load attribute keys",
+				title: "Couldn't load attribute keys",
 				variant: "inline",
 				className: "py-1",
 			}),

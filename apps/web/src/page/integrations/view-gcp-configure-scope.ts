@@ -62,7 +62,8 @@ export const scopeFields = (
 						label: GCP_SCOPE_NAMES[scopeType],
 					})),
 					variant: "outline",
-					itemClassName: "flex-1",
+					// Shrinks on a phone, where "Organization" otherwise runs past the card.
+					itemClassName: "min-w-0 flex-1 px-1 text-sm sm:px-3",
 					className: "w-full",
 				}),
 				h.p([h.Class(SMALL)], [scope.description]),

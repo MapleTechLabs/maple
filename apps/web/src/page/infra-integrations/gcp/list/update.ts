@@ -44,6 +44,18 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 
 const hrefOfSearch = (search: Search) => hrefOf(AppRoute.InfraGcp({ search }))
 
+/** A view of its own replaces a link's old `?tab=`, and starts unscoped and unsearched. */
+const viewSearch = (search: Search, view: string): Search => ({
+	...search,
+	view,
+	tab: undefined,
+	scope: undefined,
+	q: undefined,
+})
+
+/** The view tab's link: where `ClickedView` navigates. */
+export const viewHref = (search: Search, view: string): string => hrefOfSearch(viewSearch(search, view))
+
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(search), isReplace: false }),
@@ -81,7 +93,8 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	const off = state.connectors.length === 0 && loadedFleet !== null && loadedFleet.length === 0
 	if (failed || off) return { model: withFleet, commands: fleetCommands }
 	const { view } = listScopeOf(withFleet, state.connectors.length > 0)
-	const services = gcpSparklineServices(view)
+	// The view is settled only once the fleet lands: no sparklines for a view it may leave.
+	const services = loadedFleet === null ? [] : gcpSparklineServices(view)
 	const sparksInput = { ...sparksWindow(window), services }
 	const sparksKey = requestKey(org, "getGcpInfraSparklines", { data: sparksInput })
 	const [sparks, sparkCommands] =
@@ -159,7 +172,10 @@ export const routeChanged = (
 		const synced = sync(next, context, "Load")
 		return {
 			model: synced.model,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(synced.commands ?? [])],
+			commands: [
+				resolveCommand(next, context, snapModeOf(model.refreshVersion)),
+				...(synced.commands ?? []),
+			],
 		}
 	}
 	return routeWindowStep(model.search, route.search, {
@@ -239,9 +255,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 			return { model: { ...model, resources }, commands }
 		},
-		// A view of its own replaces a link's old `?tab=`, and starts unscoped and unsearched.
-		ClickedView: ({ view }) =>
-			navigate(model, { ...model.search, view, tab: undefined, scope: undefined, q: undefined }),
+		ClickedView: ({ view }) => navigate(model, viewSearch(model.search, view)),
 		ClickedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		ChangedSearch: ({ value }) =>
 			navigate(model, { ...model.search, q: value === "" ? undefined : value }),

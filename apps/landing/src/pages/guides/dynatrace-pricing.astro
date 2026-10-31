@@ -1,0 +1,675 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
+
+const pageTitle = "Dynatrace pricing: DPS rate card and cost per host | Maple";
+const pageDescription =
+    "Dynatrace pricing explained: the DPS rate card, cost per host and per GiB, what OpenTelemetry data costs, and a worked monthly bill for a small fleet.";
+const published = "2026-10-19";
+const updated = "2026-10-20";
+const updatedLabel = "October 20, 2026";
+const verified = "2026-10-20";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const toc = [
+    { depth: 2, slug: "how-it-works", text: "How Dynatrace pricing works" },
+    { depth: 3, slug: "commitment", text: "The annual commitment" },
+    { depth: 3, slug: "not-published", text: "What isn't published" },
+    { depth: 2, slug: "rate-card", text: "The rate card" },
+    { depth: 3, slug: "per-host", text: "Cost per host" },
+    { depth: 3, slug: "kubernetes", text: "Kubernetes and containers" },
+    { depth: 3, slug: "data", text: "Logs, traces and metrics" },
+    { depth: 3, slug: "front-end", text: "RUM and synthetic" },
+    { depth: 2, slug: "example", text: "A worked monthly bill" },
+    { depth: 3, slug: "retention-choice", text: "The retention choice" },
+    { depth: 3, slug: "levers", text: "What moves the bill" },
+    { depth: 2, slug: "opentelemetry", text: "OpenTelemetry data" },
+    { depth: 3, slug: "otel-traces", text: "Which traces are included" },
+    { depth: 3, slug: "otel-collector", text: "Drop data in the Collector" },
+    { depth: 2, slug: "vs-new-relic", text: "Dynatrace vs New Relic" },
+    { depth: 2, slug: "maple", text: "Maple's pricing" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
+
+// One color per kind of meter, used by every badge, chart and table on the page.
+const meters = {
+    hosts: { name: "Hosts", color: "var(--chart-1)" },
+    data: { name: "Data", color: "var(--chart-2)" },
+    frontEnd: { name: "Front end", color: "var(--chart-3)" },
+} as const;
+type Meter = keyof typeof meters;
+
+const HOURS = 730;
+const usd = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const rateCard: { meter: Meter; capability: string; price: string; month?: string }[] = [
+    { meter: "hosts", capability: "Full-Stack Monitoring", price: "$0.01 per memory-GiB-hour", month: "$58.40 a month for an 8 GiB host" },
+    { meter: "hosts", capability: "Infrastructure Monitoring", price: "$0.04 per host-hour, any size", month: "$29.20 a month per host" },
+    { meter: "hosts", capability: "Foundation & Discovery", price: "$0.01 per host-hour, any size", month: "$7.30 a month per host" },
+    { meter: "hosts", capability: "Database Monitoring", price: "$0.11 per database-instance-hour", month: "$80.30 a month per instance" },
+    { meter: "hosts", capability: "Kubernetes Platform Monitoring", price: "$0.002 per pod-hour, any size", month: "$1.46 a month per pod" },
+    { meter: "hosts", capability: "Code Monitoring", price: "$0.005 per container-hour", month: "$3.65 a month per container" },
+    { meter: "data", capability: "Logs: ingest & process", price: "$0.20 per GiB" },
+    { meter: "data", capability: "Logs: retain", price: "$0.0007 per GiB-day" },
+    { meter: "data", capability: "Logs: query", price: "$0.0035 per GiB scanned" },
+    { meter: "data", capability: "Logs: retain with included queries", price: "$0.02 per GiB-day" },
+    { meter: "data", capability: "Traces and events: ingest / retain / query", price: "$0.20 per GiB / $0.0007 per GiB-day / $0.0035 per GiB scanned" },
+    { meter: "data", capability: "Metrics: ingest & process", price: "$0.15 per 100,000 data points", month: "queries included" },
+    { meter: "frontEnd", capability: "Real User Monitoring", price: "$0.00225 per session", month: "$2.25 per 1,000 sessions" },
+    { meter: "frontEnd", capability: "RUM with Session Replay", price: "$0.0045 per replay capture", month: "$4.50 per 1,000 replays" },
+    { meter: "frontEnd", capability: "Browser monitor or clickpath", price: "$0.0045 per synthetic action", month: "$4.50 per 1,000 actions" },
+    { meter: "frontEnd", capability: "HTTP monitor", price: "$0.001 per synthetic request", month: "$1 per 1,000 requests" },
+];
+
+// Full-Stack cost per host by RAM, against the flat Infrastructure and Foundation prices.
+const hostSizes = [2, 4, 8, 16, 32, 64].map((gib) => ({ gib, billed: Math.max(gib, 4), month: Math.max(gib, 4) * HOURS * 0.01 }));
+const hostMax = hostSizes[hostSizes.length - 1].month;
+const infraMonth = HOURS * 0.04;
+const foundationMonth = HOURS * 0.01;
+
+// The worked example: one fleet, list prices, 730 host-hours and 30 days of data.
+const bill: { meter: Meter; line: string; calc: string; amount: number }[] = [
+    { meter: "hosts", line: "Full-Stack, 6 app hosts", calc: `6 × 16 GiB × ${HOURS} h × $0.01`, amount: 6 * 16 * HOURS * 0.01 },
+    { meter: "hosts", line: "Infrastructure, 4 utility hosts", calc: `4 × ${HOURS} h × $0.04`, amount: 4 * HOURS * 0.04 },
+    { meter: "data", line: "Log ingest & process", calc: "300 GiB × $0.20", amount: 300 * 0.2 },
+    { meter: "data", line: "Log retain, included queries", calc: "300 GiB × 30 days × $0.02", amount: 300 * 30 * 0.02 },
+    { meter: "data", line: "Traces and metrics", calc: "within the hosts' included volume", amount: 0 },
+    { meter: "frontEnd", line: "Real User Monitoring", calc: "100,000 sessions × $0.00225", amount: 100_000 * 0.00225 },
+    { meter: "frontEnd", line: "HTTP monitors", calc: "5 × 8,640 requests × $0.001", amount: 5 * 8640 * 0.001 },
+];
+const billTotal = bill.reduce((sum, b) => sum + b.amount, 0);
+
+const levers = [
+    ["Monitoring mode per host", "Full-Stack only where you need traces and code-level data. A 64 GiB cache host costs $467.20 a month in Full-Stack and $29.20 in Infrastructure."],
+    ["OneAgent 1.301 on Kubernetes nodes", "From that version, pods on Full-Stack hosts are covered by the host price instead of billed per pod-hour."],
+    ["Retention per log bucket", "Included queries for logs that dashboards and alerts read every day, pay-per-query for audit logs kept for years."],
+    ["Synthetic frequency and locations", "Every location multiplies every check. One HTTP check a minute from five locations is 216,000 requests, $216 a month."],
+    ["Budgets and cost monitors", "Dynatrace's cost management tools set budgets against the commitment, flag anomalies and forecast to the end of the period."],
+    ["Size the commitment from a trial", "Run the trial on real traffic, read consumption per capability in Account Management, and commit to that rather than a host count."],
+];
+
+const dropDebugConfig = `receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  filter/drop-debug:
+    error_mode: ignore
+    logs:
+      log_record:
+        - severity_number < SEVERITY_NUMBER_INFO
+  cumulative_to_delta:
+    max_staleness: 25h
+
+exporters:
+  otlp_http/dynatrace:
+    endpoint: "https://\${env:DT_ENVIRONMENT_ID}.live.dynatrace.com/api/v2/otlp"
+    headers:
+      Authorization: "Bearer \${env:DT_PLATFORM_TOKEN}"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp_http/dynatrace]
+    logs:
+      receivers: [otlp]
+      processors: [filter/drop-debug]
+      exporters: [otlp_http/dynatrace]
+    metrics/dynatrace:
+      receivers: [otlp]
+      processors: [cumulative_to_delta]
+      exporters: [otlp_http/dynatrace]`;
+
+const mapleExporterConfig = `exporters:
+  otlp_http/maple:
+    endpoint: "https://ingest.maple.dev"
+    headers:
+      Authorization: "Bearer \${env:MAPLE_INGEST_KEY}"
+
+service:
+  pipelines:
+    traces:
+      exporters: [otlp_http/dynatrace, otlp_http/maple]
+    logs:
+      exporters: [otlp_http/dynatrace, otlp_http/maple]
+    metrics/maple:
+      receivers: [otlp]
+      exporters: [otlp_http/maple]`;
+
+const faqs = [
+    {
+        question: "How much does Dynatrace cost per host?",
+        answer:
+            "At list price, Full-Stack Monitoring is $0.01 per memory-GiB-hour with a 4 GiB minimum, so an 8 GiB host running all month (730 hours) is $58.40 and a 16 GiB host is $116.80. Infrastructure Monitoring is $0.04 per host-hour for any size host ($29.20 a month) and Foundation & Discovery is $0.01 per host-hour ($7.30). Prices last verified 2026-10-20 on dynatrace.com/pricing.",
+    },
+    {
+        question: "Is Dynatrace free?",
+        answer:
+            "No. Dynatrace has no free plan. There is a 15-day free trial with no credit card required, and a Playground with sample data that needs no installation. Production use runs on a Dynatrace Platform Subscription with a minimum annual spend.",
+    },
+    {
+        question: "What is DPS in Dynatrace?",
+        answer:
+            "DPS is the Dynatrace Platform Subscription. You commit to a minimum annual spend, typically on a 1 to 3 year contract, and every capability you use (host-hours, GiB of logs, sessions, queries) draws down that commitment at the prices on your rate card. Every generally available capability is included; there are no modules to buy and no per-seat fees.",
+    },
+    {
+        question: "What is the minimum Dynatrace commitment?",
+        answer:
+            "Dynatrace does not publish it. The pricing page and licensing docs say DPS requires a minimum annual spend commitment, set in your order form with sales. The discount for a larger commitment is not published either.",
+    },
+    {
+        question: "What happens if I use more than my Dynatrace commitment?",
+        answer:
+            "Dynatrace says it never charges penalty-style overages. Usage beyond the commitment is billed monthly on demand at the same rates as prepaid usage, or you can raise the commitment to get a lower unit price.",
+    },
+    {
+        question: "Is Dynatrace cheaper than New Relic?",
+        answer:
+            "It depends on what drives your bill. Dynatrace charges for monitored hosts by memory and hour plus data volume, with no per-seat fees. New Relic charges per GB ingested after 100 GB free each month, plus a monthly fee per core or full platform user. A large team on a small fleet tends to favour Dynatrace's model; many hosts and a few engineers tends to favour New Relic's.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Dynatrace pricing, explained",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: updated,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/dynatrace-pricing`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Dynatrace pricing" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Pricing</span>
+                    <span>9 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Dynatrace pricing, explained
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    The public rate card, what a host and a GiB cost, and a small fleet priced line by line.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={updated}>Updated {updatedLabel}</time>
+                    <span>Prices last verified <time datetime={verified}>{verified}</time></span>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={toc} class="sticky top-28" />
+            </aside>
+
+            <article class="dt-guide min-w-0">
+                <section id="how-it-works" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · The model</p>
+                    <h2>How Dynatrace pricing works</h2>
+
+                    <div class="guide-answer">
+                        <p><strong>Dynatrace pricing</strong> is pay-as-you-use against a yearly minimum. You agree to spend at least a set amount each year, and everything you monitor is metered by the hour or by the gigabyte and taken out of that amount.</p>
+                    </div>
+
+                    <p>
+                        The contract is the <strong>Dynatrace Platform Subscription</strong> (DPS). It includes every generally available capability, so there are no modules to buy, and it has no per-seat fees: every user gets the full platform. What you pay depends on three kinds of meter, and this guide colors each one the same way throughout:
+                    </p>
+
+                    <div class="meter-strip">
+                        <div style={`--meter: ${meters.hosts.color}`}>
+                            <span class="meter-badge">{meters.hosts.name}</span>
+                            <p>Monitored hosts, pods and containers, billed per hour in 15-minute intervals.</p>
+                        </div>
+                        <div style={`--meter: ${meters.data.color}`}>
+                            <span class="meter-badge">{meters.data.name}</span>
+                            <p>Logs, traces, metrics and events, billed per GiB or data point to ingest, retain and query.</p>
+                        </div>
+                        <div style={`--meter: ${meters.frontEnd.color}`}>
+                            <span class="meter-badge">{meters.frontEnd.name}</span>
+                            <p>Real-user sessions and synthetic checks, billed per session, action or request.</p>
+                        </div>
+                    </div>
+
+                    <p>
+                        Hourly billing means an autoscaled VM that runs for two hours costs two hours. A host monitored for part of a 15-minute interval is charged for the whole interval.
+                    </p>
+
+                    <h3 id="commitment" class="scroll-mt-24">The annual commitment</h3>
+                    <p>
+                        The licensing docs define the <strong>annual commitment</strong> as the minimum you agree to spend each year. Contracts are typically 1 to 3 years, split into 12-month periods, and hosts, logs and sessions all draw from the same amount. Account Management shows consumption by capability with a forecast to the end of the period.
+                    </p>
+                    <p>
+                        Going over is billed monthly at the same unit prices; Dynatrace says it never charges penalty-style overages. Committing to more lowers the unit price. If your usage at list price comes to less than the commitment, you still pay the commitment.
+                    </p>
+
+                    <h3 id="not-published" class="scroll-mt-24">What Dynatrace doesn't publish</h3>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Ask sales before you sign</p>
+                        <ul>
+                            <li><strong>The minimum commitment.</strong> No dollar amount appears on the pricing page, the FAQ or the licensing docs.</li>
+                            <li><strong>The discount schedule.</strong> The FAQ says the unit price drops as the commitment rises, without tiers or percentages.</li>
+                            <li><strong>Unused commitment.</strong> Neither the docs nor the FAQ say whether it expires or carries over at the end of a period.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="rate-card" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · List prices</p>
+                    <h2>The Dynatrace rate card</h2>
+                    <p>
+                        These are the public list prices in USD from <a href="https://www.dynatrace.com/pricing/rate-card/" target="_blank" rel="noopener noreferrer">dynatrace.com/pricing/rate-card</a>, last verified {verified}. Your contract rate card can be lower. Monthly figures assume {HOURS} hours, an average month; the pricing page rounds the same prices to $58, $29 and $7.
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Meter</th><th>Capability</th><th>List price</th><th>In practice</th></tr>
+                            </thead>
+                            <tbody>
+                                {rateCard.map((r) => (
+                                    <tr>
+                                        <td><span class="meter-badge" style={`--meter: ${meters[r.meter].color}`}>{meters[r.meter].name}</span></td>
+                                        <td>{r.capability}</td>
+                                        <td>{r.price}</td>
+                                        <td>{r.month ?? ""}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        The rate card also lists Mainframe Monitoring, application security, automation workflows ($0.03 per workflow-hour), data egress ($0.15 per GiB), AI units ($0.10 each) and the older "Classic" units. AI exploration inside Dynatrace is included at no charge.
+                    </p>
+
+                    <h3 id="per-host" class="scroll-mt-24"><span class="meter-dot" style={`--meter: ${meters.hosts.color}`}></span>Dynatrace cost per host</h3>
+                    <p>
+                        A host's monitoring mode sets both its price and its unit. <strong>Full-Stack</strong> adds APM, code-level profiling, Kubernetes monitoring and 10 days of traces, and is priced by the host's memory. <strong>Infrastructure</strong> covers process, disk, memory and network metrics at a flat price per host. <strong>Foundation &amp; Discovery</strong> covers basic health, topology and log collection.
+                    </p>
+
+                    <figure class="host-chart" aria-label={`Monthly Full-Stack cost by host memory: ${hostSizes.map((h) => `${h.gib} GiB ${usd(h.month)}`).join(", ")}. Infrastructure Monitoring is a flat ${usd(infraMonth)} and Foundation and Discovery ${usd(foundationMonth)} for any size host.`}>
+                        <div class="host-chart__rows" aria-hidden="true">
+                            {hostSizes.map((h) => (
+                                <div class="host-chart__row">
+                                    <span class="host-chart__label">{h.gib} GiB{h.gib < h.billed && <em>billed as 4</em>}</span>
+                                    <span class="host-chart__track"><span class="host-chart__bar" style={`width: ${(h.month / hostMax) * 100}%`}></span></span>
+                                    <span class="host-chart__amount">{usd(h.month)}<small>/mo</small></span>
+                                </div>
+                            ))}
+                            <span class="host-chart__mark host-chart__mark--infra" style={`left: calc(var(--label-w) + (100% - var(--label-w) - var(--amount-w)) * ${infraMonth / hostMax})`}><span>Infrastructure {usd(infraMonth)}/mo</span></span>
+                        </div>
+                        <figcaption>Full-Stack per month by host memory. The dashed line is Infrastructure Monitoring, the same {usd(infraMonth)} for any size host. At the 4 GiB minimum the two cost the same; every GiB above it widens the gap.</figcaption>
+                    </figure>
+
+                    <p>The Full-Stack unit has rules that change the arithmetic, from the <a href="https://docs.dynatrace.com/docs/license/capabilities/app-infra-observability/full-stack-monitoring" target="_blank" rel="noopener noreferrer">Full-Stack billing docs</a>:</p>
+                    <ul class="guide-list">
+                        <li>RAM is rounded up to the next 0.25 GiB, and hosts bill at least 4 GiB. Application-only containers have a 256 MiB minimum.</li>
+                        <li>Each GiB includes 900 custom metric data points per 15-minute interval. Infrastructure Monitoring includes 1,500 per host instead. Unused points don't carry over.</li>
+                        <li>Each GiB includes 200 KiB of trace data per minute, with a floor of 64,000 KiB per minute for environments under 320 GiB.</li>
+                    </ul>
+
+                    <h3 id="kubernetes" class="scroll-mt-24"><span class="meter-dot" style={`--meter: ${meters.hosts.color}`}></span>Kubernetes and containers</h3>
+                    <p>
+                        Kubernetes Platform Monitoring is <strong>$0.002 per pod-hour</strong> for any size pod. Pods on Full-Stack hosts are included in the host price when the node runs OneAgent 1.301 or newer. Pods on other hosts, and pods stuck in Pending, bill per pod-hour. Code Monitoring is a separate $0.005 per container-hour.
+                    </p>
+
+                    <h3 id="data" class="scroll-mt-24"><span class="meter-dot" style={`--meter: ${meters.data.color}`}></span>Logs, traces and metrics</h3>
+                    <p>
+                        Logs, traces and events each bill three times: <strong>ingest &amp; process</strong> per GiB, <strong>retain</strong> per GiB-day and <strong>query</strong> per GiB scanned. Metrics bill per 100,000 data points ingested, with queries included and 15 months of retention.
+                    </p>
+                    <p>
+                        Two details from the <a href="https://docs.dynatrace.com/docs/license/capabilities/log-analytics" target="_blank" rel="noopener noreferrer">log billing docs</a> affect estimates. Logs you filter out in Dynatrace's pipeline still bill ingest; they only skip retain. And processing can grow the stored volume by a factor of 2 or more over what arrived.
+                    </p>
+                    <p>
+                        For retention you choose per log bucket. <strong>Pay-per-query</strong> stores at $0.0007 per GiB-day and charges every scan. <strong>Retain with included queries</strong> stores at $0.02 per GiB-day for a 10 to 35 day window, with a daily scan allowance of 15 times the volume retained in it.
+                    </p>
+
+                    <h3 id="front-end" class="scroll-mt-24"><span class="meter-dot" style={`--meter: ${meters.frontEnd.color}`}></span>RUM and synthetic</h3>
+                    <p>
+                        Real User Monitoring is $2.25 per 1,000 sessions, or $4.50 per 1,000 with a session replay, plus $0.0001 for each property attached to a session. Synthetic checks bill per run: an HTTP check every minute from one location makes 43,200 requests in 30 days, $43.20 a month. Every extra location adds the same again.
+                    </p>
+                </section>
+
+                <section id="example" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Worked example</p>
+                    <h2>A worked monthly Dynatrace bill</h2>
+                    <p>
+                        A team runs six 16 GiB application hosts in Full-Stack and four utility hosts (databases, a queue, a bastion) in Infrastructure, around the clock. They ingest 10 GiB of logs a day and keep 30 days queryable. The site has 100,000 real-user sessions a month, and five HTTP endpoints are checked every five minutes from one location.
+                    </p>
+
+                    <figure class="bill-bar" aria-label={`The monthly bill at list price, ${usd(billTotal)}: hosts ${usd(bill.filter((b) => b.meter === "hosts").reduce((s, b) => s + b.amount, 0))}, data ${usd(bill.filter((b) => b.meter === "data").reduce((s, b) => s + b.amount, 0))}, front end ${usd(bill.filter((b) => b.meter === "frontEnd").reduce((s, b) => s + b.amount, 0))}.`}>
+                        <div class="bill-bar__track" aria-hidden="true">
+                            {bill.filter((b) => b.amount > 0).map((b) => (
+                                <span style={`--meter: ${meters[b.meter].color}; flex: ${b.amount}`} title={`${b.line}: ${usd(b.amount)}`}></span>
+                            ))}
+                        </div>
+                        <div class="bill-bar__legend" aria-hidden="true">
+                            {(Object.keys(meters) as Meter[]).map((m) => {
+                                const sum = bill.filter((b) => b.meter === m).reduce((s, b) => s + b.amount, 0);
+                                return <span style={`--meter: ${meters[m].color}`}><i></i>{meters[m].name} {usd(sum)}/mo · {Math.round((sum / billTotal) * 100)}%</span>;
+                            })}
+                        </div>
+                    </figure>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Line</th><th>Calculation</th><th>Per month</th></tr>
+                            </thead>
+                            <tbody>
+                                {bill.map((b) => (
+                                    <tr>
+                                        <td><span class="meter-dot meter-dot--inline" style={`--meter: ${meters[b.meter].color}`}></span>{b.line}</td>
+                                        <td>{b.calc}</td>
+                                        <td class="num">{usd(b.amount)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr><td>Total at list price</td><td>{usd(billTotal * 12)} a year</td><td class="num">{usd(billTotal)} a month</td></tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <p>
+                        Traces and metrics cost nothing extra here, on two assumptions. The six Full-Stack hosts bring 96 GiB of included volume; under 320 GiB the trace floor of 64,000 KiB a minute applies, and OneAgent's sampling keeps the hosts roughly within it. Custom metrics have to stay within 92,400 data points per 15 minutes: 900 for each of the 96 GiB plus 1,500 for each Infrastructure host. The four Infrastructure hosts send no traces or code-level data. If the yearly total is below the contract minimum, the minimum is what you pay.
+                    </p>
+
+                    <h3 id="retention-choice" class="scroll-mt-24">The retention choice</h3>
+                    <p>
+                        On pay-per-query retention the same 300 GiB costs $6.30 a month to store instead of $180. The $173.70 difference buys about 49,600 GiB of scans a month, roughly 1,650 GiB a day. Dashboards refreshing over 30 days of logs pass that quickly. A team that searches logs only during incidents may never reach it.
+                    </p>
+
+                    <h3 id="levers" class="scroll-mt-24">What moves the bill</h3>
+                    <div class="guide-checklist">
+                        {levers.map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{title}</h4><p>{body}</p></div></div>
+                        ))}
+                    </div>
+                </section>
+
+                <section id="opentelemetry" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · OpenTelemetry</p>
+                    <h2>What OpenTelemetry data costs on Dynatrace</h2>
+                    <p>
+                        Dynatrace ingests OTLP over HTTP with protobuf at <code>https://&lt;environment-id&gt;.live.dynatrace.com/api/v2/otlp</code>. It accepts no gRPC and no JSON, and it wants metrics in delta temporality. Whether the data is covered by a host's included volume depends on where it comes from.
+                    </p>
+
+                    <h3 id="otel-traces" class="scroll-mt-24">Which traces are included</h3>
+                    <figure class="trace-paths" aria-label="How trace data is billed by source. Traces OneAgent captures on a Full-Stack host count against the included volume, and Adaptive Traffic Management samples them to stay within it. OpenTelemetry traces from a Full-Stack host count against the included volume, but nothing keeps them within it, and the excess bills at $0.20 per GiB. Traces from hosts that are not Full-Stack monitored bill at $0.20 per GiB from the first byte.">
+                        {[
+                            ["hosts", "OneAgent on a Full-Stack host", "Included", "Adaptive Traffic Management samples to stay within the included volume."],
+                            ["mixed", "OTLP from a Full-Stack host", "Included, then $0.20 / GiB", "Counts against the included volume, but your SDK or Collector sets the sampling, so nothing keeps it within it."],
+                            ["data", "OTLP from any other host", "$0.20 / GiB", "Billed as Traces Ingest & Process from the first byte, plus retain and query."],
+                        ].map(([kind, source, outcome, detail]) => (
+                            <div class={`trace-paths__row trace-paths__row--${kind}`} aria-hidden="true">
+                                <span class="trace-paths__source">{source}</span>
+                                <span class="trace-paths__arrow"></span>
+                                <div><span class="trace-paths__outcome">{outcome}</span><p>{detail}</p></div>
+                            </div>
+                        ))}
+                    </figure>
+                    <p>
+                        The included volumes assume telemetry enriched the way Dynatrace recommends (OneAgent, the Dynatrace Operator, or the enrichment steps in its docs). For custom OpenTelemetry deployments the docs say included-volume billing "may still work as described" but is not guaranteed. Metrics from an OpenTelemetry Collector count toward included data points only when the Collector adds Dynatrace's Kubernetes enrichment.
+                    </p>
+                    <p>
+                        An all-OpenTelemetry setup with no OneAgent has no host charge and no included volume. Every span, log and data point then bills on the data meters.
+                    </p>
+
+                    <h3 id="otel-collector" class="scroll-mt-24">Drop data in the Collector, before it's metered</h3>
+                    <p>
+                        Filtering inside Dynatrace still bills ingest, so drop records before they are sent. An <a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a> runs between your services and Dynatrace. This config receives OTLP on port 4318, drops logs below <code>INFO</code>, converts metrics to delta, and exports to Dynatrace with a platform token that has the OpenPipeline ingest scopes:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">collector.yaml</p>
+                        <pre><code set:html={highlight(dropDebugConfig, "yaml")} /></pre>
+                    </div>
+                    <p>
+                        The same <code>filter</code> processor can drop health-check spans or noisy metrics. Set <code>DT_ENVIRONMENT_ID</code> and <code>DT_PLATFORM_TOKEN</code> in the Collector's environment. The component names are the current spelling, tested on Collector contrib 0.163.1; older releases only know them as <code>otlphttp</code> and <code>cumulativetodelta</code>, which 0.163.1 also still accepts.
+                    </p>
+                </section>
+
+                <section id="vs-new-relic" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Comparison</p>
+                    <h2>Dynatrace vs New Relic pricing</h2>
+                    <p>
+                        The two vendors meter different things. Dynatrace bills hosts by the hour and data by volume, with no seat fees. New Relic bills data by volume and people by seat, with no host meter. New Relic figures are from <a href="https://newrelic.com/pricing" target="_blank" rel="noopener noreferrer">newrelic.com/pricing</a>, last verified {verified}; the <a href="/guides/new-relic-pricing">New Relic pricing guide</a> covers its model in detail.
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Dynatrace</th><th>New Relic</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Hosts</td><td>$0.01 per GiB-hour (Full-Stack), $0.04 per host-hour (Infrastructure)</td><td>No host charge on the default model; compute-based pricing is quoted by sales</td></tr>
+                                <tr><td>Data</td><td>Logs and traces $0.20 per GiB, plus retain and query</td><td>100 GB a month free, then $0.40 per GB (or $0.60 with Data Plus)</td></tr>
+                                <tr><td>Users</td><td>No per-seat fees</td><td>Per user per month: core $49; full platform on Standard $10 for the first user, then $99 each (5 users at most); Pro $349 on an annual commitment</td></tr>
+                                <tr><td>Free option</td><td>15-day trial</td><td>Free tier with one full platform user</td></tr>
+                                <tr><td>Commitment</td><td>Minimum annual spend, amount not published</td><td>Standard is monthly pay-as-you-go</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        For the fleet in the worked example, the Dynatrace bill stays the same whether five or fifty engineers log in. On New Relic the same team pays per full platform user, but adding hosts costs nothing beyond their data. Price both against your own host count, data volume and number of people who need full access.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · Maple</p>
+                    <h2>How Maple prices observability</h2>
+                    <p>
+                        Maple bills by data volume only. The Startup plan is $39 a month with 100 GB each of logs, traces and metrics, then $0.30 per GB per signal, with 30-day retention. Nothing is metered per host, seat or query, and a per-signal overage cap rejects new data for that signal once it is reached. Current numbers are on the <a href="/pricing">pricing page</a>.
+                    </p>
+
+                    <h3 id="compare" class="scroll-mt-24">Compare both on the same data</h3>
+                    <p>
+                        Maple ingests OTLP directly, so the Collector from section 04 can send to both during a trial. Add a second exporter with your Maple ingest key from <strong>Settings → Ingestion</strong>, add it to the traces and logs exporter lists, and add a metrics pipeline of its own. Maple's metrics pipeline skips <code>cumulative_to_delta</code>, so it gets the data as your services sent it:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">collector.yaml (additions)</p>
+                        <pre><code set:html={highlight(mapleExporterConfig, "yaml")} /></pre>
+                    </div>
+                    <p>
+                        After a few days, compare the GB each signal sent to Maple with Dynatrace's consumption for the same traffic in Account Management.
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Try it with your own telemetry</p>
+                        <h3>Point an OpenTelemetry exporter at Maple</h3>
+                        <p>The ingest reference covers endpoints, keys and compression. The host docs cover infrastructure metrics through the Collector.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/reference/ingest" class="guide-button guide-button--primary">Ingest API docs</a>
+                            <a href="/docs/infrastructure/hosts" class="guide-button">Send host metrics</a>
+                            <a href="/pricing" class="guide-button">Maple pricing</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources, last verified {verified}</p>
+                    <ul>
+                        <li><a href="https://www.dynatrace.com/pricing/" target="_blank" rel="noopener noreferrer">Dynatrace: Pricing</a></li>
+                        <li><a href="https://www.dynatrace.com/pricing/rate-card/" target="_blank" rel="noopener noreferrer">Dynatrace: Rate card (list price, USD)</a></li>
+                        <li><a href="https://www.dynatrace.com/pricing/frequently-asked-questions/" target="_blank" rel="noopener noreferrer">Dynatrace: Pricing FAQ</a></li>
+                        <li><a href="https://www.dynatrace.com/try-free/" target="_blank" rel="noopener noreferrer">Dynatrace: Try it free</a></li>
+                        <li><a href="https://docs.dynatrace.com/docs/license/concepts" target="_blank" rel="noopener noreferrer">Dynatrace docs: DPS key concepts</a></li>
+                        <li><a href="https://docs.dynatrace.com/docs/license/faq" target="_blank" rel="noopener noreferrer">Dynatrace docs: DPS FAQ</a></li>
+                        <li><a href="https://docs.dynatrace.com/docs/license/capabilities/app-infra-observability/full-stack-monitoring" target="_blank" rel="noopener noreferrer">Dynatrace docs: Full-Stack Monitoring consumption</a></li>
+                        <li><a href="https://docs.dynatrace.com/docs/license/capabilities/app-infra-observability/infrastructure-monitoring" target="_blank" rel="noopener noreferrer">Dynatrace docs: Infrastructure Monitoring consumption</a></li>
+                        <li><a href="https://docs.dynatrace.com/docs/license/capabilities/log-analytics" target="_blank" rel="noopener noreferrer">Dynatrace docs: Log Analytics consumption</a></li>
+                        <li><a href="https://docs.dynatrace.com/docs/ingest-from/opentelemetry/otlp-api" target="_blank" rel="noopener noreferrer">Dynatrace docs: OTLP API</a></li>
+                        <li><a href="https://docs.dynatrace.com/docs/ingest-from/opentelemetry/collector/configuration" target="_blank" rel="noopener noreferrer">Dynatrace docs: Collector configuration</a></li>
+                        <li><a href="https://newrelic.com/pricing" target="_blank" rel="noopener noreferrer">New Relic: Pricing</a></li>
+                        <li><a href="/docs/reference/ingest">Maple docs: Ingest API</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .dt-guide { max-width: 46rem; font-family: var(--font-display); }
+    .dt-guide section + section { margin-top: 5.5rem; }
+    .dt-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .dt-guide .guide-eyebrow span { color: var(--primary); }
+    .dt-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .dt-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .dt-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .dt-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .dt-guide .guide-answer p, .dt-guide .guide-list li { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .dt-guide strong { font-weight: 600; color: var(--foreground); }
+    .dt-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .dt-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .dt-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .dt-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .dt-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .dt-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .dt-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .dt-guide .guide-list { margin: 0 0 1.5rem; padding-left: 1.2rem; list-style: disc; }
+    .dt-guide .guide-list li::marker { color: var(--chart-1); }
+    .dt-guide .guide-list li { margin-bottom: 0.5rem; }
+
+    /* One color per kind of meter: set --meter on the element. */
+    .dt-guide .meter-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--meter) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--meter) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--meter) 70%, var(--foreground)); white-space: nowrap; }
+    .dt-guide .meter-dot { width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--meter); box-shadow: 0 0 0 4px color-mix(in oklab, var(--meter) 18%, transparent); }
+    .dt-guide .meter-dot--inline { display: inline-block; margin-right: 0.6rem; width: 0.5rem; height: 0.5rem; box-shadow: none; vertical-align: 0.05rem; }
+
+    .meter-strip { display: grid; gap: 0.75rem; margin: 1.75rem 0 2rem; }
+    .meter-strip > div { border: 1px solid color-mix(in oklab, var(--meter) 30%, var(--border)); border-radius: 0.75rem; background: linear-gradient(180deg, color-mix(in oklab, var(--meter) 9%, var(--bg-deep)), var(--bg-deep)); padding: 1rem 1.1rem; }
+    .meter-strip p { margin: 0.7rem 0 0; font-size: 13px; line-height: 1.55; color: var(--muted-foreground); }
+
+    .host-chart { --label-w: 5.5rem; --amount-w: 5.75rem; margin: 2rem 0 1.75rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 2rem 1.25rem 1rem; }
+    .host-chart__rows { position: relative; display: grid; gap: 0.55rem; }
+    .host-chart__row { display: grid; grid-template-columns: var(--label-w) 1fr var(--amount-w); align-items: center; }
+    .host-chart__label { display: grid; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .host-chart__label em { font-style: normal; font-size: 9px; color: var(--muted-foreground); }
+    .host-chart__track { height: 0.9rem; border-radius: 0.25rem; background: color-mix(in oklab, var(--chart-1) 8%, transparent); }
+    .host-chart__bar { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--chart-1) 78%, transparent); }
+    .host-chart__amount { text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .host-chart__amount small { margin-left: 0.15em; font-size: 10px; color: var(--muted-foreground); }
+    .host-chart__mark { position: absolute; top: -0.6rem; bottom: -0.3rem; width: 0; border-left: 1.5px dashed var(--foreground); opacity: 0.75; }
+    .host-chart__mark span { position: absolute; top: -1.1rem; left: 0.35rem; white-space: nowrap; font-family: var(--font-mono); font-size: 10px; color: var(--foreground); }
+    .host-chart figcaption { margin-top: 1.1rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .bill-bar { margin: 2rem 0 0.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .bill-bar__track { display: flex; gap: 2px; height: 1.5rem; overflow: hidden; border-radius: 0.35rem; }
+    .bill-bar__track span { min-width: 3px; background: color-mix(in oklab, var(--meter) 78%, transparent); }
+    .bill-bar__legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-top: 0.9rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .bill-bar__legend span { display: inline-flex; align-items: center; gap: 0.45rem; }
+    .bill-bar__legend i { width: 0.6rem; height: 0.6rem; border-radius: 2px; background: var(--meter); }
+
+    .trace-paths { display: grid; gap: 1px; margin: 1.75rem 0 2rem; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .trace-paths__row { --from: var(--chart-1); --to: var(--chart-1); display: grid; grid-template-columns: 11rem 2.5rem 1fr; align-items: center; gap: 0.75rem; background: var(--background); padding: 1rem 1.15rem; }
+    .trace-paths__row--mixed { --to: var(--chart-2); }
+    .trace-paths__row--data { --from: var(--chart-2); --to: var(--chart-2); }
+    .trace-paths__source { font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: color-mix(in oklab, var(--from) 70%, var(--foreground)); }
+    .trace-paths__arrow { position: relative; height: 2px; background: linear-gradient(90deg, var(--from), var(--to)); }
+    .trace-paths__arrow::after { content: ""; position: absolute; right: -1px; top: -4px; border: 5px solid transparent; border-left: 7px solid var(--to); border-right: 0; }
+    .trace-paths__outcome { font-size: 14px; font-weight: 600; color: color-mix(in oklab, var(--to) 70%, var(--foreground)); }
+    .trace-paths__row p { margin: 0.25rem 0 0; font-size: 12.5px; line-height: 1.55; color: var(--muted-foreground); }
+
+    .dt-guide .code-file { margin: 1.25rem 0; }
+    .dt-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .dt-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    .dt-guide .tok-comment { color: var(--muted-foreground); }
+    .dt-guide .tok-name { color: color-mix(in oklab, var(--chart-2) 75%, var(--foreground)); }
+    .dt-guide .tok-labels { color: var(--foreground); }
+    .dt-guide .tok-value { color: color-mix(in oklab, var(--primary) 75%, var(--foreground)); }
+
+    .dt-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .dt-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .dt-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .dt-guide td { border-bottom: 1px solid var(--border); padding: 0.75rem 0.9rem; vertical-align: middle; }
+    .dt-guide td + td { border-left: 1px solid var(--border); }
+    .dt-guide td.num { text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); white-space: nowrap; }
+    .dt-guide tbody tr:last-child td { border-bottom: 0; }
+    .dt-guide tfoot td { border-top: 1px solid var(--border); border-bottom: 0; background: var(--bg-deep); font-weight: 600; color: var(--foreground); }
+    .dt-guide tfoot td.num { color: var(--primary); }
+
+    .dt-guide .guide-callout { margin: 1.25rem 0 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .dt-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .dt-guide .guide-callout ul { display: grid; gap: 0.6rem; margin: 0.8rem 0 0; padding-left: 1.1rem; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
+    .dt-guide .guide-checklist { display: grid; gap: 1px; margin: 1.5rem 0 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .dt-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .dt-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--primary); }
+    .dt-guide .guide-checklist p { margin: 0.35rem 0 0; font-size: 12.5px; line-height: 1.6; color: var(--muted-foreground); }
+    .dt-guide .guide-figure { margin: 1.5rem 0 0; }
+    .dt-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .dt-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .dt-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .dt-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .dt-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .dt-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .dt-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .dt-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .dt-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .dt-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .dt-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (max-width: 639px) {
+        .trace-paths__row { grid-template-columns: 1fr; gap: 0.5rem; }
+        .trace-paths__arrow { width: 2.5rem; }
+    }
+    @media (min-width: 640px) {
+        .meter-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .dt-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dt-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .dt-guide a, .dt-guide .guide-button { transition: none; }
+    }
+</style>

@@ -109,7 +109,7 @@ const dispatch = (context: DispatchContext, fetchFn: typeof fetch) =>
 		fetchFn,
 		5_000,
 		"https://web.localhost/alerts",
-		"https://web.localhost/chat",
+		"https://web.localhost/alerts/rule_1",
 		deps,
 	)
 
@@ -254,7 +254,7 @@ describe("AlertDelivery.http span", () => {
 				respondWith(() => new Response("", { status: 200 })),
 				5_000,
 				"https://web.localhost/alerts",
-				"https://web.localhost/chat",
+				"https://web.localhost/alerts/rule_1",
 				{ ...deps, sendEmail: () => Effect.void },
 			).pipe(Effect.withTracer(tracer))
 

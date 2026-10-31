@@ -59,13 +59,18 @@ export const KIND_DOT = {
 	section_added: "bg-chart-3",
 	section_removed: "bg-severity-warn",
 	section_updated: "bg-muted-foreground",
-	restored: "bg-primary ring-[3px] ring-primary/18",
+	restored: "bg-primary ring-[3px] ring-primary-a3",
 	multiple: "bg-chart-5",
 } satisfies Record<DashboardVersionChangeKind, string>
 
 export const HistoryState = Schema.Struct({
 	isOpen: Schema.Boolean,
 	versions: VersionsData.schema,
+	/**
+	 * Bumped per version-list read, so an older list landing last is dropped. A counter, not a
+	 * `Keyed` slot: the read has no org-scoped request key and reopening resets to `Loading`.
+	 */
+	versionsGeneration: Schema.Number,
 	previewed: Schema.NullOr(VersionRow),
 	snapshot: SnapshotData.schema,
 	restoreDialog: Dialog.Model,
@@ -82,6 +87,7 @@ export type HistoryState = typeof HistoryState.Type
 export const initHistory = (): HistoryState => ({
 	isOpen: false,
 	versions: AsyncData.Idle(),
+	versionsGeneration: 0,
 	previewed: null,
 	snapshot: AsyncData.Idle(),
 	restoreDialog: Dialog.init("dashboard-restore-version", "alert-dialog"),

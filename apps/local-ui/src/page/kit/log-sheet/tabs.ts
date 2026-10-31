@@ -1,9 +1,9 @@
-import { highlightJson } from "../../../lib/highlight"
 import * as AttributesView from "@maple/web/ui/attributes/attributes-view"
 import { linkButton } from "@maple/web/ui/button"
 import * as CopyButton from "@maple/web/ui/copy-button"
 import { icon, type IconName } from "@maple/web/ui/icon"
 import { keyValue, keyValueList } from "@maple/web/ui/key-value"
+import { cappedCode } from "@maple/web/ui/logs/log-message"
 import { scrollArea } from "@maple/web/ui/scroll-area"
 import * as TabsView from "@maple/web/ui/tabs-view"
 import { Option } from "effect"
@@ -61,10 +61,7 @@ const rawPanel = (h: HtmlBuilder<Message>, model: Model, log: LocalLog): Html =>
 				className: "h-5 px-1.5 text-[10px]",
 			}),
 		]),
-		h.pre(
-			[h.Class("whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed")],
-			[h.code([h.InnerHTML(highlightJson(payload))], [])],
-		),
+		...cappedCode(h, payload, "whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed"),
 	])
 }
 

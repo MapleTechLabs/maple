@@ -8,10 +8,11 @@ import * as Field from "../../ui/field"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { integrationOfSearch } from "./catalog"
+import { ReadClock } from "./command"
 import {
 	FetchOrganizations,
-	FetchWebhookConfig,
-	normalizeTokenPaste,
+	isAwaitingFirstMetrics,
 	parsePatternList,
 	type PlanetscaleCardModel,
 	SelectOrganization,
@@ -19,7 +20,7 @@ import {
 } from "./planetscale"
 import { chain, requestStatus } from "./update-status"
 
-// `PlanetScaleIntegrationCard`'s state changes.
+// `PlanetScaleIntegrationCard`'s and its connect flow's state changes.
 
 type Return = PageReturn<Model, Message>
 
@@ -36,11 +37,51 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 export const planetscaleStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
 
+/**
+ * The watch starts at the first clock read while the card is shown and awaits first metrics,
+ * and resets otherwise, so a later connection or visit gets its own full window.
+ */
+export const withWatchStart = (model: Model, readAtMs: number | null): Model => {
+	const startedAt = model.planetscaleCard.watchStartedAt
+	const isWatched =
+		integrationOfSearch(model.search.integration) === "planetscale" &&
+		isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs)
+	return withCard(model, { watchStartedAt: isWatched ? (startedAt ?? readAtMs) : null })
+}
+
+/** A renewed grant or organization gets its own full window from the next clock read. */
+export const restartWatch = (model: Model): Model => withCard(model, { watchStartedAt: null })
+
+/** A status load that starts awaiting first metrics reads the clock to open the window. */
+export const loadedStatus = (model: Model): Return => {
+	const watched = withWatchStart(model, null)
+	return integrationOfSearch(watched.search.integration) === "planetscale" &&
+		watched.planetscaleCard.watchStartedAt === null &&
+		isAwaitingFirstMetrics(planetscaleStatusOf(watched), watched.nowMs)
+		? { model: watched, commands: [ReadClock()] }
+		: { model: watched }
+}
+
+/** Each visit to the card starts a fresh watch from a fresh clock. */
+export const enterPlanetscale = (model: Model): Return => ({
+	model: withCard(model, { watchStartedAt: null }),
+	commands: [ReadClock()],
+})
+
+/** A watch tick, or "Check again" after the watch ran out: read the status and the clock. */
+export const refreshWatch = (model: Model, context: PageContext): Return => {
+	const refreshed = requestStatus(model, context, "planetscale", "Refresh")
+	return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
+}
+
+export const clickedCheckAgain = (model: Model, context: PageContext): Return =>
+	refreshWatch(withCard(model, { watchStartedAt: null }), context)
+
 /** A write's `planetscaleIntegration` `reactivityKeys` (the target list carries no key). */
 const refreshAfterWrite = (model: Model, context: PageContext): Return =>
-	chain(model, [
-		(next) => requestStatus(next, context, "planetscale", "Refresh"),
-		(next) => requestStatus(next, context, "planetscaleDatabases", "Refresh"),
+	chain(restartWatch(model), [
+		(next) => requestStatus(next, context, "planetscale", "Supersede"),
+		(next) => requestStatus(next, context, "planetscaleDatabases", "Supersede"),
 	])
 
 export const requestOrganizations = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
@@ -54,12 +95,26 @@ export const requestOrganizations = (model: Model, context: PageContext, mode: K
 	})
 }
 
-/** The inline picker mounts (and reads the organizations) while the org is still to be chosen. */
-export const ensurePendingPicker = (model: Model, context: PageContext): Return => {
+/** The picker, seeded once with the saved binding. */
+const seededPicker = (model: Model): Partial<PlanetscaleCardModel> => {
 	const status = planetscaleStatusOf(model)
-	return status !== null && !status.connected && status.pending_org_selection
-		? requestOrganizations(model, context, "Load")
-		: { model }
+	return {
+		selectedOrg: status?.organization ?? null,
+		includeBranches: Field.init(status?.scrape_target?.include_branches.join(", ") ?? ""),
+		excludeBranches: Field.init(status?.scrape_target?.exclude_branches.join(", ") ?? ""),
+	}
+}
+
+/** Once authorized, Choose data's picker reads the organizations; a bound org seeds it once. */
+export const ensurePicker = (model: Model, context: PageContext): Return => {
+	const status = planetscaleStatusOf(model)
+	if (status === null || (!status.connected && !status.pending_org_selection)) return { model }
+	const card = model.planetscaleCard
+	const seeded =
+		status.connected && card.selectedOrg === null && !card.isSelecting
+			? withCard(model, seededPicker(model))
+			: model
+	return requestOrganizations(seeded, context, "Load")
 }
 
 const dialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -69,14 +124,9 @@ const dialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 	),
 })
 
-/** "Change organization": the picker seeded with the current binding. */
+/** "Edit data": the picker dialog, seeded with the current binding. */
 export const clickedChange = (model: Model, context: PageContext): Return => {
-	const status = planetscaleStatusOf(model)
-	const seeded = withCard(model, {
-		selectedOrg: status?.organization ?? null,
-		includeBranches: Field.init(status?.scrape_target?.include_branches.join(", ") ?? ""),
-		excludeBranches: Field.init(status?.scrape_target?.exclude_branches.join(", ") ?? ""),
-	})
+	const seeded = withCard(model, seededPicker(model))
 	return chain(seeded, [
 		(next) => dialogStep(next, Dialog.open(next.planetscaleCard.pickerDialog)),
 		(next) => requestOrganizations(next, context, "Load"),
@@ -107,7 +157,7 @@ export const gotBranchField = (
 	}
 }
 
-/** Cancel closes the dialog; in the pending state the same button disconnects. */
+/** Cancel closes the dialog. */
 export const clickedPickerCancel = (model: Model): Return =>
 	model.planetscaleCard.pickerDialog.isOpen
 		? dialogStep(model, Dialog.close(model.planetscaleCard.pickerDialog))
@@ -136,7 +186,7 @@ export const completedSelect = (
 ): Return => {
 	const settled = withCard(model, { isSelecting: false })
 	if (failure !== null)
-		return toast(settled, "error", "Failed to connect PlanetScale organization", failure.message)
+		return toast(settled, "error", "Couldn't connect PlanetScale organization", failure.message)
 	return chain(settled, [
 		(next) => toast(next, "success", `PlanetScale organization ${organization} connected`),
 		(next) => refreshAfterWrite(next, context),
@@ -148,68 +198,43 @@ export const completedSelect = (
 	])
 }
 
+export const updateCard = (model: Model, card: Partial<PlanetscaleCardModel>): Return => ({
+	model: withCard(model, card),
+})
+
 export const gotTokenField = (model: Model, field: "id" | "secret", message: Field.Message): Return => {
 	const current = field === "id" ? model.planetscaleCard.tokenId : model.planetscaleCard.tokenSecret
 	const step = Field.update(current, message)
 	return {
 		model: withCard(model, field === "id" ? { tokenId: step.model } : { tokenSecret: step.model }),
 		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotMetricsTokenMessage({ field, message: inner }),
+			Message.GotPlanetscaleTokenField({ field, message: inner }),
 		),
-	}
-}
-
-export const pastedToken = (model: Model, field: "id" | "secret", text: string): Return => {
-	const card = model.planetscaleCard
-	const next = normalizeTokenPaste(field, text, { id: card.tokenId.value, secret: card.tokenSecret.value })
-	return {
-		model: withCard(model, {
-			tokenId: { ...card.tokenId, value: next.id },
-			tokenSecret: { ...card.tokenSecret, value: next.secret },
-		}),
 	}
 }
 
 export const submittedToken = (model: Model): Return => {
 	const card = model.planetscaleCard
-	if (card.isSavingToken || card.tokenId.value.trim() === "" || card.tokenSecret.value === "")
-		return { model }
+	const tokenId = card.tokenId.value.trim()
+	const tokenSecret = card.tokenSecret.value.trim()
+	if (card.isSavingToken || tokenId === "" || tokenSecret === "") return { model }
 	return {
 		model: withCard(model, { isSavingToken: true, tokenError: null }),
-		commands: [
-			SetMetricsToken({ tokenId: card.tokenId.value.trim(), tokenSecret: card.tokenSecret.value }),
-		],
+		commands: [SetMetricsToken({ tokenId, tokenSecret })],
 	}
 }
 
-export const completedToken = (model: Model, context: PageContext, error: string | null): Return => {
-	if (error !== null) return { model: withCard(model, { isSavingToken: false, tokenError: error }) }
-	return chain(
-		withCard(model, {
-			isSavingToken: false,
-			tokenId: Field.init(),
-			tokenSecret: Field.init(),
-			isRotating: false,
-		}),
-		[
-			(next) => toast(next, "success", "Branch metrics enabled"),
-			(next) => refreshAfterWrite(next, context),
-		],
-	)
-}
-
-export const clickedShowWebhook = (model: Model, context: PageContext): Return => {
-	const revealed = withCard(model, { isWebhookRevealed: true })
-	const key = requestKey(context.orgId, "planetscaleIntegration.webhookConfig", {})
-	return Option.match(Keyed.request(model.planetscaleCard.webhookConfig, key, "Load"), {
-		onNone: () => ({ model: revealed }),
-		onSome: (webhookConfig) => ({
-			model: withCard(revealed, { webhookConfig }),
-			commands: [FetchWebhookConfig({ key })],
-		}),
-	})
-}
-
-export const updateCard = (model: Model, card: Partial<PlanetscaleCardModel>): Return => ({
-	model: withCard(model, card),
-})
+/** PlanetScale checks the token before Maple stores it, so a failure saved nothing. */
+export const completedToken = (model: Model, context: PageContext, failure: LoadFailure | null): Return =>
+	failure !== null
+		? { model: withCard(model, { isSavingToken: false, tokenError: failure.message }) }
+		: refreshAfterWrite(
+				withCard(model, {
+					isSavingToken: false,
+					tokenError: null,
+					isReplacingToken: false,
+					tokenId: Field.init(),
+					tokenSecret: Field.init(),
+				}),
+				context,
+			)

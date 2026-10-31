@@ -7,6 +7,7 @@ import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../../ui/icon"
+import { textLink } from "../../../../ui/text-link"
 import { listFooter } from "../../../../ui/list-footer"
 import { panel, panelHeader, panelTitle } from "../../../../ui/panel"
 import { segmentedSelect } from "../../../../ui/segmented-select"
@@ -24,11 +25,8 @@ import { panelScope, type Trigger } from "./view-scope"
 
 type H = HtmlBuilder<Message>
 
-const TABLE_MAX_HEIGHT = "420px"
 const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
-const MONO_LINK =
-	"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
 const warehouseTimeToMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
 
@@ -53,11 +51,11 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 	h.label(
 		[
 			h.Class(
-				"flex h-6 items-center gap-1.5 rounded-sm border border-border/70 bg-background/60 px-2 transition-colors focus-within:border-ring min-w-0 max-w-xs flex-1",
+				"flex h-6 items-center gap-1.5 rounded-sm border border-border-subtle bg-background/60 px-2 transition-colors focus-within:border-ring min-w-0 max-w-xs flex-1",
 			),
 		],
 		[
-			icon(h, "MagnifierIcon", { size: 11, className: "shrink-0 text-muted-foreground" }),
+			icon(h, "MagnifierIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
 			h.input([
 				h.Type("search"),
 				h.Value(value),
@@ -77,7 +75,7 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 								h.AriaLabel("Clear filter"),
 								h.OnClick(Message.ChangedBreakdownSearch({ value: "" })),
 								h.Class(
-									"inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground [&_svg]:size-3",
+									"inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground active:text-foreground [&_svg]:size-3",
 								),
 							],
 							[icon(h, "XmarkIcon")],
@@ -128,14 +126,12 @@ const table = (
 		{
 			ariaLabel: `${dimension.column} breakdown`,
 			isWaiting: options.isWaiting,
-			maxHeight: TABLE_MAX_HEIGHT,
-			stickySurfaceClass: "bg-card",
 		},
 		[
-			head(dimension.column, "key", "w-0 flex-1 min-w-[220px]"),
-			head("Requests", "requests", "w-[110px]"),
-			head("Error rate", "errorRate", "w-[90px]"),
-			head("Bandwidth", "bytes", "w-[90px]", "hidden md:flex"),
+			head(dimension.column, "key", "w-0 flex-1 min-w-56"),
+			head("Requests", "requests", "w-28"),
+			head("Error rate", "errorRate", "w-24"),
+			head("Bandwidth", "bytes", "w-24", "hidden md:flex"),
 		],
 		sorted.length === 0
 			? [dataTableEmpty(h, [options.emptyMessage])]
@@ -151,7 +147,7 @@ const table = (
 						],
 						[
 							h.div(
-								[h.Class("w-0 min-w-[220px] flex-1 truncate")],
+								[h.Class("w-0 min-w-56 flex-1 truncate")],
 								[
 									options.selected === null
 										? h.span(
@@ -175,7 +171,7 @@ const table = (
 													h.Title(`Filter this page by ${label}`),
 													h.Class(
 														cn(
-															"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
+															"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline active:underline focus-visible:outline-1 focus-visible:outline-ring",
 															isSelected ? "text-primary" : "text-foreground",
 														),
 													),
@@ -187,7 +183,7 @@ const table = (
 							h.div(
 								[
 									h.Class(
-										"w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80",
+										"w-28 text-right font-mono text-xs tabular-nums text-foreground-soft",
 									),
 									h.Title(`${formatPercent(row.share)} of listed requests`),
 								],
@@ -197,7 +193,7 @@ const table = (
 								[
 									h.Class(
 										cn(
-											"w-[90px] text-right font-mono text-xs tabular-nums",
+											"w-24 text-right font-mono text-xs tabular-nums",
 											errorRateClass(row.errorRate),
 										),
 									),
@@ -207,7 +203,7 @@ const table = (
 							h.div(
 								[
 									h.Class(
-										"hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block",
+										"hidden w-24 text-right font-mono text-xs tabular-nums text-foreground-soft md:block",
 									),
 								],
 								[formatBytes(row.bytes)],
@@ -253,12 +249,14 @@ const stored = (
 			...(collectedFrom === null ? [] : [h.span([], ["collected from ", collectedFrom])]),
 			...(canSearchLive
 				? [
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.ClickedSearchLive()),
-								h.Class(cn(MONO_LINK, "ml-auto")),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								isMono: true,
+								className: "ml-auto text-3xs",
+								onClick: Message.ClickedSearchLive(),
+							},
 							["Search all ", dimension.noun, " in Cloudflare"],
 						),
 					]
@@ -473,7 +471,7 @@ export const breakdownPanel = (
 														size: "xs",
 														mono: true,
 														className:
-															"bg-background/60 font-normal transition-colors hover:text-foreground",
+															"bg-background/60 font-normal hover:text-foreground active:text-foreground",
 													}),
 												),
 											),

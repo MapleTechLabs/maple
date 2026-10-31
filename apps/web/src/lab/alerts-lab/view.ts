@@ -16,7 +16,8 @@ import type { Model } from "./model"
 
 type AlertsTab = "inbox" | "rules" | "routing"
 
-export const FRAME_WIDTH = "1200px"
+/** Fills the lab column and caps at a desktop width; a fixed width overflowed narrower columns. */
+export const FRAME_CLASS = "w-full max-w-[1200px] overflow-hidden rounded-md border bg-background"
 const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 	{ value: "inbox", label: "Inbox" },
 	{ value: "rules", label: "Rules" },
@@ -24,11 +25,19 @@ const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 ]
 
 /** `LabSection`. */
-export const section = <M>(h: HtmlBuilder<M>, id: string, title: string, children: ReadonlyArray<Html>): Html =>
+export const section = <M>(
+	h: HtmlBuilder<M>,
+	id: string,
+	title: string,
+	children: ReadonlyArray<Html>,
+): Html =>
 	h.section(
 		[h.Id(id), h.Class("scroll-mt-6 space-y-3")],
 		[
-			h.h2([h.Class("font-mono text-xs text-muted-foreground")], ["#", id, " ", h.span([h.Class("text-foreground")], [title])]),
+			h.h2(
+				[h.Class("font-mono text-xs text-muted-foreground")],
+				["#", id, " ", h.span([h.Class("text-foreground")], [title])],
+			),
 			...children,
 		],
 	)
@@ -41,7 +50,7 @@ const alertsFrame = <M>(h: HtmlBuilder<M>, tab: AlertsTab, data: AlertsOverviewR
 		["routing", 0],
 	])
 	return h.div(
-		[h.Class("overflow-hidden rounded-md border bg-background"), h.Style({ width: FRAME_WIDTH })],
+		[h.Class(FRAME_CLASS)],
 		[
 			h.div(
 				[h.Class("space-y-3 border-b px-4 pt-4")],
@@ -50,7 +59,10 @@ const alertsFrame = <M>(h: HtmlBuilder<M>, tab: AlertsTab, data: AlertsOverviewR
 						[h.Class("flex items-center justify-between gap-4")],
 						[
 							h.p([h.Class("text-sm font-medium")], ["Alerts"]),
-							button(h, { size: "sm" }, [icon(h, "PlusIcon"), tab === "routing" ? "Add destination" : "New rule"]),
+							button(h, { size: "sm" }, [
+								icon(h, "PlusIcon"),
+								tab === "routing" ? "Add destination" : "New rule",
+							]),
 						],
 					),
 					underlineTabStrip(
@@ -69,7 +81,9 @@ const alertsFrame = <M>(h: HtmlBuilder<M>, tab: AlertsTab, data: AlertsOverviewR
 														h.Class(
 															cn(
 																"font-mono text-xs tabular-nums",
-																entry.value === "inbox" ? "text-severity-error" : "text-muted-foreground",
+																entry.value === "inbox"
+																	? "text-severity-error"
+																	: "text-muted-foreground",
 															),
 														),
 													],
@@ -88,7 +102,12 @@ const alertsFrame = <M>(h: HtmlBuilder<M>, tab: AlertsTab, data: AlertsOverviewR
 	)
 }
 
-type HubInputs = Readonly<{ fixture: AlertsLabFixture; status: Model["status"]; timeZone: string; nowMs: number }>
+type HubInputs = Readonly<{
+	fixture: AlertsLabFixture
+	status: Model["status"]
+	timeZone: string
+	nowMs: number
+}>
 
 /** The sections the hub's views draw, run against the lab's hub Model. */
 export const hubSections = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, inputs, h) => {
@@ -97,7 +116,9 @@ export const hubSections = Submodel.defineView<HubModel, HubMessage, HubInputs>(
 	return h.div(
 		[h.Class("space-y-12")],
 		[
-			section(h, "inbox", "Inbox: two firing, one held", [alertsFrame(h, "inbox", fixture.overview, inboxTab(h, fixture.overview))]),
+			section(h, "inbox", "Inbox: two firing, one held", [
+				alertsFrame(h, "inbox", fixture.overview, inboxTab(h, fixture.overview)),
+			]),
 			section(h, "inbox-quiet", "Inbox: nothing firing, two blind spots", [
 				alertsFrame(h, "inbox", fixture.quiet, inboxTab(h, fixture.quiet)),
 			]),
@@ -131,7 +152,14 @@ export const hubSections = Submodel.defineView<HubModel, HubMessage, HubInputs>(
 								[h.Class("min-w-[760px]")],
 								[
 									h.div(
-										[h.Class(cn(DESTINATION_ROW_GRID, "border-b px-4 py-2 text-xs text-muted-foreground"))],
+										[
+											h.Class(
+												cn(
+													DESTINATION_ROW_GRID,
+													"border-b px-4 py-2 text-xs text-muted-foreground",
+												),
+											),
+										],
 										[
 											h.span([], ["Destination"]),
 											h.span([], ["Type"]),

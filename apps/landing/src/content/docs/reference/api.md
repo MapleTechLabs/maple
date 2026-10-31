@@ -2,7 +2,7 @@
 title: "Maple API"
 description: "The Maple REST API: base URLs, API keys and scopes, the resources it exposes, pagination, the error envelope, rate limits, and where the OpenAPI specification lives."
 group: "Reference"
-order: 1
+order: 4
 navLabel: "REST API"
 ---
 
@@ -55,7 +55,10 @@ Each row is one scope family. The [interactive reference](https://api.maple.dev/
 | `scrape_targets`     | Prometheus scrape targets, their checks, and a test probe                                |
 | `attribute_mappings` | Attribute mappings                                                                       |
 | `instrumentation`    | Instrumentation recommendations, the setup audit, and which signals each service sends   |
-| `integrations`       | Chat connectors and the PlanetScale integration                                          |
+| `integrations`       | Chat connectors, and the AWS, GCP and PlanetScale integrations                           |
+| `sources`            | Connected sources and their source tokens: create, update, pause, resume, roll, usage    |
+| `investigations`     | AI investigations: list, start, get and restart                                          |
+| `anomalies`          | Detected anomaly incidents, their time series, and anomaly detection settings            |
 
 ## Conventions
 

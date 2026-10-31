@@ -4,13 +4,14 @@ import {
 	formatRangeSeconds,
 	formatWarehouseDateTime,
 	hasUnresolvedVariableRefs,
+	interpolateWidgetParams,
 	parseWarehouseDateTime,
 	MAX_LIST_RANGE_SECONDS,
 	planWidgetRequest,
 	type VariableValues,
 } from "@maple/query-engine"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { WarehouseDecodeError } from "@maple/web-data/warehouse/effect-utils"
+import { isRequestTimeout, WarehouseDecodeError } from "@maple/web-data/warehouse/effect-utils"
 import { getWidgetServerFunction } from "@maple/web-data/warehouse/widget-data-sources"
 import {
 	dataSourceTransform,
@@ -26,9 +27,13 @@ import { requestKey } from "../../../data/request-key"
 type Transform = typeof WidgetDataSourceTransformSchema.Type
 type Row = Readonly<Record<string, unknown>>
 
-/** A widget whose request is planned: its dedupe key, endpoint and resolved params. */
+/**
+ * A widget whose request is planned: its dedupe key, endpoint and resolved params. `shape` is the
+ * request without its window, so a re-plan can tell a time-only change from a different query.
+ */
 export const PlannedRequest = Schema.Struct({
 	key: Schema.String,
+	shape: Schema.String,
 	endpoint: Schema.String,
 	params: Schema.Record(Schema.String, Schema.Unknown),
 })
@@ -120,6 +125,13 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 		_tag: "Request",
 		request: {
 			key: requestKey(input.orgId, "widgetData", { endpoint: plan.endpoint, params }),
+			shape: requestKey(input.orgId, "widgetShape", {
+				endpoint: plan.endpoint,
+				params:
+					input.variables === undefined
+						? request.params
+						: interpolateWidgetParams(request.params, input.variables.values),
+			}),
 			endpoint: plan.endpoint,
 			params,
 		},
@@ -171,7 +183,10 @@ export const toWidgetFailure = (error: unknown): WidgetFailure => {
 	return { title: shown.title, message: shown.message, kind }
 }
 
-/** `fetchWidgetData`: the endpoint's server function, retried twice unless the window was empty. */
+/**
+ * `fetchWidgetData`: the endpoint's server function, retried twice unless the window was empty or the read
+ * hit its deadline (retrying a timeout would hold the tile on its skeleton for three deadlines).
+ */
 export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string, unknown>>) => {
 	const serverFn = getWidgetServerFunction(endpoint)
 	return serverFn === undefined
@@ -180,7 +195,8 @@ export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string
 				Effect.retry({
 					times: 2,
 					schedule: Schedule.exponential(Duration.millis(500)),
-					while: (error) => !EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? ""),
+					while: (error) =>
+						!EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? "") && !isRequestTimeout(error),
 				}),
 			)
 }

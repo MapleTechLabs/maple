@@ -1,11 +1,12 @@
-import { ConfigProvider, Effect, Layer, ManagedRuntime } from "effect"
-import { McpServicesLive } from "../../runtime/mcp-service-graph"
+import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { mcpServicesWithFeatureFlags } from "../../runtime/mcp-service-graph"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Env } from "@maple/backend/platform/Env"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { EVAL_TENANT, FIXTURES } from "./utils"
+import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
@@ -43,7 +44,13 @@ export interface EvalRuntime {
  * carries the already-resolved MCP tenant, matching the post-auth dispatcher
  * context shared by HTTP and RPC.
  */
-export const makeEvalRuntime = (): EvalRuntime => {
+export const makeEvalRuntime = (
+	featureFlags: Layer.Layer<
+		OrganizationFeatureFlagsService,
+		never,
+		Env
+	> = OrganizationFeatureFlagsService.layer,
+): EvalRuntime => {
 	const testDb = createTestDb()
 	const env = testEnv()
 
@@ -52,7 +59,7 @@ export const makeEvalRuntime = (): EvalRuntime => {
 	const databaseLive = testDb.layer
 	const workerEnvLive = Layer.succeed(WorkerEnvironment, env as Record<string, unknown>)
 
-	const layer = McpServicesLive.pipe(
+	const layer = mcpServicesWithFeatureFlags(featureFlags).pipe(
 		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive)),
 	)
 	// `as any`: the residual requirement set is satisfied at runtime (same pattern
@@ -71,6 +78,11 @@ export const makeEvalRuntime = (): EvalRuntime => {
 	}
 }
 
+class StructuredOutputTooDeep extends Schema.TaggedError<StructuredOutputTooDeep>()(
+	"@maple/ai/evals/StructuredOutputTooDeep",
+	{ message: Schema.String },
+) {}
+
 /**
  * Invoke a tool handler directly (no LLM) through the eval runtime + request
  * layer. Used to validate the full-execution wiring without spending an LLM call.
@@ -82,7 +94,20 @@ export const runToolDirect = async (
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> => {
 	return rt.runtime.runPromise(
-		McpToolExecutor.pipe(Effect.flatMap((executor) => executor.execute(rt.tenant, name, params, "mcp"))),
+		McpToolExecutor.pipe(
+			Effect.flatMap((executor) => executor.execute(rt.tenant, name, params, "mcp")),
+			// Every tool run here is held to the depth bound clients enforce on results.
+			Effect.tap((result) => {
+				const depth = jsonDepth(result.structuredContent)
+				return depth > MAX_STRUCTURED_OUTPUT_DEPTH
+					? Effect.fail(
+							new StructuredOutputTooDeep({
+								message: `${name} structuredContent nests ${depth} levels deep`,
+							}),
+						)
+					: Effect.void
+			}),
+		),
 	)
 }
 

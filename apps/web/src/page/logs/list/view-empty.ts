@@ -4,7 +4,6 @@ import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { canWidenRange, logFilterChips } from "./derive"
-import { MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
@@ -75,6 +74,13 @@ const searchEmpty = (h: HtmlBuilder<Message>, model: Model): Html => {
 	)
 }
 
+/** Unfiltered and the org never sent logs: the setup state is the answer, whatever the list says. */
+export const isNeverReceived = (model: Model): boolean =>
+	presenceOf(model.presence, "logs").status === "absent" &&
+	!model.search.search &&
+	!model.search.traceId &&
+	logFilterChips(model.search).length === 0
+
 export const emptyState = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.div(
 		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
@@ -83,7 +89,7 @@ export const emptyState = (h: HtmlBuilder<Message>, model: Model): Html =>
 			model.search.search || model.search.traceId
 				? searchEmpty(h, model)
 				: h.div(
-						[h.Class("rounded-md border"), h.OnMount(MountEmptyState())],
+						[h.Class("rounded-md border")],
 						[
 							signalEmptyState(h, {
 								signal: "logs",

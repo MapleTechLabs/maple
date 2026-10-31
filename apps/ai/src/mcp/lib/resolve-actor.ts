@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { isReservedAgentName } from "@maple/domain/system-agents"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -30,7 +30,7 @@ const toResolveError = (error: { readonly message: string }) =>
 /**
  * Resolve the calling actor for issue-mutating MCP tools. Preference order:
  * the pre-resolved `tenant.actorId` (API-key/header-pinned agent identity),
- * then an agent actor derived from the MCP client's negotiated name, and only
+ * then the caller's own agent actor named after the MCP client, and only
  * then the authenticated user — so automation driven through a human session
  * shows up in the activity timeline as the agent that did it.
  */
@@ -43,7 +43,12 @@ export const resolveActor = Effect.fn("McpActor.resolveActor")(function* (tenant
 		const agent = yield* actors
 			.ensureAgentActor(tenant.orgId, clientAgentName, { createdBy: tenant.userId })
 			.pipe(Effect.mapError(toResolveError))
-		return { actorId: agent.id, isAgent: true }
+		// The client name is caller-chosen: act as the agent only when this user created it, never
+		// as a same-named agent someone else in the org owns.
+		const owned = yield* actors
+			.findOwnedAgentActor(tenant.orgId, agent.id, tenant.userId)
+			.pipe(Effect.mapError(toResolveError))
+		if (Option.isSome(owned)) return { actorId: owned.value.id, isAgent: true }
 	}
 
 	const actor = yield* actors

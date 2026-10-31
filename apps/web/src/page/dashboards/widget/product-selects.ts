@@ -52,7 +52,7 @@ export const productSelectEdit = (id: string, value: string): Option.Option<Prod
 	}
 }
 
-/** `BreakdownPicker`'s `onValueChange`: None clears, a dimension sets, "Attribute..." emits the typed key. */
+/** `BreakdownPicker`'s `onValueChange`: None clears, a dimension sets, "Attribute…" emits the typed key. */
 export const breakdownPicked = (state: EditorState, value: string, attributeKey: string): EditorState => {
 	const key = attributeKey.trim()
 	const next =

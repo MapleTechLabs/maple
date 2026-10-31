@@ -1,18 +1,15 @@
-import { RailwayConnectRequest } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
-import * as Field from "../../../../ui/field"
 import * as Tooltip from "../../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { nextSort } from "../../../kit/table-sort"
-import { connectedToastOf } from "../../../integrations/railway"
-import { CompleteReloadSpin, ConnectRailway, FetchServices, LoadStatus, ResolveWindow } from "./command"
+import { CompleteReloadSpin, FetchServices, LoadStatus, ResolveWindow } from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
 
@@ -20,8 +17,6 @@ type Return = PageReturn<Model, Message>
 type Search = Model["search"]
 
 export const DEFAULT_PRESET = "6h"
-
-const decodeConnectRequest = Schema.decodeUnknownOption(RailwayConnectRequest)
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -57,7 +52,7 @@ const requestStatus = (model: Model, context: PageContext, mode: Keyed.RequestMo
 		onNone: () => ({ model }),
 		onSome: (status) => ({
 			model: { ...model, status },
-			commands: [LoadStatus({ key, refresh: mode === "Refresh" })],
+			commands: [LoadStatus({ key: status.key, refresh: mode === "Refresh" })],
 		}),
 	})
 }
@@ -81,7 +76,6 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		services: Keyed.idle(),
 		sort: { key: "memoryMax", dir: "desc" },
 		rowTooltip: Tooltip.init("railway-row-tooltip"),
-		connect: { token: Field.init(), isSubmitting: false, error: null },
 		timePicker: TimeRangePicker.init("railway-time-range"),
 		refreshVersion: 0,
 		isReloading: false,
@@ -103,22 +97,15 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (): Return => ({ model: next }),
 	})
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
-
-const fieldStep = (model: Model, message: Field.Message): Return => {
-	const next = Field.update(model.connect.token, message)
-	return {
-		model: { ...model, connect: { ...model.connect, token: next.model } },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotTokenFieldMessage({ message: inner }),
-		),
-	}
-}
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -195,31 +182,4 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		GotTokenFieldMessage: ({ message: inner }) => fieldStep(model, inner),
-		SubmittedConnect: () => {
-			if (model.connect.isSubmitting) return { model }
-			return Option.match(decodeConnectRequest({ token: model.connect.token.value.trim() }), {
-				onNone: () => ({ model }),
-				onSome: (request) => ({
-					model: { ...model, connect: { ...model.connect, isSubmitting: true, error: null } },
-					commands: [ConnectRailway({ token: request.token })],
-				}),
-			})
-		},
-		// `RailwayTokenForm` toasts `connectedToast` on success.
-		SucceededConnect: ({ status }) => ({
-			...requestServices(
-				{
-					...model,
-					connect: { token: Field.init(), isSubmitting: false, error: null },
-					status: { key: statusKey(context), data: AsyncData.Success({ data: status }) },
-				},
-				context,
-				"Load",
-			),
-			outMessage: PageOutMessage.RequestedToast({ type: "success", ...connectedToastOf(status, "connect") }),
-		}),
-		FailedConnect: ({ error }) => ({
-			model: { ...model, connect: { ...model.connect, isSubmitting: false, error } },
-		}),
 	})

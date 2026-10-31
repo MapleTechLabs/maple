@@ -6,16 +6,20 @@ import {
 	organizationRegionOpen,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { currentRegion } from "../lib/region"
-import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
-import { clerkJsUrl } from "./clerk-js-url"
-import { Clock, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
+import { bootedClerk, type ClerkLoadError } from "./clerk-boot"
+import { Clock, Duration, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 
 /** The slice of clerk-js this app reads (`window.Clerk`). */
 interface ClerkResources {
 	readonly user?: ClerkUserResource | null
-	readonly session?: { readonly id: string; readonly getToken: () => Promise<string | null> } | null
+	readonly session?: {
+		readonly id: string
+		readonly status?: string
+		/** Set while the session is `pending`: the task Clerk wants finished first. */
+		readonly currentTask?: { readonly key: string }
+		readonly getToken: (options?: { readonly skipCache?: boolean }) => Promise<string | null>
+	} | null
 	readonly organization?: ClerkOrganizationResource | null
 }
 
@@ -106,6 +110,16 @@ export interface ClerkUserResource {
 	readonly getOrganizationMemberships: () => Promise<
 		ClerkPage<{ readonly organization: { readonly id: string } }>
 	>
+	readonly getOrganizationInvitations: (params: {
+		readonly status: "pending"
+		readonly pageSize: number
+	}) => Promise<ClerkPage<ClerkUserInvitationResource>>
+}
+/** An invitation addressed to the signed-in user (`user.getOrganizationInvitations()`). */
+export interface ClerkUserInvitationResource {
+	readonly id: string
+	readonly publicOrganizationData: { readonly id: string; readonly name: string; readonly imageUrl: string }
+	readonly accept: () => Promise<ClerkUserInvitationResource>
 }
 export interface ClerkPublicUserData {
 	readonly userId?: string
@@ -113,6 +127,7 @@ export interface ClerkPublicUserData {
 	readonly lastName: string | null
 	readonly identifier: string
 	readonly imageUrl: string
+	readonly hasImage: boolean
 }
 export interface ClerkMembershipResource {
 	readonly id: string
@@ -156,13 +171,20 @@ export interface ClerkOrganizationResource {
 	/** Re-reads the org, so its new public metadata reaches the listeners. */
 	readonly reload: () => Promise<ClerkOrganizationResource>
 }
-interface ClerkGlobal extends ClerkResources {
+export interface ClerkGlobal extends ClerkResources {
 	readonly load: (options: Readonly<Record<string, unknown>>) => Promise<void>
 	readonly addListener: (listener: (resources: ClerkResources) => void) => () => void
 	readonly mountSignIn: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
 	readonly unmountSignIn: (element: HTMLDivElement) => void
 	readonly mountSignUp: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
 	readonly unmountSignUp: (element: HTMLDivElement) => void
+	readonly mountTaskResetPassword: (
+		element: HTMLDivElement,
+		props: Readonly<Record<string, unknown>>,
+	) => void
+	readonly unmountTaskResetPassword: (element: HTMLDivElement) => void
+	readonly mountTaskSetupMFA: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
+	readonly unmountTaskSetupMFA: (element: HTMLDivElement) => void
 	readonly setActive: (params: { readonly organization: string | null }) => Promise<void>
 	readonly signOut: () => Promise<void>
 	/** Clerk's re-verification modal, what `useReverification` opens (absent on a stub). */
@@ -177,14 +199,6 @@ declare global {
 	}
 }
 
-export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()(
-	"@maple/web/ClerkLoadError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
 /**
  * An organization as the app reads it (`useOrganization`, `useOrganizationList`): its public
  * metadata decoded into the region (`useOrganizationRegion`) and rollout flags it decides.
@@ -197,7 +211,12 @@ export const ClerkOrganization = Schema.Struct({
 	isServedHere: Schema.Boolean,
 	/** `organizationRegionOpen` at the time of the emit: onboarding may still ask for the region. */
 	isRegionOpen: Schema.Boolean,
-	flags: Schema.Struct({ aiAutoTriage: Schema.Boolean, releases: Schema.Boolean }),
+	flags: Schema.Struct({
+		aiAutoTriage: Schema.Boolean,
+		releases: Schema.Boolean,
+		securityAudit: Schema.Boolean,
+		statusPages: Schema.Boolean,
+	}),
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type
 
@@ -209,6 +228,13 @@ export const ClerkUser = Schema.Struct({
 })
 export type ClerkUser = typeof ClerkUser.Type
 
+/**
+ * A pending session's task that only Clerk's own card resolves. `choose-organization` is left
+ * out: `/org-required` handles the org-less session.
+ */
+export const PendingSessionTask = Schema.Literals(["reset-password", "setup-mfa"])
+export type PendingSessionTask = typeof PendingSessionTask.Type
+
 /** What the app reads from a Clerk session (`useAuth()`, `useUser()`, `useOrganization()`). */
 export const ClerkSnapshot = Schema.Struct({
 	maybeUserId: Schema.Option(UserId),
@@ -217,13 +243,16 @@ export const ClerkSnapshot = Schema.Struct({
 	maybeOrganization: Schema.Option(ClerkOrganization),
 	/** `useOrganizationList({ userMemberships })`, the first page. */
 	memberships: Schema.Array(ClerkOrganization),
+	/** The API treats a pending session as signed out, so the app shows the task instead. */
+	maybePendingTask: Schema.Option(PendingSessionTask),
 })
 export type ClerkSnapshot = typeof ClerkSnapshot.Type
 
 const toOrganization = (organization: ClerkOrganizationResource, nowMs: number): ClerkOrganization => ({
 	id: OrgId.make(organization.id),
 	name: organization.name,
-	imageUrl: organization.imageUrl ?? "",
+	// Clerk's generated default image is not the org's; the warm initials tile stands in.
+	imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
 	homeRegion: organizationHomeRegion(organization.publicMetadata),
 	isServedHere: organizationServedIn(organization.publicMetadata, currentRegion),
 	isRegionOpen: organizationRegionOpen(
@@ -241,7 +270,7 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		maybeUser: Option.map(Option.fromNullishOr(resources.user), (user) => ({
 			fullName: user.fullName ?? null,
 			email: user.primaryEmailAddress?.emailAddress ?? null,
-			imageUrl: user.imageUrl ?? "",
+			imageUrl: user.hasImage ? (user.imageUrl ?? "") : "",
 		})),
 		maybeOrganization: Option.map(Option.fromNullishOr(resources.organization), (organization) =>
 			toOrganization(organization, nowMs),
@@ -249,57 +278,16 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		memberships: (resources.user?.organizationMemberships ?? []).map((membership) =>
 			toOrganization(membership.organization, nowMs),
 		),
+		maybePendingTask: Option.filter(
+			Option.fromNullishOr(
+				resources.session?.status === "pending" ? resources.session.currentTask?.key : null,
+			),
+			Schema.is(PendingSessionTask),
+		),
 	}))
 
-const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? ""
-const signInUrl = import.meta.env.VITE_CLERK_SIGN_IN_URL?.trim() || "/sign-in"
-const signUpUrl = import.meta.env.VITE_CLERK_SIGN_UP_URL?.trim() || "/sign-up"
-
-const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
-	const script = document.createElement("script")
-	// The exact URL index.html preloads (vite.config.ts), so this runs the bytes already fetched.
-	script.src = clerkJsUrl(publishableKey)
-	script.async = true
-	script.crossOrigin = "anonymous"
-	script.setAttribute("data-clerk-js-script", "true")
-	script.setAttribute("data-clerk-publishable-key", publishableKey)
-	script.addEventListener("load", () => resume(Effect.void))
-	script.addEventListener("error", (cause) =>
-		resume(Effect.fail(new ClerkLoadError({ message: "Failed to load Clerk", cause }))),
-	)
-	document.head.appendChild(script)
-})
-
-const currentClerk = Effect.suspend(() =>
-	Option.match(Option.fromNullishOr(window.Clerk), {
-		onNone: () =>
-			Effect.fail(new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined })),
-		onSome: Effect.succeed,
-	}),
-)
-
-/** Loads clerk-js the way `<ClerkProvider>` does (unless a stub already sits on `window`). */
-export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.gen(function* () {
-	yield* Effect.promise(() => purgeForeignClerkCookies(publishableKey))
-	if (window.Clerk === undefined) {
-		yield* injectClerkJs
-	}
-	const clerk = yield* currentClerk
-	yield* Effect.tryPromise({
-		try: () =>
-			clerk.load({
-				signInUrl,
-				signUpUrl,
-				signUpFallbackRedirectUrl: "/quick-start",
-				afterSignOutUrl: signInUrl,
-				// `<ClerkProvider appearance localization>`: every Clerk surface inherits these.
-				appearance: clerkAppearance,
-				localization: clerkLocalization,
-			}),
-		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
-	})
-	return yield* toSnapshot(clerk)
-})
+/** The Clerk load `boot.ts` started (`clerk-boot.ts`), as the session it settled on. */
+export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.flatMap(bootedClerk, toSnapshot)
 
 /** Every Clerk emit (session touch, org switch, sign-out), as snapshots. */
 export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<ClerkResources>((queue) =>
@@ -317,6 +305,14 @@ export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<Cler
 export const setActiveOrganization = (orgId: string): Effect.Effect<void> =>
 	Effect.promise(() => window.Clerk?.setActive({ organization: orgId }) ?? Promise.resolve()).pipe(
 		Effect.catchDefect(() => Effect.void),
+	)
+
+/** `setActive({ organization })` that reports a refusal, for callers that must not move on without it. */
+export const activateOrganization = (orgId: string): Effect.Effect<void, ClerkActionError> =>
+	clerkTry("Couldn't open that organization. Reload the page and try again.", () =>
+		window.Clerk === undefined
+			? Promise.reject(new TypeError("Clerk is not loaded"))
+			: window.Clerk.setActive({ organization: orgId }),
 	)
 
 /** `useClerk().signOut()`: Clerk then routes to `afterSignOutUrl`. */
@@ -360,21 +356,29 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 	}),
 )
 
+const SESSION_TOKEN_TIMEOUT = Duration.seconds(10)
+
+const sessionToken = (skipCache: boolean): Effect.Effect<Option.Option<string>> =>
+	Effect.tryPromise(() => window.Clerk?.session?.getToken({ skipCache }) ?? Promise.resolve(null)).pipe(
+		Effect.map(Option.fromNullishOr),
+		// Runs before the request deadline starts, so a stalled token refresh must not hang every request.
+		Effect.timeoutOrElse({ duration: SESSION_TOKEN_TIMEOUT, orElse: () => Effect.succeedNone }),
+		Effect.orElseSucceed(Option.none),
+	)
+
 /** The session JWT for API calls (`session.getToken()`). */
-export const clerkSessionToken: Effect.Effect<Option.Option<string>> = Effect.tryPromise(
-	() => window.Clerk?.session?.getToken() ?? Promise.resolve(null),
-).pipe(Effect.map(Option.fromNullishOr), Effect.orElseSucceed(Option.none))
+export const clerkSessionToken = sessionToken(false)
+
+/** A session JWT minted now, bypassing clerk-js's token cache. */
+export const freshClerkSessionToken = sessionToken(true)
 
 // clerk-js resources for the Clerk-only settings tabs and `/account`: ported markup over the
 // vanilla resource API.
 
-export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()(
-	"@maple/web/ClerkActionError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
+export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()("@maple/web/ClerkActionError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 const stringField = (value: unknown, key: string): string | undefined =>
 	Predicate.hasProperty(value, key) && typeof value[key] === "string" ? value[key] : undefined
@@ -457,6 +461,55 @@ export const clerkTryReverified = <A>(
 		Effect.catchIf(isReverificationRequired, (refusal) => Effect.andThen(reverify(refusal), attempt)),
 	)
 }
+
+/** A pending invitation for the signed-in user, as `/org-required` offers it. */
+export const UserInvitation = Schema.Struct({
+	id: Schema.String,
+	orgId: Schema.String,
+	orgName: Schema.String,
+	imageUrl: Schema.String,
+})
+export type UserInvitation = typeof UserInvitation.Type
+
+const userInvitationPage = (
+	user: ClerkUserResource,
+): Effect.Effect<ReadonlyArray<ClerkUserInvitationResource>, ClerkActionError> => {
+	return clerkTry("Couldn't load your invitations", () =>
+		// One generous page: nobody holds a hundred open invitations.
+		user.getOrganizationInvitations.call(user, { status: "pending", pageSize: 100 }),
+	).pipe(Effect.map((page) => page.data))
+}
+
+/** `useOrganizationList({ userInvitations })`: the orgs that invited this user and are still waiting. */
+export const pendingUserInvitations: Effect.Effect<
+	ReadonlyArray<UserInvitation>,
+	ClerkActionError
+> = currentClerkUser.pipe(
+	Effect.flatMap(userInvitationPage),
+	Effect.map((invitations) =>
+		invitations.map((invitation) => ({
+			id: invitation.id,
+			orgId: invitation.publicOrganizationData.id,
+			orgName: invitation.publicOrganizationData.name,
+			imageUrl: invitation.publicOrganizationData.imageUrl,
+		})),
+	),
+)
+
+/** `invitation.accept()`: answers with the org joined, which the caller then makes active. */
+export const acceptUserInvitation = (invitationId: string): Effect.Effect<string, ClerkActionError> =>
+	Effect.gen(function* () {
+		const user = yield* currentClerkUser
+		const invitations = yield* userInvitationPage(user)
+		const invitation = invitations.find((candidate) => candidate.id === invitationId)
+		if (invitation === undefined)
+			return yield* new ClerkActionError({
+				message: "This invitation is no longer pending",
+				cause: undefined,
+			})
+		yield* clerkTry("Could not accept the invitation", () => invitation.accept.call(invitation))
+		return invitation.publicOrganizationData.id
+	})
 
 /** `setActive({ organization })` then home: after leaving or deleting the active organization. */
 export const switchAwayFrom = (orgId: string): Effect.Effect<void> =>

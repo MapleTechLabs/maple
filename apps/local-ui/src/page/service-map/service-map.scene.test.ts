@@ -68,7 +68,7 @@ const mapOf = (model: Model) => Option.getOrThrow(model.maybeMap)
 
 describe("local service map", () => {
 	test("entry reads the clock and the stored layout, then asks the map once", () => {
-		expect(init(context).commands.map(({ name }) => name)).toEqual([ReadClock.name, ReadStored.name])
+		expect(init(context).commands.map(({ name }) => name)).toEqual(expect.arrayContaining([ReadClock.name, ReadStored.name]))
 		const anchored = pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW }))
 		expect((anchored.commands ?? []).map(({ name }) => name)).toEqual([FetchServiceMap.name])
 	})

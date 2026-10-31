@@ -63,6 +63,15 @@ export const apiNotFoundBody = (method: string, pathname: string, origin: string
 	},
 })
 
+/** Docs paths get the docs 404 (search and docs nav); everything else the site one. */
+const notFoundPage = async (url: URL, assets: AssetsBinding): Promise<Response> => {
+	if (url.pathname.startsWith("/docs/")) {
+		const docs = await assets.fetch(new Request(new URL("/docs/404/", url)))
+		if (docs.ok) return docs
+	}
+	return assets.fetch(new Request(new URL("/404.html", url)))
+}
+
 /** The markdown 404: what was asked for, and where to look instead. */
 export const notFoundMarkdown = (pathname: string, origin: string): string =>
 	[
@@ -143,7 +152,7 @@ export const handleRequest = async (request: Request, assets: AssetsBinding): Pr
 	// already consumed the body stream, so re-deriving from `request` throws
 	// `Body has already been used` and the runtime answers 500. That is invisible
 	// for GETs (no body) and turned every POST to an unknown path into a 500.
-	const notFound = await assets.fetch(new Request(new URL("/404.html", url)))
+	const notFound = await notFoundPage(url, assets)
 	return withHeaders(new Response(notFound.body, { status: 404, headers: notFound.headers }), {
 		Vary: "Accept",
 	})

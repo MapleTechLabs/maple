@@ -20,7 +20,8 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { AUTH_TYPE_LABELS, hostnameOf, type ScheduledStatus, toneBadge } from "./view-prometheus"
+import { hostnameOf } from "./prometheus"
+import { AUTH_TYPE_LABELS, type ScheduledStatus, toneBadge } from "./view-prometheus"
 
 // `ScrapeTargetDetails`, `MetricBox` and `ScrapeTargetChecksTable`.
 // TODO(tooltip): a check's message renders its trigger; the full-message popup is the overlay port's.
@@ -79,9 +80,9 @@ const checksTable = (
 		onIdle: () => skeletonList(h, { rows: 3, gap: "2" }),
 		onLoading: () => skeletonList(h, { rows: 3, gap: "2" }),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load scheduled checks", variant: "row" }),
+			errorState(h, { failure, title: "Couldn't load scheduled checks", variant: "row" }),
 		onStale: ({ error }) =>
-			errorState(h, { failure: error, title: "Failed to load scheduled checks", variant: "row" }),
+			errorState(h, { failure: error, title: "Couldn't load scheduled checks", variant: "row" }),
 		onRefreshing: () => checksRows(h, checks, timeZone),
 		onSuccess: () => checksRows(h, checks, timeZone),
 	})
@@ -96,9 +97,9 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 					tableHeader(h, [
 						tableRow(h, [
 							tableHead(h, ["Time"], "w-full pl-3"),
-							tableHead(h, ["State"], "w-[64px]"),
-							tableHead(h, ["Duration"], "w-[70px]"),
-							tableHead(h, ["Samples"], "w-[72px] pr-3"),
+							tableHead(h, ["State"], "w-16"),
+							tableHead(h, ["Duration"], "w-16"),
+							tableHead(h, ["Samples"], "w-20 pr-3"),
 						]),
 					]),
 					tableBody(
@@ -277,7 +278,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 									...(failureMessage !== null && failureMessage !== ""
 										? [
 												h.p(
-													[h.Class("font-mono text-2xs text-muted-foreground/80")],
+													[h.Class("font-mono text-2xs text-foreground-subtle")],
 													[failureMessage],
 												),
 											]
@@ -374,6 +375,6 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 
 const sectionTitle = (h: H, iconName: "PulseIcon" | "ExternalLinkIcon" | "HistoryIcon", text: string): Html =>
 	eyebrow(h, { variant: "label", className: "flex items-center gap-2", as: "div" }, [
-		icon(h, iconName, { size: 13 }),
+		icon(h, iconName, { size: 14 }),
 		text,
 	])

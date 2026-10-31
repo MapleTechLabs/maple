@@ -9,119 +9,82 @@ import { type OrgId, UserId } from "@maple/domain/primitives"
 import { VcsInstallations } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Clock, Duration, Effect, Layer, Schedule, Schema, Stream } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { FetchHttpClient } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { Env } from "@maple/backend/platform/Env"
 import {
 	WorkflowEventSink,
 	type WorkflowEventSinkApi,
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
-	ensureIntegrationSource,
-	integrationSourceName,
-	stampableSourceId,
+	isSourcePaused,
+	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
-import { isIngestRefusal, summarizeUpstreamBody } from "../upstream-body"
+import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 import { jobLogRecords, type OtlpLogsPayload, workflowJobLogsToOtlp } from "./logs"
 import { type OtlpTracesPayload, workflowJobToOtlp, workflowRunToOtlp } from "./otlp"
 
+/** Short, with two retries: a webhook job should not wait on a stalled gateway for long. */
 const INGEST_TIMEOUT = Duration.seconds(15)
 const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-ci-traces")
 /** Log records per ingest request: about 1 MB of JSON, well under the gateway's body limit. */
 const LOG_BATCH_SIZE = 1000
-
-export class CiTraceIngestError extends Schema.TaggedError<CiTraceIngestError>()(
-	"@maple/backend/integrations/CiTraceIngestError",
-	{
-		message: Schema.String,
-		status: Schema.optionalKey(Schema.Number),
-	},
-) {}
-
-/** A refused key (billing, revoked) cannot succeed on retry; everything else is worth two more tries. */
-const isRetryable = (error: CiTraceIngestError) =>
-	error.status === undefined || !isIngestRefusal(error.status)
+const UNLINKED = { stamped: undefined, paused: false } as const
 
 const make = Effect.gen(function* () {
-	const env = yield* Env
-	const httpClient = yield* HttpClient.HttpClient
 	const ingestKeys = yield* OrgIngestKeysService
 	const database = yield* Database
-	const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
+	const ingest = yield* makeIngestSender
 
+	// A refused key (billing, revoked) cannot succeed on retry; everything else gets two more tries.
 	const post = (ingestKey: string, payload: OtlpTracesPayload | OtlpLogsPayload) => {
 		const signal = "resourceLogs" in payload ? "logs" : "traces"
-		return Effect.gen(function* () {
-			const request = HttpClientRequest.post(`${ingestBaseUrl}/v1/${signal}`, {
-				headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
-			}).pipe(HttpClientRequest.bodyJsonUnsafe(payload))
-			const response = yield* httpClient.execute(request).pipe(
-				Effect.annotateSpans("peer.service", "ingest"),
-				Effect.mapError(
-					(error) =>
-						new CiTraceIngestError({ message: `CI ${signal} ingest failed: ${error.message}` }),
-				),
-			)
-			if (response.status >= 300) {
-				const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-				return yield* new CiTraceIngestError({
-					message: `CI ${signal} ingest returned ${response.status}: ${summarizeUpstreamBody(body, response.headers)}`,
-					status: response.status,
-				})
-			}
-		}).pipe(
-			Effect.timeoutOrElse({
-				duration: INGEST_TIMEOUT,
-				orElse: () =>
-					Effect.fail(new CiTraceIngestError({ message: `CI ${signal} ingest timed out` })),
-			}),
+		return ingest.send({ signal, ingestKey, payload, label: `CI ${signal}`, timeout: INGEST_TIMEOUT }).pipe(
 			Effect.retry({
 				schedule: Schedule.exponential(Duration.millis(250)),
 				times: 2,
-				while: isRetryable,
+				while: (error) => !isRefusal(error),
 			}),
 		)
 	}
 
-	// The installation's pull source as its `src_` id. Never fails: without it the spans go unstamped.
-	const resolveSourceId = (
+	// The installation's source: its `src_` id and whether it is paused. Never fails: without it the
+	// spans go unstamped, and the gateway still drops a paused source's data.
+	const installationSource = (
 		orgId: OrgId,
 		job: { readonly provider: string; readonly externalInstallationId: string },
 	) =>
-		stampableSourceId(
-			Effect.gen(function* () {
-				if (job.provider !== "github") return undefined
-				const now = yield* Clock.currentTimeMillis
-				return yield* database.execute((db) =>
-					Effect.gen(function* () {
-						const [installation] = yield* db.run(
-							PG.from(VcsInstallations)
-								.select("id", "accountLogin")
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.provider.eq("github"),
-									$.externalInstallationId.eq(job.externalInstallationId),
-								])
-								.limit(1),
-						)
-						if (installation === undefined) return undefined
-						return yield* ensureIntegrationSource(
-							db,
-							orgId,
-							{
-								platform: "github",
-								integrationId: installation.id,
-								name: integrationSourceName.github(installation),
-							},
-							now,
-						)
-					}),
-				)
-			}),
-			{ orgId, platform: "github" },
-		)
+		job.provider !== "github"
+			? Effect.succeed(UNLINKED)
+			: database
+					.execute((db) =>
+						Effect.gen(function* () {
+							const [installation] = yield* db.run(
+								PG.from(VcsInstallations)
+									.select("sourceId")
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.provider.eq("github"),
+										$.externalInstallationId.eq(job.externalInstallationId),
+									])
+									.limit(1),
+							)
+							const sourceId = installation?.sourceId ?? null
+							return {
+								stamped: stampedSourceId(sourceId),
+								paused: yield* isSourcePaused(db, sourceId, yield* Clock.currentTimeMillis),
+							}
+						}),
+					)
+					.pipe(
+						Effect.catch((error) =>
+							Effect.logWarning("Installation source unavailable").pipe(
+								Effect.annotateLogs({ orgId, error: error.message }),
+								Effect.as(UNLINKED),
+							),
+						),
+					)
 
 	/**
 	 * Posts with the org's public key. A 401 can be a key rotated in another graph while this one's
@@ -133,7 +96,7 @@ const make = Effect.gen(function* () {
 			.getOrCreate(orgId, SYSTEM_USER_ID)
 			.pipe(Effect.flatMap((keys) => post(keys.publicKey, payload)))
 		return send.pipe(
-			Effect.catchTag("@maple/backend/integrations/CiTraceIngestError", (error) =>
+			Effect.catchTag("@maple/backend/ingest/IngestSendError", (error) =>
 				error.status === 401
 					? ingestKeys.forget(orgId).pipe(Effect.andThen(send))
 					: Effect.fail(error),
@@ -150,7 +113,11 @@ const make = Effect.gen(function* () {
 		toPayload: (sourceId: string | undefined) => OtlpTracesPayload,
 	) =>
 		Effect.gen(function* () {
-			const payload = toPayload(yield* resolveSourceId(orgId, job))
+			const source = yield* installationSource(orgId, job)
+			if (source.paused) {
+				return yield* Effect.annotateCurrentSpan("maple.cicd.outcome", "source_paused")
+			}
+			const payload = toPayload(source.stamped)
 			const spanCount = payload.resourceSpans[0]?.scopeSpans[0]?.spans.length ?? 0
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cicd.span_count": spanCount })
 			yield* postAs(orgId, payload)
@@ -176,13 +143,16 @@ const make = Effect.gen(function* () {
 		lines: Stream.Stream<string, E>,
 	) =>
 		Effect.gen(function* () {
-			const sourceId = yield* resolveSourceId(orgId, job)
+			const source = yield* installationSource(orgId, job)
+			if (source.paused) {
+				return yield* Effect.annotateCurrentSpan("maple.cicd.outcome", "source_paused")
+			}
 			const sent = yield* jobLogRecords(job, lines).pipe(
 				Stream.grouped(LOG_BATCH_SIZE),
 				Stream.runFoldEffect(
 					() => 0,
 					(count, batch) =>
-						postAs(orgId, workflowJobLogsToOtlp(job, batch, sourceId)).pipe(
+						postAs(orgId, workflowJobLogsToOtlp(job, batch, source.stamped)).pipe(
 							Effect.as(count + batch.length),
 						),
 				),

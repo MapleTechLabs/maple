@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterChip } from "../../../ui/filter-chip"
 import { searchInput } from "../../../ui/search-input"
+import { listToolbar } from "../../kit/list-toolbar"
 
 // The replays toolbar: the URL search and the triage chips.
 // TODO(tooltip): the chips' hover tooltips.
@@ -14,7 +15,8 @@ export type ReplaysToolbarOptions<M> = Readonly<{
 	query: string
 	onInput: (value: string) => M
 	onClear: M
-	errorSessions: number
+	/** `undefined` until the facets answer, so a failed read never claims zero. */
+	errorSessions: number | undefined
 	isErrorsOnly: boolean
 	onToggleErrorsOnly: M
 	engagedSessions: number | undefined
@@ -23,43 +25,69 @@ export type ReplaysToolbarOptions<M> = Readonly<{
 	isWaiting?: boolean
 }>
 
+/** A filter toggle, sized to the search box beside it; the count trails as on every filter chip. */
 const triageChip = <M>(
 	h: HtmlBuilder<M>,
-	isPressed: boolean,
-	onClick: M,
-	tone: Tone,
-	children: ReadonlyArray<Html | string>,
-): Html => filterChip(h, { isPressed, onClick, tone, hasDot: true }, children)
+	options: Readonly<{
+		isPressed: boolean
+		onClick: M
+		tone: Tone
+		label: string
+		count: number | undefined
+	}>,
+): Html =>
+	filterChip(
+		h,
+		{
+			isPressed: options.isPressed,
+			onClick: options.onClick,
+			tone: options.tone,
+			hasDot: true,
+			size: "sm",
+			count: options.count === undefined ? undefined : formatNumber(options.count),
+		},
+		[options.label],
+	)
 
 export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOptions<M>): Html => {
 	const isWaiting = options.isWaiting ?? false
-	return h.div([h.Class("flex flex-wrap items-center justify-between gap-3")], [
-		searchInput(h, {
+	// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+	return listToolbar(h, {
+		className: "pb-0",
+		leading: searchInput(h, {
 			id: "replays-search",
 			value: options.query,
 			placeholder: "Search by URL…",
 			onInput: options.onInput,
 			onClear: options.onClear,
-			size: "default",
+			size: "sm",
 			className: cn("max-w-sm", "w-full sm:max-w-sm"),
 		}),
-		h.div(
-			[
-				...(isWaiting ? [h.AriaBusy(true)] : []),
-				h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(isWaiting))),
-			],
-			[
-				triageChip(h, options.isErrorsOnly, options.onToggleErrorsOnly, "crit", [
-					h.span([h.Class("tabular-nums")], [formatNumber(options.errorSessions)]),
-					" with errors",
-				]),
-				triageChip(h, options.isEngagedOnly, options.onToggleEngagedOnly, "ok", [
-					...(options.engagedSessions === undefined
-						? []
-						: [h.span([h.Class("tabular-nums")], [formatNumber(options.engagedSessions)])]),
-					"engaged",
-				]),
-			],
-		),
-	])
+		trailing: [
+			h.div(
+				[
+					...(isWaiting ? [h.AriaBusy(true)] : []),
+					h.Role("group"),
+					h.AriaLabel("Quick filters"),
+					h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(isWaiting))),
+				],
+				[
+					triageChip(h, {
+						isPressed: options.isErrorsOnly,
+						onClick: options.onToggleErrorsOnly,
+						tone: "crit",
+						label: "With errors",
+						count: options.errorSessions,
+					}),
+					triageChip(h, {
+						isPressed: options.isEngagedOnly,
+						onClick: options.onToggleEngagedOnly,
+						tone: "ok",
+						label: "Engaged",
+						count: options.engagedSessions,
+					}),
+				],
+			),
+		],
+	})
 }

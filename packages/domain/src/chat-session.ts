@@ -87,21 +87,12 @@ export const prReplyIdFromChatSessionId = (sessionId: string): string | undefine
  * from somewhere new. A connector-driven thread is an ordinary chat-mode conversation that a
  * connector is answering in, and it stays free to be anchored on an alert later.
  */
-export const ChatMode = Schema.Literals([
-	"default",
-	"alert",
-	"widget-fix",
-	"investigate",
-	"pr-review",
-	"pr-reply",
-])
+export const ChatMode = Schema.Literals(["default", "investigate", "pr-review", "pr-reply"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
 export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	if (tab.startsWith("alert-")) return "alert"
-	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
 	if (tab.startsWith("prr-")) return "pr-reply"
 	if (tab.startsWith("pr-")) return "pr-review"
@@ -109,10 +100,6 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 }
 
 const CONNECTOR_TAB_PREFIX = "bot-"
-
-/** Whether this session's transcript belongs to a connector thread rather than the Maple app. */
-export const isConnectorSessionId = (sessionId: string): boolean =>
-	tabIdFromChatSessionId(sessionId).startsWith(CONNECTOR_TAB_PREFIX)
 
 // Owned by `./primitives` so the engine and the connector packages cannot drift apart.
 export { ChatConnectorId, ChatConversationKey } from "./primitives"
@@ -150,6 +137,8 @@ export class ChatSubToolCall extends Schema.Class<ChatSubToolCall>("@maple/ChatS
 	input: Schema.Unknown,
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/** The turn ended before this call settled. */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
@@ -178,6 +167,11 @@ export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCal
 	/** Present once the tool settled. */
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The turn ended (stopped, failed or ran out of steps) before this call settled, so it never
+	 * will. Without it a reader shows the call as still running, forever.
+	 */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	/**
 	 * True when this call is an approval-gated mutation the agent paused on. The tool did NOT run;
 	 * the client renders an approval card and applies it through `POST /internal/chat/apply`.

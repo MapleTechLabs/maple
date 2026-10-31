@@ -110,6 +110,48 @@ const scriptState = (configure: ConfigureModel): { script: string | null; failur
 	return { script: null, failure: null }
 }
 
+/** The setup script with Copy and Open in Cloud Shell, and who may run it. */
+export const scriptSection = (
+	h: H,
+	model: Model,
+	configure: ConfigureModel,
+	connector: V2GcpConnector,
+): Html => {
+	const sinkExists = connector.applied_logs_enabled === true
+	const { script, failure } = scriptState(configure)
+	return h.section(
+		[h.Class("flex flex-col gap-3")],
+		[
+			h.div(
+				[h.Class("flex flex-col gap-0.5")],
+				[
+					h.h3([h.Class(GCP_TITLE)], ["Run this script in Cloud Shell"]),
+					h.p([h.Class(SMALL)], ["Nothing changes in Google Cloud until it runs."]),
+				],
+			),
+			fileCard(h, model, configure, {
+				name: "setup.sh",
+				text: script,
+				failure,
+				secret: true,
+				children: [openCloudShellButton(h, connector.project_id, "default")],
+			}),
+			h.p(
+				[h.Class(SMALL)],
+				[
+					"Run it ",
+					...runAs(h, connector),
+					" ",
+					!connector.logs_enabled && sinkExists
+						? "Takes one to two minutes. "
+						: "Takes about a minute and is safe to run again. ",
+					externalLink(h, `${DOCS}#roles-for-running-the-script`, "Roles if you aren't an Owner"),
+				],
+			),
+		],
+	)
+}
+
 export const applyStage = (
 	h: H,
 	model: Model,
@@ -144,49 +186,11 @@ export const applyStage = (
 		]
 	const overdue = !opened.rerun && gcpScriptOverdue(connector, opened.at, nowMs)
 	const choice = gcpLogFilterChoice(configure.filter, sinkExists)
-	const { script, failure } = scriptState(configure)
 	return [
 		configureHeader(h, options.title, 3),
 		configurePanel(
 			h,
-			[
-				runSummary(h, connector, filterShort(choice)),
-				h.section(
-					[h.Class("flex flex-col gap-3")],
-					[
-						h.div(
-							[h.Class("flex flex-col gap-0.5")],
-							[
-								h.h3([h.Class(GCP_TITLE)], ["Run this script in Cloud Shell"]),
-								h.p([h.Class(SMALL)], ["Nothing changes in Google Cloud until it runs."]),
-							],
-						),
-						fileCard(h, model, configure, {
-							name: "setup.sh",
-							text: script,
-							failure,
-							secret: true,
-							children: [openCloudShellButton(h, connector.project_id, "default")],
-						}),
-						h.p(
-							[h.Class(SMALL)],
-							[
-								"Run it ",
-								...runAs(h, connector),
-								" ",
-								!connector.logs_enabled && sinkExists
-									? "Takes one to two minutes. "
-									: "Takes about a minute and is safe to run again. ",
-								externalLink(
-									h,
-									`${DOCS}#roles-for-running-the-script`,
-									"Roles if you aren't an Owner",
-								),
-							],
-						),
-					],
-				),
-			],
+			[runSummary(h, connector, filterShort(choice)), scriptSection(h, model, configure, connector)],
 			"flex flex-col gap-5",
 		),
 		runStatus(h, connector, { opened, overdue, nowMs, method: "script" }),

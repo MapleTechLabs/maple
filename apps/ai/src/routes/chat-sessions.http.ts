@@ -27,20 +27,19 @@ import {
 	ChatSendRequest,
 	ChatSendResponse,
 	encodeChatTurnTenant,
-	isConnectorSessionId,
+	investigationIdFromChatSessionId,
 	orgIdFromChatSessionId,
 	originForTenant,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import type { ChatSessionCallError, ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { Effect, Layer, Option, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { Env } from "@maple/backend/platform/Env"
-import { resolveHttpMcpTenant } from "../mcp/lib/query-warehouse"
+import { resolveChatSessionTenantContext } from "../mcp/lib/resolve-tenant"
 
 const json = (body: unknown, status = 200) =>
 	HttpServerResponse.text(JSON.stringify(body), {
@@ -119,8 +118,12 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 
 	// Unauthenticated and bad-credential requests are 401, not the 500 an uncaught `McpAuth*Error`
 	// would produce out of a raw router. `Effect.option` rather than `catchTags` because the
-	// resolver's whole error channel *is* the two auth failures.
-	const tenant: Option.Option<TenantContext> = yield* Effect.option(resolveHttpMcpTenant)
+	// resolver's whole error channel *is* the auth failures. Session-only: API keys and MCP OAuth
+	// tokens are refused here, since a turn from this route runs as an attended `app` turn.
+	const tenant: Option.Option<TenantContext> = yield* HttpServerRequest.toWeb(request).pipe(
+		Effect.flatMap(resolveChatSessionTenantContext),
+		Effect.option,
+	)
 	if (Option.isNone(tenant)) {
 		return { ok: false, failure: problem("Authentication required", 401) } as const
 	}
@@ -128,6 +131,11 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 	if (tenant.value.orgId !== sessionOrgId) {
 		// Deliberately 404, not 403: confirming that another org's conversation exists is itself
 		// a leak.
+		return { ok: false, failure: problem("Chat session not found", 404) } as const
+	}
+
+	// The dashboard's only conversation is an investigation's; bot threads and reviews have their own drivers.
+	if (investigationIdFromChatSessionId(sessionId) === undefined) {
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 
@@ -170,13 +178,6 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				const resolved = yield* resolveSession(request)
 				if (!resolved.ok) return resolved.failure
 				const { sessionId, tenant, stub } = resolved.session
-				// A connector thread is driven only by its connector. History and events stay
-				// readable — this is the one verb that would otherwise let any member of the org
-				// post into a channel conversation, metered as the connector with nobody listening.
-				if (isConnectorSessionId(sessionId)) {
-					return problem("This conversation is driven by its chat connector", 403)
-				}
-
 				const body = yield* request.text.pipe(Effect.orElseSucceed(() => ""))
 				const parsed = yield* decodeSendRequest(body).pipe(Effect.option)
 				if (parsed._tag === "None" || parsed.value.text.trim() === "") {
@@ -264,7 +265,9 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				// turn, and a caller-supplied one named a message that never existed — so the
 				// `turn-end` it recorded matched nothing and no client ever cleared its streaming
 				// state.
-				const aborted = yield* sessionCall("abort", resolved.session.stub.abort("user")).pipe(Effect.option)
+				const aborted = yield* sessionCall("abort", resolved.session.stub.abort("user")).pipe(
+					Effect.option,
+				)
 				if (Option.isNone(aborted)) return problem("The chat session is unavailable", 503)
 				return HttpServerResponse.empty({ status: 204 })
 			}),
@@ -275,7 +278,13 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 	// router was built from into them. The tenant resolver and the Durable Object lookup read
 	// these per request, so hand them over from the build — reading them inside a handler
 	// answered every chat request with a 500 ("Service not found") until 2026-09-08.
+	// Only these three: the whole build context would also hand every request the isolate's Scope.
 	HttpRouter.provideRequest(
-		Layer.effectContext(Effect.context<ApiKeysService | AuthService | Env | ChatSessions>()),
+		Layer.effectContext(
+			Effect.map(
+				Effect.context<AuthService | Env | ChatSessions>(),
+				Context.pick(AuthService, Env, ChatSessions),
+			),
+		),
 	),
 )

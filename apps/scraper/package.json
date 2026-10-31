@@ -6,9 +6,11 @@
 		"start": "bun run src/main.ts",
 		"dev": "bun --env-file=../../.env.local --watch src/main.ts",
 		"test": "vitest run",
-		"typecheck": "tsrs --noEmit"
+		"typecheck": "tsrs --noEmit",
+		"bundle": "bun build src/main.ts --target=bun --outfile dist/scraper.js"
 	},
 	"dependencies": {
+		"@alchemy.run/aws": "catalog:alchemy",
 		"@effect/platform-bun": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/domain": "workspace:*",
@@ -17,9 +19,8 @@
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
-		"@types/bun": "^1.4.2",
+		"@types/bun": "^1.4.4",
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"

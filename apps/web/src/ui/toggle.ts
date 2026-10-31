@@ -91,3 +91,15 @@ export const toggle = <Message>(
 		},
 		children,
 	)
+
+/**
+ * A segment's height inside the recessed track (1px border + 2px padding a side), so the whole
+ * track is as tall as a button or select of the same size in a toolbar row.
+ */
+export const segmentItemHeight = {
+	xs: "h-[22px] min-w-[22px] sm:h-[22px] sm:min-w-[22px]",
+	sm: "h-[calc(--spacing(8)-6px)] min-w-[calc(--spacing(8)-6px)] sm:h-[calc(--spacing(7)-6px)] sm:min-w-[calc(--spacing(7)-6px)]",
+	default:
+		"h-[calc(--spacing(9)-6px)] min-w-[calc(--spacing(9)-6px)] sm:h-[calc(--spacing(8)-6px)] sm:min-w-[calc(--spacing(8)-6px)]",
+	lg: "h-[calc(--spacing(10)-6px)] min-w-[calc(--spacing(10)-6px)] sm:h-[calc(--spacing(9)-6px)] sm:min-w-[calc(--spacing(9)-6px)]",
+} as const

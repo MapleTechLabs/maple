@@ -1,22 +1,47 @@
 import { OrgId } from "@maple/domain"
-import { encodePublicId, PublicIdPrefixes, V2SourceWithSecret } from "@maple/domain/http/v2"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	V2AwsIntegration,
+	V2ScrapeTarget,
+	V2SourceWithSecret,
+} from "@maple/domain/http/v2"
 import { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
+import * as Field from "../../../ui/field"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message as IntegrationMessage } from "../../integrations/message"
+import { ScrollToTop } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+import { trailOf } from "./view-trail"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const route = (platform?: "nodejs" | "kubernetes") => ({
 	_tag: "SourcesNew" as const,
 	search: platform === undefined ? {} : { platform },
@@ -29,7 +54,9 @@ const STATUS_READS = ["LoadIntegrationsCloudflareStatus", "LoadIntegrationsScrap
 const indicatorMeasured = () =>
 	Mount.resolve<string, Tabs.Message>(
 		Tabs.MeasureTabIndicator,
-		Tabs.Message.MeasuredIndicator({ rect: { left: 0, right: 96, top: 0, bottom: 32, width: 96, height: 32 } }),
+		Tabs.Message.MeasuredIndicator({
+			rect: { left: 0, right: 96, top: 0, bottom: 32, width: 96, height: 32 },
+		}),
 	)
 
 const created = (lastUsedAt: string | null = null) =>
@@ -39,6 +66,7 @@ const created = (lastUsedAt: string | null = null) =>
 		name: "Node.js",
 		description: null,
 		platform: "nodejs",
+		kind: "token",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
 		integration_id: null,
@@ -65,7 +93,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
-			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Source" })).toExist(),
 		)
 		expect(
 			pageUpdate(entered.model, Message.ClickedPushPlatform({ platform: "nodejs" })).outMessage,
@@ -89,49 +117,97 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
-			expectView(text("Step 2 of 3 · Name it")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Name" })).toExist(),
 			click(role("button", { name: "Advanced" })),
 			expectView(text("Resource attributes")).toExist(),
+			click(role("button", { name: "Back" })),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/sources/new", isReplace: false })),
 		)
 		const back = routeChanged(entered.model, route(), context)
 		expect(back.model.platform).toBeNull()
-		expect(names(routeChanged(back.model, route("kubernetes"), context).commands)).toEqual(["FetchSourcesList"])
+		// Another source opens at the top of the page, not at the picker's scroll offset.
+		const picked = names(routeChanged(back.model, route("kubernetes"), context).commands)
+		expect(picked).toContain("FetchSourcesList")
+		expect(picked).toContain("ScrollSourcesNewToTop")
 	})
 
 	test("an empty name disables Create; a failed create toasts and re-enables it", () => {
 		const entered = init(route("nodejs"), context).model
 		const blank = pageUpdate(entered, Message.ChangedName({ value: "  " })).model
 		expect(pageUpdate(blank, Message.SubmittedForm()).commands ?? []).toHaveLength(0)
+		scene(
+			{ update: pageUpdate, view },
+			given(blank),
+			expectView(role("button", { name: "Create source" })).toBeDisabled(),
+		)
 		const started = pageUpdate(entered, Message.SubmittedForm())
 		expect(names(started.commands)).toEqual(["CreateSource"])
 		const failure = toLoadFailure(new Error("no"))
 		const failed = pageUpdate(started.model, Message.CompletedCreate({ result: Result.fail(failure) }))
 		expect(failed.model.isSaving).toBe(false)
 		expect(failed.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "error", title: "Failed to create source", description: failure.message }),
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Couldn't create source",
+				description: failure.message,
+			}),
 		)
 	})
 
 	test("a create shows the token, refreshes the list and polls until data arrives", () => {
 		const started = pageUpdate(init(route("nodejs"), context).model, Message.SubmittedForm()).model
 		const done = pageUpdate(started, Message.CompletedCreate({ result: Result.succeed(created()) }))
-		expect(names(done.commands)).toEqual(["FetchSourcesList", "FetchCreatedSource"])
+		expect(names(done.commands)).toEqual(
+			expect.arrayContaining(["FetchSourcesList", "FetchCreatedSource"]),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(done.model),
 			indicatorMeasured(),
-			expectView(text("Step 3 of 3 · Send data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Send data" })).toExist(),
 			expectView(text("Waiting for first data")).toExist(),
+			expectView(text("Waiting for the first request signed with maple_src_Q7xZa")).toExist(),
 			expectView(role("link", { name: "Skip for now" })).toExist(),
+			expectView(role("button", { name: "Open source" })).toBeDisabled(),
 		)
 		const key = done.model.firstData.key ?? ""
-		const pending = pageUpdate(done.model, Message.CompletedFetchSource({ key, result: Result.succeed(created()) }))
+		const pending = pageUpdate(
+			done.model,
+			Message.CompletedFetchSource({ key, result: Result.succeed(created()) }),
+		)
 		expect(names(pending.commands)).toEqual(["WaitFirstDataPoll"])
-		expect(names(pageUpdate(pending.model, Message.ElapsedPoll({ key })).commands)).toEqual(["FetchCreatedSource"])
-		const receiving = pageUpdate(done.model, Message.CompletedFetchSource({ key, result: Result.succeed(created("2026-10-01T00:01:00.000Z")) }))
+		expect(names(pageUpdate(pending.model, Message.ElapsedPoll({ key })).commands)).toEqual([
+			"FetchCreatedSource",
+		])
+		const receiving = pageUpdate(
+			done.model,
+			Message.CompletedFetchSource({
+				key,
+				result: Result.succeed(created("2026-10-01T00:01:00.000Z")),
+			}),
+		)
 		expect(receiving.commands ?? []).toHaveLength(0)
 		expect(pageUpdate(receiving.model, Message.ElapsedPoll({ key })).commands ?? []).toHaveLength(0)
-		scene({ update: pageUpdate, view }, given(receiving.model), indicatorMeasured(), expectView(role("link", { name: "Open source" })).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(receiving.model),
+			indicatorMeasured(),
+			expectView(role("link", { name: "Open source" })).toExist(),
+			expectView(role("listitem", { name: "Receiving data" })).toExist(),
+		)
+	})
+
+	test("the token step keeps the created source's trail after the route moves to another platform", () => {
+		const started = pageUpdate(init(route("nodejs"), context).model, Message.SubmittedForm()).model
+		const done = pageUpdate(started, Message.CompletedCreate({ result: Result.succeed(created()) })).model
+		const moved = routeChanged(done, route("kubernetes"), context).model
+		scene(
+			{ update: pageUpdate, view },
+			given(moved),
+			indicatorMeasured(),
+			expectView(role("listitem", { name: "Kubernetes" })).toBeAbsent(),
+			expectView(role("listitem", { current: "step", name: "Send data" })).toExist(),
+		)
 	})
 
 	test("an integration's step shows its own connect card; an unknown id falls back to the picker", () => {
@@ -159,11 +235,11 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded),
-			expectView(text("Step 2 of 3 · Connect Cloudflare")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			expectView(role("button", { name: "Connect Cloudflare" })).toExist(),
-			click(role("button", { name: "Pick another source" })),
+			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)
-		expect(pageUpdate(entered.model, Message.ClickedBack()).outMessage).toEqual(
+		expect(pageUpdate(entered.model, Message.ClickedStepBack()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/sources/new", isReplace: false }),
 		)
 		const unknown = init(integrationRoute("slack"), context)
@@ -171,7 +247,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(unknown.model),
-			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Source" })).toExist(),
 		)
 	})
 
@@ -194,19 +270,110 @@ describe("connect a source", () => {
 					}),
 				),
 			})
-		const waiting = pageUpdate(entered.model, Message.GotIntegrationsMessage({ message: status(false) })).model
+		const waiting = pageUpdate(
+			entered.model,
+			Message.GotIntegrationsMessage({ message: status(false) }),
+		).model
 		const connected = pageUpdate(waiting, Message.GotIntegrationsMessage({ message: status(true) }))
 		expect(names(connected.commands)).toContain("FetchSourcesList")
-		const row = { ...created(), platform: "cloudflare" as const, key_prefix: null, name: "Cloudflare Acme" }
+		const row = {
+			...created(),
+			platform: "cloudflare" as const,
+			key_prefix: null,
+			name: "Cloudflare Acme",
+		}
 		const listed = pageUpdate(
 			connected.model,
-			Message.CompletedFetchList({ key: connected.model.list.key ?? "", result: Result.succeed([row]) }),
+			Message.CompletedFetchList({
+				key: connected.model.list.key ?? "",
+				result: Result.succeed([row]),
+			}),
 		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(listed),
-			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { name: "Acme" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
+			click(role("button", { name: "Back" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
+			expectView(role("button", { name: "Continue" })).toBeEnabled(),
+		)
+		// On Go live, a poll that loses the connection takes Connect's tick away.
+		const live = pageUpdate(listed, Message.ClickedContinue()).model
+		const lost = pageUpdate(live, Message.GotIntegrationsMessage({ message: status(false) })).model
+		expect(trailOf(lost)).toContainEqual({ label: "Connect", state: "next" })
+	})
+
+	test("an integration that sends nothing says what is left instead of connected", () => {
+		const entered = init(integrationRoute("aws"), context)
+		const status = (metrics_last_received_at: string | null) =>
+			IntegrationMessage.CompletedLoadAws({
+				key: entered.model.integrations.statuses.aws.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(V2AwsIntegration)({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [
+							{
+								id: encodePublicId(
+									PublicIdPrefixes.awsConnection,
+									"018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+								),
+								object: "aws_connection",
+								account_id: "123456789012",
+								role_arn:
+									"arn:aws:iam::123456789012:role/MapleIntegration-018f2b3c4d5e4f708192a3b4",
+								oidc_issuer: "https://api.maple.dev/oidc/aws",
+								oidc_subject: "aws-connection:018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+								modules: [],
+								granted_modules: [],
+								template_version: 2,
+								setup_outdated: false,
+								verified_at: "2026-10-23T08:00:00.000Z",
+								last_checked_at: "2026-10-23T08:58:00.000Z",
+								last_check_error: null,
+								metric_stream: { regions: ["us-east-1"], namespaces: ["AWS/ECS"] },
+								metric_stream_changed_at: "2026-10-23T07:55:00.000Z",
+								metrics_last_received_at,
+								metrics_last_error: null,
+								created_at: "2026-10-23T07:55:00.000Z",
+							},
+						],
+					}),
+				),
+			})
+		const clocked = pageUpdate(
+			entered.model,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedReadClock({
+					nowMs: Date.parse("2026-10-23T09:00:00.000Z"),
+				}),
+			}),
+		).model
+		// Connect, then Choose data (prefilled with the stream), then Go live.
+		const live = (message: IntegrationMessage) =>
+			pageUpdate(
+				pageUpdate(
+					pageUpdate(clocked, Message.GotIntegrationsMessage({ message })).model,
+					Message.ClickedContinue(),
+				).model,
+				Message.ClickedContinue(),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(live(status(null))),
+			expectView(text("No metrics arriving")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Go live: needs attention" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(live(status("2026-10-23T08:59:30.000Z"))),
+			expectView(role("listitem", { name: "Live" })).toExist(),
 		)
 	})
 
@@ -221,16 +388,61 @@ describe("connect a source", () => {
 	test("WarpStream finishes once a target is added in this visit, and links to the list", () => {
 		const entered = init(integrationRoute("warpstream"), context).model
 		expect(entered.hasAddedTarget).toBe(false)
-		const added = pageUpdate(
+		const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
+			id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
+			object: "scrape_target",
+			name: "api.warpstream.com",
+			service_name: null,
+			url: "https://api.warpstream.com/api/v1/monitoring/prometheus/virtual_clusters/vci_1",
+			target_type: "prometheus",
+			organization: null,
+			include_branches: [],
+			exclude_branches: [],
+			scrape_interval_seconds: 15,
+			labels_json: null,
+			auth_type: "basic",
+			has_credentials: true,
+			managed_by: null,
+			enabled: true,
+			last_scrape_at: null,
+			last_scrape_error: null,
+			created_at: "2026-10-01T00:00:00.000Z",
+			updated_at: "2026-10-01T00:00:00.000Z",
+		})
+		const added = [
+			() =>
+				IntegrationMessage.GotFormFieldMessage({
+					field: "url",
+					message: Field.Message.ChangedValue({ value: target.url }),
+				}),
+			() => IntegrationMessage.SubmittedTargetForm(),
+			() => IntegrationMessage.CompletedSave({ isEdit: false, id: target.id, failure: null }),
+			(model: Model) =>
+				IntegrationMessage.CompletedLoadScrapeTargets({
+					key: model.integrations.statuses.scrapeTargets.key ?? "",
+					result: Result.succeed([target]),
+				}),
+			() =>
+				IntegrationMessage.CompletedProbe({
+					id: target.id,
+					failure: null,
+					success: true,
+					error: null,
+				}),
+		].reduce(
+			(model, message) =>
+				pageUpdate(model, Message.GotIntegrationsMessage({ message: message(model) })).model,
 			entered,
-			Message.GotIntegrationsMessage({
-				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
-			}),
-		).model
+		)
+		expect(added.hasAddedTarget).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
 			given(added),
-			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { name: "api.warpstream.com" })).toExist(),
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)
 	})

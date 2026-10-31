@@ -1,5 +1,5 @@
 import { formatCost, type SessionSummary } from "@maple/agent-sessions"
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -26,7 +26,10 @@ type H = HtmlBuilder<Message>
 const railSection = (h: H, title: string, aside: Html | undefined, children: ReadonlyArray<Html>): Html =>
 	h.section(
 		[h.Class("flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0")],
-		[sectionHeading(h, { variant: "eyebrow", as: "h3", title, actions: aside, className: "mb-0" }), ...children],
+		[
+			sectionHeading(h, { variant: "eyebrow", as: "h3", title, actions: aside, className: "mb-0" }),
+			...children,
+		],
 	)
 
 const sharePercent = (value: number, total: number): number => (total <= 0 ? 0 : (value / total) * 100)
@@ -75,7 +78,7 @@ const timeComposition = (h: H, summary: SessionSummary): Html => {
 				[h.Key(band.kind), h.Class("flex items-center gap-2.5")],
 				[
 					icon(h, AGENT_TIME_ICON[band.kind], {
-						size: 13,
+						size: 14,
 						className: cn("shrink-0", AGENT_TIME_TEXT[band.kind]),
 						attributes: [h.AriaHidden(true)],
 					}),
@@ -121,7 +124,7 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 												" ",
 												String(model.llmCalls),
 												" ",
-												model.llmCalls === 1 ? "call" : "calls",
+												pluralize(model.llmCalls, "call"),
 											],
 										),
 									],
@@ -141,7 +144,7 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 						),
 					)),
 			h.p(
-				[h.Class("text-2xs text-muted-foreground leading-relaxed")],
+				[h.Class("font-prose text-2xs text-muted-foreground leading-relaxed")],
 				[
 					summary.cost === undefined
 						? "No span reported a cost. Maple does not price tokens itself."
@@ -177,7 +180,7 @@ const tokensSection = (h: H, summary: SessionSummary): Html => {
 							[h.Key(bucket.key), h.Class("flex items-center gap-2.5")],
 							[
 								icon(h, bucket.icon, {
-									size: 13,
+									size: 14,
 									className: cn("shrink-0", bucket.text),
 									attributes: [h.AriaHidden(true)],
 								}),
@@ -223,7 +226,7 @@ const agentsSection = (h: H, summary: SessionSummary): Html =>
 									cn(
 										"min-w-0 truncate rounded-sm px-2 py-0.5 font-mono text-2xs",
 										index === 0
-											? "bg-primary/12 text-primary"
+											? "bg-primary-a2 text-primary"
 											: "bg-muted text-muted-foreground",
 									),
 								),

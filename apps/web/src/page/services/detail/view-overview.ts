@@ -9,8 +9,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_TOKENS, metricsGrid } from "./view-charts"
 import { deploysPanel, issuesPanel } from "./view-deploys"
-import { dependencyStrip, usagePanel, workloadsPanel } from "./view-footprint"
+import { dependencyStrip, runsOnPanel, usagePanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
+import { uptimePanel } from "./view-uptime"
 
 // The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
 
@@ -24,7 +25,7 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 	if (AsyncData.isFailure(overview)) {
 		return errorState(h, {
 			failure: overview.error,
-			title: "Failed to load service overview",
+			title: "Couldn't load service overview",
 			onRetry: Message.ClickedRetry({ target: "Overview" }),
 		})
 	}
@@ -57,7 +58,8 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 					issuesPanel(h, model, clock, isLimited),
 					deploysPanel(h, model, clock, isDetailLoading),
 					usagePanel(h, model, envFilterActive),
-					workloadsPanel(h, model, envFilterActive),
+					uptimePanel(h, model),
+					runsOnPanel(h, model, envFilterActive),
 				],
 			),
 			dependencyStrip(h, model),

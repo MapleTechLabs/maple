@@ -105,8 +105,8 @@ const widthButton = (h: HtmlBuilder<Message>, model: Model, option: (typeof WIDT
 			h.OnClick(Message.ClickedWidth({ width: option.value })),
 			h.Class(
 				model.width === option.value
-					? "rounded border border-border bg-accent px-2 py-1 text-xs"
-					: "rounded border border-border px-2 py-1 text-xs text-muted-foreground",
+					? "rounded-sm border border-border bg-accent px-2 py-1 text-xs"
+					: "rounded-sm border border-border px-2 py-1 text-xs text-muted-foreground",
 			),
 		],
 		[option.label],
@@ -125,7 +125,7 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 							[
 								h.Type("button"),
 								h.OnClick(Message.ClickedClear()),
-								h.Class("rounded border border-border px-2 py-1 text-xs"),
+								h.Class("rounded-sm border border-border px-2 py-1 text-xs"),
 							],
 							["Clear ", clearLabel(model)],
 						),

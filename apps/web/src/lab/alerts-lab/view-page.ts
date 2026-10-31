@@ -12,13 +12,14 @@ import { linkButton } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { labShellView } from "../app-shell"
 import { Message, type Model } from "./model"
-import { FRAME_WIDTH, hubSections, section } from "./view"
+import { FRAME_CLASS, hubSections, section } from "./view"
 
 type H = HtmlBuilder<Message>
 
 /** `IncidentFrame`: `IncidentHeader` (a page header) over `IncidentBody`, from the fixture. */
 const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
-	const { incident, rule, ruleIncidents, states, preview, range, deliveries, investigation } = fixture.incident
+	const { incident, rule, ruleIncidents, states, preview, range, deliveries, investigation } =
+		fixture.incident
 	const entries = buildIncidentTimeline({
 		incident,
 		deliveries,
@@ -28,7 +29,7 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
 	})
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
 	return h.div(
-		[h.Class("overflow-hidden rounded-md border bg-background"), h.Style({ width: FRAME_WIDTH })],
+		[h.Class(FRAME_CLASS)],
 		[
 			h.div(
 				[h.Class("border-b p-4")],
@@ -41,7 +42,9 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
 							{
 								variant: "outline",
 								size: "sm",
-								href: hrefOf(AppRoute.Investigation({ id: String(investigation.id), search: {} })),
+								href: hrefOf(
+									AppRoute.Investigation({ id: String(investigation.id), search: {} }),
+								),
 							},
 							[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 						),
@@ -89,10 +92,17 @@ const pageBody = (h: H, model: Model): Html => {
 							slotId: "alerts-lab-hub",
 							model: model.hub,
 							view: hubSections,
-							viewInputs: { fixture, status: model.status, timeZone: model.timeZone, nowMs: model.nowMs },
+							viewInputs: {
+								fixture,
+								status: model.status,
+								timeZone: model.timeZone,
+								nowMs: model.nowMs,
+							},
 							toParentMessage: (message) => Message.GotHubMessage({ message }),
 						}),
-						section(h, "incident", "Incident: critical error rate on maple-chat", [incidentFrame(h, model, fixture)]),
+						section(h, "incident", "Incident: critical error rate on maple-chat", [
+							incidentFrame(h, model, fixture),
+						]),
 					],
 				),
 			]),

@@ -30,16 +30,16 @@ const INERT_SORT = { isActive: false, dir: "desc" } satisfies Readonly<{ isActiv
 const columns = <M>(h: HtmlBuilder<M>, sort: SortState | null, onSort?: OnSort<M>): ReadonlyArray<Html> => {
 	const sortOf = (key: HostSortKey) => (onSort === undefined ? INERT_SORT : headSort(sort, key, onSort))
 	return [
-		columnHead(h, { label: "Host", sort: sortOf("hostName"), width: "w-0 flex-1 min-w-[260px]" }),
-		columnHead(h, { label: "Usage", width: "w-[200px]" }),
+		columnHead(h, { label: "Host", sort: sortOf("hostName"), width: "w-0 flex-1 min-w-64" }),
+		columnHead(h, { label: "Usage", width: "w-52" }),
 		columnHead(h, {
 			label: "Load 15m",
 			sort: sortOf("load15"),
 			align: "right",
-			width: "w-[80px]",
+			width: "w-20",
 			hidden: "hidden lg:flex",
 		}),
-		columnHead(h, { label: "Last seen", sort: sortOf("lastSeen"), align: "right", width: "w-[100px]" }),
+		columnHead(h, { label: "Last seen", sort: sortOf("lastSeen"), align: "right", width: "w-24" }),
 	]
 }
 
@@ -50,12 +50,12 @@ export const hostTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		columns<M>(h, null),
 		skeletonRows(h, 6, () => [
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-32")],
 			),
-			skeleton(h, "h-9 w-[200px]"),
-			skeleton(h, "ml-auto hidden h-3 w-[80px] lg:block"),
-			skeleton(h, "h-3 w-[100px]"),
+			skeleton(h, "h-9 w-52"),
+			skeleton(h, "ml-auto hidden h-3 w-20 lg:block"),
+			skeleton(h, "h-3 w-24"),
 		]),
 	)
 
@@ -76,7 +76,7 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
+				[h.Class("w-0 min-w-64 flex-1")],
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],
@@ -103,7 +103,7 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 				],
 			),
 			h.div(
-				[h.Class("w-[200px]")],
+				[h.Class("w-52")],
 				[
 					meterRows(h, [
 						{ label: "CPU", fraction: host.cpuPct },
@@ -115,13 +115,13 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 			h.div(
 				[
 					h.Class(
-						"hidden w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block",
+						"hidden w-20 text-right font-mono text-xs tabular-nums text-foreground-soft lg:block",
 					),
 				],
 				[formatLoad(host.load15)],
 			),
 			h.div(
-				[h.Class("w-[100px] text-right")],
+				[h.Class("w-24 text-right")],
 				[
 					relativeTime(h, {
 						value: host.lastSeen,

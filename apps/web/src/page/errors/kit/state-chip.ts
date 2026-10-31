@@ -30,7 +30,7 @@ export const investigationChip = <M>(
 			h.Class(
 				cn(
 					"inline-flex max-w-full items-center gap-1.5 text-2xs font-medium whitespace-nowrap",
-					"text-muted-foreground hover:text-foreground hover:underline",
+					"text-muted-foreground hover:text-foreground active:text-foreground hover:underline active:underline",
 					"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm",
 					options.className,
 				),
@@ -45,7 +45,7 @@ export const investigationChip = <M>(
 			statusDot(h, { tone: "custom", className: "bg-current" }),
 			h.span([h.Class(cn("truncate", options.compact === true && "hidden @xl/page:inline"))], [label]),
 			...(withConfidence && investigation.confidence && investigation.status === "diagnosed"
-				? [h.span([h.Class("text-muted-foreground/60")], ["· ", investigation.confidence])]
+				? [h.span([h.Class("text-foreground-subtle")], ["· ", investigation.confidence])]
 				: []),
 		],
 	)

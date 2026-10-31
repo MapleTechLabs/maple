@@ -78,12 +78,12 @@ const emptyState = (h: H, inputs: HeatmapChartInputs): Html => {
 						[
 							h.div(
 								[
-									h.Class("grid grid-cols-8 gap-[2px] rounded-sm p-[3px]"),
+									h.Class("grid grid-cols-8 gap-0.5 rounded-sm p-[3px]"),
 									h.Style({ background: grout(inputs.theme) }),
 								],
 								Array.from({ length: 32 }, (_, i) =>
 									h.div([
-										h.Class("size-1.5 rounded-[1px]"),
+										h.Class("size-1.5 rounded-2xs"),
 										h.Style({
 											background:
 												i === 11
@@ -124,7 +124,7 @@ const tooltipBody = (
 							[h.Class("text-muted-foreground")],
 							[
 								h.span([], [tooltip.x]),
-								h.span([h.Class("px-1 text-muted-foreground/50")], ["·"]),
+								h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
 								h.span([], [label(tooltip.y)]),
 							],
 						),
@@ -228,7 +228,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 					: {
 							footer: h.p(
 								[
-									h.Class("pt-1 text-right text-3xs leading-3 tabular-nums text-muted-foreground/70"),
+									h.Class("pt-1 text-right text-3xs leading-3 tabular-nums text-foreground-subtle"),
 									h.Style({
 										height: `${FOOTNOTE_BLOCK_H}px`,
 										"padding-left": `${layout.gutter}px`,

@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import {
 	displayGroupKey,
 	eventTypeEmoji,
+	formatAlertHeadline,
 	formatEventTypeLabel,
 	formatObservedSummary,
 	formatSignalLabel,
@@ -26,7 +27,6 @@ export interface AlertEmailContent {
 export const buildAlertEmailContent = (
 	context: TemplateRenderContext,
 	linkUrl: string,
-	chatUrl: string,
 ): Effect.Effect<AlertEmailContent, AlertDeliveryError> =>
 	Effect.try({
 		// Synchronous: the template is a compiled string, spliced in place.
@@ -44,10 +44,9 @@ export const buildAlertEmailContent = (
 				window: formatWindow(context.windowMinutes),
 				accentColor: alertAccentColor(context.eventType, context.severity),
 				linkUrl,
-				chatUrl,
 			})
 			return {
-				subject: `${emoji} ${context.ruleName} — ${eventLabel}`,
+				subject: `${emoji} ${formatAlertHeadline(context)}`,
 				html,
 			}
 		},

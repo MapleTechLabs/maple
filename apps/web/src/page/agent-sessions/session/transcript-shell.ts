@@ -76,13 +76,13 @@ export const inlineNote = (h: H, children: ReadonlyArray<Html | string>, classNa
 		[
 			h.Class(
 				cn(
-					"flex items-start gap-2.5 rounded-md border border-input border-dashed bg-muted/20 px-3 py-2",
+					"flex items-start gap-2.5 rounded-md border border-input border-dashed bg-surface-faint px-3 py-2",
 					className,
 				),
 			),
 		],
 		[
-			icon(h, "CircleQuestionIcon", { size: 13, className: "mt-0.5 shrink-0 text-muted-foreground" }),
+			icon(h, "CircleQuestionIcon", { size: 14, className: "mt-0.5 shrink-0 text-muted-foreground" }),
 			h.p([h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")], children),
 		],
 	)

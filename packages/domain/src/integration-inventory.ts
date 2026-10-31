@@ -2,6 +2,12 @@
 // fills `IntegrationInventoryInputs` (narrow column projections, epoch ms), then
 // `buildIntegrationInventory` derives every status, same shape as `./setup-audit`.
 
+import {
+	SOURCE_HEALTH_STATUSES,
+	type SourceHealthResult,
+	type SourceHealthStatus,
+	worstSourceStatus,
+} from "./source-health"
 import { redactUrlSecrets } from "./url-redaction"
 
 export const INTEGRATION_PROVIDERS = [
@@ -14,29 +20,30 @@ export const INTEGRATION_PROVIDERS = [
 ] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 
-/** Worst first: a provider takes the worst status of itself and its resources. */
-export const INTEGRATION_STATUSES = ["disconnected", "failing", "stale", "pending", "healthy"] as const
-export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number]
+/** Worst first: a provider takes the worst status of its sources and resources. Same as a source's. */
+export const INTEGRATION_STATUSES = SOURCE_HEALTH_STATUSES
+export type IntegrationStatus = SourceHealthStatus
 
 const STATUS_RANK = {
 	disconnected: 0,
 	failing: 1,
 	stale: 2,
-	pending: 3,
-	healthy: 4,
+	paused: 3,
+	pending: 4,
+	healthy: 5,
 } satisfies Record<IntegrationStatus, number>
 
-export const worstStatus = (statuses: ReadonlyArray<IntegrationStatus>): IntegrationStatus =>
-	statuses.reduce<IntegrationStatus>(
-		(worst, s) => (STATUS_RANK[s] < STATUS_RANK[worst] ? s : worst),
-		"healthy",
-	)
+export const worstStatus = worstSourceStatus
 
 /** The alerting pollers tick every 5 minutes; six missed ticks is no longer a blip. */
 const POLLER_STALE_MS = 30 * 60 * 1000
 /** PlanetScale inventory refreshes hourly and deploy requests round-robin 25 databases per tick. */
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
+
+/** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
+export const scrapeStaleAfterMs = (scrapeIntervalSeconds: number) =>
+	Math.max(SCRAPE_MIN_STALE_MS, scrapeIntervalSeconds * 10 * 1000)
 
 export interface PollState {
 	readonly lastSuccessAt: number | null
@@ -122,6 +129,8 @@ export interface IntegrationInventoryInputs {
 		readonly scrapeIntervalSeconds: number
 		readonly lastScrapeAt: number | null
 		readonly lastScrapeError: string | null
+		/** False for a target switched off; absent reads as on. */
+		readonly enabled?: boolean
 	}>
 	readonly chatWorkspaces: ReadonlyArray<{
 		readonly connector: string
@@ -177,7 +186,7 @@ export const INTEGRATION_FEEDS = {
 		"query insights and deploy-request events",
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
-	chat: ["the Maple bot in chat workspaces"],
+	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
 } satisfies Record<IntegrationProvider, ReadonlyArray<string>>
 
 /** The newest attempt decides: an error newer than the last success is failing. */
@@ -419,11 +428,16 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			note: [db.kind, db.region, db.state].filter((part) => part !== null && part !== "").join(", "),
 		}
 	})
+	// A disabled managed target only holds branch filters: metrics come from the metrics API.
 	const scrape = inputs.scrapeTargets
-		.filter((t) => t.managedBy?.startsWith("planetscale:"))
+		.filter((t) => t.managedBy?.startsWith("planetscale:") && t.enabled !== false)
 		.map((t) => scrapeResource(t, now, "metrics scrape"))
+	// Only permissions something still depends on; older bindings stored ones that no longer matter.
 	const missing = Object.entries(connection.detectedPermissions ?? {})
-		.filter(([, granted]) => !granted)
+		.filter(
+			([permission, granted]) =>
+				!granted && PLANETSCALE_PERMISSION_FEEDS.some(([key]) => key === permission),
+		)
 		.map(([permission]) => permission)
 	// The inventory pass clears its error on success, so a set error is the latest outcome.
 	const own = isRevoked(oauth)
@@ -450,7 +464,6 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 
 /** What each permission probed at org-binding time feeds, so a missing one names its effect. */
 const PLANETSCALE_PERMISSION_FEEDS = [
-	["readMetricsEndpoints", "database metrics"],
 	["readDatabases", "the database inventory and deploy requests"],
 	["readOrganization", "the organization lookup"],
 ] as const
@@ -463,25 +476,30 @@ export const scrapeResource = (
 	now: number,
 	kind: string,
 ): IntegrationResource => {
-	const staleAfterMs = Math.max(SCRAPE_MIN_STALE_MS, target.scrapeIntervalSeconds * 10 * 1000)
+	const staleAfterMs = scrapeStaleAfterMs(target.scrapeIntervalSeconds)
 	// A failed scrape leaves lastScrapeAt at the last success and sets the error; a later success clears it.
 	const status: IntegrationStatus =
-		target.lastScrapeError !== null
-			? "failing"
-			: target.lastScrapeAt === null
-				? "pending"
-				: now - target.lastScrapeAt > staleAfterMs
-					? "stale"
-					: "healthy"
+		target.enabled === false
+			? "paused"
+			: target.lastScrapeError !== null
+				? "failing"
+				: target.lastScrapeAt === null
+					? "pending"
+					: now - target.lastScrapeAt > staleAfterMs
+						? "stale"
+						: "healthy"
 	return {
 		kind,
 		name: target.name,
 		status,
 		lastSuccessAt: target.lastScrapeAt,
 		lastError: target.lastScrapeError,
-		note: target.serviceName
-			? `${redactUrlSecrets(target.url)} → service ${target.serviceName}`
-			: redactUrlSecrets(target.url),
+		note:
+			target.enabled === false
+				? "Scraping is turned off"
+				: target.serviceName
+					? `${redactUrlSecrets(target.url)} → service ${target.serviceName}`
+					: redactUrlSecrets(target.url),
 	}
 }
 
@@ -497,7 +515,8 @@ const prometheus = (inputs: IntegrationInventoryInputs, now: number): Integratio
 
 const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const hazel = oauthFor(inputs, "hazel")
-	if (!hazel && inputs.chatWorkspaces.length === 0) return null
+	const linear = oauthFor(inputs, "linear")
+	if (!hazel && !linear && inputs.chatWorkspaces.length === 0) return null
 	const workspaces = inputs.chatWorkspaces.map((w): IntegrationResource => ({
 		kind: "workspace",
 		name: w.name,
@@ -518,14 +537,27 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 				},
 			]
 		: []
+	const linearResource: ReadonlyArray<IntegrationResource> = linear
+		? [
+				{
+					kind: "workspace",
+					name: linear.externalAccountName ?? "Linear",
+					status: linear.revokedAt === null ? "healthy" : "disconnected",
+					lastSuccessAt: null,
+					lastError: null,
+					note: "linear",
+				},
+			]
+		: []
 	const connectedAt = [
 		...inputs.chatWorkspaces.map((w) => w.createdAt),
 		...(hazel ? [hazel.createdAt] : []),
+		...(linear ? [linear.createdAt] : []),
 	]
 	return entry("chat", now, {
 		account: null,
 		connectedAt: Math.min(...connectedAt),
-		resources: [...workspaces, ...hazelResource],
+		resources: [...workspaces, ...hazelResource, ...linearResource],
 	})
 }
 
@@ -550,3 +582,21 @@ export const buildIntegrationInventory = (
 		})),
 	}
 }
+
+/**
+ * A provider reads as the worst of its sources and its own resources, so `list_integrations`
+ * never reads better than Sources.
+ */
+export const withSourceHealth = (
+	inventory: IntegrationInventory,
+	sources: ReadonlyArray<{ readonly platform: string; readonly health: SourceHealthResult }>,
+): IntegrationInventory => ({
+	...inventory,
+	integrations: inventory.integrations.map((entry) => {
+		const own = sources.filter((source) => source.platform === entry.provider)
+		if (own.length === 0) return entry
+		const status = worstStatus([entry.status, ...own.map((source) => source.health.status)])
+		const problem = own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
+		return { ...entry, status, problem: status === "healthy" ? null : problem }
+	}),
+})

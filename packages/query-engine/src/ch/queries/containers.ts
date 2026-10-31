@@ -300,6 +300,7 @@ export interface ContainerDetailSummaryOutput {
 	readonly composeProject: string
 	readonly composeService: string
 	readonly runtime: string
+	readonly sourceId: string
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
@@ -318,6 +319,7 @@ export function containerDetailSummaryQuery(opts: ContainerDetailSummaryOpts) {
 			composeProject: CH.any_($.ResourceAttributes.get("compose.project")),
 			composeService: CH.any_($.ResourceAttributes.get("compose.service")),
 			runtime: CH.any_(containerRuntimeExpr($.ResourceAttributes)),
+			sourceId: CH.argMax($.ResourceAttributes.get("maple_source_id"), $.TimeUnix),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
 			cpuPct: avgIfOrZero($.Value, $.MetricName.eq("container.cpu.utilization")).div(100),

@@ -6,10 +6,17 @@ import { Effect, Option, Queue, Schema, Stream } from "effect"
 /** `COLLECTION_LOAD_TIMEOUT_MS`: how long a collection may sit loading with nothing to show. */
 export const COLLECTION_LOAD_TIMEOUT_MS = 30_000
 
+/** How long a page waits on a collection it only enriches with before reading it as empty. */
+export const ENRICHMENT_LOAD_TIMEOUT_MS = 3_000
+
 const decodeDetail = Schema.decodeUnknownOption(Schema.Struct({ collectionId: Schema.String }))
 
 /** Emits once when the stream gave up (`collection:sync-failed`) or the timeout passed. */
-export const collectionLoadFailed = <M>(collectionId: string, message: () => M): Stream.Stream<M> =>
+export const collectionLoadFailed = <M>(
+	collectionId: string,
+	message: () => M,
+	timeoutMs: number = COLLECTION_LOAD_TIMEOUT_MS,
+): Stream.Stream<M> =>
 	Stream.callback<M>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
@@ -19,7 +26,7 @@ export const collectionLoadFailed = <M>(collectionId: string, message: () => M):
 					if (Option.exists(detail, (value) => value.collectionId === collectionId)) fail()
 				}
 				window.addEventListener("collection:sync-failed", onSyncFailed)
-				const timeout = window.setTimeout(fail, COLLECTION_LOAD_TIMEOUT_MS)
+				const timeout = window.setTimeout(fail, timeoutMs)
 				return { onSyncFailed, timeout }
 			}),
 			({ onSyncFailed, timeout }) =>

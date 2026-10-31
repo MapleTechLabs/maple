@@ -170,7 +170,7 @@ export interface InvestigationServiceApi {
 }
 
 export class InvestigationService extends Context.Service<InvestigationService, InvestigationServiceApi>()(
-	"@maple/api/services/InvestigationService",
+	"@maple/backend/services/InvestigationService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -732,6 +732,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								inputTokens,
 								outputTokens,
 								nowMs,
+								...(request.turnId === undefined ? undefined : { turnId: request.turnId }),
 							})
 				yield* write.pipe(
 					Effect.mapError(makePersistenceError),

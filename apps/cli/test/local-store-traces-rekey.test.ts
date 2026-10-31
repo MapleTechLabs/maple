@@ -1,20 +1,14 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { existsSync } from "node:fs"
+import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Schema } from "effect"
 import { Chdb, configureRawTelemetryRetentionDays } from "../src/server/chdb"
 import { decodeJsonEachRow } from "../src/server/chdb-rows"
-import type { MigrationDbOptions, MigrationModuleContext } from "../src/server/local-store-migration-module"
-import { localStoreMigrations } from "../src/server/local-store-migrations"
+import type { MigrationModuleContext } from "../src/server/local-store-migration-module"
 import { localSchemaSnapshot } from "../src/server/schema-identity"
-
-// Needs a real libchdb; skipped where none is installed.
-const libchdbAvailable =
-	(process.env.MAPLE_LIBCHDB !== undefined && existsSync(process.env.MAPLE_LIBCHDB)) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
+import { describeWithChdb } from "./libchdb-test-support"
+import { migrationStep, openStore } from "./local-store-step-test-support"
 
 const DAY_MS = 86_400_000
 const RETENTION_DAYS = 120
@@ -59,27 +53,9 @@ const tracesTable = (db: Chdb) =>
 		),
 	)[0]
 
-const open = async <A>(
-	dataDir: string,
-	fn: (db: Chdb) => A | Promise<A>,
-	options: MigrationDbOptions = {},
-) => {
-	const db = Chdb.open({
-		dataDir,
-		schemaSql: options.schemaSql ?? "",
-		bootstrapSchema: options.bootstrapSchema ?? false,
-	})
-	try {
-		return await fn(db)
-	} finally {
-		db.close()
-	}
-}
-
-describe.skipIf(!libchdbAvailable)("v33 -> v34 traces re-sort", () => {
-	const [migration] = localStoreMigrations.filter(
-		(candidate) => candidate.id === "local-0033-to-0034-traces-trace-key",
-	)
+describeWithChdb("v33 -> v34 traces re-sort", () => {
+	const STEP_ID = "local-0033-to-0034-traces-trace-key"
+	let migration: ReturnType<typeof migrationStep>["migration"]
 	let root = ""
 	let sourceDataDir = ""
 	let targetDataDir = ""
@@ -103,26 +79,7 @@ describe.skipIf(!libchdbAvailable)("v33 -> v34 traces re-sort", () => {
 			`INSERT INTO traces (${SPAN_COLUMNS}) VALUES ${ages.map((age, n) => span(nowMs - age * DAY_MS, n)).join(", ")}`,
 		)
 		db.close()
-		context = {
-			dataDir: sourceDataDir,
-			sourceDataDir,
-			targetDataDir,
-			source: migration!.from,
-			target: migration!.to,
-			cutoffAt: new Date(nowMs).toISOString(),
-			step: {
-				id: migration!.id,
-				moduleVersion: 1,
-				from: migration!.from,
-				to: migration!.to,
-				status: "running",
-			},
-			openSource: (fn, options) => open(sourceDataDir, fn, options),
-			openTarget: (fn, options) => open(targetDataDir, fn, options),
-			closeStores: async () => undefined,
-			ensureCapacity: async () => undefined,
-			saveStep: async () => undefined,
-		}
+		;({ migration, context } = migrationStep(STEP_ID, sourceDataDir, targetDataDir, nowMs))
 	})
 
 	afterAll(async () => {
@@ -130,19 +87,22 @@ describe.skipIf(!libchdbAvailable)("v33 -> v34 traces re-sort", () => {
 	})
 
 	test("re-sorts traces without re-firing a view, and a re-run converges", async () => {
-		const before = await open(sourceDataDir, snapshot)
+		const before = await openStore(sourceDataDir, snapshot)
 		expect(before?.traces).toBe("6")
 
-		const state = await migration!.preflight(context)
-		await migration!.prepareTarget(context, state)
-		const progress = await migration!.apply(context, state, undefined)
-		await migration!.verify(context, state, progress)
+		const state = await migration.preflight(context)
+		await migration.prepareTarget(context, state)
+		const progress = await migration.apply(context, state, undefined)
+		await migration.verify(context, state, progress)
 		// A crash after the swap re-runs apply on the already re-sorted target.
-		const resumed = await migration!.apply(context, state, progress)
-		await migration!.verify(context, state, resumed)
+		const resumed = await migration.apply(context, state, progress)
+		await migration.verify(context, state, resumed)
 		expect(resumed).toEqual({ rekeyedTraces: "6" })
 
-		const after = await open(targetDataDir, (db) => ({ snapshot: snapshot(db), table: tracesTable(db) }))
+		const after = await openStore(targetDataDir, (db) => ({
+			snapshot: snapshot(db),
+			table: tracesTable(db),
+		}))
 		expect(after.snapshot).toEqual(before)
 		expect(after.table?.sortingKey).toBe("OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId")
 		expect(after.table?.indexes.split(",")).toContain("idx_span_name")
@@ -150,7 +110,7 @@ describe.skipIf(!libchdbAvailable)("v33 -> v34 traces re-sort", () => {
 	})
 
 	test("views on traces still fire for spans ingested after the swap", async () => {
-		const [before, after] = await open(
+		const [before, after] = await openStore(
 			targetDataDir,
 			(db) => {
 				const prior = snapshot(db)

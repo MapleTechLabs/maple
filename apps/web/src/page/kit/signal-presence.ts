@@ -1,6 +1,9 @@
-import { DateTime, Effect, Option, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
+import { IdleTtl } from "../../data/idle-ttl"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { readThrough } from "../../data/read-cache"
+import { requestKey } from "../../data/request-key"
 import { MapleApiV2Client } from "../../platform/api-clients"
 
 // Signal presence over `telemetrySignalsAtom`.
@@ -27,8 +30,8 @@ export type SignalPresenceData = AsyncData.AsyncData<typeof SignalPresences.Type
 
 const UNKNOWN: SignalPresence = { status: "unknown", lastSeenMs: null }
 
-/** `GET /v2/telemetry_signals`, by signal kind; a page's Command maps the Result into its Message. */
-export const loadSignalPresences = Effect.gen(function* () {
+/** `GET /v2/telemetry_signals`, by signal kind. */
+const fetchSignalPresences = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	const response = yield* client.telemetrySignals.retrieve()
 	return Object.fromEntries(
@@ -47,11 +50,36 @@ export const loadSignalPresences = Effect.gen(function* () {
 					},
 		]),
 	)
-}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+})
 
-/** What the empty state knows: `unknown` until the presence has loaded. */
-export const presenceOf = (data: SignalPresenceData, signal: TelemetrySignalKind): SignalPresence =>
+/** Presence is reused within one bucket only: reads keep an idle TTL alive, so "absent" must expire anyway. */
+const PRESENCE_BUCKET_MS = 30_000
+
+/**
+ * The org's presence through `ReadCache`: pages request it at init, so navigating between them
+ * within a 30 s bucket reuses one read. A page's Command maps the Result into its Message.
+ */
+export const loadSignalPresences = (orgId: string) =>
+	Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
+		readThrough(
+			{
+				key: requestKey(orgId, "telemetrySignals", {
+					bucket: Math.floor(nowMs / PRESENCE_BUCKET_MS),
+				}),
+				idleTtlMs: IdleTtl.signalPresence,
+				schema: SignalPresences,
+			},
+			fetchSignalPresences,
+		),
+	).pipe(Effect.mapError(toLoadFailure), Effect.result)
+
+/** Presence as an empty state reads it: `loading` until the read settles, `unknown` if it failed. */
+export type PresenceState = SignalPresence | Readonly<{ status: "loading"; lastSeenMs: null }>
+
+const LOADING: PresenceState = { status: "loading", lastSeenMs: null }
+
+export const presenceOf = (data: SignalPresenceData, signal: TelemetrySignalKind): PresenceState =>
 	Option.match(AsyncData.getData(data), {
-		onNone: () => UNKNOWN,
+		onNone: () => (AsyncData.isFailure(data) ? UNKNOWN : LOADING),
 		onSome: (presences) => presences[signal] ?? UNKNOWN,
 	})

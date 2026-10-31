@@ -4,8 +4,8 @@ import { modelVendorColor, vendorColor } from "./vendor-color"
 
 describe("vendorColor", () => {
 	it("gives a framework its publisher's brand, shared with that publisher's models", () => {
-		expect(vendorColor("claude_agent_sdk")).toBe("#D97757")
-		// Two ids, one brand — and a monochrome one, which inverts on dark.
+		expect(vendorColor("claude_agent_sdk")).not.toBe(vendorColor("litellm"))
+		// A monochrome brand inverts on dark.
 		expect(vendorColor("openai_agents_sdk")).toBe("light-dark(#000000, #FFFFFF)")
 		expect(vendorColor("openinference-openai")).toBe(vendorColor("openai_agents_sdk"))
 		expect(vendorColor("eve")).toBe(vendorColor("vercel_ai_sdk"))

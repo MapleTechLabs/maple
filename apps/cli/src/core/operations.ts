@@ -48,8 +48,19 @@ import {
 } from "@maple/query-engine/execution"
 import { HttpClient } from "effect/http"
 import { verboseLogging } from "../lib/debug"
-import { CliUsageError, LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
-import { isLocalUnreachable, isNotMapleServer, readOnlyRejection } from "../lib/failure"
+import {
+	CliUsageError,
+	LocalServerAccessDeniedError,
+	LocalServerUnreachableError,
+	ReadOnlyQueryError,
+} from "../lib/errors"
+import {
+	isLocalUnreachable,
+	isNotMapleServer,
+	type LocalAccessDenial,
+	localAccessDenial,
+	readOnlyRejection,
+} from "../lib/failure"
 import type { ErrorRow, MetricSeriesOutput, ServiceMapResult, TopOperationRow } from "../lib/views"
 import { LOCAL_ORG_ID, localDriverError } from "./executor"
 import { Mode, type ModeError } from "./mode"
@@ -98,23 +109,49 @@ const backend: Effect.Effect<Backend, ModeError, Mode | HttpClient.HttpClient> =
 const quietUnlessVerbose = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
 	verboseLogging() ? effect : Effect.provideService(effect, References.MinimumLogLevel, "None")
 
-/** A local failure that is really "no Maple server at this URL", named with the URL. */
+/** The fix for a refused local query: Maple's access token, or the proxy's credentials. */
+const accessDenied = (baseUrl: string, denial: LocalAccessDenial): LocalServerAccessDeniedError => {
+	if (denial.by === "maple") {
+		return new LocalServerAccessDeniedError({
+			url: baseUrl,
+			status: denial.status,
+			message: `the Maple server at ${baseUrl} requires its access token`,
+			hint: "set MAPLE_LOCAL_ACCESS_TOKEN to the token the server was started with",
+		})
+	}
+	const origin = new URL(baseUrl).origin
+	return new LocalServerAccessDeniedError({
+		url: baseUrl,
+		status: denial.status,
+		message:
+			denial.status < 400
+				? `${origin} redirected the request (HTTP ${denial.status}) before it reached Maple`
+				: `${origin} refused the request before it reached Maple (HTTP ${denial.status})`,
+		hint: `if Cloudflare Access protects it, run \`cloudflared access login ${origin}\`; otherwise set MAPLE_LOCAL_HEADERS to the credentials its proxy expects`,
+	})
+}
+
+/** A local failure that is really "no Maple server at this URL" or "not let in", named with the URL. */
 const localServerFailure =
 	(baseUrl: string) =>
-	<E>(error: E): E | LocalServerUnreachableError =>
-		isLocalUnreachable(error)
+	<E>(error: E): E | LocalServerUnreachableError | LocalServerAccessDeniedError => {
+		if (isLocalUnreachable(error)) {
+			return new LocalServerUnreachableError({
+				url: baseUrl,
+				message: `could not reach the Maple server at ${baseUrl}`,
+				hint: "start it with `maple start`, or set MAPLE_LOCAL_URL to the address it printed",
+			})
+		}
+		const denial = localAccessDenial(error, baseUrl)
+		if (denial !== undefined) return accessDenied(baseUrl, denial)
+		return isNotMapleServer(error)
 			? new LocalServerUnreachableError({
 					url: baseUrl,
-					message: `could not reach the Maple server at ${baseUrl}`,
-					hint: "start it with `maple start`, or set MAPLE_LOCAL_URL to the address it printed",
+					message: `${baseUrl} answered, but it is not a Maple server`,
+					hint: "set MAPLE_LOCAL_URL to the address `maple start` printed",
 				})
-			: isNotMapleServer(error)
-				? new LocalServerUnreachableError({
-						url: baseUrl,
-						message: `${baseUrl} answered, but it is not a Maple server`,
-						hint: "set MAPLE_LOCAL_URL to the address `maple start` printed",
-					})
-				: error
+			: error
+	}
 
 /** Run `remote` against the workspace when one is configured, else `local`. */
 const dispatch = <A, E, R, E2, R2>(
@@ -122,10 +159,18 @@ const dispatch = <A, E, R, E2, R2>(
 	remote: (clients: RemoteClients) => Effect.Effect<A, E2, R2>,
 	pipeName: string,
 ) =>
-	Effect.flatMap(backend, (b): Effect.Effect<A, E | LocalServerUnreachableError | RemoteError, R | R2> =>
-		b._tag === "local"
-			? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
-			: Effect.mapError(remote(b), toWarehouseError(pipeName)),
+	Effect.flatMap(
+		backend,
+		(
+			b,
+		): Effect.Effect<
+			A,
+			E | LocalServerUnreachableError | LocalServerAccessDeniedError | RemoteError,
+			R | R2
+		> =>
+			b._tag === "local"
+				? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
+				: Effect.mapError(remote(b), toWarehouseError(pipeName)),
 	)
 
 /** The local server's URL when commands run against it, for links into its UI. */

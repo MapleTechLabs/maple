@@ -152,8 +152,7 @@ export const issuesOf = (model: Model): ReadonlyArray<ErrorIssueDocument> =>
 		viewOf(model.search),
 	)
 
-/** Issues joined with the warehouse volume, the spark series and live investigations, sorted. */
-export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> =>
+const buildSignals = (model: Model): ReadonlyArray<ErrorSignal> =>
 	sortSignals(
 		buildErrorSignals({
 			issues: issuesOf(model),
@@ -164,15 +163,45 @@ export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> =>
 		sortOf(model.search),
 	)
 
+// The last join and the model fields it read. A hover or a menu changes none of them, so the list
+// keeps the same signal objects and its memoized rows stay cached.
+const lastSignals: Array<{
+	readonly inputs: ReadonlyArray<unknown>
+	readonly signals: ReadonlyArray<ErrorSignal>
+}> = []
+
+/** Issues joined with the warehouse volume, the spark series and live investigations, sorted. */
+export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> => {
+	const inputs = [model.pages, model.volume.data, model.spark.data, model.investigations.data, model.search]
+	const previous = lastSignals[0]
+	if (previous !== undefined && previous.inputs.every((input, index) => input === inputs[index]))
+		return previous.signals
+	const signals = buildSignals(model)
+	lastSignals[0] = { inputs, signals }
+	return signals
+}
+
 export type ListStatus = "loading" | "failed" | "ready"
 
+/** The volume sort's ranking failed: no list page can be asked until it is retried. */
+export const rankingFailed = (model: Model): boolean =>
+	sortOf(model.search) === "volume" &&
+	(AsyncData.isFailure(model.ranking.data) || AsyncData.isStale(model.ranking.data))
+
 export const listStatusOf = (model: Model): ListStatus => {
+	if (rankingFailed(model)) return "failed"
 	const first = model.pages[0]
 	if (first === undefined) return "loading"
 	const data = first.page.data
 	if (AsyncData.isFailure(data) || AsyncData.isStale(data)) return "failed"
 	return AsyncData.hasData(data) ? "ready" : "loading"
 }
+
+/** What a `failed` list failed with: the ranking's error, else the first page's. */
+export const listFailureOf = (model: Model) =>
+	rankingFailed(model)
+		? AsyncData.getError(model.ranking.data)
+		: Option.flatMap(Option.fromNullishOr(model.pages[0]), (first) => AsyncData.getError(first.page.data))
 
 export type PagingState = "more" | "loading" | "failed" | "end"
 

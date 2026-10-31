@@ -9,6 +9,7 @@
 
 import { Effect, Predicate, Schema } from "effect"
 import { MetricName, ServiceName, SpanId, TraceId } from "@maple/domain"
+import { MAX_LIST_RANGE_SECONDS } from "@maple/query-engine"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
 import type {
 	InspectTraceOutput,
@@ -223,6 +224,32 @@ const buildSpanTree = (
 
 const TRACE_NOT_FOUND_TAG = "@maple/http/v2/TraceNotFoundError"
 
+const SEARCH_CAP_MS = MAX_LIST_RANGE_SECONDS * 1000
+
+/**
+ * The log search windows covering a trace's own bounds, oldest first. The trace
+ * reports its bounds truncated to the millisecond while logs keep nanoseconds,
+ * so the end is pushed out 1 ms; that also gives a trace whose spans share one
+ * instant (workerd only advances the clock across I/O) the non-empty window the
+ * logs search requires. A trace longer than the search cap is split into
+ * windows that share their boundary instant, so nothing falls between them.
+ */
+export const traceLogWindows = (
+	start: string,
+	end: string,
+): ReadonlyArray<{ readonly start_time: string; readonly end_time: string }> => {
+	const endMs = Date.parse(end) + 1
+	const from = (startMs: number): ReadonlyArray<{ start_time: string; end_time: string }> => {
+		const windowEndMs = Math.min(startMs + SEARCH_CAP_MS, endMs)
+		const window = {
+			start_time: new Date(startMs).toISOString(),
+			end_time: new Date(windowEndMs).toISOString(),
+		}
+		return windowEndMs >= endMs ? [window] : [window, ...from(windowEndMs)]
+	}
+	return from(Date.parse(start))
+}
+
 export const inspectTrace = (
 	client: MapleV2Client,
 	p: { traceId: string },
@@ -241,15 +268,22 @@ export const inspectTrace = (
 		)
 		// v2 retrieves a trace by id alone, so `--since/--start/--end` do not
 		// apply here. The trace reports its own bounds, which are exactly the
-		// window its logs fall in.
-		const logs = yield* client.logs.search({
-			payload: {
-				start_time: trace.start_time,
-				end_time: trace.end_time,
-				limit: V2_LIST_MAX,
-				filters: { trace_id: id },
-			},
-		})
+		// window its logs fall in. Logs come back newest first, so searching the
+		// windows newest first and keeping the first V2_LIST_MAX matches what one
+		// uncapped search would return. A log on a shared boundary comes back from
+		// both windows, hence the dedupe by id.
+		const pages = yield* Effect.forEach(
+			[...traceLogWindows(trace.start_time, trace.end_time)].reverse(),
+			(window) =>
+				client.logs.search({ payload: { ...window, limit: V2_LIST_MAX, filters: { trace_id: id } } }),
+			{ concurrency: 4 },
+		)
+		const logs = {
+			data: [...new Map(pages.flatMap((page) => page.data).map((l) => [l.id, l])).values()].slice(
+				0,
+				V2_LIST_MAX,
+			),
+		}
 		return {
 			traceId: trace.id,
 			serviceCount: trace.service_count,

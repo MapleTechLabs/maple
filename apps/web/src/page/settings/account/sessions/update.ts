@@ -32,7 +32,7 @@ const LoadSessions = Command.define("LoadClerkSessions", {
 	messages: [Message.CompletedLoad],
 	execute: Effect.gen(function* () {
 		const currentSessionId = yield* currentClerkSessionId
-		const result = yield* withUser("Failed to load your sessions", (user) => user.getSessions()).pipe(
+		const result = yield* withUser("Couldn't load your sessions", (user) => user.getSessions()).pipe(
 			Effect.map((sessions) => sessions.map(toRow)),
 			Effect.mapError((error) => error.message),
 			Effect.result,
@@ -46,13 +46,13 @@ const RevokeSession = Command.define("RevokeClerkSession", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedRevoke],
 	execute: ({ id }) =>
-		withUserReverified("Failed to sign out that session", (user) =>
+		withUserReverified("Couldn't sign out that session", (user) =>
 			user.getSessions().then((sessions) =>
 				Option.match(
 					Array.findFirst(sessions, (session) => session.id === id),
 					{
 						onNone: () =>
-							Promise.reject(new ClerkActionError({ message: "Failed to sign out that session", cause: undefined })),
+							Promise.reject(new ClerkActionError({ message: "Couldn't sign out that session", cause: undefined })),
 						onSome: (session) => session.revoke(),
 					},
 				),

@@ -42,13 +42,28 @@ describe("intent preload", () => {
 	test("an open instance's new window releases the keys no slot stands on any more", () => {
 		const nextWindow = preloadRoute(AppRoute.Trace({ traceId: "a".repeat(32), search: {} }), context, 0)
 		const nextKey = Option.getOrThrow(Preload.keyOfCommand(nextWindow[0]!))
-		const entered = Preload.held(Preload.init(), holder, preloaded(), [keyOf()])
-		const moved = Preload.held(entered.model, holder, nextWindow, Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }))
+		const entered = Preload.held(Preload.init(), holder, preloaded(), () => [keyOf()])
+		const moved = Preload.held(entered.model, holder, nextWindow, () => Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }))
 		expect(moved.released).toEqual([keyOf()])
 		expect(moved.model.heldKeys).toEqual([nextKey])
-		const stillShown = Preload.held(entered.model, holder, nextWindow, [keyOf(), nextKey])
+		const stillShown = Preload.held(entered.model, holder, nextWindow, () => [keyOf(), nextKey])
 		expect(stillShown.released).toEqual([])
-		expect(Preload.held(entered.model, holder, [], []).released).toEqual([])
+		expect(Preload.held(entered.model, holder, [], () => []).released).toEqual([])
+	})
+
+	test("a slot on a superseding re-read stands on the plain request key the cache stores", () => {
+		const reread = `${keyOf()}\u00012`
+		expect(Preload.liveKeysOf({ slot: { key: reread, data: { _tag: "Refreshing" } } })).toEqual([keyOf()])
+	})
+
+	test("an instance asking for nothing new does not walk its Model", () => {
+		const entered = Preload.held(Preload.init(), holder, preloaded())
+		const walked: Array<true> = []
+		Preload.held(entered.model, holder, preloaded(), () => {
+			walked.push(true)
+			return []
+		})
+		expect(walked).toEqual([])
 	})
 
 	test("another org's instance on the same route gets its own view boundary", () => {

@@ -20,14 +20,14 @@ Maple does not run hosted probes. The checks run in a Collector you operate.
 ## Alert on real traffic
 
 1. Open **Alerts**, click **New rule** and pick the **Throughput drop** template.
-2. Under **Scope**, select the service. The template sets **Min samples** to 0, so a window with no requests counts as zero and fires.
+2. Under **What to watch**, pick the service in **Services**. The template sets **Minimum samples** to 0, so a window with no requests counts as zero and fires.
 3. Set **Threshold** below the service's quietest five minutes on a normal day.
-4. Pick a range above the chart to replay the rule. The shaded periods are where it would have held an incident open.
-5. Attach a destination and click **Create rule**.
+4. Under **When to alert**, pick a range above the chart to replay the rule. The shaded periods are where it would have held an incident open.
+5. Attach a destination under **Who gets notified** and click **Create rule**.
 
 <figure class="shot">
   <img src="/screenshots/docs/uptime-monitoring-01-throughput-rule.webp" alt="The alert rule form with the Throughput signal selected, condition below 100, the checkout service in scope, and Evaluation timing opened to show a 5 minute window and Min samples 0." loading="lazy" />
-  <figcaption>A Throughput drop rule scoped to one service. Evaluation timing is opened to show Min samples at 0.</figcaption>
+  <figcaption>A Throughput drop rule scoped to one service, with Minimum samples at 0.</figcaption>
 </figure>
 
 <figure class="shot">
@@ -94,12 +94,12 @@ Notes on the config:
 
 ## What the receiver reports
 
-| Metric                         | Value                                                                                                                                            |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Metric                         | Value                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `httpcheck.status`             | One data point per status class (`1xx` to `5xx`): 1 for the class the response matched, 0 for the rest. A failed connection reports 0 for every class. |
-| `httpcheck.error`              | 1 when the request failed before a response arrived, with the reason in `error.message`.                                                         |
-| `httpcheck.duration`           | Total request time in milliseconds.                                                                                                              |
-| `httpcheck.tls.cert_remaining` | Seconds until the certificate expires. Off unless enabled, as in the config above.                                                               |
+| `httpcheck.error`              | 1 when the request failed before a response arrived, with the reason in `error.message`.                                                               |
+| `httpcheck.duration`           | Total request time in milliseconds.                                                                                                                    |
+| `httpcheck.tls.cert_remaining` | Seconds until the certificate expires. Off unless enabled, as in the config above.                                                                     |
 
 Every data point carries the checked address in `http.url`.
 
@@ -108,10 +108,10 @@ Every data point carries the checked address in `http.url`.
 1. Open **Metrics** and open `httpcheck.status`.
 2. Set **Aggregate** to `max`, **Where** to `attr.http.status_class = "2xx"`, and **Group by** to `attr.http.url`. Keep the `attr.` prefix on the filter, or it is dropped when the chart becomes a rule.
 3. Click **Create alert**.
-4. Set **Condition** to `<` and **Threshold** to `1`.
-5. Open **Evaluation timing**. Set **Window (min)** to 2 and **Min samples** to 1. A two-minute window holds two data points per URL, so the default of 50 would skip every check.
+4. Set **Alert when the value** to **is below** and **Threshold** to `1`.
+5. Under **How it is checked**, set **Window** to 2 and **Minimum samples** to 1. A two-minute window holds two data points per URL, so the default of 50 would skip every check.
 6. Leave **Breaches to fire** at 2.
-7. Attach a destination and click **Create rule**.
+7. Attach a destination under **Who gets notified** and click **Create rule**.
 
 The rule reads: no check of this URL returned a 2xx in the last two minutes. It opens one incident per URL, about three minutes into an outage, and one failed check on its own does not fire it.
 
@@ -122,7 +122,7 @@ The rule reads: no check of this URL returned a 2xx in the last two minutes. It 
 
 <figure class="shot">
   <img src="/screenshots/docs/uptime-monitoring-04-httpcheck-rule.webp" alt="The Signal and threshold section of the alert rule form: a Metrics query on httpcheck.status filtered to the 2xx status class and grouped by attr.http.url, condition below 1, window 2 minutes, breaches to fire 2, Min samples 1." loading="lazy" />
-  <figcaption>Steps 4 to 6: the condition, the window and Min samples.</figcaption>
+  <figcaption>Steps 4 to 6: the condition, the window and Minimum samples.</figcaption>
 </figure>
 
 <figure class="shot">
@@ -134,8 +134,8 @@ The rule reads: no check of this URL returned a 2xx in the last two minutes. It 
 
 A grouped rule skips a window with no data, so a stopped Collector would go unnoticed. Create a second rule on `httpcheck.status` with no group-by:
 
-- **Aggregate** `count`, **Condition** `<`, **Threshold** `1`
-- **Min samples** 1
+- **Aggregate** `count`, **Alert when the value** **is below**, **Threshold** `1`
+- **Minimum samples** 1
 - **Alert when there is no data** switched on
 
 ## Alert before a certificate expires
@@ -143,8 +143,8 @@ A grouped rule skips a window with no data, so a stopped Collector would go unno
 Create a rule on `httpcheck.tls.cert_remaining`:
 
 - **Aggregate** `min`, **Group by** `attr.http.url`
-- **Condition** `<`, **Threshold** `1209600` (14 days in seconds)
-- **Min samples** 1
+- **Alert when the value** **is below**, **Threshold** `1209600` (14 days in seconds)
+- **Minimum samples** 1
 
 ## Verify
 
@@ -161,7 +161,7 @@ For probes from several regions, a public status page, or an availability report
 
 - **No `httpcheck` metrics appear.** Check the Collector's output for exporter errors. A `401` means the ingest key is wrong or was rotated.
 - **The alert form warns "Unsupported metrics filter ignored".** The filter key is missing the `attr.` prefix. Use `attr.http.status_class`.
-- **Every check of the rule is skipped.** The window holds fewer data points than **Min samples**. Set it to 1.
+- **Every check of the rule is skipped.** The window holds fewer data points than **Minimum samples**. Set it to 1.
 - **The rule fires on a single failed check.** **Aggregate** is `min`. With `max`, every check in the window has to fail.
 
 ## Next steps

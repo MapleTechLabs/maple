@@ -67,7 +67,7 @@ export const telegramTransport: HttpTransport<Config> = {
 	peerService: "telegram",
 	providerLabel: "Telegram",
 	render: (input: RenderInput<Config>) => {
-		const { context, templated, linkUrl, chatUrl } = input
+		const { context, templated, linkUrl } = input
 		const text = templated
 			? buildTelegramTextFromTemplate(templated.title, templated.body, context)
 			: buildTelegramText(context)
@@ -86,18 +86,13 @@ export const telegramTransport: HttpTransport<Config> = {
 				parse_mode: "HTML",
 				// The chart as the message's link preview: Telegram renders it inline
 				// above the text, so it costs no second `sendPhoto` round-trip. With
-				// no chart there is nothing to preview and the links are buttons, so
-				// previews stay off rather than unfurling one of them at random.
+				// no chart there is nothing to preview and the link is a button, so
+				// previews stay off rather than unfurling it.
 				link_preview_options: context.chartUrl
 					? { url: context.chartUrl, show_above_text: true }
 					: { is_disabled: true },
 				reply_markup: {
-					inline_keyboard: [
-						[
-							{ text: "Open in Maple", url: linkUrl },
-							{ text: "✨ Ask Maple AI", url: chatUrl },
-						],
-					],
+					inline_keyboard: [[{ text: "Open in Maple", url: linkUrl }]],
 				},
 			}),
 		}

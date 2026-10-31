@@ -1,0 +1,40 @@
+---
+/** Falling pixel maple leaves behind a section. The parent is the pointer
+ * surface (wind follows the cursor over its copy too) and must be positioned. */
+interface Props {
+	/** Fraction of the width where most leaves start; the copy column sits left of it. */
+	spawnFrom?: number;
+}
+const { spawnFrom = 0.45 } = Astro.props;
+---
+
+<canvas class="maple-leaves" aria-hidden="true" data-maple-leaves data-spawn-from={spawnFrom}></canvas>
+
+<style>
+	.maple-leaves {
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		/* Leaves drifting behind the copy column stay ghosts. */
+		mask-image: linear-gradient(90deg, rgb(0 0 0 / 0.2) 0%, rgb(0 0 0 / 0.2) 40%, #000 62%);
+	}
+	@media (max-width: 767px) {
+		.maple-leaves {
+			mask-image: none;
+			opacity: 0.35;
+		}
+	}
+</style>
+
+<script>
+	import { mountMapleLeaves } from "../lib/maple-leaves";
+
+	for (const canvas of document.querySelectorAll<HTMLCanvasElement>("[data-maple-leaves]")) {
+		const host = canvas.parentElement;
+		if (!host) continue;
+		mountMapleLeaves(canvas, host, { spawnFrom: Number(canvas.dataset.spawnFrom ?? 0) });
+	}
+</script>

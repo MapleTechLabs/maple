@@ -32,7 +32,7 @@ export const RELEASE_HEALTH_DOT_CLASS = {
 export const PILL_CLASS = {
 	regressed: TONE_SOFT.crit,
 	watch: TONE_SOFT.warn,
-	rolling: "bg-primary/10 text-primary",
+	rolling: "bg-primary-a2 text-primary",
 	healthy: TONE_SOFT.ok,
 } as const satisfies Record<ReleaseHealth, string>
 

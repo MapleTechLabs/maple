@@ -19,7 +19,7 @@ const titleBar = (h: HtmlBuilder<Message>): Html =>
 						[h.Class("flex items-center gap-3")],
 						[
 							h.h1([h.Class("font-display text-lg font-semibold tracking-tight")], ["Service map"]),
-							h.span([h.Class("rounded border px-1.5 py-0.5 text-3xs text-muted-foreground")], ["Isometric lab"]),
+							h.span([h.Class("rounded-sm border px-1.5 py-0.5 text-3xs text-muted-foreground")], ["Isometric lab"]),
 						],
 					),
 					h.p([h.Class("mt-1 text-xs text-muted-foreground")], ["Every service a machine, every call a belt."]),

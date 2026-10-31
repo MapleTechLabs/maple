@@ -11,17 +11,21 @@ import {
 	RailwayConnections,
 	RailwayEnvironments,
 	ScrapeTargets,
+	Sources,
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
 import {
 	buildIntegrationInventory,
 	type IntegrationInventory,
+	withSourceHealth,
 } from "@maple/domain/integration-inventory"
 import type { OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { readHealthOverrides } from "@maple/backend/services/org/integration-sources"
+import { SOURCE_HEALTH_COLUMNS, sourceRowHealth } from "@maple/backend/services/org/source-rows"
 
 export class IntegrationInventoryUnavailableError extends Schema.TaggedError<IntegrationInventoryUnavailableError>()(
 	"@maple/backend/services/IntegrationInventoryUnavailableError",
@@ -59,7 +63,13 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				{
 					oauthConnections: db.run(
 						PG.from(OAuthConnections)
-							.select("provider", "externalAccountName", "externalUserEmail", "revokedAt", "createdAt")
+							.select(
+								"provider",
+								"externalAccountName",
+								"externalUserEmail",
+								"revokedAt",
+								"createdAt",
+							)
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 					vcsInstallations: db.run(
@@ -153,13 +163,23 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 								"scrapeIntervalSeconds",
 								"lastScrapeAt",
 								"lastScrapeError",
+								"enabled",
 							)
-							.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
+							// A user's switched-off target is still configured; a managed one waits on its connection.
+							.where(($) => [
+								$.orgId.eq(orgId),
+								PG.or($.enabled.eq(true), $.managedBy.isNull()),
+							]),
 					),
 					chatWorkspaces: db.run(
 						PG.from(ChatWorkspaces)
 							.select("connector", "name", "createdAt")
 							.where(($) => [$.orgId.eq(orgId)]),
+					),
+					sources: db.run(
+						PG.from(Sources)
+							.select(...SOURCE_HEALTH_COLUMNS)
+							.where(($) => [$.orgId.eq(orgId), $.kind.eq("integration")]),
 					),
 				},
 				{ concurrency: "unbounded" },
@@ -168,7 +188,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 
 		const now = yield* Clock.currentTimeMillis
 		const planetscale = rows.planetscaleConnections[0]
-		return buildIntegrationInventory(
+		const inventory = buildIntegrationInventory(
 			{
 				oauthConnections: rows.oauthConnections,
 				vcsInstallations: rows.vcsInstallations,
@@ -179,7 +199,8 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: rows.railwayEnvironments.map(({ servicesJson, ...env }) => ({
 					...env,
-					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({}))).length,
+					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({})))
+						.length,
 				})),
 				planetscaleConnection:
 					planetscale === undefined
@@ -199,6 +220,14 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 			},
 			now,
 		)
+		const overrides = yield* dbExecute((db) => readHealthOverrides(db, orgId, now))
+		return withSourceHealth(
+			inventory,
+			rows.sources.map((source) => ({
+				platform: source.platform,
+				health: sourceRowHealth(source, now, overrides.get(source.id)),
+			})),
+		)
 	})
 
 	return { list } satisfies IntegrationInventoryServiceApi
@@ -207,6 +236,6 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 export class IntegrationInventoryService extends Context.Service<
 	IntegrationInventoryService,
 	IntegrationInventoryServiceApi
->()("@maple/api/services/IntegrationInventoryService", { make }) {
+>()("@maple/backend/services/IntegrationInventoryService", { make }) {
 	static readonly layer = Layer.effect(this, this.make)
 }

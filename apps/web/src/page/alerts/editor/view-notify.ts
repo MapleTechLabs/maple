@@ -19,10 +19,16 @@ import type { Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
+/** What a tier's list and its Add destination menu read off the Model. */
+export type NotifyView = Pick<
+	Model,
+	"isAdmin" | "connectors" | "menus" | "chatConnect" | "chatConnectMenuId" | "brokenLogos"
+>
+
 /** `ProviderLogo size={30} bare`: a destination's mark, the monogram once its image failed. */
 export const logo = <M>(
 	h: HtmlBuilder<M>,
-	model: Model,
+	model: NotifyView,
 	type: AlertDestinationType,
 	chatConnector: string | undefined,
 	className: string,
@@ -41,7 +47,7 @@ export const logo = <M>(
 
 const logoError = (type: AlertDestinationType) => Message.FailedLoadProviderLogo({ type })
 
-const selectedRow = (h: H, model: Model, tier: Tier, destination: AlertDestinationDocument): Html => {
+const selectedRow = (h: H, model: NotifyView, tier: Tier, destination: AlertDestinationDocument): Html => {
 	const { primary, secondary } = destinationTarget(destination)
 	const paused =
 		destination.disabledAt !== null ? "Paused after repeated delivery failures" : destination.enabled ? null : "Paused"
@@ -70,7 +76,7 @@ const selectedRow = (h: H, model: Model, tier: Tier, destination: AlertDestinati
 /** The menu's entries: existing destinations, then new ones per linked workspace and provider. */
 const menuEntries = (
 	h: H,
-	model: Model,
+	model: NotifyView,
 	available: ReadonlyArray<AlertDestinationDocument>,
 	connectors: ReadonlyArray<V2ChatConnector>,
 	newTypes: ReadonlyArray<AlertDestinationType>,
@@ -145,7 +151,7 @@ const SEPARATOR: MenuView.MenuEntry = { _tag: "Separator" }
 /** The trigger row: "Add destination" and the marks of where alerts can go. */
 const addMenu = (
 	h: H,
-	model: Model,
+	model: NotifyView,
 	tier: Tier,
 	available: ReadonlyArray<AlertDestinationDocument>,
 ): Html => {
@@ -174,9 +180,9 @@ const addMenu = (
 								h.Type("button"),
 								h.Class(
 									cn(
-										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground",
+										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 										// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
-										menu.isOpen && "border-b border-border/60",
+										menu.isOpen && "border-b border-border-subtle",
 									),
 								),
 								h.DataAttribute("slot", "dropdown-menu-trigger"),
@@ -206,7 +212,7 @@ const addMenu = (
 /** `DestinationList`: one tier's destinations, plus the menu that adds an existing or new one. */
 export const destinationList = (
 	h: H,
-	model: Model,
+	model: NotifyView,
 	tier: Tier,
 	ids: ReadonlyArray<AlertDestinationId>,
 	destinations: ReadonlyArray<AlertDestinationDocument>,
@@ -215,7 +221,7 @@ export const destinationList = (
 	const available = destinations.filter((d) => !ids.includes(d.id))
 	const unresolved = ids.filter((id) => !destinations.some((d) => d.id === id))
 	const canAdd = available.length > 0 || model.isAdmin
-	return panel(h, { className: "mt-3 divide-y divide-border/60 border-border/60" }, [
+	return panel(h, { className: "mt-3 divide-y divide-border-subtle border-border-subtle" }, [
 		...selected.map((destination) => selectedRow(h, model, tier, destination)),
 		...unresolved.map((id) => unresolvedRow(h, tier, id)),
 		...(selected.length === 0 && unresolved.length === 0

@@ -8,7 +8,7 @@ export const KEYS_ATTRIBUTE = "waterfall-keys"
 export const SELECTED_ATTRIBUTE = "waterfall-selected"
 
 /** Estimated row height; measured rows replace it. */
-export const ROW_HEIGHT = 33
+export const ROW_HEIGHT = 28
 const OVERSCAN = 12
 const MAX_SCROLL_ATTEMPTS = 15
 

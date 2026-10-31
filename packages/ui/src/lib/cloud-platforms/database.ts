@@ -1,4 +1,5 @@
 import { DatabaseIcon } from "../../components/icons"
+import { dbSystemAccentClass } from "./accents"
 import type { CloudPlatformAdapter, CloudPlatformField } from "./types"
 import { pickAttr } from "./types"
 
@@ -45,28 +46,6 @@ const DB_SYSTEM_LABELS: Record<string, string> = {
 	presto: "Presto",
 	hive: "Hive",
 	spanner: "Spanner",
-} satisfies Record<string, string>
-
-/** Brand-ish accent per system; a small tint on the 12px icon, muted otherwise. */
-const DB_SYSTEM_ACCENTS: Record<string, string> = {
-	postgresql: "text-[#336791]",
-	mysql: "text-[#00758F]",
-	mariadb: "text-[#1F7A8C]",
-	clickhouse: "text-[#F5B400]",
-	redis: "text-[#DC382D]",
-	mongodb: "text-[#13AA52]",
-	elasticsearch: "text-[#00BFB3]",
-	opensearch: "text-[#00BFB3]",
-	cassandra: "text-[#1287B1]",
-	cockroachdb: "text-[#6933FF]",
-	sqlite: "text-[#0F80CC]",
-	oracle: "text-[#C74634]",
-	mssql: "text-[#CC2927]",
-	"microsoft.sql_server": "text-[#CC2927]",
-	dynamodb: "text-[#4053D6]",
-	"aws.dynamodb": "text-[#4053D6]",
-	redshift: "text-[#8C4FFF]",
-	snowflake: "text-[#29B5E8]",
 } satisfies Record<string, string>
 
 /** "microsoft.sql_server" → "SQL Server"; unknown → title-cased last segment. */
@@ -123,7 +102,7 @@ export const databaseAdapter: CloudPlatformAdapter = {
 			label: humanizeDbSystem(system),
 			kind: "Query",
 			Icon: DatabaseIcon,
-			accentClassName: DB_SYSTEM_ACCENTS[system.toLowerCase()] ?? "text-muted-foreground",
+			accentClassName: dbSystemAccentClass(system),
 			edge: null,
 			location: null,
 			outcome,

@@ -20,7 +20,7 @@ const summariseTurn = (chapter: Extract<TranscriptRow, { kind: "turn" }>): strin
 		...(chapter.toolNames.length > 0 ? [chapter.toolNames.join(", ")] : []),
 	].join(" · ")
 
-const rule = (h: H): Html => h.span([h.AriaHidden(true), h.Class("h-px grow bg-border/60")], [])
+const rule = (h: H): Html => h.span([h.AriaHidden(true), h.Class("h-px grow bg-border-subtle")], [])
 
 export const turnChapter = (
 	h: H,
@@ -57,11 +57,11 @@ export const turnChapter = (
 					...(isCollapsed ? [] : [rule(h)]),
 					isCollapsed
 						? icon(h, "ChevronRightIcon", {
-								size: 11,
+								size: 12,
 								className: "shrink-0 text-muted-foreground",
 							})
 						: icon(h, "ChevronDownIcon", {
-								size: 11,
+								size: 12,
 								className:
 									"shrink-0 text-muted-foreground opacity-0 group-hover/turn:opacity-100",
 							}),
@@ -115,11 +115,11 @@ export const emptyTurnRow = (h: H, chapter: Extract<TranscriptRow, { kind: "empt
 		h.div(
 			[h.Class("flex items-center gap-2.5 text-muted-foreground")],
 			[
-				icon(h, "DotsIcon", { size: 13, className: "shrink-0" }),
+				icon(h, "DotsIcon", { size: 14, className: "shrink-0" }),
 				h.span([h.Class("shrink-0 font-semibold text-xs")], [turnOrdinal(chapter.turn)]),
 				h.span(
 					[h.Class("min-w-0 truncate text-xs")],
-					["no agent activity — HTTP/DB work only, see Traces"],
+					["no agent activity (HTTP/DB work only, see Traces)"],
 				),
 				h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),
 			],

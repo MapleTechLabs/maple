@@ -20,7 +20,7 @@ import { orgOfKey, type RequestKey, requestKey } from "./request-key"
  * runs out, counted from its last read or its holder's release (a page leaving, a preload's hold).
  */
 
-/** `withRetention`'s LRU bound: the oldest entries go first past it. */
+/** `withRetention`'s bound: past it, idle-expired entries go first, then the least recently read. */
 export const READ_CACHE_MAX_ENTRIES = 400
 
 /** One read: its request key, its idle TTL, and the schema a cached value must pass. */
@@ -36,24 +36,41 @@ type Entry = Readonly<{
 	result: Deferred.Deferred<unknown, unknown>
 	idleTtlMs: number
 	touchedAtMs: number
+	isSettled: boolean
 }>
 
+/** Map order is recency: a touched entry is re-inserted at the end. */
 type Entries = ReadonlyMap<RequestKey, Entry>
 
-const capped = (entries: Map<RequestKey, Entry>): Map<RequestKey, Entry> =>
-	entries.size <= READ_CACHE_MAX_ENTRIES
-		? entries
-		: new Map([...entries].slice(entries.size - READ_CACHE_MAX_ENTRIES))
+const touched = (entries: Map<RequestKey, Entry>, key: RequestKey, entry: Entry): void => {
+	entries.delete(key)
+	entries.set(key, entry)
+}
+
+/** A settled entry idle past its TTL; an in-flight one never is. */
+const isExpired = (entry: Entry, nowMs: number) => entry.isSettled && nowMs - entry.touchedAtMs > entry.idleTtlMs
+
+/**
+ * Past the bound, only the excess goes: idle-expired entries first, then the least recently read,
+ * in-flight reads last. Expired entries below the bound stay: a page still holding one revives it on release.
+ */
+const capped = (entries: Map<RequestKey, Entry>, nowMs: number): Map<RequestKey, Entry> => {
+	const excess = entries.size - READ_CACHE_MAX_ENTRIES
+	if (excess <= 0) return entries
+	const rank = (entry: Entry) => (isExpired(entry, nowMs) ? 0 : entry.isSettled ? 1 : 2)
+	// `sort` is stable, so within a rank the least recently read comes first.
+	const evicted = new Set(
+		[...entries]
+			.sort(([, a], [, b]) => rank(a) - rank(b))
+			.slice(0, excess)
+			.map(([key]) => key),
+	)
+	return new Map([...entries].filter(([key]) => !evicted.has(key)))
+}
 
 /** Another org's entries are dropped on the first read for a new org (an org switch). */
 const ofOrg = (entries: Entries, org: string): Map<RequestKey, Entry> =>
 	new Map([...entries].filter(([key]) => orgOfKey(key) === org))
-
-const isLive = (entry: Entry, nowMs: number) =>
-	Effect.map(
-		Deferred.isDone(entry.result),
-		(isDone) => !isDone || nowMs - entry.touchedAtMs <= entry.idleTtlMs,
-	)
 
 type EntriesRef = SynchronizedRef.SynchronizedRef<Entries>
 type Answer = Deferred.Deferred<unknown, unknown>
@@ -65,7 +82,7 @@ const settle = (entries: EntriesRef, key: RequestKey, result: Answer, exit: Exit
 			const entry = current.get(key)
 			if (entry === undefined || entry.result !== result) return current
 			const next = new Map(current)
-			if (Exit.isSuccess(exit)) next.set(key, { ...entry, touchedAtMs: nowMs })
+			if (Exit.isSuccess(exit)) touched(next, key, { ...entry, touchedAtMs: nowMs, isSettled: true })
 			else next.delete(key)
 			return next
 		}),
@@ -88,8 +105,8 @@ const makeRead =
 				Effect.gen(function* () {
 					const next = ofOrg(current, orgOfKey(spec.key))
 					const existing = next.get(spec.key)
-					if (existing !== undefined && spec.refresh !== true && (yield* isLive(existing, nowMs))) {
-						next.set(spec.key, { ...existing, touchedAtMs: nowMs })
+					if (existing !== undefined && spec.refresh !== true && !isExpired(existing, nowMs)) {
+						touched(next, spec.key, { ...existing, touchedAtMs: nowMs })
 						return step<S["Type"], E>({ _tag: "Joiner", result: existing.result }, next)
 					}
 					const result = yield* Deferred.make<unknown, unknown>()
@@ -98,8 +115,8 @@ const makeRead =
 						Effect.onExit(load, (exit) => settle(entries, spec.key, result, exit)),
 						scope,
 					)
-					next.set(spec.key, { result, idleTtlMs: spec.idleTtlMs, touchedAtMs: nowMs })
-					return step<S["Type"], E>({ _tag: "Owner", fiber }, capped(next))
+					touched(next, spec.key, { result, idleTtlMs: spec.idleTtlMs, touchedAtMs: nowMs, isSettled: false })
+					return step<S["Type"], E>({ _tag: "Owner", fiber }, capped(next, nowMs))
 				}),
 			),
 		).pipe(
@@ -114,16 +131,14 @@ const makeRead =
 
 const makeRelease = (entries: EntriesRef) => (keys: ReadonlyArray<RequestKey>) =>
 	Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
-		SynchronizedRef.update(
-			entries,
-			(current) =>
-				new Map(
-					[...current].map(([key, entry]) => [
-						key,
-						keys.includes(key) ? { ...entry, touchedAtMs: nowMs } : entry,
-					]),
-				),
-		),
+		SynchronizedRef.update(entries, (current) => {
+			const next = new Map(current)
+			keys.forEach((key) => {
+				const entry = next.get(key)
+				if (entry !== undefined) touched(next, key, { ...entry, touchedAtMs: nowMs })
+			})
+			return next
+		}),
 	)
 
 /** `ReadCache.read` from a Command: `load` runs only when no live entry answers `spec.key`. */

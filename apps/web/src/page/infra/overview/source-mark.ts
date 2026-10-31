@@ -12,18 +12,22 @@ export const SOURCE_TITLE = {
 	kubernetes: "Kubernetes",
 	cloudflare: "Cloudflare",
 	railway: "Railway",
+	supabase: "Supabase",
 	planetscale: "PlanetScale",
 	gcp: "Google Cloud",
+	aws: "AWS",
 } satisfies Record<SourceId, string>
 
-const SOURCE_ICON = {
+export const SOURCE_ICON = {
 	hosts: "ServerIcon",
 	containers: "DockerIcon",
 	kubernetes: "KubernetesIcon",
 	cloudflare: "CloudflareBrandIcon",
 	railway: "RailwayIcon",
+	supabase: "SupabaseIcon",
 	planetscale: "PlanetScaleIcon",
 	gcp: "GoogleCloudIcon",
+	aws: "AwsIcon",
 } satisfies Record<SourceId, IconName>
 
 export const sourceMark = <M>(h: HtmlBuilder<M>, id: SourceId, size: number, className?: string): Html =>

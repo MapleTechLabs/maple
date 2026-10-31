@@ -8,7 +8,7 @@
  */
 import * as Maple from "@maple-dev/alchemy"
 import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
 import Api, { SERVICE_NAME } from "./src/Api.ts"
 

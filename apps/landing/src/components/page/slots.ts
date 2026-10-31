@@ -16,12 +16,14 @@
  */
 import type { ArtifactId, SectionId } from "../../lib/page-registry"
 import LiveAlertFiring from "../live/LiveAlertFiring.astro"
+import LiveAnomaly from "../live/LiveAnomaly.astro"
 import LiveBrowserSessions from "../live/LiveBrowserSessions.astro"
 import LiveFunnel from "../live/LiveFunnel.astro"
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro"
 import LiveLogStream from "../live/LiveLogStream.astro"
 import LiveMcpTranscript from "../live/LiveMcpTranscript.astro"
 import LiveServiceMap from "../live/LiveServiceMap.astro"
+import LiveUptime from "../live/LiveUptime.astro"
 import LogsVolume from "./artifacts/LogsVolume.astro"
 import PrReview from "./artifacts/PrReview.astro"
 import TraceExplorer from "./artifacts/TraceExplorer.astro"
@@ -32,6 +34,7 @@ import K8sViews from "./sections/K8sViews.astro"
 import GitHubAfterMerge from "./sections/GitHubAfterMerge.astro"
 import GitHubCi from "./sections/GitHubCi.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
+import UptimeCheckTrace from "./sections/UptimeCheckTrace.astro"
 
 /**
  * `satisfies`, not an annotation: it checks that every id has an entry while
@@ -50,6 +53,8 @@ export const ARTIFACTS = {
 	"alert-firing": LiveAlertFiring,
 	funnel: LiveFunnel,
 	"pr-review": PrReview,
+	uptime: LiveUptime,
+	anomaly: LiveAnomaly,
 } satisfies Record<ArtifactId, unknown>
 
 export const EXTRA_SECTIONS = {
@@ -60,4 +65,5 @@ export const EXTRA_SECTIONS = {
 	"product-events-sources": ProductEventsSources,
 	"github-ci": GitHubCi,
 	"github-after-merge": GitHubAfterMerge,
+	"uptime-check-trace": UptimeCheckTrace,
 } satisfies Record<SectionId, unknown>

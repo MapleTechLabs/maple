@@ -99,6 +99,8 @@ export const Model = Schema.Struct({
 	/** The switch notice under the mode toggle (`notice`), cleared by the next switch. */
 	kindNotice: Schema.NullOr(Schema.String),
 	isNotesOpen: Schema.Boolean,
+	/** Tags already in use across the org's rules, sorted; kept by reference while they stay the same. */
+	tagSuggestions: Schema.Array(Schema.String),
 	isSqlCollapsed: Schema.Boolean,
 	isMessageTemplateOpen: Schema.Boolean,
 	tagDraft: Schema.String,

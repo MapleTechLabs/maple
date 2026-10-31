@@ -118,6 +118,31 @@ describe("claimVisit", () => {
 		expect(claimVisit(T0 + MINUTE, true)).toBe(false)
 	})
 
+	it("charges only one of two tabs that both read 'no visit' before either wrote", () => {
+		// Tab B's write lands between tab A's write and its read-back.
+		const real = document
+		vi.stubGlobal("document", {
+			get cookie(): string {
+				return real.cookie
+			},
+			set cookie(raw: string) {
+				real.cookie = raw
+				if (raw.startsWith("maple_visit="))
+					jar.set("maple_visit", { value: `${T0}.tabb`, domain: "example.com" })
+			},
+		})
+		expect(claimVisit(T0, true)).toBe(false)
+
+		// Tab B, reading the marker it wrote, is the one charged; nobody else is.
+		newPageLoad(jar)
+		expect(claimVisit(T0 + MINUTE, true)).toBe(false)
+	})
+
+	it("reads the markers older builds wrote", () => {
+		jar.set("maple_visit", { value: String(T0), domain: "example.com" })
+		expect(claimVisit(T0 + MINUTE, true)).toBe(false)
+	})
+
 	it("refuses a second subdomain", () => {
 		installCookies(jar, "example.com")
 		expect(claimVisit(T0, true)).toBe(true)

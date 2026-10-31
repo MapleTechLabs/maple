@@ -8,9 +8,11 @@ import {
 	OrgId,
 	ScrapeTargetId,
 } from "@maple/domain/http"
+import { SourceId } from "@maple/domain/primitives"
 import type { ScrapeTargetRow } from "@maple/db/tables"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ScraperInternalRouter } from "./scraper-internal.http"
@@ -21,9 +23,13 @@ const asTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
 const asIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeTargets = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(InternalScrapeTarget)))
 
+// Only the first row is linked to a source; the rest must send without one.
+const FIRST_SOURCE = Schema.decodeUnknownSync(SourceId)("00000000-0000-4000-8000-0000000000aa")
+
 const makeRow = (index: number): ScrapeTargetRow => ({
 	id: asTargetId(`00000000-0000-4000-8000-00000000000${index}`),
 	orgId: asOrgId(`org_${index % 2}`),
+	sourceId: index === 0 ? FIRST_SOURCE : null,
 	name: `PlanetScale ${index}`,
 	serviceName: null,
 	url: "https://api.planetscale.com/v1/organizations/acme/metrics",
@@ -77,8 +83,6 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 				delete: die,
 				deleteManaged: die,
 				listAllEnabled: () => Effect.succeed(rows),
-				// Only the first row resolves a source; the rest must send without one.
-				sourceIds: (listed) => Effect.succeed(new Map([[listed[0]!.id, "src_first"]])),
 				authHeaders: die,
 				recordScrapeResults: die,
 				listChecks: die,
@@ -158,7 +162,7 @@ describe("GET /api/internal/scrape-targets", () => {
 				harness.rows.map((row) => row.id),
 			)
 			assert.strictEqual(response.body[1]?.ingestKey, "maple_pk_org_1")
-			assert.strictEqual(response.body[0]?.sourceId, "src_first")
+			assert.strictEqual(response.body[0]?.sourceId, publicSourceId(FIRST_SOURCE))
 			assert.isUndefined(response.body[1]?.sourceId)
 		}),
 	)

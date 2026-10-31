@@ -136,7 +136,7 @@ const parallelRule = (h: H, label: string, range: string): Html =>
 			icon(h, "BranchForkIcon", { size: 12, className: "shrink-0" }),
 			truncatedText(h, { text: label, className: "font-medium text-xs" }),
 			h.span([h.Class(cn(META, "shrink-0"))], [range]),
-			h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border/60")], []),
+			h.span([h.AriaHidden(true), h.Class("h-px min-w-6 grow bg-border-subtle")], []),
 		],
 	)
 
@@ -187,14 +187,14 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 			h.div(
 				[h.Class("flex items-center gap-2.5")],
 				[
-					icon(h, "CircleInfoIcon", { size: 13, className: "shrink-0 text-muted-foreground" }),
+					icon(h, "CircleInfoIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 					h.span([h.Class(cn(LABEL, "text-muted-foreground"))], ["Capture changes here"]),
 					h.span(
 						[h.Class("min-w-0 text-muted-foreground text-xs")],
 						[
 							"spans below come from ",
 							note.serviceName ?? "",
-							" — it records ",
+							", which records ",
 							CAPTURES_LABEL[note.captures],
 						],
 					),
@@ -204,9 +204,9 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 		])
 	const scope = note.scope === "session" ? `${note.anyCaptured ? "most of " : ""}this session` : "this turn"
 	return h.div(
-		[h.Class("mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-muted/30 px-4 py-3")],
+		[h.Class("mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-surface-sunken px-4 py-3")],
 		[
-			icon(h, "CircleInfoIcon", { size: 15, className: "mt-0.5 shrink-0 text-muted-foreground" }),
+			icon(h, "CircleInfoIcon", { size: 16, className: "mt-0.5 shrink-0 text-muted-foreground" }),
 			h.div(
 				[h.Class("flex min-w-0 grow flex-col gap-1")],
 				[
@@ -217,7 +217,7 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 					h.p(
 						[h.Class("text-muted-foreground text-xs leading-relaxed")],
 						[
-							"Prompts, replies and tool payloads are opt-in — the spans carry timing, models, tokens and tool names, but no text. The structure below is complete; only the words are missing.",
+							"Prompts, replies and tool payloads are opt-in. The spans carry timing, models, tokens and tool names, but no text. The structure below is complete; only the words are missing.",
 						],
 					),
 				],
@@ -244,7 +244,7 @@ export const dividerBlock = (
 						: [h.span([h.Class(CLOCK)], [clockOf(divider.startMs, timeZone)])]),
 					h.span(
 						[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
-						["history replaced with a summary — the model no longer has the messages above"],
+						["history replaced with a summary: the model no longer has the messages above"],
 					),
 					h.span([h.AriaHidden(true), h.Class("h-px grow bg-chart-4/30")], []),
 				],
@@ -284,7 +284,7 @@ export const dividerBlock = (
 					),
 					h.p(
 						[h.Class("text-center text-ui text-muted-foreground")],
-						["The agent's later turns are still arriving — this is not where the session ended."],
+						["The agent's later turns are still arriving. This is not where the session ended."],
 					),
 				],
 	)

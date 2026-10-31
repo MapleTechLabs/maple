@@ -3,6 +3,7 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
+import { summarySource } from "../../../../shell/source-link"
 
 /** `/infra/hosts/$hostName`: one instance per host; a window change arrives as `routeChanged`. */
 export const page = definePage(
@@ -16,6 +17,7 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
+		source: (model) => summarySource(model.summary.data),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
 			{ label: "Hosts", href: "/infra/hosts" },

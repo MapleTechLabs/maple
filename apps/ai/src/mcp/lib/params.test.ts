@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Effect, Exit, Schema } from "effect"
 import { toInputSchema } from "../tools/registry"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import * as P from "./params"
 import { CurrentWindowNotes, WindowNotes } from "./window-notes"
 
@@ -100,5 +101,15 @@ describe("MCP parameter vocabulary", () => {
 			const range = await Effect.runPromise(window.resolve(params, "find_errors"))
 			expect(range).toEqual({ st: "2026-09-01 00:00:00", et: "2026-09-01 03:00:00" })
 		})
+	})
+
+	it("reads a dashboard id as its UUID or its REST id, and leaves another resource's REST id as sent", () => {
+		const schema = Schema.Struct({ dashboard_id: P.resourceId("dashboard", "Dashboard") })
+		const uuid = "018f2b3c-4d5e-6f70-8192-a3b4c5d6e7f8"
+		const foreign = encodePublicId(PublicIdPrefixes.alertRule, uuid)
+		const read = (value: string) => Schema.decodeUnknownSync(schema)({ dashboard_id: value }).dashboard_id
+		expect(read(encodePublicId(PublicIdPrefixes.dashboard, uuid))).toBe(uuid)
+		expect(read(` ${uuid} `)).toBe(uuid)
+		expect(read(foreign)).toBe(foreign)
 	})
 })

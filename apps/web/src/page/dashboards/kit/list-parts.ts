@@ -32,7 +32,7 @@ export const listSectionHeader = <M>(
 		],
 	)
 
-/** `ToolbarSearch` (`SearchInput` at the default size): the clear button empties the draft. */
+/** `ToolbarSearch` (`SearchInput` at the toolbar size, sm): the clear button empties the draft. */
 export const toolbarSearch = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -45,7 +45,7 @@ export const toolbarSearch = <M>(
 ): Html =>
 	searchInput(h, {
 		id: options.id,
-		size: "default",
+		size: "sm",
 		className: cn("max-w-sm", options.className),
 		placeholder: options.placeholder,
 		value: options.draft,

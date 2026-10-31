@@ -5,7 +5,7 @@
  * creates the shared preview reviewer and its org, and seeds that org so reviewers land
  * on data. Otherwise seeds the dev test user's org. Mints a Clerk session (development
  * instance only), seeds demo telemetry through the API, then hits read endpoints that
- * touch Postgres and the warehouse. Any 5xx or network error exits 1. Tokens are never
+ * touch Postgres and the warehouse. Any non-2xx or network error exits 1. Tokens are never
  * printed.
  *
  * Env: API_URL, WEB_URL, CLERK_SECRET_KEY, optional PREVIEW_SIGNIN_KEY,
@@ -132,10 +132,10 @@ const call = async (name: string, method: "GET" | "POST", path: string, body?: u
 		headers,
 		body: body === undefined ? undefined : JSON.stringify(body),
 	}).then(
-		// 401 means the session never reached a tenant, which would mask every other check.
+		// Every call is a known-good request from an org admin, so any 4xx is a regression too.
 		async (response) => ({
 			status: String(response.status),
-			ok: response.status < 500 && response.status !== 401,
+			ok: response.status >= 200 && response.status < 300,
 			text: await response.text(),
 		}),
 		(error: unknown) => ({ status: `network error: ${String(error)}`, ok: false, text: "" }),

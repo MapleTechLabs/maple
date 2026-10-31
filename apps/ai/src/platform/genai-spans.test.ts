@@ -208,6 +208,14 @@ describe("withReturnedToolFailuresOk", () => {
 		}),
 	)
 
+	it.effect("ends a failure returned to a run_code program as Ok, with error.type", () =>
+		Effect.gen(function* () {
+			const { span, failed } = yield* endedSpan("execute_tool run_sql", "returned-to-caller")
+			assert.isFalse(failed)
+			assert.strictEqual(span.attributes.get("error.type"), "ToolCallFailed")
+		}),
+	)
+
 	it.effect("keeps a propagated failure as Error", () =>
 		Effect.gen(function* () {
 			const { span, failed } = yield* endedSpan("execute_tool run_sql", "propagated")

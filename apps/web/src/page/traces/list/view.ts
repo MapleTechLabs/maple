@@ -29,6 +29,7 @@ const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
 		h,
 		{
 			variant: isActive ? "secondary" : "outline",
+			size: "sm",
 			className: "gap-2",
 			attributes: [
 				h.DataAttribute("shortcut-focus", "search"),
@@ -36,7 +37,7 @@ const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
 			],
 		},
 		[
-			icon(h, "MagnifierIcon", { className: isActive ? "text-primary" : "text-muted-foreground" }),
+			icon(h, "FilterIcon", { className: isActive ? "text-primary" : "text-muted-foreground" }),
 			h.span([], ["Advanced filter"]),
 			kbd(h, undefined, ["F"]),
 		],
@@ -48,7 +49,7 @@ const whereClausePanel = (h: HtmlBuilder<Message>, whereClause: string): Html =>
 		h.div(
 			[h.Class("flex min-w-0 items-center gap-2")],
 			[
-				icon(h, "MagnifierIcon", { className: "size-3.5 shrink-0 text-primary" }),
+				icon(h, "FilterIcon", { className: "size-3.5 shrink-0 text-primary" }),
 				truncatedText(h, { text: whereClause, mono: true, className: "text-xs text-foreground" }),
 			],
 		),
@@ -57,7 +58,7 @@ const whereClausePanel = (h: HtmlBuilder<Message>, whereClause: string): Html =>
 			{
 				label: "Clear filter",
 				size: "icon-xs",
-				className: "shrink-0 text-muted-foreground hover:text-foreground",
+				className: "shrink-0 text-muted-foreground hover:text-foreground active:text-foreground",
 				attributes: [h.OnClick(Message.ClickedClearWhereClause())],
 			},
 			[icon(h, "XmarkIcon")],
@@ -86,6 +87,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: "Traces",
 			filters: filtersRail(h, model, inputs.context.pinnedNamespace),
 			actions: h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],

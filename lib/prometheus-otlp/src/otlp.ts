@@ -454,6 +454,13 @@ const slicerFor = (metric: OtlpMetric): MetricSlicer => {
 	return { count: 0, slice: () => metric }
 }
 
+/** One export request carrying every input's resources, in order. */
+export const mergeExportRequests = (requests: ReadonlyArray<OtlpExportRequest>): OtlpExportRequest => ({
+	resourceMetrics: requests.flatMap((request) => request.resourceMetrics),
+})
+
+type ResourceMetrics = OtlpExportRequest["resourceMetrics"][number]
+
 /**
  * Split an export request into requests of at most `maxDataPoints` data points
  * each, so no single POST can exceed a receiver's body limit. A receiver that
@@ -462,12 +469,9 @@ const slicerFor = (metric: OtlpMetric): MetricSlicer => {
  * Splitting happens at the data-point level, not the metric level: one
  * Prometheus family fans out to a series per shard per table, so a single
  * metric can exceed the budget on its own. A metric may therefore appear in
- * several chunks carrying disjoint data points, which is valid OTLP — each
- * chunk repeats the resource and scope so it stands alone.
- *
- * The budget is a data-point count rather than bytes because serializing to
- * measure would mean encoding the payload twice; the default leaves enough
- * headroom that even attribute-heavy points stay well under the limit.
+ * several chunks carrying disjoint data points, which is valid OTLP. Chunks
+ * pack across resources and scopes, repeating each one they carry points of,
+ * so a request merged from many small scrapes still fills every chunk.
  */
 export const splitExportRequest = (
 	request: OtlpExportRequest,
@@ -477,22 +481,24 @@ export const splitExportRequest = (
 	if (countDataPoints(request) <= maxDataPoints) return [request]
 
 	const chunks: Array<OtlpExportRequest> = []
+	let chunk: Array<ResourceMetrics> = []
+	let batched = 0
+	const flush = () => {
+		if (chunk.length > 0) chunks.push({ resourceMetrics: chunk })
+		chunk = []
+		batched = 0
+	}
+
 	for (const resourceMetrics of request.resourceMetrics) {
 		for (const scopeMetrics of resourceMetrics.scopeMetrics) {
-			let batch: Array<OtlpMetric> = []
-			let batched = 0
-			const flush = () => {
-				if (batch.length === 0) return
-				chunks.push({
-					resourceMetrics: [
-						{
-							resource: resourceMetrics.resource,
-							scopeMetrics: [{ scope: scopeMetrics.scope, metrics: batch }],
-						},
-					],
+			let metrics: Array<OtlpMetric> = []
+			const close = () => {
+				if (metrics.length === 0) return
+				chunk.push({
+					resource: resourceMetrics.resource,
+					scopeMetrics: [{ scope: scopeMetrics.scope, metrics }],
 				})
-				batch = []
-				batched = 0
+				metrics = []
 			}
 
 			for (const metric of scopeMetrics.metrics) {
@@ -500,16 +506,42 @@ export const splitExportRequest = (
 				let offset = 0
 				while (offset < slicer.count) {
 					const take = Math.min(maxDataPoints - batched, slicer.count - offset)
-					if (take > 0) {
-						batch.push(slicer.slice(offset, offset + take))
-						batched += take
-						offset += take
+					metrics.push(slicer.slice(offset, offset + take))
+					batched += take
+					offset += take
+					if (batched >= maxDataPoints) {
+						close()
+						flush()
 					}
-					if (batched >= maxDataPoints) flush()
 				}
 			}
-			flush()
+			close()
 		}
 	}
+	flush()
 	return chunks
 }
+
+const utf8 = new TextEncoder()
+
+/**
+ * Split and serialize an export request into OTLP/JSON bodies of at most
+ * `maxDataPoints` points and, where a single point allows, `maxBytes` bytes.
+ * A chunk over the byte budget is re-split at the point count its measured
+ * size implies, so the common case serializes each point once.
+ */
+export const encodeExportRequestChunks = (
+	request: OtlpExportRequest,
+	options: { readonly maxDataPoints: number; readonly maxBytes: number },
+): ReadonlyArray<Uint8Array> =>
+	splitExportRequest(request, options.maxDataPoints).flatMap((chunk) => {
+		const body = utf8.encode(JSON.stringify(chunk))
+		const points = countDataPoints(chunk)
+		if (body.byteLength <= options.maxBytes || points <= 1) return [body]
+		// 10% under the measured ratio, so attribute-heavy slices rarely need a third pass.
+		const fit = Math.max(
+			1,
+			Math.min(points - 1, Math.floor((points * options.maxBytes * 0.9) / body.byteLength)),
+		)
+		return encodeExportRequestChunks(chunk, { maxDataPoints: fit, maxBytes: options.maxBytes })
+	})

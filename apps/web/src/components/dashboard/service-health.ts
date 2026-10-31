@@ -1,5 +1,5 @@
 import type { ServiceLatencyBaseline } from "@maple/web-data/warehouse/services"
-import type { AnomalySignalType } from "@maple/domain/http"
+import type { AlertSignalType, AnomalySignalType } from "@maple/domain/http"
 import type { Tone } from "@maple/ui/lib/tone"
 
 /** Health rollup for a single service. */
@@ -11,6 +11,10 @@ export const HEALTH_TONE: Record<ServiceHealth, Tone> = {
 	degraded: "warn",
 	unhealthy: "crit",
 } satisfies Record<ServiceHealth, Tone>
+
+/** The health cause an open alert incident reads as: a monitor's failing check, or a rule firing. */
+export const alertIncidentCauseLabel = (signalType: AlertSignalType): string =>
+	signalType === "uptime" ? "Uptime check failing" : "Alert firing"
 
 export interface ServiceHealthCause {
 	severity: "warning" | "critical"

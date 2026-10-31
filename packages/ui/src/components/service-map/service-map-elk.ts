@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import type { ElkExtendedEdge, ElkNode, ELK } from "elkjs/lib/elk-api"
 import {
 	NS_LABEL_HEIGHT,

@@ -32,9 +32,9 @@ export const documentOf = (snapshot: V2Dashboard) =>
 	})
 
 export const FetchVersions = Command.define("FetchDashboardVersions", {
-	args: { dashboardId: Schema.String },
+	args: { dashboardId: Schema.String, generation: Schema.Number },
 	messages: [Message.CompletedFetchVersions],
-	execute: ({ dashboardId }) =>
+	execute: ({ dashboardId, generation }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
@@ -51,7 +51,7 @@ export const FetchVersions = Command.define("FetchDashboardVersions", {
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchVersions({ result })),
+			Effect.map((result) => Message.CompletedFetchVersions({ generation, result })),
 		),
 })
 

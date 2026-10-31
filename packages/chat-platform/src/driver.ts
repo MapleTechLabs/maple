@@ -14,7 +14,7 @@
  */
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatEvent, ChatTurnEndEvent } from "@maple/domain/chat-session"
-import { Cause, Clock, Effect, Fiber, Schedule, Semaphore, Stream } from "effect"
+import { Cause, Clock, Effect, Fiber, Ref, Schedule, Semaphore, Stream } from "effect"
 import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
 import {
 	renderChatMessage,
@@ -64,27 +64,20 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	// loser's edit would put a stale render back on a finished turn.
 	const gate = yield* Semaphore.make(1)
 
-	// Turn state, mutated by the stream fiber and read by the throttle fiber. Safe without a `Ref`
-	// because fibers interleave only at yield points within one isolate, and everything that reads
-	// the transcript does so under `gate`: `dirty` is cleared BEFORE the render, so an event that
-	// lands during a post or an edit marks the turn dirty again rather than being swallowed.
-	let ending: ChatNoticeBlock | null = null
-	/** How the turn closed, for the span — the one place a failed turn is more than a line of copy. */
-	let endReason = "unfinished"
-	let dirty = false
-	/**
-	 * What the render is of: a turn in progress, or the message it settles as.
-	 *
-	 * The exception to the note above — it is cleared by this fiber once the throttle fiber has
-	 * been interrupted, so no flush can read it half way through a turn it has not finished.
-	 */
-	let running = true
+	// Written by the stream fiber, read by the throttle fiber. `dirty` is cleared BEFORE the render,
+	// so an event that lands during a post or an edit marks the turn dirty again, not swallowed.
+	const turn = yield* Ref.make<TurnState>({
+		ending: null,
+		endReason: "unfinished",
+		dirty: false,
+		running: true,
+	})
 
 	const flush = gate.withPermit(
 		Effect.gen(function* () {
 			// Messages an earlier run posted already say more than a render of no events would.
 			if (resumed && transcript.seq === 0) return
-			dirty = false
+			const { ending, running } = yield* Ref.updateAndGet(turn, (state) => ({ ...state, dirty: false }))
 			const message = transcript.messages.find((candidate) => candidate.id === messageId)
 			const blocks: Array<ChatBlock> =
 				message === undefined ? [] : [...renderChatMessage(message, context, running)]
@@ -132,15 +125,13 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		// Sub-agent events carry a `task` ref and belong to a nested transcript; the turn they are
 		// nested in is the one being driven.
 		if (event.type !== "user-message" && event.task !== undefined) {
-			dirty = true
-			return
+			return yield* Ref.update(turn, (state) => ({ ...state, dirty: true }))
 		}
 		if (event.type === "turn-end" && event.messageId === messageId) {
-			ending = turnEndNotice(event)
-			endReason = event.reason
-			return
+			const ending = turnEndNotice(event)
+			return yield* Ref.update(turn, (state) => ({ ...state, ending, endReason: event.reason }))
 		}
-		dirty = true
+		yield* Ref.update(turn, (state) => ({ ...state, dirty: true }))
 	})
 
 	yield* Effect.forkChild(
@@ -158,7 +149,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		Effect.repeat(
 			// A mid-turn edit that fails takes its fiber with it and nothing joins this one, so the
 			// cause is logged here or it is lost. The final flush still runs, and still reports.
-			Effect.suspend(() => (dirty ? flush : Effect.void)).pipe(
+			Effect.flatMap(Ref.get(turn), (state) => (state.dirty ? flush : Effect.void)).pipe(
 				Effect.tapCause(report("A turn's message could not be updated")),
 			),
 			{ schedule: Schedule.spaced(outbound.limits.minEditInterval) },
@@ -176,20 +167,19 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		// A stream that dies has no `turn-end` to close on, and the reader would be left looking at
 		// the placeholder forever. Say so, flush, and then fail.
 		Effect.tapError(() =>
-			Effect.sync(() => {
-				if (ending === null) ending = DISCONNECTED
-			}),
+			Ref.update(turn, (state) => (state.ending === null ? { ...state, ending: DISCONNECTED } : state)),
 		),
 		Effect.exit,
 	)
 	yield* Fiber.interrupt(throttled)
 	// Whatever ended the turn, the last render is the finished message: the answer, and none of the
 	// working. Set here rather than on `turn-end`, so a stream that died — and never reaches one —
-	// settles the same way.
-	running = false
+	// settles the same way. Cleared only once the throttle fiber is gone, so no flush reads it half
+	// way through a turn it has not finished.
+	yield* Ref.update(turn, (state) => ({ ...state, running: false }))
 	yield* flush
 	yield* Effect.annotateCurrentSpan({
-		"maple.chat.turn.end_reason": endReason,
+		"maple.chat.turn.end_reason": (yield* Ref.get(turn)).endReason,
 		"maple.chat.messages": posted.length,
 	})
 	return yield* outcome
@@ -209,6 +199,15 @@ const report = (message: string) => (cause: Cause.Cause<unknown>) =>
 				.join(";"),
 		}),
 	)
+
+interface TurnState {
+	readonly ending: ChatNoticeBlock | null
+	/** How the turn closed, for the span: the one place a failed turn is more than a line of copy. */
+	readonly endReason: string
+	readonly dirty: boolean
+	/** What the render is of: a turn in progress, or the message it settles as. */
+	readonly running: boolean
+}
 
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
 

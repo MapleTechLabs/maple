@@ -23,12 +23,12 @@ import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axi
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
-import { formatBytes } from "@maple/ui/lib/format"
+import { axisTickFormatter, axisTickValues, formatBytes } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
-import { verticalGradient } from "./fixed-metric-axes"
+import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
@@ -48,7 +48,7 @@ type InfraDatum = InfraPoint | InfraCell
 const isCell = (datum: InfraDatum): datum is InfraCell => typeof datum.point === "object"
 const rowOf = (datum: InfraDatum): InfraPoint => (isCell(datum) ? datum.point : datum)
 
-const STROKE_WIDTH = 1.5
+const STROKE_WIDTH = SERIES_STROKE_WIDTH
 const THRESHOLD_FRACTION = 0.8
 const UNITS: ReadonlyArray<ChartUnit> = [
 	"percent",
@@ -80,25 +80,56 @@ export const infraPoints = (spec: Pick<InfraMetricSpec, "rows" | "gaps" | "xDoma
 export const labelFor = (seriesLabel: string | null) => (name: string) =>
 	name === UNNAMED_SERIES_KEY ? (seriesLabel ?? name) : name
 
-const tickFormatter =
+/** Ticks on a short card: few enough that the axis never thins them. */
+const Y_TICK_COUNT = 3
+
+/** Latency and percent axes share one unit and precision across ticks; the rest format per value. */
+const tickFormatter = (unit: InfraMetricSpec["unit"], domain: readonly [number, number]) =>
+	unit === "milliseconds"
+		? axisTickFormatter("duration_ms", domain, Y_TICK_COUNT, { max: Y_TICK_COUNT })
+		: unit === "percent"
+			? axisTickFormatter("percent", domain, Y_TICK_COUNT, { max: Y_TICK_COUNT })
+			: valueTickFormatter(unit)
+
+/** Explicit ticks where the precision comes from the step, so a 1s step reads "1s", not "1.0s". */
+const tickValues = (unit: InfraMetricSpec["unit"], domain: readonly [number, number]) =>
+	unit === "milliseconds" || unit === "percent"
+		? axisTickValues(domain, Y_TICK_COUNT, { max: Y_TICK_COUNT })
+		: undefined
+
+/** Cores and load axes read "0.5, 1, 2"; the zero tick reads "0" on every unit. */
+const valueTickFormatter =
 	(unit: InfraMetricSpec["unit"]) =>
 	(value: number): string =>
-		unit === "cores"
-			? value.toLocaleString(
-					undefined,
-					Math.abs(value) < 0.1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 2 },
-				)
-			: unit === "bytes_per_second"
-				? formatBytes(value)
-				: formatValueWithUnit(value, unit)
+		value === 0
+			? "0"
+			: unit === "cores" || unit === "load"
+				? value.toLocaleString(
+						undefined,
+						Math.abs(value) < 0.1
+							? { maximumSignificantDigits: 2 }
+							: { maximumFractionDigits: 2 },
+					)
+				: unit === "bytes_per_second"
+					? formatBytes(value)
+					: formatValueWithUnit(value, unit)
 
 export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, ChartValue, number> => {
 	const { data, series } = infraPoints(spec)
 	const axis = makeBucketAxis(spec.xDomain ?? data.map((point) => point.bucket), spec.timeZone)
 	const thresholds = spec.showThreshold && spec.unit === "percent" ? [{ value: THRESHOLD_FRACTION }] : []
-	const yDomain = niceLinearDomain(
+	const niceDomain = niceLinearDomain(
 		linearYDomain({ rows: data, keys: series, stacked: spec.stacked, thresholds }),
 	)
+	// A percent axis past 50% runs to 100%, so it draws "0, 50%, 100%" around the 80% line.
+	// Stacked shares never pass 100%: a bucket whose parts sum higher is scaled down to fit.
+	const isShare = spec.stacked && spec.unit === "percent"
+	const yDomain: readonly [number, number] =
+		isShare && niceDomain[1] > 1
+			? [niceDomain[0], 1]
+			: spec.unit === "percent" && niceDomain[1] > 0.5 && niceDomain[1] < 1
+				? [niceDomain[0], 1]
+				: niceDomain
 	const chrome = spec.chrome
 	const colorOf = (name: string) => spec.colors[name] ?? chrome.border
 	const at = (point: InfraPoint) => point.date
@@ -108,8 +139,23 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 	}
 	const gradientFor = (name: string) => `${spec.gradientPrefix}-${name.replace(/\W+/g, "_")}`
 	const curve = d3Curve(curveMonotoneX)
+	const shareScale = (point: InfraPoint) => {
+		const sum = series.reduce((total, name) => total + (valueOf(name)(point) ?? 0), 0)
+		return isShare && sum > 1 ? 1 / sum : 1
+	}
+	// Dots read the same scaled values the stacked bands draw.
+	const plottedOf = (name: string) => (point: InfraPoint) => {
+		const value = valueOf(name)(point)
+		return value === null || !spec.stacked ? value : value * shareScale(point)
+	}
 	const cells: ReadonlyArray<InfraCell> = spec.stacked
-		? data.flatMap((point) => series.map((name) => ({ point, name, value: valueOf(name)(point) })))
+		? data.flatMap((point) => {
+				const scale = shareScale(point)
+				return series.map((name) => {
+					const value = valueOf(name)(point)
+					return { point, name, value: value === null ? null : value * scale }
+				})
+			})
 		: []
 	const bands = spec.stacked
 		? [
@@ -138,7 +184,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		point === undefined || value(point) === null
 	const lone = spec.gaps
 		? series.map((name) => {
-				const value = valueOf(name)
+				const value = plottedOf(name)
 				return dot(
 					data.filter(
 						(point, index) =>
@@ -191,7 +237,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 			...thresholdMarks,
 			...bands,
 			...lone,
-			...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), chrome)),
+			...series.map((name) => focusDot(data, at, plottedOf(name), colorOf(name), chrome)),
 			focusCrosshair(chrome),
 		],
 		scales: {
@@ -199,7 +245,15 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 			y: {
 				grid: DASHED_Y_GRID,
 				scale: scaleLinear().domain(yDomain),
-				axis: { line: false, ticks: { size: 0, padding: 8, format: tickFormatter(spec.unit) } },
+				axis: {
+					line: false,
+					ticks: {
+						size: 0,
+						padding: 8,
+						values: tickValues(spec.unit, yDomain),
+						format: tickFormatter(spec.unit, yDomain),
+					},
+				},
 			},
 		},
 		margin: { top: 12, right: 12, left: 56 },

@@ -95,7 +95,12 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			}),
 		view: (model: Model, h: HtmlBuilder<Message>) =>
 			h.div(
-				[h.Id("app")],
+				[
+					h.Id("app"),
+					// A `before` toolbar floats at the viewport's bottom (48px bar, 16px off the edge):
+					// end the page's scroll area above it, so no row ever sits under the bar.
+					...(beforeView === null ? [] : [h.Class("[&_[data-slot=page-scroll-area]]:mb-20")]),
+				],
 				[
 					...(beforeView === null
 						? []
