@@ -172,7 +172,7 @@ const readCachedOverlay = (env: StatusEnv, pageId: string) =>
 	)
 
 /** Entries in the colo's cached overlay, for merging with a list that may lag behind them. */
-export const cachedOverlayEntries = (
+const cachedOverlayEntries = (
 	env: StatusEnv,
 	pageId: string,
 ): Effect.Effect<ReadonlyArray<StatusPageOverlayEntry>> =>
@@ -182,20 +182,30 @@ export const cachedOverlayEntries = (
 		),
 	)
 
-/** Caches the assembled overlay, keeping cached entries a lagging list has not caught up with yet. */
+/**
+ * Caches the assembled overlay, keeping cached entries a lagging list has not caught up with yet.
+ * The cache is read right before the write, so a post that raced the list is not dropped.
+ */
 export const rememberOverlay = (
 	env: StatusEnv,
 	pageId: string,
 	entries: ReadonlyArray<StatusPageOverlayEntry>,
-	previous: ReadonlyArray<StatusPageOverlayEntry> = [],
-): Effect.Effect<StatusPageOverlay> => {
-	const listed = new Set(entries.map((entry) => entry.id))
-	const recent = previous.filter((entry) => !listed.has(entry.id) && env.nowMs - entry.at < LIST_LAG_MS)
-	const overlay: StatusPageOverlay = { entries: [...entries, ...recent] }
-	return env.storage
-		.cachePut(cacheKey("overlay", pageId), { value: JSON.stringify(overlay), storedAt: env.nowMs })
-		.pipe(Effect.ignore, Effect.as(overlay))
-}
+): Effect.Effect<StatusPageOverlay> =>
+	cachedOverlayEntries(env, pageId).pipe(
+		Effect.flatMap((previous) => {
+			const listed = new Set(entries.map((entry) => entry.id))
+			const recent = previous.filter(
+				(entry) => !listed.has(entry.id) && env.nowMs - entry.at < LIST_LAG_MS,
+			)
+			const overlay: StatusPageOverlay = { entries: [...entries, ...recent] }
+			return env.storage
+				.cachePut(cacheKey("overlay", pageId), {
+					value: JSON.stringify(overlay),
+					storedAt: env.nowMs,
+				})
+				.pipe(Effect.ignore, Effect.as(overlay))
+		}),
+	)
 
 /** Break-glass entries, listed at most every 10s per colo; a failed list serves the cached copy, else none. */
 export const loadOverlay = (env: StatusEnv, pageId: string): Effect.Effect<StatusPageOverlay> =>
@@ -206,7 +216,7 @@ export const loadOverlay = (env: StatusEnv, pageId: string): Effect.Effect<Statu
 		}
 		const previous = Option.match(cached, { onNone: () => [], onSome: (hit) => hit.overlay.entries })
 		return yield* listOverlay(env, pageId).pipe(
-			Effect.flatMap((listed) => rememberOverlay(env, pageId, listed.entries, previous)),
+			Effect.flatMap((listed) => rememberOverlay(env, pageId, listed.entries)),
 			Effect.orElseSucceed(() => ({ entries: previous })),
 		)
 	})

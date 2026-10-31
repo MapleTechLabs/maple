@@ -141,6 +141,22 @@ describe("serving a page", () => {
 		)
 	})
 
+	it("keeps a post that lands while a page load is listing the overlay", async () => {
+		await send(fake, PAGE)
+		const later = FIXTURE_NOW + 11_000
+		// A post in this colo writes its entry and the cache after the list has read the keys.
+		fake.duringList.run = () => {
+			const raced = entry({ id: "raced", at: later, title: "Raced post" })
+			putOverlayEntry(fake, raced)
+			fake.cache.set(cacheKey("overlay", FIXTURE_PAGE_ID), {
+				value: JSON.stringify({ entries: [raced] }),
+				storedAt: later,
+			})
+		}
+		await send(fake, PAGE, { nowMs: later })
+		expect(await (await send(fake, PAGE, { nowMs: later + 1_000 })).text()).toContain("Raced post")
+	})
+
 	it("serves the slug route from R2 when KV throws", async () => {
 		fake.failing.add("kv")
 		const response = await send(fake, "https://status.maple.workers.dev/s/acme/")

@@ -72,7 +72,8 @@ export const formatAge = (ageMs: number): string => {
 
 /** Floors so a day with any downtime never reads as 100%. */
 export const formatPercent = (percent: number): string => {
-	const floored = Math.floor(percent * 100) / 100
+	// Rounds off float error first: 99.84 must not floor from 99.83999999999999.
+	const floored = Math.floor(Number((percent * 100).toFixed(6))) / 100
 	return `${floored.toFixed(2).replace(/\.?0+$/u, "")}%`
 }
 

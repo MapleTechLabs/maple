@@ -11,6 +11,10 @@ import { handleRequest } from "./handler"
 import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
 
 /** In-memory KV, R2, colo cache and rate limiter; each store can be made to fail. */
+interface ListHook {
+	run: (() => void) | null
+}
+
 export const makeFakeStorage = () => {
 	const kv = new Map<string, string>()
 	const r2 = new Map<string, string>()
@@ -31,16 +35,22 @@ export const makeFakeStorage = () => {
 
 	// Keys a lagging KV `list` has not returned yet; reads by key still see them.
 	const unlisted = new Set<string>()
+	// Runs once inside the next `list`, to land a concurrent write while it is in flight.
+	const duringList: ListHook = { run: null }
 	const storage: StatusStorage = {
 		kvGet: (key) => guard("kv", key, () => kv.get(key) ?? null),
 		kvPut: (key, value) => guard("kv-put", key, () => void kv.set(key, value)),
 		kvList: (prefix, limit) =>
-			guard("kv", prefix, () =>
-				[...kv.keys()]
+			guard("kv", prefix, () => {
+				const listed = [...kv.keys()]
 					.filter((key) => key.startsWith(prefix) && !unlisted.has(key))
 					.sort()
-					.slice(0, limit),
-			),
+					.slice(0, limit)
+				const raced = duringList.run
+				duringList.run = null
+				raced?.()
+				return listed
+			}),
 		r2Get: (key) => guard("r2", key, () => r2.get(key) ?? null),
 		cacheGet: (key) => guard("cache", key, () => cache.get(key) ?? null),
 		cachePut: (key, entry) => guard("cache", key, () => void cache.set(key, entry)),
@@ -52,7 +62,7 @@ export const makeFakeStorage = () => {
 	}
 	// Shared across requests, so two posts get distinct entry ids.
 	const ids = { next: 0 }
-	return { storage, kv, r2, cache, failing, limits, unlisted, ids }
+	return { storage, kv, r2, cache, failing, limits, unlisted, duringList, ids }
 }
 
 export type FakeStorage = ReturnType<typeof makeFakeStorage>
