@@ -227,7 +227,7 @@ describe("the page as the editor", () => {
 			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
 			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
 			expectView(role("navigation", { name: "On this page" })).not.toExist(),
-			click(role("button", { name: "Close component" })),
+			click(role("button", { name: "On this page" })),
 			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
 			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-pressed", "false"),
 		)
