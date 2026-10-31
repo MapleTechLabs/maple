@@ -25,6 +25,7 @@ const toc = [
     { depth: 2, slug: "methods", text: "Agent vs agentless" },
     { depth: 3, slug: "agent", text: "Agent: the server pushes" },
     { depth: 3, slug: "agentless", text: "Agentless: a poller pulls" },
+    { depth: 3, slug: "tools", text: "Tools" },
     { depth: 3, slug: "security", text: "Security" },
     { depth: 2, slug: "signals", text: "Signals to watch" },
     { depth: 3, slug: "ssh", text: "Checks over SSH" },
@@ -404,13 +405,19 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>Remote server monitoring, defined</h2>
 
-                    <div class="guide-answer">
-                        <p><strong>Remote server monitoring</strong> means collecting health numbers and logs from servers you can't physically reach, such as a cloud VM or a machine in a branch office, and getting an alert when a number crosses a limit or stops arriving.</p>
-                    </div>
-
                     <p>
-                        A server under your desk tells you it is struggling: the fan spins up and the shell lags. A VM in another region tells you nothing until a user reports the outage. Remote monitoring replaces that with readings sent every few seconds and rules that watch them.
+                        A server under your desk tells you it is struggling: the fan spins up and the shell lags. A VM in another region tells you nothing, so you learn it died from a customer asking why the site is down. <strong>Remote server monitoring</strong> is software that collects health numbers and logs from servers you can't physically reach, such as a cloud VM or a machine in a branch office, and alerts you when a number crosses a limit or stops arriving. Without it, a full disk or a crashed VM stays broken until someone outside notices, and your users see every minute of that downtime first. This guide compares agent and agentless collection and the tools for each, lists the signals worth watching, sets up the OpenTelemetry Collector on each server, and ends with alerts that fire when a server goes quiet.
                     </p>
+
+                    <div class="guide-callout guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>An agent pushes data out over HTTPS on port 443 and needs no inbound port. A poller needs SSH, SNMP, WinRM or port 9100 open to it.</li>
+                            <li>Run an agent on servers you own, add an outside HTTP check for what users reach, and poll only devices that can't run an agent.</li>
+                            <li>A dead server sends nothing, so one alert has to treat missing data as a breach.</li>
+                            <li>Full disks take servers down while CPU and memory look normal: alert on every writable mount above 90%.</li>
+                        </ul>
+                    </div>
                     <p>
                         Distance adds one problem a local machine doesn't have: silence. When a remote server stops reporting, you can't see why from your desk. Two signals from different places tell the common causes apart:
                     </p>
@@ -436,7 +443,7 @@ const articleJsonLd = {
                         </table>
                     </div>
                     <p>
-                        The agent reports what the server sees from the inside. The outside check reports what a client sees. This guide sets up both and an alert for each.
+                        The agent reports what the server sees from the inside. The outside check reports what a client sees.
                     </p>
                 </section>
 
@@ -537,6 +544,25 @@ const articleJsonLd = {
                     <p>
                         For servers you run, use an agent and add outside checks for the services people reach. Keep polling for devices that can't run an agent. The OpenTelemetry Collector covers each of these: <code>host_metrics</code> and <code>file_log</code> on the server, <code>snmp</code> and <code>ssh_check</code> for polling, and <code>http_check</code> for outside checks.
                     </p>
+
+                    <h3 id="tools" class="scroll-mt-24">Remote server monitoring tools</h3>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Tool</th><th>Type</th><th>License and price</th><th>Pick it if</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td class="guide-table__key"><a href="https://www.zabbix.com/features" target="_blank" rel="noopener noreferrer">Zabbix</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span> plus SNMP, SSH and HTTP checks</td><td>Open source (AGPL-3.0 since 7.0), paid support available</td><td>You want one self-hosted server for agents and network devices</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://www.datadoghq.com/pricing/?product=infrastructure" target="_blank" rel="noopener noreferrer">Datadog</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span> with a hosted backend</td><td>Paid: Infrastructure Pro $15 per host per month, billed annually; free up to 5 hosts with 1-day retention</td><td>You want nothing to host and per-host pricing fits your fleet</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://www.nagios.com/products/nagios-xi/" target="_blank" rel="noopener noreferrer">Nagios</a></td><td><span class="kind-badge" style={`--kind: ${kinds.poller.color}`}>Poller</span> with plugins; NRPE and NCPA agents optional</td><td>Nagios Core free (GPL v2); Nagios XI from $2,595 for 100 nodes, one-time</td><td>You need up/down checks and its large plugin library</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://www.paessler.com/prtg/pricing" target="_blank" rel="noopener noreferrer">PRTG</a></td><td><span class="kind-badge" style={`--kind: ${kinds.poller.color}`}>Poller</span> over SNMP, WMI and SSH</td><td>Paid by sensor: from $200 a month for 500 sensors, billed annually; free up to 100 sensors</td><td>You monitor Windows servers and network gear from one console</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://github.com/prometheus/node_exporter" target="_blank" rel="noopener noreferrer">Prometheus + node_exporter</a></td><td><span class="kind-badge" style={`--kind: ${kinds.poller.color}`}>Poller</span> metrics stack: Prometheus scrapes port 9100</td><td>Open source (Apache 2.0)</td><td>You already run Prometheus and Grafana</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://uptimerobot.com/pricing/" target="_blank" rel="noopener noreferrer">UptimeRobot</a></td><td><span class="kind-badge" style={`--kind: ${kinds.probe.color}`}>Outside check</span> as a hosted service</td><td>Free for 50 monitors at 5-minute intervals; paid plans check more often</td><td>You only need to know the site answers</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span>, poller and outside checks in one binary</td><td>Open source (Apache 2.0); sends to any OTLP backend</td><td>You want metrics and logs in an open format you can send anywhere</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="guide-caption">Prices from each vendor's pricing page, last verified October 31, 2026. This guide uses the Collector and sends to Maple.</p>
 
                     <h3 id="security" class="scroll-mt-24">Security follows the direction</h3>
                     <ul class="guide-list">
@@ -711,22 +737,22 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>06</span> · Alerts</p>
                     <h2>Alert when a remote server goes down or quiet</h2>
                     <p>
-                        A Maple <a href="/docs/alerting/alert-rules">alert rule</a> checks a value every minute over a rolling window and opens an incident after two breaching checks in a row. Most rules skip a window with no data, so a server that stops sending never trips them. A rule with <strong>Alert when there is no data</strong> switched on counts an empty window as a breach. The switch is off for rules split into one incident per group, because a group that stops reporting keeps its open incident and a healthy one never opens one.
+                        A Maple <a href="/docs/alerting/alert-rules">alert rule</a> checks a value every minute and opens an incident after two breaching checks in a row. A server that stops sending leaves empty windows, which rules skip unless <strong>Alert when there is no data</strong> is on. That switch doesn't apply to rules split into one incident per group, so the heartbeat gets its own rule.
                     </p>
                     <p>
-                        The rules below use the <strong>SQL</strong> signal, which runs ClickHouse SQL against the <code>metrics_gauge</code> table. <code>$__orgFilter</code> and <code>$__timeFilter</code> are required; the <a href="/docs/reference/sql">SQL reference</a> lists every macro. Open <strong>Alerts</strong>, click <strong>New rule</strong>, choose <strong>Start blank</strong>, and set the signal to <strong>SQL</strong>.
+                        The rules below use the <strong>SQL</strong> signal on the <code>metrics_gauge</code> table (<a href="/docs/reference/sql">SQL reference</a>). Open <strong>Alerts</strong>, click <strong>New rule</strong>, choose <strong>Start blank</strong>, and set the signal to <strong>SQL</strong>.
                     </p>
 
                     <h3 id="heartbeat" class="scroll-mt-24">Heartbeat rule per server</h3>
                     <pre><code set:html={highlight(heartbeatSql, "sql")} /></pre>
                     <ol class="guide-steps">
                         <li><span>01</span><div><h4>Threshold</h4><p><strong>Reduce each window by</strong> Sum, <strong>Alert when the value</strong> is below, <strong>Threshold</strong> <code>1</code>.</p></div></li>
-                        <li><span>02</span><div><h4>How it is checked</h4><p><strong>Window</strong> 5 min and <strong>Minimum samples</strong> 1. Each row counts as one sample, so the form's default of 50 would skip every check.</p></div></li>
-                        <li><span>03</span><div><h4>No data</h4><p>Switch <strong>Alert when there is no data</strong> on. When <code>web-01</code> goes quiet, the query returns no rows, and that counts as a breach.</p>
+                        <li><span>02</span><div><h4>How it is checked</h4><p><strong>Window</strong> 5 min and <strong>Minimum samples</strong> 1. The default of 50 would skip every check.</p></div></li>
+                        <li><span>03</span><div><h4>No data</h4><p>Switch <strong>Alert when there is no data</strong> on, so a quiet <code>web-01</code> counts as a breach.</p>
                             <figure class="guide-figure"><img src="/screenshots/guides/remote-server-monitoring-03-heartbeat-rule.webp" data-zoomable alt="The alert rule form with the SQL signal and the heartbeat query for web-01, Reduce each window by Sum, is below 1, a 5 minute window, Minimum samples 1 and Alert when there is no data switched on." width="2330" height="2227" loading="lazy" /></figure></div></li>
                     </ol>
                     <p>
-                        The incident opens six to seven minutes after the server's last report. To keep one rule per server in step with your inventory, create them from your config management with the <a href="/docs/alerting/alert-rules#create-a-rule-over-the-api">alert rules API</a>.
+                        The incident opens six to seven minutes after the server's last report. Create one rule per server from your config management with the <a href="/docs/alerting/alert-rules#create-a-rule-over-the-api">alert rules API</a>.
                     </p>
 
                     <h3 id="fleet-heartbeat" class="scroll-mt-24">One rule for the whole fleet</h3>
@@ -735,7 +761,7 @@ const articleJsonLd = {
                     </p>
                     <pre><code set:html={highlight(fleetSql, "sql")} /></pre>
                     <p>
-                        Set <strong>Reduce each window by</strong> Minimum, <strong>Alert when the value</strong> is below, <strong>Threshold</strong> the number of servers, <strong>Minimum samples</strong> 1, and <strong>Alert when there is no data</strong> on. The incident says that a server went quiet, not which one; the Hosts page filtered to <strong>Ended</strong> names it. Raise the threshold when you add a server.
+                        Set <strong>Reduce each window by</strong> Minimum, <strong>Alert when the value</strong> is below, <strong>Threshold</strong> the number of servers, <strong>Minimum samples</strong> 1, and <strong>Alert when there is no data</strong> on. The Hosts page filtered to <strong>Ended</strong> shows which server went quiet. Raise the threshold when you add a server.
                     </p>
 
                     <h3 id="thresholds" class="scroll-mt-24">Disk, memory and CPU per host</h3>
@@ -787,15 +813,13 @@ const articleJsonLd = {
     .rsm-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .rsm-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .rsm-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .rsm-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .rsm-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .rsm-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .rsm-guide strong { font-weight: 600; color: var(--foreground); }
     .rsm-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .rsm-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: color-mix(in oklab, var(--foreground) 72%, var(--background)); }
     .rsm-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .rsm-guide a:not(.guide-button):hover { color: var(--foreground); }
     .rsm-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .rsm-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .rsm-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .rsm-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
 
     /* One color per way of collecting: set --kind on the element. */
@@ -854,6 +878,10 @@ const articleJsonLd = {
     .rsm-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .rsm-guide .guide-callout .guide-kicker { color: var(--warning); }
     .rsm-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .rsm-guide .guide-takeaways { border-left-color: var(--primary); background: color-mix(in oklab, var(--primary) 6%, var(--bg-deep)); }
+    .rsm-guide .guide-takeaways .guide-kicker { color: var(--primary); }
+    .rsm-guide .guide-takeaways ul { margin: 0.7rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 14px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .rsm-guide .guide-takeaways li + li { margin-top: 0.35rem; }
     .rsm-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
     .rsm-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
     .rsm-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
