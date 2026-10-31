@@ -78,6 +78,14 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 		client: "192.0.2.9",
 		userAgent: "Mozilla/5.0 Chrome/120",
 	},
+	// A second named tool from the same address: the row shows one tool and that tool's user agent.
+	{
+		traceId: "s3",
+		path: "/",
+		status: "200",
+		client: "192.0.2.9",
+		userAgent: "Nuclei - Open-source project",
+	},
 	// Not probes: an ordinary request, and a probe path on a client span.
 	{ traceId: "n1", path: "/api/users", status: "200", client: "203.0.113.7" },
 	{ traceId: "n2", kind: "Client", path: "/.env", status: "404" },
@@ -192,6 +200,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				["q1", "../", "", "/index.php", 404, "203.0.113.7"],
 				["s1", "", "ZGrab", "/", 200, "192.0.2.9"],
 				["s2", "/.git/", "", "/.git/HEAD", 404, "192.0.2.9"],
+				["s3", "", "Nuclei", "/", 200, "192.0.2.9"],
 				["w1", "../", "", "/wp-content/plugins/x/../../../etc/passwd", 404, "203.0.113.7"],
 			],
 		)
@@ -239,7 +248,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			"/wp-login.php": [2, 1, 1],
 			"/server-status": [1, 0, 1],
 			"../": [2, 0, 1],
-			"": [1, 1, 1],
+			"": [2, 2, 1],
 		})
 		const sources = await read(CH.scannerSourcesQuery())
 		assert.deepStrictEqual(
@@ -252,7 +261,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			]),
 			[
 				["203.0.113.7", 6, 4, "", ""],
-				["192.0.2.9", 2, 1, "ZGrab", "Mozilla/5.0 zgrab/0.x"],
+				["192.0.2.9", 3, 1, "ZGrab", "Mozilla/5.0 zgrab/0.x"],
 				["198.51.100.2", 2, 1, "", ""],
 			],
 		)
@@ -269,7 +278,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				row.spans,
 			]),
 			[
-				["api", "nodejs", "18.20.8", "", 13],
+				["api", "nodejs", "18.20.8", "", 14],
 				["billing", "cpython", "3.12.4", "", 1],
 				["edge", "workerd", "", "", 1],
 				["worker", "nodejs", "24.3.0", "bun", 1],

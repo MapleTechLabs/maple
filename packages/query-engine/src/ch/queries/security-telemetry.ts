@@ -120,12 +120,8 @@ export function scannerSourcesQuery(opts: ScannerSourcesOpts = {}): CHQuery<any,
 			requests: CH.uniq($.TraceId),
 			signatures: CH.uniqIf($.Signature, $.Signature.neq("")),
 			scanner: CH.max_($.Scanner),
-			// The named tool's own user agent when there is one, so the pair shown belongs together.
-			userAgent: CH.if_(
-				CH.max_($.Scanner).neq(""),
-				CH.anyIf($.UserAgent, $.Scanner.neq("")),
-				CH.any_($.UserAgent),
-			),
+			// From the row holding that scanner name, so the pair belongs together.
+			userAgent: CH.argMax($.UserAgent, $.Scanner),
 			lastSeen: CH.max_($.Timestamp),
 		}))
 		.where(($) => [...scannerWhere($), $.ClientAddress.neq("")])
