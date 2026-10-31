@@ -72,7 +72,7 @@ The server layer reads these variables when the matching config option is not se
 
 **Repository URL:** `MAPLE_REPOSITORY_URL`, then `GITHUB_SERVER_URL` + `GITHUB_REPOSITORY` (GitHub Actions), then `VERCEL_GIT_REPO_OWNER` + `VERCEL_GIT_REPO_SLUG`.
 
-The SDK also detects the **runtime** (Node.js, Bun, Deno) and **cloud provider** (Railway, Vercel, Cloudflare, Render) and adds them as `maple.runtime` and `maple.provider` resource attributes.
+The SDK also detects the **runtime** (Node.js, Bun, Deno) and **cloud provider** (Railway, Vercel, Cloudflare, Render) and adds them as `maple.runtime` and `maple.provider` resource attributes, along with `process.runtime.name` and `process.runtime.version` (for example `22.11.0` on Node.js). Cloudflare Workers and edge runtimes report no `process.runtime.version`.
 
 ## Deployment platform notes
 
