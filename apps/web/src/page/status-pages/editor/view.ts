@@ -27,7 +27,7 @@ import {
 } from "../shared/derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { componentsOf, incidentsOf, monitorsOf, pageOf } from "./reads"
+import { componentsOf, incidentsOf, monitorsOf, pageOf, statusReadsReady } from "./reads"
 import { PAGE_MENU_ID, resolveView } from "./update"
 import { canvas } from "./view-canvas"
 import { jsonTab } from "./view-json"
@@ -145,10 +145,7 @@ const canvasRead = (model: Model): { failure: Option.Option<LoadFailure>; isRead
 		Option.orElse(() => AsyncData.getError(model.monitors.data)),
 		Option.orElse(() => AsyncData.getError(model.incidents.data)),
 	),
-	isReady:
-		AsyncData.hasData(model.components.data) &&
-		AsyncData.hasData(model.monitors.data) &&
-		AsyncData.hasData(model.incidents.data),
+	isReady: statusReadsReady(model),
 })
 
 const body = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html => {

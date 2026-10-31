@@ -114,6 +114,12 @@ export const componentsOf = (model: Model) => AsyncData.getOrElse(model.componen
 export const incidentsOf = (model: Model) => AsyncData.getOrElse(model.incidents.data, () => [])
 export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.data, () => [])
 
+/** Statuses need monitors and incidents with the components: before all three land, a monitored component would read operational. */
+export const statusReadsReady = (model: Model): boolean =>
+	AsyncData.hasData(model.components.data) &&
+	AsyncData.hasData(model.monitors.data) &&
+	AsyncData.hasData(model.incidents.data)
+
 export const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type, title, description })
 

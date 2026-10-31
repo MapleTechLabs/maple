@@ -31,9 +31,9 @@ import {
 	fillDays,
 	incidentComponentStatus,
 	isActiveIncident,
+	isListedIncident,
 	lastDays,
 	STATUS_PAGE_HISTORY_DAYS,
-	STATUS_PAGE_INCIDENT_HISTORY_DAYS,
 	STATUS_PAGE_SNAPSHOT_VERSION,
 	StatusPageSlug,
 	StatusPageTheme,
@@ -124,19 +124,6 @@ export interface SnapshotInput {
 		readonly componentId: StatusPageComponentId
 	}>
 	readonly nowMs: number
-}
-
-/** Whether a visitor should see the incident at `nowMs`: active, upcoming maintenance, or recently resolved. */
-export const isListedIncident = (incident: SnapshotIncidentInput, nowMs: number): boolean => {
-	if (!incident.published) return false
-	if (isActiveIncident(incident)) return true
-	if (incident.kind === "maintenance" && incident.status === "scheduled") {
-		return incident.scheduledEnd !== null && incident.scheduledEnd > nowMs
-	}
-	return (
-		incident.resolvedAt !== null &&
-		incident.resolvedAt >= nowMs - STATUS_PAGE_INCIDENT_HISTORY_DAYS * DAY_MS
-	)
 }
 
 /**

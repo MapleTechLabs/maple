@@ -358,7 +358,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedComponent: ({ componentId }) => selectComponent(model, componentId),
 		ClickedIncident: ({ incidentId }) => selectIncident(model, incidentId),
 		ClickedClosePanel: () => closePanel(model),
-		PressedEscape: () => closePanel(model),
+		// Escape skips the field's blur, so a component panel saves its typed edits before it closes.
+		PressedEscape: () =>
+			model.panel?._tag === "Component" ? chain(model, commitComponent, closePanel) : closePanel(model),
 		// Components
 		ChangedComponentField: ({ field, value }) => changeComponent(model, field, value),
 		CommittedComponent: () => commitComponent(model),

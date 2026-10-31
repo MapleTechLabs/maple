@@ -352,6 +352,16 @@ describe("the page as the editor", () => {
 		expect(pageUpdate(selected(1), Message.PressedEscape()).model.panel).toBeNull()
 	})
 
+	test("Escape saves a typed component edit before closing, since it skips the field's blur", () => {
+		const editing = pageUpdate(
+			selected(2),
+			Message.ChangedComponentField({ field: "name", value: "Payments" }),
+		)
+		const closed = pageUpdate(editing.model, Message.PressedEscape())
+		expect(closed.model.panel).toBeNull()
+		expect(names(closed.commands)).toContain("SaveStatusPageComponent")
+	})
+
 	test("removing a component asks first, then deletes it once", () => {
 		const asking = pageUpdate(
 			selected(2),
@@ -591,6 +601,18 @@ describe("drafts", () => {
 
 describe("live screen", () => {
 	const live = (publicBaseUrl: string): Model => ({ ...loaded({ tab: "live" }), publicBaseUrl })
+
+	test("a draft reached by link says it is not public, not that it is live", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({
+				...loaded({ tab: "live", page: statusPage({ draft: true }) }),
+				publicBaseUrl: "https://status-pr-7.maple.dev",
+			}),
+			expectView(role("heading", { name: "Acme Status is not public yet" })).toExist(),
+			expectView(role("heading", { name: "Acme Status is live" })).not.toExist(),
+		)
+	})
 
 	test("with a status domain: the full address to copy and open, and the next steps", () => {
 		scene(

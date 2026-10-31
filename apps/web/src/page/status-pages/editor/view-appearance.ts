@@ -11,6 +11,7 @@ import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { segmentedSelect } from "../../../ui/segmented-select"
+import { skeleton } from "../../../ui/skeleton"
 import { settingsSection } from "../../settings/kit/section"
 import { selectField, textField } from "../shared/fields"
 import {
@@ -34,7 +35,7 @@ import {
 	previewTheme,
 	toSnapshotIncident,
 } from "../shared/preview"
-import { componentsOf, incidentsOf, monitorsOf } from "./reads"
+import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
 
 // The Settings view's Appearance section and the live preview of the public page.
 
@@ -288,11 +289,13 @@ export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: Setti
 						: []),
 				],
 			),
-			previewFrame(h, {
-				title: "Status page preview",
-				document: settingsDocument(model, page, form),
-				className: "h-[640px]",
-			}),
+			statusReadsReady(model)
+				? previewFrame(h, {
+						title: "Status page preview",
+						document: settingsDocument(model, page, form),
+						className: "h-[640px]",
+					})
+				: skeleton(h, "h-[640px] w-full"),
 			h.p([h.Class("text-xs text-muted-foreground")], ["Unsaved changes show here first."]),
 		],
 	)

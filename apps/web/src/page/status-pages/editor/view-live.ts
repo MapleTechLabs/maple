@@ -71,16 +71,22 @@ export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
 			h.div(
 				[h.Class("flex flex-col gap-2")],
 				[
-					h.span(
-						[h.Class("flex items-center gap-2 text-severity-ok")],
-						[icon(h, "CircleCheckIcon", { size: 18 }), eyebrow(h, {}, ["Published"])],
+					// A draft reached by link, or one whose publish has not been read back yet, is not live.
+					page.draft
+						? eyebrow(h, {}, ["Draft"])
+						: h.span(
+								[h.Class("flex items-center gap-2 text-severity-ok")],
+								[icon(h, "CircleCheckIcon", { size: 18 }), eyebrow(h, {}, ["Published"])],
+							),
+					h.h2(
+						[h.Class("text-xl font-semibold tracking-tight")],
+						[page.draft ? `${page.name} is not public yet` : `${page.name} is live`],
 					),
-					h.h2([h.Class("text-xl font-semibold tracking-tight")], [`${page.name} is live`]),
 					h.p(
 						[h.Class("text-sm text-muted-foreground")],
 						[
 							page.draft
-								? "Publishing. It goes public as soon as the publish lands."
+								? "Visitors can't see it until it is published."
 								: "Visitors can read it now. Changes you make go out within a minute.",
 						],
 					),

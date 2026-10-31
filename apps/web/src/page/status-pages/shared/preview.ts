@@ -1,7 +1,7 @@
 import { UptimeMonitorId } from "@maple/domain"
 import type { StatusPagePreviewParams, V2StatusPageIncident } from "@maple/domain/http/v2"
 import {
-	STATUS_PAGE_INCIDENT_HISTORY_DAYS,
+	isListedIncident as isListedSnapshotIncident,
 	StatusPageDayBar,
 	type StatusPageSnapshot,
 	type StatusPageSnapshotIncident,
@@ -44,15 +44,20 @@ export const previewTheme = (theme: StatusPageTheme, scheme: PreviewScheme): Sta
 		? { ...theme, appearance: scheme, background: null, text: null, card: null, border: null }
 		: theme
 
-const DAY_MS = 86_400_000
-
-/** Whether visitors see the incident now: published, and open or recently closed. */
-export const isListedIncident = (incident: V2StatusPageIncident, nowMs: number): boolean =>
-	incident.published &&
-	(incident.resolved_at === null ||
-		isoMs(incident.resolved_at) >= nowMs - STATUS_PAGE_INCIDENT_HISTORY_DAYS * DAY_MS)
-
 const msOrNull = (value: string | null): number | null => (value === null ? null : isoMs(value))
+
+/** Whether visitors see the incident now, by the publisher's own rule. */
+export const isListedIncident = (incident: V2StatusPageIncident, nowMs: number): boolean =>
+	isListedSnapshotIncident(
+		{
+			published: incident.published,
+			kind: incident.kind,
+			status: incident.status,
+			scheduledEnd: msOrNull(incident.scheduled_end),
+			resolvedAt: msOrNull(incident.resolved_at),
+		},
+		nowMs,
+	)
 
 export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSnapshotIncident => ({
 	id: incident.id,
