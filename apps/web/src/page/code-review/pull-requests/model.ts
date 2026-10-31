@@ -1,4 +1,9 @@
-import { CodeReviewAnalytics, CodeReviewListResponse, PrReviewId } from "@maple/domain/http"
+import {
+	CodeReviewAnalytics,
+	CodeReviewListResponse,
+	CodeReviewSortKey,
+	PrReviewId,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
@@ -43,6 +48,7 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ClickedReview: { reviewId: PrReviewId },
 	ClickedLoadMore: {},
+	ClickedSort: { key: CodeReviewSortKey },
 	TickedPoll: {},
 	GotStatusSelectMessage: { message: Select.Message },
 	ChangedSearchDraft: { value: Schema.String },

@@ -1,4 +1,4 @@
-import type { CodeReviewListItem } from "@maple/domain/http"
+import type { CodeReviewListItem, CodeReviewSortDir, CodeReviewSortKey } from "@maple/domain/http"
 import { formatCount, outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
@@ -171,7 +171,49 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 	)
 }
 
-export const reviewTable = (h: H, reviews: ReadonlyArray<CodeReviewListItem>, context: RowContext): Html =>
+export type Sort = Readonly<{ sortBy: CodeReviewSortKey; sortDir: CodeReviewSortDir }>
+
+/** A header that sorts the list; the arrow points the active direction. */
+const sortableHead = (h: H, label: string, key: CodeReviewSortKey, sort: Sort, className: string): Html => {
+	const isActive = sort.sortBy === key
+	return tableHead(
+		h,
+		[
+			h.button(
+				[
+					h.Type("button"),
+					h.OnClick(Message.ClickedSort({ key })),
+					h.Class(
+						cn(
+							"inline-flex items-center gap-1 transition-colors",
+							isActive ? "text-foreground" : "hover:text-foreground",
+						),
+					),
+				],
+				[
+					label,
+					icon(h, "ArrowUpDownIcon", {
+						size: 10,
+						className: cn(
+							"shrink-0 transition-opacity",
+							isActive ? "opacity-100" : "opacity-40",
+							isActive && sort.sortDir === "asc" && "rotate-180",
+						),
+					}),
+				],
+			),
+		],
+		className,
+		isActive ? [h.Attribute("aria-sort", sort.sortDir === "asc" ? "ascending" : "descending")] : [],
+	)
+}
+
+export const reviewTable = (
+	h: H,
+	reviews: ReadonlyArray<CodeReviewListItem>,
+	sort: Sort,
+	context: RowContext,
+): Html =>
 	panel(h, {}, [
 		table(h, { size: "sm", className: "table-fixed" }, [
 			tableHeader(
@@ -180,10 +222,28 @@ export const reviewTable = (h: H, reviews: ReadonlyArray<CodeReviewListItem>, co
 					tableRow(h, [
 						tableHead(h, ["Pull request"], "px-4 font-normal"),
 						tableHead(h, ["Outcome"], "hidden w-40 px-3 font-normal md:table-cell"),
-						tableHead(h, ["Confidence"], "hidden w-28 px-3 text-right font-normal lg:table-cell"),
-						tableHead(h, ["Quality"], "hidden w-24 px-3 text-right font-normal lg:table-cell"),
-						tableHead(h, ["Issues"], "w-24 px-3 text-right font-normal"),
-						tableHead(h, ["Reviewed"], "hidden w-28 px-4 text-right font-normal sm:table-cell"),
+						sortableHead(
+							h,
+							"Confidence",
+							"confidence",
+							sort,
+							"hidden w-28 px-3 text-right font-normal lg:table-cell",
+						),
+						sortableHead(
+							h,
+							"Quality",
+							"quality",
+							sort,
+							"hidden w-24 px-3 text-right font-normal lg:table-cell",
+						),
+						sortableHead(h, "Issues", "issues", sort, "w-24 px-3 text-right font-normal"),
+						sortableHead(
+							h,
+							"Reviewed",
+							"reviewed",
+							sort,
+							"hidden w-28 px-4 text-right font-normal sm:table-cell",
+						),
 					]),
 				],
 				{ className: "bg-surface-sunken" },

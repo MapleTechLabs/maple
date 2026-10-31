@@ -156,4 +156,23 @@ describe("code review pull requests", () => {
 		const cleared = routeChanged(searched.model, { search: {} }, context)
 		expect(cleared.model.searchDraft).toBe("")
 	})
+
+	test("a header click sorts by that column descending, a second flips it, and newest first leaves the URL", () => {
+		const issues = pageUpdate(windowed().model, Message.ClickedSort({ key: "issues" }))
+		expect(issues.outMessage).toMatchObject({
+			url: "/code-review/pull-requests?sortBy=issues&sortDir=desc",
+		})
+		const flipped = pageUpdate(
+			windowed({ sortBy: "issues", sortDir: "desc" }).model,
+			Message.ClickedSort({ key: "issues" }),
+		)
+		expect(flipped.outMessage).toMatchObject({
+			url: "/code-review/pull-requests?sortBy=issues&sortDir=asc",
+		})
+		const reset = pageUpdate(
+			windowed({ sortBy: "reviewed", sortDir: "asc" }).model,
+			Message.ClickedSort({ key: "reviewed" }),
+		)
+		expect(reset.outMessage).toMatchObject({ url: "/code-review/pull-requests" })
+	})
 })
