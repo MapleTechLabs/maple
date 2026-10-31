@@ -14,7 +14,10 @@ const SLACK_API_BASE = "https://slack.com/api"
 const SlackResponse = Schema.Struct({
 	ok: Schema.Boolean,
 	error: Schema.optionalKey(Schema.String),
-	channel: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+	/** `conversations.create` answers with the channel; `chat.postMessage` with only its id. */
+	channel: Schema.optionalKey(
+		Schema.Union([Schema.String, Schema.Struct({ id: Schema.String, name: Schema.String })]),
+	),
 	channels: Schema.optionalKey(
 		Schema.Array(
 			Schema.Struct({

@@ -47,7 +47,7 @@ const stackTooltipBody = (h: H, bucket: BucketTooltip, total: string, portal: At
 		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
 		[
 			h.div(
-				[h.Class("border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
+				[h.Class("border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight")],
 				[bucket.heading],
 			),
 			h.div(
@@ -78,7 +78,7 @@ const stackTooltipBody = (h: H, bucket: BucketTooltip, total: string, portal: At
 			h.div(
 				[
 					h.Class(
-						"flex w-full items-center justify-between gap-3 border-border/50 border-t pt-1 leading-none",
+						"flex w-full items-center justify-between gap-3 border-border-subtle border-t pt-1 leading-none",
 					),
 				],
 				[h.span([h.Class("text-muted-foreground")], ["Total"]), figure(h, total)],
@@ -137,7 +137,7 @@ const keyValue = (h: H, label: string, value: string, className: string): Html =
 /** `BoxPlotSpike`'s body: the operation, then its outlier or its five-number summary. */
 const boxTooltipBody = (h: H, bucket: BucketTooltip, portal: Attribute<Message>): Html => {
 	const heading = h.div(
-		[h.Class("border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
+		[h.Class("border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight")],
 		[bucket.heading],
 	)
 	const row = (label: string, value: string, className: string) =>
@@ -270,7 +270,7 @@ export const spikeView = Submodel.defineView<Model, Message, SpikeInputs>((model
 			? undefined
 			: {
 					footer: h.p(
-						[h.Class("pt-1 text-right text-3xs text-muted-foreground/70")],
+						[h.Class("pt-1 text-right text-3xs text-foreground-subtle")],
 						[inputs.footer],
 					),
 				}),

@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { button } from "../../../ui/button"
+import { cardButton } from "../../../ui/card-button"
 import * as CopyButton from "../../../ui/copy-button"
 import { badge, kbd, kbdGroup } from "../../../ui/display"
 import { filterChip } from "../../../ui/filter-chip"
@@ -12,6 +13,7 @@ import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import { refreshButton } from "../../../ui/refresh-button"
 import { statusDot } from "../../../ui/status-dot"
+import { textLink } from "../../../ui/text-link"
 import * as Toggle from "../../../ui/toggle"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import { defineLab } from "../../define"
@@ -27,6 +29,7 @@ const VARIANTS = [
 	"destructive",
 	"destructive-outline",
 	"link",
+	"dashed",
 ] as const
 const TEXT_SIZES = ["xs", "sm", "default", "lg", "xl"] as const
 const ICON_SIZES = ["icon-2xs", "icon-xs", "icon-sm", "icon", "icon-lg", "icon-xl"] as const
@@ -139,8 +142,8 @@ const buttonStates = (h: HtmlBuilder<Message>): Html =>
 		button(h, { variant: "outline" }, ["Cancel edit"]),
 		button(h, { isDisabled: true }, ["Disabled"]),
 		button(h, { variant: "outline", isDisabled: true }, ["Disabled outline"]),
-		button(h, { isLoading: true }, ["Loading"]),
-		button(h, { variant: "outline", isLoading: true }, ["Loading outline"]),
+		button(h, { isLoading: true }, ["Save changes"]),
+		button(h, { variant: "outline", isLoading: true }, ["Save changes"]),
 		button(h, { variant: "outline" }, [icon(h, "PlusIcon"), " With icon"]),
 	])
 
@@ -358,6 +361,46 @@ const kbdAndInlineCode = (h: HtmlBuilder<Message>): Html =>
 		),
 	])
 
+const textLinks = (h: HtmlBuilder<Message>): Html =>
+	kitRow(h, undefined, [
+		textLink(h, { onClick: Message.ClickedRefresh() }, ["View all →"]),
+		textLink(h, { href: "#text-link" }, ["Open settings"]),
+		textLink(h, { tone: "muted", onClick: Message.ClickedRefresh() }, ["Clear filters"]),
+		textLink(
+			h,
+			{ tone: "muted", isMono: true, className: "text-3xs", onClick: Message.ClickedRefresh() },
+			["+4 more"],
+		),
+		textLink(h, { onClick: Message.ClickedRefresh(), isDisabled: true }, ["Disabled"]),
+	])
+
+const cardButtons = (h: HtmlBuilder<Message>): Html =>
+	kitRow(
+		h,
+		undefined,
+		(
+			[
+				["Resting", false, false],
+				["Selected", true, false],
+				["Disabled", false, true],
+			] as const
+		).map(([title, isSelected, isDisabled]) =>
+			cardButton(
+				h,
+				{
+					onClick: Message.ClickedRefresh(),
+					isSelected,
+					isDisabled,
+					className: "flex w-56 flex-col gap-1 p-3",
+				},
+				[
+					h.span([h.Class("text-sm font-medium")], [title]),
+					h.span([h.Class("text-xs text-muted-foreground")], ["A whole card as one click target."]),
+				],
+			),
+		),
+	)
+
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitPage(
 		h,
@@ -369,6 +412,8 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			kitSection(h, "Button variants x sizes", buttonVariantRows(h)),
 			kitSection(h, "Button states", [buttonStates(h)]),
 			kitSection(h, "Icon button", [iconButtons(h)]),
+			kitSection(h, "Text link", [textLinks(h)]),
+			kitSection(h, "Card button", [cardButtons(h)]),
 			kitSection(h, "Toggle", [toggles(model, h)]),
 			kitSection(h, "Toggle group", toggleGroups(model, h)),
 			kitSection(h, "Copy and refresh buttons", [copyAndRefresh(model, h)]),

@@ -18,6 +18,7 @@ export {
 	type RedactedDashboard,
 	type RedactedDataSource,
 	type RedactedWidget,
+	variablesForWidget,
 } from "./redact"
 export {
 	DASHBOARD_MIGRATIONS,

@@ -1,10 +1,10 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { TimeWindow } from "../../data/time-range"
+import { toLoadFailure } from "../../data/load-failure"
+import { currentWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { QuickStartState, readQuickStartState, writeQuickStartState } from "../onboarding/quick-start-state"
-import { sendIngestTestEvent } from "../settings/ingestion/command"
 import { Message } from "./setup-checklist"
 
 /** `quickStartAtomFamily(orgId)`: the stored progress, read once on entry. */
@@ -47,13 +47,18 @@ export const FetchSetupOverview = Command.define("FetchSetupChecklistOverview", 
 					})),
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadOverview({ window })),
+			Effect.catch((error) =>
+				Effect.succeed(Message.FailedLoadOverview({ window, failure: toLoadFailure(error) })),
+			),
 		),
 })
 
-export const SendSetupTestEvent = Command.define("SendSetupChecklistTestEvent", {
-	args: { publicKey: Schema.String },
-	messages: [Message.CompletedSendTestEvent],
-	execute: ({ publicKey }) =>
-		Effect.map(sendIngestTestEvent(publicKey), (isSent) => Message.CompletedSendTestEvent({ isSent })),
+/** Re-resolves the last hour against the clock, so each poll sees what landed since entry. */
+export const ResolveSetupPollWindow = Command.define("ResolveSetupChecklistPollWindow", {
+	args: { timeZone: Schema.String },
+	messages: [Message.ResolvedPollWindow],
+	execute: ({ timeZone }) =>
+		Effect.map(currentWindow({ preset: "1h", snap: false, timeZone }), (window) =>
+			Message.ResolvedPollWindow({ window }),
+		),
 })

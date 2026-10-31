@@ -97,7 +97,7 @@ const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): H
 		[
 			...(config.hint === undefined || config.hint === ""
 				? []
-				: [h.p([h.Class("text-xs text-muted-foreground/70")], [config.hint])]),
+				: [h.p([h.Class("text-xs text-foreground-subtle")], [config.hint])]),
 			...(histogram === null ? [] : [histogram]),
 			h.div(
 				[h.Class("flex items-center gap-1.5")],
@@ -138,7 +138,7 @@ const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): H
 													variant: "link",
 													size: "xs",
 													className:
-														"ml-auto text-muted-foreground hover:text-foreground",
+														"ml-auto text-muted-foreground hover:text-foreground active:text-foreground",
 													attributes: [
 														h.OnClick(config.onApply(undefined, undefined)),
 													],
@@ -193,7 +193,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 			h.AriaExpanded(isOpen),
 			h.Class(
 				cn(
-					"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground text-muted-foreground transition-colors",
+					"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground active:text-foreground text-muted-foreground",
 					eyebrowVariants({ variant: "label" }),
 				),
 			),
@@ -229,7 +229,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 												h.Role("button"),
 												h.Tabindex(0),
 												h.AriaLabel(`Clear ${config.title.toLowerCase()} filter`),
-												h.Class("rounded-xs hover:text-muted-foreground"),
+												h.Class("rounded-xs hover:text-muted-foreground active:text-muted-foreground"),
 												h.OnClick(config.onApply(undefined, undefined), {
 													propagation: "Stop",
 												}),
@@ -242,7 +242,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 						: []),
 					icon(h, "ChevronDownIcon", {
 						className: cn(
-							"size-3.5 shrink-0 text-muted-foreground/40 transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
+							"size-3.5 shrink-0 text-foreground-faint transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
 							isOpen && "rotate-180",
 						),
 					}),

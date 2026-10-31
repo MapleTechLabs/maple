@@ -8,7 +8,7 @@ import * as Chart from "../../../charts/chart"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
 import { ChartSpec, type FixedMetricRow } from "../../../charts/chart-spec"
 import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
-import { fixedMetricLegend, latencySeries } from "../../../charts/fixed-metric-legend"
+import { latencySeries } from "../../../charts/fixed-metric-legend"
 import {
 	fixedMetricModel,
 	LATENCY_SERIES,
@@ -141,13 +141,19 @@ const specOf = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context
 	})
 
 /** The hoisted header chips (`usePlotLegendSlot`): only the throughput card has two series. */
+/** Every card's legend sits in its header, right side, so latency and throughput read alike. */
 const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context: GridContext) =>
-	chart.kind !== "Throughput"
-		? []
-		: throughputLegend(throughputPlot(fixedMetricModel(rows, context.timeZone, context.nowMs), true), {
-				throughput: resolveColor(context.theme, "--chart-throughput"),
-				error: resolveColor(context.theme, "--chart-error"),
-			})
+	chart.kind === "Latency"
+		? latencySeries(context.theme)
+		: chart.kind !== "Throughput"
+			? []
+			: throughputLegend(
+					throughputPlot(fixedMetricModel(rows, context.timeZone, context.nowMs), true),
+					{
+						throughput: resolveColor(context.theme, "--chart-throughput"),
+						error: resolveColor(context.theme, "--chart-error"),
+					},
+				)
 
 export type GridState = Readonly<{
 	/** No overview yet (`Result.isInitial`), or the chart runtime and theme are still loading. */
@@ -193,10 +199,6 @@ const chartBody = <M>(
 					ariaLabel: chart.ariaLabel,
 					spec: specOf(chart, rows, context),
 					className: "h-full w-full aspect-auto",
-					legend:
-						chart.kind === "Latency"
-							? fixedMetricLegend(h, latencySeries(context.theme))
-							: undefined,
 					overlay,
 					reportPlot: true,
 				},

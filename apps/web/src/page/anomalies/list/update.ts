@@ -63,7 +63,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		firstPage: Keyed.idle(),
 		loadedPages: null,
 		isLoadingMore: false,
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		tabs: Tabs.init({ idBase: 0, values: STATUS_TABS, selected: statusOf(route.search) }),
 		filterSections: FilterSections.init(),
 		collapsedGroups: [],
@@ -73,6 +73,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model: loaded.model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			ReadAnomaliesClock(),
 			...(loaded.commands ?? []),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) => Message.GotFilterSectionsMessage({ message })),
@@ -180,7 +181,13 @@ const pressedListKey = (model: Model, key: "Next" | "Previous" | "Open" | "Escap
 	if (incidents.length === 0) return { model }
 	const current = model.focusedId === null ? -1 : incidents.findIndex((incident) => incident.id === model.focusedId)
 	const next =
-		key === "Next" ? (current < 0 ? 0 : Math.min(current + 1, incidents.length - 1)) : current <= 0 ? 0 : current - 1
+		key === "Next"
+			? current < 0
+				? 0
+				: Math.min(current + 1, incidents.length - 1)
+			: current <= 0
+				? 0
+				: current - 1
 	const target = incidents[next]
 	if (target === undefined) return { model }
 	return {
@@ -212,7 +219,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							model: { ...model, isLoadingMore: false },
 							outMessage: PageOutMessage.RequestedToast({
 								type: "error",
-								title: "More anomalies could not be loaded",
+								title: "Couldn't load more anomalies",
 								description: "",
 							}),
 						}),
@@ -264,10 +271,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		HoveredRow: ({ id }) => (model.focusedId === id ? { model } : { model: { ...model, focusedId: id } }),
 		PressedListKey: ({ key }) => pressedListKey(model, key),
 		CompletedScrollRow: () => ({ model }),
-		PaintedBody: () =>
-			AsyncData.isIdle(model.presence)
-				? { model: { ...model, presence: SignalPresenceData.Loading() }, commands: [LoadSignalPresence()] }
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

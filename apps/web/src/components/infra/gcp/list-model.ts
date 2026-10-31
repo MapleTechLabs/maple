@@ -56,8 +56,11 @@ export const GCP_SPARKLINE_BUCKETS = 24
 
 const utcMs = (time: string) => Date.parse(time.includes("T") ? time : `${time.replace(" ", "T")}Z`)
 
+export const gcpWindowSeconds = (startTime: string, endTime: string): number =>
+	(utcMs(endTime) - utcMs(startTime)) / 1000
+
 export function gcpSparklineBucketSeconds(startTime: string, endTime: string): number {
-	const windowSeconds = (utcMs(endTime) - utcMs(startTime)) / 1000
+	const windowSeconds = gcpWindowSeconds(startTime, endTime)
 	return Math.max(60, Math.ceil(windowSeconds / GCP_SPARKLINE_BUCKETS / 60) * 60)
 }
 
@@ -121,7 +124,8 @@ export function gcpRequestedView(view: string | undefined, tab: string | undefin
  * The views on the page and the one shown. A view shows while it has rows, and the requested one
  * always, so a link or a narrower time range lands on its empty state. The inventory only while a
  * connection collects: the resources of one that stopped are not listed. `counts` is null while
- * the fleet loads.
+ * the fleet loads: only the requested view is listed then, so an unrequested page waits on the
+ * services skeleton instead of showing the inventory and jumping away from it.
  */
 export function gcpViews(
 	counts: Readonly<Record<GcpServiceView, number>> | null,
@@ -129,7 +133,9 @@ export function gcpViews(
 	collecting: boolean,
 ): { readonly views: ReadonlyArray<GcpView>; readonly view: GcpView } {
 	const views = GCP_VIEWS.filter((view) =>
-		view === GCP_RESOURCES_TAB ? collecting : view === requested || (counts !== null && counts[view] > 0),
+		view === requested
+			? view !== GCP_RESOURCES_TAB || collecting
+			: counts !== null && (view === GCP_RESOURCES_TAB ? collecting : counts[view] > 0),
 	)
 	const view = views.find((candidate) => candidate === requested) ?? views[0] ?? "services"
 	return { views, view }
@@ -192,6 +198,12 @@ const FUNCTION = "gcp.cloud_functions"
 
 export const GCP_SLOW_P95_SECONDS = 1
 
+/**
+ * Mean billed instances that make a service without requests idle. Below it, a deploy's startup
+ * check or one request's warm instance would read as idle.
+ */
+export const GCP_IDLE_BILLED_INSTANCES = 0.5
+
 export interface GcpServiceRow extends GcpRowBase {
 	readonly service: "cloudRun" | "cloudFunctions"
 	/** Requests, or a 1st gen function's executions. */
@@ -206,14 +218,15 @@ export interface GcpServiceRow extends GcpRowBase {
 	readonly instances: number | undefined
 	/** Cloud Run only. */
 	readonly cpuP95: number | undefined
-	/** Seconds of billable instance time; Cloud Run only. */
-	readonly billableSeconds: number
+	/** Mean billed instances over the window: billable instance time per second; Cloud Run only. */
+	readonly billedInstances: number
 	readonly volume: ReadonlyArray<number> | undefined
 }
 
 export function gcpServiceRows(
 	fleet: ReadonlyArray<GcpFleetRead>,
 	sparks: GcpSparks,
+	windowSeconds: number,
 ): ReadonlyArray<GcpServiceRow> {
 	const run = workloadsOf(fleet, "cloudRun").map(({ keys, points }): GcpServiceRow => {
 		const read = gcpMetricReader(points)
@@ -226,7 +239,8 @@ export function gcpServiceRows(
 			latencyP95: read.mean(`${RUN}.request.duration`, "0.95"),
 			instances: read.mean(`${RUN}.container.instance.count`, "active"),
 			cpuP95: read.mean(`${RUN}.container.cpu.utilization`, "0.95"),
-			billableSeconds: read.total(`${RUN}.container.billable_time`),
+			billedInstances:
+				windowSeconds > 0 ? read.total(`${RUN}.container.billable_time`) / windowSeconds : 0,
 			volume: spark(sparks, keys, `${RUN}.requests`),
 		}
 	})
@@ -241,7 +255,7 @@ export function gcpServiceRows(
 			latencyP95: read.mean(`${FUNCTION}.execution.duration`, "0.95"),
 			instances: read.mean(`${FUNCTION}.instance.count`, "active"),
 			cpuP95: undefined,
-			billableSeconds: 0,
+			billedInstances: 0,
 			volume: spark(sparks, keys, `${FUNCTION}.executions`),
 		}
 	})
@@ -265,7 +279,7 @@ export const GCP_SERVICE_RULES: RowRules<GcpServiceRow, GcpServiceScope> = {
 			case "slow":
 				return (row.latencyP95 ?? 0) >= GCP_SLOW_P95_SECONDS
 			case "idle":
-				return row.requests === 0 && row.billableSeconds > 0
+				return row.requests === 0 && row.billedInstances >= GCP_IDLE_BILLED_INSTANCES
 		}
 	},
 	volume: (row) => row.requests,
@@ -542,13 +556,17 @@ export interface GcpListRows {
 	readonly loadBalancing: ReadonlyArray<GcpWorkloadRow>
 }
 
-/** `instances`: the Cloud SQL inventory, read only while that view shows. */
+/**
+ * `windowSeconds`: the range the fleet was read over. `instances`: the Cloud SQL inventory, read
+ * only while that view shows.
+ */
 export const gcpListRows = (
 	fleet: ReadonlyArray<GcpFleetRead>,
 	sparks: GcpSparks,
+	windowSeconds: number,
 	instances?: ReadonlyArray<GcpCloudSqlInstance>,
 ): GcpListRows => ({
-	services: gcpServiceRows(fleet, sparks),
+	services: gcpServiceRows(fleet, sparks, windowSeconds),
 	pubsub: gcpSubscriptionRows(fleet, sparks),
 	cloudSql: gcpDatabaseRows(fleet, sparks, instances),
 	gke: gcpWorkloadRows(fleet, "gke"),

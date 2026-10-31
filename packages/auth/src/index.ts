@@ -137,6 +137,10 @@ const unauthorized = (message: string) =>
 		message,
 	})
 
+/** A signed-in user with no organization to act in; v2 exposes this one case to clients. */
+const noActiveOrganization = () =>
+	new UnauthorizedError({ message: "Active organization is required", reason: "no_active_organization" })
+
 // NOTE: the decode helpers below deliberately discard the parse error and the
 // JWT helpers in `verifyHs256Jwt` do the same. Auth failures must NOT leak
 // validation hints (e.g. which schema field rejected the input) to unauthorized
@@ -349,7 +353,7 @@ type ClerkSessionAuth = {
 type ClerkRequestState = {
 	readonly isAuthenticated: boolean
 	readonly message: string | null
-	readonly toAuth: () => ClerkSessionAuth | null
+	readonly toAuth: (options?: { readonly treatPendingAsSignedOut?: boolean }) => ClerkSessionAuth | null
 }
 
 type ClerkAuthenticateRequest = (
@@ -364,7 +368,7 @@ export interface AuthEnv {
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
-	/** Only `development` lets a pinned org trust a non-member's session role. */
+	/** Only `development` lets a pinned org admit a non-member (with their session role). */
 	readonly MAPLE_ENVIRONMENT?: string | undefined
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
@@ -638,6 +642,7 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
 	authenticateClerkRequest: ClerkAuthenticateRequest,
 	acceptsToken: string | string[],
+	acceptPendingSession = false,
 ) {
 	const requestState = yield* Effect.tryPromise({
 		try: () =>
@@ -655,7 +660,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized(requestState.message ?? "Invalid Clerk session token")
 	}
 
-	const auth = requestState.toAuth()
+	// Clerk reports a `pending` session (one with an unfinished task, such as choosing an
+	// organization) as signed out unless asked otherwise.
+	const auth = requestState.toAuth({ treatPendingAsSignedOut: !acceptPendingSession })
 	if (!auth) {
 		return yield* unauthorized("Invalid Clerk session token")
 	}
@@ -668,7 +675,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized("Missing user in Clerk session token")
 	}
 
-	return { ...auth, userId: auth.userId }
+	// Pending by Clerk's own rule: authenticated only because pending sessions were let through.
+	const pending = acceptPendingSession && requestState.toAuth()?.isAuthenticated !== true
+	return { ...auth, userId: auth.userId, pending }
 })
 
 /**
@@ -686,7 +695,15 @@ export const makeResolveClerkUser = (
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "clerk" || !authenticateClerkRequest) {
 			return yield* unauthorized("A Clerk session is required")
 		}
-		const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, "session_token")
+		// A user with no organization yet holds a pending session until they create one, so
+		// this is the one place a pending session is accepted.
+		const auth = yield* authenticateClerkUser(
+			headers,
+			env,
+			authenticateClerkRequest,
+			"session_token",
+			true,
+		)
 		return yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
 	})
 
@@ -716,7 +733,18 @@ export const makeResolveTenant = (
 				return yield* unauthorized("CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk")
 			}
 
-			const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, acceptsToken)
+			const auth = yield* authenticateClerkUser(
+				headers,
+				env,
+				authenticateClerkRequest,
+				acceptsToken,
+				true,
+			)
+			// A pending session (a user who has not chosen an organization yet) is only
+			// classified so clients can show an org picker, never served.
+			if (auth.pending) {
+				return yield* auth.orgId ? unauthorized("Invalid Clerk token") : noActiveOrganization()
+			}
 
 			const orgIdOverride = getOptionalString(env.MAPLE_ORG_ID_OVERRIDE)
 			const userId = yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
@@ -749,10 +777,8 @@ export const makeResolveTenant = (
 				if (env.MAPLE_ENVIRONMENT === "development") {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
-				if (verifyOrgMembership) {
-					return yield* Effect.fail(organizationAccessDenied(pinnedOrgId))
-				}
-				return { orgId: pinnedOrgId, userId, roles: [], authMode: "clerk" }
+				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
+				return yield* Effect.fail(organizationAccessDenied(pinnedOrgId))
 			}
 
 			if (!auth.orgId) {
@@ -762,7 +788,7 @@ export const makeResolveTenant = (
 				// foreground has active.
 				const selected = yield* selectRequestedOrg(userId, headers, selectable)
 				if (Option.isNone(selected)) {
-					return yield* unauthorized("Active organization is required")
+					return yield* noActiveOrganization()
 				}
 				return {
 					orgId: selected.value.orgId,
@@ -853,6 +879,19 @@ const extractPrimaryEmail = (u: ClerkUser): string | null => {
 	return primary?.emailAddress ?? u.emailAddresses?.[0]?.emailAddress ?? null
 }
 
+/** The primary address only once Clerk has verified it; never a fallback to another address. */
+export const extractVerifiedPrimaryEmail = (u: {
+	readonly primaryEmailAddressId: string | null
+	readonly emailAddresses: ReadonlyArray<{
+		readonly id: string
+		readonly emailAddress: string
+		readonly verification: { readonly status: string } | null
+	}>
+}): string | null => {
+	const primary = u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
+	return primary?.verification?.status === "verified" ? primary.emailAddress : null
+}
+
 const makeClerkClient = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
 ) => {
@@ -885,6 +924,29 @@ export const makeGetUserEmail = (
 		return Option.match(user, {
 			onNone: () => null as string | null,
 			onSome: extractPrimaryEmail,
+		})
+	})
+}
+
+export const makeGetVerifiedPrimaryEmail = (
+	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
+) => {
+	const clerkClient = makeClerkClient(env)
+	if (!clerkClient) {
+		return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (_userId: string) {
+			return null as string | null
+		})
+	}
+
+	return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (userId: string) {
+		yield* Effect.annotateCurrentSpan("tenant.userId", userId)
+		const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
+			clerkClient.users.getUser(userId),
+		).pipe(Effect.option)
+
+		return Option.match(user, {
+			onNone: () => null as string | null,
+			onSome: extractVerifiedPrimaryEmail,
 		})
 	})
 }

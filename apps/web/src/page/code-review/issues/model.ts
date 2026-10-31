@@ -5,7 +5,7 @@ import {
 	CodeReviewFindingsResponse,
 	PrReviewId,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
@@ -17,6 +17,7 @@ import { getAnalytics, listFindings } from "../kit/api"
 import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 import { ReviewSheet, SheetMessage } from "../kit/review-sheet"
+import { SEARCH_DEBOUNCE_MS } from "../kit/search"
 
 // `/code-review/issues`: findings, their filters and the review sheet.
 
@@ -34,6 +35,9 @@ export const Model = Schema.Struct({
 	severitySelect: Select.Model,
 	categorySelect: Select.Model,
 	stateSelect: Select.Model,
+	/** The search box's input and its debounce generation. */
+	searchDraft: Schema.String,
+	searchGeneration: Schema.Number,
 	/** One Tooltip for every row's relative time (the absolute time). */
 	timeTooltip: Tooltip.Model,
 	sheet: ReviewSheet,
@@ -55,6 +59,8 @@ export const Message = defineMessageUnion({
 	ClickedLoadMore: {},
 	GotFilterSelectMessage: { filter: FilterKey, message: Select.Message },
 	GotTimeTooltipMessage: { message: Tooltip.Message },
+	ChangedSearchDraft: { value: Schema.String },
+	ElapsedSearchDebounce: { generation: Schema.Number },
 	GotSheetMessage: { message: SheetMessage },
 })
 export type Message = typeof Message.Type
@@ -79,3 +85,13 @@ export const FetchFindingAuthors = Command.define("FetchCodeReviewFindingAuthors
 		),
 })
 
+/** The search box's debounce; a newer keystroke bumps the generation. */
+export const WaitSearchDebounce = Command.define("WaitCodeReviewIssuesSearchDebounce", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedSearchDebounce],
+	execute: ({ generation }) =>
+		Effect.as(
+			Effect.sleep(Duration.millis(SEARCH_DEBOUNCE_MS)),
+			Message.ElapsedSearchDebounce({ generation }),
+		),
+})

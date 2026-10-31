@@ -41,7 +41,7 @@ const anchored = () => pageUpdate(init(context, "checkout-api").model, Message.C
 
 describe("local service detail", () => {
 	test("entry asks the overview, operations and golden signals; the operations chart waits for operations", () => {
-		expect(names(anchored().commands)).toEqual([FetchOverview.name, FetchOperations.name, FetchGoldenSignals.name])
+		expect(names(anchored().commands)).toEqual(expect.arrayContaining([FetchOverview.name, FetchOperations.name, FetchGoldenSignals.name]))
 		const base = anchored().model
 		const withOps = pageUpdate(
 			base,

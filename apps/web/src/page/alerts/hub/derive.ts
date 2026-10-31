@@ -34,13 +34,15 @@ export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> => 
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
 	(model.destinations ?? []).map(rowToAlertDestinationDocument)
 
-export type AlertsTab = "inbox" | "rules" | "routing"
+export type AlertsTab = "inbox" | "rules" | "uptime" | "routing"
 
 /** Legacy `tab` values map onto the current tabs so old links keep resolving. */
 export const resolveTab = (tab: string | undefined): AlertsTab => {
 	switch (tab) {
 		case "rules":
 			return "rules"
+		case "uptime":
+			return "uptime"
 		case "routing":
 		case "settings":
 			return "routing"

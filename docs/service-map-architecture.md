@@ -36,12 +36,12 @@ Two things about that table are not yet true but should be:
 Every edge query reconstructs its window from two sources: an hourly rollup for the whole-hour
 interior, and raw rows for the two partial hours at the ends.
 
-| Layer              | Interior tier                        | Raw tier                                     | Filled by            |
-| ------------------ | ------------------------------------ | -------------------------------------------- | -------------------- |
-| service → service  | `service_map_edges_hourly`           | `service_map_spans` ⋈ `service_map_children` | **scheduled rollup** |
-| service → database | `service_map_db_edges_hourly`        | `traces`                                     | MV                   |
-| service → external | `service_external_edges_hourly`      | `traces`                                     | MV                   |
-| db query shapes    | `service_map_db_query_shapes_hourly` | `traces`                                     | MV                   |
+| Layer              | Interior tier                        | Raw tier                                       | Filled by            |
+| ------------------ | ------------------------------------ | ---------------------------------------------- | -------------------- |
+| service → service  | `service_map_edges_hourly`           | `service_map_spans` ⋈ `service_map_children`   | **scheduled rollup** |
+| service → database | `service_map_db_edges_hourly`        | `service_map_db_edges_minutely`, then `traces` | MV                   |
+| service → external | `service_external_edges_hourly`      | `traces`                                       | MV                   |
+| db query shapes    | `service_map_db_query_shapes_hourly` | `traces`                                       | MV                   |
 
 **The two tiers must tile the window exactly once, with no gap and no overlap.** That boundary
 is not written per query. It comes from
@@ -55,12 +55,37 @@ each seam and one second either side, then compares each spliced query against a
 raw `traces`. Boundary-exact rows are the only ones that expose a tiling bug. Everything else passes
 whether the inequalities are complements or not.
 
+### Service→database reads three tiers
+
+The database edges add a minute rollup (`service_map_db_edges_minutely`, migration 0049)
+between the two: whole hours from the hourly rollup, whole minutes of the two partial hours
+from the minute rollup, and raw `traces` only for the partial minutes at each end. The raw
+tier decodes both attribute maps of every Client span, so on a heavy org (31M spans an hour)
+reading the partial hours raw took 24s and 30 GB of a 30s budget.
+
+The minute table was created without a backfill. The view stamps each row with its insert
+time (`FirstInsertedAt`); the read takes the minute after the org's first stamp as the start
+of its coverage and keeps raw `traces` for anything earlier, so a window from before the table
+existed is exact, only slower. Insert time, not `Minute`: a late span with an old timestamp
+lands in a minute whose other spans went into `traces` before the view existed. A cluster without migration 0049 reads
+the old two-tier shape (`serviceDbEdgesRaw`). The bundle also gives the database edges a 12s
+budget: past it the map renders without them and says so, instead of a 504 for the page.
+
+The remaining cost is the raw end minutes: ClickHouse reads every `traces` granule of the two
+5-minute buckets at the ends, maps included, because Tinybird runs one PREWHERE step and the
+DSL cannot emit an explicit `PREWHERE`. About 2s for that org; an explicit `PREWHERE` on the
+time predicate measured 0.3s.
+
 ### Service→service is the fragile one
 
 It is the only layer whose interior tier is filled by a **scheduled job**
 (`ServiceMapRollupService`, hourly at `0 * * * *` in `apps/alerting`) instead of a
 materialized view. The downstream service name is only recoverable by joining a Client/Producer span to its child
 Server/Consumer span, which an MV cannot express.
+
+`service_map_spans` and `service_map_children` lead their sort key with the 5-minute trace
+bucket, so the rollup's hour join and the live branch read only the buckets in their window
+(see "The service-map span tables" in [warehouse-rollups.md](warehouse-rollups.md)).
 
 Two consequences, both open:
 

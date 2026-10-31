@@ -173,6 +173,8 @@ const FAILURE_REASONS: ReadonlyMap<string, ChatOutboundFailureReason> = new Map(
 	...[
 		"invalid_blocks",
 		"invalid_blocks_format",
+		// Blocks inside an attachment, an alert card's image among them (one Slack could not fetch).
+		"invalid_attachments",
 		"msg_too_long",
 		"no_text",
 		"too_many_attachments",

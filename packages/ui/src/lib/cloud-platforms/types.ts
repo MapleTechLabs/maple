@@ -62,8 +62,8 @@ export interface CloudPlatformAdapter {
 /** Badge styling for a platform outcome — shared across providers. */
 export function outcomeBadgeStyle(bad: boolean): string {
 	return bad
-		? "bg-severity-error/15 text-severity-error border-severity-error/30"
-		: "bg-severity-info/15 text-severity-info border-severity-info/30"
+		? "bg-severity-error-a2 text-severity-error border-severity-error-a3"
+		: "bg-severity-info-a2 text-severity-info border-severity-info-a3"
 }
 
 /** First present, non-blank value among `keys`. */

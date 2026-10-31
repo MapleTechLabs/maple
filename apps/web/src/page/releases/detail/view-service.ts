@@ -119,13 +119,13 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 		],
 		onSome: (commit) => [
 			h.span([h.Class("truncate")], [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
-			h.span([h.Class("truncate text-muted-foreground/70")], [commit.repoFullName]),
+			h.span([h.Class("truncate text-foreground-subtle")], [commit.repoFullName]),
 			h.a(
 				[
 					h.Href(commit.htmlUrl),
 					h.Target("_blank"),
 					h.Rel("noreferrer"),
-					h.Class("font-mono text-primary hover:underline"),
+					h.Class("font-mono text-primary hover:underline active:underline"),
 				],
 				[shortReleaseLabel(model.commitSha), " ↗"],
 			),
@@ -280,9 +280,9 @@ const issuesPanel = (
 		onIdle: loading,
 		onLoading: loading,
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Issues could not be loaded", variant: "row" }),
+			errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
 		onStale: ({ error }) =>
-			errorState(h, { failure: error, title: "Issues could not be loaded", variant: "row" }),
+			errorState(h, { failure: error, title: "Couldn't load issues", variant: "row" }),
 		onSuccess: loaded,
 		onRefreshing: loaded,
 	})
@@ -312,7 +312,7 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 					},
 				],
 			}),
-			h.span([h.Class("text-2xs text-muted-foreground/70")], [caption]),
+			h.span([h.Class("text-2xs text-foreground-subtle")], [caption]),
 		],
 	)
 }
@@ -385,11 +385,11 @@ const detailState = (h: H, model: Model, serviceName: string, clock: Clock): Htm
 		onIdle: () => bodySkeleton(h),
 		onLoading: () => bodySkeleton(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load release", onRetry: Message.ClickedRetry() }),
+			errorState(h, { failure, title: "Couldn't load release", onRetry: Message.ClickedRetry() }),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load release",
+				title: "Couldn't load release",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onSuccess: loaded,

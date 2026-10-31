@@ -15,7 +15,7 @@ import { dashboardPage } from "../../page/kit/dashboard-page"
 import { fixtureRows } from "./fixture"
 import { CONTEXT } from "./update"
 
-// `GcpDashboardLab`: `DashboardPage fill` with the variable chips as its actions, the board as
+// `GcpDashboardLab`: `DashboardPage` with the variable chips as its actions, the board as
 // `ReadOnlyDashboardView`, and the variables dialog.
 
 type H = HtmlBuilder<Message>
@@ -35,23 +35,18 @@ const labTile = (h: H, model: Model, widget: Widget, values: VariableValues): Ht
 		widget,
 	)
 
-/** `ReadOnlyDashboardView`: the scroller around the sectioned board. */
+/** `ReadOnlyDashboardView`: the sectioned board in the page's scroll area, with its gutter. */
 const board = (h: H, model: Model, document: DashboardDocument): Html => {
 	const values = variablesOf(model, CONTEXT).values
-	return h.div(
-		[h.Class("flex h-full min-h-0 w-full flex-col")],
-		[
-			h.div(
-				[h.Class("min-h-0 flex-1 overflow-y-auto")],
-				[
-					dashboardSections(
-						h,
-						{ model, timeZone: CONTEXT.timeZone, variables: values, renderTile: (widget) => labTile(h, model, widget, values) },
-						document,
-					),
-				],
-			),
-		],
+	return dashboardSections(
+		h,
+		{
+			model,
+			timeZone: CONTEXT.timeZone,
+			variables: values,
+			renderTile: (widget) => labTile(h, model, widget, values),
+		},
+		document,
 	)
 }
 
@@ -61,7 +56,7 @@ export const view = (model: Model, h: H): Html =>
 		[
 			dashboardPage(
 				h,
-				{ actions: variableSelects(h, model, CONTEXT, true)[0], fill: true },
+				{ actions: variableSelects(h, model, CONTEXT, true)[0] },
 				model.document === null ? [] : [board(h, model, model.document)],
 			),
 			h.submodel({

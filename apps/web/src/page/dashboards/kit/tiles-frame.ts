@@ -14,7 +14,9 @@ export const titleOf = <M>(ctx: TileContext<M>, title: string | undefined, fallb
 
 /** `useWidgetTimeRangeOverride`: a tile pinned to its own window labels it in the header. */
 export const timeRangeLabelOf = <M>(ctx: TileContext<M>, widget: Widget): string | undefined =>
-	widget.timeRange === undefined ? undefined : widgetTimeRangeLabel(widget.timeRange, ctx.timeZone, ctx.nowMs ?? 0)
+	widget.timeRange === undefined
+		? undefined
+		: widgetTimeRangeLabel(widget.timeRange, ctx.timeZone, ctx.nowMs ?? 0)
 
 /** The `WidgetFrame` props every tile passes: title, mode, menu, data state and the error CTAs. */
 export const frame = <M>(
@@ -33,7 +35,6 @@ export const frame = <M>(
 	state: ctx.state,
 	loadingSkeleton: chartSkeleton(ctx.h, "line"),
 	configure: ctx.configure,
-	fix: ctx.fix,
 	narrowRange: ctx.narrowRange,
 	errorDetails: ctx.errorDetails,
 	...overrides,

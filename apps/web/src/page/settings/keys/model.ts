@@ -20,6 +20,8 @@ export const Model = Schema.Struct({
 	userId: Schema.NullOr(Schema.String),
 	/** `useApiKeysList()`: `null` until the shape's first answer. */
 	apiKeys: Schema.NullOr(Schema.Array(V2ApiKey)),
+	/** The shape failed before its first answer: the list shows the sync error, not a skeleton. */
+	isLoadFailed: Schema.Boolean,
 	typeFilter: KeyTypeFilter,
 	statusFilter: KeyStatusFilter,
 	statusSelect: Select.Model,

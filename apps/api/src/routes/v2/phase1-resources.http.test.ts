@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Ref, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
@@ -19,6 +19,7 @@ import {
 	ErrorIssueDocument,
 	ErrorIssueId,
 	ErrorIssueNotFoundError,
+	ErrorIssueTransitionError,
 	ErrorPersistenceError,
 	ErrorIssueSampleTrace,
 	ErrorIssueEnvironment,
@@ -40,6 +41,7 @@ import {
 	UserId,
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsPersistenceError,
+	WarehouseUpstreamError,
 } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
@@ -57,6 +59,7 @@ import { SharedDashboardService } from "@maple/backend/services/dashboards/Share
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -328,6 +331,9 @@ const errorIssueDetailFixture = new ErrorIssueDetailResponse({
 })
 
 const die = () => Effect.die(new Error("not exercised in this test harness"))
+const dieSync = (): never => {
+	throw new Error("not exercised in this test harness")
+}
 
 /** Empty warehouse — enough to exercise the session_replays envelope + 404 paths. */
 const warehouseStub = makeWarehouseServiceStub({
@@ -363,7 +369,11 @@ const ORG = Schema.decodeUnknownSync(OrgId)("org_phase1_e2e")
 const USER = Schema.decodeUnknownSync(UserId)("user_phase1_e2e")
 
 type InvestigationStartMode = "success" | "unavailable" | "restart_not_found"
-type IssueReadFailure = "none" | "persistence" | "warehouse_config_lookup" | "warehouse_config_decryption"
+type IssueReadFailure =
+	| "none"
+	| "persistence"
+	| "warehouse_settings_unavailable"
+	| "warehouse_config_decryption"
 
 const makeHarness = (
 	warehouseService: WarehouseQueryServiceApi = warehouseStub,
@@ -385,10 +395,15 @@ const makeHarness = (
 	} | null = null
 	const issueReadFailureEffect = () => {
 		switch (issueReadFailure) {
-			case "warehouse_config_lookup":
+			// What WarehouseQueryService reports when the org's saved settings can't be read.
+			case "warehouse_settings_unavailable":
 				return Effect.fail(
-					new OrgClickHouseSettingsPersistenceError({
+					new WarehouseUpstreamError({
 						message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						pipeName: "errorIssues",
+						cause: new OrgClickHouseSettingsPersistenceError({
+							message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						}),
 					}),
 				)
 			case "warehouse_config_decryption":
@@ -401,6 +416,18 @@ const makeHarness = (
 				return Effect.fail(new ErrorPersistenceError({ message: "database unavailable" }))
 		}
 	}
+	// One issue whose workflow actions mutate it, so a test can read the change back.
+	const storedIssue = Ref.makeUnsafe(errorIssueFixture)
+	const issueActions: Array<Record<string, unknown>> = []
+	const ensuredUsers: Array<string> = []
+	const requireStoredIssue = (
+		issueId: ErrorIssueId,
+	): Effect.Effect<ErrorIssueDocument, ErrorIssueNotFoundError> =>
+		issueId === errorIssueFixture.id
+			? Ref.get(storedIssue)
+			: Effect.fail(ErrorIssueNotFoundError.forIssue(issueId))
+	const updateStoredIssue = (patch: Partial<ErrorIssueDocument>) =>
+		Ref.updateAndGet(storedIssue, (current) => new ErrorIssueDocument({ ...current, ...patch }))
 	const startInvestigation = () => {
 		switch (investigationStartMode) {
 			case "unavailable":
@@ -513,22 +540,85 @@ const makeHarness = (
 		}),
 		// The anomalies group still exercises the issue-link audit mutation.
 		Layer.succeed(ErrorsService, {
-			transitionIssue: die,
-			claimIssue: die,
+			transitionIssue: (_org, actorId, issueId, toState, opts) =>
+				Effect.gen(function* () {
+					const current = yield* requireStoredIssue(issueId)
+					// `wontfix` stands in for a move the workflow refuses.
+					if (toState === "wontfix") {
+						return yield* Effect.fail(
+							new ErrorIssueTransitionError({
+								message: `Cannot move from ${current.workflowState} to ${toState}`,
+								issueId,
+								fromState: current.workflowState,
+								toState,
+							}),
+						)
+					}
+					issueActions.push({ action: "transition", actorId, opts })
+					return yield* updateStoredIssue({ workflowState: toState, notes: opts?.note ?? null })
+				}),
+			claimIssue: (_org, actorId, issueId, leaseDurationMs) =>
+				requireStoredIssue(issueId).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => issueActions.push({ action: "claim", actorId, leaseDurationMs })),
+					),
+					Effect.andThen(
+						updateStoredIssue({
+							workflowState: "in_progress",
+							leaseHolder: actorFixture,
+							claimedAt: decodeIso("2026-07-15T10:00:00.000Z"),
+						}),
+					),
+				),
 			proposeFix: die,
 			recordAnomalyLinkEvent: () => Effect.void,
 			runTick: die,
+		}),
+		Layer.succeed(ErrorIssueWorkflowService, {
+			rowToIssue: dieSync,
+			requireIssue: die,
+			issuesWithOpenIncidents: die,
+			hydrateIssueRows: die,
+			hydrateIssue: die,
+			recordEvent: die,
+			buildEvent: dieSync,
+			applyTransition: die,
+			heartbeatIssue: die,
+			releaseIssue: (_org, actorId, issueId, opts) =>
+				Effect.gen(function* () {
+					const current = yield* requireStoredIssue(issueId)
+					issueActions.push({ action: "release", actorId, opts })
+					return yield* updateStoredIssue({
+						workflowState: opts?.transitionTo ?? current.workflowState,
+						leaseHolder: null,
+						claimedAt: null,
+					})
+				}),
+			assignIssue: die,
+			setSeverity: (_org, actorId, issueId, severity, opts) =>
+				requireStoredIssue(issueId).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => issueActions.push({ action: "severity", actorId, opts })),
+					),
+					Effect.andThen(
+						updateStoredIssue({ severity, severitySource: severity === null ? null : "manual" }),
+					),
+				),
+			commentOnIssue: die,
+			listIssueEvents: die,
 		}),
 		Layer.succeed(ErrorActorsService, {
 			registerAgent: die,
 			listAgents: die,
 			lookupActor: die,
-			ensureUserActor: () => Effect.succeed(actorFixture),
+			ensureUserActor: (_org, userId) =>
+				Effect.sync(() => ensuredUsers.push(userId)).pipe(Effect.as(actorFixture)),
 			actorExists: die,
 			ensureSystemActor: die,
 			ensureAgentActor: die,
 			touchActor: die,
 			collectActorDocs: die,
+			findOwnedAgentActor: die,
 		}),
 		Layer.succeed(OrganizationService, {
 			retrieve: (orgId) =>
@@ -606,11 +696,23 @@ const makeHarness = (
 			}),
 		)
 
+	// A self-hosted root session: a dashboard user, which carries no scopes.
+	const bootstrapSession = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return (yield* auth.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
 	return {
 		request,
 		bootstrapKey,
+		bootstrapSession,
 		lastIssueListCall: () => lastIssueListCall,
 		lastIssueDetailCall: () => lastIssueDetailCall,
+		issueActions: () => issueActions,
+		ensuredUsers: () => ensuredUsers,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -706,6 +808,72 @@ describe("v2 error_issues over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("triages an issue as the caller: transition, claim, severity, release", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["error_issues:write"])
+		const call = (method: string, action: string, body: unknown) =>
+			harness.request(method, `/v2/error_issues/${ISS_ID}/${action}`, { token: key.secret, body })
+
+		const transitioned = await call("POST", "transitions", { to_state: "todo", note: "looking" })
+		expect(transitioned.status).toBe(200)
+		expect(transitioned.body).toMatchObject({
+			id: ISS_ID,
+			object: "error_issue",
+			workflow_state: "todo",
+			notes: "looking",
+		})
+
+		const claimed = await call("POST", "claim", { lease_duration_seconds: 600 })
+		expect(claimed.status).toBe(200)
+		expect(claimed.body).toMatchObject({ workflow_state: "in_progress", lease_holder: { id: ACTOR_ID } })
+
+		const severity = await call("PUT", "severity", { severity: "low" })
+		expect(severity.status).toBe(200)
+		expect(severity.body).toMatchObject({ severity: "low", severity_source: "manual" })
+
+		const released = await call("POST", "release", { transition_to: "in_review" })
+		expect(released.status).toBe(200)
+		expect(released.body).toMatchObject({ workflow_state: "in_review", lease_holder: null })
+
+		// Every action ran as the caller's user actor, with the wire fields translated.
+		expect(harness.issueActions()).toEqual([
+			{ action: "transition", actorId: actorFixture.id, opts: { note: "looking" } },
+			{ action: "claim", actorId: actorFixture.id, leaseDurationMs: 600_000 },
+			{ action: "severity", actorId: actorFixture.id, opts: { source: "manual" } },
+			{ action: "release", actorId: actorFixture.id, opts: { transitionTo: "in_review" } },
+		])
+		expect(harness.ensuredUsers()).toHaveLength(4)
+		await harness.dispose()
+	})
+
+	it("maps refused transitions to 409, missing issues to 404, and needs write scope", async () => {
+		const harness = makeHarness()
+		const reader = await harness.bootstrapKey(["error_issues:read"])
+		const readOnly = await harness.request("POST", `/v2/error_issues/${ISS_ID}/claim`, {
+			token: reader.secret,
+			body: {},
+		})
+		expect(readOnly.status).toBe(403)
+
+		const key = await harness.bootstrapKey(["error_issues:write"])
+		const refused = await harness.request("POST", `/v2/error_issues/${ISS_ID}/transitions`, {
+			token: key.secret,
+			body: { to_state: "wontfix" },
+		})
+		expect(refused.status).toBe(409)
+		expect(refused.body.error.code).toBe("error_issue_transition_invalid")
+
+		const missingId = encodePublicId("iss", "99999999-9999-4999-8999-999999999991")
+		const missing = await harness.request("PUT", `/v2/error_issues/${missingId}/severity`, {
+			token: key.secret,
+			body: { severity: null },
+		})
+		expect(missing.status).toBe(404)
+		expect(missing.body.error.code).toBe("error_issue_not_found")
+		expect(harness.issueActions()).toEqual([])
+		await harness.dispose()
+	})
+
 	it("maps list and rich-retrieve dependency failures to v2 503 errors", async () => {
 		const harness = makeHarness(warehouseStub, "persistence")
 		const key = await harness.bootstrapKey(["error_issues:read"])
@@ -723,15 +891,15 @@ describe("v2 error_issues over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("preserves exact warehouse failures instead of relabeling them as persistence", async () => {
-		const harness = makeHarness(warehouseStub, "warehouse_config_lookup")
+	it("answers an unreadable warehouse settings row as a retryable warehouse outage", async () => {
+		const harness = makeHarness(warehouseStub, "warehouse_settings_unavailable")
 		const key = await harness.bootstrapKey(["error_issues:read"])
 		const response = await harness.request("GET", "/v2/error_issues", { token: key.secret })
 
 		expect(response.status).toBe(503)
 		expect(response.body.error).toMatchObject({
-			_tag: "@maple/http/errors/OrgClickHouseSettingsPersistenceError",
-			code: "clickhouse_settings_unavailable",
+			_tag: "@maple/http/errors/WarehouseUpstreamError",
+			code: "warehouse_unavailable",
 			retryable: true,
 			recovery: "retry",
 		})
@@ -927,6 +1095,51 @@ describe("v2 investigations over HTTP", () => {
 		)
 		expect(unavailable.body.error.retryable).toBe(true)
 		await unavailableHarness.dispose()
+	})
+
+	it("starts a run only for callers that can read everything the agent reads", async () => {
+		const harness = makeHarness()
+		const start = (token: string) =>
+			Promise.all([
+				harness.request("POST", "/v2/investigations", {
+					token,
+					body: { subject: { type: "freeform", title: "t", prompt: "p", context_refs: [] } },
+				}),
+				harness.request("POST", `/v2/investigations/${INV_ID}/restart`, { token }),
+			]).then((responses) => responses.map((response) => response.status))
+
+		const narrow = await harness.bootstrapKey(["investigations:write"])
+		expect(await start(narrow.secret)).toEqual([403, 403])
+		const telemetryOnly = await harness.bootstrapKey([
+			"investigations:write",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		expect(await start(telemetryOnly.secret)).toEqual([403, 403])
+
+		const reads = [
+			"traces",
+			"logs",
+			"metrics",
+			"services",
+			"service_map",
+			"error_issues",
+			"session_replays",
+			"alerts",
+			"anomalies",
+			"dashboards",
+			"sources",
+			"instrumentation",
+			"integrations",
+		].map((family) => `${family}:read`)
+		const covered = await harness.bootstrapKey(["investigations:write", ...reads])
+		const unscoped = await harness.bootstrapKey()
+		const session = await harness.bootstrapSession()
+		for (const token of [covered.secret, unscoped.secret, session]) {
+			expect(await start(token)).toEqual([200, 200])
+		}
+		await harness.dispose()
 	})
 })
 
@@ -1219,6 +1432,23 @@ describe("v2 session_replays over HTTP", () => {
 		expect(second.body.data[0].seq).toBe(100)
 		expect(second.body.has_more).toBe(false)
 		expect(second.body.next_cursor).toBeNull()
+
+		// A transcript page goes past the shared list cap, so the dashboard reads it in one trip.
+		const whole = await harness.request("GET", `/v2/session_replays/${sessionId}/transcript?limit=1000`, {
+			token: key.secret,
+		})
+		expect(whole.status).toBe(200)
+		expect(whole.body.data).toHaveLength(105)
+		expect(whole.body.has_more).toBe(false)
+
+		const tooWide = await harness.request(
+			"GET",
+			`/v2/session_replays/${sessionId}/transcript?limit=1001`,
+			{
+				token: key.secret,
+			},
+		)
+		expect(tooWide.status).toBe(400)
 		await harness.dispose()
 	})
 

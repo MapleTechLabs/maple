@@ -1,4 +1,6 @@
+import { UptimeMonitorId } from "@maple/domain"
 import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -11,7 +13,8 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import { TestOutcome } from "./model"
+import { TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
+import { ServiceNamespaces } from "./uptime-groups"
 
 export const RuleBucket = Schema.Literals(["firing", "blind", "healthy", "disabled"])
 export type RuleBucket = typeof RuleBucket.Type
@@ -25,7 +28,12 @@ export const Message = defineMessageUnion({
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),
 	UpdatedIncidents: rows(AlertIncidentRowSchema),
 	UpdatedDestinations: rows(AlertDestinationRowSchema),
-	CompletedFetchDeliveries: { key: Schema.String, result: outcome(Schema.Array(AlertDeliveryEventDocument)) },
+	FailedLoadAlerts: { orgId: Schema.String },
+	ClickedRetryLoad: {},
+	CompletedFetchDeliveries: {
+		key: Schema.String,
+		result: outcome(Schema.Array(AlertDeliveryEventDocument)),
+	},
 	CompletedFetchRoutingDeliveries: {
 		key: Schema.String,
 		result: outcome(Schema.Array(AlertDeliveryEventDocument)),
@@ -48,5 +56,17 @@ export const Message = defineMessageUnion({
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	FailedLoadProviderLogo: { type: Schema.String },
 	GotDestinationDialogMessage: { message: DestinationDialog.Message },
+	GotNewRuleMenuMessage: { message: Menu.Message },
+	CompletedFetchMonitors: { key: Schema.String, result: outcome(Schema.Array(V2UptimeMonitor)) },
+	ClickedRetryMonitors: {},
+	CompletedFetchServiceNamespaces: { key: Schema.String, result: outcome(ServiceNamespaces) },
+	ChangedUptimeQuery: { value: Schema.String },
+	ClickedUptimeStatus: { filter: UptimeStatusFilter },
+	ChangedUptimeKind: { kind: UptimeKindFilter },
+	ClickedClearUptimeFilters: {},
+	CompletedToggleMonitor: { monitorId: UptimeMonitorId, result: outcome(V2UptimeMonitor) },
+	ClickedConfirmDeleteMonitor: {},
+	CompletedDeleteMonitor: { monitorId: UptimeMonitorId, result: outcome(Schema.Void) },
+	GotDeleteMonitorDialogMessage: { message: Dialog.Message },
 })
 export type Message = typeof Message.Type

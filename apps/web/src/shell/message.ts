@@ -1,5 +1,5 @@
 import { InfraSurfaceLiteral } from "@maple/domain/http"
-import { OrgId } from "@maple/domain"
+import { V2Source } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
@@ -22,7 +22,7 @@ export const Menu = defineTaggedUnion({
 })
 export type Menu = typeof Menu.Type
 
-export const Integration = Schema.Literals(["cloudflare", "railway", "planetscale", "gcp"])
+export const Integration = Schema.Literals(["cloudflare", "railway", "planetscale", "gcp", "supabase", "aws"])
 export type Integration = typeof Integration.Type
 
 export const Theme = Schema.Literals(["light", "dark"])
@@ -31,10 +31,10 @@ export type Theme = typeof Theme.Type
 export const Message = defineMessageUnion({
 	ClickedSidebarTrigger: {},
 	PressedSidebarShortcut: {},
-	/** `/chat`'s own `SidebarTrigger`: its provider is held closed, so only the mobile sheet opens. */
-	ClickedPageSidebarTrigger: {},
 	/** A page reads `useInfraSurfaces` itself (the infra overview, Kubernetes workloads). */
 	RequestedInfraSurfaces: {},
+	/** A page links to its source: read the org's sources, again when `isRefresh` (one may be new). */
+	RequestedSources: { isRefresh: Schema.Boolean },
 	ChangedViewport: { isMobile: Schema.Boolean },
 	DismissedMobileNav: {},
 	ChangedFilterViewport: { isCollapsed: Schema.Boolean },
@@ -61,20 +61,18 @@ export const Message = defineMessageUnion({
 	CompletedFocusElement: {},
 	CompletedSaveTheme: {},
 	CompletedSaveNamespace: {},
+	CompletedSaveInfraSurfaces: {},
 	CompletedSaveSidebarState: {},
 	CompletedLogOut: {},
 	ElapsedVersionPollInterval: {},
 	BecameTabVisible: {},
 	CheckedDeployedCommit: { maybeCommit: Schema.Option(Schema.String) },
 	ClickedReload: {},
-	/** The top bar's "Ask Maple AI" (`openGlobalChat`). */
-	ClickedAskMapleAi: {},
-	CompletedOpenGlobalChat: {},
 	CompletedReloadPage: {},
-	SucceededLoadTenant: { orgId: OrgId },
-	FailedLoadTenant: {},
 	SucceededLoadInfraPresence: { orgId: Schema.String, surfaces: Schema.Array(InfraSurfaceLiteral) },
 	FailedLoadInfraPresence: { orgId: Schema.String },
+	SucceededLoadSources: { orgId: Schema.String, sources: Schema.Array(V2Source) },
+	FailedLoadSources: { orgId: Schema.String },
 	SucceededLoadIntegration: { orgId: Schema.String, integration: Integration, isConnected: Schema.Boolean },
 	FailedLoadIntegration: { orgId: Schema.String, integration: Integration },
 	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
@@ -114,6 +112,8 @@ export type Message = typeof Message.Type
 export const OutMessage = defineMessageUnion({
 	/** The org-global namespace pin changed: pages rebuild their queries under the new scope. */
 	ChangedGlobalNamespace: { maybeNamespace: Schema.Option(Schema.String) },
+	/** Every integration status answered: pages waiting on the org's surfaces read now. */
+	SettledInfraSurfaces: {},
 	/** Clerk: an org other than the active one was picked (`setActive`, then reload). */
 	RequestedOrganizationSwitch: { orgId: Schema.String },
 	/** Clerk: Log out in the user menu (`signOut()`). */

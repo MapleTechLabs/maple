@@ -1,7 +1,9 @@
+import { hasConsent } from "../identity/consent"
 import { claimNewVisitor } from "../identity/visitor"
 import { isStringRecord, parseJsonObject } from "../platform/json"
 import { mayUseStorage } from "../platform/persistence"
 import { scrubUrl } from "../platform/url-privacy"
+import { randomUuid } from "../platform/uuid"
 import { IDLE_TIMEOUT_MS } from "./idle"
 
 const STORAGE_KEY = "maple.session"
@@ -10,7 +12,7 @@ const STORAGE_KEY = "maple.session"
 const MAX_SESSION_MS = 24 * 60 * 60_000
 /**
  * The activity path runs per span creation (`getSessionId`) and per captured
- * event (`markActivity` — every console call, keystroke, click, fetch);
+ * user input (`markActivity`: clicks, typing, scrolling, mouse movement);
  * persisting the bump on every call would hammer sessionStorage for no benefit
  * — rotation correctness only needs sub-idle-timeout granularity.
  */
@@ -93,6 +95,11 @@ export interface SessionRecord {
 	replayBuffered?: boolean
 	/** Set once an error turned a buffered session into a recorded one. */
 	replayTrigger?: "error"
+	/**
+	 * Set once recording stopped for good (ingest's size ceiling, or a DOM too
+	 * large to snapshot), so a reload or a show does not snapshot again for nothing.
+	 */
+	replayHalted?: boolean
 }
 
 /** Optional keys carrying a plain number. Absent is fine; wrongly typed is not. */
@@ -154,6 +161,10 @@ function parseSessionRecord(raw: string): SessionRecord | undefined {
 		if (typeof value.replayBuffered !== "boolean") return undefined
 		record.replayBuffered = value.replayBuffered
 	}
+	if (value.replayHalted !== undefined) {
+		if (typeof value.replayHalted !== "boolean") return undefined
+		record.replayHalted = value.replayHalted
+	}
 	// An unknown trigger (from a newer SDK) is dropped, not fatal: rejecting the record would split the session.
 	if (value.replayTrigger === "error") record.replayTrigger = value.replayTrigger
 	if (value.utm !== undefined) {
@@ -175,6 +186,12 @@ const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_c
 /** In-memory fallback when sessionStorage is unavailable (private mode). */
 let ephemeral: SessionRecord | undefined
 /**
+ * The Storage `ephemeral` was last written to. When the key vanishes from that
+ * same Storage (a host app's `sessionStorage.clear()` on logout), the in-memory
+ * copy is still this tab's session; a different Storage object is not ours.
+ */
+let ephemeralStorage: Storage | undefined
+/**
  * Set while sessionStorage writes throw. On quota exhaustion reads still work,
  * so the stored copy is a frozen snapshot: `metaVersion` pinned at 1 billed
  * every heartbeat as a new session. Keep this separate from the read try/catch.
@@ -187,9 +204,8 @@ const rotationListeners = new Set<SessionRotationListener>()
 /**
  * Read the entry URL/referrer/UTM of the current page.
  *
- * Guarded for non-DOM runtimes: `freshRecord` is reachable from `getSessionId`
- * on the span path and from the `nextChunkSeq`/`nextMetaVersion` fallbacks, so
- * this must not assume `location`/`document` exist.
+ * Guarded for non-DOM runtimes: `freshRecord` is reachable from `markActivity`,
+ * which runs outside a DOM, so this must not assume `location`/`document` exist.
  */
 function readEntryContext(): Partial<SessionRecord> {
 	if (typeof window === "undefined" || typeof location === "undefined") return {}
@@ -218,7 +234,7 @@ function readEntryContext(): Partial<SessionRecord> {
 
 function freshRecord(now: number): SessionRecord {
 	return {
-		id: crypto.randomUUID(),
+		id: randomUuid(),
 		startedAt: now,
 		lastActivityAt: now,
 		chunkSeq: 0,
@@ -234,8 +250,10 @@ function freshRecord(now: number): SessionRecord {
 function readRecord(): SessionRecord | undefined {
 	if (!mayUseStorage() || (writesFailed && ephemeral)) return ephemeral
 	try {
-		const raw = window.sessionStorage.getItem(STORAGE_KEY)
-		if (!raw) return undefined
+		const storage = window.sessionStorage
+		const raw = storage.getItem(STORAGE_KEY)
+		// Cleared under us: minting here would orphan the running recorder and lifecycle.
+		if (!raw) return storage === ephemeralStorage ? ephemeral : undefined
 		// A corrupt record falls back to the in-memory copy, exactly as an
 		// unreadable sessionStorage does — it is the same loss of the durable copy.
 		return parseSessionRecord(raw) ?? ephemeral
@@ -246,9 +264,12 @@ function readRecord(): SessionRecord | undefined {
 
 function writeRecord(record: SessionRecord): void {
 	ephemeral = record
+	rememberCounters(record)
 	if (!mayUseStorage()) return
 	try {
-		window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(record))
+		const storage = window.sessionStorage
+		ephemeralStorage = storage
+		storage.setItem(STORAGE_KEY, JSON.stringify(record))
 		// Cleared, not latched: once another tab frees quota the durable copy leads again.
 		writesFailed = false
 	} catch {
@@ -269,17 +290,20 @@ function writeRecord(record: SessionRecord): void {
 //
 // A reload is not a duplicate: `pagehide` releases the lease before the next
 // document reads it. A lease is live for `TAB_LEASE_TTL_MS` after its last
-// write, which covers the 60s heartbeat of a visible tab; a crashed tab's lease
-// simply ages out.
+// write. A timer keeps it fresh whatever the visibility (hidden tabs run timers
+// at least once a minute), so a hidden idle tab duplicated later still owns its
+// session; a crashed tab's lease simply ages out.
 const TAB_LEASE_PREFIX = "maple.session.tab."
 const TAB_LEASE_TTL_MS = 2 * 60_000
 const TAB_LEASE_REFRESH_MS = 5_000
+const TAB_LEASE_KEEPALIVE_MS = 30_000
 const TAB_NONCE_KEY = "__MAPLE_TAB_NONCE__"
 
 /** The session id this tab has checked (or minted) and may keep using. */
 let verifiedSessionId: string | undefined
 let leaseWrittenAt = 0
 let releaseInstalled = false
+let leaseTimer: ReturnType<typeof setInterval> | undefined
 /**
  * Set from `pagehide` until the page is shown again. The lifecycle's own
  * `pagehide` handler posts an `ended` row after ours runs, which writes the
@@ -292,7 +316,7 @@ function tabNonce(): string {
 	const owner = globalThis as Record<string, unknown>
 	const existing = owner[TAB_NONCE_KEY]
 	if (typeof existing === "string") return existing
-	const fresh = crypto.randomUUID()
+	const fresh = randomUuid()
 	owner[TAB_NONCE_KEY] = fresh
 	return fresh
 }
@@ -324,12 +348,40 @@ function claimTab(sessionId: string): void {
 	leaseWrittenAt = now
 	const storage = leaseStorage()
 	if (!storage) return
+	writeLease(storage, sessionId, now)
+	installLeaseRelease()
+	if (leaseTimer === undefined && typeof setInterval === "function") {
+		leaseTimer = setInterval(refreshLease, TAB_LEASE_KEEPALIVE_MS)
+	}
+}
+
+function writeLease(storage: Storage, sessionId: string, now: number): void {
 	try {
 		storage.setItem(`${TAB_LEASE_PREFIX}${sessionId}`, `${tabNonce()}:${now}`)
 	} catch {
 		// Storage full or blocked: detection degrades, capture does not.
 	}
-	installLeaseRelease()
+}
+
+function refreshLease(): void {
+	if (verifiedSessionId === undefined || leaseReleased) return
+	// Nothing left to protect: the SDK withdrew, or the session went idle. Stops
+	// the timer, so a shut-down or consent-revoked page stops writing storage.
+	const record = readRecord()
+	if (
+		!hasConsent() ||
+		record === undefined ||
+		record.id !== verifiedSessionId ||
+		isSessionExpired(record)
+	) {
+		clearInterval(leaseTimer)
+		leaseTimer = undefined
+		return
+	}
+	const storage = leaseStorage()
+	if (!storage) return
+	leaseWrittenAt = Date.now()
+	writeLease(storage, verifiedSessionId, leaseWrittenAt)
 }
 
 function releaseTab(sessionId: string): void {
@@ -388,7 +440,9 @@ function ownedByAnotherTab(record: SessionRecord, now: number): boolean {
 /** Test seam: drop the in-memory record and its write-failure latch. */
 export function resetSessionStorageStateForTests(): void {
 	ephemeral = undefined
+	ephemeralStorage = undefined
 	writesFailed = false
+	recentCounters.clear()
 }
 
 /** Test seam: forget this tab's lease state. */
@@ -396,6 +450,8 @@ export function resetTabLeaseForTests(): void {
 	verifiedSessionId = undefined
 	leaseWrittenAt = 0
 	leaseReleased = false
+	if (leaseTimer !== undefined) clearInterval(leaseTimer)
+	leaseTimer = undefined
 }
 
 export function isSessionExpired(record: SessionRecord, now = Date.now()): boolean {
@@ -496,13 +552,20 @@ export function getSessionId(): string | undefined {
 }
 
 /**
- * Mark activity, rotating first when the stored session has expired. Called per
- * captured event, so it shares `getSessionId`'s throttled touch — callers read
- * the returned record's `id` to detect that rotation.
+ * Resolve the session a captured event belongs to. For `"input"` (what a person
+ * does: clicks, typing, scrolling, navigation) this marks activity, rotating
+ * first when the stored session has expired, and shares `getSessionId`'s
+ * throttled touch; callers read the returned record's `id` to detect rotation.
+ *
+ * `"passive"` events (DOM mutations, console, network, errors) must neither keep
+ * an abandoned page's session alive nor start a new one: they get the stored
+ * record untouched, or `null` when it has expired. Undefined outside a browser.
  */
-export function markActivity(): SessionRecord | undefined {
+export function markActivity(kind: "input" | "passive" = "input"): SessionRecord | null | undefined {
 	if (typeof window === "undefined") return undefined
-	return touchSession(Date.now())
+	if (kind === "input") return touchSession(Date.now())
+	const record = readRecord()
+	return record !== undefined && !isSessionExpired(record) ? record : null
 }
 
 /**
@@ -583,15 +646,59 @@ export function entryContextOf(record: SessionRecord): EntryContext {
 }
 
 /**
- * Take the next replay chunk sequence number for the current session. Monotonic
- * across reloads (persisted on the session record), so a refresh continues the
- * sequence instead of restarting at 0 and overwriting the previous load's blobs.
+ * The counters of the last few sessions this document wrote, for a writer that
+ * outlived its session's record (rotated, or replaced by another SDK copy):
+ * taking the stored record's counter instead overwrote another session's blobs.
  */
-export function nextChunkSeq(): number {
-	const record = readRecord() ?? freshRecord(Date.now())
-	const seq = record.chunkSeq
-	writeRecord({ ...record, chunkSeq: seq + 1 })
-	return seq
+interface SessionCounters {
+	chunkSeq: number
+	metaVersion: number | undefined
+}
+const recentCounters = new Map<string, SessionCounters>()
+const MAX_RECENT_COUNTERS = 4
+
+function rememberCounters(record: SessionRecord): void {
+	recentCounters.delete(record.id)
+	recentCounters.set(record.id, { chunkSeq: record.chunkSeq, metaVersion: record.metaVersion })
+	for (const id of recentCounters.keys()) {
+		if (recentCounters.size <= MAX_RECENT_COUNTERS) break
+		recentCounters.delete(id)
+	}
+}
+
+/**
+ * Advance one counter of `sessionId`: on its persisted record when that is the
+ * stored one, else on this document's memory of it. Undefined for a session
+ * this document never wrote, whose counters it cannot know.
+ */
+function takeCounter(
+	sessionId: string,
+	take: (counters: SessionCounters) => { value: number; next: SessionCounters },
+): number | undefined {
+	const record = readRecord()
+	if (record?.id === sessionId) {
+		const { value, next } = take({ chunkSeq: record.chunkSeq, metaVersion: record.metaVersion })
+		writeRecord({ ...record, chunkSeq: next.chunkSeq, metaVersion: next.metaVersion })
+		return value
+	}
+	const remembered = recentCounters.get(sessionId)
+	if (!remembered) return undefined
+	const { value, next } = take(remembered)
+	recentCounters.set(sessionId, next)
+	return value
+}
+
+/**
+ * Take the next replay chunk sequence number of `sessionId`. Monotonic across
+ * reloads (persisted on the session record), so a refresh continues the
+ * sequence instead of restarting at 0 and overwriting the previous load's blobs.
+ * Undefined when the session's counter is unknown: the chunk must be dropped.
+ */
+export function nextChunkSeq(sessionId: string): number | undefined {
+	return takeCounter(sessionId, (counters) => ({
+		value: counters.chunkSeq,
+		next: { ...counters, chunkSeq: counters.chunkSeq + 1 },
+	}))
 }
 
 /**
@@ -602,11 +709,11 @@ export function nextChunkSeq(): number {
  * older SDKs (no `metaVersion`) already posted versions 1 and 2, so the
  * counter resumes at 3 for them; a fresh session starts at 1.
  */
-export function nextMetaVersion(): number {
-	const record = readRecord() ?? freshRecord(Date.now())
-	const version = (record.metaVersion ?? 2) + 1
-	writeRecord({ ...record, metaVersion: version })
-	return version
+export function nextMetaVersion(sessionId: string): number | undefined {
+	return takeCounter(sessionId, (counters) => {
+		const version = (counters.metaVersion ?? 2) + 1
+		return { value: version, next: { ...counters, metaVersion: version } }
+	})
 }
 
 /** A uniform draw in [0, 1) from Web Crypto, the same source session ids use. */
@@ -646,6 +753,18 @@ export function claimReplayMode(sampleRate: number, onErrorSampleRate: number): 
 		return buffered ? "buffer" : "off"
 	}
 	return record.replayBuffered ? "buffer" : "off"
+}
+
+/** Recording of `sessionId` stopped for good: later recorder starts of it do nothing. */
+export function markReplayHalted(sessionId: string): void {
+	const record = readRecord()
+	if (!record || record.id !== sessionId || record.replayHalted) return
+	writeRecord({ ...record, replayHalted: true })
+}
+
+export function isReplayHalted(sessionId: string): boolean {
+	const record = readRecord()
+	return record?.id === sessionId && record.replayHalted === true
 }
 
 /** An error made this buffered session a recorded one: later loads record it from the start. */

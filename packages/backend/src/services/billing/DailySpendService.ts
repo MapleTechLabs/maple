@@ -51,7 +51,7 @@ const toQueryError = (error: { readonly message: string }) =>
 	new WarehouseQueryError({ pipeName: "billingDailySpend", message: error.message })
 
 export class DailySpendService extends Context.Service<DailySpendService, DailySpendServiceApi>()(
-	"@maple/api/services/DailySpendService",
+	"@maple/backend/services/DailySpendService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService

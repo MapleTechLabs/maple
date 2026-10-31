@@ -4,8 +4,8 @@
 
 /**
  * The sidebar is split into sections so a reader sees one section's tree at a
- * time: product surfaces, the "get data in" guides, the local binary, and the
- * machine-facing references. Groups are listed in sidebar order; `icon` is a
+ * time: product surfaces, the "get data in" guides, the local binary, running
+ * it on your own server, and the machine-facing references. Groups are listed in sidebar order; `icon` is a
  * DocsCategoryIcon id, shared with the header strip.
  */
 export const SECTIONS = [
@@ -13,7 +13,7 @@ export const SECTIONS = [
 		id: "platform",
 		icon: "Dashboards",
 		label: "Platform",
-		blurb: "Concepts and every product surface.",
+		blurb: "Concepts, every product surface, and the sources that feed it.",
 		groups: [
 			"Getting Started",
 			"Concepts",
@@ -24,15 +24,18 @@ export const SECTIONS = [
 			"Agent Sessions",
 			"Dashboards",
 			"Alerting",
+			"Code Review",
+			"Infrastructure",
 			"Integrations",
+			"Infrastructure as Code",
 		],
 	},
 	{
 		id: "instrumentation",
 		icon: "Instrumentation",
 		label: "Instrumentation",
-		blurb: "Languages, frameworks, AI agents, hosts, clusters and IaC.",
-		groups: ["Instrumentation", "AI Frameworks", "AI Gateways", "Infrastructure", "Infrastructure as Code"],
+		blurb: "Languages, frameworks and AI agents.",
+		groups: ["Instrumentation", "AI Frameworks", "AI Gateways"],
 	},
 	{
 		id: "local",
@@ -40,6 +43,13 @@ export const SECTIONS = [
 		label: "Local Mode",
 		blurb: "The whole product as one binary.",
 		groups: ["Local Mode"],
+	},
+	{
+		id: "self-hosting",
+		icon: "Self-hosting",
+		label: "Self-hosting",
+		blurb: "Maple on your own server, as one container.",
+		groups: ["Self-hosting", "Platforms"],
 	},
 	{
 		id: "reference",

@@ -159,7 +159,7 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 								: h.button(
 										[
 											h.Class(
-												"cursor-pointer font-mono text-xs text-muted-foreground hover:text-foreground",
+												"cursor-pointer font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
 											),
 											h.DataAttribute("slot", "hover-card-trigger"),
 											h.Type("button"),

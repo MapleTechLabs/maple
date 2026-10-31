@@ -86,7 +86,7 @@ export const update = (model: Model, message: Message): Step =>
 		FailedStart: ({ attempt, description }) =>
 			Option.isNone(current(model, attempt))
 				? settled(model)
-				: settled({ ...model, active: null }, false, Option.some({ title: "Failed to start the install", description })),
+				: settled({ ...model, active: null }, false, Option.some({ title: "Couldn't start the install", description })),
 		BlockedPopup: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),

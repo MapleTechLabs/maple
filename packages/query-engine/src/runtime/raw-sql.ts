@@ -6,7 +6,8 @@ import {
 	RawSqlValidationError,
 } from "@maple/domain/http"
 import { ORG_FILTER_MACRO_RE, rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
-import type { QueryProfileName } from "../profiles"
+import type { QueryProfileName, WarehouseQuerySettings } from "../profiles"
+import { alertQueryLimits } from "../datetime"
 import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
 import type { OrgId } from "@maple/domain"
 
@@ -32,6 +33,8 @@ export interface PrepareRawSqlInput {
 	readonly workload: RawSqlWorkload
 	/** `$__timeGroup` keys every row at the range start: one bucket per group. Alert evaluation sets it. */
 	readonly wholeRange?: boolean
+	/** Return the first 1,000 rows of a longer result instead of failing on the cap. */
+	readonly truncateAtCap?: boolean
 }
 
 export interface PreparedRawSql {
@@ -41,6 +44,8 @@ export interface PreparedRawSql {
 
 export interface ExecuteRawSqlInput extends PrepareRawSqlInput {
 	readonly context: string
+	/** An alert rule's check interval, which sets its time and memory limits. Alert workload only. */
+	readonly alertIntervalMinutes?: number
 }
 
 export interface ExecuteRawSqlResult {
@@ -55,7 +60,11 @@ export interface RawSqlWarehouse<TTenant, E> {
 	readonly rawSqlQuery: (
 		tenant: TTenant,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, E>
 }
 
@@ -146,7 +155,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// modifiers attached to the inner result (`WITH TOTALS`, `LIMIT BY`,
 	// `WITH FILL`) are discarded by the outer SELECT.
 	return {
-		sql: `SELECT * FROM (\n${splitTerminalClauses(sql).body.trim()}\n) AS maple_raw_sql_limited\nLIMIT ${RAW_SQL_FETCH_ROW_LIMIT}`,
+		sql: `SELECT * FROM (\n${splitTerminalClauses(sql).body.trim()}\n) AS maple_raw_sql_limited\nLIMIT ${input.truncateAtCap === true ? MAX_RAW_SQL_RESULT_ROWS : RAW_SQL_FETCH_ROW_LIMIT}`,
 		granularitySeconds: granularity,
 	} satisfies PreparedRawSql
 })
@@ -176,6 +185,11 @@ const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): s
 	return null
 }
 
+const alertQuerySettings = (intervalMinutes: number): WarehouseQuerySettings => {
+	const limits = alertQueryLimits(intervalMinutes)
+	return { maxExecutionTime: limits.timeSeconds, maxMemoryUsage: limits.memoryBytes }
+}
+
 /**
  * Build the single prepare/execute workflow shared by HTTP, MCP, and alerts.
  *
@@ -197,6 +211,9 @@ export const makeExecuteRawSql = <TTenant, E>(warehouse: RawSqlWarehouse<TTenant
 		const rows = yield* warehouse.rawSqlQuery(tenant, prepared.sql, {
 			profile: input.workload === "alert" ? "rawAlert" : "rawInteractive",
 			context: input.context,
+			...(input.workload === "alert" && input.alertIntervalMinutes !== undefined
+				? { settings: alertQuerySettings(input.alertIntervalMinutes) }
+				: undefined),
 		})
 
 		const limitError = rawSqlResultLimitError(rows)

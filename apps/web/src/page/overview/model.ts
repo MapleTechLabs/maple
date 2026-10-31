@@ -1,3 +1,4 @@
+import { AlertSignalType } from "@maple/domain/http"
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -45,7 +46,6 @@ const UsageTotals = Schema.Struct({
 	logs: Schema.Number,
 	traces: Schema.Number,
 	metrics: Schema.Number,
-	dataSize: Schema.Number,
 })
 export type UsageTotals = typeof UsageTotals.Type
 
@@ -58,12 +58,15 @@ export const Incident = Schema.Struct({
 	status: Schema.String,
 	groupKey: Schema.NullOr(Schema.String),
 	severity: Schema.Literals(["warning", "critical"]),
+	signalType: AlertSignalType,
 })
 export type Incident = typeof Incident.Type
 
-export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Never)
+/** `Failure`: the live alert sync failed or stalled; the page reads it as no incidents. */
+export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Literal("Unavailable"))
 /** `useAlertRulesList()`, reduced to each rule's `enabled`. */
-export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Never)
+/** `Failure`: the live rules sync failed or stalled; the banner stays out. */
+export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Literal("Unavailable"))
 
 /** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services): one overview bucket. */
 export const OverviewPoint = Schema.Struct({

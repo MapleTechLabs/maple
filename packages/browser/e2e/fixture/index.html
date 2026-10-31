@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Maple browser SDK e2e</title>
+	</head>
+	<body>
+		<h1 id="title">Checkout page</h1>
+		<p id="secret-text">Account balance 4242 credits</p>
+		<form id="form" onsubmit="return false">
+			<input id="name" name="name" type="text" />
+			<input id="password" name="password" type="password" />
+			<input id="card" name="card" type="text" autocomplete="cc-number" />
+			<input id="csrf" name="csrf" type="hidden" value="csrf-e2e-9f8e7d6c5b4a" />
+			<button id="buy" type="button">Buy now</button>
+		</form>
+		<div id="card-panel" style="padding: 24px">
+			<div data-rr-block>SSN 078-05-1120</div>
+			<span>Billing details</span>
+		</div>
+		<ul id="list"></ul>
+		<a id="next" href="/next.html">Next page</a>
+		<script type="module" src="./app.ts"></script>
+	</body>
+</html>

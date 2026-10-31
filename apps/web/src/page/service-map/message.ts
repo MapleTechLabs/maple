@@ -48,7 +48,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchHyperdrives: result(Schema.Array(HyperdriveConfig)),
 	CompletedFetchDbSummary: result(DbSummarySchema),
 	CompletedFetchBranchStats: result(BranchStatsSchema),
-	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

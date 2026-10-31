@@ -25,7 +25,7 @@ import type { Model } from "./model"
 type Return = PageReturn<Model, Message>
 type H = HtmlBuilder<Message>
 
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 const PULL_REQUEST_STATE_TONE = {
 	open: IN_FLIGHT_SOFT,
 	merged: TONE_SOFT.done,
@@ -171,7 +171,7 @@ const pasteField = (h: H, model: Model): Html =>
 				[
 					h.a(
 						[
-							h.Class("underline hover:no-underline"),
+							h.Class("underline hover:no-underline active:no-underline"),
 							h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
 						],
 						["Connect GitHub"],

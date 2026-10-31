@@ -1,17 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
-import {
-	FetchFacets,
-	FetchFirstPage,
-	FetchNextPage,
-	LoadSignalPresence,
-	MountEmptyState,
-	MountPeekRows,
-} from "./command"
+import { FetchFacets, FetchFirstPage, FetchNextPage, MountPeekRows } from "./command"
 import { Message } from "./message"
 import type { Model, TraceRow, TracesFacets, TracesPage } from "./model"
 import { allRows, contextChanged, init, routeChanged, update } from "./update"
@@ -76,6 +69,14 @@ const loaded = (first: TracesPage): Model => {
 	].reduce((model, message) => pageUpdate(model, message).model, base)
 }
 
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ traces: { status, lastSeenMs: null } }),
+		}),
+	).model
+
 const windowOver = (from: number, to: number) =>
 	Message.ChangedVirtualWindow({
 		rows: Array.from({ length: to - from }, (_, i) => ({
@@ -93,7 +94,7 @@ describe("traces list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 		)
-		expect(names(resolved.commands)).toEqual([FetchFacets.name, FetchFirstPage.name])
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchFacets.name, FetchFirstPage.name]))
 	})
 
 	test("a first page for a superseded window is dropped", () => {
@@ -234,18 +235,25 @@ describe("traces list", () => {
 		)
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No traces found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadTracesSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(page(0))),
-			expectView(text("No traces found")).toExist(),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No traces found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded(page(0)), "absent")),
+			expectView(text("No traces yet")).toExist(),
+		)
+	})
+
+	test("a workspace that never sent traces sees setup before the list answers", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(windowed(), "absent")),
 			expectView(text("No traces yet")).toExist(),
 		)
 	})

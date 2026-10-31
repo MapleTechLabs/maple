@@ -1,4 +1,5 @@
 import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
+import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
 	getServiceHealthBaseline,
 	getServiceOverview,
@@ -73,7 +74,10 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 	execute: ({ key, refresh, input }) =>
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.serviceOverview, schema: Schema.Array(ServiceRow) },
-			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) => response.data),
+			// Maple's own services (uptime checks) stay off the list.
+			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) =>
+				response.data.filter((row) => !isMapleService(row)),
+			),
 		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -113,7 +117,7 @@ export const FetchFacets = Command.define("FetchServicesFacets", {
 		loadServicesFacets(window, { refresh, key }).pipe(
 			Effect.map(({ data }) => ({
 				environments: data.environments,
-				namespaces: data.namespaces,
+				namespaces: data.namespaces.filter((facet) => facet.name !== MAPLE_SERVICES_NAMESPACE),
 				commitShas: data.commitShas,
 			})),
 			Effect.mapError(toLoadFailure),
@@ -201,18 +205,6 @@ const firstLine = (message: string): string => {
 	return (index === -1 ? message : message.slice(0, index)).trim()
 }
 
-/** The empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountServicesEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 /** Where a click in the table goes: a service link is the link's alone (the row ignores it). */
 export const tableLinkClick = (
 	click: Readonly<{ href: string | null; button: number; hasModifier: boolean }>,
@@ -255,8 +247,10 @@ export const MountTable = Mount.defineStream("MountServicesTable", {
 })
 
 export const LoadSignalPresence = Command.define("LoadSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `CopyableBadge`'s write for the commit SHA; the row navigation waits on it. */

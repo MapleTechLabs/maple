@@ -2,7 +2,7 @@ import { definePage } from "../contract"
 import { Message } from "./message"
 import { Model } from "./model"
 import { subscriptions } from "./subscription"
-import { contextChanged, init, routeChanged, update } from "./update"
+import { contextChanged, init, revive, routeChanged, update } from "./update"
 import { view } from "./view"
 
 /** `/`: the Overview home page. One instance per org; search changes arrive as `routeChanged`. */
@@ -14,9 +14,10 @@ export const page = definePage(
 		init,
 		update,
 		routeChanged,
+		revive,
 		contextChanged,
 		view,
 		subscriptions,
-		breadcrumbs: () => [{ label: "Overview" }],
+		breadcrumbs: () => [{ label: "Overview", isPageHeading: true }],
 	},
 )

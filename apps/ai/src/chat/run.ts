@@ -8,22 +8,35 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
+import type { CodeExecutor } from "@yielded/agent/code-executor"
+import type { RunBudgetHook } from "@yielded/agent/run-options"
+import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
-import { Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
+import { Cause, Clock, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
+import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
-import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
+import {
+	makeTextSanitizer,
+	settledTurnEnd,
+	toChatEvents,
+	type ChatTurnEvent,
+	type ProgramCall,
+} from "./events"
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
+import { type ChildFindings, makeChildFindings } from "./review-child-findings"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
+import { buildCodeMode, CODE_MODE_GUIDANCE, CODE_MODE_TOOLS } from "./code-mode"
 import {
 	accumulateUsage,
 	buildChatToolkit,
@@ -75,6 +88,9 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 	}))
 }
 
+/** The `n` of a program call's `<program call id>#<n>`: the order the program made its calls in. */
+const programCallIndex = (callId: string): number => Number(callId.slice(callId.lastIndexOf("#") + 1))
+
 /** One replayed turn, in the shape `Prompt.make` accepts. */
 export interface PromptMessage {
 	readonly role: "user" | "assistant"
@@ -107,6 +123,10 @@ export interface ChatRunInput {
 	readonly review?: ReviewTurnState
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
+	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */
+	readonly codeExecutor?: Layer.Layer<CodeExecutor>
+	/** Withhold the direct tools `run_code` can call, so reads go through programs. The eval's variant. */
+	readonly codeOnly?: boolean
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -115,11 +135,21 @@ export interface ChatRunInput {
 	/** False once the turn slot has been released, which stops the run writing into a moved-on session. */
 	readonly holdsTurn: () => boolean
 	readonly append: (event: ChatTurnEvent) => void
+	/** Each `review_files` child as it ends, with the history it ran: the eval's record of it. */
+	readonly onChildSettled?: (child: SettledChild) => void
+}
+
+/** A child reviewer's ending and the conversation it ran, when the history could be read. */
+export interface SettledChild {
+	readonly event: RunEvent.SubagentCompleted | RunEvent.SubagentFailed | RunEvent.SubagentInterrupted
+	readonly history: Prompt.Prompt | undefined
 }
 
 export interface ReviewTurnState {
 	readonly coverage: ReviewCoverage
 	readonly ledger: ReviewLedger
+	/** What the turn's `review_files` children answered, so a continuation still accounts for it. */
+	readonly childFindings?: ChildFindings
 }
 
 export interface ChatRunOutcome {
@@ -155,8 +185,13 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
 		? (input.review?.coverage ?? makeReviewCoverage(input.text))
 		: undefined
+	// What this run's `review_files` children answer; `submit_review` checks the review against it.
+	const childFindings =
+		coverage === undefined ? undefined : (input.review?.childFindings ?? makeChildFindings())
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
+	// The same for a `run_code` program's calls (`<program call id>#<n>`), drawn when it settles.
+	const programCalls = new Map<string, ProgramCall>()
 	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
@@ -165,13 +200,17 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		profile.surface,
 		sessionAttributes,
 		coverage?.observe,
-		(toolCallId, ui) => uiByCall.set(toolCallId, ui),
+		(toolCallId, ui, call) =>
+			toolCallId.includes("#")
+				? programCalls.set(toolCallId, { ...call, callId: toolCallId, ui })
+				: uiByCall.set(toolCallId, ui),
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.
 	const completion: RunCompletion | undefined =
 		buildDiagnosisCompletion(
 			input.sessionId,
+			input.messageId,
 			input.tenant,
 			input.origin,
 			input.submitDiagnosis,
@@ -193,6 +232,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					sessionAttributes,
 					coverage,
 					input.review?.ledger,
+					childFindings,
 				)) ??
 		(input.submitReply === undefined || input.stageEdit === undefined
 			? undefined
@@ -205,35 +245,77 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					sessionAttributes,
 				))
 
-	// A review's own pass may hand groups of a large pull request's files to child reviewers.
+	// Read-only tools only: a program cannot hold a proposal for approval, and a write it made before
+	// failing could not be retried safely.
+	const codeTools = Object.fromEntries(
+		Object.entries(maple.toolkit.tools).filter(
+			([name]) =>
+				CODE_MODE_TOOLS.has(name) &&
+				evaluatePermission(profile.ruleset, name) === "allow" &&
+				!MUTATING_TOOL_NAMES.has(name),
+		),
+	)
+	const codeMode =
+		agent.codeMode === true && input.codeExecutor !== undefined
+			? buildCodeMode(codeTools, maple.layer, input.codeExecutor, input.codeOnly === true)
+			: undefined
+	// What the model is offered directly; the handlers still serve every Maple tool to programs.
+	const direct =
+		codeMode !== undefined && input.codeOnly === true
+			? Toolkit.make(...Object.values(maple.toolkit.tools).filter((tool) => !(tool.name in codeTools)))
+			: maple.toolkit
+
+	// A review's own pass may hand groups of a large pull request's files to child reviewers, who
+	// read with the same tools, `run_code` included.
 	const fanout =
 		completion?.tool === SUBMIT_REVIEW && completion.autonomous
 			? buildReviewFanout(
-					maple.toolkit,
+					Toolkit.merge(direct, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
 					input.model,
+					input.usage,
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
+					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
+					Object.keys(codeTools),
+					childFindings,
 				)
 			: undefined
 
 	const toolkit = Toolkit.merge(
-		maple.toolkit,
+		direct,
 		...(completion === undefined ? [] : [completion.toolkit]),
 		...(fanout === undefined ? [] : [fanout.toolkit]),
+		...(codeMode === undefined ? [] : [codeMode.toolkit]),
 	)
 	const handlers = Layer.mergeAll(
 		maple.layer,
 		...(completion === undefined ? [] : [completion.layer]),
+		...(codeMode === undefined ? [] : [codeMode.layer]),
 		// The children run the parent's own tool handlers, so those are provided into the fan-out.
-		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
+		...(fanout === undefined
+			? []
+			: [
+					fanout.layer.pipe(
+						Layer.provide(
+							codeMode === undefined ? maple.layer : Layer.merge(maple.layer, codeMode.layer),
+						),
+					),
+				]),
 	)
 
-	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
-	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
+	// Not declared to the engine, which would then require the tool on every call; see
+	// `buildDiagnosisCompletion`. A landed submission still settles the run, below.
+	const prompt = codeMode === undefined ? profile.prompt : `${profile.prompt}\n\n${CODE_MODE_GUIDANCE}`
+	const run = chatAgent({ ...agent, prompt }, toolkit, input.model, {
 		autonomous: input.origin.kind === "autonomous",
-		...(completion === undefined
-			? undefined
-			: { completion: { tool: completion.tool, required: false } }),
 	})
+	const usage = accumulateUsage(input.usage)
+	const submitted = () => completion?.submitted() === true
+	const budget: RunBudgetHook = {
+		...usage,
+		// A landed submission settles the run: the next model pull after its batch never starts. An
+		// interrupt rather than a failure, so a settled run records no error.
+		guard: (effect) => (submitted() ? Effect.interrupt : usage.guard(effect)),
+	}
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
@@ -242,6 +324,48 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	let compactions = 0
 	// One per turn: a hidden block straddles deltas, so the state that finds it has to as well.
 	const sanitizer = makeTextSanitizer()
+	const context = {
+		messageId: input.messageId,
+		isProposed,
+		labelOf: mapleToolPhrase,
+		uiOf: (toolCallId: string) => {
+			const ui = uiByCall.get(toolCallId)
+			uiByCall.delete(toolCallId)
+			return ui
+		},
+		programCallsOf: (toolCallId: string) => {
+			const calls = [...programCalls.values()]
+				.filter((call) => call.callId.startsWith(`${toolCallId}#`))
+				.sort((a, b) => programCallIndex(a.callId) - programCallIndex(b.callId))
+			calls.forEach((call) => programCalls.delete(call.callId))
+			return calls
+		},
+		sanitizer,
+	}
+	// The children's turns are saved to the run's own `ThreadHistory`, under their own thread ids.
+	const childSettled = (event: RunEvent.RunEvent) =>
+		input.onChildSettled === undefined ||
+		(event._tag !== "SubagentCompleted" &&
+			event._tag !== "SubagentFailed" &&
+			event._tag !== "SubagentInterrupted")
+			? Effect.void
+			: ThreadHistory.ThreadHistory.pipe(
+					Effect.flatMap((history) => history.load(event.childThreadId)),
+					// A read that failed is not a child that saved nothing: say so, then go on without it.
+					Effect.tapError((error) =>
+						Effect.logWarning("Could not read a child reviewer's history").pipe(
+							Effect.annotateLogs({ childThreadId: event.childThreadId, cause: String(error) }),
+						),
+					),
+					Effect.option,
+					Effect.map((history) =>
+						input.onChildSettled?.({ event, history: Option.getOrUndefined(history) }),
+					),
+				)
+	// Once the submission lands, the run's own ending (the guard's interrupt) is not the turn's.
+	const settledTerminal = (event: RunEvent.RunEvent) =>
+		submitted() &&
+		(event._tag === "RunCompleted" || event._tag === "RunFailed" || event._tag === "RunInterrupted")
 
 	return AgentRuntime.stream(run, input.text, {
 		threadId: decodeThreadId(input.sessionId),
@@ -249,33 +373,52 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// Not a budget: the ceilings live in the agent's policy. This is the only place the engine
 		// reports token usage as it accrues — the event stream carries none — and `submit_diagnosis`
 		// reads the running total mid-run, so a hook that merely observes is what fills it.
-		budget: accumulateUsage(input.usage),
+		budget,
 	}).pipe(
 		// An abort clears the claim; the run notices at the next event rather than only after the
 		// in-flight model call drains.
 		Stream.takeWhile(() => input.holdsTurn()),
 		Stream.runForEach((event) =>
-			Effect.sync(() => {
-				if (event._tag === "CompactionPerformed") compactions += 1
-				for (const chat of toChatEvents(event, {
-					messageId: input.messageId,
-					isProposed,
-					labelOf: mapleToolPhrase,
-					uiOf: (toolCallId) => {
-						const ui = uiByCall.get(toolCallId)
-						uiByCall.delete(toolCallId)
-						return ui
-					},
-					sanitizer,
-				})) {
-					input.append(chat)
-				}
-			}),
+			Effect.andThen(
+				childSettled(event),
+				Effect.sync(() => {
+					if (event._tag === "CompactionPerformed") compactions += 1
+					if (
+						(event._tag === "SubagentCompleted" ||
+							event._tag === "SubagentFailed" ||
+							event._tag === "SubagentInterrupted") &&
+						event.usage !== undefined
+					) {
+						input.usage.delegated.modelCalls += event.usage.modelCalls
+						input.usage.delegated.input += event.usage.inputTokens
+						input.usage.delegated.output += event.usage.outputTokens
+						input.usage.delegated.costMicrousd += event.usage.costMicrousd
+					}
+					if (settledTerminal(event)) return
+					for (const chat of toChatEvents(event, context)) input.append(chat)
+				}),
+			),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
 		Effect.catchIf(
 			(error) => error instanceof ApprovalRequired,
 			() => Effect.void,
+		),
+		// A landed submission makes any later failure moot, defects included; only an abort stays one.
+		Effect.catchCause((cause) =>
+			!submitted() || !input.holdsTurn()
+				? Effect.failCause(cause)
+				: Cause.hasInterruptsOnly(cause)
+					? Effect.void
+					: Effect.logWarning("Run failed after its submission landed").pipe(
+							Effect.annotateLogs({ cause: summarizeCause(cause) }),
+						),
+		),
+		Effect.tap(() =>
+			Effect.sync(() => {
+				if (submitted() && input.holdsTurn())
+					for (const chat of settledTurnEnd(context)) input.append(chat)
+			}),
 		),
 		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
 		// nothing, and how often that happens is a question about the run's ending, not this turn.

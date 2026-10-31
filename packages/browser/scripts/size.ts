@@ -24,6 +24,9 @@ import { gzipSync } from "node:zlib"
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
 	/**
+	 * 47 since 2026-10: main already measured 45.26 kB; the SDK hardening pass
+	 * (surrogate-safe text, UUID fallback, consent purge, wider URL redaction,
+	 * status-aware retries, the consent settle window) added ~1.25 kB before any sampling.
 	 * 44.5 since 2026-09: `@maple/sdk-core`'s page-wide coordination with the Effect
 	 * SDK (one error is one issue across SDK copies) and shared option resolution (~0.4 kB).
 	 * 44: `tracing.captureHeaders` in the request hooks (~0.3 kB).
@@ -34,13 +37,14 @@ const BUDGET = {
 	 * code, the rest chunk-split overhead now that a second chunk shares the OTel
 	 * core). Was 38 for navigation spans.
 	 */
-	eager: 44.5,
+	eager: 47,
 	/**
 	 * Every page load, after `init()`, off the critical path: the OTel logs SDK,
 	 * document timing, `web-vitals` (~3.3 kB), breadcrumbs,
-	 * reports, the offline queue and long-frame/interaction spans.
+	 * reports, the offline queue and long-frame/interaction spans. 14.5 since
+	 * 2026-10: main measured 14.04 kB; the logs pagehide flush adds ~0.1 kB.
 	 */
-	deferred: 14,
+	deferred: 14.5,
 	lazy: 68,
 	/**
 	 * Our own eager code, with OpenTelemetry and rrweb left external.
@@ -71,9 +75,10 @@ const BUDGET = {
 	 * offline queue's exporter wrapper, 18.5 for `tracing.captureHeaders`. 19 for
 	 * `@maple/sdk-core`'s page-wide coordination with the Effect SDK (~0.45 kB).
 	 * 19.5 for the linear stack-frame parser that replaced a backtracking regex (CodeQL).
+	 * 25 since 2026-10: main already measured 23.43 kB; the hardening pass above adds ~1 kB.
 	 * 20: the OTLP exporter moved from an external dependency into first-party code; eager fell 43.67 → 41.28 kB.
 	 */
-	firstParty: 20,
+	firstParty: 25,
 }
 
 /** How close to a ceiling counts as worth warning about. */

@@ -39,7 +39,7 @@ const shell = (h: H, children: ReadonlyArray<Html>, title?: string): Html =>
 					h.Target("_blank"),
 					h.Rel("noopener noreferrer"),
 					h.Class(
-						"flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs transition-colors hover:text-foreground",
+						"flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs hover:text-foreground active:text-foreground",
 					),
 				],
 				[

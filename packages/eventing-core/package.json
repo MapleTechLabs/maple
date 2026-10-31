@@ -1,6 +1,6 @@
 {
 	"name": "@maple/eventing-core",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"private": true,
 	"type": "module",
 	"exports": {
@@ -16,7 +16,6 @@
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"ajv": "8.20.0",
 		"typescript": "catalog:tooling",

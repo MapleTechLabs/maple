@@ -1,5 +1,6 @@
 import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "../../../../components/infra/gcp/inventory"
+import { gcpMatchStatements, gcpStatements } from "../../../../components/infra/gcp/cloud-sql-signals"
 import { gcpWorkloadKeys } from "../../../../components/infra/gcp/tabs"
 import { Command } from "foldkit"
 import * as Chart from "../../../../charts/chart"
@@ -9,12 +10,15 @@ import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
+import * as CopyButton from "../../../../ui/copy-button"
+import * as Dialog from "../../../../ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import type { OverviewInput, ResourcesQuery, TimeseriesInput } from "../data"
+import { successOf } from "../list/derive"
 import {
 	CompleteReloadSpin,
 	FetchFleet,
@@ -22,12 +26,14 @@ import {
 	FetchOverview,
 	FetchResource,
 	FetchSqlInventory,
+	FetchStatementSpans,
 	FetchTimeseries,
 	FetchTopQueries,
 	FetchTraceSide,
 	ResolveWindow,
 } from "./command"
 import { Message, type Model, type RequestMode } from "./model"
+import { type QueryPeek, resolveQueryPeek, statementSpansInput } from "./peek"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -50,6 +56,47 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 
 const hrefOfSearch = (model: Model, search: Search) =>
 	hrefOf(AppRoute.InfraGcpResource({ service: model.service, name: model.name, search }))
+
+/** The peeked statement, resolved against the statements and trace side the slots hold. */
+export const peekOf = (model: Model): QueryPeek | null => {
+	const rows = successOf(model.topQueries.data)
+	if (rows === null || model.search.peek === undefined) return null
+	const statements = gcpStatements(rows, successOf(model.timeseries.data) ?? [])
+	const traceSide = successOf(model.traceSide.data)
+	return resolveQueryPeek(
+		statements,
+		gcpMatchStatements(statements, traceSide?.tracedQueries ?? []),
+		traceSide?.databases ?? [],
+		model.search.peek,
+	)
+}
+
+const toQueryPeek = (message: Dialog.Message) => Message.GotQueryPeekMessage({ message })
+
+/**
+ * Follows `search.peek`: opens the sheet on a statement of the table and reads its spans, closes it
+ * when the hash names none. The URL already says so, so the dialog's own Opened/Closed are dropped.
+ */
+const syncPeek = (result: Return, context: PageContext, mode: Keyed.RequestMode = "Load"): Return => {
+	const model = result.model
+	const peek = peekOf(model)
+	const dialog = peek === null ? Dialog.close(model.queryPeek) : Dialog.open(model.queryPeek)
+	const commands = [...(result.commands ?? []), ...Command.mapMessages(dialog.commands ?? [], toQueryPeek)]
+	const input = peek === null || model.window === null ? null : statementSpansInput(peek, model.window)
+	if (input === null) return { ...result, model: { ...model, queryPeek: dialog.model }, commands }
+	const key = requestKey(context.orgId, "getGcpCloudSqlStatementSpans", { data: input })
+	// Another statement's (or window's) spans are not shown dimmed under this one.
+	const current: Model["statementSpans"] =
+		model.statementSpans.key === key ? model.statementSpans : Keyed.idle()
+	const [statementSpans, fetches] = requestSlot(current, key, mode, () =>
+		FetchStatementSpans({ key, input }),
+	)
+	return {
+		...result,
+		model: { ...model, queryPeek: dialog.model, statementSpans },
+		commands: [...commands, ...fetches],
+	}
+}
 
 /** Every read of the page for the resolved window, keyed like the atoms. */
 const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
@@ -149,20 +196,24 @@ const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 					}),
 				)
 			: model.nodes
-	return {
-		model: {
-			...model,
-			sqlInventory,
-			topQueries,
-			traceSide,
-			fleet,
-			timeseries,
-			resource,
-			overview,
-			nodes,
+	return syncPeek(
+		{
+			model: {
+				...model,
+				sqlInventory,
+				topQueries,
+				traceSide,
+				fleet,
+				timeseries,
+				resource,
+				overview,
+				nodes,
+			},
+			commands,
 		},
-		commands,
-	}
+		context,
+		mode,
+	)
 }
 
 const serviceOf = (service: string): GcpInfraServiceId | undefined =>
@@ -210,6 +261,9 @@ export const initialModel = (service: GcpInfraServiceId, name: string, search: S
 	traceSide: Keyed.idle(),
 	fleet: Keyed.idle(),
 	showAllQueries: false,
+	queryPeek: Dialog.init("gcp-query-peek", "sheet"),
+	statementSpans: Keyed.idle(),
+	copyStatement: CopyButton.init(),
 	charts: {},
 	chartRuntime: { _tag: "Loading" },
 	themeColors: null,
@@ -221,7 +275,10 @@ export const initialModel = (service: GcpInfraServiceId, name: string, search: S
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (hrefOfSearch(model, model.search) === hrefOfSearch(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, mode)),
@@ -231,9 +288,9 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	requestAll(model, context, "Load")
 
-const navigate = (model: Model, search: Search): Return => ({
+const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(model, search), isReplace: false }),
+	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(model, search), isReplace }),
 })
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -255,11 +312,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSqlInventory: ({ key, result }) => ({
 			model: { ...model, sqlInventory: Keyed.accept(model.sqlInventory, key, result) },
 		}),
-		CompletedFetchTopQueries: ({ key, result }) => ({
-			model: { ...model, topQueries: Keyed.accept(model.topQueries, key, result) },
-		}),
-		CompletedFetchTraceSide: ({ key, result }) => ({
-			model: { ...model, traceSide: Keyed.accept(model.traceSide, key, result) },
+		CompletedFetchTopQueries: ({ key, result }) =>
+			syncPeek(
+				{ model: { ...model, topQueries: Keyed.accept(model.topQueries, key, result) } },
+				context,
+			),
+		CompletedFetchTraceSide: ({ key, result }) =>
+			syncPeek({ model: { ...model, traceSide: Keyed.accept(model.traceSide, key, result) } }, context),
+		CompletedFetchStatementSpans: ({ key, result }) => ({
+			model: { ...model, statementSpans: Keyed.accept(model.statementSpans, key, result) },
 		}),
 		CompletedFetchFleet: ({ key, result }) => ({
 			model: { ...model, fleet: Keyed.accept(model.fleet, key, result) },
@@ -272,6 +333,31 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		AttachedLinkedCursor: () => ({ model }),
 		ClickedRetryTimeseries: () => requestAll(model, context, "Refresh"),
 		ClickedShowAllQueries: () => ({ model: { ...model, showAllQueries: !model.showAllQueries } }),
+		ClickedStatement: ({ queryHash }) =>
+			navigate({ ...model, copyStatement: CopyButton.init() }, { ...model.search, peek: queryHash }),
+		ClickedRetryStatementSpans: () => syncPeek({ model }, context, "Refresh"),
+		GotQueryPeekMessage: ({ message: inner }) => {
+			const result = Dialog.update(model.queryPeek, inner)
+			const next = {
+				model: { ...model, queryPeek: result.model },
+				commands: Command.mapMessages(result.commands ?? [], toQueryPeek),
+			}
+			return result.outMessage?._tag === "Closed"
+				? {
+						...navigate(next.model, { ...model.search, peek: undefined }, true),
+						commands: next.commands,
+					}
+				: next
+		},
+		GotCopyStatementMessage: ({ message: inner }) => {
+			const result = CopyButton.update(model.copyStatement, inner)
+			return {
+				model: { ...model, copyStatement: result.model },
+				commands: Command.mapMessages(result.commands ?? [], (message) =>
+					Message.GotCopyStatementMessage({ message }),
+				),
+			}
+		},
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

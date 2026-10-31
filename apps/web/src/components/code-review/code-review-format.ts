@@ -48,6 +48,7 @@ export const SKIP_LABELS = {
 	superseded: "a newer push was reviewed",
 	agent_unavailable: "reviewer unavailable",
 	automatic_limit: "pull request limit reached",
+	external_author: "author outside the organization",
 } satisfies Record<PrReviewSkipReason, string>
 
 const COUNT = new Intl.NumberFormat("en-US")

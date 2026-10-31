@@ -236,7 +236,7 @@ import logging
 logging.getLogger(__name__).warning("Payment retry for order %s", order_id)
 ```
 
-The root logger's level still applies. Python defaults it to `WARNING`, so call `logging.basicConfig(level=logging.INFO)` or set the level yourself to send `INFO` records.
+The root logger's level still applies. Python defaults it to `WARNING`, so call `logging.getLogger().setLevel(logging.INFO)` to send `INFO` records. `logging.basicConfig(level=...)` does nothing once the root logger has a handler, so after `import telemetry` it no longer sets the level. See [Python logging levels](/guides/python-logging-levels) for per-module and per-handler levels.
 
 ## Verify
 

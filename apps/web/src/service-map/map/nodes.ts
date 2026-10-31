@@ -8,7 +8,7 @@ import {
 	type ServiceNodeData,
 } from "@maple/ui/components/service-map/service-map-utils"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatRate } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatDuration, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { formatLatency } from "@maple/ui/lib/format"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -54,7 +54,7 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class("ml-auto flex flex-col items-end gap-px")],
 		[
-			eyebrow(h, { className: "text-4xs text-muted-foreground/60" }, ["pods"]),
+			eyebrow(h, { className: "text-4xs text-foreground-subtle" }, ["pods"]),
 			data.infra
 				? tooltipTrigger(h, [
 						h.span(
@@ -64,13 +64,13 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 								),
 							],
 							[
-								icon(h, "CubeIcon", { size: 10, className: "text-muted-foreground/70" }),
+								icon(h, "CubeIcon", { size: 10, className: "text-foreground-subtle" }),
 								String(data.infra.podCount),
 							],
 						),
 					])
 				: h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-muted-foreground/30")],
+						[h.Class("font-mono text-2xs tabular-nums text-foreground-faint")],
 						[EMPTY_VALUE],
 					),
 		],
@@ -100,10 +100,10 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 			[
 				h.Class(
 					cn(
-						"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
+						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
 						selected
 							? selectedBorderClass(errorRate)
-							: "border-border hover:border-border-active",
+							: "border-border hover:border-border-strong active:border-border-strong",
 					),
 				),
 			],
@@ -121,7 +121,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 										size: 12,
 										className: cn(
 											"shrink-0",
-											!platformIcon.branded && "text-muted-foreground/80",
+											!platformIcon.branded && "text-foreground-subtle",
 										),
 									}),
 								]),
@@ -138,14 +138,14 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 														h,
 														{
 															className:
-																"shrink-0 text-4xs text-muted-foreground/60",
+																"shrink-0 text-4xs text-foreground-subtle",
 														},
 														[runtimeInfo.short],
 													)
 												: tooltipTrigger(h, [
 														icon(h, runtimeInfo.icon, {
 															size: 12,
-															className: "shrink-0 text-muted-foreground/70",
+															className: "shrink-0 text-foreground-subtle",
 														}),
 													]),
 										]),
@@ -159,7 +159,8 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 								]),
 								errCell(h, errorRate),
 								avgCell(h, avgLatencyMs),
-								podsCell(h, data),
+								// A service on a platform has no pods; the logo by its name already says where it runs.
+								...(data.infra === undefined && data.runsOn !== undefined ? [] : [podsCell(h, data)]),
 							],
 						),
 					],
@@ -169,8 +170,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 	]
 }
 
-const formatLag = (seconds: number): string =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
+const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
 
 const planetscaleRow = <M>(
 	h: HtmlBuilder<M>,
@@ -222,7 +222,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 		h.div(
 			[
 				h.Class(
-					"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
+					"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
 				),
 				h.Style(tintedCard(color, 0.12, 0.4, selected)),
 			],
@@ -291,10 +291,10 @@ const namespaceAggregateNode = <M>(
 		h.div(
 			[
 				h.Class(
-					"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
+					"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
 				),
 				h.Style(tintedCard(color, 0.1, 0.55, selected)),
-				h.Title("Collapsed namespace — click to expand"),
+				h.Title("Collapsed namespace. Click to expand"),
 			],
 			[
 				h.div([h.Class("w-[3px] shrink-0"), h.Style({ "background-color": color })]),

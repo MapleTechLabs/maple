@@ -1,17 +1,17 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "../../charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
-import { LoadSignalPresence, MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { FacetsHint, HealthSnapshot, Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
+import { healthData } from "./view-health"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -53,37 +53,57 @@ const loaded = (rows: ReadonlyArray<HealthSnapshot>): Model => {
 		Message.CompletedFetchAnomalies({ key: facets.anomalies.key ?? "", result: Result.succeed([]) }),
 		Message.UpdatedIncidents({
 			orgId,
-			incidents: [{ status: "open", groupKey: null, severity: "critical" }],
+			incidents: [{ status: "open", groupKey: null, severity: "critical", signalType: "error_rate" }],
 		}),
 		Message.UpdatedRules({ orgId, enabled: [true, false] }),
 	]
 	return steps.reduce((model, message) => pageUpdate(model, message).model, facets)
 }
 
+type Presence = "present" | "absent"
+
+/** The page-init presence read answered: `traces` and `logs` as given. */
+const withPresence = (model: Model, traces: Presence, logs: Presence = traces): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({
+				traces: { status: traces, lastSeenMs: null },
+				logs: { status: logs, lastSeenMs: null },
+			}),
+		}),
+	).model
+
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
-const cursorMounted = () =>
-	Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
+const cursorMounted = () => Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
 
 describe("overview", () => {
 	test("entry reads the clock and hint; downstream queries wait for facets", () => {
-		expect(names(init({ search: {} }, context).commands)).toContain("ReadOverviewEntry")
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ReadOverviewEntry", "LoadOverviewSignalPresence"]),
+		)
 		const { commands } = entered()
-		expect(names(commands)).toEqual([
-			"FetchOverviewFacets",
-			"FetchOverviewAnomalyCounts",
-			"FetchOverviewServiceUsage",
-		])
+		expect(names(commands)).toEqual(
+			expect.arrayContaining([
+				"FetchOverviewFacets",
+				"FetchOverviewAnomalyCounts",
+				"FetchOverviewServiceUsage",
+			]),
+		)
+		expect(names(commands)).not.toContain("FetchOverviewTimeSeries")
 	})
 
 	test("facets with production fetch health, series and logs for it, and store the hint", () => {
 		const answered = withFacets(entered().model, ["production", "staging"])
-		expect(names(answered.commands)).toEqual([
-			"FetchServiceHealthSnapshot",
-			"FetchOverviewTimeSeries",
-			"FetchOverviewLogVolume",
-			"SaveOverviewFacetsHint",
-		])
+		expect(names(answered.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchServiceHealthSnapshot",
+				"FetchOverviewTimeSeries",
+				"FetchOverviewLogVolume",
+				"SaveOverviewFacetsHint",
+			]),
+		)
 		expect(answered.model.overviewSeries.key).toContain("production")
 		expect(answered.model.hint).toEqual({ environment: "production", preset: "24h", seen: true })
 	})
@@ -109,6 +129,60 @@ describe("overview", () => {
 		expect(names(retried.commands)).toEqual(["FetchOverviewTimeSeries"])
 	})
 
+	test("the page strip's retry asks a failed card's read again, not just the facets", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchOverviewSeries({
+				key: model.overviewSeries.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("FetchOverviewTimeSeries")
+	})
+
+	test("the page strip's retry asks failed anomaly counts again", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchAnomalies({
+				key: model.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("FetchOverviewAnomalyCounts")
+	})
+
+	test("the page strip's retry asks a failed health snapshot again", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchSnapshot({
+				key: model.snapshot.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("FetchServiceHealthSnapshot")
+	})
+
+	test("a second card's retry while the first is in flight requests nothing", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchOverviewSeries({
+				key: model.overviewSeries.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const first = pageUpdate(failed, Message.ClickedRetry({ target: "Overview" }))
+		const second = pageUpdate(first.model, Message.ClickedRetry({ target: "Overview" }))
+		expect(names(second.commands)).toEqual([])
+		expect(second.model).toEqual(first.model)
+	})
+
 	test("an answer for a superseded environment is dropped", () => {
 		const first = withFacets(entered().model, ["production"]).model
 		const second = pageUpdate(first, Message.CompletedResolveClock({ nowMs: NOW + 60 * 60 * 1000 })).model
@@ -128,6 +202,47 @@ describe("overview", () => {
 			Message.UpdatedIncidents({ orgId: "org_other", incidents: [] }),
 		)
 		expect(AsyncData.isLoading(other.model.incidents)).toBe(true)
+	})
+
+	test("health counts once the snapshot lands, even when the alert sync and anomaly read failed", () => {
+		const facets = withFacets(entered().model, ["production"]).model
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+			Message.CompletedFetchAnomalies({
+				key: facets.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		]
+		const waiting = steps.reduce((model, message) => pageUpdate(model, message).model, facets)
+		expect(AsyncData.isLoading(healthData(waiting))).toBe(true)
+		const failed = pageUpdate(waiting, Message.FailedLoadIncidents({ orgId })).model
+		expect(AsyncData.getData(healthData(failed))).toEqual(
+			Option.some([[snapshotRow("checkout")], [], []]),
+		)
+	})
+
+	test("without live alerts the banner stays out instead of claiming all clear", () => {
+		const facets = withFacets(entered().model, ["production"]).model
+		const answered = pageUpdate(
+			facets,
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+		).model
+		const failed = pageUpdate(answered, Message.FailedLoadIncidents({ orgId })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolveAll(
+				[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
+				[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
+			),
+			expectView(text("All clear")).toBeAbsent(),
+		)
 	})
 
 	test("picking an environment writes it to the URL; All environments leaves it", () => {
@@ -164,7 +279,7 @@ describe("overview", () => {
 	})
 
 	test("a card handed no rows says so instead of drawing bare axes", () => {
-		const start = loaded([snapshotRow("checkout")])
+		const start = withPresence(loaded([snapshotRow("checkout")]), "present")
 		const empty = pageUpdate(
 			start,
 			Message.CompletedFetchLogSeries({ key: start.logSeries.key ?? "", result: Result.succeed([]) }),
@@ -179,27 +294,111 @@ describe("overview", () => {
 		)
 	})
 
-	test("an org with no services asks for signal presence once the empty state painted", () => {
+	test("zero-filled series of a signal never received show the setup copy, not flat lines", () => {
+		const start = withPresence(loaded([snapshotRow("checkout")]), "present", "absent")
+		const zeros = pageUpdate(
+			start,
+			Message.CompletedFetchLogSeries({
+				key: start.logSeries.key ?? "",
+				result: Result.succeed([{ bucket: "2026-10-01 11:00:00", count: 0 }]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(zeros),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No logs yet")).toExist(),
+		)
+	})
+
+	test("when presence could not be read, an empty card gives no wider-range hint", () => {
+		const loadedModel = loaded([snapshotRow("checkout")])
+		const failed = pageUpdate(
+			loadedModel,
+			Message.CompletedLoadSignalPresence({ result: Result.fail(toLoadFailure("boom")) }),
+		).model
+		const empty = pageUpdate(
+			failed,
+			Message.CompletedFetchLogSeries({ key: failed.logSeries.key ?? "", result: Result.succeed([]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No data in this window")).toExist(),
+			expectView(text("Try a wider time range")).not.toExist(),
+		)
+	})
+
+	test("a new workspace shows a skeleton, never the quiet-window copy, until its setup state", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
 			themeResolved(),
 			cursorMounted(),
-			expectView(text("No services found")).toExist(),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No services found")).not.toExist(),
+			expectView(text("No data in this window")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "absent")),
+			themeResolved(),
+			cursorMounted(),
 			expectView(text("No services yet")).toExist(),
+			expectView(text("No services found")).not.toExist(),
+		)
+	})
+
+	test("an absent signal shows the setup state before the warehouse answers", () => {
+		const waiting = withPresence(entered().model, "absent")
+		expect(AsyncData.isLoading(healthData(waiting))).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(waiting),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No services yet")).toExist(),
+		)
+	})
+
+	test("empty charts of a workspace that never sent the signal say so, not 'try a wider range'", () => {
+		const start = withPresence(loaded([snapshotRow("checkout")]), "present", "absent")
+		const empty = pageUpdate(
+			start,
+			Message.CompletedFetchLogSeries({ key: start.logSeries.key ?? "", result: Result.succeed([]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No logs yet")).toExist(),
+			expectView(text("No data in this window")).not.toExist(),
+		)
+	})
+
+	test("a failed presence read falls back to the neutral empty copy", () => {
+		const failed = pageUpdate(
+			loaded([]),
+			Message.CompletedLoadSignalPresence({ result: Result.fail(toLoadFailure("boom")) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No services found")).toExist(),
 		)
 	})
 
 	test("Reload re-reads the clock and spins for the reload", () => {
 		const reloaded = pageUpdate(loaded([]), Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveOverviewClock", "CompleteOverviewReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveOverviewClock", "CompleteOverviewReloadSpin"]),
+		)
 		const settled = pageUpdate(
 			reloaded.model,
 			Message.CompletedReloadSpin({ version: reloaded.model.refreshVersion }),

@@ -11,7 +11,7 @@ import { toListDashboard } from "./derive"
 import type { ListDashboard, Model } from "./model"
 
 /** `COLLECTION_LOAD_TIMEOUT_MS`: how long the live list may load before the snapshot stands in. */
-export const COLLECTION_LOAD_TIMEOUT_MS = 30_000
+export const COLLECTION_LOAD_TIMEOUT_MS = 10_000
 
 const byUpdatedDesc = Order.flip(Order.mapInput(Order.String, (row: DashboardRow) => row.updated_at))
 

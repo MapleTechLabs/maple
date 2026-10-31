@@ -40,7 +40,21 @@ const activate = (root: HTMLElement, id: string) => {
 	for (const panel of root.querySelectorAll<HTMLElement>(":scope > .lt__panels > [data-lang-panel]")) {
 		panel.hidden = panel.dataset.langPanel !== id
 	}
+	const picked = triggers.find((t) => t.dataset.langTrigger === id)
+	if (picked) revealInRail(picked)
 	return true
+}
+
+// The rail scrolls sideways when its tabs overflow; keep the picked one in view
+// without moving the page (scrollIntoView would also scroll vertically).
+const revealInRail = (tab: HTMLElement) => {
+	const rail = tab.parentElement
+	if (!rail || rail.scrollWidth <= rail.clientWidth) return
+	const tabBox = tab.getBoundingClientRect()
+	const railBox = rail.getBoundingClientRect()
+	const fade = 40
+	if (tabBox.left < railBox.left + fade) rail.scrollLeft -= railBox.left + fade - tabBox.left
+	else if (tabBox.right > railBox.right - fade) rail.scrollLeft += tabBox.right - (railBox.right - fade)
 }
 
 const select = (key: string, id: string) => {
@@ -56,7 +70,8 @@ const url = new URL(location.href)
 const requested = url.searchParams.get("lang")
 const linked = roots.some(
 	(root) =>
-		root.dataset.langTabs === LANGUAGE_KEY && triggersOf(root).some((t) => t.dataset.langTrigger === requested),
+		root.dataset.langTabs === LANGUAGE_KEY &&
+		triggersOf(root).some((t) => t.dataset.langTrigger === requested),
 )
 	? requested
 	: null

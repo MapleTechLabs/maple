@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Option } from "effect"
 import { applyChatSessionMigrations, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
@@ -92,7 +92,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			// Two pieces of object work: the turn and the heartbeat alarm that keeps the object alive.
 			assert.strictEqual(state.pending.length, 2)
 			assert.lengthOf(state.alarms, 1)
-			yield* rpc.abort()
+			yield* rpc.abort("user")
 			assert.strictEqual(yield* rpc.running(), false)
 		}),
 	)

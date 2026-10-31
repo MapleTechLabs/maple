@@ -260,15 +260,11 @@ export const VirtualizeSessions = Mount.defineStream("VirtualizeAgentSessions", 
 		),
 })
 
-/** The empty state is on screen: `useSignalPresence` mounts with it. */
-export const MountEmptyState = Mount.define("MountAgentSessionsEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () => afterPaint(Message.PaintedEmptyState()),
-})
-
 export const LoadSignalPresence = Command.define("LoadAgentSessionsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `ReachEndSentinel`: the 1px marker nearing view (400px margin) asks for the next page. */

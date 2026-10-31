@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/effect-sdk",
-	"version": "0.11.0",
+	"version": "0.12.1",
 	"description": "Maple observability SDK for Effect applications",
 	"keywords": [
 		"effect",
@@ -66,9 +66,9 @@
 		"std-env": "^4.0.0"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple/browser-session": "workspace:*",
+		"@maple/sdk-core": "workspace:*",
 		"@types/node": "catalog:tooling",
 		"effect": "catalog:effect",
 		"tsdown": "^0.23.0",

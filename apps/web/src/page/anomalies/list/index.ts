@@ -7,6 +7,7 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view } from "./view"
+import { pollTicks } from "../../../data/poll"
 
 const LIVE_REFRESH_INTERVAL = Duration.seconds(15)
 
@@ -40,7 +41,7 @@ const listKeys: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	},
 })
 
-/** `useIntervalRefresh`: the first page again every 15 s while Live (ticks skip a hidden tab). */
+/** `useIntervalRefresh`: the first page again every 15 s while Live (paused while hidden or offline). */
 const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()((entry) => ({
 	listKeys: entry(
 		{ hasRows: Schema.Boolean },
@@ -55,9 +56,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()
 			modelToDependencies: ({ model }) => ({ isLive: isLiveOf(model.search) }),
 			dependenciesToStream: ({ isLive }) =>
 				isLive
-					? Stream.tick(LIVE_REFRESH_INTERVAL).pipe(
-							Stream.drop(1),
-							Stream.filter(() => typeof document === "undefined" || !document.hidden),
+					? pollTicks(LIVE_REFRESH_INTERVAL).pipe(
 							Stream.mapEffect(() =>
 								Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveRefresh({ nowMs })),
 							),
@@ -78,6 +77,6 @@ export const page = definePage(
 		routeChanged,
 		view,
 		subscriptions,
-		breadcrumbs: () => [{ label: "Anomalies" }],
+		breadcrumbs: () => [{ label: "Anomalies", isPageHeading: true }],
 	},
 )

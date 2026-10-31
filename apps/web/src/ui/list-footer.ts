@@ -36,6 +36,9 @@ const countText = <M>(options: ListFooterOptions<M>): string | null => {
 	if (shown === undefined || noun === undefined || noun === "") return null
 	const one = options.singular ?? (/[^s]s$/.test(noun) && !noun.endsWith("ies") ? noun.slice(0, -1) : noun)
 	const nounFor = (n: number) => (n === 1 ? one : noun)
+	// An unbounded total (Infinity) says "more", never "∞".
+	if (total !== undefined && total > shown && !Number.isFinite(total))
+		return `Showing ${count(shown)} ${nounFor(shown)}, more available`
 	if (total !== undefined && total > shown)
 		return `Showing ${count(shown)} of ${count(total)} ${nounFor(total)}`
 	if (options.isCapped === true)

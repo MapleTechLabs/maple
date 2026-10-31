@@ -13,7 +13,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { linkTabStrip } from "../../kit/underline-tabs"
 import { alertStatusBadge, severityBadge } from "../shared/badges"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { RULE_CHART_TOKENS } from "../shared/rule-chart"
@@ -107,21 +107,17 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 
 const tabStrip = (h: H, model: Model): Html => {
 	const active = activeTabOf(model)
-	return underlineTabStrip(
+	return linkTabStrip(
 		h,
-		{ label: "Rule sections", navigation: true },
-		TABS.map((tab) =>
-			h.a(
-				[
-					h.Key(tab),
-					// `search={(prev) => ({ ...prev, tab })}`: the time range rides along.
-					h.Href(ruleHref(model.ruleId, { ...model.search, tab })),
-					...(tab === active ? [h.AriaCurrent("page")] : []),
-					h.Class(underlineTabClass(tab === active)),
-				],
-				[tab === "overview" ? "Overview" : "History"],
-			),
-		),
+		"Rule sections",
+		TABS.map((tab) => ({
+			key: tab,
+			// `search={(prev) => ({ ...prev, tab })}`: the time range rides along.
+			href: ruleHref(model.ruleId, { ...model.search, tab }),
+			label: tab === "overview" ? "Overview" : "History",
+			isCurrent: tab === active,
+			isRouteActive: tab === active,
+		})),
 	)
 }
 
@@ -170,4 +166,3 @@ export const breadcrumbsOf = (model: Model) => {
 		{ label: model.rules === null ? "Loading…" : rule === null ? "Not found" : rule.name },
 	]
 }
-

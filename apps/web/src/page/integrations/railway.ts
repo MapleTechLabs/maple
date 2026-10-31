@@ -71,7 +71,7 @@ export const ConnectRailwayToken = Command.define("ConnectRailwayFromIntegration
 				return Effect.succeed(
 					Message.FailedRailwayConnect({
 						error: isUnexpectedError(presentation)
-							? "Failed to connect Railway."
+							? "Couldn't connect Railway."
 							: presentation.message,
 					}),
 				)

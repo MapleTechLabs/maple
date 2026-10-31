@@ -3,36 +3,35 @@ import { Effect, Schema } from "effect"
 import { UpdateErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
-import { doc } from "../lib/tool-doc"
-import { persistenceFailed, validationFailed } from "./error-issue-shared"
+import { policyOutput, renderPolicy } from "../lib/error-notification-policy"
+import { persistenceFailed } from "./error-issue-shared"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { AlertDestinationId, AlertSeverity, ErrorNotificationPolicyUpsertRequest } from "@maple/domain/http"
+import { AlertSeverity, ErrorNotificationPolicyUpsertRequest } from "@maple/domain/http"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 
-const decodeDestinationId = Schema.decodeUnknownEffect(AlertDestinationId)
 const decodePatch = Schema.decodeEffect(ErrorNotificationPolicyUpsertRequest)
-
-const yesNo = (value: boolean): string => (value ? "yes" : "no")
 
 export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistrar) {
 	server.define({
 		name: "update_error_notification_policy",
 		title: "Update Error Notification Policy",
 		description:
-			"Configure the org-wide error notification policy: whether error incidents (first seen, regression, auto-resolve) are delivered to alert destinations, and which ones. Org admins only. Omit a field to leave it unchanged.",
+			"Configure the org-wide error notification policy: whether error incidents (first seen, regression, auto-resolve) are delivered to alert destinations, and which ones. Org admins only. Omit a field to leave it unchanged; get_error_notification_policy reads the current policy. A new error becomes an issue (and can notify) only after 3 occurrences; min_occurrence_count cannot lower that.",
 		parameters: Schema.Struct({
 			enabled: P.optionalFlag("Enable notifications overall"),
-			destination_ids: P.optionalList(
-				"Alert destination IDs (from list_alert_destinations) to deliver to. An empty list clears them",
+			destination_ids: P.optionalResourceIdList(
+				"alertDestination",
+				"Alert destinations (from list_alert_destinations) to deliver to, replacing the current ones. Pass [] to clear them",
 			),
 			notify_on_first_seen: P.optionalFlag(
-				"Notify on the first-ever occurrence of an error fingerprint",
+				"Notify when a new error becomes an issue (after its 3rd occurrence)",
 			),
 			notify_on_regression: P.optionalFlag("Notify when a resolved issue re-occurs"),
 			notify_on_resolve: P.optionalFlag(
 				"Notify when an incident is auto-resolved after the silence window",
 			),
 			min_occurrence_count: P.optionalNumber(
-				"Only notify when the incident's opening occurrence count reaches this number",
+				"Only notify when an incident opens with at least this many occurrences, checked once when it opens. New errors already need 3 to become an issue, so values of 3 or less only affect regressions",
 			),
 			severity: P.optionalOneOf(AlertSeverity.literals, "Severity label carried on the notifications"),
 		}),
@@ -47,16 +46,9 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 			const destinationIds =
 				params.destination_ids === undefined
 					? undefined
-					: yield* Effect.forEach(params.destination_ids, (token) =>
-							decodeDestinationId(token).pipe(
-								Effect.mapError(
-									() =>
-										new McpInvalidInputError({
-											message: `Invalid alert destination ID: ${token}`,
-											parameter: "destination_ids",
-										}),
-								),
-							),
+					: yield* Effect.forEach(
+							params.destination_ids,
+							P.decodeResourceId("alertDestination", "destination_ids"),
 						)
 
 			const patch = yield* decodePatch({
@@ -96,36 +88,25 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 						"@maple/http/errors/ErrorPersistenceError": persistenceFailed(
 							"update_error_notification_policy",
 						),
-						"@maple/http/errors/ErrorValidationError": validationFailed(),
+						"@maple/http/errors/ErrorNotificationUnknownDestinationError": (error) =>
+							Effect.fail(
+								new McpInvalidInputError({
+									message: `No alert destination ${error.destinationIds
+										.map(
+											(id) =>
+												`${id} (${encodePublicId(PublicIdPrefixes.alertDestination, id)})`,
+										)
+										.join(
+											", ",
+										)} in this org. list_alert_destinations lists them. Nothing was changed.`,
+									parameter: "destination_ids",
+								}),
+							),
 					}),
 				)
 
-			return {
-				enabled: policy.enabled,
-				destinationIds: policy.destinationIds,
-				notifyOnFirstSeen: policy.notifyOnFirstSeen,
-				notifyOnRegression: policy.notifyOnRegression,
-				notifyOnResolve: policy.notifyOnResolve,
-				minOccurrenceCount: policy.minOccurrenceCount,
-				severity: policy.severity,
-			}
+			return yield* policyOutput(tenant.orgId, policy, "update_error_notification_policy")
 		}),
-		render: (output) => ({
-			title: "Error notification policy updated",
-			blocks: [
-				doc.fields([
-					["Enabled", yesNo(output.enabled)],
-					[
-						"Destinations",
-						output.destinationIds.length > 0 ? output.destinationIds.join(", ") : "—",
-					],
-					["First seen", yesNo(output.notifyOnFirstSeen)],
-					["Regression", yesNo(output.notifyOnRegression)],
-					["Resolve", yesNo(output.notifyOnResolve)],
-					["Min occurrence", output.minOccurrenceCount],
-					["Severity", output.severity],
-				]),
-			],
-		}),
+		render: (output) => renderPolicy("Error notification policy updated", output),
 	})
 }

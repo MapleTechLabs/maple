@@ -32,6 +32,10 @@ export const ScrapeForm = Schema.Struct({
 })
 export type ScrapeForm = typeof ScrapeForm.Type
 
+/** A probe's answer in this visit: `error` is the scrape's failure, or the call's own. */
+export const ProbeOutcome = Schema.Struct({ success: Schema.Boolean, error: Schema.NullOr(Schema.String) })
+export type ProbeOutcome = typeof ProbeOutcome.Type
+
 export const PrometheusCardModel = Schema.Struct({
 	selectedId: Schema.NullOr(ScrapeTargetId),
 	/** `useScrapeTargetChecks(selectedId)`: the latest 20 checks, re-read every 10 s. */
@@ -47,6 +51,8 @@ export const PrometheusCardModel = Schema.Struct({
 	/** `useKeyedAsyncAction`: the targets a probe or an enable toggle is in flight for. */
 	probing: Schema.Array(ScrapeTargetId),
 	toggling: Schema.Array(ScrapeTargetId),
+	/** The last probe per target id, so the connect flow's status row can show it. */
+	probes: Schema.Record(Schema.String, ProbeOutcome),
 	menus: Schema.Record(Schema.String, Menu.Model),
 })
 export type PrometheusCardModel = typeof PrometheusCardModel.Type
@@ -75,8 +81,12 @@ export const initPrometheusCard = (): PrometheusCardModel => ({
 	isDeleting: false,
 	probing: [],
 	toggling: [],
+	probes: {},
 	menus: {},
 })
+
+/** `hostnameFromUrl`: the URL's host, or the raw value when it does not parse. */
+export const hostnameOf = (value: string): string => (URL.canParse(value) ? new URL(value).host : value)
 
 const failureOf = (error: unknown): LoadFailure => toLoadFailure(error)
 

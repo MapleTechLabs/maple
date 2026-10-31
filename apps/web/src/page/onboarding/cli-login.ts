@@ -78,7 +78,7 @@ export const InspectCliDevice = Command.define("InspectCliDevice", {
 	execute: ({ userCode }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
-			const response = yield* client.auth.cliDeviceInspect({ params: { userCode } })
+			const response = yield* client.authSession.cliDeviceInspect({ params: { userCode } })
 			const expiresAtLabel = yield* localeTimeOf(response.expiresAt)
 			return Message.SucceededInspectCliDevice({
 				userCode,
@@ -88,7 +88,10 @@ export const InspectCliDevice = Command.define("InspectCliDevice", {
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
-					Message.FailedInspectCliDevice({ userCode, message: endpointMessage(error, INSPECT_FALLBACK) }),
+					Message.FailedInspectCliDevice({
+						userCode,
+						message: endpointMessage(error, INSPECT_FALLBACK),
+					}),
 				),
 			),
 		),
@@ -102,8 +105,8 @@ export const DecideCliDevice = Command.define("DecideCliDevice", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
 			yield* action === "approve"
-				? client.auth.cliDeviceApprove({ params: { userCode } })
-				: client.auth.cliDeviceDeny({ params: { userCode } })
+				? client.authSession.cliDeviceApprove({ params: { userCode } })
+				: client.authSession.cliDeviceDeny({ params: { userCode } })
 			return Message.SucceededDecideCliDevice({ action })
 		}).pipe(
 			Effect.catch((error) =>
@@ -125,7 +128,8 @@ const inspect = (model: Model, code: string): UpdateReturn => {
 	if (normalized.replace("-", "").length !== 8) {
 		return {
 			model: modifyFields(model, {
-				state: () => State.Failed({ message: "Enter the eight-character code shown in your terminal." }),
+				state: () =>
+					State.Failed({ message: "Enter the eight-character code shown in your terminal." }),
 			}),
 		}
 	}
@@ -203,4 +207,3 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: modifyFields(model, { state: () => State.Failed({ message: failure }) }),
 		}),
 	})
-

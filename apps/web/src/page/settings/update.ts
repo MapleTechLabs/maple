@@ -2,10 +2,10 @@ import { withoutCheckoutReturn } from "../../lib/billing/checkout-return"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
-import { Option } from "effect"
+import { Array, Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../route"
-import type { SettingsSearch as SettingsSearchSchema } from "../../route/search"
+import { type SettingsSearch as SettingsSearchSchema, settingsTabValues } from "../../route/search"
 
 type SettingsSearch = typeof SettingsSearchSchema.Type
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
@@ -47,17 +47,35 @@ type SettingsRoute = Extract<AppRoute, { readonly _tag: "Settings" }>
 
 export const visibilityOf = (model: Model): Visibility => {
 	const isAdmin = isClerkAuthEnabled
-		? AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.isAdmin), () => false)
+		? AsyncData.getOrElse(
+				AsyncData.map(model.session, (session) => session.isAdmin),
+				() => false,
+			)
 		: true
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
-	return { isClerk: isClerkAuthEnabled, isAdmin, canAccessDataPlatform: isAdmin && hasByoc }
+	return {
+		isClerk: isClerkAuthEnabled,
+		isAdmin,
+		canAccessDataPlatform: isAdmin && hasByoc,
+		isDataPlatformLocked: isClerkAuthEnabled && isAdmin && !hasByoc,
+	}
 }
 
-const isPending = <A, E>(data: AsyncData.AsyncData<A, E>) => AsyncData.isLoading(data) || AsyncData.isIdle(data)
+/** The session read answered and says the viewer is a member, not an admin: only then do notices say so. */
+export const isKnownMember = (model: Model): boolean =>
+	isClerkAuthEnabled &&
+	AsyncData.getOrElse(
+		AsyncData.map(model.session, (session) => !session.isAdmin),
+		() => false,
+	)
+
+const isPending = <A, E>(data: AsyncData.AsyncData<A, E>) =>
+	AsyncData.isLoading(data) || AsyncData.isIdle(data)
 
 /** The skeleton: the session (Clerk), or the customer while a deep link waits on the gated tab. */
 export const isSettingsLoading = (model: Model): boolean =>
-	isClerkAuthEnabled && (isPending(model.session) || (model.search.tab === "data-platform" && isPending(model.customer)))
+	isClerkAuthEnabled &&
+	(isPending(model.session) || (model.search.tab === "data-platform" && isPending(model.customer)))
 
 export const activeTabOf = (model: Model): SettingsTab =>
 	resolveActiveSettingsTab(model.search.tab, visibleTabs(visibleSections(visibilityOf(model))))
@@ -98,11 +116,18 @@ const putTab = (model: Model, tab: TabModel): Model =>
 const leaveTab = (model: Model): Model =>
 	model.tab === null || model.tab._tag === "Unported"
 		? { ...model, tab: null }
-		: { ...model, tab: null, kept: [...model.kept.filter((kept) => kept._tag !== model.tab?._tag), model.tab] }
+		: {
+				...model,
+				tab: null,
+				kept: [...model.kept.filter((kept) => kept._tag !== model.tab?._tag), model.tab],
+			}
 
 const sessionOf = (model: Model) => ({
 	isAdmin: visibilityOf(model).isAdmin,
-	userId: AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.userId), () => null),
+	userId: AsyncData.getOrElse(
+		AsyncData.map(model.session, (session) => session.userId),
+		() => null,
+	),
 })
 
 /** The Ingestion tab's options: the quick-start key is the org in Clerk mode, `default` self-hosted. */
@@ -119,79 +144,119 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			const step = Ingestion.init(ingestionOptionsOf(model, context))
 			return {
 				model: { ...model, tab: { _tag: "Ingestion", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotIngestionMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotIngestionMessage({ message }),
+				),
 			}
 		}
 		case "Mcp": {
 			const step = Mcp.init()
 			return {
 				model: { ...model, tab: { _tag: "Mcp", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMcpMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotMcpMessage({ message }),
+				),
 			}
 		}
 		case "Keys": {
 			const step = Keys.init(sessionOf(model))
 			return {
-				model: { ...model, tab: { _tag: "Keys", model: { ...step.model, apiKeys: model.apiKeys } } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotKeysMessage({ message })),
+				model: {
+					...model,
+					tab: {
+						_tag: "Keys",
+						model: {
+							...step.model,
+							apiKeys: model.apiKeys,
+							isLoadFailed: model.isApiKeysLoadFailed,
+						},
+					},
+				},
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotKeysMessage({ message }),
+				),
 			}
 		}
 		case "SetupHealth": {
 			const step = SetupHealth.init()
 			return {
 				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSetupHealthMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotSetupHealthMessage({ message }),
+				),
 			}
 		}
 		case "Ai": {
 			// `canAccessAi`: an admin of an org in the `aiAutoTriage` rollout (self-hosted has every rollout).
-			const hasFlag = AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.hasAiAutoTriage), () => false)
+			const hasFlag = AsyncData.getOrElse(
+				AsyncData.map(model.session, (session) => session.hasAiAutoTriage),
+				() => false,
+			)
 			const step = Ai.init(visibilityOf(model).isAdmin && (!isClerkAuthEnabled || hasFlag))
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAiMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotAiMessage({ message }),
+				),
 			}
 		}
 		case "Automation": {
 			const step = Automation.init(visibilityOf(model).isAdmin)
 			return {
 				model: { ...model, tab: { _tag: "Automation", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAutomationMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotAutomationMessage({ message }),
+				),
 			}
 		}
 		case "AuditLog": {
 			const step = AuditLog.init(model.search)
 			return {
 				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAuditLogMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotAuditLogMessage({ message }),
+				),
 			}
 		}
 		case "DataPlatform": {
 			const step = DataPlatform.init()
 			return {
 				model: { ...model, tab: { _tag: "DataPlatform", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDataPlatformMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDataPlatformMessage({ message }),
+				),
 			}
 		}
 		case "General": {
 			const step = General.init(visibilityOf(model).isAdmin)
 			return {
 				model: { ...model, tab: { _tag: "General", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotGeneralMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotGeneralMessage({ message }),
+				),
 			}
 		}
 		case "Members": {
 			const step = Members.init(visibilityOf(model).isAdmin)
 			return {
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMembersMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotMembersMessage({ message }),
+				),
 			}
 		}
 		case "Billing": {
-			const step = Billing.init(visibilityOf(model).isAdmin, model.search.checkout === "complete")
+			const visibility = visibilityOf(model)
+			const step = Billing.init(
+				visibility.isAdmin,
+				model.search.checkout === "complete",
+				visibility.isClerk,
+			)
 			return {
 				model: { ...model, tab: { _tag: "Billing", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotBillingMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotBillingMessage({ message }),
+				),
 			}
 		}
 		case "Unported":
@@ -206,73 +271,105 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 			const step = Ingestion.revisit(kept.model, ingestionOptionsOf(model, context))
 			return {
 				model: { ...model, tab: { _tag: "Ingestion", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotIngestionMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotIngestionMessage({ message }),
+				),
 			}
 		}
 		case "Mcp": {
 			const step = Mcp.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "Mcp", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMcpMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotMcpMessage({ message }),
+				),
 			}
 		}
 		case "Keys":
 			// The key list lives on the page, which kept reading it.
-			return { model: { ...model, tab: { _tag: "Keys", model: { ...kept.model, apiKeys: model.apiKeys } } } }
+			return {
+				model: {
+					...model,
+					tab: {
+						_tag: "Keys",
+						model: {
+							...kept.model,
+							apiKeys: model.apiKeys,
+							isLoadFailed: model.isApiKeysLoadFailed,
+						},
+					},
+				},
+			}
 		case "SetupHealth": {
 			const step = SetupHealth.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSetupHealthMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotSetupHealthMessage({ message }),
+				),
 			}
 		}
 		case "Ai": {
 			const step = Ai.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAiMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotAiMessage({ message }),
+				),
 			}
 		}
 		case "Automation": {
 			const step = Automation.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "Automation", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAutomationMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotAutomationMessage({ message }),
+				),
 			}
 		}
 		case "AuditLog": {
 			const step = AuditLog.revisit(kept.model, model.search)
 			return {
 				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAuditLogMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotAuditLogMessage({ message }),
+				),
 			}
 		}
 		case "DataPlatform": {
 			const step = DataPlatform.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "DataPlatform", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDataPlatformMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDataPlatformMessage({ message }),
+				),
 			}
 		}
 		case "General": {
 			const step = General.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "General", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotGeneralMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotGeneralMessage({ message }),
+				),
 			}
 		}
 		case "Members": {
 			const step = Members.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMembersMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotMembersMessage({ message }),
+				),
 			}
 		}
 		case "Billing": {
 			const step = Billing.revisit(kept.model)
 			return {
 				model: { ...model, tab: { _tag: "Billing", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotBillingMessage({ message })),
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotBillingMessage({ message }),
+				),
 			}
 		}
 		case "Unported":
@@ -293,13 +390,34 @@ const enterTab = (model: Model, tab: SettingsTab, context: PageContext): Return 
 const syncTab = (model: Model, context: PageContext): Return => {
 	if (isSettingsLoading(model)) return { model: leaveTab(model) }
 	const tab = activeTabOf(model)
+	// A tab this org cannot open (role or plan) replaces the URL with the default tab.
+	if (model.search.tab !== undefined && model.search.tab !== tab) {
+		const { tab: _hidden, ...search } = model.search
+		return {
+			model: {
+				...leaveTab(model),
+				deniedTab: Option.getOrNull(
+					Array.findFirst(settingsTabValues, (value) => value === model.search.tab),
+				),
+			},
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.Settings({ search })),
+				isReplace: true,
+			}),
+		}
+	}
+	// The locked page reads nothing; the tab mounts once the customer shows the add-on.
+	if (tab === "data-platform" && visibilityOf(model).isDataPlatformLocked === true)
+		return { model: leaveTab(model) }
 	if (!isTabCurrent(model.tab, tab)) return enterTab(model, tab, context)
 	// The audit log's filters live in the search: a change restarts its list.
 	if (model.tab !== null && model.tab._tag === "AuditLog") {
 		const step = AuditLog.searchChanged(model.tab.model, model.search)
 		return {
 			model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
-			commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAuditLogMessage({ message })),
+			commands: Command.mapMessages(step.commands ?? [], (message) =>
+				Message.GotAuditLogMessage({ message }),
+			),
 		}
 	}
 	return { model }
@@ -348,6 +466,8 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 			session: AsyncData.Loading(),
 			customer: AsyncData.Loading(),
 			apiKeys: null,
+			isApiKeysLoadFailed: false,
+			deniedTab: null,
 			tab: null,
 			kept: [],
 		},
@@ -355,12 +475,28 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 	)
 	return {
 		...entered,
-		commands: [ReadSettingsClock(), FetchSettingsSession(), FetchSettingsCustomer({ refresh: false }), ...(entered.commands ?? [])],
+		commands: [
+			ReadSettingsClock(),
+			FetchSettingsSession(),
+			FetchSettingsCustomer({ refresh: false }),
+			...(entered.commands ?? []),
+		],
 	}
 }
 
+// Only the denied link's own rewrite (no `tab`) keeps its note; picking a tab clears it.
 export const routeChanged = (model: Model, route: SettingsRoute, context: PageContext): Return =>
-	enter({ ...model, search: route.search }, context)
+	withRuleStats(changedRoute(model, route, context))
+
+const changedRoute = (model: Model, route: SettingsRoute, context: PageContext): Return =>
+	enter(
+		{
+			...model,
+			search: route.search,
+			deniedTab: route.search.tab === undefined ? model.deniedTab : null,
+		},
+		context,
+	)
 
 const liftIngestion = (
 	model: Model,
@@ -371,7 +507,9 @@ const liftIngestion = (
 	const step = Ingestion.update(current, message, ingestionOptionsOf(model, context))
 	return {
 		model: putTab(model, { _tag: "Ingestion", model: step.model }),
-		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotIngestionMessage({ message: inner })),
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotIngestionMessage({ message: inner }),
+		),
 		outMessage: step.outMessage,
 	}
 }
@@ -380,7 +518,9 @@ const liftMcp = (model: Model, current: McpModel.Model, message: McpMessage.Mess
 	const step = Mcp.update(current, message)
 	return {
 		model: putTab(model, { _tag: "Mcp", model: step.model }),
-		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotMcpMessage({ message: inner })),
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotMcpMessage({ message: inner }),
+		),
 		outMessage: step.outMessage,
 	}
 }
@@ -389,33 +529,60 @@ const liftKeys = (model: Model, current: KeysModel.Model, message: KeysMessage.M
 	const step = Keys.update(current, message)
 	return {
 		model: putTab(model, { _tag: "Keys", model: step.model }),
-		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotKeysMessage({ message: inner })),
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotKeysMessage({ message: inner }),
+		),
 		outMessage: step.outMessage,
 	}
 }
 
-/** `useCheckoutReturn` settled: drop `checkout=complete` from the URL without a history entry. */
-const clearCheckoutMarker = (model: Model) =>
+/**
+ * `useCheckoutReturn` settled: drop `checkout=complete` from the URL without a history entry. A
+ * confirmed plan also has the root re-read the app's customer (plan gate, quota banners).
+ */
+const clearCheckoutMarker = (model: Model, isConfirmed: boolean) =>
 	PageOutMessage.RequestedNavigation({
 		url: hrefOf(AppRoute.Settings({ search: withoutCheckoutReturn(model.search) })),
 		isReplace: true,
+		refreshesCustomer: isConfirmed,
 	})
 
 /** Lifts a Billing step: its commands, a stale customer read, and the cleared checkout marker. */
-const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }: Billing.Step): Return => {
+const liftBilling = (model: Model, { step, isCustomerStale, checkout }: Billing.Step): Return => {
 	const next = putTab(model, { _tag: "Billing", model: step.model })
 	// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
 	return {
 		model: isCustomerStale
-			? { ...next, customer: Option.getOrElse(AsyncData.revalidate(model.customer), () => AsyncData.Loading()) }
+			? {
+					...next,
+					customer: Option.getOrElse(AsyncData.revalidate(model.customer), () =>
+						AsyncData.Loading(),
+					),
+				}
 			: next,
 		commands: [
-			...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
+			...Command.mapMessages(step.commands ?? [], (child) =>
+				Message.GotBillingMessage({ message: child }),
+			),
 			...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
 		],
-		outMessage: step.outMessage ?? (isCheckoutSettled === true ? clearCheckoutMarker(model) : undefined),
+		// A checkout poll re-reads only this page's copy; the app's waits for the confirmed plan.
+		outMessage:
+			checkout === "Confirmed" || checkout === "TimedOut"
+				? (step.outMessage ?? clearCheckoutMarker(model, checkout === "Confirmed"))
+				: isCustomerStale && checkout === undefined
+					? withCustomerRefresh(step.outMessage)
+					: step.outMessage,
 	}
 }
+
+/** A stale customer is the app's too: the root re-reads it and shows the step's toast, if any. */
+const withCustomerRefresh = (out: PageOutMessage | undefined): PageOutMessage =>
+	PageOutMessage.RequestedCustomerRefresh(
+		out !== undefined && out._tag === "RequestedToast"
+			? { toast: { type: out.type, title: out.title, description: out.description } }
+			: {},
+	)
 
 /** The Billing tab waiting on a checkout return reads every customer answer for the plan. */
 const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
@@ -425,23 +592,45 @@ const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
 	const settled = Billing.customerChanged(billing.model, model.customer.data)
 	if (settled === null) return { model, commands, outMessage }
 	const lifted = liftBilling(model, settled)
-	return { ...lifted, commands: [...(commands ?? []), ...(lifted.commands ?? [])], outMessage: outMessage ?? lifted.outMessage }
+	return {
+		...lifted,
+		commands: [...(commands ?? []), ...(lifted.commands ?? [])],
+		outMessage: outMessage ?? lifted.outMessage,
+	}
+}
+
+/** A Billing tab on screen reads the rule stats once the customer and clock give it a cycle. */
+const withRuleStats = (ret: Return): Return => {
+	const billing = tabNamed(ret.model, "Billing")
+	if (billing === undefined) return ret
+	const customer = AsyncData.getOrElse(ret.model.customer, () => null)
+	const step = Billing.requestRuleStats(billing.model, customer, ret.model.nowMs)
+	if (step === null) return ret
+	const lifted = liftBilling(ret.model, { step, isCustomerStale: false })
+	return { ...ret, model: lifted.model, commands: [...(ret.commands ?? []), ...(lifted.commands ?? [])] }
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	withRuleStats(updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedFetchSession: ({ result }) =>
 			settleCheckout(syncTab({ ...model, session: AsyncData.settle(model.session, result) }, context)),
 		CompletedFetchCustomer: ({ result }) =>
-			settleCheckout(syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }, context)),
+			settleCheckout(
+				syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }, context),
+			),
 		GotSetupHealthMessage: ({ message: inner }) => {
 			const tab = tabNamed(model, "SetupHealth")
 			if (tab === undefined) return { model }
 			const step = SetupHealth.update(tab.model, inner)
 			return {
 				model: putTab(model, { _tag: "SetupHealth", model: step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotSetupHealthMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotSetupHealthMessage({ message: child }),
+				),
 			}
 		},
 		GotAiMessage: ({ message: inner }) => {
@@ -450,7 +639,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Ai.update(tab.model, inner)
 			return {
 				model: putTab(model, { _tag: "Ai", model: step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAiMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotAiMessage({ message: child }),
+				),
 				outMessage: step.outMessage,
 			}
 		},
@@ -460,7 +651,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Automation.update(tab.model, inner)
 			return {
 				model: putTab(model, { _tag: "Automation", model: step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAutomationMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotAutomationMessage({ message: child }),
+				),
 				outMessage: step.outMessage,
 			}
 		},
@@ -470,7 +663,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = AuditLog.update(tab.model, inner, model.search)
 			return {
 				model: putTab(model, { _tag: "AuditLog", model: step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAuditLogMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotAuditLogMessage({ message: child }),
+				),
 				outMessage: step.outMessage,
 			}
 		},
@@ -480,7 +675,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = DataPlatform.update(tab.model, inner)
 			return {
 				model: putTab(model, { _tag: "DataPlatform", model: step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotDataPlatformMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotDataPlatformMessage({ message: child }),
+				),
 				outMessage: step.outMessage,
 			}
 		},
@@ -490,7 +687,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = General.update(tab.model, inner)
 			return {
 				model: putTab(model, { _tag: "General", model: step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotGeneralMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotGeneralMessage({ message: child }),
+				),
 				outMessage: step.outMessage,
 			}
 		},
@@ -500,7 +699,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Members.update(tab.model, inner)
 			return {
 				model: putTab(model, { _tag: "Members", model: step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotMembersMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotMembersMessage({ message: child }),
+				),
 				outMessage: step.outMessage,
 			}
 		},
@@ -527,14 +728,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotKeysMessage: ({ message: inner }) => {
 			const tab = tabNamed(model, "Keys")
-			return tab === undefined ? { model } : liftKeys(model, tab.model, inner)
+			if (tab === undefined) return { model }
+			// A retry re-arms the page's load watcher over the reconnected collections.
+			const next = inner._tag === "ClickedRetryLoad" ? { ...model, isApiKeysLoadFailed: false } : model
+			return liftKeys(next, tab.model, inner)
 		},
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }
 			const apiKeys = rows.map(rowToV2ApiKey)
-			const next = { ...model, apiKeys }
+			const next = { ...model, apiKeys, isApiKeysLoadFailed: false }
 			return next.tab !== null && next.tab._tag === "Keys"
 				? liftKeys(next, next.tab.model, KeysMessageValue.UpdatedApiKeys({ rows: apiKeys }))
+				: { model: next }
+		},
+		FailedLoadApiKeys: ({ orgId }) => {
+			if (orgId !== context.orgId || model.apiKeys !== null) return { model }
+			const next = { ...model, isApiKeysLoadFailed: true }
+			return next.tab !== null && next.tab._tag === "Keys"
+				? liftKeys(next, next.tab.model, KeysMessageValue.FailedLoadApiKeys())
 				: { model: next }
 		},
 	})

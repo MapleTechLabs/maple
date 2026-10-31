@@ -38,6 +38,14 @@ jobs:
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
               with:
                   ref: ${{ inputs.commit-sha }}
+                  # History without blobs, for the ingest revision below.
+                  fetch-depth: 0
+                  filter: blob:none
+
+            # Ingest reports the last commit that touched its image context, not the deployed
+            # commit: a new env value would roll the EC2 fleet (fresh hosts) on every merge.
+            - name: Resolve the ingest revision
+              run: echo "INGEST_COMMIT_SHA=$(git log -1 --format=%H -- apps/ingest)" >> "$GITHUB_ENV"
 
             # Toolchain, Infisical, AWS OIDC (after Infisical so it wins), deps, ingest binary.
             - name: Deploy setup

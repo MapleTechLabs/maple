@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Option, Struct } from "effect"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { button } from "../../../ui/button"
 import { card } from "../../../ui/card"
@@ -8,8 +8,8 @@ import { field, fieldDescription, fieldLabel, input } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { textarea } from "../../../ui/textarea"
+import { stableSlice } from "../../kit/stable-slice"
 import { suggestedName } from "./derive"
-import { tagSuggestionsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,9 +21,12 @@ type H = HtmlBuilder<Message>
 
 const TAG_LIST_ID = "rule-tags-suggestions"
 
+/** What the section reads off the Model. */
+type DetailsView = Pick<Model, "mountedForm" | "tagDraft" | "isNotesOpen" | "tagSuggestions">
+
 /** `TagInput`: chips, a free-text input committing on Enter or comma, and the org's tags as a datalist. */
-const tagInput = (h: H, model: Model, form: RuleForm): Html => {
-	const available = tagSuggestionsOf(model).filter((tag) => !form.tags.includes(tag))
+const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
+	const available = model.tagSuggestions.filter((tag) => !form.tags.includes(tag))
 	return h.div(
 		[
 			h.Class(
@@ -43,7 +46,7 @@ const tagInput = (h: H, model: Model, form: RuleForm): Html => {
 							size: "icon-2xs",
 							label: `Remove ${tag}`,
 							hasTooltip: false,
-							className: "-mr-0.5 text-muted-foreground hover:text-foreground",
+							className: "-mr-0.5 text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
 						},
 						[icon(h, "XmarkIcon")],
@@ -63,16 +66,23 @@ const tagInput = (h: H, model: Model, form: RuleForm): Html => {
 				),
 				h.OnBlur(Message.BlurredTagInput()),
 				...(form.tags.length === 0 ? [h.Placeholder("prod, payments, team-checkout…")] : []),
-				h.Class("min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-muted-foreground/70"),
+				h.Class(
+					"min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-foreground-subtle",
+				),
 			]),
 			...(available.length > 0
-				? [h.datalist([h.Id(TAG_LIST_ID)], available.map((tag) => h.option([h.Value(tag)], [])))]
+				? [
+						h.datalist(
+							[h.Id(TAG_LIST_ID)],
+							available.map((tag) => h.option([h.Value(tag)], [])),
+						),
+					]
 				: []),
 		],
 	)
 }
 
-const nameField = (h: H, model: Model, form: RuleForm): Html => {
+const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const suggestion = suggestedName(form)
 	const isSuggesting = form.name.trim().length === 0 && suggestion !== null && suggestion.length > 0
 	const state = fieldStateOf(form.name, model.mountedForm?.name)
@@ -88,8 +98,8 @@ const nameField = (h: H, model: Model, form: RuleForm): Html => {
 								h,
 								{
 									variant: "ghost",
-									size: "sm",
-									className: "h-6 px-1.5 text-2xs",
+									size: "xs",
+									className: "px-1.5 text-2xs",
 									attributes: [h.OnClick(Message.ClickedSuggestName())],
 								},
 								["Suggest: ", suggestion ?? ""],
@@ -110,16 +120,16 @@ const nameField = (h: H, model: Model, form: RuleForm): Html => {
 	])
 }
 
-const notes = (h: H, model: Model, form: RuleForm): Html => {
+const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 	if (!model.isNotesOpen)
-		return h.button(
-			[
-				h.Type("button"),
-				h.OnClick(Message.ClickedAddNotes()),
-				h.Class(
-					"flex w-full items-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-1.5 text-left text-xs text-muted-foreground hover:border-border hover:text-foreground",
-				),
-			],
+		return button(
+			h,
+			{
+				variant: "dashed",
+				size: "xs",
+				className: "w-full justify-start",
+				attributes: [h.OnClick(Message.ClickedAddNotes())],
+			},
 			[icon(h, "PlusIcon", { size: 12 }), "Add notes"],
 		)
 	const state = fieldStateOf(form.notes, model.mountedForm?.notes)
@@ -141,8 +151,7 @@ const notes = (h: H, model: Model, form: RuleForm): Html => {
 	])
 }
 
-/** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
-export const detailsSection = (h: H, model: Model, form: RuleForm): Html => {
+const details = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const tagIds = idsOf("rule-tags", true)
 	const tagState = fieldStateOf("", undefined)
 	return card(
@@ -168,3 +177,12 @@ export const detailsSection = (h: H, model: Model, form: RuleForm): Html => {
 		"p-4",
 	)
 }
+
+const slot = createLazy()
+const viewOf = stableSlice((model: Model) =>
+	Struct.pick(model, ["mountedForm", "tagDraft", "isNotesOpen", "tagSuggestions"]),
+)
+
+/** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
+export const detailsSection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(details, [h, viewOf(model), form])

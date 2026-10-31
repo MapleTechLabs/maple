@@ -7,6 +7,7 @@ import {
 	isRangeComparator,
 	signalLabels,
 } from "./form-utils"
+import { incidentGroup } from "./incident-timeline"
 import { type DerivedRuleStatus, needsAttention } from "./rule-status"
 
 /** The four mutually exclusive buckets the Rules tab filters by. */
@@ -41,11 +42,51 @@ export function ruleConditionSummary(rule: AlertRuleDocument): string {
 	return parts.join(" · ")
 }
 
-/** "Error rate 8.4% on checkout": what an open incident is about, in one line. */
-export function incidentTitle(incident: AlertIncidentDocument): string {
+type IncidentLine = Pick<
+	AlertIncidentDocument,
+	"signalType" | "ruleName" | "groupKey" | "status" | "lastObservedValue" | "threshold"
+>
+
+/** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
+const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
+
+/** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
+export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>
+	incident.signalType === "raw_query" || incident.signalType === "builder_query"
+
+/** "Error rate 8.4% on checkout", "checkout-api is down", or a query rule's name: what an incident is about, in one line. */
+export function incidentTitle(incident: IncidentLine): string {
+	if (isUptime(incident))
+		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	if (isQueryIncident(incident)) return incident.ruleName
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
 	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
+}
+
+/** The group shown next to the rule name: an uptime incident's only when it is a real service. */
+export function incidentScope(incident: IncidentLine): string | null {
+	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+}
+
+/** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */
+export function incidentSubline(incident: IncidentLine): string {
+	const scope = incidentScope(incident)
+	const lead = isQueryIncident(incident) ? signalLabels[incident.signalType] : incident.ruleName
+	return scope === null ? lead : `${lead} · ${scope}`
+}
+
+/** An empty cell, without an em dash. */
+export const NO_THRESHOLD = "–"
+
+/** The Now / threshold cells: an uptime incident is "Down" (or "Up") with no threshold. */
+export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string }> {
+	if (isUptime(incident))
+		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
+	return {
+		now: formatSignalValue(incident.signalType, incident.lastObservedValue),
+		threshold: formatSignalValue(incident.signalType, incident.threshold),
+	}
 }
 
 export interface Headroom {
@@ -172,7 +213,7 @@ export function ruleRibbon(
 	})
 }
 
-export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery"
+export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery" | "slowed"
 
 export interface BlindSpot {
 	readonly rule: AlertRuleDocument
@@ -186,9 +227,10 @@ const BLIND_SPOT_ORDER: Record<BlindSpotKind, number> = {
 	"no-data": 2,
 	unrouted: 3,
 	delivery: 4,
+	slowed: 5,
 } satisfies Record<BlindSpotKind, number>
 
-/** Enabled rules that cannot fire, or can fire but reach nobody. One entry per rule, worst first. */
+/** Enabled rules that cannot fire, reach nobody, or were slowed to keep up. One entry per rule, worst first. */
 export function blindSpots(
 	rules: ReadonlyArray<AlertRuleDocument>,
 	derivedByRuleId: ReadonlyMap<string, DerivedRuleStatus>,
@@ -205,6 +247,13 @@ export function blindSpots(
 			spots.push({ rule, kind: "unrouted", detail: "No destinations, so nobody is notified" })
 		else if (derived.attention.recentDeliveryFailure)
 			spots.push({ rule, kind: "delivery", detail: "The last notification failed to deliver" })
+		// Last: a slowed rule still fires, so a rule that reaches nobody outranks it.
+		else if (derived.attention.slowedDown && rule.slowedIntervalMinutes !== null)
+			spots.push({
+				rule,
+				kind: "slowed",
+				detail: `Checked every ${rule.slowedIntervalMinutes} min because its query kept hitting its limit`,
+			})
 	}
 	return spots.sort((a, b) => BLIND_SPOT_ORDER[a.kind] - BLIND_SPOT_ORDER[b.kind])
 }

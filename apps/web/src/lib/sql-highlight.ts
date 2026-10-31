@@ -76,7 +76,7 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 		if (m.index > last) tokens.push({ text: code.slice(last, m.index), start: last })
 		const [full, comment, str, macro, num, ident] = m
 		if (comment) {
-			tokens.push({ text: comment, start: m.index, className: "text-muted-foreground/70 italic" })
+			tokens.push({ text: comment, start: m.index, className: "text-foreground-subtle italic" })
 		} else if (str) {
 			tokens.push({ text: str, start: m.index, className: "text-severity-info" })
 		} else if (macro) {

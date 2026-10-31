@@ -7,6 +7,7 @@ import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ClerkOrganization } from "../platform/clerk"
+import { warmAvatarTone } from "../ui/avatar-tone"
 import { avatarFallback, badge } from "../ui/display"
 import { icon } from "../ui/icon"
 import * as MenuView from "../ui/menu-view"
@@ -51,13 +52,13 @@ export type ViewInputs = Readonly<{
 
 type H = HtmlBuilder<Message>
 
-/** `OrgAvatar`: the org's logo over its initials on the primary colour. */
+/** `OrgAvatar`: the org's logo over its initials on a warm tile keyed by the name. */
 export const orgAvatar = <M>(h: HtmlBuilder<M>, name: string, className?: string, imageUrl?: string): Html =>
 	avatarFallback(
 		h,
 		{
 			className: cn("size-8 rounded-md bg-transparent", className),
-			fallbackClassName: "rounded-[inherit] bg-primary text-primary-foreground text-xs font-semibold",
+			fallbackClassName: cn("rounded-[inherit] text-xs font-semibold", warmAvatarTone(name)),
 			imageUrl,
 			imageLabel: name,
 			imageClassName: "object-cover",
@@ -70,19 +71,31 @@ const regionBadge = (h: H, region: MapleRegion, className?: string): Html => {
 	const label = MAPLE_REGION_LABELS[region]
 	return badge(
 		h,
-		{ variant: "meta", size: "xs", mono: true, className, attributes: [h.Title(`Data region: ${label.name}`)] },
+		{
+			variant: "meta",
+			size: "xs",
+			mono: true,
+			className,
+			attributes: [h.Title(`Data region: ${label.name}`)],
+		},
 		[label.short],
 	)
 }
 
-const organizationItem = (h: H, organization: ClerkOrganization, isActive: boolean): MenuView.MenuItemEntry => ({
+const organizationItem = (
+	h: H,
+	organization: ClerkOrganization,
+	isActive: boolean,
+): MenuView.MenuItemEntry => ({
 	_tag: "Item",
 	value: `${ORG_PREFIX}${organization.id}`,
 	label: organization.name,
 	content: [
 		orgAvatar(h, organization.name, undefined, organization.imageUrl),
 		h.span([h.Class("truncate"), h.Title(organization.name)], [organization.name]),
-		...(hasMultipleRegions && !organization.isRegionOpen ? [regionBadge(h, organization.homeRegion, "ml-auto")] : []),
+		...(hasMultipleRegions && !organization.isRegionOpen
+			? [regionBadge(h, organization.homeRegion, "ml-auto")]
+			: []),
 		...(isActive ? [icon(h, "CheckIcon", hasMultipleRegions ? {} : { className: "ml-auto" })] : []),
 	],
 })
@@ -101,7 +114,9 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 	const { pinned, observed } = scope
 	const rows = namespaceRows(observed, pinned, model.namespaceQuery)
 	const entries: ReadonlyArray<MenuView.MenuItemEntry> = [
-		...(rows.isFiltered ? [] : [namespaceItem(h, ALL_NAMESPACES, "All namespaces", Option.isNone(pinned))]),
+		...(rows.isFiltered
+			? []
+			: [namespaceItem(h, ALL_NAMESPACES, "All namespaces", Option.isNone(pinned))]),
 		...rows.matches.map((name) =>
 			namespaceItem(h, `${NAMESPACE_PREFIX}${name}`, name, Option.contains(pinned, name)),
 		),
@@ -152,19 +167,19 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 		placeholder: rows.isNoMatch
 			? [noNamespacesMatch(h)]
 			: isLoadingEmpty
-			? [
-					h.div(
-						[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
-						[
-							icon(h, "LoaderIcon", {
-								className: cn(spinnerStyles, "size-3.5"),
-								attributes: [h.AriaLabel("Loading"), h.Role("status")],
-							}),
-							" Loading namespaces…",
-						],
-					),
-				]
-			: [],
+				? [
+						h.div(
+							[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
+							[
+								icon(h, "LoaderIcon", {
+									className: cn(spinnerStyles, "size-3.5"),
+									attributes: [h.AriaLabel("Loading"), h.Role("status")],
+								}),
+								" Loading namespaces…",
+							],
+						),
+					]
+				: [],
 	}
 }
 
@@ -205,16 +220,34 @@ const createDialog = (h: H, model: Model): Html => {
 					[
 						DialogView.dialogHeader(h, "dialog", [
 							DialogView.dialogTitle(h, "dialog", id, "Create Organization"),
-							DialogView.dialogDescription(h, "dialog", id, "Create a new organization to collaborate with your team."),
+							DialogView.dialogDescription(
+								h,
+								"dialog",
+								id,
+								"Create a new organization to collaborate with your team.",
+							),
 						]),
 						DialogView.dialogPanel(h, "dialog", id, createFields(h, model), "space-y-4"),
 						DialogView.dialogFooter(h, "dialog", [
 							button(
 								h,
-								{ variant: "outline", isDisabled: model.isCreating, slot: "dialog-close", attributes: model.isCreating ? [] : close },
+								{
+									variant: "outline",
+									isDisabled: model.isCreating,
+									slot: "dialog-close",
+									attributes: model.isCreating ? [] : close,
+								},
 								["Cancel"],
 							),
-							button(h, { type: "submit", isLoading: model.isCreating, isDisabled: model.isCreating || isBlank }, ["Create"]),
+							button(
+								h,
+								{
+									type: "submit",
+									isLoading: model.isCreating,
+									isDisabled: model.isCreating || isBlank,
+								},
+								["Create"],
+							),
 						]),
 					],
 				),
@@ -239,11 +272,22 @@ const createFields = (h: H, model: Model): ReadonlyArray<Html> => [
 	...(hasMultipleRegions ? [regionField(h, model)] : []),
 	...(model.errorMessage === null
 		? []
-		: [h.div([h.Class("text-destructive text-xs text-sm"), h.DataAttribute("slot", "field-error")], [model.errorMessage])]),
+		: [
+				h.div(
+					[h.Class("text-destructive text-xs"), h.DataAttribute("slot", "field-error")],
+					[model.errorMessage],
+				),
+			]),
 ]
 
 const regionIdOf = (model: Model, region: MapleRegion) => `${model.createDialog.id}-region-${region}`
-const NO_FIELD_STATE = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const NO_FIELD_STATE = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 /** The "Data region" radio: fixed at creation, so it is chosen here. */
 const regionField = (h: H, model: Model): Html => {
@@ -273,7 +317,9 @@ const regionField = (h: H, model: Model): Html => {
 				h.label(
 					[
 						h.Id(RadioGroup.labelId(`${regionIdOf(model, region)}-input`)),
-						h.Class("flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-[[data-checked]]:bg-accent/64"),
+						h.Class(
+							"flex cursor-pointer items-center gap-3 px-3.5 py-2.5 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-accent/64",
+						),
 					],
 					[
 						regionBadge(h, region),
@@ -283,7 +329,11 @@ const regionField = (h: H, model: Model): Html => {
 				),
 			),
 		),
-		fieldDescription(h, { ids, state: NO_FIELD_STATE }, "Telemetry is stored and processed only in this region. It cannot be changed later."),
+		fieldDescription(
+			h,
+			{ ids, state: NO_FIELD_STATE },
+			"Telemetry is stored and processed only in this region. It cannot be changed later.",
+		),
 	])
 }
 

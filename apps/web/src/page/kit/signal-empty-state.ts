@@ -4,7 +4,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
 import { icon, type IconName } from "../../ui/icon"
-import type { SignalPresence, TelemetrySignalKind } from "./signal-presence"
+import { skeleton } from "../../ui/skeleton"
+import type { PresenceState, TelemetrySignalKind } from "./signal-presence"
 
 // `SignalEmptyState`, `FilteredEmpty` and `DocsLink`/`EmptyActions`. Presence comes from the
 // page's Model.
@@ -72,7 +73,7 @@ export const docsLink = <M>(h: HtmlBuilder<M>, page: DocsPage, label = "Read the
 	h.a(
 		[
 			h.Class(
-				"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline",
+				"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground active:text-foreground hover:underline active:underline",
 			),
 			h.Href(docsUrl(page)),
 			h.Target("_blank"),
@@ -90,7 +91,7 @@ const iconMedia = <M>(h: HtmlBuilder<M>, name: IconName): Html =>
 
 export type SignalEmptyStateOptions<M> = Readonly<{
 	signal: TelemetrySignalKind
-	presence: SignalPresence
+	presence: PresenceState
 	nowMs: number
 	noun?: string
 	/** The setup button's label in place of the signal's. */
@@ -162,7 +163,26 @@ export const filteredEmpty = <M>(
 		options.className,
 	)
 
-/** `SignalEmptyStateView`: filtered, then absent (setup), present (quiet window), else unknown. */
+/** Presence still loading: the empty state's frame in skeleton, so no copy paints and then flips. */
+export const presenceLoading = <M>(h: HtmlBuilder<M>, className?: string): Html =>
+	h.div(
+		[h.AriaBusy(true), h.AriaLabel("Loading"), h.DataAttribute("slot", "presence-loading")],
+		[
+			empty(
+				h,
+				[
+					emptyHeader(h, [
+						skeleton(h, "size-10 rounded-md"),
+						skeleton(h, "h-5 w-40"),
+						skeleton(h, "h-4 w-64"),
+					]),
+				],
+				className,
+			),
+		],
+	)
+
+/** `SignalEmptyStateView`: filtered, loading, absent (setup), present (quiet window), else unknown. */
 export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyStateOptions<M>): Html => {
 	const copy = SIGNAL_COPY[options.signal]
 	const subject = options.noun ?? copy.noun
@@ -174,6 +194,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 			detail: options.detail,
 		})
 	const { presence } = options
+	if (presence.status === "loading") return presenceLoading(h, options.className)
 	if (presence.status === "absent") {
 		return empty(
 			h,

@@ -21,9 +21,9 @@ The reusable machinery lives in two workspace libraries:
   `awaitTxIdEffect`. The backoff `onError` also dispatches window events:
   `collection:auth-error` (401), `collection:schema-error` (post-deploy schema
   drift) and `collection:sync-failed` (retries exhausted).
-- `@maple/unitflow/db` (`lib/unitflow`): collection subscriptions feed
-  model-scoped Stores used by the dashboards and alerts lists. Mutations use the
-  typed API write paths; alert toggles run through `Mutation.make`.
+- `apps/web/src/data/live-query.ts`: turns a TanStack DB live query into a
+  Foldkit Subscription stream for the dashboards and alerts lists. Mutations use
+  the typed API write paths.
 
 ## How it fits together
 

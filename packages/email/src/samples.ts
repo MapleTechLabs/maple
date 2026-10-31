@@ -418,8 +418,7 @@ export const alertNotificationProps: AlertNotificationProps = {
 	observedSummary: "5.2% > 1%",
 	window: "5m",
 	accentColor: "#e01e5a",
-	linkUrl: "https://app.maple.dev/alerts/rule_123",
-	chatUrl: "https://app.maple.dev/alerts/incidents/inc_456",
+	linkUrl: "https://app.maple.dev/alerts/incidents/inc_456",
 }
 
 const shareOf = <T extends { value: number; icon: string | null }>(rows: Array<T>) => {

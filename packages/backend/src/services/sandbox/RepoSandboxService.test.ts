@@ -1,9 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
-import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@yielded/agent/sandbox"
+import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@maple/backend/sandbox/contract"
 import { Duration, Effect, Layer, Schema, Stream } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
@@ -34,6 +34,8 @@ const makeRepo = () => {
 	writeFileSync(`${dir}/src/spaced.ts`, "const before = 1\n\n\nconst after = 2\n")
 	writeFileSync(`${dir}/other.txt`, "card declined outside src\n")
 	writeFileSync(`${dir}/README.md`, "# shop\n")
+	// git prints this name quoted in its index listing.
+	writeFileSync(`${dir}/src/a"b.ts`, "export const quoted = 1\n")
 	// A committed symlink out of the checkout: tracked, so `--error-unmatch` alone
 	// would let `awk` follow it.
 	symlinkSync(SENTINEL, `${dir}/escape.txt`)
@@ -246,6 +248,56 @@ describe("the git commands the tools build, against a real repository", () => {
 		}).pipe(Effect.provide(overRepo())),
 	)
 
+	it.effect("reads a file with one sandbox command, never running the path as shell", () => {
+		const seen: string[][] = []
+		const repo = makeRepo()
+		return Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src/checkout.ts", startLine: 1, endLine: 1 },
+			)
+			assert.strictEqual(result.exitCode, 0, result.stderr)
+			assert.include(result.stdout, "1: export const checkout = 1")
+			assert.strictEqual(seen.length, 1)
+			const hostile = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src/$(touch pwned).ts", startLine: 1, endLine: 1 },
+			)
+			assert.strictEqual(hostile.exitCode, 1)
+			assert.isFalse(existsSync(`${repo}/pwned`))
+		}).pipe(Effect.provide(RepoSandboxService.layer.pipe(Layer.provide(localSandbox(repo, seen)))))
+	})
+
+	it.effect("refuses a directory, which matches many index entries, instead of reading one", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src", startLine: 1, endLine: 10 },
+			)
+			assert.strictEqual(result.exitCode, 1)
+			assert.notInclude(result.stdout, "export const checkout")
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("reads a file whose name git quotes, and refuses a directory holding one file", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const read = (path: string) =>
+				service.readFile(ORG, { repository: "octo/shop" }, { path, startLine: 1, endLine: 10 })
+			const quoted = yield* read('src/a"b.ts')
+			assert.strictEqual(quoted.exitCode, 0, quoted.stderr)
+			assert.include(quoted.stdout, "1: export const quoted = 1")
+			const single = yield* read("src/deep")
+			assert.strictEqual(single.exitCode, 1)
+			assert.notInclude(single.stdout, "card declined")
+		}).pipe(Effect.provide(overRepo())),
+	)
+
 	it.effect("refuses an absolute or traversing path at the service, not only at the tools", () =>
 		Effect.gen(function* () {
 			const service = yield* RepoSandboxService
@@ -253,12 +305,12 @@ describe("the git commands the tools build, against a real repository", () => {
 				const failure = yield* service
 					.listFiles(ORG, { repository: "octo/shop" }, { path })
 					.pipe(Effect.flip)
-				assert.strictEqual(failure._tag, "SandboxUnsupportedRequestError")
+				assert.strictEqual(failure._tag, "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 			}
 			const cwdFailure = yield* service
 				.exec(ORG, { repository: "octo/shop" }, { command: "true", args: [], cwd: "/etc" })
 				.pipe(Effect.flip)
-			assert.strictEqual(cwdFailure._tag, "SandboxUnsupportedRequestError")
+			assert.strictEqual(cwdFailure._tag, "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}).pipe(Effect.provide(overRepo())),
 	)
 })

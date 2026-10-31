@@ -8,7 +8,7 @@ import { presenceOf } from "../../kit/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { detectLookup } from "../kit/detected-models"
 import { agentSessionsTabs } from "../kit/tabs"
-import { MountEmptyState, MountReachEnd, MountRowClicks, MountTable, VirtualizeSessions } from "./command"
+import { MountReachEnd, MountRowClicks, MountTable, VirtualizeSessions } from "./command"
 import {
 	displayedRows,
 	filterInputs,
@@ -33,7 +33,7 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load agent sessions",
+				title: "Couldn't load agent sessions",
 				onRetry: Message.ClickedReload(),
 			}),
 		onData: () => {
@@ -41,7 +41,7 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 			const rows = displayedRows(model, filterKey)
 			if (rows.length === 0) {
 				return h.div(
-					[h.Class("contents"), h.OnMount(MountEmptyState())],
+					[h.Class("contents")],
 					[
 						signalEmptyState(h, {
 							signal: "traces",
@@ -82,14 +82,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const firstPage = model.firstPage.data
 	const window = model.window
 	const filterKey = window === null ? "" : filterKeyOf(filterInputs(model.search, window))
+	const tabSessions = Option.getOrUndefined(AsyncData.getData(model.tabSessions.data))
 	return dashboardPage(
 		h,
 		{
+			title: "Agent Sessions",
 			filters: filtersRail(h, model),
 			tabs: agentSessionsTabs(h, {
 				active: "sessions",
 				counts: {
-					sessions: Option.getOrUndefined(AsyncData.getData(model.tabSessions.data)),
+					sessions: tabSessions,
 					tools: Option.getOrUndefined(AsyncData.getData(model.tabTools.data)),
 				},
 				className: "border-b border-border",
@@ -98,7 +100,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				sessionCount: AsyncData.hasData(firstPage)
 					? displayedRows(model, filterKey).length
 					: undefined,
+				totalCount: tabSessions,
 				isWaiting: AsyncData.isPending(firstPage) || AsyncData.isIdle(firstPage),
+				isFailed: AsyncData.isFailure(firstPage),
 			}),
 			scrollClassName: "pt-0",
 		},

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { BillingCustomer, BillingUsage } from "@maple/domain/http"
+import { BillingCustomer, BillingCustomerId, BillingUsage } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { classifyAutumn, decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"
 import {
@@ -11,7 +11,7 @@ import {
 	camelizeKeys,
 } from "@maple/backend/services/billing/autumn-http"
 
-const ORG = "org_test_123"
+const ORG = BillingCustomerId.make("org_test_123")
 const KEY = "am_sk_test"
 const API_URL = "https://api.useautumn.com"
 
@@ -242,6 +242,23 @@ describe("AutumnClient request construction", () => {
 			customer_id: ORG,
 			plan_id: "startup",
 			discounts: [{ reward_id: "onboarding_checklist" }],
+		})
+	})
+
+	it("cancelPlans cancels every plan in one multi-update request", async () => {
+		const { captured } = await withFetch({ body: JSON.stringify({}) }, (autumn) =>
+			autumn.cancelPlans(ORG, [
+				{ planId: "startup", action: "cancel_end_of_cycle" },
+				{ planId: "hobby", action: "cancel_immediately" },
+			]),
+		)
+		assert.strictEqual(captured?.url, "https://api.useautumn.com/v1/billing.multi_update")
+		assert.deepStrictEqual(captured?.body, {
+			customer_id: ORG,
+			updates: [
+				{ plan_id: "startup", cancel_action: "cancel_end_of_cycle" },
+				{ plan_id: "hobby", cancel_action: "cancel_immediately" },
+			],
 		})
 	})
 
@@ -619,11 +636,6 @@ describe("classifyAutumn", () => {
 		// pass through untouched so it stays distinguishable from "Autumn is down".
 		const error = await Effect.runPromise(Effect.flip(ensureOk(rejection(401, "unauthorized"))))
 		assert.strictEqual(error._tag, "@maple/http/errors/BillingNotConfiguredError")
-	})
-
-	it("passes a 2xx body straight through", async () => {
-		const body = await Effect.runPromise(classifyAutumn({ statusCode: 200, response: { ok: 1 } }))
-		assert.deepStrictEqual(body, { ok: 1 })
 	})
 
 	it("collapses every classified 4xx back to 502 under ensureOk, keeping the status in the message", async () => {

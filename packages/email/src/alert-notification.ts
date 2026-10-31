@@ -30,8 +30,6 @@ export interface AlertNotificationProps {
 	accentColor: string
 	/** Deep link to the alert in Maple. */
 	linkUrl: string
-	/** Deep link to Maple AI for this alert. */
-	chatUrl: string
 }
 
 const FG = "#e8dfd3"
@@ -48,7 +46,6 @@ export function renderAlertNotification(props: AlertNotificationProps): string {
 		window,
 		accentColor,
 		linkUrl,
-		chatUrl,
 	} = props
 
 	const previewText = `${eventLabel}: ${ruleName} — ${observedSummary}`
@@ -73,7 +70,6 @@ export function renderAlertNotification(props: AlertNotificationProps): string {
 			ruleName: truncate(ruleName, 80),
 			observedSummary,
 			linkUrl,
-			chatUrl,
 		},
 		{ preheaderPad: escapeHtml(preheaderPadding(previewText)), detailRows },
 	)

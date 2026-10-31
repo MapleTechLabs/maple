@@ -638,69 +638,112 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(harness.layer))
 	})
 
+	const decodeTriagePayload = Schema.decodeUnknownSync(Schema.Struct({ summary: Schema.String }))
+
+	/** An investigation linked to a fresh error issue, and a reader of that issue's timeline. */
+	const linkedInvestigation = (incidentId: string) =>
+		Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			const now = Date.now()
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssues).values({
+						id: issueId,
+						orgId: ORG,
+						fingerprintHash: "98765432109876543210",
+						serviceName: "checkout-api",
+						exceptionType: "TimeoutError",
+						exceptionMessage: "upstream timed out",
+						topFrame: "",
+						firstSeenAt: now,
+						lastSeenAt: now,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
+			)
+			const created = yield* service.createInvestigation(
+				ORG,
+				null,
+				new InvestigationCreateRequest({
+					subject: new InvestigationIncidentSubject({
+						type: "incident",
+						incidentKind: "error",
+						incidentId,
+						issueId,
+					}),
+				}),
+			)
+			const timeline = database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
+			)
+			return { id: created.id, timeline }
+		})
+
 	it.effect(
 		"submit_diagnosis writes the issue-linked ai_triage event exactly once across re-diagnosis",
 		() => {
 			const harness = makeHarness()
-			const issueId = asIssueId(randomUUID())
 			return Effect.gen(function* () {
 				const service = yield* InvestigationService
-				const database = yield* Database
-				const now = Date.now()
-				yield* database.execute((db) =>
-					db.run(
-						PG.insertInto(ErrorIssues).values({
-							id: issueId,
-							orgId: ORG,
-							fingerprintHash: "98765432109876543210",
-							serviceName: "checkout-api",
-							exceptionType: "TimeoutError",
-							exceptionMessage: "upstream timed out",
-							topFrame: "",
-							firstSeenAt: now,
-							lastSeenAt: now,
-							createdAt: now,
-							updatedAt: now,
-						}),
-					),
-				)
+				const { id, timeline } = yield* linkedInvestigation("err_issue_link_1")
 
-				const created = yield* service.createInvestigation(
-					ORG,
-					null,
-					new InvestigationCreateRequest({
-						subject: new InvestigationIncidentSubject({
-							type: "incident",
-							incidentKind: "error",
-							incidentId: "err_issue_link_1",
-							issueId,
-						}),
-					}),
-				)
-
-				// Two diagnosis writes (retry / re-diagnosis): the deterministic event id +
+				// Two diagnosis writes with no turn (a retried write): the deterministic event id +
 				// onConflictDoNothing must collapse them to a single timeline event.
 				yield* service.submitDiagnosis(
 					ORG,
-					created.id,
+					id,
 					new SubmitDiagnosisRequest({ report: sampleReport() }),
 				)
 				yield* service.submitDiagnosis(
 					ORG,
-					created.id,
+					id,
 					new SubmitDiagnosisRequest({ report: sampleReport() }),
 				)
 
-				const events = yield* database.execute((db) =>
-					db.run(
-						PG.from(ErrorIssueEvents)
-							.select()
-							.where(($) => [$.issueId.eq(issueId)]),
-					),
-				)
-				const aiTriageEvents = events.filter((e) => e.type === "ai_triage")
-				assert.strictEqual(aiTriageEvents.length, 1)
+				const events = yield* timeline
+				assert.strictEqual(events.filter((e) => e.type === "ai_triage").length, 1)
 			}).pipe(Effect.provide(harness.layer))
 		},
 	)
+
+	it.effect("a later turn's diagnosis lands on the issue timeline; a retried turn does not", () => {
+		const harness = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const { id, timeline } = yield* linkedInvestigation("err_issue_link_2")
+			const followUp = new AiTriageResult({
+				...sampleReport(),
+				summary: "The pool was fine; DNS was not.",
+			})
+
+			yield* service.submitDiagnosis(
+				ORG,
+				id,
+				new SubmitDiagnosisRequest({ report: sampleReport(), turnId: "turn-1" }),
+			)
+			yield* service.submitDiagnosis(
+				ORG,
+				id,
+				new SubmitDiagnosisRequest({ report: sampleReport(), turnId: "turn-1" }),
+			)
+			yield* service.submitDiagnosis(
+				ORG,
+				id,
+				new SubmitDiagnosisRequest({ report: followUp, turnId: "turn-2" }),
+			)
+
+			const summaries = (yield* timeline)
+				.filter((e) => e.type === "ai_triage")
+				.map((e) => decodeTriagePayload(e.payloadJson).summary)
+				.sort()
+			assert.deepStrictEqual(summaries, [sampleReport().summary, followUp.summary].sort())
+		}).pipe(Effect.provide(harness.layer))
+	})
 })

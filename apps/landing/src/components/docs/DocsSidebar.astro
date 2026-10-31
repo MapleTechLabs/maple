@@ -2,13 +2,14 @@
 // One section of the docs tree at a time: only the groups of the section
 // picked in the header strip render, so a reader on a Python guide scans
 // languages, not alerting.
-// Language rows carry their logo; Effect's platform pages nest under Effect.
-import { getCollection } from "astro:content";
+// Language rows carry their logo; nested rows (Effect's platforms, the hosting
+// platforms under Deploy) come from getNavTree.
 import DocsCategoryIcon from "./DocsCategoryIcon.astro";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import LanguageLogo from "./LanguageLogo.astro";
-import { groupRank, isDocGroup, sectionForGroup } from "../../lib/docs-nav";
-import { getDocSections } from "../../lib/docs-order";
+import { isDocGroup, sectionForGroup } from "../../lib/docs-nav";
+import type { BrandMarkId } from "../../lib/brand-marks";
+import { getDocSections, getNavTree, type Doc } from "../../lib/docs-order";
 
 interface Props {
     currentSlug: string;
@@ -18,30 +19,12 @@ interface Props {
 
 const { currentSlug, idPrefix = "docs-nav" } = Astro.props;
 
-const allDocs = await getCollection("docs", ({ data }) => !data.draft);
-type Doc = (typeof allDocs)[number];
-
-const byOrder = (a: Doc, b: Doc) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title);
-
-const EFFECT_ROOT = "sdks/effect";
-const effectChildren = allDocs.filter((d) => d.data.sdk === "effect" && d.id !== EFFECT_ROOT).sort(byOrder);
-
-type Row = { doc: Doc; children: Doc[] };
-
-const groups = new Map<string, Row[]>();
-for (const doc of allDocs.sort(byOrder)) {
-    if (effectChildren.includes(doc)) continue;
-    const rows = groups.get(doc.data.group) ?? [];
-    rows.push({ doc, children: doc.id === EFFECT_ROOT ? effectChildren : [] });
-    groups.set(doc.data.group, rows);
-}
 const sections = await getDocSections(currentSlug);
 const section = sections.find((s) => s.active) ?? sections[0];
+const ordered = (await getNavTree()).filter(({ group }) => sectionForGroup(group).id === section.id);
 
-const ordered = [...groups.entries()]
-    .filter(([group]) => sectionForGroup(group).id === section.id)
-    .sort(([a], [b]) => groupRank(a) - groupRank(b) || a.localeCompare(b));
-
+const markOf = (doc: Doc): BrandMarkId | undefined => doc.data.icon;
+const hasIcon = (doc: Doc) => Boolean(doc.data.sdk ?? markOf(doc));
 const label = (doc: Doc) => doc.data.navLabel ?? doc.data.title;
 const headingId = (group: string) => `${idPrefix}-${group.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
@@ -52,21 +35,25 @@ const rowClass = (active: boolean) =>
 ---
 
 <nav aria-label="Documentation">
-    {ordered.map(([groupName, rows]) => (
+    {ordered.map(({ group: groupName, rows }) => {
+        // Icon-less rows in a group with icons get a spacer so the labels line up.
+        const iconColumn = rows.some(({ doc }) => hasIcon(doc));
+        return (
         <section class="mb-7" aria-labelledby={headingId(groupName)}>
             <h3
                 id={headingId(groupName)}
-                class="mb-2 flex items-center gap-1.5 px-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted"
+                class="mb-2 flex items-center gap-2 pl-3 pr-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted"
             >
                 {isDocGroup(groupName) && (
-                    <DocsCategoryIcon name={groupName} class="h-3 w-3 shrink-0 text-primary/80" />
+                    <DocsCategoryIcon name={groupName} class="h-3.5 w-3.5 shrink-0 text-primary/80" />
                 )}
                 {groupName}
             </h3>
             <ul class="space-y-px">
-                {rows.map(({ doc, children }) => {
+                {rows.map(({ doc, children, open }) => {
                     const active = doc.id === currentSlug;
                     const childActive = children.some((c) => c.id === currentSlug);
+                    const mark = markOf(doc);
                     return (
                         <li>
                             <a
@@ -76,8 +63,10 @@ const rowClass = (active: boolean) =>
                             >
                                 {doc.data.sdk ? (
                                     <LanguageLogo id={doc.data.sdk} class="h-3.5 w-3.5 shrink-0" />
+                                ) : mark ? (
+                                    <BrandMarkIcon id={mark} class="h-3.5 w-3.5 shrink-0" />
                                 ) : (
-                                    doc.data.icon && <BrandMarkIcon id={doc.data.icon} class="h-3.5 w-3.5 shrink-0" />
+                                    iconColumn && <span class="h-3.5 w-3.5 shrink-0" aria-hidden="true"></span>
                                 )}
                                 <span class="truncate">{label(doc)}</span>
                             </a>
@@ -85,7 +74,7 @@ const rowClass = (active: boolean) =>
                                 <ul
                                     class:list={[
                                         "ml-[1.35rem] border-l border-border/70 mt-px mb-1",
-                                        !(active || childActive) && "hidden",
+                                        !(open || active || childActive) && "hidden",
                                     ]}
                                 >
                                     {children.map((child) => {
@@ -96,13 +85,14 @@ const rowClass = (active: boolean) =>
                                                     href={`/docs/${child.id}`}
                                                     aria-current={on ? "page" : undefined}
                                                     class:list={[
-                                                        "-ml-px block py-1 pl-3 pr-2 text-[13px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
+                                                        "-ml-px flex items-center gap-2 py-1 pl-3 pr-2 text-[13px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
                                                         on
                                                             ? "text-primary border-l border-primary"
                                                             : "text-fg-muted hover:text-fg border-l border-transparent",
                                                     ]}
                                                 >
-                                                    {label(child)}
+                                                    {child.data.icon && <BrandMarkIcon id={child.data.icon} class="h-3.5 w-3.5 shrink-0" />}
+                                                    <span class="truncate">{label(child)}</span>
                                                 </a>
                                             </li>
                                         );
@@ -114,5 +104,6 @@ const rowClass = (active: boolean) =>
                 })}
             </ul>
         </section>
-    ))}
+        );
+    })}
 </nav>

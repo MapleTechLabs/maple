@@ -209,7 +209,7 @@ export type CopyButtonOptions<M> = Readonly<{
 export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>): Html => {
 	const { status } = options
 	const copiedLabel = options.copiedLabel ?? "Copied"
-	const errorText = options.errorLabel ?? "Failed to copy"
+	const errorText = options.errorLabel ?? "Couldn't copy"
 	const labels: ReadonlyArray<readonly [CopyStatus, string]> =
 		options.idleLabel === undefined
 			? []

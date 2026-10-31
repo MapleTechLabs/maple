@@ -76,6 +76,8 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				copyStatus: model.traceIdCopy.status,
 				onCopy: (value) =>
 					Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: value }) }),
+				codeCopy: model.traceIdCopy,
+				toCodeCopy: (message) => Message.GotCopyMessage({ message }),
 				calendar: h.submodel({
 					slotId: "kit-content-calendar",
 					model: model.calendar,

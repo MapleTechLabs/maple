@@ -2,15 +2,17 @@ import { splitGenAiAttributes, type GenAiGroup } from "@maple/ui/lib/gen-ai"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { attributeFilterAction, tryParseJson } from "../../../../ui/attributes/attribute-row"
+import { capForDisplay, prettyJson, tryParseJson } from "../../../../lib/display-text"
+import { attributeFilterAction } from "../../../../ui/attributes/attribute-row"
 import { icon } from "../../../../ui/icon"
+import { truncationNote } from "../../../../ui/logs/log-message"
 import { copyableValue, copyButton, selectableValue } from "./copy"
 import { type AttributeScope, Message } from "./message"
 import type { PanelState as Model } from "./model"
 
 // `AttributesSection` / `AttributesTable` / `AttributeRow` (packages/ui/src/components/attributes)
 // with filter actions and a value renderer that links commit SHAs.
-// TODO(json-highlight): an expanded JSON value renders plain; it should highlight with sugar-high.
+// TODO(json-highlight): an expanded JSON value renders plain; it should highlight like `CollapsibleJsonValue`.
 
 type H = HtmlBuilder<Message>
 type Entries = ReadonlyArray<readonly [string, string]>
@@ -24,7 +26,7 @@ const filterAction = (h: H, label: string, onClick: Message, text: string): Html
 const commitShaValue = (h: H, id: string, value: string): Html => {
 	const className = cn(
 		"cursor-pointer",
-		"-mx-0.5 cursor-pointer break-all rounded px-0.5 transition-colors hover:bg-muted/50",
+		"-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken",
 	)
 	const onClick = h.OnClick(Message.ClickedCopy({ id, text: value }))
 	return FULL_SHA.test(value)
@@ -40,15 +42,18 @@ const commitShaValue = (h: H, id: string, value: string): Html => {
 		: h.button([h.Class(className), h.Type("button"), onClick], [value])
 }
 
-const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknown): Html => {
+const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 	const isOpen = model.openIds.includes(id)
+	// Re-indented only once opened: a collapsed row shows an 80-character preview.
+	const formatted = isOpen ? Option.getOrElse(prettyJson(value), () => value) : ""
+	const { shown, omitted } = capForDisplay(formatted)
 	return h.div(
 		[h.Class("min-w-0")],
 		[
 			h.button(
 				[
 					h.Class(
-						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-muted/50 rounded px-0.5 -mx-0.5 transition-colors",
+						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken rounded-sm px-0.5 -mx-0.5",
 					),
 					h.Title(isOpen ? "Collapse" : "Expand JSON"),
 					h.Type("button"),
@@ -69,17 +74,17 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 						h.div(
 							[
 								h.Class(
-									"group/json relative mt-1 overflow-hidden rounded-md border bg-muted/30",
+									"group/json relative mt-1 overflow-hidden rounded-md border bg-surface-sunken",
 								),
 							],
 							[
 								h.div(
 									[h.Class("max-h-64 overflow-auto p-2")],
 									[
-										h.pre(
-											[h.Class("text-xs leading-relaxed")],
-											[h.code([], [JSON.stringify(parsed, null, 2)])],
-										),
+										...(omitted === 0
+											? []
+											: [truncationNote(h, shown.length, formatted.length)]),
+										h.pre([h.Class("text-xs leading-relaxed")], [h.code([], [shown])]),
 									],
 								),
 								copyButton(h, model, {
@@ -89,7 +94,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 									iconSize: 10,
 									tooltipId: `${id}:json-tooltip`,
 									className:
-										"absolute top-1 right-1 border-border/60 bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
+										"absolute top-1 right-1 border-border-subtle bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
 								}),
 							],
 						),
@@ -119,7 +124,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 			? Option.none()
 			: tryParseJson(row.value)
 	const valueNode = Option.match(parsed, {
-		onSome: (json) => jsonValue(h, model, `json:${id}`, row.value, json),
+		onSome: () => jsonValue(h, model, `json:${id}`, row.value),
 		onNone: () =>
 			row.attrKey === "vcs.ref.head.revision"
 				? commitShaValue(h, `sha:${id}`, row.value)
@@ -139,7 +144,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 	return h.div(
 		[
 			h.Class(
-				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40",
+				"group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 		],
 		[
@@ -198,7 +203,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 const pick = (row: RowInput) => ({ scope: row.scope, key: row.attrKey, value: row.value })
 
 const heading = (h: H, title: string): Html =>
-	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground/70")], [title])
+	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground-soft")], [title])
 
 /** `AttributesTable` without search or namespace grouping (the span panel uses neither). */
 const attributesTable = (
@@ -216,7 +221,7 @@ const attributesTable = (
 				[
 					heading(h, title),
 					h.div(
-						[h.Class("divide-y divide-border/60 overflow-hidden rounded-md border")],
+						[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
 						entries.map(([attrKey, value]) =>
 							attributeRow(h, model, { scope, attrKey, value, isFilterable }),
 						),
@@ -239,7 +244,7 @@ const genAiSection = (
 				[
 					heading(h, "AI attributes"),
 					h.div(
-						[h.Class("divide-y divide-border/60 overflow-hidden rounded-md border")],
+						[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
 						groups.map((group) =>
 							h.div(
 								[],
@@ -247,7 +252,7 @@ const genAiSection = (
 									h.div(
 										[
 											h.Class(
-												"px-1.5 py-1.5 text-2xs font-semibold tracking-wide text-foreground/80",
+												"px-1.5 py-1.5 text-2xs font-semibold tracking-wide text-foreground-soft",
 											),
 										],
 										[group.label],
@@ -255,7 +260,7 @@ const genAiSection = (
 									h.div(
 										[
 											h.Class(
-												"divide-y divide-border/40 border-t border-border/60 bg-muted/15",
+												"divide-y divide-border-subtle border-t border-border-subtle bg-surface-faint",
 											),
 										],
 										group.fields.map((field) =>
@@ -314,7 +319,7 @@ export const attributesSection = (
 										h.AriaDisabled(false),
 										h.AriaExpanded(isInternalOpen),
 										h.Class(
-											"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground transition-colors group",
+											"flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground group",
 										),
 										...(isInternalOpen ? [h.DataAttribute("panel-open", "")] : []),
 										h.DataAttribute("slot", "collapsible-trigger"),

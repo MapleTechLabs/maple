@@ -223,22 +223,6 @@ export function legend(mode: WorstCaseMode): LegendFixture {
 	return { series, stats }
 }
 
-/* AI tool table ---------------------------------------------------------------------------- */
-
-export function toolTable(mode: WorstCaseMode): { headers: string[]; rows: string[][]; title: string } {
-	const headers = ["id", "pr", "year", "count"]
-	if (mode === "demo") return { headers, title: "Rows", rows: [["42", "17", "2026", "12"]] }
-	return {
-		headers,
-		title: "query_traces_by_service_and_time_window",
-		rows: [
-			["17293822569102704640", "128493", "2026", "1284903"],
-			["9007199254740993", "#128494", "2025", "0.30000000000000004"],
-			["", "-0", "1e21", "NaN"],
-		],
-	}
-}
-
 /* Logs + attributes ------------------------------------------------------------------------ */
 
 const DB_STATEMENT = `SELECT o.id, o.org_id, o.status, ${Array.from({ length: 160 }, (_, i) => `li.col_${i}`).join(", ")} FROM orders o JOIN line_items li ON li.order_id = o.id WHERE o.org_id = $1 AND o.created_at > now() - interval '7 days' ORDER BY o.created_at DESC LIMIT 500`

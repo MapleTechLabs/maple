@@ -52,10 +52,11 @@ export interface ReplaySessionHandle extends SessionLifecycleHandle {
 /**
  * Start recording the current browser session. Publishes the session sink,
  * posts an `active` metadata row, and installs visibility handlers:
- * hidden → flush + `ended` row (with observed trace ids) + stop capture;
- * visible → re-resolve the session (rotating if idle-expired), republish the
- * sink, restart capture, post a fresh `active` row. Metadata versions are
- * monotonic per session, so the latest row always wins on the backend.
+ * hidden → flush + `ended` row (with observed trace ids), capture kept running;
+ * visible → re-resolve the session (rotating if idle-expired, which restarts
+ * capture under the new id) and post a fresh `active` row. `pagehide`, consent
+ * revoke and a tab hidden past the idle timeout stop capture. Metadata versions
+ * are monotonic per session, so the latest row always wins on the backend.
  *
  * Returns undefined outside a browser. Sampling is the caller's decision.
  */
@@ -134,6 +135,11 @@ export function startReplaySession(options: ReplaySessionOptions): ReplaySession
 				stoppingRecorder?.stop()
 				stoppingEvents?.stop()
 				return flushed
+			},
+			// A hidden tab only flushes: rrweb, the buffer and the capture patches stay
+			// as they are, so showing it again costs no new snapshot or re-patching.
+			onPause: async ({ keepalive }) => {
+				await Promise.all([recorder?.flush(keepalive), events?.flush(keepalive)])
 			},
 			onSessionChange: (sessionId) => {
 				// A new session buffers again until its own error.

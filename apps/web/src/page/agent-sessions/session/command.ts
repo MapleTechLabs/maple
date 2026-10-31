@@ -6,6 +6,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
+import { writeClipboard } from "../../kit/clipboard"
 import { readLocale } from "../../kit/locale"
 import { Message, SpanScope } from "./message"
 import { parseMarkdownTexts } from "../../kit/message-response"
@@ -116,10 +117,7 @@ export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
 	messages: [Message.CompletedCodeAction],
 	execute: ({ action, code, language }) =>
 		(action === "copy"
-			? Effect.tryPromise(() => navigator.clipboard.writeText(code)).pipe(
-					Effect.as(true),
-					Effect.orElseSucceed(() => false),
-				)
+			? writeClipboard(code)
 			: Effect.sync(() => {
 					const url = URL.createObjectURL(new Blob([code], { type: "text/plain" }))
 					const anchor = document.createElement("a")

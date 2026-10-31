@@ -1,0 +1,61 @@
+---
+/**
+ * 08b · Uptime: checks from outside that land as spans in the org's own traces.
+ *
+ * Media-left on `bg-bg`, so it alternates with Product events (copy-left) above
+ * and Agents (copy-left) below. The monitor list is the same LiveUptime the
+ * feature page carries.
+ */
+import { getRelativeLocaleUrl } from "astro:i18n";
+import * as m from "../../paraglide/messages.js";
+import LiveUptime from "../live/LiveUptime.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const featurePath = getRelativeLocaleUrl(locale, "/features/uptime-monitoring");
+
+const points = [
+	{ title: m.uptime_point_1_title(), body: m.uptime_point_1_body() },
+	{ title: m.uptime_point_2_title(), body: m.uptime_point_2_body() },
+	{ title: m.uptime_point_3_title(), body: m.uptime_point_3_body() },
+];
+---
+
+<section id="uptime" class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-12 lg:grid-cols-[1.18fr_0.82fr] lg:items-center lg:gap-20">
+			<div class="order-last min-w-0 lg:order-first">
+				<LiveUptime />
+			</div>
+
+			<div class="min-w-0">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.uptime_eyebrow()}</p>
+
+				<h2
+					class="mt-4 max-w-[18ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.uptime_title()}
+				</h2>
+				<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted">{m.uptime_lede()}</p>
+
+				<dl class="mt-8">
+					{
+						points.map((point) => (
+							<div class="border-t border-border py-4">
+								<dt class="text-[13px] font-medium text-fg">{point.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">
+									{point.body}
+								</dd>
+							</div>
+						))
+					}
+				</dl>
+
+				<div class="mt-6 text-[13px]">
+					<a href={featurePath} class="text-fg transition-colors hover:text-primary">
+						{m.uptime_link_feature()}
+					</a>
+				</div>
+			</div>
+		</div>
+	</div>
+</section>

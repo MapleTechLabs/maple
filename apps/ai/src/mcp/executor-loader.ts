@@ -45,7 +45,9 @@ export class McpToolExecutorLoader extends Context.Service<
 					const services = yield* Layer.buildWithScope(graph, scope)
 					return Context.get(services, McpToolExecutor)
 				}).pipe(
-					Effect.provideContext(isolate),
+					// Replaces the request's context rather than merging into it (`provideContext` merges),
+					// so nothing the first request carries, like its Postgres scope, reaches the graph.
+					Effect.setContext(isolate),
 					Effect.mapError(
 						(cause) =>
 							new McpToolsUnavailableError({

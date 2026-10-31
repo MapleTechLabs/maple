@@ -58,7 +58,7 @@ describe("logs live tail", () => {
 	test("skips ticks while the tab is hidden", () =>
 		Effect.runPromise(
 			Effect.gen(function* () {
-				const hidden = { hidden: true }
+				const hidden = Object.assign(new EventTarget(), { hidden: true })
 				vi.stubGlobal("document", hidden)
 				const ticks = yield* Ref.make(0)
 				const fiber = yield* Effect.forkChild(

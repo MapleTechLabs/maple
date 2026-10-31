@@ -109,6 +109,8 @@ export default defineConfig({
 		shikiConfig: {
 			theme: codeTheme,
 			wrap: true,
+			// Shiki has no `env` grammar; docs fence `.env` files that way.
+			langAlias: { env: "dotenv" },
 			// Line classes only ("diff add" / "highlighted"); the colors live in
 			// global.css under .blog-content.
 			transformers: [
@@ -129,6 +131,7 @@ export default defineConfig({
 					ko: "ko",
 				},
 			},
+			filter: (page) => !page.includes("/docs/404"),
 			// Stamp a build-time lastmod so the sitemap exposes a freshness signal.
 			serialize(item) {
 				item.lastmod = new Date().toISOString()

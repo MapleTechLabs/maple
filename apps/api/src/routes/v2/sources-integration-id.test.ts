@@ -11,7 +11,7 @@ const source = (platform: string, integrationId: string | null) =>
 		name: "s",
 		description: null,
 		platform,
-		isDefault: false,
+		kind: integrationId === null ? "token" : "integration",
 		keyPrefix: null,
 		integrationId,
 		status: "active",

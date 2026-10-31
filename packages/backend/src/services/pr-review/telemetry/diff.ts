@@ -49,6 +49,11 @@ const NOT_RUNTIME =
 
 export const isRuntimeSource = (path: string): boolean => !NOT_RUNTIME.test(path)
 
+/** Mock, seed and lab data: it runs, so privacy still scans it, but it emits no production telemetry. */
+const MOCK_DATA = /(^|\/)(testdata|fixtures?|mocks?|seeds?|labs?)\/|\.(mocks?|fixtures?|seed)\.[a-z]+$/i
+
+export const isMockData = (path: string): boolean => MOCK_DATA.test(path)
+
 /** A string literal in a line of code, and where it starts. */
 export interface Literal {
 	readonly value: string
@@ -89,6 +94,8 @@ export interface EmittedName {
 }
 
 const ATTRIBUTE_KEY = /^[a-z_][a-z0-9_]*(?:\.[a-z0-9_]+)+$/i
+/** A literal that is the `key` of an OTLP `{ key, value: { stringValue } }` pair: payload data, not an API call. */
+const OTLP_KEY_VALUE = /["']?\bkey["']?\s*:\s*$/
 
 /**
  * Names a line hands to the telemetry API. `nearby` is the few lines above it, so an attribute
@@ -106,6 +113,8 @@ export const emittedNames = (text: string, nearby: string): ReadonlyArray<Emitte
 		} else if (
 			!literal.templated &&
 			ATTRIBUTE_KEY.test(literal.value) &&
+			!OTLP_KEY_VALUE.test(before) &&
+			!(before.trim() === "" && OTLP_KEY_VALUE.test(nearby)) &&
 			(ATTRIBUTE_CALL.test(before) || (/^\s*[:,]/.test(after) && ATTRIBUTE_CALL.test(nearby)))
 		) {
 			out.push({ kind: "attribute", value: literal.value, templated: false })

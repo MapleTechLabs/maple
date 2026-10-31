@@ -14,8 +14,8 @@ import {
 	type WorkflowRunJob,
 	type WorkflowStep,
 } from "@maple/domain/http"
+import { CI_SERVICE_NAME } from "@maple/domain/tinybird"
 
-export const CI_SERVICE_NAME = "github-actions"
 export const SCOPE_NAME = "@maple/ci-traces"
 
 const SPAN_KIND_INTERNAL = 1

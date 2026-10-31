@@ -23,6 +23,7 @@ const cloneNode = (node: VNode): VNode => ({
 export const filterRailOf = (model: Model, page: Html): Option.Option<LiftedRail> =>
 	model.filterDrawer.isOpen
 		? Option.map(splitPageRails(page).maybeFilters, (rail) => ({
+				...rail,
 				children: rail.children.map((child) => (child === null ? child : cloneNode(child))),
 			}))
 		: Option.none()

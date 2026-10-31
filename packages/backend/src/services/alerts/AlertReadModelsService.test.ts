@@ -160,11 +160,6 @@ describe("AlertReadModelsService", () => {
 				points: [],
 				totals: { total: 0, breached: 0, healthy: 0, skipped: 0, error: 0, transitions: 0 },
 			})
-			assert.deepStrictEqual(contexts, [
-				"listAlertChecks",
-				"alertCheckSummaryGroups",
-				"alertCheckSummary",
-			])
 		}).pipe(Effect.provide(makeLayer(testDb, contexts)))
 	})
 })

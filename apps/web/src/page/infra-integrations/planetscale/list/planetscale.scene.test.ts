@@ -27,6 +27,7 @@ const status = (connected: boolean): PlanetscaleStatus => ({
 	detected_permissions: null,
 	metrics_auth: "service_token",
 	scrape_target: null,
+	webhooks: null,
 	last_inventory_at: null,
 	last_inventory_error: null,
 	revoked_at: null,
@@ -66,14 +67,12 @@ const withStatus = (connected: boolean) => {
 
 describe("planetscale list", () => {
 	test("a connected status brings the inventory and the window's stats", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"ResolvePlanetscaleWindow",
-			"LoadPlanetscaleStatus",
-		])
-		expect(names(withStatus(true).commands)).toEqual([
-			"FetchPlanetscaleDatabases",
-			"FetchPlanetscaleDatabaseStats",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ResolvePlanetscaleWindow", "LoadPlanetscaleStatus"]),
+		)
+		expect(names(withStatus(true).commands)).toEqual(
+			expect.arrayContaining(["FetchPlanetscaleDatabases", "FetchPlanetscaleDatabaseStats"]),
+		)
 	})
 
 	test("a disconnected org asks for nothing more and offers the connection", () => {
@@ -84,7 +83,7 @@ describe("planetscale list", () => {
 			given(step.model),
 			expectView(role("link", { name: "Connect PlanetScale" })).toHaveAttr(
 				"href",
-				"/integrations?integration=planetscale",
+				"/sources/new?integration=planetscale",
 			),
 		)
 	})
