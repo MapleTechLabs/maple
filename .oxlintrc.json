@@ -329,6 +329,23 @@
 			"excludeFiles": ["**/*.test.ts"],
 			"rules": { "maple/mcp-tracer-anticipated-errors": "error" }
 		},
+		// The status Worker must keep serving while Maple is down: no Postgres, auth or backend services.
+		{
+			"files": ["apps/status/**/*.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^(?:@maple/backend|@maple/db|@maple-dev/effect-orm|@maple/auth|@clerk/)",
+								"message": "apps/status serves pages while Maple is down; it reads only KV, R2 and the colo cache. Share pure code through @maple/domain or @maple/status-page."
+							}
+						]
+					}
+				]
+			}
+		},
 		// Customer SDK bundle boundaries (were source-grepping architecture tests). Later overrides
 		// replace earlier rule options, so the narrower tiers repeat the broader patterns.
 		{

@@ -50,6 +50,7 @@ import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
+import StatusWorker from "./apps/status/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
@@ -363,6 +364,10 @@ export default Alchemy.Stack(
 
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
+
+		// Public status pages, served from edge storage alone so they outlive a Maple outage.
+		const statusWorker = yield* StatusWorker
+		yield* serveWorker("status", statusWorker)
 
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
 		const web = yield* Effect.provideService(Web, ApiWorker, api)
