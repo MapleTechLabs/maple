@@ -57,6 +57,13 @@ const coreGuides = [
         read: "7 min",
     },
     {
+        href: "/guides/new-relic-pricing",
+        label: "Pricing",
+        title: "New Relic pricing, explained",
+        description: "How users and gigabytes add up to a monthly bill, what the free tier covers, and what a 12-person team pays.",
+        read: "9 min",
+    },
+    {
         href: "/guides/sentry-pricing",
         label: "Pricing",
         title: "Sentry pricing in 2026",
@@ -245,8 +252,11 @@ const itemListJsonLd = {
                             href={guide.href}
                             class:list={[
                                 "group flex min-h-[280px] flex-col bg-bg p-6 transition-colors hover:bg-bg-deep focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring md:p-8",
-                                // An odd count leaves a hole in the last row; the last card fills it.
-                                index === coreGuides.length - 1 && coreGuides.length % 2 === 1 && "md:col-span-2",
+                                // A short last row leaves a hole; the last card stretches to fill it at each column count.
+                                index === coreGuides.length - 1 && [
+                                    coreGuides.length % 2 === 1 && "md:col-span-2",
+                                    ["xl:col-span-1", "xl:col-span-3", "xl:col-span-2"][coreGuides.length % 3],
+                                ],
                             ]}
                         >
                             <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">

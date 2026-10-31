@@ -116,6 +116,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
+		`- [New Relic pricing, explained](${url("/guides/new-relic-pricing")})`,
 		`- [Sentry pricing in 2026: free plan, plans and monthly costs](${url("/guides/sentry-pricing")})`,
 		`- [Dynatrace pricing, explained](${url("/guides/dynatrace-pricing")})`,
 		`- [Loguru for Python](${url("/guides/loguru")})`,
