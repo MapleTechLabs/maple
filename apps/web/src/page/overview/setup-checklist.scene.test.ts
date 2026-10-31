@@ -102,7 +102,7 @@ describe("overview setup checklist", () => {
 			...pageMounts,
 			...tabMounts,
 			expectView(text("Connect your app to see real data")).toExist(),
-			expectView(text("Watching for your first trace…")).toExist(),
+			expectView(text("Listening for your first trace")).toExist(),
 			expectView(role("button", { name: "Dismiss setup checklist" })).toExist(),
 		)
 	})
@@ -112,7 +112,7 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(withServices(entered(true).read.model, ["checkout"])),
 			...pageMounts,
-			expectView(text("We're seeing telemetry from checkout. Open it to explore.")).toExist(),
+			expectView(text("checkout is sending telemetry.")).toExist(),
 			expectView(text("Connect your app to see real data")).not.toExist(),
 		)
 	})
@@ -174,7 +174,7 @@ describe("overview setup checklist", () => {
 			given(entered(true).read.model),
 			...pageMounts,
 			expectView(text("Connect your app to see real data")).not.toExist(),
-			expectView(text(/We're seeing telemetry/)).not.toExist(),
+			expectView(text(/is sending telemetry/)).not.toExist(),
 		)
 	})
 
@@ -184,7 +184,7 @@ describe("overview setup checklist", () => {
 			given(failOverview(entered(true).read.model)),
 			...pageMounts,
 			expectView(text(failureSentence(toLoadFailure("boom")), { exact: false })).toExist(),
-			expectView(text("Watching for your first trace…")).not.toExist(),
+			expectView(text("Listening for your first trace")).not.toExist(),
 		)
 	})
 

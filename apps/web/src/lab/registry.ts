@@ -109,6 +109,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/onboarding-checklist",
+		title: "Onboarding checklist",
+		description:
+			"The top bar's credits pill and its checklist panel in progress, claimable and claimed, over fixtures.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/loaders",
 		title: "Chat loaders",
 		description:
