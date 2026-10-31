@@ -92,6 +92,8 @@ export const GetStatusPageOutput = Schema.Struct({
 export const StatusPageIncidentMutationOutput = Schema.Struct({
 	action: Schema.Literals(["created", "updated", "resolved", "scheduled"]),
 	incident: StatusPageIncidentRow,
+	/** The incident's page is a draft: nothing on it is public, a published incident included. */
+	pageDraft: Schema.Boolean,
 })
 
 // ---------------------------------------------------------------------------------------------

@@ -119,6 +119,26 @@ describe("status page tools", () => {
 			}),
 		)
 		expect(created.incident.published).toBe(true)
+		expect(created.pageDraft).toBe(false)
+	})
+
+	it("warns that a published incident stays private while its page is a draft", async () => {
+		await executeSql(
+			rt.testDb,
+			`INSERT INTO status_pages (id, org_id, name, slug, draft, created_by, created_at, updated_at)
+			 VALUES ($1, $2, 'Draft Status', 'draft-status', true, $3, now(), now())`,
+			["7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d0a", rt.tenant.orgId, rt.tenant.userId],
+		)
+		const result = await runToolDirect(rt, "create_status_page_incident", {
+			page: "draft-status",
+			title: "Login delays",
+			message: "Some sign-ins are slow.",
+			publish: true,
+		})
+		const created = decode(StatusPageIncidentMutationOutput, result)
+		expect(created.incident.published).toBe(true)
+		expect(created.pageDraft).toBe(true)
+		expect(markdown(result)).toContain("The page is a draft")
 	})
 
 	it("schedules maintenance as a draft with its window", async () => {

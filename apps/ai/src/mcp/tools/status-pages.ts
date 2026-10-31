@@ -30,6 +30,7 @@ import {
 	StatusPageIncidentImpact,
 	type OrgId,
 	type StatusPageComponentId,
+	type StatusPageId,
 	type StatusPageIncidentStatus,
 } from "@maple/domain/primitives"
 import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
@@ -171,6 +172,12 @@ const auditUpdatePosted = Effect.fnUntraced(function* (incident: StatusPageIncid
 	})
 })
 
+/** Whether the incident's page is still a draft, which keeps everything on it private. */
+const pageIsDraft = Effect.fnUntraced(function* (tool: string, orgId: OrgId, pageId: StatusPageId) {
+	const page = yield* (yield* StatusPagesService).get(orgId, pageId).pipe(Effect.mapError(toMcpError(tool)))
+	return page.draft
+})
+
 /** A page by its id, REST id (`stp_…`), slug or exact name. */
 const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref: string) {
 	const service = yield* StatusPagesService
@@ -241,14 +248,18 @@ const renderIncident = (title: string, output: typeof StatusPageIncidentMutation
 	const incident = output.incident
 	return {
 		title,
-		notices: incident.published
-			? []
-			: incident.resolvedAt === null
-				? [
-						"This is a draft: it is not on the public page. post_status_page_update with publish=true publishes it.",
-					]
-				: // A closed draft must not be pointed at post_status_page_update: its statuses reopen it.
-					["This was closed as a draft, so it never appeared on the public page."],
+		notices: output.pageDraft
+			? [
+					"The page is a draft, so nothing on it is public, this incident included. Publish the page in Maple under Status pages.",
+				]
+			: incident.published
+				? []
+				: incident.resolvedAt === null
+					? [
+							"This is a draft: it is not on the public page. post_status_page_update with publish=true publishes it.",
+						]
+					: // A closed draft must not be pointed at post_status_page_update: its statuses reopen it.
+						["This was closed as a draft, so it never appeared on the public page."],
 		blocks: [
 			doc.fields([
 				["Title", incident.title],
@@ -513,7 +524,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			yield* auditIncidentCreated(created)
-			return { action: "created" as const, incident: toIncidentRow(created) }
+			return { action: "created" as const, incident: toIncidentRow(created), pageDraft: page.draft }
 		}),
 		render: (output) => renderIncident("Status page incident opened", output),
 	})
@@ -565,7 +576,11 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			yield* auditUpdatePosted(posted)
-			return { action: "updated" as const, incident: toIncidentRow(posted) }
+			return {
+				action: "updated" as const,
+				incident: toIncidentRow(posted),
+				pageDraft: yield* pageIsDraft(tool, tenant.orgId, posted.pageId),
+			}
 		}),
 		render: (output) => renderIncident("Status page update posted", output),
 	})
@@ -602,7 +617,11 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			yield* auditUpdatePosted(updated)
-			return { action: "resolved" as const, incident: toIncidentRow(updated) }
+			return {
+				action: "resolved" as const,
+				incident: toIncidentRow(updated),
+				pageDraft: yield* pageIsDraft(tool, tenant.orgId, updated.pageId),
+			}
 		}),
 		render: (output) => renderIncident("Status page incident resolved", output),
 	})
@@ -648,7 +667,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			yield* auditIncidentCreated(created)
-			return { action: "scheduled" as const, incident: toIncidentRow(created) }
+			return { action: "scheduled" as const, incident: toIncidentRow(created), pageDraft: page.draft }
 		}),
 		render: (output) => renderIncident("Maintenance scheduled", output),
 	})
@@ -754,7 +773,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				title: `Status page config applied: ${output.page.name}`,
 				notices: unchanged
 					? ["Nothing changed: the document matched the page."]
-					: ["The change publishes to the public page within a minute."],
+					: output.page.draft
+						? ["The page is a draft, so the change stays private until the page is published."]
+						: ["The change publishes to the public page within a minute."],
 				blocks: [
 					doc.fields([
 						["Fields changed", list(fields)],

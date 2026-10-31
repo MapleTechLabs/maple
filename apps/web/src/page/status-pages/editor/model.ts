@@ -71,7 +71,6 @@ export const Model = Schema.Struct({
 	isReordering: Schema.Boolean,
 	addPicker: Picker,
 	isAddingComponents: Schema.Boolean,
-	addFailure: Schema.NullOr(LoadFailure),
 	// Incidents
 	incidentForm: IncidentForm,
 	isCreatingIncident: Schema.Boolean,

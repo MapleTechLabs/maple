@@ -396,6 +396,19 @@ describe("the page as the editor", () => {
 		])
 	})
 
+	test("a failed add closes the panel, so a retry cannot add the components that did land twice", () => {
+		const adding = pageUpdate(loaded(), Message.ClickedAddComponent()).model
+		const failed = pageUpdate(
+			{ ...adding, isAddingComponents: true },
+			Message.CompletedAddComponents({
+				result: Result.fail(toLoadFailure(new Error("second create refused"))),
+			}),
+		)
+		expect(failed.model.panel).toBeNull()
+		expect(failed.model.isAddingComponents).toBe(false)
+		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
+	})
+
 	test("members see the page and its components without any control to change them", () => {
 		scene(
 			{ update: pageUpdate, view },
@@ -611,6 +624,9 @@ describe("live screen", () => {
 			}),
 			expectView(role("heading", { name: "Acme Status is not public yet" })).toExist(),
 			expectView(role("heading", { name: "Acme Status is live" })).not.toExist(),
+			// The publisher skips a draft, so its address would not resolve: no link to open.
+			expectView(role("link", { name: "Open" })).not.toExist(),
+			expectView(role("link", { name: "https://status-pr-7.maple.dev/s/acme-status" })).not.toExist(),
 		)
 	})
 
