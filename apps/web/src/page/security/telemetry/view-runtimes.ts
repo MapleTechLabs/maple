@@ -132,7 +132,7 @@ const severityCounts = (counts: Record<AdvisorySeverity, number>): string =>
 		.map((severity) => `${counts[severity]} ${severity}`)
 		.join(" · ")
 
-const notScannedReason = (posture: RuntimeEntry["posture"]): string => {
+const notScannedReason = ({ posture, row }: RuntimeEntry): string => {
 	switch (posture.status) {
 		case "no_version":
 			return "This service reports no runtime version to check"
@@ -141,7 +141,10 @@ const notScannedReason = (posture: RuntimeEntry["posture"]): string => {
 			return `This service reports the Node.js version ${label} emulates, not its own; send ${label}'s version as process.runtime.version`
 		}
 		default:
-			return "Maple has no vulnerability data for this runtime"
+			// Every tracked runtime has an advisory source, so what is left is untracked.
+			return row.runtimeName.trim() === ""
+				? "This service reports no runtime: set process.runtime.name and process.runtime.version"
+				: "Maple does not track versions of this runtime"
 	}
 }
 
@@ -150,7 +153,7 @@ const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 	switch (vulnerabilities.status) {
 		case "not_covered":
 			return h.span(
-				[h.Class("text-xs text-muted-foreground"), h.Title(notScannedReason(entry.posture))],
+				[h.Class("text-xs text-muted-foreground"), h.Title(notScannedReason(entry))],
 				["Not scanned"],
 			)
 		case "not_checked":
