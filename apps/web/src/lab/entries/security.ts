@@ -12,6 +12,9 @@ import { breadcrumbsOf as runCrumbs, view as runView } from "../../page/security
 import * as TabsPage from "../../page/security/tabs/model"
 import * as TabsUpdate from "../../page/security/tabs/update"
 import { view as tabsView } from "../../page/security/tabs/view"
+import * as TelemetryPage from "../../page/security/telemetry/model"
+import * as TelemetryUpdate from "../../page/security/telemetry/update"
+import { view as telemetryView } from "../../page/security/telemetry/view"
 import { build, context, isLocalCommand, Scenario } from "../security-lab/scenarios"
 import { defineShellLab } from "../shell-lab"
 
@@ -23,6 +26,7 @@ const Model = Schema.Struct({
 	tabs: Schema.NullOr(TabsPage.Model),
 	run: Schema.NullOr(RunPage.Model),
 	finding: Schema.NullOr(FindingPage.Model),
+	telemetry: Schema.NullOr(TelemetryPage.Model),
 })
 type Model = typeof Model.Type
 
@@ -30,6 +34,7 @@ const Message = defineMessageUnion({
 	GotTabsMessage: { message: TabsPage.Message },
 	GotRunMessage: { message: RunPage.Message },
 	GotFindingMessage: { message: FindingPage.Message },
+	GotTelemetryMessage: { message: TelemetryPage.Message },
 })
 type Message = typeof Message.Type
 
@@ -49,7 +54,7 @@ const flags = Effect.all({
 
 const init = (input: typeof Flags.Type) => {
 	const built = build(input.scenario, input.nowMs)
-	const empty: Model = { scenario: input.scenario, tabs: null, run: null, finding: null }
+	const empty: Model = { scenario: input.scenario, tabs: null, run: null, finding: null, telemetry: null }
 	switch (built._tag) {
 		case "Tabs":
 			return {
@@ -70,6 +75,13 @@ const init = (input: typeof Flags.Type) => {
 				model: { ...empty, finding: built.step.model },
 				commands: Command.mapMessages(built.step.commands, (message) =>
 					Message.GotFindingMessage({ message }),
+				),
+			}
+		case "Telemetry":
+			return {
+				model: { ...empty, telemetry: built.step.model },
+				commands: Command.mapMessages(built.step.commands, (message) =>
+					Message.GotTelemetryMessage({ message }),
 				),
 			}
 	}
@@ -107,6 +119,16 @@ const update = (model: Model, message: Message) =>
 				),
 			}
 		},
+		GotTelemetryMessage: ({ message: inner }) => {
+			if (model.telemetry === null) return { model }
+			const next = TelemetryUpdate.update(model.telemetry, inner, context)
+			return {
+				model: { ...model, telemetry: next.model },
+				commands: Command.mapMessages((next.commands ?? []).filter(isLocalCommand), (child) =>
+					Message.GotTelemetryMessage({ message: child }),
+				),
+			}
+		},
 	})
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -134,7 +156,15 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 						viewInputs: { context },
 						toParentMessage: (message) => Message.GotFindingMessage({ message }),
 					})
-				: h.empty
+				: model.telemetry !== null
+					? h.submodel({
+							slotId: "security-lab-telemetry",
+							model: model.telemetry,
+							view: telemetryView,
+							viewInputs: { context },
+							toParentMessage: (message) => Message.GotTelemetryMessage({ message }),
+						})
+					: h.empty
 
 export const lab = defineShellLab("Security Center", {
 	Model,
@@ -152,5 +182,7 @@ export const lab = defineShellLab("Security Center", {
 				? runCrumbs(model.run)
 				: model.finding !== null
 					? findingCrumbs(model.finding)
-					: [],
+					: model.telemetry !== null
+						? tabsCrumbs(model.telemetry.tab)
+						: [],
 })
