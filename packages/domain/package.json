@@ -16,6 +16,7 @@
 		"./aws": "./src/aws.ts",
 		"./gcp": "./src/gcp.ts",
 		"./gcp-infra": "./src/gcp-infra.ts",
+		"./runtime-advisories": "./src/runtime-advisories.ts",
 		"./runtime-posture": "./src/runtime-posture.ts",
 		"./security-telemetry": "./src/security-telemetry.ts",
 		"./service-runtimes": "./src/service-runtimes.ts",

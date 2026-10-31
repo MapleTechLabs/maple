@@ -235,7 +235,7 @@ export const pageIdFromUrl = (raw: string): Option.Option<StatusPageId> =>
 	Option.orElse(decodePublicId(raw), () => decodeInternalId(raw))
 
 /** The editor's views: the page itself (none), its settings, its JSON, or the just-published screen. */
-export type EditorView = "settings" | "json" | "live"
+export type EditorView = "appearance" | "settings" | "json" | "live"
 
 export const statusPageHref = (id: StatusPageId, view?: EditorView): string =>
 	hrefOf(

@@ -1,3 +1,4 @@
+import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { Layer } from "effect"
@@ -165,6 +166,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
 	RuntimeReleaseCatalog.layer,
+	RuntimeAdvisoryCatalog.layer,
 	TelemetryReadService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,

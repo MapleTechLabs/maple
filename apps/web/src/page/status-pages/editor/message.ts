@@ -67,9 +67,9 @@ export const Message = defineMessageUnion({
 	GotDeleteComponentDialogMessage: { message: Dialog.Message },
 	ClickedAddComponent: {},
 	GotAddPickerMessage: { message: PickerMessage },
-	CompletedCreateMonitor: { result: outcome(V2UptimeMonitor) },
+	CompletedCreateMonitor: { session: Schema.Number, result: outcome(V2UptimeMonitor) },
 	ClickedSubmitAdd: {},
-	CompletedAddComponents: { result: outcome(Schema.Array(V2StatusPageComponent)) },
+	CompletedAddComponents: { session: Schema.Number, result: outcome(Schema.Array(V2StatusPageComponent)) },
 	// Incidents
 	ClickedNewIncident: { kind: StatusPageIncidentKind },
 	ChangedIncidentKind: { kind: StatusPageIncidentKind },

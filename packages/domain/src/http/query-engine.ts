@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
+import { ADVISORY_SEVERITIES } from "../runtime-advisories"
 import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
@@ -2597,6 +2598,16 @@ export const RuntimeReleaseRow = Schema.Struct({
 	latest: Schema.NullOr(Schema.String),
 })
 
+/** A known vulnerability in a runtime version (`RuntimeAdvisory` in `@maple/domain/runtime-advisories`). */
+export const RuntimeAdvisoryRow = Schema.Struct({
+	id: Schema.String,
+	osvId: Schema.String,
+	summary: Schema.NullOr(Schema.String),
+	severity: Schema.Literals(ADVISORY_SEVERITIES),
+	fixedIn: Schema.NullOr(Schema.String),
+	published: Schema.NullOr(Schema.String),
+})
+
 export class SecurityRuntimesResponse extends Schema.Class<SecurityRuntimesResponse>(
 	"SecurityRuntimesResponse",
 )({
@@ -2618,6 +2629,10 @@ export class SecurityRuntimesResponse extends Schema.Class<SecurityRuntimesRespo
 		),
 		/** Release cycles per `RuntimeProduct` from `@maple/domain/runtime-posture`; a product whose read failed is absent. */
 		releases: Schema.Record(Schema.String, Schema.Array(RuntimeReleaseRow)),
+		/** Known vulnerabilities per `advisoryKey` (`nodejs@22.4.0`); a version whose read failed is absent. */
+		advisories: Schema.Record(Schema.String, Schema.Array(RuntimeAdvisoryRow)),
+		/** `advisoryKey`s not read this time because the request's read budget ran out. */
+		advisoriesSkipped: Schema.Array(Schema.String),
 	}),
 }) {}
 

@@ -1,4 +1,5 @@
 import type { StatusPagePreviewParams } from "@maple/domain/http/v2"
+import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
 import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../../data/keyed"
@@ -102,7 +103,7 @@ type EditorRoute = Extract<AppRoute, { readonly _tag: "StatusPage" }>
 
 /** The view the search names; anything else is the page itself, so an old or mistyped link lands. */
 export const resolveView = (view: string | undefined): EditorView | "page" =>
-	view === "settings" || view === "json" || view === "live" ? view : "page"
+	view === "appearance" || view === "settings" || view === "json" || view === "live" ? view : "page"
 
 export const PAGE_MENU_ID = "status-page-menu"
 
@@ -134,6 +135,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isReordering: false,
 		addPicker: emptyPicker,
 		isAddingComponents: false,
+		addSession: 0,
 		incidentForm: emptyIncidentForm("incident"),
 		isCreatingIncident: false,
 		incidentFailure: null,
@@ -249,10 +251,6 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 		outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 	})
 	switch (result.outMessage.value) {
-		case "settings":
-			return navigate(statusPageHref(model.pageId, "settings"))
-		case "json":
-			return navigate(statusPageHref(model.pageId, "json"))
 		case "break-glass":
 			return navigate(`${statusPageHref(model.pageId, "settings")}#status-page-settings-break-glass`)
 		case "delete":
@@ -382,9 +380,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		ClickedAddComponent: () => openAdd(model),
 		GotAddPickerMessage: ({ message: child }) => addPickerStep(model, child),
-		CompletedCreateMonitor: ({ result }) => addMonitorCreated(model, result),
+		CompletedCreateMonitor: ({ session, result }) => addMonitorCreated(model, session, result),
 		ClickedSubmitAdd: () => submitAdd(model),
-		CompletedAddComponents: ({ result }) => addedComponents(model, result, context),
+		CompletedAddComponents: ({ session, result }) => addedComponents(model, session, result, context),
 		// Incidents
 		ClickedNewIncident: ({ kind }) => openComposer(model, kind),
 		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
@@ -416,7 +414,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// Settings
 		ChangedSetting: ({ field, value }) => changeSetting(model, field, value),
 		ToggledPoweredBy: () => togglePoweredBy(model),
-		PickedThemePreset: ({ preset }) => changeTheme(model, { preset }),
+		PickedThemePreset: ({ preset }) =>
+			changeTheme(model, { preset, ...STATUS_PAGE_PRESET_DEFAULTS[preset] }),
 		PickedThemeAppearance: ({ appearance }) => changeTheme(model, { appearance }),
 		ChangedThemeColor: ({ field, value }) => changeTheme(model, { [field]: value }),
 		PickedThemeRadius: ({ radius }) => changeTheme(model, { radius }),

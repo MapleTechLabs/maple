@@ -57,7 +57,8 @@ const DESCRIPTION = {
 	findings: CODE_AUDITS,
 	runs: CODE_AUDITS,
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
-	runtimes: "The language runtime each service reports, checked against its published end-of-life dates.",
+	runtimes:
+		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",
 } satisfies Record<SecurityTab, string>
 
 /** The title block: the page `<h1>` and its one line of context, like every other page header. */
