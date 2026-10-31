@@ -308,11 +308,22 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        Most of these failures give you warning. A drive that is 97% full today was 94% full last week, and a service that crashed at 3 a.m. wrote an event when it did. Monitoring turns those early signs into an alert while there is still time to act.
+                        Most of these failures give you warning. A drive that is 97% full today was 94% full last week, and a service that crashed at 3 a.m. wrote an event when it did. Without monitoring, the first sign is a user who can't reach the app. With it, those early signs become an alert while there is still time to act.
                     </p>
                     <p>
                         The goal of this guide: know what to watch, pick a tool that fits how many servers you run, and have alerts on the things that break.
                     </p>
+
+                    <div class="guide-callout guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Watch services, disk space, CPU, memory, Event Log errors and failed logins first.</li>
+                            <li>Alert when a drive passes 85% full, and again at 95%.</li>
+                            <li>Performance Monitor and Event Viewer cover one server, but keep no history across servers and send no alerts.</li>
+                            <li>The OpenTelemetry Collector, installed as a Windows service, collects counters, service status and the Event Log in one place.</li>
+                            <li>A switched-off server sends nothing, so page on it with an HTTP check from another machine.</li>
+                        </ul>
+                    </div>
                 </section>
 
                 <section id="signals" class="scroll-mt-24">
@@ -599,6 +610,10 @@ const articleJsonLd = {
     .win-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .win-guide .guide-callout .guide-kicker { color: var(--warning); }
     .win-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .win-guide .guide-takeaways { border-left-color: var(--primary); background: color-mix(in oklab, var(--primary) 6%, var(--bg-deep)); }
+    .win-guide .guide-takeaways .guide-kicker { color: var(--primary); }
+    .win-guide .guide-takeaways ul { margin: 0.7rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 14px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .win-guide .guide-takeaways li + li { margin-top: 0.35rem; }
     .win-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
     .win-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
     .win-guide .guide-steps li > div { min-width: 0; }
