@@ -36,12 +36,25 @@ export class ChdbClosedError extends Schema.TaggedError<ChdbClosedError>()("@map
 	message: Schema.String,
 }) {}
 
+let configuredLibchdb: string | undefined
+
+/**
+ * Load libchdb from exactly `path` (a host that provisioned it, e.g. the
+ * @maple-dev/alchemy sidecar). Must run before the first connection: chDB is
+ * loaded once per process.
+ */
+export const configureLibchdb = (path: string): void => {
+	configuredLibchdb = path
+}
+
 /** Locate `libchdb` at runtime, in priority order:
+ *  0. the path a host passed to {@link configureLibchdb}
  *  1. `MAPLE_LIBCHDB` env (explicit override)
  *  2. sibling of the executable (the shipped 2-file bundle: `maple` + `libchdb`)
  *  3. `~/.maple/bin/libchdb.{so,dylib}` (dev / installed location)
  */
 function resolveLibchdb(): string {
+	if (configuredLibchdb !== undefined) return configuredLibchdb
 	const candidates: string[] = []
 	const override = process.env.MAPLE_LIBCHDB
 	if (override) candidates.push(override)
@@ -60,6 +73,21 @@ function resolveLibchdb(): string {
 		)
 	}
 	return found
+}
+
+/**
+ * The release tag (`v26.7.3`) of the libchdb this process would load, read from
+ * the library itself via `chdb_version`. Loads only that symbol and opens no
+ * connection, so it is safe before any store is touched. Throws when the
+ * library is missing or predates `chdb_version`.
+ */
+export const loadedLibchdbRelease = (): string => {
+	const lib = dlopen(resolveLibchdb(), { chdb_version: { args: [], returns: FFIType.ptr } })
+	const version = lib.symbols.chdb_version()
+	const release = version === null ? undefined : new CString(version).toString()
+	lib.close()
+	if (release === undefined) throw new Error("libchdb reported no version")
+	return `v${release}`
 }
 
 type ChdbSymbols = ReturnType<typeof openLib>["symbols"]

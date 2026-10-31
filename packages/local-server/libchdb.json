@@ -1,0 +1,9 @@
+{
+	"version": "v26.7.3",
+	"sha256": {
+		"linux-x86_64-libchdb.tar.gz": "bc33260c32acf78eade2ac41a9115f38e00404651fa42e3bb4c419e4f011c031",
+		"linux-aarch64-libchdb.tar.gz": "d153adad1ff39b2e3caf0417f09d8bd9edd41939c7c67a3c4978a61e73fb9227",
+		"macos-x86_64-libchdb.tar.gz": "af5ded3ed3e84c31af1cd198dcf459f11d2b6aad4f6ddeccc04b8a519b0300fc",
+		"macos-arm64-libchdb.tar.gz": "5640e50dccf711bf3dd5551333d08e43f433edf7bd94b2289f36c2539e627762"
+	}
+}

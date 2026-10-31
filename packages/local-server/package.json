@@ -4,14 +4,16 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		".": "./src/runtime.ts",
 		"./schema/*": "./src/schema/*",
 		"./*": "./src/*.ts"
 	},
 	"scripts": {
-		"test": "bun test --max-concurrency=1 src/otlp/encode.test.ts",
+		"test": "bun test --max-concurrency=1 src/otlp/encode.test.ts test/*.test.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@effect/platform-bun": "catalog:effect",
 		"@maple/domain": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
 		"@maple/ingest-rules": "workspace:*",

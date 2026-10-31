@@ -786,6 +786,7 @@
       "name": "@maple/local-server",
       "version": "0.0.0",
       "dependencies": {
+        "@effect/platform-bun": "catalog:effect",
         "@maple/domain": "workspace:*",
         "@maple/eventing-core": "workspace:*",
         "@maple/ingest-rules": "workspace:*",

@@ -164,8 +164,8 @@ or remove the old PATH symlink so your shell resolves Homebrew's `maple`.
 There is a single binary, `maple`, compiled from **`apps/cli`** (package
 `@maple/cli`, Effect + Bun) with `bun build --compile`. It is both the CLI and
 the server; the server, store and archive code lives in the private workspace
-package **`packages/local-server`** (`@maple/local-server`), which the CLI
-builds on. It talks to the embedded
+package **`packages/local-server`** (`@maple/local-server`), which the CLI and
+the `@maple-dev/alchemy` local sidecar both build on. It talks to the embedded
 ClickHouse engine **directly via `bun:ffi`**, with no subprocess and no second
 language in front:
 
@@ -758,8 +758,8 @@ The build:
    `bun build --compile` bakes it into the binary as the `--offline` fallback
    (the default UI is served from `local.maple.dev`);
 4. compiles `apps/cli`;
-5. downloads the pinned `libchdb` (`LIBCHDB_VERSION`, checksum-verified) beside
-   the binary;
+5. downloads the pinned `libchdb` (`LIBCHDB_VERSION`, defaulting to the release in
+   `packages/local-server/libchdb.json`; sha256-verified against the same manifest) beside the binary;
 6. restores the committed `ui-embed.gen.ts` stub.
 
 At runtime `maple` `dlopen`s the sibling `libchdb`, resolved relative to its own
