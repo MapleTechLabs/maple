@@ -71,7 +71,7 @@ const nameField = (h: H, model: Model): Html =>
 						[
 							h.AriaHidden(true),
 							h.Class(
-								"flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary font-display text-xl font-semibold text-primary-foreground",
+								"flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong font-display text-xl font-semibold text-foreground",
 							),
 						],
 						[initialOf(model.name)],
@@ -80,7 +80,7 @@ const nameField = (h: H, model: Model): Html =>
 						id: "org-required-name",
 						size: "lg",
 						className: "flex-1",
-						controlClassName: "h-12 text-base",
+						controlClassName: "h-12 leading-12 text-base sm:h-12 sm:leading-12 sm:text-base",
 						isDisabled: model.isCreating || model.createdOrgId !== null,
 						attributes: [
 							h.Maxlength(100),
@@ -213,7 +213,7 @@ const membershipRow = (h: H, model: Model, organization: ClerkOrganization): Htm
 const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>): Html =>
 	h.form(
 		[
-			h.Class("flex flex-col gap-9"),
+			h.Class("flex flex-col gap-8"),
 			h.AriaLabel("Create your organization"),
 			h.OnSubmit(Message.SubmittedCreate()),
 		],
@@ -221,12 +221,11 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 			nameField(h, model),
 			...(hasMultipleRegions ? [regionField(h, model)] : []),
 			h.div(
-				[h.Class("flex flex-col gap-4")],
+				[h.Class("flex flex-col gap-3")],
 				[
-					h.p(
-						[h.AriaLive("polite"), h.Class(cn("min-h-4 text-xs", TONE_TEXT.crit))],
-						model.errorMessage === null ? [] : [model.errorMessage],
-					),
+					...(model.errorMessage === null
+						? []
+						: [h.p([h.Class(cn("text-xs", TONE_TEXT.crit))], [model.errorMessage])]),
 					button(
 						h,
 						{
@@ -273,14 +272,10 @@ const workspacePreview = (h: H, model: Model): Html =>
 	h.div(
 		[h.AriaHidden(true), h.Class("relative flex w-full max-w-[640px] flex-col items-center gap-5")],
 		[
-			h.span([h.Class("text-sm font-medium text-foreground")], ["A peek at your new workspace"]),
+			h.span([h.Class("text-xs text-muted-foreground")], ["A peek at your new workspace"]),
 			h.div(
 				[h.Class("w-full overflow-hidden rounded-md border border-border bg-background")],
 				[
-					h.div(
-						[h.Class("flex h-9 items-center gap-1.5 border-b border-border bg-sidebar px-3.5")],
-						[0, 1, 2].map(() => h.span([h.Class("size-2.5 rounded-full bg-input")], [])),
-					),
 					h.div(
 						[h.Class("flex h-[420px]")],
 						[
@@ -294,14 +289,14 @@ const workspacePreview = (h: H, model: Model): Html =>
 									h.div(
 										[
 											h.Class(
-												"flex items-center gap-2 rounded-md border border-primary bg-sidebar-accent p-1.5",
+												"flex items-center gap-2 rounded-md border border-border bg-sidebar-accent p-1.5",
 											),
 										],
 										[
 											h.span(
 												[
 													h.Class(
-														"flex size-6 shrink-0 items-center justify-center rounded-sm bg-primary text-xs font-semibold text-primary-foreground",
+														"flex size-6 shrink-0 items-center justify-center rounded-sm border border-border bg-surface-strong text-xs font-semibold text-foreground",
 													),
 												],
 												[initialOf(model.name)],
@@ -350,7 +345,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 										],
 										[
 											h.span(
-												[h.Class("text-primary")],
+												[h.Class("text-muted-foreground")],
 												[icon(h, "FrameworkOpenTelemetryIcon", { size: 28 })],
 											),
 											h.span(
@@ -383,30 +378,33 @@ export const view = (
 		[h.Class("flex h-dvh overflow-hidden bg-background text-foreground")],
 		[
 			h.div(
-				[h.Class("flex h-dvh w-full shrink-0 flex-col lg:w-[640px]")],
+				[h.Class("flex h-dvh w-full shrink-0 flex-col lg:w-[760px]")],
 				[
-					h.div([h.Class("shrink-0 px-6 pt-8 sm:px-12 lg:px-20 lg:pt-12")], [header(h, email)]),
+					h.div([h.Class("shrink-0 px-6 py-5 sm:px-12 lg:px-16")], [header(h, email)]),
 					h.div(
 						[
 							h.Class(
-								"min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-10 sm:px-12 lg:px-20",
+								"min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-10 sm:px-12 lg:px-16",
 							),
 						],
 						[
 							h.div(
-								[h.Class("flex flex-col gap-10 pt-12")],
+								[h.Class("flex max-w-lg flex-col gap-10 pt-4")],
 								[
 									h.div(
 										[h.Class("flex flex-col gap-3")],
 										[
-											h.p([h.Class("text-sm text-primary")], ["Welcome to Maple"]),
+											h.p(
+												[h.Class("text-sm text-muted-foreground")],
+												["Welcome to Maple"],
+											),
 											h.h1(
 												[
 													h.Class(
-														"font-display text-4xl font-semibold leading-[1.1] tracking-tight",
+														"font-display text-3xl font-semibold leading-tight tracking-tight",
 													),
 												],
-												["Let's give your team a home."],
+												["Give your team a home"],
 											),
 											h.p(
 												[
@@ -415,7 +413,7 @@ export const view = (
 													),
 												],
 												[
-													"Your traces, logs, dashboards and alerts all live in one organization. It takes ten seconds.",
+													"Your traces, logs, dashboards and alerts live in one organization.",
 												],
 											),
 										],

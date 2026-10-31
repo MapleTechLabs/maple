@@ -55,9 +55,7 @@ const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 			h.div(
 				[h.Class("text-muted-foreground flex items-center gap-2.5")],
 				[
-					...(iconName === undefined
-						? []
-						: [icon(h, iconName, { className: "size-4" })]),
+					...(iconName === undefined ? [] : [icon(h, iconName, { className: "size-4" })]),
 					h.span([h.Class("font-medium")], [feature.label]),
 				],
 			),
@@ -214,7 +212,7 @@ const enterpriseCard = (h: H): Html =>
 			cardHeader(h, [
 				h.div(
 					[h.Class("flex items-center justify-between gap-2")],
-					[cardTitle(h, ["Enterprise"], eyebrowVariants({ className: "text-primary" }))],
+					[cardTitle(h, ["Enterprise"], eyebrowVariants())],
 				),
 				h.div(
 					[h.Class("mt-3 flex items-baseline gap-1")],
@@ -256,7 +254,7 @@ const enterpriseCard = (h: H): Html =>
 				"mt-auto flex-col gap-2 items-stretch",
 			),
 		],
-		"flex flex-col border-primary-a3 bg-primary/[0.02]",
+		"flex flex-col",
 	)
 
 /** `PricingCards`: skeletons while the catalog loads, its error row, or the plan grid. */

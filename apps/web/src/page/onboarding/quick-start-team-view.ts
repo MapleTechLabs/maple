@@ -66,7 +66,7 @@ const TOOLS: ReadonlyArray<Tool> = [
 
 const toolRow = (h: H, tool: Tool): Html =>
 	h.li(
-		[h.Class("flex items-center gap-3.5 px-4 py-4")],
+		[h.Class("flex flex-wrap items-center gap-x-3.5 gap-y-3 px-4 py-4")],
 		[
 			h.span(
 				[
@@ -78,7 +78,7 @@ const toolRow = (h: H, tool: Tool): Html =>
 				[icon(h, tool.icon, { size: 20 })],
 			),
 			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+				[h.Class("flex min-w-0 flex-1 basis-48 flex-col gap-1")],
 				[
 					h.span([h.Class("text-sm font-medium")], [tool.name]),
 					h.span([h.Class("text-xs leading-snug text-muted-foreground")], [tool.line]),
@@ -90,6 +90,7 @@ const toolRow = (h: H, tool: Tool): Html =>
 					href: tool.href,
 					variant: "outline",
 					size: "sm",
+					className: "max-sm:ml-[3.375rem]",
 					attributes: [
 						h.Target("_blank"),
 						h.Rel("noopener"),
@@ -120,14 +121,20 @@ export const teamStep = (h: H, team: Team): Html => {
 					),
 				],
 			),
-			h.ul(
+			// Wrapped, so the column's side padding lands outside the list's border, not inside it.
+			h.div(
+				[],
 				[
-					h.AriaLabel("Tools"),
-					h.Class(
-						"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+					h.ul(
+						[
+							h.AriaLabel("Tools"),
+							h.Class(
+								"flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card",
+							),
+						],
+						TOOLS.map((tool) => toolRow(h, tool)),
 					),
 				],
-				TOOLS.map((tool) => toolRow(h, tool)),
 			),
 			team.isLoaded
 				? h.div(
@@ -270,27 +277,22 @@ const pricingSkeleton = (h: H): Html =>
 /** `StepPlan` / `StepPlanLayout`: the trial pitch over the pricing cards; it is the first step, so no Back. */
 export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html =>
 	h.div(
-		[h.Class("flex-1 flex flex-col items-center px-6 py-12 overflow-auto")],
+		[h.Class("flex flex-1 flex-col items-center px-6 pb-12 pt-4 sm:px-12 lg:px-16")],
 		[
 			h.div(
 				[h.Class("w-full max-w-5xl")],
 				[
 					h.div(
-						[h.Class("text-center mb-10")],
+						[h.Class("mb-10 flex flex-col items-center gap-2.5 text-center")],
 						[
-							eyebrow(h, { variant: "label", className: "text-primary" }, ["Pick a plan"]),
-							h.h2(
-								[h.Class("font-display text-3xl font-semibold tracking-tight mt-2")],
-								["Pick a plan to keep going"],
+							h.h1(
+								[h.Class("font-display text-3xl font-semibold tracking-tight")],
+								[`Start your ${TRIAL_DURATION_DAYS}-day free trial`],
 							),
 							h.p(
-								[h.Class("font-display text-muted-foreground text-sm mt-3 max-w-lg mx-auto")],
+								[h.Class("max-w-lg text-title leading-relaxed text-muted-foreground")],
 								[
-									"Start a ",
-									String(TRIAL_DURATION_DAYS),
-									"-day free trial: we'll save your card now and won't charge until day ",
-									String(TRIAL_DURATION_DAYS),
-									". Cancel anytime from settings.",
+									`Pick a plan to keep going. Your card is saved now and charged on day ${TRIAL_DURATION_DAYS}; cancel anytime from settings.`,
 								],
 							),
 						],
@@ -303,20 +305,16 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 
 const inviteForm = (h: H, team: Team, isBusy: boolean): Html =>
 	h.form(
-		[h.Class("space-y-3 border-t pt-6"), h.OnSubmit(toTeam(TeamMessage.SubmittedInvite()))],
+		[h.Class("space-y-3"), h.OnSubmit(toTeam(TeamMessage.SubmittedInvite()))],
 		[
-			label(h, { attributes: [h.For("onboarding-teammate-email")] }, [
-				"Invite a teammate",
-				" ",
-				h.span([h.Class("font-normal text-muted-foreground")], ["(optional)"]),
-			]),
+			label(h, { attributes: [h.For("onboarding-teammate-email")] }, ["Invite a teammate"]),
 			h.div(
 				[h.Class("flex flex-wrap gap-2")],
 				[
 					input(h, {
 						id: "onboarding-teammate-email",
 						type: "email",
-						className: "min-w-40 flex-1",
+						className: "min-w-56 flex-1",
 						isDisabled: !team.canManage || isBusy,
 						attributes: [
 							h.Autocomplete("email"),
@@ -348,7 +346,7 @@ const inviteForm = (h: H, team: Team, isBusy: boolean): Html =>
 				[
 					isAlreadyInvited(team)
 						? "This teammate already has a pending invitation."
-						: "They’ll receive an email invitation to join this workspace as a member.",
+						: "They get an email invitation to join as a member.",
 				],
 			),
 		],
