@@ -9,6 +9,7 @@ export const PackageEcosystem = Schema.Literals(PACKAGE_ECOSYSTEMS)
 export type PackageEcosystem = typeof PackageEcosystem.Type
 
 export const AdvisorySeverity = Schema.Literals(ADVISORY_SEVERITIES)
+export type AdvisorySeverity = typeof AdvisorySeverity.Type
 
 export const PackageAdvisory = Schema.Struct({
 	/** Stable across scans: the GitHub advisory id when OSV has one, else the first OSV id. */
