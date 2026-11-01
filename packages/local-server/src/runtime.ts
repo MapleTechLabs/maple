@@ -361,7 +361,10 @@ const share = (
 				Effect.logError(`cannot take over Maple Local at ${dataDir}: ${error.message}; retrying`),
 			),
 			Effect.retry(
-				Schedule.min([Schedule.exponential(Duration.seconds(1)), Schedule.spaced(Duration.seconds(30))]),
+				Schedule.min([
+					Schedule.exponential(Duration.seconds(1)),
+					Schedule.spaced(Duration.seconds(30)),
+				]),
 			),
 			Effect.forkIn(parent),
 		)
