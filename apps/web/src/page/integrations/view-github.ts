@@ -138,7 +138,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 				variant: "outline",
 				className: "w-fit",
 				isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
-				attributes: [h.OnClick(Message.ClickedInstallGithubElsewhere())],
+				attributes: [h.OnClick(Message.ClickedOpenGithubInstallPage())],
 			},
 			[icon(h, "GithubIcon"), "Install on another GitHub account"],
 		),

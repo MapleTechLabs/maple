@@ -81,7 +81,13 @@ const showsUpRail = (h: H): Html =>
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
 	})
 
-const installButton = (h: H, model: Model, label: string, variant?: "outline"): Html =>
+const installButton = (
+	h: H,
+	model: Model,
+	label: string,
+	variant?: "outline",
+	onClick: Message = Message.ClickedConnect(),
+): Html =>
 	button(
 		h,
 		{
@@ -90,7 +96,7 @@ const installButton = (h: H, model: Model, label: string, variant?: "outline"): 
 			className: "w-fit",
 			isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
 			isLoading: model.connect.isStarting,
-			attributes: [h.OnClick(Message.ClickedConnect())],
+			attributes: [h.OnClick(onClick)],
 		},
 		variant === undefined ? [icon(h, "GithubIcon"), label] : [label],
 	)
@@ -133,7 +139,13 @@ const installation = (h: H, model: Model, status: GithubIntegrationStatus): Html
 							),
 						],
 					),
-					installButton(h, model, "Change repos on GitHub", "outline"),
+					installButton(
+						h,
+						model,
+						"Change repos on GitHub",
+						"outline",
+						Message.ClickedOpenGithubInstallPage(),
+					),
 				],
 			),
 			...(repos.length === 0

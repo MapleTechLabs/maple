@@ -158,7 +158,7 @@ describe("github connect flow", () => {
 	test("Connect authorizes first; only the account picker opens the install page", () => {
 		const entered = inner(disconnected(), IntegrationMessage.ClickedConnect())
 		expect(entered.integrations.connect.active).toEqual({ provider: "github", attempt: 1 })
-		const elsewhere = inner(discovered().model, IntegrationMessage.ClickedInstallGithubElsewhere())
+		const elsewhere = inner(discovered().model, IntegrationMessage.ClickedOpenGithubInstallPage())
 		expect(elsewhere.integrations.connect.active).toEqual({
 			provider: "github",
 			attempt: 1,
