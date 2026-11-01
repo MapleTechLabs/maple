@@ -96,7 +96,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 						setupDocs: "github",
 						guideDocs: "github",
 						detail: h.p(
-							[h.Class("text-xs text-muted-foreground")],
+							[h.Class("font-prose text-xs text-muted-foreground")],
 							["Release tracking needs spans to carry the ", inlineCode(h, {}, ["vcs.ref.head.revision"]), " resource attribute."],
 						),
 					}),
