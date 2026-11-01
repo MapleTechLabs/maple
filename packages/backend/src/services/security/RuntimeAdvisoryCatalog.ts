@@ -1,12 +1,16 @@
 import { EdgeCacheService } from "@maple/cache"
 import { RuntimeAdvisoryRow } from "@maple/domain/http"
 import {
+	ADVISORY_SOURCES,
 	type AdvisoryTarget,
 	advisoryKey,
 	fixedVersionFor,
+	inAdvisoryRange,
+	isPatched,
 	lowestVersion,
 	OSV_RUNTIME_ECOSYSTEM,
-	OSV_RUNTIME_PACKAGES,
+	patchedVersionFor,
+	rangeEndFor,
 	type RuntimeAdvisory,
 	severityOf,
 	sortAdvisories,
@@ -14,8 +18,9 @@ import {
 import { Context, Effect, Layer, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
-// Known vulnerabilities per runtime version for the Security Center's Runtimes tab, read from
-// OSV.dev. One read per runtime version a day; a version whose read fails is left out.
+// Known vulnerabilities per runtime version for the Security Center's Runtimes tab. OSV.dev is read
+// once per runtime version a day; a GitHub repository's advisory list once per repository a day,
+// matched against each version here. A version whose read fails is left out.
 
 const CACHE_BUCKET = "runtime-advisories"
 const CACHE_TTL_SECONDS = 24 * 60 * 60
@@ -65,17 +70,127 @@ type OsvVuln = NonNullable<typeof OsvQueryResponse.Type.vulns>[number]
 /** `null` records a failed read. */
 const CachedAdvisories = Schema.NullOr(Schema.Array(RuntimeAdvisoryRow))
 
+const GithubAdvisoriesResponse = Schema.Array(
+	Schema.Struct({
+		ghsa_id: Schema.String,
+		cve_id: Schema.NullOr(Schema.String),
+		html_url: Schema.String,
+		summary: Schema.NullOr(Schema.String),
+		severity: Schema.NullOr(Schema.String),
+		published_at: Schema.NullOr(Schema.String),
+		withdrawn_at: Schema.NullOr(Schema.String),
+		vulnerabilities: Schema.NullOr(
+			Schema.Array(
+				Schema.Struct({
+					package: Schema.NullOr(Schema.Struct({ name: Schema.NullOr(Schema.String) })),
+					vulnerable_version_range: Schema.NullOr(Schema.String),
+					patched_versions: Schema.NullOr(Schema.String),
+				}),
+			),
+		),
+	}),
+)
+
+/** A repository advisory reduced to what matching a version needs. */
+const GithubAdvisory = Schema.Struct({
+	id: Schema.String,
+	url: Schema.String,
+	summary: Schema.NullOr(Schema.String),
+	severity: RuntimeAdvisoryRow.fields.severity,
+	published: Schema.NullOr(Schema.String),
+	ranges: Schema.Array(Schema.Struct({ vulnerable: Schema.String, patched: Schema.NullOr(Schema.String) })),
+})
+type GithubAdvisory = typeof GithubAdvisory.Type
+
+const CachedGithubAdvisories = Schema.NullOr(Schema.Array(GithubAdvisory))
+
+/**
+ * Whether an advisory entry is versioned like the runtime: unnamed, the runtime or repo, or a built-in
+ * module (`node:crypto`). Deno's crates (`deno_fetch`, `serde_v8`) carry their own versions.
+ */
+const isRuntimePackage = (
+	name: string | null | undefined,
+	product: AdvisoryTarget["product"],
+	repo: string,
+) => {
+	const normalized = (name ?? "").trim().toLowerCase()
+	return (
+		normalized === "" ||
+		normalized === product ||
+		normalized === repo.toLowerCase() ||
+		normalized.includes(":")
+	)
+}
+
+const toGithubAdvisory = (
+	advisory: (typeof GithubAdvisoriesResponse.Type)[number],
+	product: AdvisoryTarget["product"],
+	repo: string,
+): GithubAdvisory => ({
+	id: advisory.cve_id ?? advisory.ghsa_id,
+	url: advisory.html_url,
+	summary: advisory.summary,
+	severity: severityOf(advisory.severity),
+	published: advisory.published_at,
+	ranges: (advisory.vulnerabilities ?? []).flatMap((vulnerability) =>
+		vulnerability.vulnerable_version_range === null ||
+		!isRuntimePackage(vulnerability.package?.name, product, repo)
+			? []
+			: [
+					{
+						vulnerable: vulnerability.vulnerable_version_range,
+						patched: vulnerability.patched_versions,
+					},
+				],
+	),
+})
+
+/** The advisories whose ranges hold `version`, each with the lowest patched version above it. */
+const githubAdvisoriesFor = (
+	advisories: ReadonlyArray<GithubAdvisory>,
+	version: string,
+): ReadonlyArray<RuntimeAdvisory> =>
+	sortAdvisories(
+		advisories.flatMap((advisory) => {
+			const hits = advisory.ranges.filter(
+				(range) => inAdvisoryRange(range.vulnerable, version) && !isPatched(range.patched, version),
+			)
+			if (hits.length === 0) return []
+			const fixes = hits.flatMap((range) => {
+				const fixed =
+					patchedVersionFor(range.patched, version) ?? rangeEndFor(range.vulnerable, version)
+				return fixed === null ? [] : [fixed]
+			})
+			return [
+				{
+					id: advisory.id,
+					url: advisory.url,
+					summary: truncate(advisory.summary),
+					severity: advisory.severity,
+					fixedIn: lowestVersion(fixes),
+					published: advisory.published,
+				},
+			]
+		}),
+	)
+
 export class RuntimeAdvisoryCatalogError extends Schema.TaggedError<RuntimeAdvisoryCatalogError>()(
 	"@maple/security/RuntimeAdvisoryCatalogError",
 	{ message: Schema.String, key: Schema.String, cause: Schema.Defect() },
 ) {}
 
-/** Many advisories carry no summary, only details: their first sentence stands in, capped. */
-const summaryOf = (vuln: OsvVuln): string | null => {
-	const text = (vuln.summary ?? vuln.details?.split(/(?<=\.)\s/)[0] ?? "").trim()
+/** Advisories per page; a repository past this many only has its newest read. */
+const GITHUB_PAGE_SIZE = 100
+
+const truncate = (raw: string | null | undefined): string | null => {
+	const text = (raw ?? "").trim()
 	if (text === "") return null
 	return text.length > SUMMARY_MAX_LENGTH ? `${text.slice(0, SUMMARY_MAX_LENGTH - 1).trimEnd()}…` : text
 }
+
+/** Many advisories carry no summary, only details: their first sentence stands in, capped. */
+const summaryOf = (vuln: OsvVuln): string | null =>
+	truncate(vuln.summary ?? vuln.details?.split(/(?<=\.)\s/)[0])
 
 const toAdvisory = (vuln: OsvVuln, version: string): RuntimeAdvisory => {
 	const fixes = (vuln.affected ?? [])
@@ -86,7 +201,7 @@ const toAdvisory = (vuln: OsvVuln, version: string): RuntimeAdvisory => {
 		})
 	return {
 		id: vuln.aliases?.find((alias) => alias.startsWith("CVE-")) ?? vuln.id,
-		osvId: vuln.id,
+		url: `https://osv.dev/vulnerability/${encodeURIComponent(vuln.id)}`,
 		summary: summaryOf(vuln),
 		severity: severityOf(vuln.database_specific?.severity),
 		fixedIn: lowestVersion(fixes),
@@ -119,6 +234,58 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 	make: Effect.gen(function* () {
 		const edgeCache = yield* EdgeCacheService
 		const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
+
+		const fetchGithubAdvisories = (product: AdvisoryTarget["product"], repo: string) =>
+			HttpClientRequest.get(`https://api.github.com/repos/${repo}/security-advisories`).pipe(
+				HttpClientRequest.setUrlParams({ per_page: String(GITHUB_PAGE_SIZE), state: "published" }),
+				HttpClientRequest.setHeaders({
+					accept: "application/vnd.github+json",
+					"user-agent": "maple-security-center",
+					"x-github-api-version": "2022-11-28",
+				}),
+				httpClient.execute,
+				Effect.flatMap(HttpClientResponse.schemaBodyJson(GithubAdvisoriesResponse)),
+				Effect.timeout(REQUEST_TIMEOUT),
+				Effect.map((advisories) =>
+					advisories
+						.filter((advisory) => advisory.withdrawn_at === null)
+						.map((advisory) => toGithubAdvisory(advisory, product, repo)),
+				),
+				Effect.mapError(
+					(cause) =>
+						new RuntimeAdvisoryCatalogError({
+							message: `GitHub advisory read failed for ${repo}`,
+							key: repo,
+							cause,
+						}),
+				),
+				Effect.withSpan("github.security_advisories", {
+					kind: "client",
+					attributes: {
+						"peer.service": "api.github.com",
+						"maple.runtime.product": product,
+						"maple.advisory.repo": repo,
+					},
+				}),
+			)
+
+		/** A repository's advisory list, null when the read failed. Shared by every version of the runtime. */
+		const githubListFor = (product: AdvisoryTarget["product"], repo: string) =>
+			edgeCache
+				.getOrCompute(
+					{
+						bucket: CACHE_BUCKET,
+						key: `github:${repo}`,
+						ttlSeconds: (value) => (value === null ? FAILURE_TTL_SECONDS : CACHE_TTL_SECONDS),
+						schema: CachedGithubAdvisories,
+						readTimeoutMs: CACHE_READ_TIMEOUT_MS,
+					},
+					fetchGithubAdvisories(product, repo).pipe(
+						Effect.tapError((error) => Effect.logWarning("runtime advisory read failed", error)),
+						Effect.orElseSucceed(() => null),
+					),
+				)
+				.pipe(Effect.map((result) => result.value))
 
 		const fetchAdvisories = (target: AdvisoryTarget, name: string) =>
 			HttpClientRequest.post("https://api.osv.dev/v1/query").pipe(
@@ -158,10 +325,24 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 			  }
 			| { readonly _tag: "skipped"; readonly key: string }
 
-		const advisoriesFor = (target: AdvisoryTarget, budget: Ref.Ref<number>): Effect.Effect<Read> => {
+		const advisoriesFor = (
+			target: AdvisoryTarget,
+			budget: Ref.Ref<number>,
+			githubLists: ReadonlyMap<string, Effect.Effect<ReadonlyArray<GithubAdvisory> | null>>,
+		): Effect.Effect<Read> => {
 			const key = advisoryKey(target)
-			const name = OSV_RUNTIME_PACKAGES.get(target.product)
-			if (name === undefined) return Effect.succeed({ _tag: "read", key, value: null })
+			const source = ADVISORY_SOURCES[target.product]
+			if (source._tag === "github") {
+				const list = githubLists.get(source.repo) ?? githubListFor(target.product, source.repo)
+				return list.pipe(
+					Effect.map((advisories): Read => ({
+						_tag: "read",
+						key,
+						value: advisories === null ? null : githubAdvisoriesFor(advisories, target.version),
+					})),
+				)
+			}
+			const name = source.package
 			const spend = Ref.modify(budget, (left) => [left > 0, left - 1] as const).pipe(
 				Effect.flatMap((allowed) =>
 					allowed
@@ -206,10 +387,30 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 			targets: ReadonlyArray<AdvisoryTarget>,
 		) {
 			const distinct = [...new Map(targets.map((target) => [advisoryKey(target), target])).values()]
+			const consulted = distinct.slice(0, MAX_VERSIONS)
 			const budget = yield* Ref.make(MAX_READS)
+			// One read per repository however many of its runtime's versions are asked for.
+			const githubLists = new Map(
+				yield* Effect.forEach(
+					[
+						...new Map(
+							consulted.flatMap((target) => {
+								const source = ADVISORY_SOURCES[target.product]
+								return source._tag === "github"
+									? [[source.repo, target.product] as const]
+									: []
+							}),
+						),
+					],
+					([repo, product]) =>
+						Effect.cached(githubListFor(product, repo)).pipe(
+							Effect.map((list) => [repo, list] as const),
+						),
+				),
+			)
 			const reads = yield* Effect.forEach(
-				distinct.slice(0, MAX_VERSIONS),
-				(target) => advisoriesFor(target, budget),
+				consulted,
+				(target) => advisoriesFor(target, budget, githubLists),
 				{ concurrency: CONCURRENCY },
 			)
 			return {

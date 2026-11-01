@@ -31,6 +31,7 @@ import type { Resources } from "../../../platform/resources"
 import * as Dialog from "../../../ui/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
+import { connectReturns } from "../../integrations/connect-returns"
 import * as ChatFields from "./chat-fields"
 import * as EmailFields from "./email-fields"
 import * as LinearFields from "./linear-fields"
@@ -464,6 +465,20 @@ export const chatConnectStream = (dependencies: ChatConnectStream.Dependencies) 
 	Stream.map(ChatConnectStream.streamOf(dependencies), (message) =>
 		Message.GotChatConnectMessage({ message }),
 	)
+
+/** The Linear fields on screen: their connect popup's return re-reads the connection. */
+export const ConnectReturnDependencies = { isListening: Schema.Boolean }
+
+export const connectReturnDependencies = (model: Model) => ({
+	isListening: model.dialog.isOpen && model.form.type === "linear",
+})
+
+export const connectReturnStream = ({ isListening }: ReturnType<typeof connectReturnDependencies>) =>
+	isListening
+		? Stream.map(connectReturns("linear"), () =>
+				Message.GotLinearFieldsMessage({ message: LinearFields.Message.ReturnedConnect() }),
+			)
+		: Stream.empty
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
