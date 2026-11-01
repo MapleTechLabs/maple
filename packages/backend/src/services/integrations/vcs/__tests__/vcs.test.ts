@@ -47,7 +47,10 @@ import {
 	VcsProviderRegistry,
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
-import { PullRequestEventSink } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
+import {
+	DependencyScanSink,
+	PullRequestEventSink,
+} from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { clampQueueDelaySeconds } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
@@ -1827,6 +1830,8 @@ describe("VcsSyncService orchestrator", () => {
 		readonly fetchReposError?: VcsRateLimitedError | VcsProviderError | VcsInstallationGoneError
 		readonly branches?: ReadonlyArray<{ name: string; headSha: string | null }>
 		readonly branchesTruncated?: boolean
+		/** Scan requests the dependency scanner hook received; absent leaves the hook out. */
+		readonly scanRequests?: Array<{ repository: string; trigger: string; commitSha: string | undefined }>
 		readonly fetchBranchesError?:
 			| VcsProviderError
 			| VcsInstallationGoneError
@@ -1930,8 +1935,22 @@ describe("VcsSyncService orchestrator", () => {
 								Effect.ignore,
 							),
 					})
+		const scanRequests = opts.scanRequests
+		const scanSink =
+			scanRequests === undefined
+				? Layer.empty
+				: Layer.succeed(DependencyScanSink, {
+						onScanRequested: (_installation, repository, job) =>
+							Effect.sync(() => {
+								scanRequests.push({
+									repository: repository.fullName,
+									trigger: job.trigger,
+									commitSha: job.commitSha,
+								})
+							}),
+					})
 		return Layer.effect(VcsSyncService, VcsSyncService.make).pipe(
-			Layer.provideMerge(Layer.mergeAll(repoLive, registry, queue, sink, workflowSink)),
+			Layer.provideMerge(Layer.mergeAll(repoLive, registry, queue, sink, workflowSink, scanSink)),
 		)
 	}
 
@@ -2612,6 +2631,98 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo })))
 	})
+
+	it.effect("with the scanner bound, a push to the tracked branch enqueues a scan of its head", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_orch"))
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const push = (branch: string) =>
+				svc.processMessage(
+					Schema.encodeSync(VcsSyncJob)({
+						kind: "push",
+						provider: "github",
+						externalInstallationId: "42",
+						externalRepoId: "7",
+						branch,
+						commits: [commit(SHA_A, 1)],
+					}),
+				)
+			yield* push("feature/x")
+			yield* push("main")
+			assert.deepStrictEqual(
+				sent.filter((job) => job.kind === "dependency-scan"),
+				[
+					{
+						kind: "dependency-scan",
+						provider: "github",
+						externalInstallationId: "42",
+						externalRepoId: "7",
+						trigger: "push",
+					},
+				],
+			)
+		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo, scanRequests: [] })))
+	})
+
+	it.effect("without the scanner bound, a push enqueues no scan", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_orch"))
+			yield* upsertReposFor(repo, "42", oneRepo)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "push",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					branch: "main",
+					commits: [commit(SHA_A, 1)],
+				}),
+			)
+			assert.isFalse(sent.some((job) => job.kind === "dependency-scan"))
+		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo })))
+	})
+
+	it.effect(
+		"hands a scan job to the scanner with its repository resolved, and drops one for an unknown repository",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			const scanRequests: Array<{
+				repository: string
+				trigger: string
+				commitSha: string | undefined
+			}> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				yield* seedInstallation(repo, asOrgId("org_orch"))
+				yield* upsertReposFor(repo, "42", oneRepo)
+				const scanJob = (externalRepoId: string) =>
+					svc.processMessage(
+						Schema.encodeSync(VcsSyncJob)({
+							kind: "dependency-scan",
+							provider: "github",
+							externalInstallationId: "42",
+							externalRepoId,
+							trigger: "manual",
+						}),
+					)
+				yield* scanJob("7")
+				yield* scanJob("404")
+				assert.deepStrictEqual(scanRequests, [
+					{ repository: "octo/repo", trigger: "manual", commitSha: undefined },
+				])
+			}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo, scanRequests })))
+		},
+	)
 
 	it.effect("drops a job for an unknown installation without persisting or failing", () => {
 		const testDb = createTestDb(trackedDbs)
