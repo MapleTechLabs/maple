@@ -204,6 +204,20 @@ describe("readBillingProfile", () => {
 		}),
 	)
 
+	it.effect("reads a deleted customer's tombstone as unlinked", () =>
+		Effect.gen(function* () {
+			const profile = yield* readBillingProfile(
+				{
+					getCustomer: () => Effect.succeed(ok({ id: CUS, object: "customer", deleted: true })),
+					listTaxIds: () => Effect.succeed(missing),
+				},
+				CUS,
+			)
+			assert.isFalse(profile.linked)
+			assert.deepStrictEqual(profile.taxIds, [])
+		}),
+	)
+
 	it.effect("collapses any other Stripe rejection on the read into a 502", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(

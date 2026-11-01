@@ -34,6 +34,7 @@ import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import {
 	ensureStripeCustomerId,
+	failIfCustomerMissing,
 	isAlreadyRemoved,
 	readBillingProfile,
 	readStripeCustomerId,
@@ -454,6 +455,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							name: payload.name,
 							address: payload.address,
 						})
+						yield* failIfCustomerMissing(result)
 						// Caller input: Stripe's rejection (a bad country code, say) is about
 						// what THEY sent, so the classified 4xx survives to the client.
 						yield* classifyAutumn(result)
@@ -471,6 +473,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							type: payload.type,
 							value: payload.value,
 						})
+						yield* failIfCustomerMissing(result)
 						// `tax_id_invalid` lands here with Stripe's own wording, which is the
 						// only place the format expectation is spelled out.
 						yield* classifyAutumn(result)

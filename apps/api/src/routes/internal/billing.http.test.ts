@@ -645,6 +645,7 @@ describe("billing writes over HTTP", () => {
 		overrides: {
 			readonly autumn?: object
 			readonly organizations?: object
+			readonly stripe?: object
 			/** The org this one is billed through, when it is a member org. */
 			readonly billedThrough?: OrgId
 		} = {},
@@ -672,7 +673,7 @@ describe("billing writes over HTTP", () => {
 				Layer.succeed(BillingOrgService, { members: () => Effect.succeed([]) } as never),
 			),
 			Layer.provideMerge(Layer.succeed(ProductEventsService, { track: die, trackMany: die })),
-			Layer.provideMerge(Layer.succeed(StripeClient, { request: die })),
+			Layer.provideMerge(Layer.succeed(StripeClient, { request: die, ...overrides.stripe })),
 			Layer.provideMerge(
 				Layer.succeed(OrganizationService, { retrieve: die, ...overrides.organizations } as never),
 			),
@@ -686,10 +687,10 @@ describe("billing writes over HTTP", () => {
 		)
 		const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 
-		const post = async (path: string, body: unknown) => {
+		const send = (method: string) => async (path: string, body: unknown) => {
 			const response = await handler(
 				new Request(`http://maple.test${path}`, {
-					method: "POST",
+					method,
 					headers: { authorization: "Bearer test-token", "content-type": "application/json" },
 					body: JSON.stringify(body),
 				}),
@@ -699,7 +700,7 @@ describe("billing writes over HTTP", () => {
 			return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 		}
 
-		return { post, dispose }
+		return { post: send("POST"), put: send("PUT"), dispose }
 	}
 
 	it("refuses attach from a non-admin member", async () => {
@@ -708,6 +709,27 @@ describe("billing writes over HTTP", () => {
 			const response = await harness.post("/internal/billing/attach", { planId: "startup" })
 			assert.strictEqual(response.status, 403)
 			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingForbiddenError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers a details save against a customer Stripe no longer has as unavailable", async () => {
+		const missing = {
+			statusCode: 404,
+			response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+		}
+		const harness = makeHarness(["org:admin"], {
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({ statusCode: 200, response: { id: ORG, stripeId: "cus_deleted" } }),
+			},
+			stripe: { updateCustomer: () => Effect.succeed(missing) },
+		})
+		try {
+			const response = await harness.put("/internal/billing/profile", { name: "Acme GmbH" })
+			assert.strictEqual(response.status, 409)
+			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingProfileUnavailableError")
 		} finally {
 			await harness.dispose()
 		}
