@@ -205,7 +205,7 @@ const acquireLocal = (options: LocalOptions) =>
 					message: `the local store at ${dataDir} is already in use${pid === undefined ? "" : ` by PID ${pid}`}`,
 				}),
 		)
-		yield* ensurePortFree(HOSTNAME, port)
+		yield* ensurePortFree(HOSTNAME, port, "the `port` option")
 		const ui = yield* remoteUiUrl
 		// Per start, never sticky: a retry without `libchdb` falls back to MAPLE_LIBCHDB.
 		yield* Effect.acquireRelease(

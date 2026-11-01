@@ -126,7 +126,12 @@ export class LocalServerConfigError extends Schema.TaggedError<LocalServerConfig
 
 /** Fail fast when the port is taken. Not atomic (the real bind can still lose
  *  a race), but it keeps a busy port from costing a reset or a wipe. */
-export const ensurePortFree = (hostname: string, port: number): Effect.Effect<void, ServerBindError> =>
+/** `portOption` names how the caller picks another port (`--port` for the CLI). */
+export const ensurePortFree = (
+	hostname: string,
+	port: number,
+	portOption = "--port",
+): Effect.Effect<void, ServerBindError> =>
 	Effect.try({
 		try: () => Bun.listen({ hostname, port, socket: { data() {} } }).stop(true),
 		catch: (error) =>
@@ -135,7 +140,7 @@ export const ensurePortFree = (hostname: string, port: number): Effect.Effect<vo
 				port,
 				message:
 					errnoCode(error) === "EADDRINUSE"
-						? `port ${port} on ${hostname} is already in use; choose another with --port, or stop whatever holds it`
+						? `port ${port} on ${hostname} is already in use; choose another with ${portOption}, or stop whatever holds it`
 						: `cannot bind ${hostname}:${port}: ${describeError(error)}`,
 			}),
 	})
