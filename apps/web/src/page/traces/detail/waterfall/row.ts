@@ -1,4 +1,5 @@
 import { cacheResultStyles, getCacheInfo } from "@maple/ui/lib/cache"
+import { CLOUDFLARE_ACCENT_CLASS } from "@maple/ui/lib/cloud-platforms/accents"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getHttpInfo, HTTP_METHOD_COLORS, httpStatusTone } from "@maple/ui/lib/http"
@@ -18,6 +19,7 @@ import { serviceDot } from "../../../../ui/values"
 import type { SpanNodeData } from "../trace-data"
 import { Message } from "./model"
 import { rowPlatform } from "./platform"
+import { type Mark, serviceRuntime, spanTech } from "./tech"
 import { countDescendants, type TreeRow, treeLevel } from "./tree"
 
 // `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
@@ -155,16 +157,28 @@ const pixelBar = (
 				((i + 1) / TOTAL_BLOCKS) * 100 > leftPercent && (i / TOTAL_BLOCKS) * 100 < spanEnd
 			return h.div(
 				[
-					h.Attribute(
-						"class",
-						`w-[5px] h-2.5 rounded-2xs shrink-0 ${isActive ? "" : "bg-muted"}`,
-					),
+					h.Attribute("class", `w-[5px] h-2.5 rounded-2xs shrink-0 ${isActive ? "" : "bg-muted"}`),
 					...(isActive ? [h.Style({ "background-color": color })] : []),
 				],
 				[],
 			)
 		}),
 	)
+}
+
+const markIcon = (h: HtmlBuilder<Message>, mark: Mark): Html =>
+	h.span(
+		[h.Class("flex shrink-0"), h.Role("img"), h.AriaLabel(mark.label), h.Title(mark.label)],
+		[icon(h, mark.icon, { size: 12, className: mark.className })],
+	)
+
+/** An empty tech slot, so names align whether or not a row has a mark. */
+const emptySlot = (h: HtmlBuilder<Message>): Html => h.span([h.Class("w-3 shrink-0")], [])
+
+/** What the span called (Postgres, Kafka, an LLM), left of its name. */
+const techIcon = (h: HtmlBuilder<Message>, span: SpanNodeData): Html => {
+	const tech = spanTech({ ...span.spanAttributes })
+	return tech === null ? emptySlot(h) : markIcon(h, tech)
 }
 
 const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Html => {
@@ -184,6 +198,7 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
+					emptySlot(h),
 					badge(
 						h,
 						{
@@ -221,26 +236,27 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 
 type HttpInfo = NonNullable<ReturnType<typeof getHttpInfo>>
 
-/** The service where the call path enters it; a child in its parent's service keeps only the platform. */
+/** The Cloudflare Worker mark, else the service's runtime or Effect. */
+const serviceMark = (span: SpanNodeData): Mark | null => {
+	// Workers report `cloud.platform` on the resource; Worker spans may carry it themselves.
+	const isWorker =
+		rowPlatform({ ...span.spanAttributes })?.id === "cloudflare" ||
+		span.resourceAttributes["cloud.platform"] === "cloudflare.workers"
+	if (isWorker)
+		return { icon: "CloudflareIcon", label: "Cloudflare Worker", className: CLOUDFLARE_ACCENT_CLASS }
+	return serviceRuntime({ ...span.resourceAttributes })
+}
+
+/** The service where the call path enters it, with what runs it; a child in its parent's service shows none. */
 const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html> => {
 	const span = row.node
-	const platform = rowPlatform({ ...span.spanAttributes })
-	const platformIcon =
-		platform === null
-			? []
-			: [
-					icon(h, platform.icon, {
-						size: 12,
-						className: cn("shrink-0", platform.accentClassName),
-						attributes: [h.AriaLabel(platform.label)],
-					}),
-				]
-	if (row.parent !== null && row.parent.serviceName === span.serviceName) return platformIcon
+	if (row.parent !== null && row.parent.serviceName === span.serviceName) return []
+	const mark = serviceMark(span)
 	return [
 		h.span(
 			[h.Class("flex min-w-0 max-w-[30%] shrink items-center gap-1.5 font-mono text-3xs")],
 			[
-				...platformIcon,
+				...(mark === null ? [] : [markIcon(h, mark)]),
 				serviceDot(h, { serviceName: span.serviceName, className: "size-1.5" }),
 				h.span(
 					[
@@ -250,7 +266,11 @@ const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html
 					],
 					[span.serviceName],
 				),
-				h.span([h.Class("shrink-0 text-foreground-subtle")], [getSpanKindLabel(span.spanKind)]),
+				// The kind yields first on narrow rows so the service name stays readable.
+				h.span(
+					[h.Class("hidden shrink-0 text-foreground-subtle @min-[720px]/row:inline")],
+					[getSpanKindLabel(span.spanKind)],
+				),
 			],
 		),
 	]
@@ -461,6 +481,7 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
+					techIcon(h, span),
 					nameLabel(h, span, httpInfo),
 					...serviceLabel(h, row),
 					...edgeLabel(h, span),
