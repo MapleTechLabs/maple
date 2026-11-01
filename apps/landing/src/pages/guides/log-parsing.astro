@@ -445,10 +445,10 @@ const articleJsonLd = {
             <article class="lp-guide min-w-0">
                 <section class="guide-lead">
                     <p>
-                        Something broke, and the answer is somewhere in a few million log lines. A <strong>log</strong> is the text record a program writes as it runs, one line per request, error or event. <strong>Log parsing</strong> is splitting each line into named fields, such as the time, the status code or the URL path, so tools can filter and count by those fields instead of searching the text.
+                        <strong>Log parsing</strong> is splitting raw log lines into structured fields, such as the timestamp, the severity, the status code or the URL path. Once a line is parsed, tools can filter, count and alert on those fields instead of searching free text.
                     </p>
                     <p>
-                        Without it, an alert on the error rate or a chart of the busiest endpoints has nothing to count, because the status code and the path are buried inside a string. This guide covers the common log formats and the tools that parse them, with an OpenTelemetry Collector config you can run for each format.
+                        This guide covers the common log formats and the techniques and tools used to parse them, how to parse logs in the OpenTelemetry Collector with a config for each format, how to write a parser for your own format, and how to parse a log file by hand.
                     </p>
 
                     <div class="guide-takeaways">

@@ -337,10 +337,10 @@ const articleJsonLd = {
             <article class="prom-guide min-w-0">
                 <section class="guide-lead">
                     <p>
-                        You shipped a service and want to know how it is doing right now: how many requests it handles, how many fail, how slow the slow ones are. <strong>Prometheus</strong> is a free, open-source monitoring system that collects those numbers. A <strong>Prometheus metric</strong> is one of them: a named number your app keeps up to date, such as requests served, which Prometheus reads every few seconds and stores so you can chart it and alert on it.
+                        <strong>Prometheus</strong> is an open-source monitoring system that collects numeric measurements, called metrics, from your applications and servers and stores them as time series. You query them with PromQL, chart them in Grafana and alert on them.
                     </p>
                     <p>
-                        Without metrics, you hear about a slow checkout or a full disk from a customer, with no history to show when it started. By the end of this guide you'll have an app publishing metrics, plus Prometheus and Grafana running locally to chart them.
+                        This guide explains what a Prometheus metric looks like, the four metric types (counter, gauge, histogram and summary) and when to use each, the metrics worth watching first, and how to collect and chart them with Prometheus and Grafana.
                     </p>
 
                     <div class="guide-takeaways">
@@ -360,7 +360,7 @@ const articleJsonLd = {
                     <h2>What a Prometheus metric is</h2>
 
                     <p>
-                        Applications publish their metrics as plain text on an HTTP endpoint, usually <code>/metrics</code>. Every line is one number:
+                        A <strong>Prometheus metric</strong> is a named number your application keeps up to date, such as the count of requests served. Prometheus reads it every few seconds and stores each reading. Applications publish their metrics as plain text on an HTTP endpoint, usually <code>/metrics</code>. Every line is one number:
                     </p>
 
                     <div class="anatomy" role="img" aria-label="An annotated metric line: http_requests_total is the metric name, method POST and status 500 are labels, 17 is the current value.">
