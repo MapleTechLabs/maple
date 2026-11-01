@@ -22,7 +22,13 @@ import { DependencyScanSink } from "@maple/backend/services/integrations/vcs/Pul
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { PackageAdvisoryCatalog } from "@maple/backend/services/security/PackageAdvisoryCatalog"
 import { type DependencyScanMatchInput, DependencyScanStore } from "./DependencyScanStore"
-import { manifestsFor, type SelectedLockfile, sameLockfiles, selectLockfiles } from "./lockfile-selection"
+import {
+	MAX_LOCKFILES,
+	manifestsFor,
+	type SelectedLockfile,
+	sameLockfiles,
+	selectLockfiles,
+} from "./lockfile-selection"
 
 // Reads a repository's lockfiles at one commit through the VCS provider, looks their packages up
 // in OSV and stores the scan. A lockfile's parse is cached by its blob sha (and its manifests'),
@@ -253,7 +259,7 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					yield* Effect.annotateCurrentSpan({
 						"vcs.commit.sha": commitSha,
 						"maple.depscan.lockfile_count": selected.length,
-						"maple.depscan.lockfiles_skipped": skipped,
+						"maple.depscan.lockfiles_skipped": skipped.length,
 						"maple.depscan.tree_truncated": tree.truncated,
 					})
 
@@ -312,7 +318,18 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							.completeScan({
 								orgId,
 								scanId: started.id,
-								lockfiles: reads.map((read) => read.lockfile),
+								// A lockfile past the cap is recorded, so its findings are kept rather than read as deleted.
+								lockfiles: [
+									...reads.map((read) => read.lockfile),
+									...skipped.map((lockfile) =>
+										lockfileRow(
+											lockfile,
+											"skipped",
+											0,
+											`Past the ${MAX_LOCKFILES} lockfiles a scan reads`,
+										),
+									),
+								],
 								packageCount: packages.length,
 								matches,
 							})

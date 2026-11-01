@@ -7,7 +7,7 @@ import type { VcsTreeFile } from "@maple/backend/services/integrations/vcs/VcsPr
 /** Lockfiles read per scan; the rest are left out, deepest paths first. */
 export const MAX_LOCKFILES = 50
 /** Manifests read for one yarn lockfile, which says nothing about direct and dev dependencies. */
-export const MAX_MANIFESTS = 50
+export const MAX_MANIFESTS = 20
 
 export interface SelectedLockfile {
 	readonly file: VcsTreeFile
@@ -27,7 +27,8 @@ const depth = (path: string): number => path.split("/").length
  */
 export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 	readonly selected: ReadonlyArray<SelectedLockfile>
-	readonly skipped: number
+	/** Past the cap: recorded as skipped so their findings are kept, not read as deleted. */
+	readonly skipped: ReadonlyArray<SelectedLockfile>
 } {
 	const candidates = files.flatMap((file): ReadonlyArray<SelectedLockfile> => {
 		const kind = lockfileKindOf(file.path)
@@ -39,7 +40,7 @@ export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 	const kept = candidates
 		.filter((c) => c.kind !== "go-sum" || !goModDirs.has(directoryOf(c.file.path)))
 		.sort((a, b) => depth(a.file.path) - depth(b.file.path) || a.file.path.localeCompare(b.file.path))
-	return { selected: kept.slice(0, MAX_LOCKFILES), skipped: Math.max(0, kept.length - MAX_LOCKFILES) }
+	return { selected: kept.slice(0, MAX_LOCKFILES), skipped: kept.slice(MAX_LOCKFILES) }
 }
 
 /** The package.json files under a yarn lockfile's directory, keyed relative to it. */
