@@ -94,6 +94,7 @@ import {
 	LocalStatus,
 	mapleCommand,
 	parseElapsedSeconds,
+	parseProcStartedAtMs,
 	PID_HANDOVER_ENV,
 	prettyPath,
 	resolveAdvertiseHost,
@@ -277,8 +278,21 @@ const readPidSnapshot = (path: string): Effect.Effect<Option.Option<PidFileSnaps
 const sameSnapshot = (a: PidFileSnapshot, b: PidFileSnapshot): boolean =>
 	a.raw === b.raw && a.ino === b.ino && a.mtimeMs === b.mtimeMs
 
-/** Wall-clock start of a live process (`ps -o etime=`), when it can be known. */
-const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+/** Wall-clock start of a live process from `/proc`, on Linux. */
+const procStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+	Effect.try({
+		try: () =>
+			parseProcStartedAtMs(
+				readFileSync(`/proc/${pid}/stat`, "utf8"),
+				readFileSync("/proc/stat", "utf8"),
+			),
+		catch: (error) => error,
+	}).pipe(
+		Effect.map(Option.fromUndefinedOr),
+		Effect.orElseSucceed(() => Option.none<number>()),
+	)
+
+const psStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
 	Effect.try({
 		try: () =>
 			Bun.spawnSync(["ps", "-o", "etime=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" }),
@@ -293,6 +307,15 @@ const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =
 		Effect.orElseSucceed(() => Option.none<number>()),
 	)
 
+/** Wall-clock start of a live process (`/proc`, else `ps -o etime=`), when it can be known.
+ *  `/proc` first: slim and distroless container images ship no `ps`. */
+const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+	procStartedAtMs(pid).pipe(
+		Effect.flatMap((startedAt) =>
+			Option.isSome(startedAt) ? Effect.succeed(startedAt) : psStartedAtMs(pid),
+		),
+	)
+
 type PidOwner =
 	| { readonly kind: "stale" }
 	/** `verified`: the process provably started before the file was written. */
@@ -304,7 +327,7 @@ const livePid = (pid: number, verified: boolean): PidOwner => ({ kind: "live", p
 /**
  * Does the process named by a PID file still own it? After a crash or reboot
  * the number may belong to an unrelated process, which necessarily started
- * after the file was written. Without `ps` the answer is "live, unverified",
+ * after the file was written. Without `/proc` or `ps` the answer is "live, unverified",
  * the conservative reading for every caller.
  */
 const pidOwner = (snapshot: PidFileSnapshot): Effect.Effect<PidOwner> =>
