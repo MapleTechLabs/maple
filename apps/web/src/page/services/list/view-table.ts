@@ -2,7 +2,7 @@ import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { TONE_COLOR } from "@maple/ui/lib/tone"
+import { ERROR_RATE_COLOR, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "../../../ui/status-dot"
 import { tableCellStyles as tableCellClass, tableRowStyles } from "@maple/ui/styles/ui/table"
@@ -45,7 +45,6 @@ import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
 
-export const ERROR_RATE_COLOR = TONE_COLOR.crit
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
 const CHART_MODEL = Chart.init()
@@ -276,14 +275,20 @@ const serviceRow = (
 						h.AriaLabel(`Error rate: ${formatErrorRate(service.errorRate)}`),
 					],
 					[
-						sparkline(h, ctx, `err-${rowKey}`, errorRates, ERROR_RATE_COLOR),
+						sparkline(
+							h,
+							ctx,
+							`err-${rowKey}`,
+							errorRates,
+							ERROR_RATE_COLOR[errorRateLevel(service.errorRate)],
+						),
 						h.div(
 							[h.Class("absolute inset-0 flex items-center justify-center")],
 							[
-								h.span(
-									[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
-									[formatErrorRate(service.errorRate)],
-								),
+								errorRateValue(h, {
+									rate: service.errorRate,
+									className: cn("text-xs font-semibold", TEXT_HALO),
+								}),
 							],
 						),
 					],

@@ -1,6 +1,6 @@
 import type { CodeReviewListItem, CodeReviewSortDir, CodeReviewSortKey } from "@maple/domain/http"
-import { formatCount, outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-review-format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
@@ -21,7 +21,7 @@ import {
 } from "../../../ui/table"
 import { emptyValue } from "../../../ui/values"
 import { authorLabel } from "../kit/author"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
 // `ReviewTable`: the pull requests and their reviews.
@@ -154,7 +154,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 												),
 											]
 										: []),
-									formatCount(review.findings),
+									formatNumber(review.findings),
 								],
 							),
 				],
@@ -163,8 +163,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 			tableCell(
 				h,
 				[
-					relativeTime(h, {
-						tooltip: "title",
+					listRelativeTime(h, {
 						value: review.createdAt,
 						nowMs: context.nowMs,
 						timeZone: context.timeZone,

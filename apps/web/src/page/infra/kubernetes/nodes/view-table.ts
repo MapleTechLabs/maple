@@ -7,7 +7,7 @@ import { truncatedText } from "../../../../ui/truncated-text"
 import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skeletonRows } from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
-import { relativeTime } from "../../../kit/relative-time"
+import { listRelativeTime } from "../../../kit/relative-time"
 import type { SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import { Message, type NodeSortKey } from "./message"
@@ -117,12 +117,11 @@ const nodeRow = (h: H, node: NodeRow, inputs: NodeTableInputs): Html =>
 			h.div(
 				[h.Class("w-24 text-right")],
 				[
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: node.lastSeen,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
-						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: "text-2xs text-muted-foreground",
 					}),
 				],
 			),

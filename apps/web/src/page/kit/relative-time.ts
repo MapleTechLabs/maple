@@ -63,3 +63,9 @@ export const relativeTime = <M>(h: HtmlBuilder<M>, options: RelativeTimeOptions)
 		[label],
 	)
 }
+
+/** A list column's relative time: `3h ago`, with the full timestamp as its title. */
+export const listRelativeTime = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ value: TimeInput; nowMs: number; timeZone: string; className?: string }>,
+): Html => relativeTime(h, { ...options, tooltip: "title" })

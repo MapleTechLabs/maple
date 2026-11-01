@@ -1,6 +1,6 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { zonedDateParts } from "@maple/query-engine/datetime"
-import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
+import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { type ErrorSignal, densifySpark, surgeRatio } from "../../../lib/models/error-signal"
@@ -38,21 +38,6 @@ export const formatLastSeen = (iso: string, timeZone: string, nowMs: number): st
 		day: "numeric",
 		year: sameYear ? undefined : "numeric",
 	})
-}
-
-/** `formatTimestampInTimezone(input, { timeZone, withYear })` (lib/timezone-format.ts). */
-export const formatTimestamp = (iso: string, timeZone: string, withYear: boolean): string => {
-	const ms = epochOf(iso)
-	if (Number.isNaN(ms)) return EMPTY_VALUE
-	return new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		year: withYear ? "numeric" : undefined,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	}).format(ms)
 }
 
 /** `SignalSpark`: the trend in one static svg, coloured by severity (or surge). */

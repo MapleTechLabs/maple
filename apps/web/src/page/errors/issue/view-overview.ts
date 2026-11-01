@@ -1,12 +1,13 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../ui/copy-button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { truncatedText } from "../../../ui/truncated-text"
-import { formatTimestamp } from "../hub/view-signal"
+import { formatExactCount } from "../../kit/locale"
+import { relativeTime } from "../../kit/relative-time"
 import { SEVERITY_FILL } from "../kit/severity"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -137,22 +138,13 @@ export const factLane = (h: H, label: string, children: ReadonlyArray<Html>): Ht
 
 const count = (h: H, value: number): Html =>
 	h.span(
-		[h.Class("text-foreground tabular-nums"), h.Title(value.toLocaleString("en-US"))],
+		[h.Class("text-foreground tabular-nums"), h.Title(formatExactCount(value))],
 		[formatNumber(value)],
 	)
 
 /** `RelativeTime tooltip="title"`: relative text, the absolute stamp as its title. */
-export const stamp = (h: H, iso: string, timeZone: string, nowMs: number): Html => {
-	const ms = new Date(iso).getTime()
-	return h.time(
-		[
-			h.Attribute("datetime", new Date(ms).toISOString()),
-			h.Title(formatTimestamp(iso, timeZone, true)),
-			h.Class("text-foreground tabular-nums"),
-		],
-		[formatRelativeTime(ms, nowMs)],
-	)
-}
+export const stamp = (h: H, iso: string, timeZone: string, nowMs: number): Html =>
+	relativeTime(h, { value: iso, nowMs, timeZone, tooltip: "title", className: "text-foreground tabular-nums" })
 
 export type FactInputs = Readonly<{
 	windowCount: number

@@ -17,7 +17,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { emptyValue, serviceDot } from "../../../ui/values"
+import { emptyValue, errorRateValue, latencyValue, serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
@@ -30,16 +30,26 @@ import type { TimeSearch } from "./view-overview"
 type H = HtmlBuilder<Message>
 
 /** "0.30% → 1.24%": the version it replaced, then this one. */
-const baselineShift = (h: H, value: number, baseline: number | undefined, format: (value: number) => string, tone?: "error" | "warn"): Html =>
+const baselineShift = (h: H, baseline: string | undefined, current: Html): Html =>
 	h.span(
 		[h.Class("inline-flex items-baseline gap-1 font-mono text-xs tabular-nums")],
 		[
 			...(baseline === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-foreground-subtle"), h.Title("The version this one replaced")], [format(baseline), " →"])]),
-			h.span([h.Class(cn(tone === "error" && "text-severity-error", tone === "warn" && "text-severity-warn"))], [format(value)]),
+				: [h.span([h.Class("text-3xs text-foreground-subtle"), h.Title("The version this one replaced")], [baseline, " →"])]),
+			current,
 		],
 	)
+
+/** The current value in its threshold tone, unless the release's health calls it out. */
+const healthTone = (tone: "error" | "warn" | undefined): string | undefined =>
+	tone === "error" ? "text-severity-error" : tone === "warn" ? "text-severity-warn" : undefined
+
+const errorRateShift = (h: H, value: number, baseline: number | undefined, tone?: "error"): Html =>
+	baselineShift(h, baseline === undefined ? undefined : formatErrorRate(baseline), errorRateValue(h, { rate: value, className: healthTone(tone) }))
+
+const latencyShift = (h: H, value: number, baseline: number | undefined, tone?: "warn"): Html =>
+	baselineShift(h, baseline === undefined ? undefined : formatLatency(baseline), latencyValue(h, { ms: value, className: healthTone(tone) }))
 
 const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html | null => {
 	if (counts === null) return null
@@ -252,7 +262,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 									...(multi
 										? [h.span([h.Class("inline-flex"), h.Title(`Worst service: ${worst.serviceName}`)], [serviceDot(h, { serviceName: worst.serviceName })])]
 										: []),
-									baselineShift(h, worst.errorRate, worst.baseline?.errorRate, formatErrorRate, worst.health === "regressed" ? "error" : undefined),
+									errorRateShift(h, worst.errorRate, worst.baseline?.errorRate, worst.health === "regressed" ? "error" : undefined),
 								],
 							),
 						],
@@ -260,7 +270,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 					),
 					tableCell(
 						h,
-						[baselineShift(h, worst.p95LatencyMs, worst.baseline?.p95LatencyMs, formatLatency, worst.health === "watch" ? "warn" : undefined)],
+						[latencyShift(h, worst.p95LatencyMs, worst.baseline?.p95LatencyMs, worst.health === "watch" ? "warn" : undefined)],
 						"py-2 align-top",
 					),
 					tableCell(h, [issueCounts(h, counts)].filter((node): node is Html => node !== null), "py-2 align-top"),
@@ -308,12 +318,12 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 								tableCell(h, [time(service.firstSeen)], "whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground"),
 								tableCell(
 									h,
-									[baselineShift(h, service.errorRate, service.baseline?.errorRate, formatErrorRate, service.health === "regressed" ? "error" : undefined)],
+									[errorRateShift(h, service.errorRate, service.baseline?.errorRate, service.health === "regressed" ? "error" : undefined)],
 									"py-1.5",
 								),
 								tableCell(
 									h,
-									[baselineShift(h, service.p95LatencyMs, service.baseline?.p95LatencyMs, formatLatency, service.health === "watch" ? "warn" : undefined)],
+									[latencyShift(h, service.p95LatencyMs, service.baseline?.p95LatencyMs, service.health === "watch" ? "warn" : undefined)],
 									"py-1.5",
 								),
 								tableCell(h, [], "py-1.5"),

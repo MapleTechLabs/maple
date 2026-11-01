@@ -1,8 +1,8 @@
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
-import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../ui/empty"
@@ -111,7 +111,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 		[
 			selectableTile(h, {
 				eyebrow: "Tool calls",
-				value: formatToolCount(totals.calls),
+				value: formatNumber(totals.calls),
 				spark: calls,
 				// Spans that start inside the window have no earlier stretch to compare against.
 				subline:
@@ -265,7 +265,7 @@ const toolRow = <M>(
 				],
 			),
 			volumeSpark(h, options.env.spark, `mcp-tool-spark-${row.tool}`, row.spark),
-			numberCell(h, formatToolCount(row.calls), "w-20 text-foreground"),
+			numberCell(h, formatNumber(row.calls), "w-20 text-foreground"),
 			duration(h, row.p50, options.percentile === "p50", "hidden @min-[900px]/panel:block"),
 			duration(h, row.p90, options.percentile === "p90"),
 			duration(h, row.p95, options.percentile === "p95", "hidden @min-[900px]/panel:block"),
@@ -347,7 +347,7 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 				data.tools.length === options.toolCount
 					? `Showing all ${data.tools.length} ${pluralize(data.tools.length, "tool")}`
 					: `${data.tools.length} of ${options.toolCount} tools`,
-				`· ${formatToolCount(data.totals.calls)} calls · ${formatErrorRate(errorRate(data.totals))} failed`,
+				`· ${formatNumber(data.totals.calls)} calls · ${formatErrorRate(errorRate(data.totals))} failed`,
 			),
 		],
 	)
@@ -427,17 +427,17 @@ const clientRow = <M>(h: HtmlBuilder<M>, row: McpClientRow, max: number): Html =
 			),
 			numberCell(
 				h,
-				isQuiet ? EMPTY_VALUE : formatToolCount(row.calls),
+				isQuiet ? EMPTY_VALUE : formatNumber(row.calls),
 				cn("w-14", isQuiet ? "text-foreground-subtle" : "text-foreground"),
 			),
 			numberCell(
 				h,
-				row.connects === 0 ? EMPTY_VALUE : formatToolCount(row.connects),
+				row.connects === 0 ? EMPTY_VALUE : formatNumber(row.connects),
 				"w-16 text-muted-foreground",
 			),
 			numberCell(
 				h,
-				row.sources === 0 ? EMPTY_VALUE : formatToolCount(row.sources),
+				row.sources === 0 ? EMPTY_VALUE : formatNumber(row.sources),
 				"w-14 text-muted-foreground",
 			),
 			numberCell(
@@ -476,7 +476,7 @@ const initializerRow = <M>(
 				fillClassName: "bg-primary/70",
 				className: "h-1.5 min-w-0 flex-1 rounded-xs bg-muted",
 			}),
-			numberCell(h, formatToolCount(row.count), "w-14 text-foreground"),
+			numberCell(h, formatNumber(row.count), "w-14 text-foreground"),
 		],
 	)
 
@@ -513,7 +513,7 @@ const methodRow = <M>(h: HtmlBuilder<M>, row: McpMethodRow): Html =>
 		[h.Class("flex h-9 items-center gap-3 border-b border-border-subtle last:border-0")],
 		[
 			h.span([h.Class("w-0 min-w-0 flex-1 truncate font-mono text-xs")], [row.method]),
-			numberCell(h, formatToolCount(row.calls), "w-16 text-foreground"),
+			numberCell(h, formatNumber(row.calls), "w-16 text-foreground"),
 			numberCell(h, row.p50 === 0 ? "<1ms" : formatDurationNs(row.p50), "w-20 text-muted-foreground"),
 			numberCell(h, row.p95 === 0 ? "<1ms" : formatDurationNs(row.p95), "w-20 text-muted-foreground"),
 		],
@@ -622,7 +622,7 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			? []
 			: [
 					note(h, [
-						`${hidden.length} more ${pluralize(hidden.length, "client")} · ${formatToolCount(
+						`${hidden.length} more ${pluralize(hidden.length, "client")} · ${formatNumber(
 							hidden.reduce((sum, client) => sum + client.calls, 0),
 						)} calls`,
 					]),
@@ -691,7 +691,7 @@ export const serverBody = <M>(
 			mcpScopeRow(
 				h,
 				options.scope,
-				formatToolCount(data.totals.calls),
+				formatNumber(data.totals.calls),
 				`tool calls · ${callerCount} ${pluralize(callerCount, "client")}`,
 			),
 			metricStrip(h, data, options),

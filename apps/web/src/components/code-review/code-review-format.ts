@@ -51,12 +51,6 @@ export const SKIP_LABELS = {
 	external_author: "author outside the organization",
 } satisfies Record<PrReviewSkipReason, string>
 
-const COUNT = new Intl.NumberFormat("en-US")
-const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 })
-
-// Not `formatNumber`: that compacts from 1K, while review counts stay exact below 10K.
-export const formatCount = (value: number) => (value >= 10_000 ? COMPACT.format(value) : COUNT.format(value))
-
 /** A span in the largest unit that keeps it readable: `42s`, `14m`, `5.2h`, `7.0d`. */
 export function formatSpan(seconds: number | null): string {
 	if (seconds === null || !Number.isFinite(seconds)) return EMPTY_VALUE

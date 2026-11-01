@@ -13,7 +13,7 @@ import {
 } from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine, platformLabel } from "../../kit/meta-line"
-import { relativeTime } from "../../../kit/relative-time"
+import { listRelativeTime } from "../../../kit/relative-time"
 import type { SortDir, SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import type { HostSortKey } from "./message"
@@ -123,12 +123,11 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 			h.div(
 				[h.Class("w-24 text-right")],
 				[
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: host.lastSeen,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
-						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: "text-2xs text-muted-foreground",
 					}),
 				],
 			),
