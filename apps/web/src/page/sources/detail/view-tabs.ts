@@ -7,7 +7,7 @@ import { textarea } from "../../../ui/textarea"
 import { dangerRow, dangerZone } from "../../settings/kit/danger-zone"
 import { saveBar } from "../../settings/kit/save-bar"
 import { settingsSection, settingsSections } from "../../settings/kit/section"
-import { isRulesDirty, rulesOutcome } from "../kit/rules"
+import { rulesOutcome } from "../kit/rules"
 import * as RulesView from "../kit/rules-view"
 import * as Setup from "../kit/setup"
 import { keepsStoredData } from "../kit/integration"
@@ -15,6 +15,7 @@ import { platformMeta } from "../kit/platforms"
 import { hasToken, pausedLabel } from "../kit/shared"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
+import { isSettingsDirty } from "./update"
 import type { Model, RevealedToken, SettingsForm } from "./model"
 
 // `SourceSetupTab` and `SourceSettings`.
@@ -206,12 +207,8 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 	if (form === null) return h.empty
 	const isToken = hasToken(source)
 	const isValid = form.name.trim().length > 0 && (!isToken || rulesOutcome(form.rules).valid)
-	const isDirty =
-		form.name !== source.name ||
-		form.description !== (source.description ?? "") ||
-		(isToken && isRulesDirty(form.rules))
 	const save = saveBar(h, {
-		isDirty,
+		isDirty: isSettingsDirty(form),
 		isPending: form.isSaving,
 		isSaveDisabled: !isValid,
 		onDiscard: Message.ClickedDiscardSettings(),

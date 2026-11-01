@@ -382,7 +382,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (isReadOnly(model)) {
 				const closed = closeDialog(model.deleteDialog, wrapDelete)
 				return {
-					model: { ...model, deleteDialog: closed.dialog, pendingDelete: null },
+					model: { ...model, deleteDialog: closed.dialog },
 					commands: closed.commands,
 				}
 			}
@@ -393,7 +393,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedDeleteDashboard: ({ result }) => {
 			const closed = closeDialog(model.deleteDialog, wrapDelete)
-			const settled = { ...model, deleteDialog: closed.dialog, pendingDelete: null, isDeleting: false }
+			// `pendingDelete` stays: the closing dialog still names the dashboard.
+			const settled = { ...model, deleteDialog: closed.dialog, isDeleting: false }
 			return Result.match(result, {
 				onFailure: (error) => {
 					const failed = failedWrite(settled, error, context.orgId)

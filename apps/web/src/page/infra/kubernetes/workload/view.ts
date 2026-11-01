@@ -143,8 +143,12 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						onChange: (value) => Message.ClickedMetric({ metric: value }),
 						ariaLabel: "Metric",
 					}),
-					h.div(
-						[h.Class("inline-flex items-center gap-2 text-2xs text-muted-foreground")],
+					// The label wraps the switch's hidden input, so a click on the text toggles too.
+					h.label(
+						[
+							h.Id("workload-group-by-pod-label"),
+							h.Class("inline-flex cursor-pointer items-center gap-2 text-2xs text-muted-foreground"),
+						],
 						[
 							...switchControl(h, {
 								id: "workload-group-by-pod",
@@ -153,7 +157,7 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 								labelledBy: "workload-group-by-pod-label",
 								onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
 							}),
-							h.span([h.Id("workload-group-by-pod-label")], ["Per-pod breakdown"]),
+							"Per-pod breakdown",
 						],
 					),
 				],
