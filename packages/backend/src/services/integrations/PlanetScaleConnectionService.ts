@@ -598,9 +598,6 @@ export class PlanetScaleConnectionService extends Context.Service<
 											scrapeTargetId,
 											sourceId,
 											detectedPermissionsJson: { ...permissions },
-											// A new binding starts clean: an old inventory failure must not count
-											// toward a repeated-403 revoke (PlanetScaleService.pollOrg).
-											lastInventoryError: null,
 											updatedAt: now,
 										})
 										.where(($) => [$.id.eq(existing.id)])

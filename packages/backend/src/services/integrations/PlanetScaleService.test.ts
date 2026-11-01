@@ -1528,6 +1528,36 @@ describe("PlanetScaleService forbidden grants", () => {
 		)
 	})
 
+	it.effect("a reconnect restarts the count, even without an org rebind", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { stub, forbidden } = stubForbidden()
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			forbidden.value = true
+			const service = yield* PlanetScaleService
+			const oauth = yield* PlanetScaleOAuthService
+			yield* service.pollAllOrgs()
+			yield* service.pollAllOrgs()
+			assert.isNotNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
+
+			// Re-authorize only: a multi-org grant keeps its binding and skips the picker.
+			const { state } = yield* oauth.startConnect(asOrgId("org_1"), asUserId("user_1"), {
+				callbackUrl: "https://api.example.com/api/integrations/planetscale/callback",
+			})
+			yield* oauth.completeConnect("auth-code", state, {
+				orgId: asOrgId("org_1"),
+				userId: asUserId("user_1"),
+			})
+			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
+
+			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
 	it.effect("never revokes the grant over a 403 on one database's branches", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { stub, forbidden } = stubForbidden((url) => url.includes("/branches"))

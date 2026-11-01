@@ -10,7 +10,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates } from "@maple/db/tables"
+import { OAuthAuthStates, PlanetscaleConnections } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
@@ -497,6 +497,15 @@ export class PlanetScaleOAuthService extends Context.Service<
 				refreshTokenTag: refreshEnc.tag,
 				expiresAt,
 			})
+			// A new grant starts clean: an inventory failure from the old one must not count
+			// toward the repeated-403 revoke in PlanetScaleService.pollOrg.
+			yield* oauth.dbExecute((db) =>
+				db.run(
+					PG.update(PlanetscaleConnections)
+						.set({ lastInventoryError: null, updatedAt: currentTime })
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
+			)
 
 			return { orgId, returnTo: stateRow.returnTo ?? null, organizations }
 		})
