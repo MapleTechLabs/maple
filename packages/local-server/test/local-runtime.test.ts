@@ -180,7 +180,7 @@ describe("a store another process already serves", () => {
 		})
 	})
 
-	it("takes the store over once the owner exits", async () => {
+	it("takes the store over once the owner exits, and keeps trying when that fails", async () => {
 		await withStore(async (dataDir) => {
 			// Dirty, so the takeover stops at the store check without loading chDB.
 			markStoreOpen(dataDir)
@@ -197,13 +197,15 @@ describe("a store another process already serves", () => {
 				)
 				owner.kill()
 				await owner.exited
-				for (let i = 0; i < 50 && !logs.some((line) => line.includes("cannot take over")); i++)
-					await Bun.sleep(100)
+				const failures = () => logs.filter((line) => line.includes("cannot take over"))
+				for (let i = 0; i < 80 && failures().length < 2; i++) await Bun.sleep(100)
 				await Effect.runPromise(Scope.close(scope, Exit.void))
 			})
-			expect(logs.some((line) => line.includes("taking it over"))).toBe(true)
-			expect(logs.find((line) => line.includes("cannot take over"))).toContain("not cleanly closed")
+			const failures = logs.filter((line) => line.includes("cannot take over"))
+			expect(failures.length).toBeGreaterThanOrEqual(2)
+			expect(failures[0]).toContain("not cleanly closed")
+			expect(logs.filter((line) => line.includes("taking it over")).length).toBeGreaterThanOrEqual(2)
 			expect(existsSync(serverPidPath(dataDir))).toBe(false)
 		})
-	})
+	}, 15_000)
 })

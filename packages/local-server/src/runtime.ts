@@ -353,12 +353,18 @@ const share = (
 				}),
 			)
 			yield* Effect.logInfo(`PID ${owner.pid} let go of Maple Local at ${dataDir}; taking it over`)
-			yield* ownOrShare(options, { port, strict: false }, parent).pipe(
-				Effect.catch((error) =>
-					Effect.logError(`cannot take over Maple Local at ${dataDir}: ${error.message}`),
-				),
-			)
-		}).pipe(Effect.forkIn(parent))
+			yield* ownOrShare(options, { port, strict: false }, parent)
+		}).pipe(
+			// Never give up while this session runs: a lost race with another sharer, a
+			// slow new owner or a store fixed by `maple restore` all resolve on a later try.
+			Effect.tapError((error) =>
+				Effect.logError(`cannot take over Maple Local at ${dataDir}: ${error.message}; retrying`),
+			),
+			Effect.retry(
+				Schedule.min([Schedule.exponential(Duration.seconds(1)), Schedule.spaced(Duration.seconds(30))]),
+			),
+			Effect.forkIn(parent),
+		)
 		return {
 			port,
 			endpoint: owner.url,
