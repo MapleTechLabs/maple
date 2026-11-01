@@ -84,9 +84,9 @@ process.on("SIGTERM", () => {
 })
 ```
 
-`@opentelemetry/sdk-logs` 0.220.0 and later take `{ exporter }`. Older releases take the exporter as the first argument, `new BatchLogRecordProcessor(exporter)`. Passing it positionally to a current release raises no error, but no log record is exported.
+`@opentelemetry/sdk-logs` 0.220.0 and later take `{ exporter }`. Older releases take the exporter as the first argument, `new BatchLogRecordProcessor(exporter)`. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
 
-On Node.js versions older than those in [Prerequisites](#prerequisites), replace the `register()` call with `module.register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)` from `node:module`. Node.js 26 marks `module.register` as deprecated.
+On a Node.js version outside those in [Prerequisites](#prerequisites), import `register` from `node:module` instead and call `register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)`. Node.js 26 marks that form as deprecated.
 
 The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 

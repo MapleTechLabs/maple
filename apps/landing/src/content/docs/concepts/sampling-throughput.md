@@ -88,4 +88,4 @@ service:
             exporters: [otlp_http]
 ```
 
-The metrics pipeline sees every request while the traces pipeline samples as aggressively as you like. Collectors older than 0.163 name the connector `spanmetrics` and the exporter `otlphttp`.
+The metrics pipeline sees every request while the traces pipeline samples as aggressively as you like. Older Collector releases name the connector `spanmetrics` and the exporter `otlphttp`.

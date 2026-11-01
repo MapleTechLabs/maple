@@ -74,7 +74,7 @@ Notes on the config:
 - **The three `*.utilization` metrics must be enabled.** The `host_metrics` receiver leaves them off by default, and the Hosts page reads them for CPU, memory and disk.
 - **`resource_detection` sets `host.name`.** Maple keys each host on `host.name`. The `system` detector also sets `os.type` and `host.arch`, which the detail page shows. Add a cloud detector (`ec2`, `gcp` or `azure`) to fill in `cloud.provider` and `cloud.region`.
 - **EU organizations** use `https://ingest.eu.maple.dev` as the endpoint.
-- **Collectors older than 0.163 use the old component names:** `hostmetrics`, `resourcedetection` and `otlphttp`.
+- **Older Collector releases use the previous names:** `hostmetrics`, `resourcedetection` and `otlphttp`.
 
 If you already run a Collector on the host for application telemetry, add the `host_metrics` receiver and a `metrics` pipeline to it instead of running a second one.
 
@@ -106,7 +106,7 @@ Click a host to open its detail page: **CPU**, **Memory**, **Filesystem**, **Net
 
 ## Troubleshooting
 
-- **The host does not appear.** Check the Collector's output for exporter errors. A `401` means the ingest key is wrong or was rotated. Confirm `resource_detection` is in the pipeline: without `host.name`, Maple cannot list the host.
+- **The host does not appear.** Check the Collector's output for exporter errors. A `401` means the ingest key is wrong or was rotated. Confirm `resource_detection` (`resourcedetection` on older Collectors) is in the pipeline: without `host.name`, Maple cannot list the host.
 - **The host appears but CPU, memory or disk read 0.** The matching `*.utilization` metric is not enabled in the receiver config.
 - **The host is under Stopped reporting.** The Collector stopped or cannot reach Maple. The host leaves that filter on its next report.
 - **Two rows for one machine.** `host.name` changed, for example after a hostname change or a container restart. Each distinct `host.name` is its own host.

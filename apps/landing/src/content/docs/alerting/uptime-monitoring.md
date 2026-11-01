@@ -87,7 +87,7 @@ MAPLE_INGEST_KEY=YOUR_INGEST_KEY otelcol-contrib --config config.yaml
 
 Notes on the config:
 
-- **Collectors older than 0.163 use the old component names:** `httpcheck` and `otlphttp`. Use those if your release rejects `http_check` or `otlp_http`.
+- **Older Collector releases use the previous names:** `httpcheck` and `otlphttp`. Use those if your release rejects `http_check` or `otlp_http`.
 - **`resource/uptime` sets `service.name`.** The checks appear in Maple under the service `uptime-checks`.
 - **EU organizations** use `https://ingest.eu.maple.dev` as the endpoint.
 - **Run the Collector outside the system it checks.** On the same machine as the service, it goes down with it.

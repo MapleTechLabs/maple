@@ -85,7 +85,7 @@ These settings decide whether every trace arrives and joins Google's request log
 | Flushing     | Flush the span and log processors when the server span ends. Call `sdk.shutdown()` on `SIGTERM` and keep `node` as PID 1. Cloud Run throttles the container's CPU once the response is sent: with the default batch timers, telemetry arrives 5 to 6 seconds after the request on a warm instance and about 30 seconds after a cold start. |
 | Logs         | Emit application logs over OpenTelemetry, not stdout. Each record carries the trace and span ID of its request, and nothing is stored twice.                                                                                                                                                                                               |
 
-For Node.js 22.22.3 or later with `@opentelemetry/sdk-node`:
+For Node.js 22.22.3+, 24.11.1+ or 26+ with `@opentelemetry/sdk-node`:
 
 ```js
 // tracing.mjs

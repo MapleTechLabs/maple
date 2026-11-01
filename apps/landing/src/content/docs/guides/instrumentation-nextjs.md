@@ -76,7 +76,7 @@ export function register() {
 }
 ```
 
-`BatchLogRecordProcessor` takes `{ exporter }` in `@opentelemetry/sdk-logs` 0.220.0 and later. Older releases take the exporter as the first argument. Passing it positionally to a current release raises no error, but no log record is exported.
+`BatchLogRecordProcessor` takes `{ exporter }` in `@opentelemetry/sdk-logs` 0.220.0 and later. Older releases take the exporter as the first argument. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
 
 `traceExporter` takes an exporter instance. `OTLPHttpProtoTraceExporter` is exported by `@vercel/otel` and sends OTLP over HTTP with protobuf encoding. It also runs in the Edge runtime.
 
