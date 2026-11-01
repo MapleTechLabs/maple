@@ -117,6 +117,8 @@ export interface DependencyScanStoreApi {
 	readonly listFindings: (input: {
 		readonly orgId: OrgId
 		readonly repositoryId?: VcsRepositoryId | undefined
+		/** Only these repositories, so the limit is spent on them; an empty list reads nothing. */
+		readonly repositoryIds?: ReadonlyArray<VcsRepositoryId> | undefined
 		readonly status?: DependencyFindingStatus | undefined
 		readonly limit: number
 	}) => Effect.Effect<ReadonlyArray<DependencyFindingRow>, DependencyScanPersistenceError>
@@ -580,6 +582,8 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 			const listFindings: DependencyScanStoreApi["listFindings"] = Effect.fn(
 				"DependencyScanStore.listFindings",
 			)(function* (input) {
+				const repositoryIds = input.repositoryIds
+				if (repositoryIds !== undefined && repositoryIds.length === 0) return []
 				return yield* dbExecute((db) =>
 					db.run(
 						PG.from(DependencyFindings)
@@ -589,6 +593,9 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 								input.repositoryId === undefined
 									? undefined
 									: $.repositoryId.eq(input.repositoryId),
+								repositoryIds === undefined
+									? undefined
+									: $.repositoryId.in_(...repositoryIds),
 								input.status === undefined ? undefined : $.status.eq(input.status),
 							])
 							.orderBy(($) => [

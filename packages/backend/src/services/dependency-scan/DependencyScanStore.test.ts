@@ -124,6 +124,14 @@ describe("DependencyScanStore bulk reads", () => {
 					[],
 				)
 				assert.deepStrictEqual(yield* store.latestBranchScans({ orgId: orgB }), [])
+				assert.strictEqual(
+					(yield* store.listFindings({ orgId: orgA, repositoryIds: [repo], limit: 10 })).length,
+					2,
+				)
+				assert.deepStrictEqual(
+					yield* store.listFindings({ orgId: orgA, repositoryIds: [], limit: 10 }),
+					[],
+				)
 			}),
 		),
 	)

@@ -465,27 +465,27 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 				"DependencyScanService.listFindings",
 			)(function* (tenant, query) {
 				const orgId = tenant.orgId
+				// Only repositories the org still has: a purged or removed one's findings are not shown.
+				const connected = yield* connectedRepositories(orgId).pipe(
+					Effect.mapError(persistence("Could not list repositories")),
+				)
+				const names = new Map(connected.map(({ repository }) => [repository.id, repository.fullName]))
 				const rows = yield* store
 					.listFindings({
 						orgId,
 						limit: FINDINGS_LIMIT,
 						status: query.status,
 						repositoryId: query.repositoryId,
+						repositoryIds: [...names.keys()],
 					})
 					.pipe(Effect.mapError(persistence("Could not list findings")))
-				const connected = yield* connectedRepositories(orgId).pipe(
-					Effect.mapError(persistence("Could not list repositories")),
-				)
 				const production = yield* productionOrNone(tenant, connected)
 				const byFinding = productionByFinding(
 					production.running,
 					production.completed,
 					production.matches,
 				)
-				const names = new Map(connected.map(({ repository }) => [repository.id, repository.fullName]))
-				// A purged or removed repository's findings stay in the table but are not shown.
 				const ranked = rows
-					.filter((row) => names.has(row.repositoryId))
 					.map((row, order) => {
 						const services = byFinding.get(findingKey(row)) ?? []
 						const spans = services.reduce((sum, service) => sum + service.spanCount, 0)
@@ -500,11 +500,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 				})
 				return {
 					findings: ranked.map(({ row, services }) =>
-						findingViewOf(
-							row,
-							names.get(row.repositoryId) ?? "",
-							services.map(toRunningService),
-						),
+						findingViewOf(row, names.get(row.repositoryId) ?? "", services.map(toRunningService)),
 					),
 					production: {
 						available: production.available,
