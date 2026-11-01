@@ -1467,6 +1467,9 @@ const make: Effect.Effect<
 									$.orgId.eq(orgId),
 									$.archivedAt.isNotNull(),
 									$.archivedAt.lt(archivedCutoff),
+									// A fixed issue old clients still hit holds the build set that keeps them
+									// from reopening it; deleting it re-mints the bug as a new triage issue.
+									$.lastSeenAt.lt(archivedCutoff),
 								])
 								.limit(500),
 						),

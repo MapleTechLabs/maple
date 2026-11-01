@@ -5,9 +5,9 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "vitest"
-import { RetiredDayAuthority } from "../src/server/archives/retention"
-import { InsertBatcher } from "../src/server/insert-batcher"
-import { __testables } from "../src/server/serve"
+import { RetiredDayAuthority } from "@maple/local-server/archives/retention"
+import { InsertBatcher } from "@maple/local-server/insert-batcher"
+import { __testables } from "@maple/local-server/serve"
 import { makeRuntime, openStore, run, serveWith } from "./eventing-test-support"
 
 describe("Durable outbox overflow", () => {

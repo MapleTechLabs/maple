@@ -15,6 +15,6 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
-		breadcrumbs: () => [{ label: "Agent Sessions", href: "/agent-sessions" }, { label: "Tools" }],
+		breadcrumbs: () => [{ label: "Agent sessions", href: "/agent-sessions" }, { label: "Tools" }],
 	},
 )

@@ -3,13 +3,13 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
 import { errorState } from "../../ui/error-state"
 import { skeleton } from "../../ui/skeleton"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
+import { disconnectDialog } from "./view-disconnect"
 
 // `CloudflareAccountCard` and `CloudflareHeaderActions`.
 
@@ -91,24 +91,14 @@ export const cloudflareHeaderActions = (h: H, model: Model): ReadonlyArray<Html>
 					h,
 					{
 						size: "sm",
-						variant: "destructive-outline",
+						variant: "outline",
 						isDisabled: busy,
 						isLoading: model.disconnect.isPending,
 						attributes: [h.OnClick(Message.ClickedDisconnect())],
 					},
 					[multi ? "Disconnect all" : "Disconnect"],
 				),
-				confirmDialog(h, {
-					slotId: "integration-disconnect",
-					model: model.disconnect.dialog,
-					toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
-					title: "Disconnect Cloudflare",
-					description: multi
-						? "Maple stops collecting data from all connected Cloudflare accounts. You can reconnect later."
-						: "Maple stops collecting data from this Cloudflare account. You can reconnect later.",
-					confirmLabel: "Disconnect",
-					onConfirm: Message.ConfirmedDisconnect(),
-				}),
+				disconnectDialog(h, model, multi ? "cloudflare-multi" : "cloudflare"),
 			],
 		),
 	]

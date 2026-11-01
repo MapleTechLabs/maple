@@ -1,5 +1,6 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import type { CodeReviewAnalytics, CodeReviewTotals } from "@maple/domain/http"
-import { CATEGORY_LABELS, formatCount } from "../../../components/code-review/code-review-format"
+import { CATEGORY_LABELS } from "../../../components/code-review/code-review-format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../ui/empty"
@@ -36,7 +37,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 									h.span([h.Class("min-w-0 flex-1 truncate")], [row.name]),
 									h.span(
 										[h.Class("tabular-nums text-muted-foreground")],
-										[formatCount(row.value)],
+										[formatNumber(row.value)],
 									),
 								],
 							),
@@ -60,7 +61,7 @@ const barList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<Bar>, emptyLabel: str
 						[h.Class("flex items-center justify-between gap-2 text-sm")],
 						[
 							h.span([h.Class("truncate")], [row.label]),
-							h.span([h.Class("tabular-nums text-muted-foreground")], [formatCount(row.value)]),
+							h.span([h.Class("tabular-nums text-muted-foreground")], [formatNumber(row.value)]),
 						],
 					),
 					meter(h, {
@@ -139,12 +140,12 @@ export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics
 									),
 									tableCell(
 										h,
-										[formatCount(row.pullRequests)],
+										[formatNumber(row.pullRequests)],
 										"text-right text-sm tabular-nums",
 									),
 									tableCell(
 										h,
-										[formatCount(row.findings)],
+										[formatNumber(row.findings)],
 										"pr-0 text-right text-sm tabular-nums text-muted-foreground",
 									),
 								],

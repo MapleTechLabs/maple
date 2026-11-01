@@ -7,7 +7,8 @@ import { AppRoute, hrefOf } from "../../../route"
 import { copyButton } from "../../../ui/copy-button"
 import { icon } from "../../../ui/icon"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
-import { buildLogJsonPayload, formatLogTimestamp } from "./derive"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { buildLogJsonPayload } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
@@ -44,7 +45,7 @@ export const metaStrip = (
 						[h.Class("font-mono")],
 						[
 							copyable(h, model, "meta-time", log.timestamp, [
-								formatLogTimestamp(log.timestamp, timeZone),
+								formatTimestampInTimezone(log.timestamp, { timeZone, withMilliseconds: true }),
 							]),
 						],
 					),

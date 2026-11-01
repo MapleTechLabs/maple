@@ -324,6 +324,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						}),
 					]
 				: []),
+			...(search.groupId !== undefined && search.groupId !== ""
+				? [
+						activeUserFilter(h, {
+							userId: search.groupId,
+							count: rowCount,
+							label: "Sessions from group",
+							clearLabel: "Clear group filter",
+							onClear: Message.ClickedClearGroupId(),
+						}),
+					]
+				: []),
 			listBody(h, model, inputs.context.timeZone),
 		],
 	)

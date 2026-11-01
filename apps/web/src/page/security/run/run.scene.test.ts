@@ -101,8 +101,8 @@ describe("security run", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(RUN_IDS.billing)),
-			expectView(role("tablist", { name: "Severity" })).toExist(),
-			expectView(role("tab", { name: /^Critical/ })).toHaveAttr("aria-selected", "false"),
+			expectView(role("group", { name: "Severity" })).toExist(),
+			expectView(role("button", { name: /^Critical/ })).toHaveAttr("aria-pressed", "false"),
 			expectView(text("Refund endpoint skips the invoice ownership check")).toExist(),
 			expectView(role("button", { name: /^How the run ran/ })).toHaveAttr("aria-expanded", "false"),
 			expectView(text("Gaps")).not.toExist(),

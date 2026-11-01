@@ -11,6 +11,12 @@ export const PlanetScaleWebhookQueue = Cloudflare.Queues.Queue(
 	stageNamed("planetscale-webhooks"),
 )
 
+/** Cancelled plans the Autumn webhook read, reviewed off its request. */
+export const CancellationReviewsQueue = Cloudflare.Queues.Queue(
+	"cancellation-reviews",
+	stageNamed("cancellation-reviews"),
+)
+
 /** Org audit-log entries on their way to the warehouse. */
 export const AuditEventsQueue = Cloudflare.Queues.Queue("audit-events", stageNamed("audit-events"))
 

@@ -33,6 +33,9 @@ export const METRIC_TYPE_COLORS = new Map<string, string>([
 	["exponential_histogram", "var(--primary)"],
 ])
 
+/** The type's short label ("Exp Hist"), or the raw type when it is unknown. */
+export const metricTypeLabel = (type: string): string => METRIC_TYPE_CONFIG.get(type)?.label ?? type
+
 /** `MetricTypeBadge`. */
 export const metricTypeBadge = <M>(h: HtmlBuilder<M>, type: string): Html => {
 	const config = METRIC_TYPE_CONFIG.get(type) ?? {

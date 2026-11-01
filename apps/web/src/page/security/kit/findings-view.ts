@@ -4,7 +4,8 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
-import { severityIcon } from "../../errors/kit/severity"
+import { segmentedSelect } from "../../../ui/segmented-select"
+import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
 import { locationOf } from "./format"
 import {
 	BUCKET_LABEL,
@@ -15,7 +16,7 @@ import {
 	type SeverityBucket,
 	SCORED_BUCKETS,
 } from "./findings"
-import { SECURITY_SEVERITY_FILL, securitySeverityBadge } from "./parts"
+import { securitySeverityBadge } from "./parts"
 
 // The findings list the run page and the Findings tab share, laid out like Linear's issue list:
 // severity tabs on top, collapsible groups, one dense line per finding.
@@ -33,24 +34,26 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 						? "border-2 border-dashed border-muted-foreground"
 						: bucket === "rejected"
 							? "bg-foreground-faint"
-							: SECURITY_SEVERITY_FILL[bucket],
+							: SEVERITY_FILL[bucket],
 				className,
 			),
 		),
 	])
 
 /** Linear's priority marks: bars by severity, the warning glyph for critical, a dashed ring for
- * an unproven lead. Only critical is coloured, so the eye goes there first. */
-export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket): Html => {
+ * an unproven lead. Only critical is coloured, so the eye goes there first. `isQuiet` draws an
+ * unconfirmed estimate a text step quieter; critical keeps its colour. */
+export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, isQuiet = false): Html => {
+	const quiet = isQuiet ? "text-foreground-subtle" : undefined
 	switch (bucket) {
 		case "critical":
 			return severityIcon(h, "critical", 14)
 		case "high":
 		case "medium":
 		case "low":
-			return severityIcon(h, bucket, 14, "text-foreground")
+			return severityIcon(h, bucket, 14, quiet ?? "text-foreground")
 		case "informational":
-			return severityIcon(h, null, 14)
+			return severityIcon(h, null, 14, quiet)
 		case "needs_validation":
 			return h.span(
 				[
@@ -104,52 +107,26 @@ export type SeverityTabsOptions<M> = Readonly<{
 	label: string
 }>
 
-const tabButton = <M>(
-	h: HtmlBuilder<M>,
-	isActive: boolean,
-	onClick: M,
-	key: string,
-	children: ReadonlyArray<Html | string>,
-): Html =>
-	h.button(
-		[
-			h.Key(key),
-			h.Type("button"),
-			h.Role("tab"),
-			h.AriaSelected(isActive),
-			h.OnClick(onClick),
-			h.Class(
-				cn(
-					"flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-					isActive
-						? "border-border bg-muted font-medium text-foreground"
-						: "border-transparent text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-				),
-			),
-		],
-		children,
-	)
-
-const tabCount = <M>(h: HtmlBuilder<M>, count: number): Html =>
-	h.span([h.Class("font-mono tabular-nums text-muted-foreground")], [String(count)])
-
 /** One click per severity; a bucket with nothing in it stays out of the way unless it is picked. */
 export const severityTabs = <M>(h: HtmlBuilder<M>, options: SeverityTabsOptions<M>): Html => {
 	const total = SCORED_BUCKETS.reduce((sum, bucket) => sum + options.counts[bucket], 0)
-	return h.div(
-		[h.Role("tablist"), h.AriaLabel(options.label), h.Class("flex items-center gap-1 overflow-x-auto")],
-		[
-			tabButton(h, options.active === null, options.onPick(null), "all", ["All", tabCount(h, total)]),
+	return segmentedSelect<SeverityBucket | "all", M>(h, {
+		size: "sm",
+		ariaLabel: options.label,
+		className: "max-w-full overflow-x-auto",
+		value: options.active ?? "all",
+		onChange: (value) => options.onPick(value === "all" ? null : value),
+		options: [
+			{ value: "all", label: `All ${total}` },
 			...SCORED_BUCKETS.filter((bucket) => options.counts[bucket] > 0 || options.active === bucket).map(
-				(bucket) =>
-					tabButton(h, options.active === bucket, options.onPick(bucket), bucket, [
-						bucketIcon(h, bucket),
-						BUCKET_LABEL[bucket],
-						tabCount(h, options.counts[bucket]),
-					]),
+				(bucket) => ({
+					value: bucket,
+					label: `${BUCKET_LABEL[bucket]} ${options.counts[bucket]}`,
+					icon: bucketIcon(h, bucket),
+				}),
 			),
 		],
-	)
+	})
 }
 
 /** Copy for the hint on each group, where the bucket needs one. */
@@ -190,9 +167,7 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 		),
 	]
 	const children = [
-		isUnverified(finding)
-			? h.span([h.Class("inline-flex opacity-50")], [bucketIcon(h, bucketOf(finding))])
-			: bucketIcon(h, bucketOf(finding)),
+		bucketIcon(h, bucketOf(finding), isUnverified(finding)),
 		h.span(
 			[
 				h.Class(

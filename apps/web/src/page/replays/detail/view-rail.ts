@@ -25,7 +25,7 @@ import { meter } from "../../../ui/meter"
 import { skeleton } from "../../../ui/skeleton"
 import { togglePrimitive } from "../../../ui/toggle"
 import { MARKER_SOFT, MARKER_TEXT } from "../kit/replay-meta"
-import { realOffsetFrom, timelineFrom } from "./derive"
+import { realOffsetFrom } from "./derive"
 import { Message } from "./message"
 import type { EventFilter, EventRow, Model, RailTab, ReplayDetail, TraceSummary } from "./model"
 import { sessionTab } from "./view-session"
@@ -133,16 +133,14 @@ const railOf = stableSlice((model: Model) => ({
 	transcript: model.transcript,
 	traceSummaries: model.traceSummaries,
 	startTime: model.meta.startTime,
-	inactiveIntervals: model.meta.inactiveIntervals,
 	totalMs: model.player.totalMs,
-	isSkippingIdle: model.player.isSkippingIdle,
 }))
 type RailView = ReturnType<typeof railOf>
 
 /** `useClockAt`: a warehouse timestamp's clock offset in the recording. */
 const clockAt = (model: RailView, timestamp: string): string => {
 	const offset = realOffsetFrom(model.startTime, model.totalMs, timestamp)
-	return offset === undefined ? EMPTY_VALUE : formatClock(timelineFrom(model).toDisplay(offset))
+	return offset === undefined ? EMPTY_VALUE : formatClock(offset)
 }
 
 const filterButton = (

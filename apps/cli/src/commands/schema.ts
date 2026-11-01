@@ -14,14 +14,14 @@ import {
 	runLocalStoreMigration,
 	type MigrationPlan,
 } from "../server/local-store-migrations"
-import { maintenanceOperation, releasePreservedCheckpoints } from "../server/checkpoints"
+import { maintenanceOperation, releasePreservedCheckpoints } from "@maple/local-server/checkpoints"
 import {
 	listRetainedLeftovers,
 	pruneRetainedLeftovers,
 	type RetainedInventory,
 	type RetainedLeftover,
 } from "../server/retained-leftovers"
-import { isStoreDirty, readMarker } from "../server/store-version"
+import { isStoreDirty, readMarker } from "@maple/local-server/store-version"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import { commandScope, mapleCommand } from "./server-args"
 

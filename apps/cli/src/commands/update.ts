@@ -14,7 +14,7 @@ import {
 } from "../core/update"
 import { step, type StepHandle, type StepLabels } from "../lib/progress"
 import { amber, bold, cyan, dim, green } from "../lib/style"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 
 // NB: this is named `--tag`, not `--version`: the CLI framework reserves a
 // global `--version` flag (prints the binary version and exits), so a

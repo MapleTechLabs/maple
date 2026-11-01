@@ -1,6 +1,6 @@
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
-import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
+import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import { backdropBar } from "../../ui/meter"
@@ -84,7 +84,7 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 										[
 											h.span(
 												[h.Class("text-foreground")],
-												[formatToolCount(row.calls)],
+												[formatNumber(row.calls)],
 											),
 											errorRateValue(h, { rate: errorRate(row) }),
 											latencyValue(h, { ms: row.p95 / 1_000_000, scale: "p95" }),
@@ -114,7 +114,7 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 }
 
 const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServiceTabOptions<M>): Html => {
-	const clients = data.clients.slice(0, PANEL_LIMIT)
+	const clients = data.clients.filter((client) => client.calls > 0).slice(0, PANEL_LIMIT)
 	const maxCalls = Math.max(...clients.map((client) => client.calls), 1)
 	return panel(h, { className: "min-w-0" }, [
 		panelHeader(h, { title: "Clients", action: viewAll(h, "View all", options.onOpenServer) }),
@@ -145,7 +145,7 @@ const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 									),
 								],
 								[
-									h.span([h.Class("text-foreground")], [formatToolCount(client.calls)]),
+									h.span([h.Class("text-foreground")], [formatNumber(client.calls)]),
 									errorRateValue(h, { rate: errorRate(client) }),
 								],
 							),
@@ -163,7 +163,9 @@ export const serviceMcpTab = <M>(
 	options: ServiceTabOptions<M>,
 ): Html => {
 	const { totals } = data
-	const top = data.clients[0]
+	// Clients that only connected have no calls to rank.
+	const callers = data.clients.filter((client) => client.calls > 0)
+	const top = callers[0]
 	return h.div(
 		[h.Class("flex flex-col gap-4 p-4")],
 		[
@@ -187,13 +189,13 @@ export const serviceMcpTab = <M>(
 							),
 						],
 					),
-					viewAll(h, "Open in MCP Servers", options.onOpenServer),
+					viewAll(h, "Open in MCP servers", options.onOpenServer),
 				],
 			),
 			statRail(h, { columns: 4 }, [
 				statRailItem(h, {
 					eyebrow: "Tool calls",
-					value: formatToolCount(totals.calls),
+					value: formatNumber(totals.calls),
 					spark: data.series.map((point) => point.calls),
 					sparkColor: "var(--primary)",
 					subline: `${data.tools.length} ${pluralize(data.tools.length, "tool")}`,
@@ -215,7 +217,7 @@ export const serviceMcpTab = <M>(
 				}),
 				statRailItem(h, {
 					eyebrow: "Clients",
-					value: String(data.clients.length),
+					value: String(callers.length),
 					subline:
 						top === undefined
 							? ""

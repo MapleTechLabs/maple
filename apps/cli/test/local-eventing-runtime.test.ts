@@ -13,9 +13,9 @@ import {
 	type SignalProjectionSpec,
 	type SignalScalar,
 } from "@maple/eventing-core"
-import { normalizeOtlpLogs, normalizeOtlpLogsWithDiagnostics } from "../src/server/eventing/otlp"
-import { sourceOccurrenceFingerprint } from "../src/server/eventing/runtime"
-import { encodeLogs } from "../src/server/otlp/encode"
+import { normalizeOtlpLogs, normalizeOtlpLogsWithDiagnostics } from "@maple/local-server/eventing/otlp"
+import { sourceOccurrenceFingerprint } from "@maple/local-server/eventing/runtime"
+import { encodeLogs } from "@maple/local-server/otlp/encode"
 import { makeRuntime, metricRecorder, openStore, run } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void>): Promise<void> => {

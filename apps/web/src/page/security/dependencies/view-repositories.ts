@@ -24,7 +24,7 @@ import {
 	tableRow,
 } from "../../../ui/table"
 import { relativeTime } from "../../kit/relative-time"
-import { repositoryName, SECURITY_SEVERITY_FILL } from "../kit/parts"
+import { repositoryName } from "../kit/parts"
 import {
 	isScanPending,
 	openFindingsOf,
@@ -35,6 +35,7 @@ import {
 	shortSha,
 	upgradePlanOf,
 } from "./derive"
+import { SEVERITY_FILL } from "../../errors/kit/severity"
 import { Message, type Model } from "./model"
 
 // Each connected repository as a row: its latest scan, open findings by severity, the upgrades
@@ -167,7 +168,7 @@ const severityCounts = (h: H, findings: ReadonlyArray<DependencyFindingView>): H
 						statusDot(h, {
 							tone: "custom",
 							size: "lg",
-							className: SECURITY_SEVERITY_FILL[severity],
+							className: SEVERITY_FILL[severity],
 						}),
 						String(counts[severity]),
 					],

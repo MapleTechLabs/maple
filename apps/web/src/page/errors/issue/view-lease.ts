@@ -53,7 +53,7 @@ export const leaseHud = <M>(
 		h,
 		{
 			className: cn(
-				"flex-row items-center gap-3 border-border-subtle bg-card/50 px-3 py-2.5",
+				"flex-row items-center gap-3 border-border-subtle bg-surface-faint px-3 py-2.5",
 				isDanger && "border-severity-error-a4",
 			),
 		},

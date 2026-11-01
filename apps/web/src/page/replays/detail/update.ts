@@ -22,7 +22,6 @@ import {
 	manifestTotalMs,
 	playerStatus,
 	realOffsetOf,
-	timelineOf,
 	traceWindowOf,
 	windowOf,
 } from "./derive"
@@ -207,11 +206,11 @@ const togglePlay = (model: Model): Model => {
 	return instruct(model, "resume", undefined, { isPlaying: true })
 }
 
-/** `seekDisplay` → `applySeek`: map to the real clock, rebuild outside the loaded span, else drive the engine. */
-const seekDisplay = (model: Model, context: PageContext, displayMs: number): Return => {
+/** `applySeek`: rebuild outside the loaded span, else drive the engine. */
+const seekTo = (model: Model, context: PageContext, offsetMs: number): Return => {
 	if (!isReady(model)) return { model }
 	const { player } = model
-	const clamped = Math.max(0, Math.min(timelineOf(model).toReal(displayMs), player.totalMs))
+	const clamped = Math.max(0, Math.min(offsetMs, player.totalMs))
 	const placed: Model = {
 		...model,
 		player: {
@@ -368,15 +367,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model,
 			commands: [MeasureScrub({ surface, clientX })],
 		}),
-		MeasuredScrub: ({ ratio }) => seekDisplay(model, context, ratio * timelineOf(model).activeTotalMs),
-		RequestedSeek: ({ displayMs }) => seekDisplay(model, context, displayMs),
-		RequestedSeekBy: ({ deltaMs }) =>
-			seekDisplay(model, context, timelineOf(model).toDisplay(model.player.currentMs) + deltaMs),
+		MeasuredScrub: ({ ratio }) => seekTo(model, context, ratio * model.player.totalMs),
+		RequestedSeek: ({ offsetMs }) => seekTo(model, context, offsetMs),
+		RequestedSeekBy: ({ deltaMs }) => seekTo(model, context, model.player.currentMs + deltaMs),
 		RequestedSeekToTimestamp: ({ timestamp }) => {
 			const offset = realOffsetOf(model, timestamp)
 			return offset === undefined
 				? { model }
-				: seekDisplay(model, context, timelineOf(model).toDisplay(offset))
+				: seekTo(model, context, offset)
 		},
 		PickedSpeed: ({ speed }) => ({ model: { ...model, player: { ...model.player, speed } } }),
 		ToggledSkipIdle: () => ({
@@ -395,6 +393,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const ranged = syncRange(entry.model, context, "Refresh")
 			return { model: ranged.model, commands: [...(entry.commands ?? []), ...(ranged.commands ?? [])] }
 		},
+		// `Load` asks again only for a failed slot; loaded or in-flight reads are kept.
+		ClickedRetryDetail: () => requestEntry(model, context, "Load"),
 		PickedRailTab: ({ tab }) => ({ model: { ...model, railTab: tab } }),
 		PickedEventFilter: ({ filter }) => ({
 			model: { ...model, eventFilter: filter, openEventIndex: null },
@@ -404,7 +404,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const offset = realOffsetOf(toggled, timestamp)
 			return offset === undefined
 				? { model: toggled }
-				: seekDisplay(toggled, context, timelineOf(toggled).toDisplay(offset))
+				: seekTo(toggled, context, offset)
 		},
 		ToggledTraceSpans: ({ traceId, startTime }) => {
 			const isOpen = model.expandedTraces.includes(traceId)

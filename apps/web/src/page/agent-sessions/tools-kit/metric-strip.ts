@@ -1,7 +1,6 @@
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	formatToolCount,
 	formatToolMetric,
 	metricSpark,
 	metricValue,
@@ -94,7 +93,7 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 							h.span([], [formatPercent(share)]),
 							h.span(
 								[h.Class("text-foreground-subtle")],
-								["of all ", formatToolCount(config.allSessions), " sessions"],
+								["of all ", formatNumber(config.allSessions), " sessions"],
 							),
 						]),
 			isSelected: config.metric === key,

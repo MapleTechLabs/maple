@@ -2,11 +2,7 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	parseChTimestampMs,
-	spanDisplayRange,
-	type Timeline,
-} from "../../../components/replays/replay-timeline"
+import { parseChTimestampMs, spanRange } from "../../../components/replays/replay-timeline"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
@@ -22,7 +18,6 @@ import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
 import { stableSlice } from "../../kit/stable-slice"
 import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
-import { timelineFrom } from "./derive"
 import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
 import { bufferedTrack, idleBandsTrack, markersTrack, type Playhead, playheadOf } from "./view-player"
@@ -196,27 +191,22 @@ const tracesOf = stableSlice((model: Model) => ({
 	spans: model.spans,
 	expandedTraces: model.expandedTraces,
 	startTime: model.meta.startTime,
-	inactiveIntervals: model.meta.inactiveIntervals,
 	totalMs: model.player.totalMs,
-	isSkippingIdle: model.player.isSkippingIdle,
 }))
 type TracesView = ReturnType<typeof tracesOf>
 
-type SeekFrame = Readonly<{ view: TracesView; timeline: Timeline }>
-
-const rangeOf = (frame: SeekFrame, startTime: string, durationMs: number) =>
-	spanDisplayRange({
+const rangeOf = (view: TracesView, startTime: string, durationMs: number) =>
+	spanRange({
 		spanStartIso: startTime,
 		durationMs,
-		recordingStartEpochMs: frame.view.startTime,
-		realTotalMs: frame.view.totalMs,
-		timeline: frame.timeline,
+		recordingStartEpochMs: view.startTime,
+		realTotalMs: view.totalMs,
 	})
 
-const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
-	const range = rangeOf(frame, span.startTime, span.durationMs)
-	const leftPct = pct(range.displayStartMs, frame.timeline.activeTotalMs)
-	const widthPct = Math.max(0.4, pct(range.displayEndMs, frame.timeline.activeTotalMs) - leftPct)
+const spanRowItem = (h: H, view: TracesView, span: SpanRow): Html => {
+	const range = rangeOf(view, span.startTime, span.durationMs)
+	const leftPct = pct(range.startMs, view.totalMs)
+	const widthPct = Math.max(0.4, pct(range.endMs, view.totalMs) - leftPct)
 	return h.div(
 		[h.Key(span.spanId), h.Class("flex items-stretch")],
 		[
@@ -240,7 +230,7 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 			h.button(
 				[
 					h.Type("button"),
-					h.OnClick(Message.RequestedSeek({ displayMs: range.displayStartMs })),
+					h.OnClick(Message.RequestedSeek({ offsetMs: range.startMs })),
 					h.Class("relative h-5 flex-1 cursor-pointer"),
 				],
 				[
@@ -263,8 +253,8 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 	)
 }
 
-const spanLane = (h: H, frame: SeekFrame, traceId: string): Html => {
-	const data = frame.view.spans[traceId] ?? AsyncData.Loading()
+const spanLane = (h: H, view: TracesView, traceId: string): Html => {
+	const data = view.spans[traceId] ?? AsyncData.Loading()
 	return AsyncData.matchData(data, {
 		onEmpty: () => h.div([h.Class("bg-surface-faint px-3 py-2")], [skeleton(h, "h-3 w-1/2")]),
 		onFailure: (failure) =>
@@ -283,17 +273,17 @@ const spanLane = (h: H, frame: SeekFrame, traceId: string): Html => {
 						[h.Class("max-h-56 space-y-px overflow-y-auto bg-surface-faint py-1")],
 						[...spans]
 							.sort((a, b) => parseChTimestampMs(a.startTime) - parseChTimestampMs(b.startTime))
-							.map((span) => spanRowItem(h, frame, span)),
+							.map((span) => spanRowItem(h, view, span)),
 					),
 	})
 }
 
-const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
-	const isExpanded = frame.view.expandedTraces.includes(summary.traceId)
-	const range = rangeOf(frame, summary.startTime, summary.durationMs)
+const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
+	const isExpanded = view.expandedTraces.includes(summary.traceId)
+	const range = rangeOf(view, summary.startTime, summary.durationMs)
 	const isError = summary.hasError > 0
-	const leftPct = pct(range.displayStartMs, frame.timeline.activeTotalMs)
-	const widthPct = Math.max(0.6, pct(range.displayEndMs, frame.timeline.activeTotalMs) - leftPct)
+	const leftPct = pct(range.startMs, view.totalMs)
+	const widthPct = Math.max(0.6, pct(range.endMs, view.totalMs) - leftPct)
 	return h.li(
 		[h.Key(summary.traceId), h.Class("border-b border-border-subtle last:border-b-0")],
 		[
@@ -387,7 +377,7 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 					h.button(
 						[
 							h.Type("button"),
-							h.OnClick(Message.RequestedSeek({ displayMs: range.displayStartMs })),
+							h.OnClick(Message.RequestedSeek({ offsetMs: range.startMs })),
 							h.Class("relative h-11 flex-1 cursor-pointer"),
 						],
 						[
@@ -415,13 +405,12 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 					),
 				],
 			),
-			...(isExpanded ? [spanLane(h, frame, summary.traceId)] : []),
+			...(isExpanded ? [spanLane(h, view, summary.traceId)] : []),
 		],
 	)
 }
 
 const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): Html => {
-	const frame: SeekFrame = { view, timeline: timelineFrom(view) }
 	if (traceIds.length === 0)
 		return h.div(
 			[],
@@ -458,7 +447,7 @@ const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): H
 						])
 					: h.ul(
 							[h.Class("max-h-72 overflow-y-auto")],
-							summaries.map((summary) => traceRow(h, frame, summary)),
+							summaries.map((summary) => traceRow(h, view, summary)),
 						),
 			],
 		}),

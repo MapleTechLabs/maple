@@ -104,7 +104,7 @@ const saveIndicator = (h: H, model: Model): Html =>
 			h.AriaLive("polite"),
 			h.Class(
 				model.componentSave === "failed"
-					? "font-mono text-xs text-destructive"
+					? "font-mono text-xs text-destructive-foreground"
 					: "font-mono text-xs text-muted-foreground",
 			),
 		],
@@ -273,7 +273,7 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 			[
 				h.AriaLabel("Post an update"),
 				h.OnSubmit(Message.SubmittedUpdate()),
-				h.Class("flex flex-col gap-3 rounded-md border bg-muted/30 p-3"),
+				h.Class("flex flex-col gap-3 rounded-md border bg-surface-faint p-3"),
 			],
 			[
 				selectField(h, {

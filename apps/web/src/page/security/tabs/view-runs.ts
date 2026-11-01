@@ -10,7 +10,7 @@ import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { nothingInWindow } from "../../kit/nothing-in-window"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import {
 	formatElapsed,
 	formatUsd,
@@ -179,13 +179,7 @@ const runRow = (
 					h.span(
 						[h.Class("flex flex-col items-end")],
 						[
-							relativeTime(h, {
-								value: run.startedAt,
-								nowMs,
-								timeZone,
-								variant: "short",
-								tooltip: "title",
-							}),
+							listRelativeTime(h, { value: run.startedAt, nowMs, timeZone, variant: "short" }),
 							h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
 						],
 					),
@@ -233,7 +227,7 @@ const toolbar = (
 			toParentMessage: (message) => Message.GotRunsTargetSelectMessage({ message }),
 		}),
 		trailing: [
-			toolbarCount(h, [isCapped ? `showing the ${RUN_LIST_CAP} newest` : countLabel(count, "run")]),
+			toolbarCount(h, [isCapped ? `${RUN_LIST_CAP}+ runs` : countLabel(count, "run")]),
 		],
 	})
 

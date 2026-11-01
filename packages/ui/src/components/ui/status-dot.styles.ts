@@ -11,9 +11,9 @@ export const statusDotVariants = cva("relative inline-flex shrink-0 rounded-full
 			ok: TONE_FILL.ok,
 			info: TONE_FILL.info,
 			done: TONE_FILL.done,
-			neutral: TONE_FILL.neutral,
 			// In-flight work (running investigations, live streams).
-			live: "bg-primary",
+			live: TONE_FILL.live,
+			neutral: TONE_FILL.neutral,
 			// Colour comes from the caller's className (service colours, severity maps).
 			custom: "",
 		},

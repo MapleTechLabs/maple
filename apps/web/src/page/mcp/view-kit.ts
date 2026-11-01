@@ -283,6 +283,7 @@ export const headingNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
 
 const CLIENT_ICONS = new Map<string, IconName>([
 	["Claude Code", "ClaudeIcon"],
+	["Claude", "ClaudeIcon"],
 	["curl", "SquareTerminalIcon"],
 	["Bun", "BunIcon"],
 	["Node (undici)", "NodejsIcon"],

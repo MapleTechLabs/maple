@@ -269,10 +269,19 @@ describe("session replay identity columns", () => {
 		)
 	})
 
+	it("matches groupId exactly", () => {
+		const { sql } = compileUnsafe(sessionReplaysListQuery({ groupId: "org_acme" }), {
+			...baseParams,
+			...WINDOW,
+		})
+		expect(sql).toContain("GroupId = 'org_acme'")
+	})
+
 	it("omits both identity predicates when unset", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({}), { ...baseParams, ...WINDOW })
 		expect(sql).not.toContain("ILIKE")
 		expect(sql).not.toContain("GroupName =")
+		expect(sql).not.toContain("GroupId =")
 	})
 
 	// The group facet must exclude its own dimension, or selecting a group would
@@ -282,6 +291,18 @@ describe("session replay identity columns", () => {
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
 		// 13 branches, minus the group branch itself.
 		expect(sql.split("GroupName = 'Acme Inc'").length - 1).toBe(12)
+	})
+
+	it("narrows every facet branch by the exact GroupId", () => {
+		const q = sessionReplaysFacetsQuery({ groupId: "org_acme" })
+		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
+		expect(sql.split("GroupId = 'org_acme'").length - 1).toBe(13)
+	})
+
+	it("never offers an empty group as a facet option", () => {
+		const q = sessionReplaysFacetsQuery({})
+		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
+		expect(sql).toContain("GroupName != ''")
 	})
 })
 

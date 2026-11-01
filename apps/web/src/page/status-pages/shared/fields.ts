@@ -1,7 +1,14 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import {
+	field,
+	fieldDescription,
+	fieldError,
+	type FieldIds,
+	fieldLabel,
+	type FieldState,
+} from "../../../ui/field"
 import { input } from "../../../ui/input"
-import { label } from "../../../ui/label"
 import { nativeOption, nativeSelect } from "../../../ui/native-select"
 import { textarea } from "../../../ui/textarea"
 
@@ -11,7 +18,7 @@ type Common<M> = Readonly<{
 	id: string
 	label: string
 	hint?: string
-	/** Replaces the hint, in the destructive colour. */
+	/** Replaces the hint, in the error colour. */
 	error?: string | null
 	className?: string
 	isDisabled?: boolean
@@ -22,25 +29,23 @@ type Common<M> = Readonly<{
 
 const frame = <M>(h: HtmlBuilder<M>, options: Common<M>, control: Html): Html => {
 	const error = options.error ?? null
-	return h.div(
-		[h.Class(cn("flex flex-col gap-1.5", options.className))],
-		[
-			label(
-				h,
-				{
-					className: options.isLabelHidden === true ? "sr-only" : "text-xs text-muted-foreground",
-					attributes: [h.For(options.id)],
-				},
-				[options.label],
-			),
-			control,
-			...(error !== null
-				? [h.p([h.Id(`${options.id}-error`), h.Class("text-xs text-destructive")], [error])]
-				: options.hint === undefined
-					? []
-					: [h.p([h.Class("text-xs text-muted-foreground")], [options.hint])]),
-		],
-	)
+	const state: FieldState = {
+		isInvalid: error !== null,
+		isDirty: false,
+		isFilled: false,
+		isFocused: false,
+		isTouched: false,
+	}
+	const ids: FieldIds = { control: options.id, label: `${options.id}-label`, error: `${options.id}-error` }
+	return field(h, { state, className: cn("items-stretch gap-1.5", options.className) }, [
+		fieldLabel(h, { ids, state, className: options.isLabelHidden === true ? "sr-only" : undefined }, options.label),
+		control,
+		...(error !== null
+			? [fieldError(h, { ids, state }, error)]
+			: options.hint === undefined
+				? []
+				: [fieldDescription(h, { ids, state }, options.hint)]),
+	])
 }
 
 export const textField = <M>(

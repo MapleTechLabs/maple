@@ -328,7 +328,13 @@ const menuEntries: ReadonlyArray<MenuEntry> = [
 	...(IS_ADMIN
 		? [
 				{ _tag: "Separator" } as const,
-				{ _tag: "Item", value: "disconnect", label: "Disconnect", variant: "destructive" } as const,
+				{
+					_tag: "Item",
+					value: "disconnect",
+					label: "Disconnect",
+					icon: "TrashIcon",
+					variant: "destructive",
+				} as const,
 			]
 		: []),
 ]

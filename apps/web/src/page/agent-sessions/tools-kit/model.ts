@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import type { PresetValue } from "../../kit/time-controls"
 
 // Schemas for the tool analytics reads (`@maple/web-data/lib/tool-analytics` types), shared by
 // `/agent-sessions/tools` and the tool detail page.
@@ -78,7 +79,7 @@ export type ToolSearch = Readonly<{
 	timePreset?: string
 }>
 
-export const DEFAULT_TOOL_PRESET = "7d"
+export const DEFAULT_TOOL_PRESET: PresetValue = "1w"
 export const selectedMetric = (search: ToolSearch): ToolMetric => search.metric ?? "calls"
 export const selectedPercentile = (search: ToolSearch): ToolPercentile => search.percentile ?? "p90"
 

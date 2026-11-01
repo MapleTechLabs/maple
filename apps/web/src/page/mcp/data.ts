@@ -1,9 +1,10 @@
+import type { McpClientKind } from "@maple/domain/http"
 import type { ToolSeriesPoint } from "../agent-sessions/tools-kit/model"
 
 // What the MCP hub reads, per server and per tool. Every field comes from the MCP semantic
 // conventions (`mcp.method.name`, `gen_ai.tool.name`, `error.type`, `user_agent.original`).
 
-export type McpClientKind = "agent" | "script" | "unknown"
+export type { McpClientKind }
 
 export type McpServerRow = Readonly<{
 	service: string
@@ -30,7 +31,16 @@ export type McpToolRow = Readonly<{
 	spark: ReadonlyArray<number>
 }>
 
-export type McpClientRow = Readonly<{ name: string; kind: McpClientKind; calls: number; errors: number }>
+/** `connects` counts initialize requests, `sources` distinct client addresses; a quiet client has 0 calls. */
+export type McpClientRow = Readonly<{
+	name: string
+	kind: McpClientKind
+	calls: number
+	errors: number
+	connects: number
+	sources: number
+	lastSeenMs: number
+}>
 
 export type McpMethodRow = Readonly<{ method: string; calls: number; p50: number; p95: number }>
 

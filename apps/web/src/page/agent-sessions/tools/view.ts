@@ -17,7 +17,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
-import { timeControls } from "../../kit/time-controls"
+import { presetSpanLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { agentSessionsTabs } from "../kit/tabs"
 import { metricStrip, metricStripLoading } from "../tools-kit/metric-strip"
@@ -76,7 +76,7 @@ const toolLanes = (
 	return { sparks, colors }
 }
 
-const toolbar = (h: H, model: Model, actions: Html): Html => {
+const toolbar = (h: H, model: Model): Html => {
 	const facets = Option.getOrUndefined(AsyncData.getData(model.facets.data))
 	const select = (
 		facet: "service" | "model" | "env",
@@ -109,14 +109,13 @@ const toolbar = (h: H, model: Model, actions: Html): Html => {
 		isFailingOnly: model.search.failing === true,
 		onToggleFailingOnly: Message.ToggledFailingOnly(),
 		isWaiting: AsyncData.isRefreshing(model.totals.data),
-		actions,
 	})
 }
 
 /** `isFilled`: the route zero-fills the scope series over the window; the lab's fixture is already bucketed. */
 type BodyOptions = Readonly<{ timeZone: string; isFilled: boolean }>
 
-const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Html => {
+const loadedView = (h: H, model: Model, options: BodyOptions): Html => {
 	const { timeZone } = options
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
 	const { window, themeColors } = model
@@ -143,7 +142,7 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
-			toolbar(h, model, actions),
+			toolbar(h, model),
 			...(tabs.tools === 0
 				? [
 						h.div(
@@ -186,7 +185,10 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 							metric,
 							percentile,
 							allSessions: totals.allSessions,
-							windowLabel: model.search.timePreset ?? DEFAULT_TOOL_PRESET,
+							windowLabel:
+								model.search.startTime !== undefined
+									? "period"
+									: presetSpanLabel(model.search.timePreset ?? DEFAULT_TOOL_PRESET),
 							onSelectMetric: (next) => Message.ClickedMetric({ metric: next }),
 							percentileToggle: model.percentileToggle,
 							toPercentileMessage: (message) => Message.GotPercentileMessage({ message }),
@@ -288,7 +290,7 @@ export const toolsBody = (h: H, model: Model, options: BodyOptions): Html =>
 		onData: () =>
 			model.themeColors === null || model.chartRuntime._tag === "Loading"
 				? loadingView(h)
-				: loadedView(h, model, options, timeActions(h, model)),
+				: loadedView(h, model, options),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
@@ -298,12 +300,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					title: "Agent Sessions",
+					title: "Agent sessions",
+					actions: timeActions(h, model),
 					tabs: agentSessionsTabs(h, {
 						active: "tools",
 						search: model.search,
 						counts: tabCounts(model),
-						className: "border-b border-border",
 					}),
 					scrollClassName: "p-0",
 				},

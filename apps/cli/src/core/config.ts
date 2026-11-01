@@ -3,8 +3,8 @@ import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
 import * as path from "node:path"
-import { defaultLocalUrl } from "../lib/local-address"
-import { durableWrite } from "../server/durable-files"
+import { defaultLocalUrl } from "@maple/local-server/local-address"
+import { durableWrite } from "@maple/local-server/durable-files"
 import {
 	credentialAccount,
 	deleteNativeCredential,

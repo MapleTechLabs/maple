@@ -32,6 +32,7 @@ import { CHART_HEIGHT } from "../../kit/chart-card"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
+import type { PresetValue } from "../../../kit/time-controls"
 import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
 import { type PageData, pageOf } from "./derive"
@@ -388,7 +389,7 @@ export const workloadPageView = (
 	h: H,
 	model: Model,
 	data: PageData,
-	options: Readonly<{ timeZone: string; defaultPreset: string }>,
+	options: Readonly<{ timeZone: string; defaultPreset: PresetValue }>,
 ): Html => {
 	const timeSearch = {
 		startTime: model.search.startTime,

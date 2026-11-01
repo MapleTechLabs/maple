@@ -1,4 +1,4 @@
-import { formatPercent, pluralize } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	errorTextTokens,
@@ -8,7 +8,7 @@ import {
 	variantDifferences,
 	type VariantDifference,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount, UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
+import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -103,10 +103,10 @@ const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 	return facts(h, [
 		h.span(
 			[h.Class("text-foreground")],
-			[formatToolCount(group.calls), ` failed ${pluralize(group.calls, "call")}`],
+			[formatNumber(group.calls), ` failed ${pluralize(group.calls, "call")}`],
 		),
 		`${share} of failures`,
-		`${formatToolCount(group.sessions)} ${pluralize(group.sessions, "session")}`,
+		`${formatNumber(group.sessions)} ${pluralize(group.sessions, "session")}`,
 		`first seen ${formatTimestampInTimezone(group.firstSeen, { timeZone })}`,
 		`last seen ${formatTimestampInTimezone(group.lastSeen, { timeZone })}`,
 	])
@@ -179,7 +179,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 					]),
 					h.span(
 						[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
-						["max ", formatToolCount(Math.max(0, ...group.spark))],
+						["max ", formatNumber(Math.max(0, ...group.spark))],
 					),
 				],
 			),

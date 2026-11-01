@@ -195,7 +195,7 @@ const optionEntries = (
 			: []),
 		{ _tag: "Item", value: "collapsible", label: isCollapsible ? "Always expanded" : "Allow collapsing" },
 		{ _tag: "Separator" },
-		{ _tag: "Item", value: "delete", label: "Delete group…", icon: "TrashIcon", variant: "destructive" },
+		{ _tag: "Item", value: "delete", label: "Delete group", icon: "TrashIcon", variant: "destructive" },
 	]
 }
 

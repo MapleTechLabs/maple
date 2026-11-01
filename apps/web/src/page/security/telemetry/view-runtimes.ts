@@ -22,6 +22,7 @@ import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import {
 	type CriticalUpgrade,
 	criticalUpgrades,
+	currentEntries,
 	isSeenThisHour,
 	type RuntimeEntry,
 	runtimeEntries,
@@ -87,8 +88,15 @@ const markOf = (entry: RuntimeEntry): Mark => {
 	}
 }
 
+const REPLACED_MARK: Mark = {
+	label: "Replaced",
+	variant: "muted",
+	detail: "a newer version took over",
+	title: "This version stopped reporting after another one of this service started. It counts toward no totals.",
+}
+
 const statusCell = (h: H, entry: RuntimeEntry): Html => {
-	const mark = markOf(entry)
+	const mark = entry.replaced ? REPLACED_MARK : markOf(entry)
 	return h.div(
 		[
 			h.Class("flex min-w-0 flex-col items-start gap-1"),
@@ -172,6 +180,9 @@ const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 			const summary = vulnerabilities.summary
 			if (summary.worst === null)
 				return h.span([h.Class("text-xs text-muted-foreground")], ["None known"])
+			// History, not a finding: no alarm colour on a version no longer running.
+			if (entry.replaced)
+				return h.span([h.Class("text-xs text-muted-foreground")], [severityCounts(summary.counts)])
 			const rest = summary.total - summary.counts[summary.worst]
 			return h.div(
 				[h.Class("flex min-w-0 flex-col items-start gap-1"), h.Title(severityCounts(summary.counts))],
@@ -514,7 +525,9 @@ export const runtimesBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 		onData: (runtimes) => {
 			const entries = runtimeEntries(runtimes)
 			if (entries.length === 0) return [runtimesEmpty(h)]
-			const hasNoVersion = entries.some((entry) => entry.posture.status === "no_version")
+			const hasNoVersion = currentEntries(entries).some(
+				(entry) => entry.posture.status === "no_version",
+			)
 			const upgrades = criticalUpgrades(entries)
 			return [
 				totalsRail(h, entries),

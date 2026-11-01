@@ -1,18 +1,18 @@
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
-import { LOCAL_CONTROL_SCHEMA_HISTORY } from "../apps/cli/src/server/local-schema-history"
-import { LOCAL_CONTROL_SCHEMA_VERSION } from "../apps/cli/src/server/local-schema-version"
+import { LOCAL_CONTROL_SCHEMA_HISTORY } from "../packages/local-server/src/local-schema-history"
+import { LOCAL_CONTROL_SCHEMA_VERSION } from "../packages/local-server/src/local-schema-version"
 import { execFileSync } from "node:child_process"
 import {
 	CURRENT_LOCAL_SCHEMA,
 	LOCAL_SCHEMA_HISTORY,
 	LOCAL_SCHEMA_MANIFEST,
 	LOCAL_SCHEMA_MANIFEST_DIGEST,
-	LOCAL_SCHEMA_SNAPSHOTS,
 	LOCAL_SCHEMA_VERSION,
-} from "../apps/cli/src/server/schema-identity"
+} from "../packages/local-server/src/schema-identity"
+import { LOCAL_SCHEMA_SNAPSHOTS } from "../apps/cli/src/server/schema-snapshots"
 import { resolveMigrationChain } from "../apps/cli/src/server/local-store-migrations"
-import { schemaDigest, schemaFingerprint } from "../apps/cli/src/server/store-version"
+import { schemaDigest, schemaFingerprint } from "../packages/local-server/src/store-version"
 
 const fail = (message: string): never => {
 	console.error(message)
@@ -68,7 +68,7 @@ if (!sameIdentity(latest, CURRENT_LOCAL_SCHEMA)) {
 		)
 	else
 		console.error(
-			`\nAppend this entry to LOCAL_SCHEMA_HISTORY in apps/cli/src/server/local-schema-history.ts,\nthen register a migration edge reaching v${CURRENT_LOCAL_SCHEMA.version}:\n\n${historyEntrySource(CURRENT_LOCAL_SCHEMA)}\n`,
+			`\nAppend this entry to LOCAL_SCHEMA_HISTORY in packages/local-server/src/local-schema-history.ts,\nthen register a migration edge reaching v${CURRENT_LOCAL_SCHEMA.version}:\n\n${historyEntrySource(CURRENT_LOCAL_SCHEMA)}\n`,
 		)
 	fail("append a new versioned identity and migration edge before changing the schema")
 }
@@ -122,7 +122,7 @@ for (const entry of LOCAL_SCHEMA_HISTORY) {
 	}
 }
 
-const historyPath = "apps/cli/src/server/local-schema-history.ts"
+const historyPath = "packages/local-server/src/local-schema-history.ts"
 const parseHistorySource = (source: string) => {
 	const entries: Array<Record<string, string | number>> = []
 	const pattern =
@@ -207,7 +207,7 @@ if (baseRefExists) {
 }
 
 const controlTip = LOCAL_CONTROL_SCHEMA_HISTORY.at(-1)
-const controlSql = readFileSync("apps/cli/src/server/schema/control-schema.sql", "utf8")
+const controlSql = readFileSync("packages/local-server/src/schema/control-schema.sql", "utf8")
 const controlDigest = (sql: string) => createHash("sha256").update(sql).digest("hex")
 if (controlTip?.version !== LOCAL_CONTROL_SCHEMA_VERSION || controlTip.digest !== controlDigest(controlSql))
 	fail("control schema changed without a versioned identity; run local-schema:bump --control")
@@ -215,7 +215,10 @@ if (!controlSql.includes(`PRAGMA user_version = ${LOCAL_CONTROL_SCHEMA_VERSION};
 	fail("control DDL pragma does not match its version identity")
 for (const [index, entry] of LOCAL_CONTROL_SCHEMA_HISTORY.entries()) {
 	if (entry.version !== index + 1) fail("control schema history versions must be sequential from 1")
-	const snapshot = readFileSync(`apps/cli/src/server/schema/control-schema-v${entry.version}.sql`, "utf8")
+	const snapshot = readFileSync(
+		`packages/local-server/src/schema/control-schema-v${entry.version}.sql`,
+		"utf8",
+	)
 	if (controlDigest(snapshot) !== entry.digest) fail(`immutable control schema v${entry.version} drifted`)
 }
 

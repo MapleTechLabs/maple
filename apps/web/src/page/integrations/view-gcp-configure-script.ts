@@ -23,7 +23,7 @@ export const loadFailure = (h: H, failure: ScriptFailure): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-2")],
 		[
-			h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [failure.message]),
+			h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [failure.message]),
 			button(
 				h,
 				{

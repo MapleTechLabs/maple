@@ -3,10 +3,11 @@
 A Cloudflare Worker and the Maple resources that observe it, in one stack — via
 [`@maple-dev/alchemy`](../../packages/alchemy-maple) and [`@maple-dev/effect-sdk`](../../packages/effect-sdk).
 
-|                                    |                                                                            |
-| ---------------------------------- | -------------------------------------------------------------------------- |
-| [`src/Api.ts`](src/Api.ts)         | The Worker: Alchemy's Effect-native style, instrumented with the Maple SDK |
-| [`alchemy.run.ts`](alchemy.run.ts) | A PagerDuty destination, two alert rules, a dashboard, a scoped API key    |
+|                                        |                                                                            |
+| -------------------------------------- | -------------------------------------------------------------------------- |
+| [`src/Api.ts`](src/Api.ts)             | The Worker: Alchemy's Effect-native style, instrumented with the Maple SDK |
+| [`alchemy.run.ts`](alchemy.run.ts)     | A PagerDuty destination, two alert rules, a dashboard, a scoped API key    |
+| [`local.alchemy.ts`](local.alchemy.ts) | Two Workers exporting to one Maple Local server under `alchemy dev`        |
 
 ## The seam
 
@@ -48,3 +49,32 @@ MAPLE_API_KEY=maple_ak_… bun alchemy destroy
 
 Hit the Worker's URL a few times, then look for the `checkout` service in Maple: one span per
 request, plus the handler's log line, both drained through `ctx.waitUntil` after the response.
+
+## Local runtime
+
+`local.alchemy.ts` runs two Workers with distinct service names sharing
+`Local("observability")` through `Telemetry({ local: Observability })`. Its independent
+`localProviders()` needs no Maple or Cloudflare deployment credentials for local dev.
+
+From the repository root:
+
+```bash
+bun install --frozen-lockfile
+bun run --cwd packages/effect-sdk build
+bun run --cwd packages/alchemy-maple build
+```
+
+Then, from this example directory:
+
+```bash
+bun alchemy dev --config local.alchemy.ts
+```
+
+The first run downloads and verifies the pinned chDB library into `~/.maple/cache/libchdb`;
+set `MAPLE_LIBCHDB` to use a copy you already have. The `Local` resource, its storage, port
+and unclean-shutdown behavior are documented in
+[`@maple-dev/alchemy`'s README](../../packages/alchemy-maple/README.md#local-development).
+
+This local-only example has no hosted ingest key. For hosted deploys, also pass `ingestKey` to
+`Telemetry`; it is resolved only outside local dev. `Maple.providers()` reads `MAPLE_API_KEY`
+when the stack loads, so register it only where you deploy.

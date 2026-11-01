@@ -15,7 +15,7 @@ import {
 import { chartError, chartLoading, chartPlotArea } from "../../../../ui/chart-state"
 import { attributeSection, metaRow, resourceAttributesCard } from "../../kit/resource-attributes"
 import { seriesLegend } from "../../../kit/series-legend"
-import { formatSeen } from "../../../metrics/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"
 
@@ -58,11 +58,11 @@ export const hostMetadataPanel = (
 				attributeSection(h, "Lifecycle", [
 					row("first seen", formatRelativeTime(summary.firstSeen, nowMs), {
 						copyValue: summary.firstSeen,
-						tooltip: formatSeen(summary.firstSeen, timeZone),
+						tooltip: formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
 					}),
 					row("last seen", formatRelativeTime(summary.lastSeen, nowMs), {
 						copyValue: summary.lastSeen,
-						tooltip: formatSeen(summary.lastSeen, timeZone),
+						tooltip: formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
 					}),
 				]),
 			],

@@ -2,7 +2,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { IconName } from "../../../ui/icon"
-import { pageTitle } from "../../../ui/page-layout"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 // The frame of the Security tabs: title block, the tab strip, content. Overview, Findings and Runs
@@ -70,16 +69,6 @@ const DESCRIPTION = {
 		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
 } satisfies Record<SecurityTab, string>
 
-/** The title block: the page `<h1>` and its one line of context, like every other page header. */
-const securityTitle = <M>(h: HtmlBuilder<M>, tab: SecurityTab): Html =>
-	h.div(
-		[h.Class("min-w-0 space-y-0.5")],
-		[
-			pageTitle(h, { className: "leading-8 text-foreground" }, ["Security"]),
-			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [DESCRIPTION[tab]]),
-		],
-	)
-
 /** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */
 export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex shrink-0 flex-col gap-6")], children)
@@ -99,7 +88,8 @@ export const securityLayout = <M>(
 	dashboardPage(
 		h,
 		{
-			titleContent: securityTitle(h, options.active),
+			title: "Security",
+			description: DESCRIPTION[options.active],
 			actions: options.actions,
 			tabs: tabs(h, options.active),
 			scrollClassName: "pb-8",

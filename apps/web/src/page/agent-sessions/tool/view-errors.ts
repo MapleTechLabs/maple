@@ -1,4 +1,4 @@
-import { formatPercent, pluralize } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -10,7 +10,7 @@ import {
 	fillTrend,
 	unwrapToolErrorText,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount, UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
+import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
@@ -192,7 +192,7 @@ const errorRow = (
 			}),
 			h.span(
 				[h.Class("w-20 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
-				[formatToolCount(row.calls)],
+				[formatNumber(row.calls)],
 			),
 			h.span(
 				[
@@ -200,7 +200,7 @@ const errorRow = (
 						"hidden w-20 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
 					),
 				],
-				[formatToolCount(row.sessions)],
+				[formatNumber(row.sessions)],
 			),
 			relativeTime(h, {
 				value: row.lastSeen,
@@ -323,7 +323,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 				[
 					isExpanded
 						? "Show fewer errors"
-						: `Show ${formatToolCount(hidden.length)} more ${pluralize(hidden.length, "error")}`,
+						: `Show ${formatNumber(hidden.length)} more ${pluralize(hidden.length, "error")}`,
 				],
 			),
 			...(isExpanded
@@ -332,7 +332,7 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 						h.span(
 							[h.Class("text-foreground-subtle")],
 							[
-								formatToolCount(hiddenCalls),
+								formatNumber(hiddenCalls),
 								` failed ${pluralize(hiddenCalls, "call")}`,
 								...(hiddenCalls === hidden.length && hidden.length > 1 ? [", 1 each"] : []),
 							],
@@ -403,12 +403,12 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 											),
 										],
 										[
-											formatToolCount(failures),
+											formatNumber(failures),
 											" failed ",
 											pluralize(failures, "call"),
 											...(inputs.rows.length > 0
 												? [
-														` · ${formatToolCount(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`,
+														` · ${formatNumber(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`,
 													]
 												: []),
 										],
@@ -453,7 +453,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 								[h.Class("pl-3.5 text-xs text-muted-foreground")],
 								[
 									inputs.toolCalls > 0
-										? `All ${formatToolCount(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this range succeeded.`
+										? `All ${formatNumber(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this range succeeded.`
 										: `${inputs.tool} was not called in this range.`,
 								],
 							),

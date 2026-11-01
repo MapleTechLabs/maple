@@ -1,4 +1,3 @@
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import {
 	countLabel,
 	formatBytes,
@@ -10,13 +9,12 @@ import {
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { toEpochMs } from "@maple/ui/lib/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type * as Chart from "../../../../charts/chart"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "../../../../ui/button"
-import * as Dialog from "../../../../ui/dialog"
 import * as DialogView from "../../../../ui/dialog-view"
 import { kbd } from "../../../../ui/display"
 import { emptyMessage } from "../../../../ui/empty"
@@ -41,6 +39,7 @@ import type { LoadFailure } from "../../../../data/load-failure"
 import type { ApiBucket, EndpointDetail, StatusRow } from "../model-tabs"
 import { type ChartContext, latencyChart, STATUS_COLORS, statusChart } from "../view-api-charts"
 import { methodLabel } from "../view-api"
+import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { MountEndpointPeekKeys } from "./keys"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -390,17 +389,6 @@ const bodyCard = (h: H, detail: EndpointDetail): Html =>
 				),
 	])
 
-/** "Oct 24 13:40" in the page time zone, 24-hour like the rest of the page. */
-const formatSlowestTime = (timestamp: string, timeZone: string): string =>
-	new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		hourCycle: "h23",
-	}).format(toEpochMs(timestamp))
-
 const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 	h.section(
 		[h.Class("flex flex-col overflow-hidden rounded-md border bg-card")],
@@ -477,7 +465,12 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								),
 								h.span(
 									[h.Class("ml-auto shrink-0 whitespace-nowrap text-muted-foreground")],
-									[formatSlowestTime(request.timestamp, inputs.timeZone)],
+									[
+										formatTimestampInTimezone(request.timestamp, {
+											timeZone: inputs.timeZone,
+											style: "range",
+										}),
+									],
 								),
 							],
 						),
@@ -551,45 +544,24 @@ const stepButton = (
 	)
 
 const header = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Html =>
-	DialogView.dialogHeader(
-		h,
-		"sheet",
-		[
+	sheetDetailHeader(h, {
+		dialogId: model.dialog.id,
+		kind: [methodLabel(h, peek.endpoint.method, "")],
+		title: [peek.endpoint.route],
+		description: inputs.scopeLabel,
+		meta: [
+			// The header's hidden description already reads the scope to screen readers.
+			h.span([h.AriaHidden(true), h.Class("text-xs text-muted-foreground")], [inputs.scopeLabel]),
 			h.div(
-				[h.Class("flex items-center gap-2")],
+				[h.Class("ml-auto flex shrink-0 items-center gap-1")],
 				[
-					methodLabel(h, peek.endpoint.method, ""),
-					h.h2(
-						[
-							h.Class(
-								cn(SheetStyles.sheetTitleStyles, "min-w-0 truncate text-title font-medium"),
-							),
-							h.DataAttribute("slot", "sheet-title"),
-							h.Id(Dialog.titleId(model.dialog.id)),
-							h.Title(peek.endpoint.route),
-						],
-						[peek.endpoint.route],
-					),
-					h.div(
-						[h.Class("ml-auto flex shrink-0 items-center gap-1")],
-						[
-							stepButton(h, "Previous endpoint", "ChevronUpIcon", peek.index > 0, -1),
-							stepButton(h, "Next endpoint", "ChevronDownIcon", peek.index < peek.count - 1, 1),
-						],
-					),
+					stepButton(h, "Previous endpoint", "ChevronUpIcon", peek.index > 0, -1),
+					stepButton(h, "Next endpoint", "ChevronDownIcon", peek.index < peek.count - 1, 1),
 				],
-			),
-			h.p(
-				[
-					h.Class(cn(SheetStyles.sheetDescriptionStyles, "text-2xs text-muted-foreground")),
-					h.DataAttribute("slot", "sheet-description"),
-					h.Id(Dialog.descriptionId(model.dialog.id)),
-				],
-				[inputs.scopeLabel],
 			),
 		],
-		"gap-1.5 border-b pr-14 pb-4",
-	)
+		className: "border-b pb-4",
+	})
 
 const footer = (h: H, peek: Peek, inputs: ViewInputs): Html => {
 	const topError = endpointStatusCodes(inputs.statusRows, peek.endpoint.spanName).find(

@@ -1,6 +1,6 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
-import { countLabel, formatBucketLabel } from "@maple/ui/lib/format"
+import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
@@ -196,7 +196,7 @@ export const kpiRail = (
 			subline:
 				data.checks === 0
 					? `No checks in the ${WINDOW_LABEL[data.window]}`
-					: `${data.checks.toLocaleString()} checks, ${data.failures.toLocaleString()} failed`,
+					: `${formatNumber(data.checks)} checks, ${formatNumber(data.failures)} failed`,
 		}),
 	})
 	const percentile = (label: string, value: number | null) =>
@@ -732,9 +732,9 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 						[h.Class("text-xs text-muted-foreground tabular-nums")],
 						[
 							stats.samplesTruncated
-								? `Newest ${stats.samples.length.toLocaleString()} checks`
-								: `${stats.samples.length.toLocaleString()} checks`,
-							failed === 0 ? "" : `, ${failed} failed`,
+								? `Newest ${formatNumber(stats.samples.length)} checks`
+								: `${formatNumber(stats.samples.length)} checks`,
+							failed === 0 ? "" : `, ${formatNumber(failed)} failed`,
 						],
 					),
 				}),

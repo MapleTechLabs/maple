@@ -1,16 +1,29 @@
 import { defineConfig } from "tsdown"
+import libchdb from "../local-server/libchdb.json" with { type: "json" }
+
+// The chDB release the sidecar pairs with: the manifest scripts/build-local-binary.sh
+// also reads. No env override: provisionLibchdb always fetches the manifest's
+// release, and the runtime refuses to start against any other libchdb.
+const libchdbVersion = libchdb.version
 
 export default defineConfig({
 	entry: {
 		index: "./src/index.ts",
 		telemetry: "./src/Telemetry.ts",
+		local: "./src/Local.ts",
+		"local-sidecar": "./src/LocalSidecar.ts",
 	},
 	format: "esm",
 	dts: { tsconfig: "../../tsconfig.alchemy-maple.json" },
 	outDir: "dist",
+	// The sidecar bundles @maple/local-server (private, never published); its
+	// schema DDL is imported as text. Bun built-ins and every @effect/* package
+	// stay external: they must be the same versions as the user's `effect`.
+	loader: { ".sql": "text" },
+	define: { __CHDB_VERSION__: JSON.stringify(libchdbVersion) },
 	deps: {
-		neverBundle: ["effect", "alchemy", "@maple-dev/effect-sdk"],
+		neverBundle: ["effect", /^@effect\//, "alchemy", "@maple-dev/effect-sdk", /^bun:/],
 		alwaysBundle: [/^@maple\//, /^@maple-dev\/effect-orm/],
-		onlyImport: ["effect", "alchemy", "@maple-dev/effect-sdk", /^node:/],
+		onlyImport: ["effect", /^@effect\//, "alchemy", "@maple-dev/effect-sdk", /^node:/, /^bun:/],
 	},
 })

@@ -12,20 +12,20 @@ import {
 	retiredDayLedgerPath,
 	RetiredDayAuthority,
 	retireLiveDayInServer,
-} from "../src/server/archives/retention"
-import { ARCHIVE_SIGNALS, type ArchiveSignalName } from "../src/server/archives/signals"
+} from "@maple/local-server/archives/retention"
+import { ARCHIVE_SIGNALS, type ArchiveSignalName } from "@maple/local-server/archives/signals"
 import {
 	activePointerPath,
 	generationManifestPath,
 	nextMidnightUtc,
 	rangeRoot,
 	shardsRoot,
-} from "../src/server/archives/paths"
-import { rebuildCatalog } from "../src/server/archives/listing"
-import type { ArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { RequestQuiescenceGate } from "../src/server/serve"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/paths"
+import { rebuildCatalog } from "@maple/local-server/archives/listing"
+import type { ArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { RequestQuiescenceGate } from "@maple/local-server/serve"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex")
 

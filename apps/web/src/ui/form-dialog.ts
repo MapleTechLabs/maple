@@ -16,7 +16,9 @@ export type FormDialogOptions<M> = Readonly<{
 	slotId: string
 	model: Dialog.Model
 	toParentMessage: (message: Dialog.Message) => M
-	title: string
+	/** Rich copy (a provider logo before the text) as children. */
+	title: string | ReadonlyArray<Html | string>
+	titleClassName?: string
 	/** Rich copy (a `<Kbd>` inside) as children. */
 	description?: string | ReadonlyArray<Html | string>
 	onSubmit: M
@@ -58,7 +60,7 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 					],
 					[
 						DialogView.dialogHeader(h, "dialog", [
-							DialogView.dialogTitle(h, "dialog", id, options.title),
+							DialogView.dialogTitle(h, "dialog", id, options.title, options.titleClassName),
 							...(options.description === undefined
 								? []
 								: [DialogView.dialogDescription(h, "dialog", id, options.description)]),

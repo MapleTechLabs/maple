@@ -201,13 +201,15 @@ const operationsTable = (
 	])
 }
 
+const retry = Message.ClickedRetry({ target: "Operations" })
+
 /** The Operations tab: skeleton, error, or the sortable table (window note past 30 days). */
 export const operationsTab = (h: H, model: Model, theme: ThemeColors | null): Html =>
 	AsyncData.match(model.operations.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load operations" }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load operations" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load operations", onRetry: retry }),
+		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load operations", onRetry: retry }),
 		onRefreshing: (operations) => operationsBody(h, model, operations, theme, true),
 		onSuccess: (operations) => operationsBody(h, model, operations, theme, false),
 	})

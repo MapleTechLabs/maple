@@ -1,0 +1,242 @@
+import { randomUUID } from "node:crypto"
+import { closeSync, constants, fsyncSync, openSync, renameSync, writeSync } from "node:fs"
+import { access, chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
+import { dirname, join } from "node:path"
+import { Effect, Schema } from "effect"
+
+export interface DurabilityFaults {
+	readonly beforeFileSync?: (path: string) => void | Promise<void>
+	readonly beforeRename?: (from: string, to: string) => void | Promise<void>
+	readonly beforeDirectorySync?: (path: string) => void | Promise<void>
+	readonly beforeRemove?: (path: string) => void | Promise<void>
+	readonly afterRetirementIntent?: (path: string) => void | Promise<void>
+	readonly afterRetirementRename?: (path: string) => void | Promise<void>
+	readonly afterRetiredSnapshotRemoval?: (path: string) => void | Promise<void>
+	readonly afterRetirementComplete?: (path: string) => void | Promise<void>
+	readonly afterRetirementCleanupRename?: (path: string) => void | Promise<void>
+	readonly afterRetirementCleanupRemoval?: (path: string) => void | Promise<void>
+	readonly afterCompletedOperationPreserved?: (path: string) => void | Promise<void>
+}
+
+// APFS and the target Linux filesystems support directory fsync. Keep the
+// fallback deliberately narrow for filesystems that explicitly report that
+// the operation is unsupported; descriptor/type errors are programming bugs.
+const unsupportedDirectorySyncCodes = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP"])
+
+export const isUnsupportedDirectorySyncError = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	"code" in error &&
+	unsupportedDirectorySyncCodes.has(String((error as NodeJS.ErrnoException).code))
+
+export const ensurePrivateDirectory = async (
+	path: string,
+	setMode: (path: string, mode: number) => Promise<void> = chmod,
+): Promise<void> => {
+	await ensureRealDirectory(path)
+	await setMode(path, 0o700).catch(async (error: NodeJS.ErrnoException) => {
+		// A bind mount or a dir pre-created by another uid: its mode is not ours
+		// to set, but one already private to its owner and writable by us is fine.
+		if (error.code !== "EPERM" || !(await isWritableDirectory(path))) throw error
+		const mode = (await lstat(path)).mode & 0o777
+		if ((mode & 0o077) !== 0) {
+			throw new DurableFileError({
+				path,
+				message: `cannot chmod ${path} to 0700 and its mode ${mode.toString(8)} lets group/other access it; restrict it to its owner`,
+				cause: error,
+			})
+		}
+		warnUnhardenedDirectory(path)
+	})
+}
+
+const isWritableDirectory = (path: string): Promise<boolean> =>
+	access(path, constants.W_OK | constants.X_OK).then(
+		() => true,
+		() => false,
+	)
+
+const warnedDirectories = new Set<string>()
+const warnUnhardenedDirectory = (path: string): void => {
+	if (warnedDirectories.has(path)) return
+	warnedDirectories.add(path)
+	process.emitWarning(
+		`cannot chmod ${path} to 0700 (owned by another user); continuing, it is already owner-only`,
+	)
+}
+
+/** Like {@link ensurePrivateDirectory}, but an already-existing directory keeps
+ * its mode. `durableWrite` targets sit beside caller-chosen paths (markers and
+ * journals next to an arbitrary `--data-dir`), so hardening the parent would
+ * chmod e.g. `/var/lib` to 0700 and break every other service under it. Only
+ * a directory this call creates gets 0700. */
+export const ensureParentDirectory = async (path: string): Promise<void> => {
+	const existed = await ensureRealDirectory(path)
+	if (!existed) await chmod(path, 0o700)
+}
+
+/** Returns whether the directory already existed. */
+const ensureRealDirectory = async (path: string): Promise<boolean> => {
+	const before = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+		if (error.code === "ENOENT") return null
+		throw error
+	})
+	if (before?.isSymbolicLink()) throw new Error(`refusing symlink directory: ${path}`)
+	if (before && !before.isDirectory()) throw new Error(`refusing non-directory path: ${path}`)
+	await mkdir(path, { recursive: true, mode: 0o700 })
+	const after = await lstat(path)
+	if (after.isSymbolicLink() || !after.isDirectory()) {
+		throw new Error(`private directory is not a real directory: ${path}`)
+	}
+	return before !== null
+}
+
+export const syncDirectory = async (path: string, faults: DurabilityFaults = {}): Promise<void> => {
+	await faults.beforeDirectorySync?.(path)
+	let handle
+	try {
+		handle = await open(path, constants.O_RDONLY)
+		await handle.sync()
+	} catch (error) {
+		if (!isUnsupportedDirectorySyncError(error)) throw error
+	} finally {
+		await handle?.close()
+	}
+}
+
+export const durableWrite = async (
+	path: string,
+	bytes: string | Uint8Array,
+	faults: DurabilityFaults = {},
+): Promise<void> => {
+	const parent = dirname(path)
+	await ensureParentDirectory(parent)
+	const temporary = join(parent, `.${randomUUID()}.tmp`)
+	const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
+	try {
+		await handle.writeFile(bytes)
+		await faults.beforeFileSync?.(path)
+		await handle.sync()
+	} catch (error) {
+		await handle.close().catch(() => undefined)
+		await rm(temporary, { force: true }).catch(() => undefined)
+		throw error
+	}
+	await handle.close()
+	try {
+		await faults.beforeRename?.(temporary, path)
+		await rename(temporary, path)
+		await syncDirectory(parent, faults)
+	} catch (error) {
+		await rm(temporary, { force: true }).catch(() => undefined)
+		throw error
+	}
+}
+
+export const durableJson = async (
+	path: string,
+	value: unknown,
+	faults: DurabilityFaults = {},
+): Promise<void> => durableWrite(path, `${JSON.stringify(value, null, 2)}\n`, faults)
+
+export const durableRemove = async (path: string, faults: DurabilityFaults = {}): Promise<void> => {
+	await faults.beforeRemove?.(path)
+	await rm(path, { force: true })
+	await syncDirectory(dirname(path), faults)
+}
+
+export const durableRename = async (
+	from: string,
+	to: string,
+	faults: DurabilityFaults = {},
+): Promise<void> => {
+	await faults.beforeRename?.(from, to)
+	await rename(from, to)
+	await syncDirectory(dirname(from), faults)
+	if (dirname(to) !== dirname(from)) await syncDirectory(dirname(to), faults)
+}
+
+/** A synchronous durable write or rename failed; thrown by the sync helpers below. */
+export class DurableFileError extends Schema.TaggedError<DurableFileError>()("@maple/cli/DurableFileError", {
+	path: Schema.String,
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
+
+const durableFileError =
+	(path: string, action: string) =>
+	(cause: unknown): DurableFileError =>
+		new DurableFileError({
+			path,
+			message: `could not ${action} ${path}: ${cause instanceof Error ? cause.message : String(cause)}`,
+			cause,
+		})
+
+const syncDirectoryNow = (path: string): Effect.Effect<void, DurableFileError> =>
+	Effect.acquireUseRelease(
+		Effect.try({ try: () => openSync(path, constants.O_RDONLY), catch: durableFileError(path, "open") }),
+		(fd) => Effect.try({ try: () => fsyncSync(fd), catch: durableFileError(path, "fsync") }),
+		(fd) => Effect.sync(() => closeSync(fd)),
+	).pipe(
+		Effect.catchIf(
+			(error) => isUnsupportedDirectorySyncError(error.cause),
+			() => Effect.void,
+		),
+	)
+
+/**
+ * Synchronous create-or-truncate whose bytes and directory entry are fsynced
+ * before it returns, for callers that cannot await (the chDB open path). The
+ * target's existence is the signal, so no temp-file rename is needed.
+ */
+export const durableWriteFileSync = (path: string, bytes: string): void =>
+	Effect.runSync(
+		Effect.acquireUseRelease(
+			Effect.try({ try: () => openSync(path, "w", 0o600), catch: durableFileError(path, "open") }),
+			(fd) =>
+				Effect.try({
+					try: () => {
+						writeSync(fd, bytes)
+						fsyncSync(fd)
+					},
+					catch: durableFileError(path, "write"),
+				}),
+			(fd) => Effect.sync(() => closeSync(fd)),
+		).pipe(Effect.andThen(syncDirectoryNow(dirname(path)))),
+	)
+
+/** Synchronous {@link durableRename}; throws a {@link DurableFileError} on failure. */
+export const durableRenameSync = (from: string, to: string): void =>
+	Effect.runSync(
+		Effect.try({ try: () => renameSync(from, to), catch: durableFileError(from, "rename") }).pipe(
+			Effect.andThen(syncDirectoryNow(dirname(from))),
+			Effect.andThen(dirname(to) === dirname(from) ? Effect.void : syncDirectoryNow(dirname(to))),
+		),
+	)
+
+export const syncTree = async (
+	path: string,
+	options: { readonly allowSymlinks?: boolean } = {},
+): Promise<void> => {
+	const entries = await readdir(path, { withFileTypes: true })
+	for (const entry of entries) {
+		const child = join(path, entry.name)
+		if (entry.isDirectory()) {
+			await syncTree(child, options)
+		} else if (entry.isFile()) {
+			const handle = await open(child, constants.O_RDONLY)
+			try {
+				await handle.sync()
+			} finally {
+				await handle.close()
+			}
+		} else if (entry.isSymbolicLink() && options.allowSymlinks) {
+			// A closed chDB store contains engine-managed symlinks. Do not
+			// follow them; syncing this directory below durably records the link.
+			continue
+		} else {
+			throw new Error(`refusing to sync non-file checkpoint entry at ${child}`)
+		}
+	}
+	await syncDirectory(path)
+}

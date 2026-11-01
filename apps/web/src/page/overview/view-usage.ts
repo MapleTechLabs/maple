@@ -13,9 +13,9 @@ import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 const OVERVIEW_TILE_CLASS = "px-4"
 
 const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (value: number) => string }> = [
-	{ title: "Total Logs", key: "logs", format: formatNumber },
-	{ title: "Total Traces", key: "traces", format: formatNumber },
-	{ title: "Total Metrics", key: "metrics", format: formatNumber },
+	{ title: "Total logs", key: "logs", format: formatNumber },
+	{ title: "Total traces", key: "traces", format: formatNumber },
+	{ title: "Total metrics", key: "metrics", format: formatNumber },
 ]
 
 /** Loading tiles; on failure a quiet "Couldn't load" rail, or bare tiles when the page strip

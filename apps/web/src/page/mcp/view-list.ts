@@ -1,5 +1,5 @@
-import { formatErrorRate } from "@maple/ui/lib/format"
-import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
@@ -65,7 +65,7 @@ const serverRow = <M>(
 				[row.protocolVersion],
 			),
 			volumeSpark(h, options.spark, `mcp-server-spark-${row.service}`, row.spark),
-			numberCell(h, formatToolCount(row.calls), "w-20 text-foreground"),
+			numberCell(h, formatNumber(row.calls), "w-20 text-foreground"),
 			shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
 			numberCell(h, formatDurationNs(row.p95), "w-20 text-foreground-soft"),
 			numberCell(h, String(row.tools), "hidden w-14 text-muted-foreground @min-[640px]/panel:block"),
@@ -192,7 +192,7 @@ export const listBody = <M>(
 			toolTableFooter(
 				h,
 				`${rows.length} MCP ${rows.length === 1 ? "server" : "servers"}`,
-				`· ${formatToolCount(calls)} tool calls · ${errors} failed`,
+				`· ${formatNumber(calls)} tool calls · ${formatNumber(errors)} failed`,
 			),
 			addServerStrip(h, options.onInstrument),
 		],

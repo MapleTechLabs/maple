@@ -6,8 +6,8 @@ import { button } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { copyableField } from "../../../ui/copyable-field"
 import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
 import { failureMessage } from "../../../data/load-failure"
+import { dangerRow, dangerZone } from "../../settings/kit/danger-zone"
 import { saveBar } from "../../settings/kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../settings/kit/section"
 import { switchRow } from "../../settings/kit/switch-row"
@@ -157,7 +157,7 @@ export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 		? []
 		: [
 				h.div(
-					[h.Class("flex flex-col gap-2 rounded-md border bg-muted/30 p-3")],
+					[h.Class("flex flex-col gap-2 rounded-md border bg-surface-faint p-3")],
 					[
 						copyableField(h, {
 							id: "status-page-break-glass-token",
@@ -269,36 +269,19 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 	)
 }
 
-const dangerZone = (h: H): Html =>
-	settingsSection(h, { id: "status-page-settings-danger", title: "Danger zone", framed: false }, [
-		panel(h, { className: "border-destructive-a4" }, [
-			h.div(
-				[h.Class("flex items-start justify-between gap-6 p-4")],
-				[
-					h.div(
-						[h.Class("space-y-1")],
-						[
-							h.p([h.Class("text-sm font-medium text-foreground")], ["Delete status page"]),
-							h.p(
-								[h.Class("font-prose text-xs text-muted-foreground")],
-								[
-									"Takes the page offline and deletes its components and incidents. This cannot be undone.",
-								],
-							),
-						],
-					),
-					button(
-						h,
-						{
-							variant: "destructive",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedDeletePage())],
-						},
-						["Delete status page"],
-					),
-				],
+const deleteSection = (h: H): Html =>
+	dangerZone(h, { id: "status-page-settings-danger" }, [
+		dangerRow(h, {
+			title: "Delete status page",
+			description: [
+				"Takes the page offline and deletes its components and incidents. This cannot be undone.",
+			],
+			action: button(
+				h,
+				{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDeletePage())] },
+				["Delete status page"],
 			),
-		]),
+		}),
 	])
 
 /**
@@ -366,7 +349,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
 		breakGlassSection(h, model, page),
-		...(model.isAdmin ? [dangerZone(h)] : []),
+		...(model.isAdmin ? [deleteSection(h)] : []),
 	])
 
 export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>

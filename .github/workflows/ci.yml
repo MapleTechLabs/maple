@@ -77,6 +77,7 @@ jobs:
                       cli:
                         - *base
                         - 'apps/cli/**'
+                        - 'packages/local-server/**'
                         - 'apps/local-ui/**'
                         # local-ui renders apps/web's source modules.
                         - 'apps/web/src/**'
@@ -95,6 +96,7 @@ jobs:
                       archive:
                         - *base
                         - 'apps/cli/**'
+                        - 'packages/local-server/**'
                         - 'apps/local-ui/**'
                         - 'scripts/build-local-binary.sh'
                         - 'scripts/gen-ui-embed.ts'
@@ -106,6 +108,7 @@ jobs:
                         - 'lib/effect-clickhouse-http/**'
                         - 'apps/api/scripts/query-bench/**'
                         - 'packages/backend/src/services/warehouse/**'
+                        - 'packages/backend/src/services/errors/error-tick-*'
                         - 'packages/db/**'
                         - 'packages/query-engine/**'
                         # The sweep analyzes the integration builders too.
@@ -471,6 +474,16 @@ jobs:
                   src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
                   src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
+
+            # The fingerprint the error views compute, against the TS mirror every
+            # fingerprint unit test exercises: fixed cases, a seeded differential fuzz
+            # (the seed is in the failure message), and the tick that turns hashes into issues.
+            - name: Verify the error fingerprint against the TS mirror
+              run: >-
+                  bun run --filter=@maple/backend test --
+                  src/services/warehouse/error-fingerprint-v3.clickhouse.e2e.test.ts
+                  src/services/warehouse/error-fingerprint-fuzz.clickhouse.e2e.test.ts
+                  src/services/errors/error-tick-fingerprint.clickhouse.e2e.test.ts
 
             # Every SQL shape the product emits, against the real analyzer: unit tests
             # only compare SQL text, which is how a NO_COMMON_TYPE reached production.
