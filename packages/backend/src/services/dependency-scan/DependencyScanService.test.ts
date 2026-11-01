@@ -160,8 +160,14 @@ describe("DependencyScanService", () => {
 			const api = yield* seed
 			yield* recordScan(api.id, "a", true)
 			assert.strictEqual((yield* service.listFindings(org, {})).findings.length, 1)
+			const [finding] = (yield* service.listFindings(org, {})).findings
 			yield* vcs.markRepositoryRemoved(api.id)
 			assert.deepStrictEqual((yield* service.listFindings(org, {})).findings, [])
+			if (finding === undefined) return
+			const error = yield* Effect.flip(
+				service.updateFinding(org, admin, finding.id, { status: "dismissed", reason: "gone" }),
+			)
+			assert.strictEqual(error._tag, "@maple/http/dependency-scan/DependencyFindingNotFoundError")
 		}).pipe(Effect.provide(serviceFor(sent)))
 	})
 
