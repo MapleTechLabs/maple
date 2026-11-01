@@ -735,6 +735,30 @@ describe("billing writes over HTTP", () => {
 		}
 	})
 
+	it("answers a tax-ID add against a customer Stripe no longer has as unavailable", async () => {
+		const missing = {
+			statusCode: 404,
+			response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+		}
+		const harness = makeHarness(["org:admin"], {
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({ statusCode: 200, response: { id: ORG, stripeId: "cus_deleted" } }),
+			},
+			stripe: { createTaxId: () => Effect.succeed(missing) },
+		})
+		try {
+			const response = await harness.post("/internal/billing/profile/tax-ids", {
+				type: "eu_vat",
+				value: "DE123456789",
+			})
+			assert.strictEqual(response.status, 409)
+			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingProfileUnavailableError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("refuses plan and portal changes from an org billed through another org", async () => {
 		const harness = makeHarness(["org:admin"], { billedThrough: PAYER_ORG })
 		try {
