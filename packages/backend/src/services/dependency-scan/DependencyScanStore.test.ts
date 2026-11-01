@@ -215,6 +215,27 @@ describe("DependencyScanStore findings lifecycle", () => {
 		),
 	)
 
+	it.effect("keeps a finding open when OSV now lists its advisory only as another's alias", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				yield* scan(store, "a", [
+					match("x/net", { ecosystem: "Go", advisoryId: "GO-2026-1", aliases: [] }),
+					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-cccc", aliases: [] }),
+				])
+				yield* scan(store, "b", [
+					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-cccc", aliases: ["GO-2026-1"] }),
+				])
+				assert.deepStrictEqual(
+					(yield* findings(store)).map((row) => [row.advisoryId, row.status]).sort(),
+					[
+						["GHSA-cccc", "open"],
+						["GO-2026-1", "open"],
+					],
+				)
+			}),
+		),
+	)
+
 	it.effect("never lets an older scan that settles late undo a newer scan's fixes", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
