@@ -13,6 +13,7 @@ import { skeleton } from "../../../ui/skeleton"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { toolbarStat } from "../../kit/list-toolbar"
 import { docsLink, filteredEmpty, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { timeControls } from "../../kit/time-controls"
@@ -67,9 +68,6 @@ const loadingSkeleton = (h: H): Html =>
 		],
 	)
 
-const stat = (h: H, value: string, rest: ReadonlyArray<string>, valueClass = "text-foreground"): Html =>
-	h.span([], [h.span([h.Class(`font-medium tabular-nums ${valueClass}`)], [value]), " ", ...rest])
-
 const timeSearchOf = (model: Model): TimeSearch => ({
 	startTime: model.search.startTime,
 	endTime: model.search.endTime,
@@ -122,13 +120,19 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 		[h.Class("flex flex-col gap-3")],
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-baseline gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground")],
+				[h.Class("flex flex-wrap items-center gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground")],
 				[
-					stat(h, formatNumber(groups.length), [pluralize(groups.length, "release")]),
-					stat(h, formatNumber(services), [pluralize(services, "service")]),
-					stat(h, formatRate(groups.length / windowDays), ["per day"]),
+					toolbarStat(h, { value: formatNumber(groups.length), label: pluralize(groups.length, "release") }),
+					toolbarStat(h, { value: formatNumber(services), label: pluralize(services, "service") }),
+					toolbarStat(h, { value: formatRate(groups.length / windowDays), label: "per day" }),
 					...(flagged > 0
-						? [stat(h, formatNumber(flagged), [pluralize(flagged, "release"), " with errors up"], "text-severity-error")]
+						? [
+								toolbarStat(h, {
+									value: formatNumber(flagged),
+									label: `${pluralize(flagged, "release")} with errors up`,
+									dot: "crit",
+								}),
+							]
 						: []),
 					h.span([h.Class("text-foreground-subtle")], ["Each release is compared with the version it replaced"]),
 					...(response.truncated

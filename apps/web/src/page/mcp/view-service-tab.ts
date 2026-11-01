@@ -189,7 +189,7 @@ export const serviceMcpTab = <M>(
 							),
 						],
 					),
-					viewAll(h, "Open in MCP Servers", options.onOpenServer),
+					viewAll(h, "Open in MCP servers", options.onOpenServer),
 				],
 			),
 			statRail(h, { columns: 4 }, [

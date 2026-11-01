@@ -269,13 +269,13 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 					" of ",
 					String(active.length),
 					" ",
-					"repositories reviewed. Rules, models and analytics live in Code Review.",
+					"repositories reviewed. Rules, models and analytics live on the Code review page.",
 				],
 				control: [
 					linkButton(
 						h,
 						{ size: "sm", variant: "outline", href: hrefOf(AppRoute.CodeReviewSettings()) },
-						["Open Code Review"],
+						["Open code review"],
 					),
 				],
 			}),

@@ -213,7 +213,7 @@ const serversView = (h: H, model: Model, timeZone: string): Html =>
 	dashboardPage(
 		h,
 		{
-			title: "MCP Servers",
+			title: "MCP servers",
 			description:
 				"Every service that answers MCP requests: the tools agents call, the clients calling them, and why calls fail.",
 			actions: timeActions(h, model),

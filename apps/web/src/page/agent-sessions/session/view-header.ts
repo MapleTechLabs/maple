@@ -7,10 +7,10 @@ import * as CopyButton from "../../../ui/copy-button"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
-import { pageTitle } from "../../../ui/page-layout"
 import { moreChip } from "../kit/more-chip"
 import { sessionIdentity } from "../kit/session-name"
 import { vendorColor, vendorIcon } from "../kit/vendor"
+import { detailTitle } from "../../kit/detail-header"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -66,22 +66,24 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 	const traceId = traceSessionTraceId(model.sessionId)
 	const idLabel = traceId === undefined ? "Session ID" : "Trace ID"
 	const id = traceId ?? model.sessionId
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-2")],
-		[
-			h.div(
-				[h.Class("flex min-w-0 items-center gap-2")],
+	return detailTitle(h, {
+		kind: [
+			h.span(
+				[h.Class("inline-flex items-center gap-1.5")],
 				[
 					icon(h, vendorIcon(vendorId), {
-						size: 18,
+						size: 12,
 						className: "shrink-0",
 						style: { color: vendorColor(vendorId) },
 						attributes: [h.AriaHidden(true)],
 					}),
-					pageTitle(h, { title: heading }, [heading]),
-					...(summary.failed ? [badge(h, { variant: "crit" }, ["Failed"])] : []),
+					"Agent session",
 				],
 			),
+		],
+		title: [heading],
+		meta: [
+			...(summary.failed ? [badge(h, { variant: "crit" }, ["Failed"])] : []),
 			keyValueList(h, { layout: "inline" }, [
 				keyValue(h, { label: "Started" }, [
 					relativeTime(h, {
@@ -115,5 +117,5 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 				]),
 			]),
 		],
-	)
+	})
 }

@@ -11,6 +11,7 @@ import type * as Select from "../../../ui/select"
 import { type SelectEntry, type SelectOption, view as selectView } from "../../../ui/select-view"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { listToolbar } from "../../kit/list-toolbar"
 import { presenceOf } from "../../kit/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
@@ -81,7 +82,7 @@ const toolbarSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: "metrics-search",
 		size: "sm",
-		className: "max-w-sm w-64",
+		className: "w-full max-w-sm",
 		placeholder: "Search metrics…",
 		value: model.searchInput,
 		onInput: (value) => Message.ChangedSearchInput({ value }),
@@ -90,7 +91,7 @@ const toolbarSearch = (h: H, model: Model): Html =>
 
 const toTypeSelect = (message: Select.Message) => Message.GotTypeSelectMessage({ message })
 
-const filters = (h: H, model: Model): Html =>
+const typeSelect = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: "metrics-type-filter",
 		model: model.typeSelect,
@@ -102,12 +103,16 @@ const filters = (h: H, model: Model): Html =>
 			ariaLabel: "Metric type",
 			size: "sm",
 			className: "w-auto min-w-0",
-			toView: (parts) =>
-				h.div(
-					[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
-					[toolbarSearch(h, model), ...parts],
-				),
+			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
+	})
+
+// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+const filters = (h: H, model: Model): Html =>
+	listToolbar(h, {
+		className: "pb-0",
+		leading: toolbarSearch(h, model),
+		trailing: [typeSelect(h, model)],
 	})
 
 const VIEW_OPTIONS = (h: H) =>

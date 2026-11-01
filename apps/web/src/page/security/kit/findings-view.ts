@@ -4,6 +4,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
+import { segmentedSelect } from "../../../ui/segmented-select"
 import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
 import { locationOf } from "./format"
 import {
@@ -106,52 +107,26 @@ export type SeverityTabsOptions<M> = Readonly<{
 	label: string
 }>
 
-const tabButton = <M>(
-	h: HtmlBuilder<M>,
-	isActive: boolean,
-	onClick: M,
-	key: string,
-	children: ReadonlyArray<Html | string>,
-): Html =>
-	h.button(
-		[
-			h.Key(key),
-			h.Type("button"),
-			h.Role("tab"),
-			h.AriaSelected(isActive),
-			h.OnClick(onClick),
-			h.Class(
-				cn(
-					"flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-					isActive
-						? "border-border bg-muted font-medium text-foreground"
-						: "border-transparent text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-				),
-			),
-		],
-		children,
-	)
-
-const tabCount = <M>(h: HtmlBuilder<M>, count: number): Html =>
-	h.span([h.Class("font-mono tabular-nums text-muted-foreground")], [String(count)])
-
 /** One click per severity; a bucket with nothing in it stays out of the way unless it is picked. */
 export const severityTabs = <M>(h: HtmlBuilder<M>, options: SeverityTabsOptions<M>): Html => {
 	const total = SCORED_BUCKETS.reduce((sum, bucket) => sum + options.counts[bucket], 0)
-	return h.div(
-		[h.Role("tablist"), h.AriaLabel(options.label), h.Class("flex items-center gap-1 overflow-x-auto")],
-		[
-			tabButton(h, options.active === null, options.onPick(null), "all", ["All", tabCount(h, total)]),
+	return segmentedSelect<SeverityBucket | "all", M>(h, {
+		size: "sm",
+		ariaLabel: options.label,
+		className: "max-w-full overflow-x-auto",
+		value: options.active ?? "all",
+		onChange: (value) => options.onPick(value === "all" ? null : value),
+		options: [
+			{ value: "all", label: `All ${total}` },
 			...SCORED_BUCKETS.filter((bucket) => options.counts[bucket] > 0 || options.active === bucket).map(
-				(bucket) =>
-					tabButton(h, options.active === bucket, options.onPick(bucket), bucket, [
-						bucketIcon(h, bucket),
-						BUCKET_LABEL[bucket],
-						tabCount(h, options.counts[bucket]),
-					]),
+				(bucket) => ({
+					value: bucket,
+					label: `${BUCKET_LABEL[bucket]} ${options.counts[bucket]}`,
+					icon: bucketIcon(h, bucket),
+				}),
 			),
 		],
-	)
+	})
 }
 
 /** Copy for the hint on each group, where the bucket needs one. */

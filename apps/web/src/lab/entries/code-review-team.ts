@@ -237,5 +237,5 @@ export const lab = defineShellLab("Code review team", {
 	update: (model, message) => followed(update(model, message, context)),
 	view: (model, h) => view(model, { context }, h),
 	currentPath: "/code-review/team",
-	breadcrumbs: [{ label: "Code Review", href: "/code-review" }, { label: "Team" }],
+	breadcrumbs: [{ label: "Code review", href: "/code-review" }, { label: "Team" }],
 })

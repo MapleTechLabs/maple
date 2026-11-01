@@ -27,8 +27,7 @@ import { button, linkButton } from "../../../ui/button"
 import { badge } from "../../../ui/display"
 import { card, cardPanel } from "../../../ui/card"
 import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { pageTitle } from "../../../ui/page-layout"
+import { detailTitle } from "../../kit/detail-header"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
@@ -57,7 +56,20 @@ export const CHART_TOKENS: ReadonlyArray<string> = [
 
 const SEVERITY_STROKE = { critical: "--severity-error", warning: "--severity-warn" } as const
 
-export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: number): Html => {
+/** The detail header's title side: the signal and service under the "Anomaly" eyebrow. */
+export const anomalyTitle = (h: H, incident: AnomalyIncidentDocument): Html =>
+	detailTitle(h, {
+		kind: ["Anomaly"],
+		title: [
+			SIGNAL_LABEL[incident.signalType],
+			h.span([h.Class("text-foreground-subtle")], [" · "]),
+			incident.serviceName,
+		],
+		titleText: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
+	})
+
+/** The observed value against its baseline, above the signal chart. */
+export const anomalySummary = (h: H, incident: AnomalyIncidentDocument, nowMs: number): Html => {
 	const tone = severityToneFor(incident)
 	const isStale = isStaleOpenIncident(incident, nowMs)
 	const dev = deviation(incident)
@@ -66,69 +78,35 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 		incident.status === "open" && !isStale ? tone.text : "text-foreground",
 	)
 	const fmt = (value: number) => formatSignalValue(incident.signalType, value)
-	return h.div(
-		[h.Class("space-y-2")],
+	return h.p(
+		[h.Class("max-w-2xl text-sm text-muted-foreground")],
 		[
-			eyebrow(h, { as: "div" }, ["Anomaly"]),
-			h.header(
-				[h.Class("flex flex-wrap items-start gap-x-6 gap-y-3")],
-				[
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-1")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-3")],
-								[
-									pageTitle(
-										h,
-										{
-											title: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
-											className:
-												"min-w-0 whitespace-normal break-words text-foreground",
-										},
-										[
-											SIGNAL_LABEL[incident.signalType],
-											h.span([h.Class("text-foreground-subtle")], [" · "]),
-											incident.serviceName,
-										],
-									),
-								],
-							),
-							h.p(
-								[h.Class("max-w-2xl text-sm text-muted-foreground")],
-								[
-									isStale ? "Last recorded" : "Observed",
-									" ",
-									h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
-									" ",
-									"against a ",
-									h.span(
-										[h.Class("font-mono text-foreground")],
-										[fmt(incident.baselineMedian)],
-									),
-									" 7-day baseline:",
-									" ",
-									h.span([h.Class(accent)], [dev.label]),
-									dev.kind === "sigma"
-										? " above median"
-										: dev.kind === "percent"
-											? " vs baseline"
-											: "",
-									", threshold ",
-									h.span(
-										[h.Class("font-mono text-foreground")],
-										[fmt(incident.thresholdValue)],
-									),
-									".",
-									isStale
-										? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt, nowMs)}; this stale detector state does not represent current service health.`
-										: "",
-								],
-							),
-						],
-					),
-				],
+			isStale ? "Last recorded" : "Observed",
+			" ",
+			h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
+			" ",
+			"against a ",
+			h.span(
+				[h.Class("font-mono text-foreground")],
+				[fmt(incident.baselineMedian)],
 			),
+			" 7-day baseline:",
+			" ",
+			h.span([h.Class(accent)], [dev.label]),
+			dev.kind === "sigma"
+				? " above median"
+				: dev.kind === "percent"
+					? " vs baseline"
+					: "",
+			", threshold ",
+			h.span(
+				[h.Class("font-mono text-foreground")],
+				[fmt(incident.thresholdValue)],
+			),
+			".",
+			isStale
+				? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt, nowMs)}; this stale detector state does not represent current service health.`
+				: "",
 		],
 	)
 }

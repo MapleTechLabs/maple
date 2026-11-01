@@ -46,8 +46,10 @@ const liveChip = (h: H, isLive: boolean): Html =>
 	)
 
 /** `ListToolbar`: the status tabs and the count readout. */
+// The sticky area pads the page edge, so the toolbar adds no gap under itself.
 const toolbar = (h: H, model: Model, count: number | null): Html =>
 	listToolbar(h, {
+		className: "pb-0",
 		leading: h.submodel({
 			slotId: "anomalies-status-tabs",
 			model: model.tabs,
@@ -144,14 +146,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			filters: filtersRail(h, model, all, AsyncData.isLoading(data) || AsyncData.isIdle(data)),
 			// The live toggle is an action; while reads fail the error block owns the retry status.
 			actions: AsyncData.hasError(data) ? undefined : liveChip(h, isLiveOf(model.search)),
-			// The toolbar sits one header gap under the title, as tabs do on tabbed pages.
-			scrollClassName: "pt-0",
+			sticky: toolbar(h, model, hasFirstPage ? filtered.length : null),
 		},
 		[
 			h.div(
 				[],
 				[
-					toolbar(h, model, hasFirstPage ? filtered.length : null),
 					...(chipBar === null ? [] : [chipBar]),
 					body,
 				],
