@@ -11,8 +11,11 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, type StatRailColumns } from "../../kit/stat-rail"
 import { manageAccessLink } from "../settings/repositories"
+import { HEADLINE_LABELS, SECONDARY_LABELS } from "../analytics/view-stats"
+import { CI_HEADLINE_LABELS } from "../ci/view-stats"
 import { analyticsPanel } from "./analytics-panel"
 import { section } from "./parts"
+import { SHEET_STAT_LABELS } from "./review-sheet-sections"
 
 // Loading states for code review, drawn in the real panels, headers and row geometry: labels and
 // titles that don't depend on the data render for real, so only the values swap in.
@@ -402,12 +405,7 @@ const authorsCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 /** The analytics tab before its first answer and while the charts load. */
 export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	busyPage(h, "Loading review analytics", [
-		headlineSkeleton(h, [
-			"Pull requests reviewed",
-			"Total reviews",
-			"Avg time to merge",
-			"Issues caught",
-		]),
+		headlineSkeleton(h, Object.values(HEADLINE_LABELS)),
 		h.div(
 			[h.Class("grid gap-6 lg:grid-cols-2")],
 			[
@@ -438,19 +436,11 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			[h.Class("grid gap-6 lg:grid-cols-3")],
 			[barListCard(h, "Issues by category"), barListCard(h, "Review outcomes"), authorsCardSkeleton(h)],
 		),
-		headlineSkeleton(
-			h,
-			[
-				"Avg confidence",
-				"Avg quality",
-				"Avg review time",
-				"Fixed rate",
-				"Dismissed",
-				"Critical issues",
-				"Tokens",
-			],
-			{ columns: 4, className: "xl:grid-cols-7", size: "secondary" },
-		),
+		headlineSkeleton(h, Object.values(SECONDARY_LABELS), {
+			columns: 4,
+			className: "xl:grid-cols-7",
+			size: "secondary",
+		}),
 	])
 
 const tablePanel = <M>(h: HtmlBuilder<M>, title: string, columns: ReadonlyArray<SkeletonColumn>): Html =>
@@ -459,11 +449,7 @@ const tablePanel = <M>(h: HtmlBuilder<M>, title: string, columns: ReadonlyArray<
 /** The CI tab before its first answer and while the charts load. */
 export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	busyPage(h, "Loading CI analytics", [
-		headlineSkeleton(
-			h,
-			["Runs", "Success rate", "p50 run time", "p95 run time", "Runner wait", "CI time"],
-			{ columns: 3, className: "xl:grid-cols-6" },
-		),
+		headlineSkeleton(h, Object.values(CI_HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
 		h.div(
 			[h.Class("grid gap-6 lg:grid-cols-2")],
 			[chartCard(h, "Runs by result", "bar"), chartCard(h, "Run time", "line")],
@@ -512,8 +498,6 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): 
 /** A loading block with the slow-load note in the gap under it. */
 export const withSlowNote = <M>(h: HtmlBuilder<M>, label: string, block: Html): Html =>
 	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [block, slowNote(h)])
-
-const SHEET_STATS = ["Outcome", "Confidence", "Quality", "Issues", "Duration", "Model", "Tokens", "Reviewed"]
 
 /** `PullRequestCiRuns`' rows: result badge, workflow, commit and duration. */
 export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html =>
@@ -587,7 +571,7 @@ export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyA
 							statRail(
 								h,
 								{},
-								SHEET_STATS.map((label) =>
+								Object.values(SHEET_STAT_LABELS).map((label) =>
 									statRailItem(h, {
 										compact: true,
 										eyebrow: label,

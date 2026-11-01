@@ -145,36 +145,46 @@ const RANKED_BY = {
 	ciTime: "CI time",
 } satisfies Readonly<Record<Metric, string>>
 
+/** The headline tiles' labels, in order; the loading skeleton shows them too. */
+const HEADLINE_LABELS = {
+	merged: "Merged",
+	mergeTime: "Review to merge",
+	firstReview: "First review",
+	defaultRed: "Default branch red",
+	ciPerMerge: "CI time per merge",
+	runnerWait: "Runner wait",
+} as const
+
 const headlineStrip = (h: H, totals: CodeReviewTeamTotals): Html => {
 	const failRate =
 		totals.defaultBranchRuns === 0 ? null : totals.defaultBranchFailed / totals.defaultBranchRuns
 	const stats: ReadonlyArray<{ label: string; value: string; subline?: string; hint: string }> = [
 		{
-			label: "Merged",
+			label: HEADLINE_LABELS.merged,
 			value: formatCount(totals.mergedPullRequests),
 			subline: `of ${formatCount(totals.pullRequests)} reviewed`,
 			hint: "Pull requests by people, first reviewed in this window, that merged",
 		},
 		{
-			label: "Review to merge",
+			label: HEADLINE_LABELS.mergeTime,
 			value: spanOf(totals.medianMergeSeconds),
 			subline: "median",
 			hint: "Median time from a pull request's first review to its merge",
 		},
 		{
-			label: "First review",
+			label: HEADLINE_LABELS.firstReview,
 			value: spanOf(totals.medianFirstReviewSeconds),
 			subline: "median",
 			hint: "Median time from a pull request's first review being queued to it being posted",
 		},
 		{
-			label: "Default branch red",
+			label: HEADLINE_LABELS.defaultRed,
 			value: rateOf(failRate),
 			subline: `of ${formatCount(totals.defaultBranchRuns)} pushes`,
 			hint: "CI runs on pushes to a repository's default branch that failed",
 		},
 		{
-			label: "CI time per merge",
+			label: HEADLINE_LABELS.ciPerMerge,
 			value:
 				totals.mergedPullRequests === 0
 					? EMPTY_VALUE
@@ -183,7 +193,7 @@ const headlineStrip = (h: H, totals: CodeReviewTeamTotals): Html => {
 			hint: "Runner time of every CI run, bots included, per merged pull request",
 		},
 		{
-			label: "Runner wait",
+			label: HEADLINE_LABELS.runnerWait,
 			value: totals.p95QueueMs === null ? EMPTY_VALUE : formatSpan(totals.p95QueueMs / 1000),
 			subline: "p95",
 			hint: "How long the slowest 5% of jobs waited for a runner",
@@ -436,18 +446,7 @@ const teamSkeleton = (h: H, model: Model): Html => {
 		"bg-surface-sunken",
 	)
 	return busyPage(h, "Loading the team", [
-		headlineSkeleton(
-			h,
-			[
-				"Merged",
-				"Review to merge",
-				"First review",
-				"Default branch red",
-				"CI time per merge",
-				"Runner wait",
-			],
-			{ columns: 3, className: "xl:grid-cols-6" },
-		),
+		headlineSkeleton(h, Object.values(HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
 		panel(h, {}, [
 			panelHeader(h, { title: scorecardTitle(model), action: panelControl(h) }),
 			tableSkeleton(h, columns, { first: median }),
