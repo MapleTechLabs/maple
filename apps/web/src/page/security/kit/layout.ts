@@ -85,6 +85,9 @@ const CODE_TABS: ReadonlyArray<{ tab: CodeTab; label: string; icon: IconName; hr
 	},
 ]
 
+/** `/security`, which opens the code audit until the hub has an overview of its own. */
+const SECURITY_CRUMB: BreadcrumbEntry = { label: "Security", href: hrefOf(AppRoute.Security()) }
+
 /** `Security › <source>`, then the code audit's tab when it is not its overview. */
 export const breadcrumbsOf = (
 	source: SecuritySource,
@@ -92,17 +95,13 @@ export const breadcrumbsOf = (
 ): ReadonlyArray<BreadcrumbEntry> => {
 	const label = CODE_TABS.find((entry) => entry.tab === tab)?.label ?? ""
 	return source === "code" && tab !== "overview"
-		? [
-				{ label: "Security" },
-				{ label: SOURCE_LABEL.code, href: hrefOf(AppRoute.SecurityCode()) },
-				{ label },
-			]
-		: [{ label: "Security" }, { label: SOURCE_LABEL[source] }]
+		? [SECURITY_CRUMB, { label: SOURCE_LABEL.code, href: hrefOf(AppRoute.SecurityCode()) }, { label }]
+		: [SECURITY_CRUMB, { label: SOURCE_LABEL[source] }]
 }
 
 /** The code audit's crumbs above a run or finding, then the list it leads back to. */
 export const codeCrumbs = (back: BreadcrumbEntry): ReadonlyArray<BreadcrumbEntry> => [
-	{ label: "Security" },
+	SECURITY_CRUMB,
 	{ label: SOURCE_LABEL.code, href: hrefOf(AppRoute.SecurityCode()) },
 	back,
 ]
