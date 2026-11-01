@@ -91,6 +91,8 @@ interface World {
 	files: Map<string, { readonly sha: string; readonly content: string; readonly size?: number }>
 	truncated: boolean
 	osvDown: boolean
+	/** Where the branch head moves while the tree is read, as a concurrent push would. */
+	headAfterTree: GitCommitSha | undefined
 	/** Blob shas read from the provider, in order. */
 	readonly blobReads: Array<string>
 }
@@ -105,20 +107,25 @@ const world = (files: Record<string, string>): World => ({
 	),
 	truncated: false,
 	osvDown: false,
+	headAfterTree: undefined,
 	blobReads: [],
 })
 
 const source = (state: World) => ({
 	resolveRef: () => Effect.sync(() => Option.some(state.head)),
 	fetchTreeFiles: () =>
-		Effect.sync(() => ({
-			truncated: state.truncated,
-			files: [...state.files].map(([path, blob]): VcsTreeFile => ({
-				path,
-				sha: blob.sha,
-				size: blob.size ?? blob.content.length,
-			})),
-		})),
+		Effect.sync(() => {
+			const listing = {
+				truncated: state.truncated,
+				files: [...state.files].map(([path, blob]): VcsTreeFile => ({
+					path,
+					sha: blob.sha,
+					size: blob.size ?? blob.content.length,
+				})),
+			}
+			if (state.headAfterTree !== undefined) state.head = state.headAfterTree
+			return listing
+		}),
 	fetchBlobText: (_installation: unknown, _repo: unknown, blobSha: string) =>
 		Effect.sync(() => {
 			state.blobReads.push(blobSha)
@@ -318,6 +325,24 @@ describe("DependencyScanner", () => {
 			})
 			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
 			assert.strictEqual(again._tag, "Scanned")
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("does not reconcile when the branch moved on while the scan read it", () => {
+		const state = world({ "package-lock.json": packageLock("4.17.15") })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			// The lockfile is upgraded, but a newer push lands while this scan lists the tree.
+			state.head = sha("b")
+			state.files.set("package-lock.json", { sha: "lock-up", content: packageLock("4.18.0") })
+			state.headAfterTree = sha("c")
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(
+				outcome._tag === "Scanned" ? outcome.scan.error : null,
+				"main moved on to ccccccc during the scan",
+			)
+			assert.isTrue((yield* findingsOf).every((finding) => finding.status === "open"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 

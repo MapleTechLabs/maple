@@ -377,6 +377,14 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							"maple.depscan.package_count": packages.length,
 							"maple.depscan.match_count": matches.length,
 						})
+						// A branch that moved on while this scan read it gets a newer scan; this one must not
+						// reconcile over it, whichever of the two settles last.
+						const headNow = defaultBranchHead
+							? yield* provider
+									.resolveRef(installation, repo, ref)
+									.pipe(Effect.mapError(scanError(`Could not resolve ${ref}`)))
+							: Option.none()
+						const movedTo = Option.filter(headNow, (sha) => sha !== commitSha)
 						return yield* store
 							.completeScan({
 								orgId,
@@ -394,10 +402,14 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								],
 								packageCount: packages.length,
 								matches,
-								incomplete:
-									advisories.unread === 0
-										? undefined
-										: `${advisories.unread} known vulnerabilities past the ${MAX_VULNERABILITIES} a scan reads were left out`,
+								// Either reason keeps this scan from reconciling: the branch moved on, or advisories were left unread.
+								incomplete: Option.match(movedTo, {
+									onNone: () =>
+										advisories.unread === 0
+											? undefined
+											: `${advisories.unread} known vulnerabilities past the ${MAX_VULNERABILITIES} a scan reads were left out`,
+									onSome: (sha) => `${ref} moved on to ${sha.slice(0, 7)} during the scan`,
+								}),
 							})
 							.pipe(Effect.mapError(scanError("Could not store the scan")))
 					})
