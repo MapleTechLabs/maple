@@ -179,7 +179,7 @@ const runRow = (
 					h.span(
 						[h.Class("flex flex-col items-end")],
 						[
-							listRelativeTime(h, { value: run.startedAt, nowMs, timeZone }),
+							listRelativeTime(h, { value: run.startedAt, nowMs, timeZone, variant: "short" }),
 							h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
 						],
 					),

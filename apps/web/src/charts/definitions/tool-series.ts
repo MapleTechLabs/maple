@@ -8,6 +8,7 @@ import { type ChartValue, d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
+import { formatExactCount } from "../../page/kit/locale"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
@@ -53,6 +54,10 @@ const formatOf = (spec: ToolSeriesSpec): ((value: number) => string) => {
 		}
 	}
 }
+
+/** Tooltips read exact counts; the axis keeps the compact ticks. */
+const tooltipFormatOf = (spec: ToolSeriesSpec): ((value: number) => string) =>
+	spec.format === "calls" || spec.format === "sessions" ? (value) => formatExactCount(value) : formatOf(spec)
 
 const bucketOf = (row: Row): string => {
 	const value = row["bucket"]
@@ -122,7 +127,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 										label: entry.label,
 										color: entry.color,
 										dashed: false,
-										value: formatOf(spec)(value),
+										value: tooltipFormatOf(spec)(value),
 									},
 								]
 					}),

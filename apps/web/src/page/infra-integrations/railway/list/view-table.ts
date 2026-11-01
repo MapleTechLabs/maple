@@ -177,6 +177,7 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 					relativeTime(h, {
 						value: view.lastSeen,
 						...clock,
+						mono: true,
 						className: "cursor-default text-2xs text-muted-foreground",
 						trigger: trigger(ids.seen),
 					}),

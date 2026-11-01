@@ -172,6 +172,7 @@ const workflowRow = (
 							ciResultBadge(h, row.lastResult),
 							listRelativeTime(h, {
 								value: row.lastStartedAt,
+								variant: "short",
 								className: "text-xs text-muted-foreground",
 								...time,
 							}),

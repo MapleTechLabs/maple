@@ -227,7 +227,7 @@ export function formatDurationNs(ns: number): string {
 	return formatLatency(ns / 1_000_000)
 }
 
-/** The metric's value as the tiles, axis and columns print it. */
+/** The metric's value as the tiles, axis and columns print it; chart tooltips keep counts exact. */
 export function formatToolMetric(value: number, metric: ToolMetric): string {
 	switch (metric) {
 		case "calls":

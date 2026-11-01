@@ -152,7 +152,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			),
 			tableCell(
 				h,
-				[listRelativeTime(h, { value: run.startedAt, ...time })],
+				[listRelativeTime(h, { value: run.startedAt, variant: "short", ...time })],
 				"hidden px-3 text-right align-top text-muted-foreground tabular-nums md:table-cell",
 			),
 			tableCell(

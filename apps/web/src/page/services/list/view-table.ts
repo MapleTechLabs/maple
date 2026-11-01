@@ -2,7 +2,7 @@ import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { ERROR_RATE_COLOR, errorRateLevel } from "@maple/ui/lib/error-rate"
+import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "../../../ui/status-dot"
 import { tableCellStyles as tableCellClass, tableRowStyles } from "@maple/ui/styles/ui/table"
@@ -280,7 +280,10 @@ const serviceRow = (
 							ctx,
 							`err-${rowKey}`,
 							errorRates,
-							ERROR_RATE_COLOR[errorRateLevel(service.errorRate)],
+							// Red for any error in the window, so a spike under a low average still reads.
+							service.errorRate > 0 || errorRates.some((rate) => rate > 0)
+								? TONE_COLOR.crit
+								: TONE_COLOR.neutral,
 						),
 						h.div(
 							[h.Class("absolute inset-0 flex items-center justify-center")],

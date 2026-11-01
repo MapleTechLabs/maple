@@ -192,7 +192,7 @@ export const listBody = <M>(
 			toolTableFooter(
 				h,
 				`${rows.length} MCP ${rows.length === 1 ? "server" : "servers"}`,
-				`· ${formatNumber(calls)} tool calls · ${errors} failed`,
+				`· ${formatNumber(calls)} tool calls · ${formatNumber(errors)} failed`,
 			),
 			addServerStrip(h, options.onInstrument),
 		],

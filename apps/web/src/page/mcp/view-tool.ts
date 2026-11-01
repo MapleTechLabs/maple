@@ -80,7 +80,7 @@ const charts = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOpti
 			mcpPlot(h, env, {
 				chartId: "mcp-tool-error-rate",
 				title: "Failure rate",
-				action: headingNote(h, `${data.errors} of ${formatNumber(data.calls)}`),
+				action: headingNote(h, `${formatNumber(data.errors)} of ${formatNumber(data.calls)}`),
 				rows,
 				series: [{ key: "errorRate", label: "Failure rate", token: "--color-severity-error" }],
 				format: "errorRate",
@@ -348,7 +348,12 @@ export const toolBody = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: Too
 		[h.Class("flex flex-col")],
 		[
 			options.toolbar,
-			mcpScopeRow(h, options.scope, formatNumber(data.calls), `calls · ${data.errors} failed`),
+			mcpScopeRow(
+				h,
+				options.scope,
+				formatNumber(data.calls),
+				`calls · ${formatNumber(data.errors)} failed`,
+			),
 			charts(h, data, options),
 			failures(h, data, options),
 			calls(h, data, options),
