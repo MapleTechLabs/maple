@@ -247,11 +247,17 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 										...base,
 										advisoryId: null,
 										url: null,
-										summary: null,
+										// Undefined advisories were never read (a failed read or a spent budget): not a clean result.
+										summary:
+											entry.advisories === undefined
+												? "Known vulnerabilities for this version could not be checked this time."
+												: null,
 										severity:
-											entry.posture.status === "end_of_life"
-												? ("medium" as const)
-												: ("low" as const),
+											entry.advisories === undefined
+												? ("unknown" as const)
+												: entry.posture.status === "end_of_life"
+													? ("medium" as const)
+													: ("low" as const),
 										fixedIn: "latest" in entry.posture ? entry.posture.latest : null,
 									},
 								]

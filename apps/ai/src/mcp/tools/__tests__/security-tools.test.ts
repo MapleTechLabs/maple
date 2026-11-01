@@ -130,6 +130,12 @@ describe("list_security_findings", () => {
 		expect(first.text).toContain('status="all"')
 	})
 
+	it("says when an offset is past the last match", async () => {
+		const { output, text } = await list(admin, { offset: 500 })
+		expect(output.findings).toEqual([])
+		expect(text).toContain("is past the last of the")
+	})
+
 	it("says when a target's latest audit stopped early", async () => {
 		const { output } = await list(admin, { area: "code" })
 		expect(output.areas[0]?.summary).toContain(

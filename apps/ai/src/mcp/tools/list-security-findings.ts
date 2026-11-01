@@ -300,7 +300,13 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 						]),
 					),
 					...(output.findings.length === 0
-						? [doc.text(matched === 0 ? "No finding matches the filters." : "")]
+						? [
+								doc.text(
+									matched === 0
+										? "No finding matches the filters."
+										: `offset ${output.offset} is past the last of the ${matched} matching findings; lower it.`,
+								),
+							]
 						: [
 								doc.heading("Findings, worst first"),
 								doc.table(
