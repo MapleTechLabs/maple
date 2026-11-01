@@ -337,8 +337,19 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 								.filter((repo) => repo.latestScan === null)
 								.map((repo) => repo.fullName)
 						: []
-				const unknown =
-					unscanned.length === 0 ? "" : `; unknown for ${unscanned.join(", ")} (never scanned)`
+				// A failed read is not a clean result: say which side Maple could not check.
+				const unread = [
+					...(dependencies !== undefined &&
+					dependencies._tag !== "read" &&
+					dependencies._tag !== "not_connected"
+						? ["dependencies"]
+						: []),
+					...(runtimes !== undefined && runtimes._tag !== "read" ? ["runtimes"] : []),
+				]
+				const unknown = [
+					unscanned.length === 0 ? "" : `; unknown for ${unscanned.join(", ")} (never scanned)`,
+					unread.length === 0 ? "" : `; unknown for ${unread.join(" and ")} (could not be read)`,
+				].join("")
 				const closed =
 					closedDeps.length === 0
 						? ""
@@ -350,7 +361,9 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 							? `Verdict: affected in code (${openDeps.map((m) => m.repository).join(", ")}), but no production service is known to run it${closed}${unknown}.`
 							: closedDeps.length > 0
 								? `Verdict: not affected now${closed}${unknown}.`
-								: `Verdict: not found in anything Maple checked${unknown}.`,
+								: unread.length === 0
+									? `Verdict: not found in anything Maple checked${unknown}.`
+									: `Verdict: not found in what Maple could read${unknown}.`,
 				)
 				if (dependencies?._tag === "read" && dependencies.capped)
 					coverage.push(
@@ -390,7 +403,11 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 						message: `No security finding matches "${output.query}".`,
 						hints: [
 							"Pass an id from list_security_findings: a code fingerprint, a 32-character dependency finding id, a runtime key (nodejs@20.10.0), an answered probe (service:/path), or an advisory id (CVE-…, GHSA-…).",
-							"An advisory id only matches packages and runtime versions Maple has seen in use: no match means none of your scanned lockfiles or running services is affected.",
+							...(output.notSearched.length === 0
+								? [
+										"An advisory id only matches packages and runtime versions Maple has seen in use: no match means none of your scanned lockfiles or running services is affected.",
+									]
+								: []),
 							...output.notSearched.map((reason) => `Not searched: ${reason}`),
 						],
 					},

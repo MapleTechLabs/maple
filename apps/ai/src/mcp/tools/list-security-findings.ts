@@ -403,6 +403,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 									{
 										...filterArgs(output.filters),
 										area: output.areaFilter,
+										// The same window, so the next page ranks the same findings.
+										start_time: output.window.startTime,
+										end_time: output.window.endTime,
 										offset: output.offset + output.findings.length,
 										limit: output.findings.length,
 									},
