@@ -37,6 +37,15 @@ const series = (
 	})
 
 /** One series per client, calls only. */
+/** Failed calls per client per bucket; every one is a `run_sql` tool error. */
+const CLIENT_ERRORS = new Map<string, Readonly<Record<number, number>>>([
+	["preview-verifier", { 0: 2 }],
+	["curl", { 10: 2 }],
+	["Claude Code", { 10: 1 }],
+	["Bun", { 11: 2 }],
+])
+
+/** One series per client: calls, and the client's failed calls in that bucket. */
 const split = (
 	byClient: Readonly<Record<string, Readonly<Record<number, number>>>>,
 ): ReadonlyArray<ToolSeriesPoint> =>
@@ -46,7 +55,7 @@ const split = (
 			seriesKey: client,
 			calls: buckets[index] ?? 0,
 			sessions: 0,
-			errors: 0,
+			errors: CLIENT_ERRORS.get(client)?.[index] ?? 0,
 			p50: 0,
 			p90: 0,
 			p95: 0,
@@ -82,9 +91,9 @@ export const MCP_OVERVIEW: McpServerOverview = {
 	nowMs: MCP_NOW,
 	series: SERVER_SERIES,
 	clientSeries: split({
-		curl: { 9: 75, 10: 140, 11: 57 },
+		curl: { 9: 75, 10: 140, 11: 64 },
 		"estate-console": { 9: 14, 10: 16, 11: 15, 12: 5 },
-		Bun: { 11: 23, 12: 2 },
+		Bun: { 11: 16, 12: 2 },
 		"Node (undici)": { 8: 8, 9: 12 },
 		"Claude Code": { 10: 13, 12: 2 },
 		"preview-verifier": { 0: 5 },
@@ -236,10 +245,10 @@ export const MCP_OVERVIEW: McpServerOverview = {
 		},
 	],
 	clients: [
-		{ name: "curl", kind: "script", calls: 272, errors: 2 },
+		{ name: "curl", kind: "script", calls: 279, errors: 2 },
 		{ name: "estate-console", kind: "unknown", calls: 50, errors: 0 },
-		{ name: "Bun", kind: "script", calls: 25, errors: 2 },
 		{ name: "Node (undici)", kind: "script", calls: 20, errors: 0 },
+		{ name: "Bun", kind: "script", calls: 18, errors: 2 },
 		{ name: "Claude Code", kind: "agent", calls: 15, errors: 1 },
 		{ name: "preview-verifier", kind: "unknown", calls: 5, errors: 2 },
 	],
@@ -333,7 +342,7 @@ export const MCP_SERVERS: ReadonlyArray<McpServerRow> = [
 		p95: 600 * MS,
 		tools: 13,
 		topClient: "curl",
-		topClientShare: 272 / 387,
+		topClientShare: 279 / 387,
 		lastCallMs: at(12, 31),
 		spark: SERVER_SERIES.map((point) => point.calls),
 	},
@@ -355,10 +364,10 @@ export const MCP_RUN_SQL: McpToolDetail = {
 		12: [4, 0, 210, 640, 721],
 	}),
 	clientSeries: split({
-		curl: { 9: 10, 10: 47, 11: 10 },
+		curl: { 9: 11, 10: 48, 11: 8 },
 		"Node (undici)": { 8: 8, 9: 11 },
-		Bun: { 11: 11, 12: 4 },
-		"Claude Code": { 9: 1, 10: 11 },
+		Bun: { 11: 13, 12: 2 },
+		"Claude Code": { 10: 10, 12: 2 },
 		"preview-verifier": { 0: 2 },
 	}),
 	errorGroups: [
@@ -439,12 +448,41 @@ export const MCP_RUN_SQL: McpToolDetail = {
 		call(at(9, 34, 0), "preview-verifier", "2", 149, "tool_error", "6d2b8e47"),
 	],
 	recent: [
-		call(at(12, 31, 20), "Bun", "4", 212, null, "f4a1c6d8"),
-		call(at(12, 31, 12), "Bun", "3", 198, null, "0be57a92"),
-		call(at(12, 30, 58), "Bun", "2", 721, null, "8c3d1e5f"),
-		call(at(12, 30, 41), "Bun", "1", 236, null, "2a96f0b4"),
+		call(at(12, 31, 20), "Claude Code", "12", 212, null, "f4a1c6d8"),
+		call(at(12, 31, 12), "Bun", "4", 198, null, "0be57a92"),
+		call(at(12, 30, 58), "Claude Code", "11", 721, null, "8c3d1e5f"),
+		call(at(12, 30, 41), "Bun", "3", 236, null, "2a96f0b4"),
 		call(at(12, 26, 56), "Bun", "2", 84, "tool_error", "5b1e07c2"),
 		call(at(12, 26, 17), "Bun", "1", 2411, null, "684105b7"),
 		call(at(12, 26, 2), "Bun", "1", 10_823, "tool_error", "a660d8ed"),
 	],
 }
+
+/** Tool calls per (client, tool) over the window, from the warehouse; errors where any. */
+export const MCP_CLIENT_TOOLS: ReadonlyArray<
+	Readonly<{ client: string; tool: string; calls: number; errors: number }>
+> = [
+	{ client: "Bun", tool: "run_sql", calls: 15, errors: 2 },
+	{ client: "Bun", tool: "service_deployments", calls: 3, errors: 0 },
+	{ client: "Claude Code", tool: "run_sql", calls: 12, errors: 1 },
+	{ client: "Claude Code", tool: "search_logs", calls: 1, errors: 0 },
+	{ client: "Claude Code", tool: "list_error_issues", calls: 1, errors: 0 },
+	{ client: "Claude Code", tool: "list_services", calls: 1, errors: 0 },
+	{ client: "Node (undici)", tool: "run_sql", calls: 19, errors: 0 },
+	{ client: "Node (undici)", tool: "search_traces", calls: 1, errors: 0 },
+	{ client: "curl", tool: "list_error_incidents", calls: 144, errors: 0 },
+	{ client: "curl", tool: "run_sql", calls: 67, errors: 2 },
+	{ client: "curl", tool: "explore_attributes", calls: 26, errors: 0 },
+	{ client: "curl", tool: "search_traces", calls: 12, errors: 0 },
+	{ client: "curl", tool: "list_alert_incidents", calls: 10, errors: 0 },
+	{ client: "curl", tool: "list_uptime_monitors", calls: 9, errors: 0 },
+	{ client: "curl", tool: "list_error_issues", calls: 9, errors: 0 },
+	{ client: "curl", tool: "list_services", calls: 2, errors: 0 },
+	{ client: "estate-console", tool: "list_alert_rules", calls: 10, errors: 0 },
+	{ client: "estate-console", tool: "ingest_freshness", calls: 10, errors: 0 },
+	{ client: "estate-console", tool: "list_services", calls: 10, errors: 0 },
+	{ client: "estate-console", tool: "list_alert_incidents", calls: 10, errors: 0 },
+	{ client: "estate-console", tool: "find_errors", calls: 10, errors: 0 },
+	{ client: "preview-verifier", tool: "list_services", calls: 3, errors: 0 },
+	{ client: "preview-verifier", tool: "run_sql", calls: 2, errors: 2 },
+]

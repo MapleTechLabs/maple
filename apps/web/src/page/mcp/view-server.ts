@@ -1,10 +1,11 @@
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
-import { formatErrorRate } from "@maple/ui/lib/format"
+import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { meter } from "../../ui/meter"
 import { selectableTile } from "../agent-sessions/tools-kit/metric-strip"
@@ -65,6 +66,10 @@ export type ServerBodyOptions<M> = Readonly<{
 	/** What the toolbar narrows the page to, for the scope row. */
 	scope: string
 	window: McpWindow
+	/** Every tool the server answered in the window, before the filters. */
+	toolCount: number
+	/** Durations have no per-client split: the tile says so while a client filter is set. */
+	isDurationServerWide: boolean
 	metric: McpMetric
 	percentile: ToolPercentile
 	onSelectMetric: (metric: McpMetric) => M
@@ -88,6 +93,8 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 	const { totals } = data
 	const calls = data.series.map((point) => point.calls).slice(-SPARK_BUCKETS)
 	const topClient = data.clients[0]
+	// The share is of the listed clients' calls: a tool search can empty the totals.
+	const clientCalls = data.clients.reduce((sum, client) => sum + client.calls, 0)
 	const clientsPerBucket = data.series.map(
 		(point) =>
 			new Set(
@@ -111,7 +118,11 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 								"first spans",
 								`${formatClock(data.firstSpanMs, options.env.timeZone)} · nothing to compare`,
 							)
-						: subline(h, `${data.tools.length} tools`, `· ${data.clients.length} clients`),
+						: subline(
+								h,
+								`${data.tools.length} tools`,
+								`· ${data.clients.length} ${pluralize(data.clients.length, "client")}`,
+							),
 				isSelected: options.metric === "calls",
 				onSelect: options.onSelectMetric("calls"),
 				className: TILE,
@@ -122,7 +133,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 				spark: data.series.map((point) => point.errors).slice(-SPARK_BUCKETS),
 				subline: subline(
 					h,
-					`${totals.errors} tool errors`,
+					`${totals.errors} ${pluralize(totals.errors, "tool error")}`,
 					`· ${totals.statusErrors} with Error status`,
 				),
 				isSelected: options.metric === "error_rate",
@@ -136,11 +147,13 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 						eyebrow: "Duration",
 						value: formatDurationNs(totals[options.percentile]),
 						spark: data.series.map((point) => point[options.percentile]).slice(-SPARK_BUCKETS),
-						subline: subline(
-							h,
-							`p50 ${formatDurationNs(totals.p50)}`,
-							`· p95 ${formatDurationNs(totals.p95)}`,
-						),
+						subline: options.isDurationServerWide
+							? subline(h, "all clients", `· p50 ${formatDurationNs(totals.p50)}`)
+							: subline(
+									h,
+									`p50 ${formatDurationNs(totals.p50)}`,
+									`· p95 ${formatDurationNs(totals.p95)}`,
+								),
 						isSelected: options.metric === "duration",
 						onSelect: options.onSelectMetric("duration"),
 						ariaLabel: `${options.percentile.toUpperCase()} duration`,
@@ -159,7 +172,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 						: subline(
 								h,
 								topClient.name,
-								`${Math.round((topClient.calls / Math.max(totals.calls, 1)) * 100)}% of calls`,
+								`${Math.round((topClient.calls / Math.max(clientCalls, 1)) * 100)}% of calls`,
 							),
 				isSelected: options.metric === "clients",
 				onSelect: options.onSelectMetric("clients"),
@@ -315,12 +328,16 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 				]),
 				toolTableBody(
 					h,
-					data.tools.map((row, index) => toolRow(h, row, index, maxRate, options)),
+					data.tools.length === 0
+						? [emptyMessage(h, { className: "py-8 font-mono" }, ["No tools match the filters."])]
+						: data.tools.map((row, index) => toolRow(h, row, index, maxRate, options)),
 				),
 			]),
 			toolTableFooter(
 				h,
-				`Showing all ${data.tools.length} tools`,
+				data.tools.length === options.toolCount
+					? `Showing all ${data.tools.length} tools`
+					: `${data.tools.length} of ${options.toolCount} tools`,
 				`· ${formatToolCount(data.totals.calls)} calls · ${formatErrorRate(errorRate(data.totals))} failed`,
 			),
 		],
@@ -500,7 +517,12 @@ const statusNote = (errors: number, statusErrors: number): string | undefined =>
 	const ok = Math.max(errors - statusErrors, 0)
 	if (errors === 0 || ok === 0) return undefined
 	const reading = ok === errors ? "reads 0% failed" : "undercounts them"
-	const lead = ok === errors ? `All ${errors} have` : `${ok} of ${errors} have`
+	const lead =
+		ok === errors
+			? errors === 1
+				? "The 1 failure has"
+				: `All ${errors} have`
+			: `${ok} of ${errors} have`
 	return `${lead} span status Ok: the spec keeps tool errors off the status, so a status-only view ${reading}.`
 }
 
@@ -577,7 +599,7 @@ export const serverBody = <M>(
 				h,
 				options.scope,
 				formatToolCount(data.totals.calls),
-				`tool calls · ${data.clients.length} clients`,
+				`tool calls · ${data.clients.length} ${pluralize(data.clients.length, "client")}`,
 			),
 			metricStrip(h, data, options),
 			mainChart(h, data, options),

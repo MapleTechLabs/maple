@@ -1,243 +1,55 @@
 import { QueryEngineTimeoutError } from "@maple/domain/http"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { Effect, Option, Record, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Effect, Option } from "effect"
+import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../charts/chart"
-import { ChartRuntime, LoadChartRuntime } from "../../charts/chart-runtime"
 import { ResolveThemeColors, resolveColor, ThemeColors } from "../../charts/theme-colors"
 import { toLoadFailure } from "../../data/load-failure"
 import { ToolPercentile } from "../../page/agent-sessions/tools-kit/model"
-import {
-	facetSelect,
-	facetValue,
-	initFacetSelect,
-	toolFilterToolbar,
-} from "../../page/agent-sessions/tools-kit/toolbar"
+import { facetSelect, toolFilterToolbar } from "../../page/agent-sessions/tools-kit/toolbar"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { timeControls } from "../../page/kit/time-controls"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import { underlineTabClass, underlineTabStrip } from "../../page/kit/underline-tabs"
 import { listBody } from "../../page/mcp/view-list"
-import type { McpServerOverview, McpToolDetail } from "../../page/mcp/data"
-import {
-	formatClock,
-	MCP_CHART_TOKENS,
-	type McpFilters,
-	type McpWindow,
-	scopeText,
-} from "../../page/mcp/view-kit"
-import { McpClientIdentity, McpMetric, serverBody } from "../../page/mcp/view-server"
+import { formatClock, MCP_CHART_TOKENS, scopeText } from "../../page/mcp/view-kit"
+import { McpMetric, serverBody } from "../../page/mcp/view-server"
 import { serviceMcpTab } from "../../page/mcp/view-service-tab"
 import { noServersState, quietWindow, serverError, serverLoading } from "../../page/mcp/view-states"
-import { McpCallList, toolBody } from "../../page/mcp/view-tool"
-import type { Resources } from "../../platform/resources"
+import { toolBody } from "../../page/mcp/view-tool"
 import { button } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
 import { icon } from "../../ui/icon"
 import { pageDescription, pageTitle } from "../../ui/page-layout"
-import * as Select from "../../ui/select"
 import { skeleton } from "../../ui/skeleton"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { serviceDot } from "../../ui/values"
+import { filteredOverview, filteredTool } from "../mcp-filter"
+import {
+	decodeCallList,
+	decodeIdentity,
+	decodePercentile,
+	decodeView,
+	filtersOf,
+	Flags,
+	init,
+	Message,
+	Model,
+	PRESET,
+	pressed,
+	TIME_ZONE,
+	update,
+	type View,
+	VIEW_LABEL,
+	VIEWS,
+	WINDOW,
+} from "../mcp-lab"
 import { MCP_NOW, MCP_OVERVIEW, MCP_RUN_SQL, MCP_SERVERS } from "../mcp-fixture"
 import { defineShellLab } from "../shell-lab"
 
 // `/lab/mcp`: the MCP hub's pages in the real shell over `maple-ai`'s spans from Nov 1, 2026.
 // The toolbar at the bottom switches page and state; `?view=` opens one directly.
-
-const VIEWS = ["list", "server", "tool", "service", "empty", "loading", "error", "quiet"] as const
-type View = (typeof VIEWS)[number]
-const VIEW_LABEL = {
-	list: "/mcp",
-	server: "/mcp/maple-ai",
-	tool: "tool: run_sql",
-	service: "service MCP tab",
-	empty: "empty",
-	loading: "loading",
-	error: "error",
-	quiet: "quiet window",
-} satisfies { readonly [K in View]: string }
-const TIME_ZONE = "Europe/Berlin"
-const PRESET = "6h"
-const WINDOW: McpWindow = { startMs: MCP_NOW - 6 * 3_600_000, label: "Last 6 hours", bucketLabel: "15m" }
-
-const Model = Schema.Struct({
-	view: Schema.Literals(VIEWS),
-	metric: McpMetric,
-	percentileToggle: ToggleGroup.Model,
-	clientToggle: ToggleGroup.Model,
-	callsToggle: ToggleGroup.Model,
-	clientSelect: Select.Model,
-	kindSelect: Select.Model,
-	client: Schema.UndefinedOr(Schema.String),
-	kind: Schema.UndefinedOr(Schema.String),
-	isFailingOnly: Schema.Boolean,
-	searchInput: Schema.String,
-	timePicker: TimeRangePicker.Model,
-	charts: Schema.Record(Schema.String, Chart.Model),
-	themeColors: Schema.NullOr(ThemeColors),
-	chartRuntime: ChartRuntime,
-})
-type Model = typeof Model.Type
-
-const Facet = Schema.Literals(["client", "kind"])
-
-const Message = defineMessageUnion({
-	ClickedView: { view: Schema.Literals(VIEWS) },
-	ClickedMetric: { metric: McpMetric },
-	GotPercentileMessage: { message: ToggleGroup.Message },
-	GotClientToggleMessage: { message: ToggleGroup.Message },
-	GotCallsToggleMessage: { message: ToggleGroup.Message },
-	GotSelectMessage: { facet: Facet, message: Select.Message },
-	ToggledFailingOnly: {},
-	ChangedSearchInput: { value: Schema.String },
-	GotTimePickerMessage: { message: TimeRangePicker.Message },
-	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	Ignored: {},
-})
-type Message = typeof Message.Type
-type Return = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
-
-const Flags = Schema.Struct({ view: Schema.Literals(VIEWS) })
-type Flags = typeof Flags.Type
-const decodeView = Schema.decodeUnknownOption(Schema.Literals(VIEWS))
-const decodePercentile = Schema.decodeUnknownOption(ToolPercentile)
-const decodeIdentity = Schema.decodeUnknownOption(McpClientIdentity)
-const decodeCallList = Schema.decodeUnknownOption(McpCallList)
-
-/** A toggle group's one pressed value, decoded, or the fallback. */
-const pressed = <A>(
-	model: ToggleGroup.Model,
-	decode: (value: string | undefined) => Option.Option<A>,
-	fallback: A,
-): A => Option.getOrElse(decode(model.values[0]), () => fallback)
-
-const init = (flags: Flags): Return => ({
-	model: {
-		view: flags.view,
-		metric: "calls",
-		percentileToggle: ToggleGroup.init({ label: "Percentile", values: ["p90"] }),
-		clientToggle: ToggleGroup.init({ label: "Client identity", values: ["ua"] }),
-		callsToggle: ToggleGroup.init({ label: "Calls", values: ["slowest"] }),
-		clientSelect: initFacetSelect("mcp-client-select", undefined),
-		kindSelect: initFacetSelect("mcp-kind-select", undefined),
-		client: undefined,
-		kind: undefined,
-		isFailingOnly: false,
-		searchInput: "",
-		timePicker: TimeRangePicker.init("mcp-time-range-picker"),
-		charts: {},
-		themeColors: null,
-		chartRuntime: { _tag: "Loading" },
-	},
-	commands: [
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
-})
-
-/** A toggle group keeps one value pressed: a press on the pressed item leaves it as it was. */
-const toggleStep = (
-	current: ToggleGroup.Model,
-	message: ToggleGroup.Message,
-	wrap: (message: ToggleGroup.Message) => Message,
-	write: (next: ToggleGroup.Model) => Model,
-): Return => {
-	const next = ToggleGroup.update(current, message)
-	const kept = next.model.values.length === 0 ? { ...next.model, values: current.values } : next.model
-	return { model: write(kept), commands: Command.mapMessages(next.commands ?? [], wrap) }
-}
-
-const update = (model: Model, message: Message): Return =>
-	Message.match<Return>(message, {
-		ClickedView: ({ view }) => ({ model: { ...model, view } }),
-		ClickedMetric: ({ metric }) => ({ model: { ...model, metric } }),
-		GotPercentileMessage: ({ message: inner }) =>
-			toggleStep(
-				model.percentileToggle,
-				inner,
-				(m) => Message.GotPercentileMessage({ message: m }),
-				// Arrow keys and focus reach here too; only a new percentile switches the chart.
-				(next) => ({
-					...model,
-					percentileToggle: next,
-					metric: next.values[0] === model.percentileToggle.values[0] ? model.metric : "duration",
-				}),
-			),
-		GotClientToggleMessage: ({ message: inner }) =>
-			toggleStep(
-				model.clientToggle,
-				inner,
-				(m) => Message.GotClientToggleMessage({ message: m }),
-				(next) => ({
-					...model,
-					clientToggle: next,
-				}),
-			),
-		GotCallsToggleMessage: ({ message: inner }) =>
-			toggleStep(
-				model.callsToggle,
-				inner,
-				(m) => Message.GotCallsToggleMessage({ message: m }),
-				(next) => ({
-					...model,
-					callsToggle: next,
-				}),
-			),
-		GotSelectMessage: ({ facet, message: inner }) => {
-			const current = facet === "client" ? model.clientSelect : model.kindSelect
-			const next = Select.update(current, inner)
-			const value =
-				next.outMessage === undefined
-					? facet === "client"
-						? model.client
-						: model.kind
-					: facetValue(next.outMessage.value)
-			return {
-				model:
-					facet === "client"
-						? { ...model, clientSelect: next.model, client: value }
-						: { ...model, kindSelect: next.model, kind: value },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotSelectMessage({ facet, message: m }),
-				),
-			}
-		},
-		ToggledFailingOnly: () => ({ model: { ...model, isFailingOnly: !model.isFailingOnly } }),
-		ChangedSearchInput: ({ value }) => ({ model: { ...model, searchInput: value } }),
-		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			return {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotTimePickerMessage({ message: m }),
-				),
-			}
-		},
-		GotChartMessage: ({ chartId, message: inner }) => {
-			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)
-			return {
-				model: { ...model, charts: Record.set(model.charts, chartId, next.model) },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotChartMessage({ chartId, message: m }),
-				),
-			}
-		},
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		Ignored: () => ({ model }),
-	})
 
 type H = HtmlBuilder<Message>
 
@@ -291,47 +103,6 @@ const KIND_OPTIONS = ["agent", "script", "unknown"].map((kind) => ({
 		.filter((client) => client.kind === kind)
 		.reduce((sum, client) => sum + client.calls, 0),
 }))
-
-const filtersOf = (model: Model): McpFilters => ({
-	search: model.searchInput,
-	client: model.client,
-	kind: model.kind,
-	isFailingOnly: model.isFailingOnly,
-})
-
-/** The fixture narrowed the way the reads would be: tool name, failing only, client and kind. */
-const filteredOverview = (filters: McpFilters): McpServerOverview => {
-	const needle = filters.search.trim().toLowerCase()
-	const clients = MCP_OVERVIEW.clients.filter(
-		(client) =>
-			(filters.client === undefined || client.name === filters.client) &&
-			(filters.kind === undefined || client.kind === filters.kind),
-	)
-	const names = new Set(clients.map((client) => client.name))
-	return {
-		...MCP_OVERVIEW,
-		tools: MCP_OVERVIEW.tools.filter(
-			(row) => row.tool.toLowerCase().includes(needle) && (!filters.isFailingOnly || row.errors > 0),
-		),
-		clients,
-		clientSeries: MCP_OVERVIEW.clientSeries.filter((point) => names.has(point.seriesKey)),
-	}
-}
-
-const filteredTool = (filters: McpFilters): McpToolDetail => {
-	const keep = (call: McpToolDetail["slowest"][number]) =>
-		(filters.client === undefined || call.client === filters.client) &&
-		(!filters.isFailingOnly || call.errorType !== null)
-	return {
-		...MCP_RUN_SQL,
-		clientSeries: MCP_RUN_SQL.clientSeries.filter(
-			(point) => filters.client === undefined || point.seriesKey === filters.client,
-		),
-		slowest: MCP_RUN_SQL.slowest.filter(keep),
-		failed: MCP_RUN_SQL.failed.filter(keep),
-		recent: MCP_RUN_SQL.recent.filter(keep),
-	}
-}
 
 const toolbar = (h: H, model: Model, withSearch: boolean): Html => {
 	const clientSelect = facetSelect(h, {
@@ -484,6 +255,8 @@ const pageView = (model: Model, h: H): Html => {
 							toolbar: toolbar(h, model, true),
 							scope: scopeText("all tools", filters),
 							window: WINDOW,
+							toolCount: MCP_OVERVIEW.tools.length,
+							isDurationServerWide: filters.client !== undefined || filters.kind !== undefined,
 							metric: model.metric,
 							percentile: pressed(model.percentileToggle, decodePercentile, "p90"),
 							onSelectMetric: (metric: McpMetric) => Message.ClickedMetric({ metric }),
