@@ -78,6 +78,7 @@ export const Message = defineMessageUnion({
 	GotSeveritySelectMessage: { message: Select.Message },
 	GotFingerprintCopyMessage: { message: CopyButton.Message },
 	GotIssueIdCopyMessage: { message: CopyButton.Message },
+	GotPromptCopyMessage: { message: CopyButton.Message },
 	GotChartMessage: { message: Chart.Message },
 	ClickedClaim: {},
 	ClickedExtendLease: {},

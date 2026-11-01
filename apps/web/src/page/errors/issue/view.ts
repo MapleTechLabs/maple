@@ -24,6 +24,7 @@ import type { Model } from "./model"
 import { occurrencePanel, OCCURRENCE_TOKENS } from "./view-chart"
 import { headerActions, headerTitle, issueTabs } from "./view-header"
 import { culpritPanel, issueFactStrip } from "./view-overview"
+import { agentHandoffPanel } from "./view-agent-handoff"
 import {
 	alertSourceCard,
 	attachNudge,
@@ -54,6 +55,7 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 		[h.Class("flex flex-col gap-7")],
 		[
 			culpritPanel(h, model, issue),
+			...(issue.kind === "error" ? [agentHandoffPanel(h, model, issue)] : []),
 			issueFactStrip(h, issue, {
 				windowCount: timeseries.reduce((sum, bucket) => sum + bucket.count, 0),
 				windowLabel: windowLabel(model.search),
@@ -67,6 +69,7 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 					: [
 							occurrencePanel(
 								h,
+								model.chart,
 								timeseries,
 								issue.severity,
 								chartWindow,

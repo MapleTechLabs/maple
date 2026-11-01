@@ -7,7 +7,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { truncatedText } from "../../../ui/truncated-text"
 import { formatTimestamp } from "../hub/view-signal"
-import { SEVERITY_FILL } from "../kit/severity"
+import { SEVERITY_FILL, SEVERITY_TEXT } from "../kit/severity"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -135,9 +135,13 @@ export const factLane = (h: H, label: string, children: ReadonlyArray<Html>): Ht
 		[eyebrow(h, {}, [label]), h.div([h.Class("min-w-0 text-sm")], children)],
 	)
 
-const count = (h: H, value: number): Html =>
+/** A lane's count, set larger than the stamps beside it; `className` tones it. */
+const count = (h: H, value: number, className = "text-foreground"): Html =>
 	h.span(
-		[h.Class("text-foreground tabular-nums"), h.Title(value.toLocaleString("en-US"))],
+		[
+			h.Class(cn("text-lg leading-6 font-semibold tabular-nums", className)),
+			h.Title(value.toLocaleString("en-US")),
+		],
 		[formatNumber(value)],
 	)
 
@@ -164,7 +168,15 @@ export type FactInputs = Readonly<{
 /** `IssueFactStrip`: window and lifetime counts, first and last seen, then what applies. */
 export const issueFactStrip = (h: H, issue: ErrorIssueDocument, inputs: FactInputs): Html =>
 	factStrip(h, [
-		factLane(h, `Events · ${inputs.windowLabel}`, [count(h, inputs.windowCount)]),
+		factLane(h, `Events · ${inputs.windowLabel}`, [
+			count(
+				h,
+				inputs.windowCount,
+				inputs.windowCount === 0 || issue.severity === null
+					? "text-foreground"
+					: SEVERITY_TEXT[issue.severity],
+			),
+		]),
 		factLane(h, "Events · all time", [count(h, issue.occurrenceCount)]),
 		factLane(h, "First seen", [stamp(h, issue.firstSeenAt, inputs.timeZone, inputs.nowMs)]),
 		factLane(h, "Last seen", [stamp(h, issue.lastSeenAt, inputs.timeZone, inputs.nowMs)]),
@@ -174,7 +186,10 @@ export const issueFactStrip = (h: H, issue: ErrorIssueDocument, inputs: FactInpu
 						h.span(
 							[h.Class("text-foreground")],
 							[
-								h.span([h.Class("tabular-nums")], [String(issue.regressionCount)]),
+								h.span(
+									[h.Class("font-medium text-severity-warn tabular-nums")],
+									[String(issue.regressionCount)],
+								),
 								...(issue.lastRegressedAt
 									? [
 											h.span(

@@ -4,6 +4,7 @@ import { densifySpark, surgeRatio } from "../../../lib/models/error-signal"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 import * as Chart from "../../../charts/chart"
 import { ChartSpec } from "../../../charts/chart-spec"
 import { sortedOccurrences } from "../../../charts/definitions/occurrences"
@@ -41,13 +42,14 @@ export type ChartInputs = Readonly<{
 }>
 
 /** `IssueOccurrenceChart`: the bars, or the dashed empty line when the window saw nothing. */
-const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((_model, inputs, h) =>
+const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((model, inputs, h) =>
 	sortedOccurrences(inputs.points).length === 0
 		? emptyMessage(
 				h,
 				{
 					dashed: true,
-					className: "flex h-44 w-full items-center justify-center border-border-subtle py-0 text-xs",
+					className:
+						"flex h-44 w-full items-center justify-center border-border-subtle py-0 text-xs",
 				},
 				["No activity in this window"],
 			)
@@ -60,14 +62,18 @@ const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((
 					color: inputs.color,
 					timeZone: inputs.timeZone,
 				}),
-				tooltipBody: () => Option.none(),
+				tooltipBody: (portal) =>
+					Option.flatMap(model.tooltip, (tooltip) =>
+						tooltip._tag === "Bucket"
+							? Option.some(bucketTooltipBody(h, tooltip, portal))
+							: Option.none(),
+					),
 			}),
 )
 
-const CHART_MODEL = Chart.init()
-
 export const occurrencePanel = (
 	h: H,
+	chart: Chart.Model,
 	points: ReadonlyArray<Point>,
 	severity: IssueSeverity | null,
 	window: ChartWindow,
@@ -100,7 +106,7 @@ export const occurrencePanel = (
 			[
 				h.submodel({
 					slotId: "issue-occurrence-chart",
-					model: CHART_MODEL,
+					model: chart,
 					view: chartView,
 					toParentMessage: (message) => Message.GotChartMessage({ message }),
 					viewInputs: {

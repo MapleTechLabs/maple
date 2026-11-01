@@ -299,6 +299,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/error-issue",
+		title: "Error issue",
+		description:
+			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the agent handoff, the fact strip and the rail.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/alerts",
 		title: "Alerts",
 		description:
