@@ -19,6 +19,7 @@ import * as CustomRange from "./custom-range"
 import {
 	formatUtcOffset,
 	init,
+	isActivePreset,
 	isOpenKey,
 	LONG_RANGE_PRESET_VALUES,
 	Message,
@@ -46,6 +47,19 @@ const sceneView = withViewInputs(view, {
 	selectedPreset: "1h",
 	presets: PRESET_VALUES,
 	timeZone: "Europe/Berlin",
+})
+
+describe("time range picker preset rail", () => {
+	test("a URL preset marks the row naming the same window, never a different one", () => {
+		expect(isActivePreset("7d", "1w")).toBe(true)
+		expect(isActivePreset("60m", "1h")).toBe(true)
+		expect(isActivePreset("24h", "24h")).toBe(true)
+		// "1d" is today since midnight and "30d" is not a calendar month: neither is a rolling window.
+		expect(isActivePreset("1d", "24h")).toBe(false)
+		expect(isActivePreset("30d", "1mo")).toBe(false)
+		expect(isActivePreset("today", "24h")).toBe(false)
+		expect(isActivePreset(undefined, "24h")).toBe(false)
+	})
 })
 
 describe("time range picker offset", () => {
