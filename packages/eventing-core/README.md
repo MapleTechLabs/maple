@@ -29,7 +29,7 @@ perform the mandatory predicate depth/node preflight described in the generated
 predicate definition; JSON Schema validation alone does not enforce those
 whole-tree limits.
 
-The first host adapter is Maple Local in `apps/cli/src/server/eventing`. It uses
+The first host adapter is Maple Local in `packages/local-server/src/eventing`. It uses
 an authenticated configuration endpoint, a SQLite projection/outbox store, and
 the pre-chDB OTLP seam. The package itself deliberately contains none of those
 host decisions.

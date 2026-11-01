@@ -335,16 +335,32 @@ const articleJsonLd = {
             </aside>
 
             <article class="prom-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        <strong>Prometheus</strong> is an open-source monitoring system that collects numeric measurements, called metrics, from your applications and servers and stores them as time series. You query them with PromQL, chart them in Grafana and alert on them.
+                    </p>
+                    <p>
+                        This guide explains what a Prometheus metric looks like, the four metric types (counter, gauge, histogram and summary) and when to use each, the metrics worth watching first, and how to collect and chart them with Prometheus and Grafana.
+                    </p>
+
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Counters only go up: chart them with <code>rate()</code> or <code>increase()</code>, never raw.</li>
+                            <li>Gauges go up and down: read the value directly.</li>
+                            <li>Use a histogram for latency. Its buckets add up across instances; summary percentiles don't.</li>
+                            <li>Start with request rate, error ratio and p95 latency, and alert on <code>up == 0</code>.</li>
+                            <li>Keep user IDs and full URLs out of labels: every label value is a new time series.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="what-is-a-metric" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>What a Prometheus metric is</h2>
 
-                    <div class="guide-answer">
-                        <p>A <strong>Prometheus metric</strong> is a named number that your application keeps up to date, such as how many requests it has served. Prometheus reads it every few seconds and stores each reading, so you can chart how the number changes over time.</p>
-                    </div>
-
                     <p>
-                        Applications publish their metrics as plain text on an HTTP endpoint, usually <code>/metrics</code>. Every line is one number:
+                        A <strong>Prometheus metric</strong> is a named number your application keeps up to date, such as the count of requests served. Prometheus reads it every few seconds and stores each reading. Applications publish their metrics as plain text on an HTTP endpoint, usually <code>/metrics</code>. Every line is one number:
                     </p>
 
                     <div class="anatomy" role="img" aria-label="An annotated metric line: http_requests_total is the metric name, method POST and status 500 are labels, 17 is the current value.">
@@ -514,6 +530,14 @@ const articleJsonLd = {
                             </tbody>
                         </table>
                     </div>
+
+                    <p><strong>Which type should I use?</strong></p>
+                    <ul class="guide-list">
+                        <li>It counts things that happen, such as requests or errors: <span class="type-badge" style={`--type: ${typeColor.Counter}`}>Counter</span></li>
+                        <li>It can go down for a reason other than a restart: <span class="type-badge" style={`--type: ${typeColor.Gauge}`}>Gauge</span></li>
+                        <li>You need percentiles, such as p95 latency: <span class="type-badge" style={`--type: ${typeColor.Histogram}`}>Histogram</span></li>
+                        <li>One process, with percentiles you know in advance: <span class="type-badge" style={`--type: ${typeColor.Summary}`}>Summary</span> works, but a histogram still does more</li>
+                    </ul>
                 </section>
 
                 <section id="what-to-watch" class="scroll-mt-24">
@@ -686,16 +710,18 @@ const articleJsonLd = {
     .prom-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .prom-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .prom-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .prom-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .prom-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .prom-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .prom-guide strong { font-weight: 600; color: var(--foreground); }
     .prom-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
     .prom-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .prom-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .prom-guide a:not(.guide-button):hover { color: var(--foreground); }
     .prom-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
-    .prom-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .prom-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .prom-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .prom-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .prom-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .prom-guide .guide-takeaways li::marker { color: var(--primary); }
+    .prom-guide .guide-list { display: grid; gap: 0.6rem; margin: 0 0 1.5rem; padding-left: 1.2rem; list-style: disc; font-size: 16px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
 
     /* One color per metric type: set --type on the element. */
     .prom-guide .type-badge { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid color-mix(in oklab, var(--type) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--type) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--type) 70%, var(--foreground)); white-space: nowrap; }

@@ -3,8 +3,8 @@
 // `--debug`. Pure so the rules are testable (bin.ts runs at import time).
 
 import { Predicate } from "effect"
-import { SIGN_IN_REQUIRED } from "../server/remote-auth"
-import { isRemoteHttps } from "./local-address"
+import { SIGN_IN_REQUIRED } from "@maple/local-server/remote-auth"
+import { isRemoteHttps } from "@maple/local-server/local-address"
 
 export interface FailureReport {
 	/** The failure's `_tag`, recorded as `maple.cli.outcome` on the root span. */

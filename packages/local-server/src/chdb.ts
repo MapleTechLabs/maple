@@ -18,7 +18,7 @@ import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "./version"
 
 /** A chDB failure — locating libchdb, opening the connection, or bootstrapping
  *  the schema. Carries the underlying message verbatim. */
@@ -36,12 +36,25 @@ export class ChdbClosedError extends Schema.TaggedError<ChdbClosedError>()("@map
 	message: Schema.String,
 }) {}
 
+let configuredLibchdb: string | undefined
+
+/**
+ * Load libchdb from exactly `path` (a host that provisioned it, e.g. the
+ * @maple-dev/alchemy sidecar), or clear it with `undefined`. Must run before the
+ * first connection: chDB is loaded once per process.
+ */
+export const configureLibchdb = (path: string | undefined): void => {
+	configuredLibchdb = path
+}
+
 /** Locate `libchdb` at runtime, in priority order:
+ *  0. the path a host passed to {@link configureLibchdb}
  *  1. `MAPLE_LIBCHDB` env (explicit override)
  *  2. sibling of the executable (the shipped 2-file bundle: `maple` + `libchdb`)
  *  3. `~/.maple/bin/libchdb.{so,dylib}` (dev / installed location)
  */
 function resolveLibchdb(): string {
+	if (configuredLibchdb !== undefined) return configuredLibchdb
 	const candidates: string[] = []
 	const override = process.env.MAPLE_LIBCHDB
 	if (override) candidates.push(override)
@@ -61,6 +74,34 @@ function resolveLibchdb(): string {
 	}
 	return found
 }
+
+// Never dlclose'd: unloading libchdb runs its static destructors, and the real
+// connection would then load it a second time into the same process.
+const releaseByPath = new Map<string, string>()
+
+/**
+ * The release tag (`v26.7.3`) of the libchdb this process would load, read from
+ * the library itself via `chdb_version`. Loads only that symbol and opens no
+ * connection, so it is safe before any store is touched. Fails when the
+ * library is missing or predates `chdb_version`.
+ */
+export const loadedLibchdbRelease: Effect.Effect<string, ChdbError> = Effect.gen(function* () {
+	const path = yield* Effect.try({
+		try: resolveLibchdb,
+		catch: (error) => new ChdbError({ message: error instanceof Error ? error.message : String(error) }),
+	})
+	const cached = releaseByPath.get(path)
+	if (cached !== undefined) return cached
+	const version = yield* Effect.try({
+		try: () => dlopen(path, { chdb_version: { args: [], returns: FFIType.ptr } }).symbols.chdb_version(),
+		catch: (error) =>
+			new ChdbError({ message: `cannot load chdb_version from ${path}: ${String(error)}` }),
+	})
+	if (version === null) return yield* new ChdbError({ message: `libchdb at ${path} reported no version` })
+	const release = `v${new CString(version).toString()}`
+	releaseByPath.set(path, release)
+	return release
+})
 
 type ChdbSymbols = ReturnType<typeof openLib>["symbols"]
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { buildBatchedInsertStatements, buildInsertSql, buildInsertStatements } from "../src/server/inserts"
+import {
+	buildBatchedInsertStatements,
+	buildInsertSql,
+	buildInsertStatements,
+} from "@maple/local-server/inserts"
 
 const line = (i: number, pad = 0) => JSON.stringify({ body: `row-${i}${"x".repeat(pad)}` })
 

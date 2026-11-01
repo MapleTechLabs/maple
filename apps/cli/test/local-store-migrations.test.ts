@@ -8,21 +8,12 @@ import {
 	LOCAL_SCHEMA_MANIFEST,
 	LOCAL_SCHEMA_V1,
 	LOCAL_SCHEMA_V2,
-	LOCAL_SCHEMA_V2_MANIFEST,
 	LOCAL_SCHEMA_V3,
-	LOCAL_SCHEMA_V3_MANIFEST,
 	LOCAL_SCHEMA_V4,
-	LOCAL_SCHEMA_V4_MANIFEST,
 	LOCAL_SCHEMA_V5,
-	LOCAL_SCHEMA_V5_MANIFEST,
-	LOCAL_SCHEMA_V7_MANIFEST,
 	LOCAL_SCHEMA_V6,
 	LOCAL_SCHEMA_V10,
-	LOCAL_SCHEMA_V10_MANIFEST,
 	LOCAL_SCHEMA_V11,
-	LOCAL_SCHEMA_V11_MANIFEST,
-	LOCAL_SCHEMA_V12_MANIFEST,
-	LOCAL_SCHEMA_V13_MANIFEST,
 	LOCAL_SCHEMA_V20,
 	LOCAL_SCHEMA_V21,
 	LOCAL_SCHEMA_V22,
@@ -46,7 +37,18 @@ import {
 	LOCAL_SCHEMA_V42,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
-} from "../src/server/schema-identity"
+} from "@maple/local-server/schema-identity"
+import {
+	LOCAL_SCHEMA_V2_MANIFEST,
+	LOCAL_SCHEMA_V3_MANIFEST,
+	LOCAL_SCHEMA_V4_MANIFEST,
+	LOCAL_SCHEMA_V5_MANIFEST,
+	LOCAL_SCHEMA_V7_MANIFEST,
+	LOCAL_SCHEMA_V10_MANIFEST,
+	LOCAL_SCHEMA_V11_MANIFEST,
+	LOCAL_SCHEMA_V12_MANIFEST,
+	LOCAL_SCHEMA_V13_MANIFEST,
+} from "../src/server/schema-snapshots"
 import {
 	abandonLocalStoreMigration,
 	abandonLocalStoreMigrationPreservingSource,
@@ -56,26 +58,28 @@ import {
 	identityFromMarker,
 	legacyToCurrentModule,
 	localStoreMigrations,
-	migrationJournalPath,
-	migrationHistoryPath,
-	migrationRootPath,
 	planMigration,
 	readMigrationJournal,
-	readMigrationJournalStructure,
 	resolveMigrationChain,
 	runLocalStoreMigration,
 	promoteLocalStoreMigration,
 	validateMigrationRegistry,
 	type LocalStoreMigration,
 	type MigrationModuleContext,
-	type MigrationJournal,
 } from "../src/server/local-store-migrations"
+import {
+	type MigrationJournal,
+	migrationHistoryPath,
+	migrationJournalPath,
+	migrationRootPath,
+	readMigrationJournalStructure,
+} from "@maple/local-server/local-store-migration-journal"
 import type { MigrationDb } from "../src/server/local-store-migration-module"
 import {
 	comparePhysicalSchema,
 	type LocalSchemaManifest,
 	withRawTelemetryRetentionFloor,
-} from "../src/server/schema-manifest"
+} from "@maple/local-server/schema-manifest"
 import {
 	ensureStoreMarkerDurable,
 	isStoreDirty,
@@ -83,8 +87,8 @@ import {
 	serverPidPath,
 	storeMarkerPath,
 	storeOpenMarkerPath,
-} from "../src/server/store-version"
-import { durableJson } from "../src/server/durable-files"
+} from "@maple/local-server/store-version"
+import { durableJson } from "@maple/local-server/durable-files"
 import {
 	__testables as legacyTestables,
 	advanceDuplicateKeyProgress,
@@ -94,7 +98,7 @@ import {
 	type CopyProgress,
 	type RawReplayProgress,
 } from "../src/server/local-store-migrations/legacy-to-current"
-import { LOCAL_SCHEMA_HISTORY } from "../src/server/local-schema-history"
+import { LOCAL_SCHEMA_HISTORY } from "@maple/local-server/local-schema-history"
 import { LOCAL_STORE_STEPS } from "../src/server/local-store-migrations/steps"
 import { stepStatements } from "../src/server/local-store-migrations/step-executor"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -1828,13 +1832,13 @@ describe("migration journal creation is lock-serialized", () => {
 			await writeFile(
 				storeMarkerPath(dataDir),
 				`${JSON.stringify({
-					chdb: (await import("../src/version")).CHDB_VERSION,
+					chdb: (await import("@maple/local-server/version")).CHDB_VERSION,
 					maple: "test",
 					createdAt: "2026-08-30T00:00:00.000Z",
 					schema: LEGACY_LOCAL_SCHEMA.fingerprint,
 				})}\n`,
 			)
-			const { withMaintenanceLock } = await import("../src/server/checkpoints")
+			const { withMaintenanceLock } = await import("@maple/local-server/checkpoints")
 			const { randomUUID } = await import("node:crypto")
 			await withMaintenanceLock(dataDir, randomUUID(), async () => {
 				// A concurrent migrate must fail at the lock WITHOUT having written

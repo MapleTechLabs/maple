@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest"
 import {
 	decodeMigrationJournal,
 	MigrationJournalSchema,
-} from "../src/server/local-store-migrations/journal-schema"
+} from "@maple/local-server/local-store-migrations/journal-schema"
 
 const golden = {
 	formatVersion: 2,

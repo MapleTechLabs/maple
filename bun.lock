@@ -148,15 +148,15 @@
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/eventing-core": "workspace:*",
-        "@maple/ingest-rules": "workspace:*",
+        "@maple/local-server": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "effect": "catalog:effect",
-        "protobufjs": "^8.8.1",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
         "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -539,8 +539,11 @@
         "@maple-dev/effect-sdk": "workspace:*",
       },
       "devDependencies": {
+        "@effect/platform-bun": "catalog:effect",
         "@effect/vitest": "catalog:effect",
         "@maple/domain": "workspace:*",
+        "@maple/local-server": "workspace:*",
+        "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
@@ -549,9 +552,13 @@
         "vitest": "catalog:",
       },
       "peerDependencies": {
+        "@effect/platform-bun": "^4.0.0",
         "alchemy": ">=2.0.0-beta.80 <3",
         "effect": "^4.0.0",
       },
+      "optionalPeers": [
+        "@effect/platform-bun",
+      ],
     },
     "packages/alerting-core": {
       "name": "@maple/alerting-core",
@@ -815,6 +822,26 @@
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
         "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/local-server": {
+      "name": "@maple/local-server",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform-bun": "catalog:effect",
+        "@maple/domain": "workspace:*",
+        "@maple/eventing-core": "workspace:*",
+        "@maple/ingest-rules": "workspace:*",
+        "@maple/query-engine": "workspace:*",
+        "effect": "catalog:effect",
+        "protobufjs": "^8.8.1",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.4",
+        "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -1583,6 +1610,8 @@
     "@maple/ingest-rules": ["@maple/ingest-rules@workspace:packages/ingest-rules"],
 
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
+
+    "@maple/local-server": ["@maple/local-server@workspace:packages/local-server"],
 
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 

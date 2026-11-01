@@ -87,6 +87,10 @@
 			],
 			"ignoreBinaries": ["duckdb"]
 		},
+		"packages/local-server": {
+			// The session model test spawns this as a process, which knip does not follow.
+			"entry": ["test/fixtures/*.ts"]
+		},
 		"packages/backend": {
 			// The opt-in GitHub e2e test compares the dependency scanner with a locally installed osv-scanner.
 			"ignoreBinaries": ["osv-scanner"]

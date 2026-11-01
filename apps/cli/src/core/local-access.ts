@@ -3,8 +3,8 @@ import { Cause, Duration, Effect, Layer, Option, Result, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { defaultLocalUrl, isLoopbackHostname, isRemoteHttps } from "../lib/local-address"
-import { ACCESS_TOKEN_ENV } from "../server/remote-auth"
+import { defaultLocalUrl, isLoopbackHostname, isRemoteHttps } from "@maple/local-server/local-address"
+import { ACCESS_TOKEN_ENV } from "@maple/local-server/remote-auth"
 
 const bare = (hostname: string): string => hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase()
 

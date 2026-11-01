@@ -8,8 +8,8 @@
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;

@@ -10,9 +10,9 @@
 
 import { rmSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
-import { Chdb } from "../src/server/chdb"
-import { exportSignalShards } from "../src/server/archives/export"
-import { archiveSignal } from "../src/server/archives/signals"
+import { Chdb } from "@maple/local-server/chdb"
+import { exportSignalShards } from "@maple/local-server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;

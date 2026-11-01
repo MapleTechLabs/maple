@@ -29,13 +29,14 @@ const authorUrl = `https://github.com/${author.github}`;
 const toc = [
     { depth: 2, slug: "definition", text: "Log parsing, defined" },
     { depth: 2, slug: "formats", text: "Formats and techniques" },
+    { depth: 3, slug: "tools", text: "Log parsing tools" },
     { depth: 2, slug: "collector", text: "The OpenTelemetry Collector" },
     { depth: 3, slug: "file-log", text: "The file log receiver" },
     { depth: 3, slug: "config", text: "Pick your log format" },
     { depth: 3, slug: "run", text: "Run it" },
     { depth: 3, slug: "see", text: "See the parsed fields" },
     { depth: 2, slug: "own-format", text: "Parse your own format" },
-    { depth: 2, slug: "mistakes", text: "Common mistakes" },
+    { depth: 2, slug: "mistakes", text: "Best practices and mistakes" },
     { depth: 2, slug: "by-hand", text: "Parse a file by hand" },
 ];
 const sectionNav = toc.filter((h) => h.depth === 2);
@@ -312,6 +313,16 @@ const checkOutput = `{'client_address': '203.0.113.7', 'time_local': '19/Oct/202
 no match on line 6: 192.0.2.44 - - [19/Oct/2026:14:02:17 +0000] "\\x16\\x03\\x01\\x0
 1 lines did not match`;
 
+// Facts from each vendor's own page, last verified 2026-10-31.
+const tools = [
+    ["OpenTelemetry Collector", "https://opentelemetry.io/docs/collector/", "Vendor-agnostic pipeline that receives, processes and exports logs, metrics and traces", "Open source, Apache 2.0", "Free", "Parsing once and sending to any OTLP backend"],
+    ["Fluent Bit", "https://fluentbit.io/", "Lightweight processor and forwarder for logs, metrics and traces; a CNCF graduated project", "Open source, Apache 2.0", "Free", "An agent on every node or container"],
+    ["Logstash", "https://www.elastic.co/logstash", "Elastic's server-side pipeline; grok turns unstructured text into fields", "Apache 2.0 for the -oss build, Elastic License for the default build", "Free to self-host", "Elastic Stack users and grok patterns"],
+    ["Vector", "https://vector.dev/", "Observability pipeline maintained by Datadog; parses with Vector Remap Language", "Open source, MPL 2.0", "Free", "Programmable transforms in one binary"],
+    ["Graylog", "https://graylog.org/products/source-available/", "Log management with pipeline processing, search and alerts", "Graylog Open: SSPL; Enterprise and Security editions are paid", "Open is free; Enterprise uses value-based licensing", "Self-hosted log search with parsing built in"],
+    ["Splunk", "https://www.splunk.com/en_us/products/pricing.html", "Commercial data platform; the rex command extracts fields with a regex at search time", "Proprietary", "Ingest, workload, entity or activity pricing; free trials", "Teams already on Splunk"],
+];
+
 const mistakes = [
     ["A loose regex", "Anchor the pattern with <code>^</code> and <code>$</code> so a partial match can't fill half the fields, and use negated classes such as <code>[^\"]*</code> instead of <code>.*</code>, which backtracks across the rest of the line."],
     ["Keeping query strings", "Query strings carry session tokens, emails and IDs. The <code>path</code> group in this guide stops at <code>?</code>, so they never reach an attribute."],
@@ -432,13 +443,29 @@ const articleJsonLd = {
             </aside>
 
             <article class="lp-guide min-w-0">
+                <section class="guide-lead">
+                    <p>
+                        <strong>Log parsing</strong> is splitting raw log lines into structured fields, such as the timestamp, the severity, the status code or the URL path. Once a line is parsed, tools can filter, count and alert on those fields instead of searching free text.
+                    </p>
+                    <p>
+                        This guide covers the common log formats and the techniques and tools used to parse them, how to parse logs in the OpenTelemetry Collector with a config for each format, how to write a parser for your own format, and how to parse a log file by hand.
+                    </p>
+
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>The format decides the parser: JSON, logfmt and syslog have their own, other text needs a regex with named groups.</li>
+                            <li>Parse once in a pipeline such as the OpenTelemetry Collector, so every backend gets the same fields.</li>
+                            <li>Convert status codes and sizes to integers: as text, <code>"502" &gt;= "60"</code> is false.</li>
+                            <li>Let lines that don't match through with their raw body; they are often the ones worth reading.</li>
+                            <li>For code you own, log JSON from a structured logger instead of parsing text later.</li>
+                        </ul>
+                    </div>
+                </section>
+
                 <section id="definition" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>Log parsing, defined</h2>
-
-                    <div class="guide-answer">
-                        <p><strong>Log parsing</strong> is splitting each line of a log into named fields, such as the time, the status code or the URL path. Tools can then filter and count by those fields instead of searching the text.</p>
-                    </div>
 
                     <p>
                         Here is one request from an nginx access log, before and after parsing. Each color is one field, and the same colors mark that field in the regex and config further down.
@@ -490,6 +517,23 @@ const articleJsonLd = {
                     </div>
                     <p>
                         Any text format without a dedicated parser falls back to a <strong>regular expression</strong>, where each named group, written <code>(?P&lt;name&gt;...)</code>, becomes a field. <strong>Grok</strong>, popularized by Logstash, is regex with a library of ready-made named patterns: <code>%&#123;IP:client&#125;</code> matches an IP address, and <code>%&#123;HTTPD_COMBINEDLOG&#125;</code> matches a whole nginx or Apache line. The next section has a Collector config for each format in the table.
+                    </p>
+
+                    <h3 id="tools" class="scroll-mt-24">Log parsing tools</h3>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Tool</th><th>What it is</th><th>License</th><th>Pricing</th><th>Best for</th></tr>
+                            </thead>
+                            <tbody>
+                                {tools.map(([name, url, what, license, pricing, bestFor]) => (
+                                    <tr><td><a href={url} target="_blank" rel="noopener noreferrer"><strong>{name}</strong></a></td><td>{what}</td><td>{license}</td><td>{pricing}</td><td>{bestFor}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Maple stores logs that arrive over OTLP, so this guide parses them in the Collector before they are sent.
                     </p>
                 </section>
 
@@ -629,8 +673,8 @@ const articleJsonLd = {
                 </section>
 
                 <section id="mistakes" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>05</span> · Mistakes</p>
-                    <h2>Common log parsing mistakes</h2>
+                    <p class="guide-eyebrow"><span>05</span> · Best practices</p>
+                    <h2>Log parsing best practices and common mistakes</h2>
                     <p>A parser that looks right on the sample line can still lose data in these ways:</p>
                     <div class="guide-checklist">
                         {mistakes.map(([title, body], index) => (
@@ -733,7 +777,7 @@ const articleJsonLd = {
     .lp-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .lp-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .lp-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .lp-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .lp-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .lp-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption) { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .lp-guide strong { font-weight: 600; color: var(--foreground); }
     .lp-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); overflow-wrap: anywhere; }
     .lp-guide pre { position: relative; margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); tab-size: 4; }
@@ -745,9 +789,10 @@ const articleJsonLd = {
     .lp-guide .guide-list li::marker { color: var(--primary); }
     .lp-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .lp-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .lp-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .lp-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .lp-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .lp-guide .guide-takeaways { margin: 2rem 0 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .lp-guide .guide-takeaways ul { display: grid; gap: 0.5rem; margin: 0.8rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.6; color: var(--foreground); }
+    .lp-guide .guide-takeaways li::marker { color: var(--primary); }
 
     /* Syntax colors stay neutral or in the page accent, so the field colors are the only hues in code. */
     .lp-guide .tok-comment { color: var(--muted-foreground); }

@@ -4,7 +4,7 @@ import { dirname } from "node:path"
 import { annotateOutcome, EXIT_START_REFUSED, markFailedExit } from "../core/outcomes"
 import { describeFailure, formatFailure } from "../lib/failure"
 import { dim } from "../lib/style"
-import { dataDirSidecarPath } from "../server/store-version"
+import { dataDirSidecarPath } from "@maple/local-server/store-version"
 
 /**
  * Deterministic `maple start` refusals under a supervisor (launchd KeepAlive,

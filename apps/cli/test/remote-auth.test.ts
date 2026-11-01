@@ -14,8 +14,8 @@ import {
 	SESSION_COOKIE,
 	SESSION_TTL_MS,
 	sessionValid,
-} from "../src/server/remote-auth"
-import { __testables, isBrowserOriginAllowed, makeBrowserOriginPolicy } from "../src/server/serve"
+} from "@maple/local-server/remote-auth"
+import { __testables, isBrowserOriginAllowed, makeBrowserOriginPolicy } from "@maple/local-server/serve"
 
 const INGEST_KEY = "ingest-key-0123456789abcdef"
 const ACCESS_TOKEN = "access-token-0123456789abcdef"

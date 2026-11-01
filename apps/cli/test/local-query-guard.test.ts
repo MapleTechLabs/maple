@@ -3,15 +3,15 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Result } from "effect"
-import { Chdb, ChdbClosedError } from "../src/server/chdb"
+import { Chdb, ChdbClosedError } from "@maple/local-server/chdb"
 import { describeWithChdb } from "./libchdb-test-support"
 import {
 	countArrayRows,
 	prepareLocalQuery,
 	READ_ONLY_REJECTION_PREFIX,
 	ReadOnlyQueryRejected,
-} from "../src/server/query-guard"
-import { __testables } from "../src/server/serve"
+} from "@maple/local-server/query-guard"
+import { __testables } from "@maple/local-server/serve"
 
 /** The engine's canonical form, as `formatQuerySingleLine` would print it. */
 const engine = (canonical: string) => ({ query: () => canonical })
