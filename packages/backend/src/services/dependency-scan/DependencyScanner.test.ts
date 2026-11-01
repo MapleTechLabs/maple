@@ -346,6 +346,8 @@ describe("DependencyScanner", () => {
 
 			const [latest] = yield* store.listScans({ orgId: repository.orgId, limit: 1 })
 			assert.strictEqual(latest?.status, "failed")
+			// The typed failure's message, followed by what caused it.
+			assert.match(latest?.error ?? "", /^Could not read advisories: .+/)
 			assert.deepStrictEqual((yield* findingsOf).map(keyOf).sort(), before)
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
