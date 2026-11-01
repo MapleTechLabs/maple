@@ -7,6 +7,7 @@ import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { ruleToFormState } from "@maple/web-data/alerts/form-utils"
 import {
+	type AlertRuleStateRow,
 	buildRuleStatesByRuleId,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
@@ -26,15 +27,25 @@ export interface IncidentView {
 	readonly payload: Option.Option<V2AlertRulePreviewParams>
 }
 
+/** The state rows of one rule (one per group). */
+export const ruleStatesOf = (model: Model, ruleId: string): ReadonlyArray<AlertRuleStateRow> =>
+	(model.states ?? []).filter((row) => row.rule_id === ruleId)
+
 /** The incident and its rule, or `None` while the incidents list has not answered or lacks it. */
 export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
 	if (model.incidents === null || model.nowMs === null) return Option.none()
-	const incidents = model.incidents.map(rowToAlertIncidentDocument)
-	const incident = incidents.find((candidate) => candidate.id === model.incidentId)
-	if (incident === undefined) return Option.none()
-	const statesByRule = buildRuleStatesByRuleId(model.states ?? [])
-	const rules = (model.rules ?? []).map((row) => rowToAlertRuleDocument(row, statesByRule))
-	const rule = rules.find((candidate) => candidate.id === incident.ruleId) ?? null
+	const incidentRow = model.incidents.find((row) => row.id === model.incidentId)
+	if (incidentRow === undefined) return Option.none()
+	// Only this incident's rule is decoded: the org's other rules and incidents are never shown here.
+	const incident = rowToAlertIncidentDocument(incidentRow)
+	const ruleRow = (model.rules ?? []).find((row) => row.id === incidentRow.rule_id)
+	const rule =
+		ruleRow === undefined
+			? null
+			: rowToAlertRuleDocument(
+					ruleRow,
+					buildRuleStatesByRuleId(ruleStatesOf(model, incidentRow.rule_id)),
+				)
 	const now = model.nowMs
 	const start = isoMs(incident.firstTriggeredAt)
 	const pad = Math.max(30, (rule?.windowMinutes ?? 5) * 4) * MINUTE_MS
@@ -43,7 +54,9 @@ export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
 	return Option.some({
 		incident,
 		rule,
-		ruleIncidents: incidents.filter((candidate) => candidate.ruleId === incident.ruleId),
+		ruleIncidents: model.incidents
+			.filter((row) => row.rule_id === incidentRow.rule_id)
+			.map(rowToAlertIncidentDocument),
 		range,
 		// An uptime rule has no query to replay: its signal is the monitor's checks.
 		payload:
