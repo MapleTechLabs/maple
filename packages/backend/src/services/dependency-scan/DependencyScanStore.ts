@@ -314,7 +314,7 @@ const reconcileFindings = (
 		const orgId = scan.orgId
 		const open = yield* db.run(
 			PG.from(DependencyFindings)
-				.select("id", "lockfilePath")
+				.select("id", "lockfilePath", "ecosystem", "packageName", "advisoryId", "aliases")
 				.where(($) => [$.orgId.eq(orgId), $.repositoryId.eq(scan.repositoryId), $.status.eq("open")]),
 		)
 		yield* Effect.forEach(Arr.chunksOf(groups, WRITE_CHUNK), (chunk) =>
@@ -393,8 +393,21 @@ const reconcileFindings = (
 		// A lockfile that failed, was too large or unsupported says nothing about its findings.
 		const lockfileStatus = new Map(lockfiles.map((lockfile) => [lockfile.path, lockfile.status]))
 		const matched = new Set(groups.map((group) => group.id))
+		// A finding OSV now lists only as another advisory's alias is still matched, not fixed.
+		const matchedNames = groups.map((group) => ({
+			key: JSON.stringify([group.head.lockfilePath, group.head.ecosystem, group.head.packageName]),
+			names: new Set([group.head.advisoryId, ...group.aliases]),
+		}))
+		const namedByMatch = (row: (typeof open)[number]) => {
+			const key = JSON.stringify([row.lockfilePath, row.ecosystem, row.packageName])
+			return matchedNames.some(
+				(group) =>
+					group.key === key &&
+					[row.advisoryId, ...row.aliases].some((name) => group.names.has(name)),
+			)
+		}
 		const fixedIds = open
-			.filter((row) => !matched.has(row.id))
+			.filter((row) => !matched.has(row.id) && !namedByMatch(row))
 			.filter((row) => {
 				const status = lockfileStatus.get(row.lockfilePath)
 				return status === undefined || status === "parsed"
