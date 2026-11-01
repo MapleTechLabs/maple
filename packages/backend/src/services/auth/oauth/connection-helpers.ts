@@ -310,7 +310,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		 * Pollers filter on `revokedAt IS NULL`, so a revoked grant stops being
 		 * retried every tick; `upsertConnection` (reconnect) clears the stamp.
 		 * With `unchangedSince`, the stamp is a no-op once the row was rewritten after that read.
-		 * Best-effort: bookkeeping must never mask the revocation error itself.
+		 * Best-effort: bookkeeping must never mask the revocation error itself. Reports whether it landed.
 		 */
 		const markConnectionRevoked = Effect.fn("OAuthConnectionHelpers.markConnectionRevoked")(function* (
 			orgId: OrgId,
@@ -320,7 +320,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			// Before the write, not after: the memo must not outlive the decision to
 			// revoke even if the stamp itself fails (it is best-effort/ignored below).
 			yield* invalidateConnectionMemo(orgId)
-			yield* dbExecute((db) =>
+			return yield* dbExecute((db) =>
 				db.run(
 					PG.update(OAuthConnections)
 						.set({ revokedAt: currentTime })
@@ -329,9 +329,13 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 							$.provider.eq(provider),
 							$.revokedAt.isNull(),
 							...(unchangedSince === undefined ? [] : [$.updatedAt.eq(unchangedSince)]),
-						]),
+						])
+						.returning("id"),
 				),
-			).pipe(Effect.ignore)
+			).pipe(
+				Effect.map((stamped) => stamped.length > 0),
+				Effect.orElseSucceed(() => false),
+			)
 		})
 
 		/** Drop the org's connection row and its source; reports whether anything was removed. */

@@ -401,8 +401,12 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 				// A revoked grant fails every call until a reconnect; skip it without an error and
 				// without caching, so the reconnect resumes discovery on the next call.
 				if (row.authType === "planetscale_oauth") {
-					const grant = yield* psOAuth.grantStatus(row.orgId)
-					if (grant.revokedAt !== null) {
+					// An unreadable grant falls through to the fetch, which keeps the stale fallback.
+					const revoked = yield* psOAuth.grantStatus(row.orgId).pipe(
+						Effect.map((grant) => grant.revokedAt !== null),
+						Effect.orElseSucceed(() => false),
+					)
+					if (revoked) {
 						yield* Effect.annotateCurrentSpan({
 							"maple.planetscale.skip_reason": "grant_revoked",
 						})

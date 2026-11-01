@@ -33,6 +33,7 @@ import {
 	collectPages,
 	decodeConsumed,
 	PLANETSCALE_TIMEOUT_STATUS,
+	PlanetScaleOrgForbiddenError,
 	runPlanetScale,
 	type SdkError,
 } from "./planetscale/api"
@@ -451,6 +452,10 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					connection,
 					`listing databases in ${organization}`,
 					collectPages(PlanetScale.listDatabases, { organization, per_page: PAGE_SIZE }, MAX_PAGES),
+				).pipe(
+					Effect.catchTag("@maple/backend/integrations/PlanetScaleForbiddenError", (forbidden) =>
+						Effect.fail(new PlanetScaleOrgForbiddenError({ message: forbidden.message })),
+					),
 				)
 				const inventoryComplete = listing.complete
 				const upstreamDatabases = yield* decodeConsumed(
@@ -805,21 +810,20 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					)
 					return { outcome: "refreshed" as const, deployEvents }
 				}
-				// A 403 means the grant lost access (org removed from it, scope dropped); it does not
-				// clear on its own. The same 403 two ticks running stamps the grant revoked, so polling
-				// stops and the integration asks for a reconnect instead of failing every tick.
-				const forbiddenAgain =
-					result.error._tag === "@maple/backend/integrations/PlanetScaleForbiddenError" &&
-					connection.lastInventoryError === result.error.message
-				if (forbiddenAgain && grant.updatedAt !== null) {
-					yield* psOAuth.markRevoked(connection.orgId, grant.updatedAt)
-				}
+				// A 403 on the org listing means the grant lost access to the org; it does not clear
+				// on its own. Two ticks running stamps the grant revoked, so polling stops and the
+				// integration asks for a reconnect. A lost race (reconnect, refresh) retries next tick.
+				const revokedNow =
+					result.error._tag === "@maple/backend/integrations/PlanetScaleOrgForbiddenError" &&
+					connection.lastInventoryError === result.error.message &&
+					grant.updatedAt !== null &&
+					(yield* psOAuth.markRevoked(connection.orgId, grant.updatedAt))
 				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
 					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
 				)
 				yield* reportInventoryPoll(
 					connection,
-					forbiddenAgain || result.error._tag === "@maple/http/errors/IntegrationsRevokedError"
+					revokedNow || result.error._tag === "@maple/http/errors/IntegrationsRevokedError"
 						? DISCONNECTED
 						: { _tag: "Failed", error: result.error.message },
 				)
@@ -830,7 +834,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// on an Ok span as `error.type` + a Warn log; both paths log identically.
 				const expectedType = isUpstreamTimeout(result.error)
 					? "upstream_timeout"
-					: forbiddenAgain
+					: revokedNow
 						? "grant_forbidden"
 						: null
 				yield* (

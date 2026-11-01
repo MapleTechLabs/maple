@@ -1474,8 +1474,8 @@ describe("PlanetScaleService rejected tokens", () => {
 })
 
 describe("PlanetScaleService forbidden grants", () => {
-	/** Answers 403 to every database listing while `forbidden.value` is set; counts the calls. */
-	const stubForbidden = () => {
+	/** Answers 403 to `matches` URLs (default: all database calls) while `forbidden.value` is set. */
+	const stubForbidden = (matches: (url: string) => boolean = (url) => url.includes("/databases")) => {
 		const base = stubApi({
 			databases: [{ id: "db_1", name: "main-db" }],
 			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
@@ -1485,7 +1485,7 @@ describe("PlanetScaleService forbidden grants", () => {
 		const stub = (async (input: string | URL | Request, init?: RequestInit) => {
 			const url =
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-			if (forbidden.value && url.includes("/databases")) {
+			if (forbidden.value && matches(url)) {
 				calls.forbidden += 1
 				return new Response(JSON.stringify({ code: "forbidden", message: "Forbidden" }), {
 					status: 403,
@@ -1522,6 +1522,24 @@ describe("PlanetScaleService forbidden grants", () => {
 			const third = yield* service.pollAllOrgs()
 			assert.deepStrictEqual([third.skipped, third.failures], [1, 0])
 			assert.strictEqual(calls.forbidden, callsBefore)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
+	it.effect("never revokes the grant over a 403 on one database's branches", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { stub, forbidden } = stubForbidden((url) => url.includes("/branches"))
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			forbidden.value = true
+			const service = yield* PlanetScaleService
+
+			for (const _ of [1, 2, 3]) {
+				assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			}
+			assert.isNull((yield* (yield* PlanetScaleOAuthService).grantStatus(asOrgId("org_1"))).revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
 			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),

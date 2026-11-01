@@ -202,9 +202,10 @@ export interface PlanetScaleOAuthServiceApi {
 	>
 	/**
 	 * Stamp the grant revoked so pollers stop and the UI asks for a reconnect. A no-op when the
-	 * row was rewritten after `unchangedSince` (a reconnect or refresh wins). Best-effort.
+	 * row was rewritten after `unchangedSince` (a reconnect or refresh wins). Best-effort; reports
+	 * whether the stamp landed.
 	 */
-	readonly markRevoked: (orgId: OrgId, unchangedSince: number) => Effect.Effect<void>
+	readonly markRevoked: (orgId: OrgId, unchangedSince: number) => Effect.Effect<boolean>
 	/** Drop the stored grant. PlanetScale documents no revoke endpoint. */
 	readonly disconnect: (
 		orgId: OrgId,
