@@ -10,7 +10,7 @@ import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { ruleToFormState } from "@maple/web-data/alerts/form-utils"
 import {
 	buildRuleStatesByRuleId,
-	rowToAlertDestinationDocument,
+	rowsToAlertDestinationDocuments,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
@@ -54,7 +54,7 @@ export const ruleIncidentsOf = (model: Model): ReadonlyArray<AlertIncidentDocume
 		})
 
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
-	(model.destinations ?? []).map(rowToAlertDestinationDocument)
+	rowsToAlertDestinationDocuments(model.destinations ?? [])
 
 export const ruleDeliveriesOf = (model: Model): ReadonlyArray<AlertDeliveryEventDocument> =>
 	AsyncData.getOrElse(model.deliveries.data, () => []).filter((event) => event.ruleId === model.ruleId)
@@ -108,8 +108,13 @@ export const chartChecksOf = (
 	})
 }
 
-export const payloadOf = (model: Model, rule: AlertRuleDocument | null): Option.Option<V2AlertRulePreviewParams> =>
-	rule === null || model.window === null ? Option.none() : previewPayload(ruleToFormState(rule), model.window)
+export const payloadOf = (
+	model: Model,
+	rule: AlertRuleDocument | null,
+): Option.Option<V2AlertRulePreviewParams> =>
+	rule === null || model.window === null
+		? Option.none()
+		: previewPayload(ruleToFormState(rule), model.window)
 
 /** The picker's label: a preset's, else the range (not yet zone-aware). */
 export const rangeLabelOf = (model: Model): string =>
