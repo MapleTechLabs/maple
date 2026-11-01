@@ -96,8 +96,12 @@ const exit = async (child: ReturnType<typeof spawn>) => {
 		clearTimeout(timer)
 	}
 }
-const healthy = async () => {
-	for (let i = 0; i < 200; i++) {
+// CI boots six native probes on one runner at once, so a cold chDB start can take well over 20s.
+// A foreground server that dies during startup fails at once instead of at the deadline.
+const healthy = async (server?: ReturnType<typeof Bun.spawn>) => {
+	const deadline = Date.now() + 60_000
+	while (Date.now() < deadline) {
+		ok(server?.exitCode == null, `server exited with ${server?.exitCode} before /health; inspect ${root}`)
 		const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1000) }).catch(() => null)
 		if (response?.ok) return
 		await Bun.sleep(100)
@@ -159,7 +163,7 @@ const stop = async () => strictEqual(await exit(spawn("stop", ["stop", "--data-d
 let detached = false
 try {
 	const foreground = spawn("foreground", [...args, ...moduleArgs])
-	await healthy()
+	await healthy(foreground)
 	await request("/local/eventing/projections", projection)
 	await request("/v1/logs", ingest)
 	const first = outbox(await request("/local/eventing/outbox"))
