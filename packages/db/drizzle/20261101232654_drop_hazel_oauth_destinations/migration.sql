@@ -25,6 +25,39 @@ WHERE jsonb_typeof(rules."destination_ids_json") = 'array'
 		JOIN "alert_destinations" AS destinations ON destinations."id" = destination_id
 		WHERE destinations."type" = 'hazel-oauth'
 	);--> statement-breakpoint
+-- Each severity tier names its own destinations (the column above is their union); a tier
+-- keeps its place even when it is left with none.
+UPDATE "alert_rules" AS rules
+SET "thresholds_json" = (
+	SELECT jsonb_agg(
+		CASE
+			WHEN jsonb_typeof(tier -> 'destinationIds') = 'array' THEN jsonb_set(
+				tier,
+				'{destinationIds}',
+				COALESCE(
+					(
+						SELECT jsonb_agg(destination_id)
+						FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(tier -> 'destinationIds') = 'array' THEN tier -> 'destinationIds' ELSE '[]'::jsonb END) AS ids(destination_id)
+						WHERE destination_id NOT IN (SELECT "id" FROM "alert_destinations" WHERE "type" = 'hazel-oauth')
+					),
+					'[]'::jsonb
+				)
+			)
+			ELSE tier
+		END
+		ORDER BY tiers.position
+	)
+	FROM jsonb_array_elements(CASE WHEN jsonb_typeof(rules."thresholds_json") = 'array' THEN rules."thresholds_json" ELSE '[]'::jsonb END) WITH ORDINALITY AS tiers(tier, position)
+)
+WHERE jsonb_typeof(rules."thresholds_json") = 'array'
+	AND jsonb_array_length(CASE WHEN jsonb_typeof(rules."thresholds_json") = 'array' THEN rules."thresholds_json" ELSE '[]'::jsonb END) > 0
+	AND EXISTS (
+		SELECT 1
+		FROM jsonb_array_elements(CASE WHEN jsonb_typeof(rules."thresholds_json") = 'array' THEN rules."thresholds_json" ELSE '[]'::jsonb END) AS tiers(tier)
+		CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(tier -> 'destinationIds') = 'array' THEN tier -> 'destinationIds' ELSE '[]'::jsonb END) AS ids(destination_id)
+		JOIN "alert_destinations" AS destinations ON destinations."id" = ids.destination_id
+		WHERE destinations."type" = 'hazel-oauth'
+	);--> statement-breakpoint
 UPDATE "error_notification_policies" AS policies
 SET "destination_ids_json" = COALESCE(
 	(
