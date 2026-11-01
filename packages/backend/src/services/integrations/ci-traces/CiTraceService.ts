@@ -25,7 +25,7 @@ import {
 	isRefusal,
 	makeIngestSender,
 } from "@maple/backend/services/ingest/ingest-sender"
-import { SharedIngestRefusals } from "./ingest-refusals"
+import { type IngestRefusal, SharedIngestRefusals } from "./ingest-refusals"
 import { jobLogRecords, type OtlpLogsPayload, workflowJobLogsToOtlp } from "./logs"
 import { type OtlpTracesPayload, workflowJobToOtlp, workflowRunToOtlp } from "./otlp"
 
@@ -42,15 +42,28 @@ const make = Effect.gen(function* () {
 	const ingestKeys = yield* OrgIngestKeysService
 	const database = yield* Database
 	const ingest = yield* makeIngestSender
-	const refusals = (yield* SharedIngestRefusals) ?? (yield* makeExpiringStore<string>())
+	const refusals = (yield* SharedIngestRefusals) ?? (yield* makeExpiringStore<IngestRefusal>())
 
 	// A refused key (billing, revoked) is the org's state, not a lost write: the span ends Ok and
 	// the org is held, so later webhooks neither post nor download a job log for it.
-	const heldRefusal = (orgId: OrgId) => Effect.map(refusals.get(orgId), Option.getOrUndefined)
+	// The hold is for the refused key: a key rotated since (possibly in another graph, so the memo
+	// is bypassed) ends it, and the event goes out with the new key.
+	const heldRefusal = (orgId: OrgId) =>
+		Effect.gen(function* () {
+			const held = yield* refusals.get(orgId)
+			if (Option.isNone(held)) return undefined
+			yield* ingestKeys.forget(orgId)
+			const keys = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)
+			if (keys.publicKey === held.value.publicKey) return held.value.message
+			yield* refusals.remove(orgId)
+			return undefined
+		})
+	const hold = (orgId: OrgId, publicKey: string, error: IngestSendError) =>
+		Effect.flatMap(Clock.currentTimeMillis, (now) =>
+			refusals.set(orgId, { publicKey, message: error.message }, now + Duration.toMillis(REFUSAL_HOLD)),
+		)
 	const holdRefused = (orgId: OrgId, error: IngestSendError) =>
 		Effect.gen(function* () {
-			const now = yield* Clock.currentTimeMillis
-			yield* refusals.set(orgId, error.message, now + Duration.toMillis(REFUSAL_HOLD))
 			yield* Effect.annotateCurrentSpan({
 				"maple.cicd.outcome": "ingest_refused",
 				"maple.cicd.failure": error.message,
@@ -125,7 +138,15 @@ const make = Effect.gen(function* () {
 	const postAs = (orgId: OrgId, payload: OtlpTracesPayload | OtlpLogsPayload) => {
 		const send = ingestKeys
 			.getOrCreate(orgId, SYSTEM_USER_ID)
-			.pipe(Effect.flatMap((keys) => post(keys.publicKey, payload)))
+			.pipe(
+				Effect.flatMap((keys) =>
+					post(keys.publicKey, payload).pipe(
+						Effect.tapError((error) =>
+							isRefusal(error) ? hold(orgId, keys.publicKey, error) : Effect.void,
+						),
+					),
+				),
+			)
 		return send.pipe(
 			Effect.catchTag("@maple/backend/ingest/IngestSendError", (error) =>
 				error.status === 401

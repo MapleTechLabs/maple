@@ -20,6 +20,7 @@ import { SourceId } from "@maple/domain/primitives"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { CiTraceSinkWith } from "./CiTraceService"
+import { type IngestRefusal, SharedIngestRefusals } from "./ingest-refusals"
 import { MAX_JOB_LOG_CHARS } from "./logs"
 
 const trackedDbs: TestDb[] = []
@@ -618,6 +619,29 @@ describe("CiTraceService", () => {
 				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
 			)
 			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
+		})
+	})
+
+	it.live("ends the hold once the refused key is rotated, and sends with the new key", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			// The isolate caches the queue consumer shares across batches.
+			const caches = Layer.mergeAll(
+				Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>()),
+				Layer.succeed(SharedIngestRefusals, yield* makeExpiringStore<IngestRefusal>()),
+			)
+			const batch = sinkLayer(testDb, recordingFetch(calls, [403, 200])).pipe(Layer.provide(caches))
+			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			yield* emitJob.pipe(Effect.provide(batch))
+			const rotated = yield* OrgIngestKeysService.use((keys) =>
+				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+			).pipe(Effect.provide(keysLayer(testDb)))
+			yield* emitJob.pipe(Effect.provide(batch))
+			assert.deepStrictEqual(
+				calls.map((call) => call.authorization),
+				[calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+			)
 		})
 	})
 

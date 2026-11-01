@@ -2,7 +2,10 @@ import type { OrgIngestKeyRow } from "@maple/db/tables"
 import { Effect, Layer } from "effect"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { SharedIngestKeysMemo } from "@maple/backend/services/org/shared-ingest-keys-memo"
-import { SharedIngestRefusals } from "@maple/backend/services/integrations/ci-traces/ingest-refusals"
+import {
+	type IngestRefusal,
+	SharedIngestRefusals,
+} from "@maple/backend/services/integrations/ci-traces/ingest-refusals"
 import { type InstallationToken, SharedInstallationTokens } from "./installation-tokens"
 
 /**
@@ -12,7 +15,7 @@ import { type InstallationToken, SharedInstallationTokens } from "./installation
 export const makeVcsSyncIsolateCaches = Effect.gen(function* () {
 	const tokens = yield* makeExpiringStore<InstallationToken>()
 	const ingestKeys = yield* makeExpiringStore<OrgIngestKeyRow>()
-	const refusals = yield* makeExpiringStore<string>()
+	const refusals = yield* makeExpiringStore<IngestRefusal>()
 	return Layer.mergeAll(
 		Layer.succeed(SharedInstallationTokens, tokens),
 		Layer.succeed(SharedIngestKeysMemo, ingestKeys),
