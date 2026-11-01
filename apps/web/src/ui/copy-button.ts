@@ -216,7 +216,7 @@ export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>):
 			: [
 					["idle", options.idleLabel],
 					["copied", copiedLabel],
-					["error", options.errorLabel ?? "Failed"],
+					["error", options.errorLabel ?? "Couldn't copy"],
 				]
 	return button(
 		h,

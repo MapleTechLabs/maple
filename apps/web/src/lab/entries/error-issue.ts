@@ -76,9 +76,31 @@ const detail = Schema.decodeUnknownSync(V2ErrorIssueDetail)({
 	open_pull_request_count: 0,
 	merged_pull_request_count: 0,
 	timeseries,
-	sample_traces: [],
-	incidents: [],
-	environments: [{ name: "production", count: 1_740 }],
+	sample_traces: [3, 9, 14, 26, 41].map((minutesAgo, i) => ({
+		trace_id: `4bf92f3577b34da6a3ce929d0e0e47${String(36 + i).padStart(2, "0")}`,
+		span_id: `00f067aa0ba902b${i}`,
+		service_name: "subscriptions-api",
+		timestamp: new Date(NOW - minutesAgo * 60_000).toISOString(),
+		exception_message: "Cannot read properties of undefined (reading 'plan')",
+		duration_micros: 18_400 + i * 2_100,
+	})),
+	incidents: [
+		{
+			id: encodePublicId("einc", "0199a006-0000-7000-8000-000000000002"),
+			object: "error_incident",
+			issue_id: encodePublicId("iss", issueId),
+			status: "open",
+			reason: "regression",
+			first_triggered_at: "2026-11-01T10:04:00.000Z",
+			last_triggered_at: "2026-11-01T11:58:00.000Z",
+			resolved_at: null,
+			occurrence_count: 1_082,
+		},
+	],
+	environments: [
+		{ name: "production", count: 1_104 },
+		{ name: "staging", count: 96 },
+	],
 })
 
 /** Reads, writes and the window resolve go to the API; the lab answers them itself. */

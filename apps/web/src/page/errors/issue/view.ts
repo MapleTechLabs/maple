@@ -21,23 +21,20 @@ import {
 import { MountRightRail } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { occurrencePanel, OCCURRENCE_TOKENS } from "./view-chart"
+import { occurrencePanel, OCCURRENCE_TOKENS, signalOf } from "./view-chart"
 import { headerActions, headerTitle, issueTabs } from "./view-header"
-import { culpritPanel, issueFactStrip } from "./view-overview"
-import { agentHandoffPanel } from "./view-agent-handoff"
-import {
-	alertSourceCard,
-	attachNudge,
-	bodySection,
-	linkedInvestigationPanel,
-	pullRequestsPanel,
-} from "./view-panels"
+import { exceptionPanel, issueStats } from "./view-overview"
+import { getItFixedPanel } from "./view-agent-handoff"
+import { alertSourceCard, attachNudge, bodySection, pullRequestsPanel } from "./view-panels"
 import { issueSidebar } from "./view-sidebar"
 import { attachDialog } from "./attach"
 import { verificationCard } from "./view-verification"
 import { incidentsTable, occurrencesTable } from "./view-tables"
 import { commentComposer, issueTimeline } from "./view-activity"
 import { skeleton } from "../../../ui/skeleton"
+import { panel, panelHeader } from "../../../ui/panel"
+import { textLinkClass } from "../../../ui/text-link"
+import { AppRoute, hrefOf } from "../../../route"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
 
@@ -48,59 +45,126 @@ type H = HtmlBuilder<Message>
 /** States where somebody has taken the issue on, so a missing pull request is worth pointing at. */
 const AWAITING_FIX_STATES = new Set(["in_progress", "in_review"])
 
-const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: PageViewInputs): Html => {
-	const { issue, timeseries, incidents } = detail
-	const chartWindow = model.window === null ? null : chartWindowOf(model.window)
-	return h.div(
-		[h.Class("flex flex-col gap-7")],
-		[
-			culpritPanel(h, model, issue),
-			...(issue.kind === "error" ? [agentHandoffPanel(h, model, issue)] : []),
-			issueFactStrip(h, issue, {
-				windowCount: timeseries.reduce((sum, bucket) => sum + bucket.count, 0),
-				windowLabel: windowLabel(model.search),
-				timeZone: inputs.context.timeZone,
-				nowMs: model.nowMs,
-			}),
-			...(issue.kind === "alert"
-				? [alertSourceCard(h, issue)]
-				: chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
-					? []
-					: [
-							occurrencePanel(
-								h,
-								model.chart,
-								timeseries,
-								issue.severity,
-								chartWindow,
-								model.themeColors,
-								inputs.context.timeZone,
-							),
-						]),
-			linkedInvestigationPanel(h, linkedInvestigationOf(model), model.isStartingInvestigation),
-			...(issue.kind === "error"
-				? [
-						bodySection(
-							h,
-							{
-								id: "incidents",
-								title: "Incidents",
-								count: incidents.length === 0 ? undefined : `${incidents.length} opened`,
-							},
+/** The latest few samples inline, with the way to all of them. */
+const latestOccurrences = (
+	h: H,
+	model: Model,
+	detail: ErrorIssueDetailResponse,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): ReadonlyArray<Html> =>
+	detail.sampleTraces.length === 0
+		? []
+		: [
+				panel(h, { className: "shrink-0 overflow-hidden" }, [
+					panelHeader(h, {
+						title: "Latest occurrences",
+						action: h.a(
 							[
-								incidentsTable(h, incidents, {
-									nowMs: model.nowMs,
-									timeZone: inputs.context.timeZone,
-								}),
+								h.Href(
+									hrefOf(
+										AppRoute.ErrorIssue({
+											issueId: model.issueId,
+											search: { ...model.search, tab: "occurrences" },
+										}),
+									),
+								),
+								h.Class(textLinkClass("muted", false, "text-xs")),
 							],
+							[`All ${detail.sampleTraces.length} samples`],
 						),
-					]
-				: []),
-			...relatedAnomaliesSection(h, relatedAnomaliesOf(model), {
-				nowMs: model.nowMs,
-				timeZone: inputs.context.timeZone,
-			}),
-		],
+					}),
+					occurrencesTable(h, detail.sampleTraces.slice(0, LATEST_OCCURRENCES), clock),
+				]),
+			]
+
+const LATEST_OCCURRENCES = 3
+
+/** Incidents as a panel; one quiet line while there are none. */
+const incidentsPanel = (
+	h: H,
+	detail: ErrorIssueDetailResponse,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): Html =>
+	panel(h, { className: "shrink-0 overflow-hidden" }, [
+		panelHeader(h, {
+			title: "Incidents",
+			scope:
+				detail.incidents.length === 0
+					? undefined
+					: h.span(
+							[h.Class("text-2xs text-muted-foreground tabular-nums")],
+							[`${detail.incidents.length} opened`],
+						),
+		}),
+		detail.incidents.length === 0
+			? h.p(
+					[h.Class("px-4 py-3 text-xs text-muted-foreground")],
+					[
+						"None in this window. An incident opens when the error is first seen or comes back after a fix.",
+					],
+				)
+			: incidentsTable(h, detail.incidents, clock),
+	])
+
+type Signal = ReturnType<typeof signalOf>
+
+const signalOfDetail = (model: Model, detail: ErrorIssueDetailResponse): Signal | null =>
+	model.window === null ? null : signalOf(detail.timeseries, chartWindowOf(model.window))
+
+/** The occurrences chart, or its frame while the theme and the chart runtime load. */
+const chartSlot = (h: H, model: Model, detail: ErrorIssueDetailResponse, timeZone: string): Html => {
+	const chartWindow = model.window === null ? null : chartWindowOf(model.window)
+	return chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
+		? panel(h, { className: "shrink-0 overflow-hidden" }, [
+				panelHeader(h, { title: "Occurrences" }),
+				h.div([h.Class("px-4 pt-3 pb-4")], [skeleton(h, "h-44 w-full rounded-md")]),
+			])
+		: occurrencePanel(
+				h,
+				model.chart,
+				detail.timeseries,
+				detail.issue.severity,
+				chartWindow,
+				model.themeColors,
+				timeZone,
+			)
+}
+
+const overview = (
+	h: H,
+	model: Model,
+	detail: ErrorIssueDetailResponse,
+	signal: Signal | null,
+	inputs: PageViewInputs,
+): Html => {
+	const { issue, timeseries } = detail
+	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	const stats = issueStats(h, issue, {
+		windowCount: timeseries.reduce((sum, bucket) => sum + bucket.count, 0),
+		windowLabel: windowLabel(model.search),
+		spark: signal?.dense ?? [],
+		surge: signal?.surge ?? null,
+		...clock,
+	})
+	const fix = getItFixedPanel(h, model, issue, linkedInvestigationOf(model))
+	return h.div(
+		[h.Class("flex flex-col gap-4")],
+		issue.kind === "alert"
+			? [
+					alertSourceCard(h, issue),
+					stats,
+					fix,
+					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
+				]
+			: [
+					exceptionPanel(h, model, issue),
+					stats,
+					fix,
+					chartSlot(h, model, detail, inputs.context.timeZone),
+					...latestOccurrences(h, model, detail, clock),
+					incidentsPanel(h, detail, clock),
+					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
+				],
 	)
 }
 
@@ -176,11 +240,18 @@ const otherTab = (
 const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: PageViewInputs): Html => {
 	const investigation = linkedInvestigationOf(model)
 	const tab = tabOf(model.search)
+	const signal = signalOfDetail(model, detail)
 	return dashboardPage(
 		h,
 		{
-			titleContent: headerTitle(h, detail.issue, investigation, relatedAnomaliesOf(model)),
-			actions: headerActions(h, model, investigation, detail.issue),
+			titleContent: headerTitle(
+				h,
+				detail.issue,
+				investigation,
+				relatedAnomaliesOf(model),
+				signal?.surge ?? null,
+			),
+			actions: headerActions(h, model, detail.issue),
 			tabs: issueTabs(h, model.issueId, model.search, {
 				active: tab,
 				showOccurrences: detail.issue.kind === "error",
@@ -190,7 +261,9 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 			rightPanel: rightPanel(h, model, detail),
 		},
 		[
-			tab === "overview" ? overview(h, model, detail, inputs) : otherTab(h, model, tab, detail, inputs),
+			tab === "overview"
+				? overview(h, model, detail, signal, inputs)
+				: otherTab(h, model, tab, detail, inputs),
 			severityConfirmDialog(h, model),
 			attachDialog(h, model),
 		],

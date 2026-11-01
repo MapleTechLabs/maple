@@ -1,12 +1,11 @@
 import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
 import { AlertRuleId } from "@maple/domain/primitives"
 import { Option, Schema } from "effect"
-import type { V2Investigation } from "@maple/domain/http/v2"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
+import { button } from "../../../ui/button"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
@@ -51,7 +50,9 @@ const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean
 							h.Href(pr.url),
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
-							h.Class("truncate text-sm font-medium text-foreground hover:underline active:underline"),
+							h.Class(
+								"truncate text-sm font-medium text-foreground hover:underline active:underline",
+							),
 						],
 						[pr.repoFullName, "#", String(pr.number)],
 					),
@@ -142,94 +143,6 @@ export const attachNudge = (h: H): Html =>
 			["Attach the PR that fixes this"],
 		),
 	])
-
-export const linkedInvestigationPanel = (
-	h: H,
-	investigation: V2Investigation | null,
-	isStarting: boolean,
-): Html =>
-	investigation === null
-		? panel(
-				h,
-				{ className: "shrink-0 flex-row flex-wrap items-center justify-between gap-4 px-5 py-4" },
-				[
-					h.div(
-						[h.Class("min-w-0")],
-						[
-							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
-								["No linked investigation"],
-							),
-							h.p(
-								[h.Class("mt-0.5 text-xs text-muted-foreground")],
-								["Start an evidence-backed autonomous pass for this issue."],
-							),
-						],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: isStarting,
-							attributes: [h.OnClick(Message.ClickedInvestigate())],
-						},
-						[icon(h, "PulseIcon"), "Start investigation"],
-					),
-				],
-			)
-		: panel(
-				h,
-				{
-					className:
-						"grid shrink-0 gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center",
-				},
-				[
-					h.div(
-						[h.Class("min-w-0")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-center gap-2")],
-								[
-									h.p(
-										[h.Class("text-sm font-medium text-foreground")],
-										["Linked investigation"],
-									),
-									badge(h, { variant: "outline", className: "capitalize" }, [
-										investigation.status,
-									]),
-									...(investigation.confidence
-										? [
-												h.span(
-													[h.Class("text-xs capitalize text-muted-foreground")],
-													[`${investigation.confidence} confidence`],
-												),
-											]
-										: []),
-								],
-							),
-							h.p(
-								[h.Class("mt-1 truncate text-sm text-muted-foreground")],
-								[
-									investigation.report?.suspectedCause ??
-										(investigation.status === "investigating"
-											? "Gathering evidence…"
-											: (investigation.error ?? "No diagnosis submitted")),
-								],
-							),
-						],
-					),
-					linkButton(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							href: hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} })),
-						},
-						["Open investigation"],
-					),
-				],
-			)
 
 /** `BodySection` over `SectionHeading`: a titled block of the page body. */
 export const bodySection = (

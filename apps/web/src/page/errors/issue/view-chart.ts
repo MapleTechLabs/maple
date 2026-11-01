@@ -11,7 +11,6 @@ import { sortedOccurrences } from "../../../charts/definitions/occurrences"
 import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
 import { panel, panelHeader } from "../../../ui/panel"
 import { SEVERITY_TOKEN } from "../kit/severity"
 import type { ChartWindow } from "./derive"
@@ -21,8 +20,6 @@ import { Message } from "./message"
 
 type H = HtmlBuilder<Message>
 type Point = Readonly<{ bucket: string; count: number }>
-
-const SURGE_THRESHOLD = 2.5
 
 /** The tokens the chart reads off the theme: each severity's colour, and primary for unset. */
 export const OCCURRENCE_TOKENS = [...Object.values(SEVERITY_TOKEN), "--primary"]
@@ -71,6 +68,12 @@ const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((
 			}),
 )
 
+/** The window's buckets, zero-filled, and how its tail compares with its own average. */
+export const signalOf = (points: ReadonlyArray<Point>, window: ChartWindow) => {
+	const dense = densifySpark(points, window)
+	return { dense, surge: surgeRatio(dense) }
+}
+
 export const occurrencePanel = (
 	h: H,
 	chart: Chart.Model,
@@ -80,29 +83,17 @@ export const occurrencePanel = (
 	theme: ThemeColors,
 	timeZone: string,
 ): Html => {
-	const dense = densifySpark(points, window)
-	const ratio = surgeRatio(dense)
 	const peak = points.reduce((max, point) => Math.max(max, point.count), 0)
-	const isSurging = ratio !== null && ratio >= SURGE_THRESHOLD
-	return panel(h, { className: "shrink-0" }, [
+	return panel(h, { className: "shrink-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Occurrences",
 			scope: h.span(
-				[h.Class("text-2xs text-muted-foreground")],
-				[
-					"peak ",
-					h.span([h.Class("tabular-nums")], [formatNumber(peak)]),
-					" per",
-					" ",
-					formatBucket(window.bucketMs),
-				],
+				[h.Class("font-mono text-2xs text-muted-foreground tabular-nums")],
+				[`Peak ${formatNumber(peak)} / ${formatBucket(window.bucketMs)}`],
 			),
-			action: isSurging ? eyebrow(h, { className: "text-severity-error" }, ["Surging"]) : undefined,
-			divided: false,
-			className: "px-3 pt-2.5",
 		}),
 		h.div(
-			[h.Class("px-3 pt-2 pb-3")],
+			[h.Class("px-4 pt-3 pb-4")],
 			[
 				h.submodel({
 					slotId: "issue-occurrence-chart",
