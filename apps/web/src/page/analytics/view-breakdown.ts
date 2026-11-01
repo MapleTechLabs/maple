@@ -368,7 +368,7 @@ export const breakdownPanel = (
 					emptyMessage(
 						h,
 						{ className: "py-10" },
-						dimension.emptyMessage?.(h) ?? [`No ${dimension.noun} data in this window.`],
+						dimension.emptyMessage?.(h) ?? [`No ${dimension.noun} data in this window`],
 					),
 				]
 			: [

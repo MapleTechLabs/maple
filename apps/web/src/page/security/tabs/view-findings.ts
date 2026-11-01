@@ -223,13 +223,17 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 	const content =
 		state._tag === "Loading"
 			? placeholderRows(h, 6)
-			: targets.length === 0
+			: targets.length === 0 || all.length === 0
 				? empty(
 						h,
 						[
 							emptyHeader(h, [
 								emptyTitle(h, ["No findings yet"]),
-								emptyDescription(h, ["Findings appear here after the first audit run of a target finishes."]),
+								emptyDescription(h, [
+									targets.length === 0
+										? "Findings appear here after the first audit run of a target finishes."
+										: "No audit has reported a finding yet.",
+								]),
 							]),
 						],
 						"rounded-md border border-dashed md:py-14",
@@ -241,10 +245,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 								filteredEmpty(h, {
 									noun: "findings",
 									className: "rounded-md border border-dashed md:py-14",
-									description:
-										all.length === 0
-											? "No audit has reported a finding yet."
-											: "Nothing in this status matches the filters.",
+									description: "Nothing in this status matches the filters.",
 									onClear:
 										// Clearing keeps the status, so the status alone is not a filter.
 										Object.keys(model.findingsSearch).some((key) => key !== "status")

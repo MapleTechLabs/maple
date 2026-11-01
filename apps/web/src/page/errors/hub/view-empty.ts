@@ -106,8 +106,16 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 		return filteredEmpty(h, {
 			noun: view === "all" ? "errors" : `${VIEW_LABEL[view].toLowerCase()} errors`,
 			description: "Everything in this view was excluded by the sidebar filters.",
-			onClear: Message.ClickedClearFilters(),
 			className: "py-12",
+			// Open and Closed also offer the All tab, beside the kit's Clear filters.
+			...(view === "all"
+				? { onClear: Message.ClickedClearFilters() }
+				: {
+						detail: actions(h, [
+							outline(h, "outline", Message.ClickedClearFilters(), "Clear filters"),
+							outline(h, "ghost", Message.ClickedViewAll(), "See every error"),
+						]),
+					}),
 		})
 	const copy = EMPTY_COPY[view]
 	const isUnknown = !isNarrowed && presence.status === "unknown"

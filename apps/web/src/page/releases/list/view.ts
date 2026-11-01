@@ -3,7 +3,9 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { ReleaseHealth } from "../../../components/releases/release-model"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
+import { icon } from "../../../ui/icon"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
 import { inlineCode } from "../../../ui/inline-code"
 import { panel } from "../../../ui/panel"
@@ -11,7 +13,7 @@ import { skeleton } from "../../../ui/skeleton"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { filteredEmpty, signalEmptyState } from "../../kit/signal-empty-state"
+import { docsLink, filteredEmpty, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -74,6 +76,36 @@ const timeSearchOf = (model: Model): TimeSearch => ({
 	timePreset: model.search.timePreset,
 })
 
+const vcsHint = (h: H): ReadonlyArray<Html | string> => [
+	"Release tracking needs spans to carry the ",
+	inlineCode(h, {}, ["vcs.ref.head.revision"]),
+	" resource attribute.",
+]
+
+/** Setup copy only while traces are unknown to Maple; once they arrive, the missing attribute is the cause. */
+const releasesEmpty = (h: H, model: Model): Html => {
+	if (hasFilters(model.search)) return filteredEmpty(h, { noun: "releases", onClear: Message.ClickedClearFilters() })
+	const presence = presenceOf(model.presence, "traces")
+	if (presence.status === "loading" || presence.status === "absent")
+		return signalEmptyState(h, {
+			signal: "traces",
+			presence,
+			nowMs: model.nowMs,
+			noun: "releases",
+			purpose: "Releases compare errors and latency before and after each deploy.",
+			setupDocs: "github",
+			detail: h.p([h.Class("font-prose text-xs text-muted-foreground")], vcsHint(h)),
+		})
+	return empty(h, [
+		emptyHeader(h, [
+			emptyMedia(h, { variant: "icon" }, [icon(h, "ClockIcon")]),
+			emptyTitle(h, ["No releases in this window"]),
+			emptyDescription(h, vcsHint(h)),
+		]),
+		emptyContent(h, [docsLink(h, "github")]),
+	])
+}
+
 const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, timeZone: string): Html => {
 	const { impacts, groups, live, response } = deriveOf(data)
 	const health: ReleaseHealth | undefined = model.search.impact
@@ -83,24 +115,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 	const windowDays = Math.max(1 / 24, (toEpochMs(response.endTime) - toEpochMs(response.startTime)) / 86_400_000)
 	const flagged = groups.filter((group) => group.health === "regressed").length
 	const timeSearch = timeSearchOf(model)
-	if (groups.length === 0)
-		return panel(h, {}, [
-			hasFilters(model.search)
-				? filteredEmpty(h, { noun: "releases", onClear: Message.ClickedClearFilters() })
-				: signalEmptyState(h, {
-						signal: "traces",
-						presence: presenceOf(model.presence, "traces"),
-						nowMs: model.nowMs,
-						noun: "releases",
-						purpose: "Releases compare errors and latency before and after each deploy.",
-						setupDocs: "github",
-						guideDocs: "github",
-						detail: h.p(
-							[h.Class("font-prose text-xs text-muted-foreground")],
-							["Release tracking needs spans to carry the ", inlineCode(h, {}, ["vcs.ref.head.revision"]), " resource attribute."],
-						),
-					}),
-		])
+	if (groups.length === 0) return panel(h, {}, [releasesEmpty(h, model)])
 	const issues = AsyncData.getOrElse(model.issues.data, () => null)
 	const live_ = liveNow(h, live, timeSearch, model.search.environments)
 	return h.div(

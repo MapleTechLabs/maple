@@ -158,7 +158,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				return analyticsView(h, model, analytics, timeZone)
 			const filtered = model.search.repo !== undefined || model.search.pipeline !== undefined
 			if (!filtered && !ciTracesOn(model)) return noCiRuns(h)
-if (filtered)
+			if (filtered)
 				return filteredEmpty(h, {
 					noun: "CI runs",
 					description: "Widen the window or clear the filters.",

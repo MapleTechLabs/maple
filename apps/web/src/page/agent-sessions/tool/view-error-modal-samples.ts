@@ -53,7 +53,8 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 					: failure !== undefined
 						? [
 								errorState(h, {
-									failure,
+									// Loading the next page again is always worth a try, whatever the cause.
+									failure: { ...failure, recovery: "retry" },
 									title: "Couldn't load more",
 									variant: "quiet",
 									onRetry: Message.ClickedLoadMore(),
