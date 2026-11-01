@@ -421,7 +421,10 @@ const articleJsonLd = {
             <article class="loguru-guide min-w-0">
                 <section class="guide-lead">
                     <p>
-                        Your Python app needs logs you can read when something breaks, and the standard <code>logging</code> module makes you wire up handlers and formatters before you get a rotating log file or JSON lines. <strong>Loguru</strong> is a popular logging library for Python that takes almost no setup: you import one ready-made <code>logger</code> and call it. In production, a log file without rotation grows until the disk is full, and lines from requests handled at the same time interleave with nothing to tell them apart. This guide takes you from the first line to JSON log files and an observability tool that shows which request wrote each line.
+                        Your Python app needs logs you can read when something breaks, and the standard <code>logging</code> module makes you wire up handlers and formatters before you get a rotating log file or JSON lines. <strong>Loguru</strong> is a popular logging library for Python that takes almost no setup: you import one ready-made <code>logger</code> and call it.
+                    </p>
+                    <p>
+                        In production, a log file without rotation grows until the disk is full, and lines from requests handled at the same time interleave with nothing to tell them apart. This guide takes you from the first line to JSON log files and an observability tool that shows which request wrote each line.
                     </p>
 
                     <div class="guide-takeaways">

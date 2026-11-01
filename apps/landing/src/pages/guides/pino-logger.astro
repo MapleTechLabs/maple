@@ -400,7 +400,10 @@ const articleJsonLd = {
             <article class="pino-guide min-w-0">
                 <section class="guide-lead">
                     <p>
-                        Most Node.js apps start logging with <code>console.log</code>. It has no levels you can turn down in production, and it writes plain text that a log tool can only match as strings. <strong>Pino</strong> is a logger for Node.js that writes each log entry as one line of JSON, built to add as little work as possible to the code that serves your requests. Levels and JSON fields let you switch debug output off in production and find one failed checkout by its order ID instead of grepping text. By the end, every line your service writes is JSON with secrets redacted, and carries the trace ID of the request that wrote it.
+                        Most Node.js apps start logging with <code>console.log</code>. It has no levels you can turn down in production, and it writes plain text that a log tool can only match as strings. <strong>Pino</strong> is a logger for Node.js that writes each log entry as one line of JSON, built to add as little work as possible to the code that serves your requests.
+                    </p>
+                    <p>
+                        Levels and JSON fields let you switch debug output off in production and find one failed checkout by its order ID instead of grepping text. By the end, every line your service writes is JSON with secrets redacted, and carries the trace ID of the request that wrote it.
                     </p>
 
                     <div class="guide-takeaways">
