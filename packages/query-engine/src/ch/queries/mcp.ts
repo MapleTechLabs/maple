@@ -39,16 +39,18 @@ const knownClient = ($: TracesRow, prefix: string) =>
 	CH.positionCaseInsensitive(userAgent($), CH.lit(prefix)).eq(1)
 
 /** `mcpClientOf(user agent).name`, in SQL. */
-export const mcpClientName = ($: TracesRow): CH.Expr<string> =>
-	CH.multiIf<string>(
+export const mcpClientName = ($: TracesRow): CH.Expr<string> => {
+	const token = CH.extract_(userAgent($), MCP_CLIENT_TOKEN_PATTERN)
+	return CH.multiIf<string>(
 		[
-			[userAgent($).eq(""), CH.lit(UNKNOWN_MCP_CLIENT)],
 			...KNOWN_MCP_CLIENTS.map(
 				(client) => [knownClient($, client.prefix), CH.lit(client.name)] as const,
 			),
+			[token.eq(""), CH.lit(UNKNOWN_MCP_CLIENT)],
 		],
-		CH.extract_(userAgent($), MCP_CLIENT_TOKEN_PATTERN),
+		token,
 	)
+}
 
 /** `mcpClientOf(user agent).kind`, in SQL. */
 const mcpClientKind = ($: TracesRow): CH.Expr<string> =>

@@ -35,11 +35,13 @@ export const UNKNOWN_MCP_CLIENT = "unknown"
 /** An unrecognised `product/version` is named by its product token. */
 export const MCP_CLIENT_TOKEN_PATTERN = "^[^/ ]+"
 
+/** Reads the raw string, untrimmed, exactly as the SQL copy does; no product token is `unknown`. */
 export const mcpClientOf = (userAgent: string): McpClient => {
-	const agent = userAgent.trim()
-	if (agent === "") return { name: UNKNOWN_MCP_CLIENT, kind: "unknown" }
-	const lower = agent.toLowerCase()
+	const lower = userAgent.toLowerCase()
 	const known = KNOWN_MCP_CLIENTS.find((client) => lower.startsWith(client.prefix))
 	if (known !== undefined) return { name: known.name, kind: known.kind }
-	return { name: new RegExp(MCP_CLIENT_TOKEN_PATTERN).exec(agent)?.[0] ?? agent, kind: "unknown" }
+	return {
+		name: new RegExp(MCP_CLIENT_TOKEN_PATTERN).exec(userAgent)?.[0] ?? UNKNOWN_MCP_CLIENT,
+		kind: "unknown",
+	}
 }

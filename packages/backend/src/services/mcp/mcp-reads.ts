@@ -21,6 +21,8 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 type Window = Readonly<{ startTime: string; endTime: string; bucketSeconds: number }>
 
 const TOOLS_CALL = "tools/call"
+/** Warehouse reads one page request runs at once; the rest queue behind them. */
+const MCP_READ_CONCURRENCY = 4
 /** A window never draws more buckets than this; a finer request is widened. */
 const MAX_BUCKETS = 500
 
@@ -139,7 +141,7 @@ export const readMcpServers = Effect.fn("McpReads.servers")(function* (
 				context: "mcpServerClients",
 			}),
 		],
-		{ concurrency: "unbounded" },
+		{ concurrency: MCP_READ_CONCURRENCY },
 	)
 	const buckets = bucketsOf(window)
 	const servers = stats
@@ -261,7 +263,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				context: "mcpFirstSeen",
 			}),
 		],
-		{ concurrency: "unbounded" },
+		{ concurrency: MCP_READ_CONCURRENCY },
 	)
 	const buckets = bucketsOf(window)
 	const sparks = Arr.groupBy(toolSeries, (row) => row.key)
@@ -398,7 +400,7 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 				list("failed"),
 				list("recent"),
 			],
-			{ concurrency: "unbounded" },
+			{ concurrency: MCP_READ_CONCURRENCY },
 		)
 	// The trends read only the groups the panel lists.
 	const trend =

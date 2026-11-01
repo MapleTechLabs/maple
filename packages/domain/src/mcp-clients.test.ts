@@ -21,7 +21,9 @@ describe("mcpClientOf", () => {
 		expect(mcpClientOf("estate-mcp/3.1 (linux)")).toEqual({ name: "estate-mcp", kind: "unknown" })
 	})
 
-	it("files a call without a user agent under unknown", () => {
+	it("files a call without a product token under unknown", () => {
+		expect(mcpClientOf("")).toEqual({ name: "unknown", kind: "unknown" })
 		expect(mcpClientOf("  ")).toEqual({ name: "unknown", kind: "unknown" })
+		expect(mcpClientOf(" curl/8.0").name).toBe("unknown")
 	})
 })
