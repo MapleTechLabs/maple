@@ -1558,6 +1558,92 @@ describe("PlanetScaleService forbidden grants", () => {
 		)
 	})
 
+	/** Start the OAuth flow again and complete it: a re-authorize that keeps the org binding. */
+	const reauthorize = Effect.gen(function* () {
+		const oauth = yield* PlanetScaleOAuthService
+		const { state } = yield* oauth.startConnect(asOrgId("org_1"), asUserId("user_1"), {
+			callbackUrl: "https://api.example.com/api/integrations/planetscale/callback",
+		})
+		return yield* oauth.completeConnect("auth-code", state, {
+			orgId: asOrgId("org_1"),
+			userId: asUserId("user_1"),
+		})
+	})
+
+	it.effect("a 403 that lands after a reconnect does not count against the new grant", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { stub: forbiddenStub, forbidden } = stubForbidden((url) => /\/databases(\?|$)/.test(url))
+		// Hold the first forbidden org listing until the reconnect below has landed.
+		const gate = Promise.withResolvers<void>()
+		const arrived = Promise.withResolvers<void>()
+		const held = { value: true }
+		const stub = (async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+			if (forbidden.value && held.value && /\/databases(\?|$)/.test(url)) {
+				held.value = false
+				arrived.resolve()
+				await gate.promise
+			}
+			return forbiddenStub(input, init)
+		}) as typeof fetch
+		globalThis.fetch = stub
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			forbidden.value = true
+			const service = yield* PlanetScaleService
+			const oauth = yield* PlanetScaleOAuthService
+
+			const inFlight = yield* Effect.forkChild(service.pollAllOrgs())
+			yield* Effect.promise(() => arrived.promise)
+			yield* TestClock.adjust("1 millis")
+			yield* reauthorize
+			gate.resolve()
+			assert.strictEqual((yield* Fiber.join(inFlight)).failures, 1)
+
+			// The new grant's first 403 is only a failed read.
+			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			assert.isNull((yield* oauth.grantStatus(asOrgId("org_1"))).revokedAt)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
+	it.effect("a reconnect that cannot reset the inventory error keeps the old grant", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { stub, forbidden } = stubForbidden()
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			forbidden.value = true
+			const service = yield* PlanetScaleService
+			const oauth = yield* PlanetScaleOAuthService
+			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			const before = yield* oauth.grantStatus(asOrgId("org_1"))
+
+			yield* Effect.promise(async () => {
+				await executeSql(
+					testDb,
+					`CREATE FUNCTION reject_write() RETURNS trigger LANGUAGE plpgsql AS $$
+					 BEGIN RAISE EXCEPTION 'write rejected'; END $$`,
+				)
+				await executeSql(
+					testDb,
+					`CREATE TRIGGER reject_write BEFORE UPDATE ON planetscale_connections
+					 FOR EACH ROW EXECUTE FUNCTION reject_write()`,
+				)
+			})
+			yield* TestClock.adjust("1 millis")
+			yield* Effect.flip(reauthorize)
+
+			// The new tokens were not stored without the reset, so no fresh grant inherits the 403.
+			assert.strictEqual((yield* oauth.grantStatus(asOrgId("org_1"))).updatedAt, before.updatedAt)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
 	it.effect("never revokes the grant over a 403 on one database's branches", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { stub, forbidden } = stubForbidden((url) => url.includes("/branches"))

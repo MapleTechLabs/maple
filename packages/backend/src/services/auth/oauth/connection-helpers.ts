@@ -146,6 +146,12 @@ export interface MakeOAuthConnectionHelpersOptions {
 			sourceId: SourceId,
 		) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
 	}
+	/** Provider state a new grant must reset, written in the same transaction as the grant. */
+	readonly onUpsert?: (
+		db: MapleDb,
+		orgId: OrgId,
+		currentTime: number,
+	) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
 }
 
 /**
@@ -154,7 +160,7 @@ export interface MakeOAuthConnectionHelpersOptions {
  */
 export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOptions) =>
 	Effect.gen(function* () {
-		const { provider, providerLabel, database, env, source } = options
+		const { provider, providerLabel, database, env, source, onUpsert } = options
 		const httpClient = yield* HttpClient.HttpClient
 
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
@@ -287,6 +293,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 								})
 								.returning("id", "sourceId", "externalAccountName"),
 						)
+						if (onUpsert !== undefined) yield* onUpsert(db, orgId, currentTime)
 						if (source === undefined || connection === undefined || connection.sourceId !== null)
 							return
 						const sourceId = yield* createIntegrationSource(

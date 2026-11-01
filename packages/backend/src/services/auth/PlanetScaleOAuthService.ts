@@ -225,6 +225,14 @@ export class PlanetScaleOAuthService extends Context.Service<
 			providerLabel: "PlanetScale",
 			database,
 			env,
+			// A new grant starts clean: an inventory failure from the old one must not count toward
+			// the repeated-403 revoke in PlanetScaleService.pollOrg, even if the callback fails after.
+			onUpsert: (db, orgId, currentTime) =>
+				db.run(
+					PG.update(PlanetscaleConnections)
+						.set({ lastInventoryError: null, updatedAt: currentTime })
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
 		})
 
 		const apiTarget = (accessToken: string) => ({
@@ -497,15 +505,6 @@ export class PlanetScaleOAuthService extends Context.Service<
 				refreshTokenTag: refreshEnc.tag,
 				expiresAt,
 			})
-			// A new grant starts clean: an inventory failure from the old one must not count
-			// toward the repeated-403 revoke in PlanetScaleService.pollOrg.
-			yield* oauth.dbExecute((db) =>
-				db.run(
-					PG.update(PlanetscaleConnections)
-						.set({ lastInventoryError: null, updatedAt: currentTime })
-						.where(($) => [$.orgId.eq(orgId)]),
-				),
-			)
 
 			return { orgId, returnTo: stateRow.returnTo ?? null, organizations }
 		})

@@ -546,7 +546,7 @@ describe("PlanetScaleDiscoveryService", () => {
 		}).pipe(Effect.provideService(FetchHttpClient.Fetch, stub), Effect.provide(makeLayer(testDb, stub)))
 	})
 
-	it.effect("skips a revoked grant without calling discovery, and resumes after a reconnect", () => {
+	it.effect("skips a revoked grant, even with fresh cached targets, and resumes after a reconnect", () => {
 		const testDb = createTestDb(trackedDbs)
 		const recorded: Array<string> = []
 		const stub: typeof fetch = async (input) => {
@@ -593,11 +593,11 @@ describe("PlanetScaleDiscoveryService", () => {
 			const row = (yield* targets.listAllEnabled()).find((candidate) => candidate.id === created.id)
 			if (!row) return yield* Effect.die("created row not found")
 
+			// Discovered before the revoke, so a fresh cache entry holds the signed URLs.
+			assert.strictEqual((yield* discovery.discover(row)).length, 2)
 			const grant = yield* oauth.grantStatus(asOrgId("org_1"))
 			yield* oauth.markRevoked(asOrgId("org_1"), grant.updatedAt ?? 0)
 			const isSdCall = (url: string) => url.includes("/my-org/metrics")
-			// Past the cache TTL, so the next discover is a refresh.
-			yield* TestClock.adjust(Duration.minutes(11))
 			recorded.length = 0
 			assert.deepStrictEqual(yield* discovery.discover(row), [])
 			assert.isFalse(recorded.some(isSdCall))

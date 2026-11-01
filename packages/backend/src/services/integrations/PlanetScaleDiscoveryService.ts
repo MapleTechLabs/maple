@@ -378,6 +378,19 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 
 		const discover = Effect.fn("PlanetScaleDiscoveryService.discover")(function* (row: ScrapeTargetRow) {
 			yield* Effect.annotateCurrentSpan({ orgId: row.orgId })
+			// A revoked grant fails every call until a reconnect; skip it without an error, before
+			// the cache (its signed URLs would keep scraping), so a reconnect resumes on the next call.
+			if (row.authType === "planetscale_oauth") {
+				// An unreadable grant falls through to the fetch, which keeps the stale fallback.
+				const revoked = yield* psOAuth.grantStatus(row.orgId).pipe(
+					Effect.map((grant) => grant.revokedAt !== null),
+					Effect.orElseSucceed(() => false),
+				)
+				if (revoked) {
+					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
+					return []
+				}
+			}
 			const now = yield* Clock.currentTimeMillis
 			const cached = Option.getOrUndefined(HashMap.get(yield* Ref.get(cache), row.id))
 			if (cached && now - cached.fetchedAt < DISCOVERY_TTL_MS) {
@@ -398,21 +411,6 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			// The span wraps the stale fallback too: a failure served from cache closes Ok with
 			// `error.type`, so a slow discovery endpoint does not open an error issue per refresh.
 			const refresh = Effect.gen(function* () {
-				// A revoked grant fails every call until a reconnect; skip it without an error and
-				// without caching, so the reconnect resumes discovery on the next call.
-				if (row.authType === "planetscale_oauth") {
-					// An unreadable grant falls through to the fetch, which keeps the stale fallback.
-					const revoked = yield* psOAuth.grantStatus(row.orgId).pipe(
-						Effect.map((grant) => grant.revokedAt !== null),
-						Effect.orElseSucceed(() => false),
-					)
-					if (revoked) {
-						yield* Effect.annotateCurrentSpan({
-							"maple.planetscale.skip_reason": "grant_revoked",
-						})
-						return []
-					}
-				}
 				const fresh = yield* Effect.result(fetchSubTargets(row))
 				if (Result.isSuccess(fresh)) {
 					yield* Ref.update(cache, (entries) =>

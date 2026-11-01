@@ -384,6 +384,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				orgId: OrgId,
 				connectionId: string,
 				error: string | null,
+				unchangedSince?: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
@@ -424,7 +425,12 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 										}
 									: { lastInventoryError: error, updatedAt: now },
 							)
-							.where(($) => [$.id.eq(connectionId)]),
+							// A late failure must not restore an error a reconnect cleared meanwhile:
+							// it would count the new grant's first 403 as a repeat.
+							.where(($) => [
+								$.id.eq(connectionId),
+								...(unchangedSince === undefined ? [] : [$.updatedAt.eq(unchangedSince)]),
+							]),
 					),
 				)
 			})
@@ -818,7 +824,12 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					connection.lastInventoryError === result.error.message &&
 					grant.updatedAt !== null &&
 					(yield* psOAuth.markRevoked(connection.orgId, grant.updatedAt))
-				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
+				yield* recordInventoryResult(
+					connection.orgId,
+					connection.id,
+					result.error.message,
+					connection.updatedAt,
+				).pipe(
 					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
 				)
 				yield* reportInventoryPoll(
