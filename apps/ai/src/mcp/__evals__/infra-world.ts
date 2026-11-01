@@ -722,7 +722,8 @@ export const infraFixtureRules = (): FixtureRule[] => [
 			).map((c) => containerRow(sql, c)),
 	},
 	{
-		match: (sql) => has(sql, "mountpoint"),
+		// Host summaries read mountpoints too (disk %), so key on the per-mount output.
+		match: (sql) => has(sql, "usedMax"),
 		rows: (sql) =>
 			HOSTS.filter((h) => matches(sql, "host.name", h.hostName)).flatMap((h) =>
 				h.filesystems.map((fs) => ({
