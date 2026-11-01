@@ -43,7 +43,7 @@ const failedBody = (h: H, model: Model): ReadonlyArray<Html> => [
 ]
 
 /** The bottom of a page that is not the bottom of the list. */
-const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => {
+export const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => {
 	if (paging === "end") return []
 	if (paging === "loading") {
 		return [

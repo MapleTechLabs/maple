@@ -117,6 +117,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/empty-states",
+		title: "Empty states",
+		description:
+			"Empty, load-more and inline-failure states one at a time (`?item=`), over static fixtures.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/loaders",
 		title: "Chat loaders",
 		description:
