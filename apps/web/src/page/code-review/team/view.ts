@@ -1,6 +1,7 @@
 import type { CodeReviewTeam, CodeReviewTeamMember, CodeReviewTeamTotals } from "@maple/domain/http"
 import { formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatExactCount } from "../../kit/locale"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -50,7 +51,7 @@ const rateOf = (rate: number | null) => (rate === null ? EMPTY_VALUE : formatPer
 const spanOf = (seconds: number | null) => (seconds === null ? EMPTY_VALUE : formatSpan(seconds))
 /** Runner time in hours past the first: days of CI read as a calendar span, not as work. */
 const runnerTimeOf = (ms: number) =>
-	ms < 3_600_000 ? formatSpan(ms / 1000) : `${formatNumber(Math.round(ms / 3_600_000))}h`
+	ms < 3_600_000 ? formatSpan(ms / 1000) : `${formatExactCount(Math.round(ms / 3_600_000))}h`
 
 type Column = Readonly<{
 	metric: Metric
