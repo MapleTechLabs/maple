@@ -117,7 +117,10 @@ const jsonValue = fc.letrec<{ value: unknown }>((tie) => ({
 		fc.boolean(),
 		fc.constant(null),
 		fc.array(tie("value"), { maxLength: 3 }),
-		fc.dictionary(word, tie("value"), { maxKeys: 3 }),
+		// Nested keys are re-escaped too: control characters and line separators included.
+		fc.dictionary(fc.oneof(word, hostile, fc.constantFrom("k\u2028", "\u000f", "a\\b")), tie("value"), {
+			maxKeys: 3,
+		}),
 	),
 }))
 const jsonMessage = fc.oneof(

@@ -371,6 +371,8 @@ const decodeJsonString = Schema.decodeUnknownOption(Schema.fromJsonString(Schema
 /** One top-level entry as `JSONExtractKeysAndValuesRaw` reports it, duplicates included. */
 interface JsonEntry {
 	readonly key: string
+	/** The key re-escaped the way ClickHouse renders it inside a nested object. */
+	readonly keyRaw: string
 	/** The value re-serialized compactly, the way ClickHouse renders it. */
 	readonly raw: string
 	/** The decoded value when it is a string, which is all the label reads. */
@@ -449,7 +451,7 @@ const readEntry = (s: string, at: number): Read<JsonEntry> => {
 	if (s[colon] !== ":") return undefined
 	const value = readValue(s, skipSpace(s, colon + 1))
 	if (value === undefined) return undefined
-	return { value: { key: key.value.text, ...value.value }, end: value.end }
+	return { value: { key: key.value.text, keyRaw: key.value.raw, ...value.value }, end: value.end }
 }
 
 function readValue(s: string, at: number): Read<{ readonly raw: string; readonly text: string | undefined }> {
@@ -457,7 +459,7 @@ function readValue(s: string, at: number): Read<{ readonly raw: string; readonly
 	if (head === "{") {
 		const entries = readSequence(s, at, "}", readEntry)
 		if (entries === undefined) return undefined
-		const raw = `{${entries.value.map((e) => `${JSON.stringify(e.key)}:${e.raw}`).join(",")}}`
+		const raw = `{${entries.value.map((e) => `${e.keyRaw}:${e.raw}`).join(",")}}`
 		return { value: { raw, text: undefined }, end: entries.end }
 	}
 	if (head === "[") {
