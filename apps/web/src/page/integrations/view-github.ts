@@ -51,7 +51,8 @@ const needsApprovalNote = (h: H, login: string): Html =>
 export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html> => {
 	const selection = model.githubCard.selection
 	if (selection === null) return []
-	const current = githubStatusOf(model)?.accountLogin ?? null
+	const status = githubStatusOf(model)
+	const current = status?.accountLogin ?? null
 	const replacesCurrent =
 		current !== null && selection.installations.some((choice) => choice.accountLogin !== current)
 	return [
@@ -68,7 +69,9 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 					h.p(
 						[h.Class("text-sm text-muted-foreground")],
 						[
-							`This Maple organization is connected to ${current}. Choosing a different account replaces it and removes ${current}'s synced repositories and commit history from Maple.`,
+							status?.connected === true
+								? `This Maple organization is connected to ${current}. Choosing a different account replaces it and removes ${current}'s synced repositories and commit history from Maple.`
+								: `This Maple organization was connected to ${current} before it lost access. Choosing a different account replaces it and removes ${current}'s synced repositories and commit history from Maple.`,
 						],
 					),
 				]

@@ -208,6 +208,34 @@ describe("github connect flow", () => {
 		)
 	})
 
+	test("reconnecting after lost access names the old account as past, not connected", () => {
+		const lost = withStatus(
+			status({
+				connected: false,
+				state: "disconnected",
+				accountLogin: "old-org",
+				accountType: "organization",
+				repositorySelection: "all",
+				repositories: [],
+			}),
+		)
+		const returned = inner(
+			lost,
+			IntegrationMessage.ReceivedConnectMessage({
+				provider: "github",
+				status: "success",
+				message: "Choose an account",
+				github: selection,
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(returned),
+			expectView(text(/was connected to old-org before it lost access/)).toExist(),
+			expectView(text(/is connected to old-org/)).not.toExist(),
+		)
+	})
+
 	test("an authorization failure ends the waiting state and keeps recovery available", () => {
 		const started = inner(disconnected(), IntegrationMessage.ClickedConnect())
 		const failed = inner(
