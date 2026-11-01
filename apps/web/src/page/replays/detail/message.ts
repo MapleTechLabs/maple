@@ -31,6 +31,8 @@ export const Message = defineMessageUnion({
 	/** The engine clock while playing, or after a jump over an idle gap. */
 	TickedEngine: { seedVersion: Schema.Number, currentMs: Schema.Number },
 	FinishedEngine: { seedVersion: Schema.Number },
+	/** The engine ran out of loaded events mid-recording. */
+	StarvedEngine: { seedVersion: Schema.Number, currentMs: Schema.Number },
 	ClickedPlay: {},
 	/** A press on a scrub surface; a Command measures where along it the pointer landed. */
 	PressedScrubber: { surface: Schema.Literals(["transport", "timeline"]), clientX: Schema.Number },

@@ -22168,6 +22168,100 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	PlugIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M16 2V7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 2V7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 15.01V15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 15.01V15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 13V7H20V13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 21H14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 19V17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 19V17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 } as const satisfies Record<string, IconNode>
 
 export type IconName = keyof typeof ICON_TREES

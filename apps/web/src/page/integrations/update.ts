@@ -85,8 +85,9 @@ const chatSearchOf = (outcome: OAuthReturnOutcome, chat: NonNullable<OAuthReturn
 }
 
 /**
- * The finished provider return: a chat flow reports through its search params, a popup whose
- * opener took the outcome waits to close, and anything else reports here.
+ * The finished provider return: a chat flow reports through its search params and re-reads the
+ * connectors (the entry read raced the install), a popup whose opener took the outcome waits to
+ * close, and anything else reports here.
  */
 const completedOAuthReturn = (
 	model: Model,
@@ -94,10 +95,21 @@ const completedOAuthReturn = (
 	outcome: OAuthReturnOutcome | null,
 ): Return => {
 	if (outcome === null) return { model }
-	if (outcome.chat !== null)
-		return navigateTo(model, hrefOfSearch(chatSearchOf(outcome, outcome.chat)), true)
+	const chat = outcome.chat
+	if (chat !== null)
+		return chain(model, [
+			(next) => requestStatus(next, context, "chat", "Supersede"),
+			(next) => navigateTo(next, hrefOfSearch(chatSearchOf(outcome, chat)), true),
+		])
 	if (outcome.provider === null || (outcome.isHandedOff && outcome.status === "success")) return { model }
-	return Connect.receivedCallback(model, context, outcome.provider, outcome.status, outcome.message)
+	return Connect.receivedCallback(
+		model,
+		context,
+		outcome.provider,
+		outcome.status,
+		outcome.message,
+		outcome.github,
+	)
 }
 
 const navigateTo = (model: Model, url: string, isReplace: boolean): Return => ({
@@ -256,6 +268,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return callback === null ? { model } : navigateTo(model, hrefOfSearch(callback.next), true)
 		},
 		ClickedConnect: () => Connect.clickedConnect(model),
+		ClickedOpenGithubInstallPage: () => Connect.clickedConnect(model, "install"),
+		ClickedSelectGithubInstallation: ({ installationId }) =>
+			Github.clickedInstallation(model, installationId),
+		CompletedSelectGithubInstallation: ({ state, installationId, failure }) =>
+			Github.completedInstallation(model, context, state, installationId, failure),
 		ClickedChatInstall: () => Chat.clickedInstall(model),
 		CompletedLoadCloudflareUsage: ({ key, result }) => ({
 			model: {
@@ -502,8 +519,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PolledConnect: ({ attempt }) => Connect.polled(model, context, attempt),
 		ClosedConnectPopup: ({ attempt }) => Connect.closedPopup(model, context, attempt),
 		EndedConnectGrace: ({ attempt }) => Connect.endedGrace(model, attempt),
-		ReceivedConnectMessage: ({ provider, status, message: text }) =>
-			Connect.receivedCallback(model, context, provider, status, text),
+		ReceivedConnectMessage: ({ provider, status, message: text, github }) =>
+			Connect.receivedCallback(model, context, provider, status, text, github),
+		ReceivedConnectRelay: ({ provider, status, message: text, github }) =>
+			Connect.receivedRelay(model, context, provider, status, text, github),
 		CompletedOAuthReturn: ({ outcome }) => completedOAuthReturn(model, context, outcome),
 		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Supersede"),
 		ClickedRetryFailedStatuses: () =>

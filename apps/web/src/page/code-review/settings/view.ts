@@ -11,9 +11,10 @@ import { icon } from "../../../ui/icon"
 import type * as Select from "../../../ui/select"
 import { view as selectView } from "../../../ui/select-view"
 import { settingRow } from "../../../ui/setting-row"
-import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { codeReviewLayout } from "../kit/layout"
+import { bar, repositoryListSkeleton, withSlowNote } from "../kit/skeletons"
+import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
 import { Message, type Model } from "./model"
@@ -39,7 +40,8 @@ const MODEL_ENTRIES = [
 	})),
 ]
 
-const modelSetting = (h: H, model: Model): Html =>
+/** The Review model row around its control: the select, or a bar while settings load. */
+const modelRow = (h: H, control: Html): Html =>
 	settingRow(h, {
 		ids: {
 			control: "code-review-model-control",
@@ -51,32 +53,34 @@ const modelSetting = (h: H, model: Model): Html =>
 		className: "bg-card px-5 py-4",
 		label: "Review model",
 		description: "Runs pull request reviews and replies.",
-		control: [
-			h.submodel({
-				slotId: model.modelSelect.id,
-				model: model.modelSelect,
-				view: selectView,
-				toParentMessage: (message: Select.Message) => Message.GotModelSelectMessage({ message }),
-				viewInputs: {
-					entries: MODEL_ENTRIES,
-					size: "sm",
-					ariaLabel: "Review model",
-					className: "w-56",
-					isDisabled: !model.isAdmin || model.isSavingModel,
-					toView: (parts) =>
-						h.div(
-							[
-								h.Class("contents"),
-								...(model.isAdmin
-									? []
-									: [h.Title("Only admins can change the review model")]),
-							],
-							parts,
-						),
-				},
-			}),
-		],
+		control: [control],
 	})
+
+const modelSetting = (h: H, model: Model): Html =>
+	modelRow(
+		h,
+		h.submodel({
+			slotId: model.modelSelect.id,
+			model: model.modelSelect,
+			view: selectView,
+			toParentMessage: (message: Select.Message) => Message.GotModelSelectMessage({ message }),
+			viewInputs: {
+				entries: MODEL_ENTRIES,
+				size: "sm",
+				ariaLabel: "Review model",
+				className: "w-56",
+				isDisabled: !model.isAdmin || model.isSavingModel,
+				toView: (parts) =>
+					h.div(
+						[
+							h.Class("contents"),
+							...(model.isAdmin ? [] : [h.Title("Only admins can change the review model")]),
+						],
+						parts,
+					),
+			},
+		}),
+	)
 
 const formView = (h: H, form: RulesForm.Model, isAdmin: boolean, wrap: (m: RulesForm.Message) => Message) =>
 	h.submodel({
@@ -117,7 +121,7 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 
 const repositoriesSection = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.githubStatus.data, {
-		onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
+		onEmpty: () => repositoryListSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -150,11 +154,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 /** `RepositoryConfig` in its dialog: skeleton, the error line, or the repository's rules form. */
 const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
-		onEmpty: () =>
-			h.div(
-				[h.Class("space-y-3")],
-				[skeleton(h, "h-20 w-full"), skeleton(h, "h-16 w-full"), skeleton(h, "h-8 w-1/2")],
-			),
+		onEmpty: () => rulesFormSkeleton(h, "repository"),
 		onFailure: (failure) =>
 			h.p(
 				[h.Class("text-xs text-severity-error"), h.Role("alert")],
@@ -196,13 +196,70 @@ const repoDialog = (h: H, model: Model): Html => {
 	})
 }
 
+type SectionBodies = Readonly<{
+	reviewer: ReadonlyArray<Html>
+	defaults: ReadonlyArray<Html>
+	repositories: ReadonlyArray<Html>
+}>
+
+/** The page's three sections at the settings column width, filled with content or its skeleton. */
+const sections = (h: H, bodies: SectionBodies): Html =>
+	h.div(
+		[h.Class("max-w-4xl")],
+		[
+			settingsSections(h, [
+				settingsSection(
+					h,
+					{
+						id: "code-review-settings-reviewer",
+						title: "Reviewer",
+						description: ["The model every review and reply in this organization runs on."],
+						framed: false,
+					},
+					bodies.reviewer,
+				),
+				settingsSection(
+					h,
+					{
+						id: "code-review-settings-defaults",
+						title: "Default review rules",
+						description: [
+							"Every repository starts from these. A repository can override any of them.",
+						],
+						framed: true,
+					},
+					bodies.defaults,
+				),
+				settingsSection(
+					h,
+					{
+						id: "code-review-settings-repositories",
+						title: "Repositories",
+						description: [
+							"Pick which repositories get reviews, and tune any of them on its own.",
+						],
+						framed: false,
+					},
+					bodies.repositories,
+				),
+			]),
+		],
+	)
+
 const content = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.settings.data, {
 		onEmpty: () =>
-			h.div(
-				[h.Class("flex flex-col gap-6")],
-				[skeleton(h, "h-20 w-full rounded-md"), skeleton(h, "h-[520px] w-full rounded-md")],
-			),
+			sections(h, {
+				reviewer: [
+					withSlowNote(
+						h,
+						"Loading the review model",
+						modelRow(h, bar(h, "h-8 w-56 rounded-lg sm:h-7")),
+					),
+				],
+				defaults: [rulesFormSkeleton(h, "organization")],
+				repositories: [repositoryListSkeleton(h, true)],
+			}),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -210,57 +267,18 @@ const content = (h: H, model: Model): Html =>
 				onRetry: Message.ClickedRetrySettings(),
 			}),
 		onData: () =>
-			// The settings column width, like every settings page.
-			h.div(
-				[h.Class("max-w-4xl")],
-				[
-					settingsSections(h, [
-						settingsSection(
-							h,
-							{
-								id: "code-review-settings-reviewer",
-								title: "Reviewer",
-								description: [
-									"The model every review and reply in this organization runs on.",
-								],
-								framed: false,
-							},
-							[modelSetting(h, model)],
+			sections(h, {
+				reviewer: [modelSetting(h, model)],
+				defaults: Option.match(Option.fromNullishOr(model.defaultsForm), {
+					onNone: () => [],
+					onSome: (form) => [
+						formView(h, form, model.isAdmin, (message) =>
+							Message.GotDefaultsFormMessage({ message }),
 						),
-						settingsSection(
-							h,
-							{
-								id: "code-review-settings-defaults",
-								title: "Default review rules",
-								description: [
-									"Every repository starts from these. A repository can override any of them.",
-								],
-								framed: true,
-							},
-							Option.match(Option.fromNullishOr(model.defaultsForm), {
-								onNone: () => [],
-								onSome: (form) => [
-									formView(h, form, model.isAdmin, (message) =>
-										Message.GotDefaultsFormMessage({ message }),
-									),
-								],
-							}),
-						),
-						settingsSection(
-							h,
-							{
-								id: "code-review-settings-repositories",
-								title: "Repositories",
-								description: [
-									"Pick which repositories get reviews, and tune any of them on its own.",
-								],
-								framed: false,
-							},
-							[repositoriesSection(h, model)],
-						),
-					]),
-				],
-			),
+					],
+				}),
+				repositories: [repositoriesSection(h, model)],
+			}),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>

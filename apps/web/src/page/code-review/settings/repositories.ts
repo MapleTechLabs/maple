@@ -62,6 +62,18 @@ export type RepoListOptions<M> = Readonly<{
 	onConfigure: (repo: GithubRepoSummary) => M
 }>
 
+/** The list header's way to the GitHub App's repository access. */
+export const manageAccessLink = <M>(h: HtmlBuilder<M>): Html =>
+	h.a(
+		[
+			h.Class(
+				"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
+			),
+			h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
+		],
+		["Manage GitHub access", icon(h, "ArrowRightIcon", { size: 12, className: "shrink-0" })],
+	)
+
 /** The owner recedes so the part that differs between rows, the repository name, carries it. */
 const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	const slash = fullName.indexOf("/")
@@ -167,15 +179,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 	return panel(h, {}, [
 		panelHeader(h, {
 			className: "px-5 py-3 text-xs text-muted-foreground",
-			action: h.a(
-				[
-					h.Class(
-						"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
-					),
-					h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
-				],
-				["Manage GitHub access", icon(h, "ArrowRightIcon", { size: 12, className: "shrink-0" })],
-			),
+			action: manageAccessLink(h),
 			children: [
 				h.span(
 					[],

@@ -84,6 +84,7 @@ import {
 	ensureStoreMarkerDurable,
 	isStoreDirty,
 	readMarker,
+	serverPidPath,
 	storeMarkerPath,
 	storeOpenMarkerPath,
 } from "@maple/local-server/store-version"
@@ -100,7 +101,7 @@ import {
 import { LOCAL_SCHEMA_HISTORY } from "@maple/local-server/local-schema-history"
 import { LOCAL_STORE_STEPS } from "../src/server/local-store-migrations/steps"
 import { stepStatements } from "../src/server/local-store-migrations/step-executor"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -697,6 +698,23 @@ describe("marker v2 durability", () => {
 })
 
 describe("durable migration recovery", () => {
+	it("treats a PID file naming this process as stale, but refuses for a live server", async () => {
+		const root = await mkdtemp(join(tmpdir(), "maple-migration-own-pid-"))
+		const dataDir = join(root, "data")
+		try {
+			await mkdir(dataDir, { recursive: true })
+			// In a container every `maple` run is PID 1, so a dead server's file names us.
+			await writeFile(serverPidPath(dataDir), String(process.pid))
+			expect(await abandonLocalStoreMigrationPreservingSource(dataDir)).toBeNull()
+			await writeFile(serverPidPath(dataDir), String(process.ppid))
+			await expect(abandonLocalStoreMigrationPreservingSource(dataDir)).rejects.toThrow(
+				`maple is running (PID ${process.ppid})`,
+			)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
 	it("fails closed on malformed journal topology and typed progress", async () => {
 		const root = await mkdtemp(join(tmpdir(), "maple-migration-journal-invariants-"))
 		const dataDir = join(root, "data")

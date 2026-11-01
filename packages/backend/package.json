@@ -16,7 +16,9 @@
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsrs --noEmit",
-		"typecheck:test": "tsrs --noEmit -p tsconfig.test.json"
+		"typecheck:test": "tsrs --noEmit -p tsconfig.test.json",
+		"osv:capture-fixtures": "bun scripts/capture-osv-fixtures.ts",
+		"osv:compare": "bun scripts/depscan-vs-osv-scanner.ts"
 	},
 	"dependencies": {
 		"@alchemy.run/cloudflare": "catalog:alchemy",
@@ -37,6 +39,7 @@
 		"@maple/email": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
 		"@maple/infra": "workspace:*",
+		"@maple/lockfiles": "workspace:*",
 		"@maple/prometheus-otlp": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-engine-integrations": "workspace:*",

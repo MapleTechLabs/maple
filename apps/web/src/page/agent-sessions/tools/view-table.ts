@@ -8,8 +8,6 @@ import {
 	toolsTableFooter,
 } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import * as Sparkline from "../../../charts/sparkline"
 import type { LoadFailure } from "../../../data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
 import { emptyMessage } from "../../../ui/empty"
@@ -17,6 +15,7 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { skeletonList } from "../../../ui/skeleton"
 import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../tools-kit/model"
+import { volumeSparkCell } from "../tools-kit/spark"
 import { toolDetailLinkSearch } from "../tools-kit/model"
 import {
 	errorTone,
@@ -50,9 +49,6 @@ export type ToolsTableInputs = Readonly<{
 	nowMs: number
 	timeZone: string
 }>
-
-/** Sparks draw no focus or tooltip, so they share one constant chart Model. */
-const SPARK_CHART = Chart.init()
 
 const head = (h: H, sort: SortState): Html => {
 	const sortable = (label: string, width: string, key: string, align?: "right", hidden?: string) =>
@@ -139,26 +135,12 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 				),
 			],
 		),
-		h.span(
-			[h.Class("hidden h-[22px] w-28 shrink-0 @min-[720px]/panel:block")],
-			[
-				h.submodel({
-					slotId: `tool-spark-${row.key}`,
-					model: SPARK_CHART,
-					view: Sparkline.view,
-					toParentMessage: (message) => Message.GotSparkMessage({ message }),
-					viewInputs: {
-						chartId: `tool-spark-${row.key}`,
-						values: inputs.sparkFor(row.key).slice(-24),
-						color: inputs.sparkColor,
-						className: "size-full",
-						revision: 0,
-						fillOpacity: [0.35, 0],
-						isFramedWhenEmpty: true,
-					},
-				}),
-			],
-		),
+		volumeSparkCell(h, {
+			chartId: `tool-spark-${row.key}`,
+			values: inputs.sparkFor(row.key),
+			color: inputs.sparkColor,
+			toMessage: (message) => Message.GotSparkMessage({ message }),
+		}),
 		h.span(
 			[h.Class("w-20 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
 			[formatToolCount(row.calls)],

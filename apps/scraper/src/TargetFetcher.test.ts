@@ -118,7 +118,7 @@ describe("TargetFetcher", () => {
 			assert.strictEqual(limited.message, "returned HTTP 503")
 			assert.strictEqual((yield* fetchStatus(403)).reason, "auth_failed")
 			assert.strictEqual((yield* fetchStatus(500)).reason, "target_error")
-			assert.strictEqual((yield* fetchStatus(404)).reason, "scrape_failed")
+			assert.strictEqual((yield* fetchStatus(404)).reason, "target_rejected")
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 

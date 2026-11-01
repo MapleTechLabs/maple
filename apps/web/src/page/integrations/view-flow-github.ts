@@ -23,7 +23,7 @@ import { activeRepos, githubReach } from "./flow-github"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf } from "./update-github"
-import { githubDeactivated } from "./view-github"
+import { githubDeactivated, githubInstallationPicker, githubReconnectButton } from "./view-github"
 import { SYNC_PRESENTATION } from "./view-github-repos"
 
 // GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
@@ -81,16 +81,22 @@ const showsUpRail = (h: H): Html =>
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
 	})
 
-const installButton = (h: H, model: Model, label: string, variant?: "outline"): Html =>
+const installButton = (
+	h: H,
+	model: Model,
+	label: string,
+	variant?: "outline",
+	onClick: Message = Message.ClickedConnect(),
+): Html =>
 	button(
 		h,
 		{
 			size: variant === undefined ? undefined : "sm",
 			variant,
 			className: "w-fit",
-			isDisabled: model.connect.isStarting,
+			isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
 			isLoading: model.connect.isStarting,
-			attributes: [h.OnClick(Message.ClickedConnect())],
+			attributes: [h.OnClick(onClick)],
 		},
 		variant === undefined ? [icon(h, "GithubIcon"), label] : [label],
 	)
@@ -133,7 +139,13 @@ const installation = (h: H, model: Model, status: GithubIntegrationStatus): Html
 							),
 						],
 					),
-					installButton(h, model, "Change repos on GitHub", "outline"),
+					installButton(
+						h,
+						model,
+						"Change repos on GitHub",
+						"outline",
+						Message.ClickedOpenGithubInstallPage(),
+					),
 				],
 			),
 			...(repos.length === 0
@@ -153,48 +165,88 @@ const connectStep = (h: H, model: Model): Html => {
 	const isConnected = status !== null && status.connected
 	const isDeactivated = status !== null && (status.state === "suspended" || status.state === "disconnected")
 	const isWaiting = model.connect.active !== null && !isConnected
+	const hasSelection = model.githubCard.selection !== null
+	const discovery = status?.repositoryDiscovery
+	const isDiscovering = discovery?._tag === "Pending"
 	return flowColumns(
 		h,
 		[
-			isDeactivated
+			isDeactivated && !hasSelection && !isDiscovering && discovery?._tag !== "Failed"
 				? githubDeactivated(h, model, status)
 				: stepCard(
 						h,
-						{ icon: "GithubIcon", title: "Install the Maple GitHub App" },
-						isConnected
-							? [installation(h, model, status)]
-							: [
-									h.p(
-										[h.Class("text-sm text-muted-foreground")],
-										[
-											"GitHub opens in a new window. Pick the organization or account, then choose All repositories or Selected repositories. Maple reads code metadata, deployments and checks, and writes pull request comments.",
-										],
-									),
-									installButton(h, model, "Install on GitHub"),
-								],
+						{ icon: "GithubIcon", title: "Connect the Maple GitHub App" },
+						hasSelection
+							? githubInstallationPicker(h, model)
+							: isDiscovering
+								? [
+										h.p(
+											[h.Class("text-sm text-muted-foreground")],
+											[
+												"Maple is reading the repositories granted to this installation.",
+											],
+										),
+									]
+								: isConnected
+									? [installation(h, model, status)]
+									: discovery?._tag === "Failed"
+										? [
+												h.p(
+													[h.Class("text-sm text-muted-foreground")],
+													["Reconnect to retry repository discovery."],
+												),
+											]
+										: [
+												h.p(
+													[h.Class("text-sm text-muted-foreground")],
+													[
+														"GitHub opens in a new window. Approve Maple, then pick an account where the app is installed, or install it and choose All repositories or Selected repositories. Maple reads code metadata, deployments and checks, and writes pull request comments.",
+													],
+												),
+												installButton(h, model, "Connect GitHub"),
+											],
 					),
-			isWaiting
-				? statusRow(h, { tone: "working", text: "Waiting for GitHub to send you back…" })
-				: isConnected
-					? statusRow(h, {
-							tone: "ok",
-							text: `${githubReach(status)} with ${countLabel(activeRepos(status).length, "repository", "repositories")}.`,
-						})
-					: isDeactivated
-						? statusRow(h, {
-								tone: "error",
-								text: "The app lost access on GitHub. Reconnect to pick up where sync stopped.",
-							})
-						: statusRow(h, {
-								tone: "idle",
-								text: "Not installed yet. This step completes on its own when GitHub sends you back.",
-							}),
+			hasSelection
+				? statusRow(h, { tone: "idle", text: "Choose an account to finish connecting." })
+				: isDiscovering
+					? statusRow(h, { tone: "working", text: "Discovering repositories…" })
+					: discovery?._tag === "Failed" && !hasSelection
+						? statusRow(h, { tone: "error", text: discovery.message })
+						: isWaiting
+							? statusRow(h, { tone: "working", text: "Waiting for GitHub to send you back…" })
+							: isConnected
+								? statusRow(h, {
+										tone: "ok",
+										text: `${githubReach(status)} with ${countLabel(activeRepos(status).length, "repository", "repositories")}.`,
+									})
+								: isDeactivated
+									? statusRow(h, {
+											tone: "error",
+											text: "The app lost access on GitHub. Reconnect to pick up where sync stopped.",
+										})
+									: statusRow(h, {
+											tone: "idle",
+											text: "Not connected yet. This step completes on its own when GitHub sends you back.",
+										}),
+			...(discovery?._tag === "Failed" && !hasSelection ? [githubReconnectButton(h, model)] : []),
 		],
 		readsRail(h),
 	)
 }
 
-const syncRow = (h: H, repos: ReadonlyArray<GithubRepoSummary>): CheckRow => {
+const syncRow = (
+	h: H,
+	repos: ReadonlyArray<GithubRepoSummary>,
+	discovery: GithubIntegrationStatus["repositoryDiscovery"],
+): CheckRow => {
+	if (discovery?._tag === "Pending")
+		return {
+			state: "working",
+			title: "Discovering repositories",
+			detail: "Maple is reading the repositories granted to this installation.",
+		}
+	if (discovery?._tag === "Failed")
+		return { state: "failed", title: "Repository discovery failed", detail: discovery.message }
 	const total = repos.length
 	const synced = repos.filter((repo) => repo.syncStatus === "ready").length
 	const failed = repos.filter((repo) => repo.syncStatus === "error")
@@ -292,9 +344,14 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 const liveStep = (h: H, model: Model): Html => {
 	const status = githubStatusOf(model)
 	const repos = status === null ? [] : activeRepos(status)
+	const discovery = status?.repositoryDiscovery
+	const isDiscovering = discovery?._tag === "Pending"
+	const discoveryFailed = discovery?._tag === "Failed"
 	const isLive =
 		status !== null &&
 		status.connected &&
+		!isDiscovering &&
+		!discoveryFailed &&
 		repos.length > 0 &&
 		repos.every((repo) => repo.syncStatus === "ready")
 	return flowColumns(
@@ -310,10 +367,19 @@ const liveStep = (h: H, model: Model): Html => {
 				rows:
 					status === null
 						? [{ state: "waiting", title: "Waiting for GitHub's status" }]
-						: [accessRow(status, repos.length), syncRow(h, repos)],
+						: isDiscovering || discoveryFailed
+							? [syncRow(h, repos, status.repositoryDiscovery)]
+							: [
+									accessRow(status, repos.length),
+									syncRow(h, repos, status.repositoryDiscovery),
+								],
 			}),
-			...(status !== null && !status.connected ? [installButton(h, model, "Reconnect GitHub")] : []),
-			repoTable(h, repos),
+			...(discoveryFailed
+				? [githubReconnectButton(h, model)]
+				: status !== null && !status.connected && !isDiscovering
+					? [installButton(h, model, "Reconnect GitHub")]
+					: []),
+			...(repos.length > 0 || (!isDiscovering && !discoveryFailed) ? [repoTable(h, repos)] : []),
 		],
 		showsUpRail(h),
 	)

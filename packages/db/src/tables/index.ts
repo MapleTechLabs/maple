@@ -76,6 +76,7 @@ import {
 	SecurityAuditTargets,
 	SecurityAuditUnits,
 } from "./security-audit"
+import { DependencyFindings, DependencyScanMatches, DependencyScans } from "./dependency-scan"
 import { SupabaseConnections, SupabaseProjectInsights, SupabaseProjects } from "./supabase"
 import { OrgSupportChannels } from "./support-channels"
 import {
@@ -108,6 +109,7 @@ export * from "./anomalies"
 export * from "./api-keys"
 export * from "./billing-links"
 export * from "./cancellation-reviews"
+export * from "./dependency-scan"
 export * from "./chat-identities"
 export * from "./chat-workspaces"
 export * from "./cli-device-authorizations"
@@ -233,6 +235,9 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	SecurityAuditEvents,
 	SecurityAuditOrgReservations,
 	SecurityAuditOrgSettings,
+	DependencyScans,
+	DependencyScanMatches,
+	DependencyFindings,
 	SupabaseConnections,
 	SupabaseProjects,
 	SupabaseProjectInsights,

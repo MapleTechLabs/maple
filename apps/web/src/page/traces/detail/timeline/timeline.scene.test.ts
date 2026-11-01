@@ -20,6 +20,7 @@ import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
 import { init, setSelectedSpanId, update } from "./update"
 import { view as timelineView } from "./view"
+import { attributeKeys } from "./view-chrome"
 
 const traceId = Schema.decodeSync(TraceId)("6843a8853182b32339b2dd5120d423f2")
 const spanId = Schema.decodeSync(SpanId)
@@ -154,6 +155,14 @@ describe("trace timeline", () => {
 		const stepped = update(searched, Message.PressedSearchKey({ key: "Enter", isShift: false })).model
 		expect(stepped.matchCursor).toBe(1)
 		expect(stepped.focusedIndex).toBe(0)
+	})
+
+	test("Color-by offers only keys a span actually carries, not the query's empty projections", () => {
+		const projected = { "server.address": "db.internal", "rpc.system": "", "gen_ai.system": "" }
+		const keys = attributeKeys([
+			{ ...root, spanAttributes: projected, children: [{ ...child, spanAttributes: projected }] },
+		])
+		expect(keys).toEqual([{ kind: "spanAttribute", key: "server.address", count: 2 }])
 	})
 
 	test("picking a color scheme is reported to the page; the same one is ignored", () => {

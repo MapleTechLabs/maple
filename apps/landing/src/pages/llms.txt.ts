@@ -122,6 +122,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Uptime monitoring with traces and HTTP checks](${url("/guides/uptime-monitoring")})`,
 		`- [Prometheus metrics, explained](${url("/guides/prometheus-metrics")})`,
 		`- [Log parsing: from raw lines to structured fields](${url("/guides/log-parsing")})`,
+		`- [Remote server monitoring with OpenTelemetry](${url("/guides/remote-server-monitoring")})`,
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
@@ -132,6 +133,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Loguru for Python](${url("/guides/loguru")})`,
 		`- [Python logging levels and how to set them](${url("/guides/python-logging-levels")})`,
 		`- [Incident response, step by step](${url("/guides/incident-response")})`,
+		`- [Windows server monitoring tools and what to watch](${url("/guides/windows-server-monitoring")})`,
 		"",
 
 		"## Maple API",

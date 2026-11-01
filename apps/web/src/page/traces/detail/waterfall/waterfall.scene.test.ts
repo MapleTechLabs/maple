@@ -1,8 +1,10 @@
 import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 import {
+	all,
 	click,
 	expect as expectView,
+	expectAll,
 	expectOutMessage,
 	given,
 	Mount,
@@ -117,6 +119,41 @@ describe("waterfall", () => {
 			Mount.resolve(VirtualizeWaterfall, windowOver(4)),
 			click(role("button", { name: /span b/ })),
 			expectOutMessage(OutMessage.SelectedSpan({ spanId: idOf("b") })),
+		)
+	})
+
+	test("rows mark what each span called and what runs the service it enters", () => {
+		const api = { "telemetry.sdk.name": "effect", "process.runtime.name": "bun" }
+		const query = {
+			...node("q", 1),
+			spanAttributes: { "db.system.name": "postgresql" },
+			resourceAttributes: api,
+		}
+		const worker = {
+			...node("w", 1),
+			serviceName: "edge",
+			resourceAttributes: { "cloud.platform": "cloudflare.workers", "process.runtime.name": "workerd" },
+		}
+		const llm = {
+			...node("l", 1),
+			serviceName: "agent",
+			spanAttributes: { "gen_ai.provider.name": "anthropic" },
+			resourceAttributes: { "telemetry.sdk.language": "python" },
+		}
+		const trace: TraceData = {
+			...small,
+			rootSpans: [{ ...node("r", 0, [query, llm, worker]), resourceAttributes: api }],
+		}
+		scene(
+			{ update, view },
+			given(update(entered(trace), windowOver(4)).model),
+			Mount.resolve(VirtualizeWaterfall, windowOver(4)),
+			expectView(role("img", { name: "PostgreSQL" })).toExist(),
+			expectView(role("img", { name: "Cloudflare Worker" })).toExist(),
+			expectView(role("img", { name: "LLM call · Anthropic" })).toExist(),
+			expectView(role("img", { name: "Python" })).toExist(),
+			// The query stays in the root's service, so only the root carries its runtime.
+			expectAll(all.role("img", { name: "Effect on Bun" })).toHaveCount(1),
 		)
 	})
 

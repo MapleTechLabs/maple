@@ -1,11 +1,12 @@
 /**
- * The transport against a stubbed HTTP client: the requests Hazel's bot API expects, a 429 waited
- * out, and the conversation a mention opens.
+ * The transport against a stubbed HTTP client: the requests Hazel's bot API expects, a turn streamed
+ * through a message's live state, a 429 waited out, and the conversation a mention opens.
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Fiber, Layer } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
+import { encodeChatActionToken } from "../../action-token"
 import type { InboundAction, InboundMessage } from "../../ingress"
 import { ConnectorCredentials } from "../../outbound"
 import { BOT_TOKEN_CONFIG } from "./api"
@@ -107,6 +108,181 @@ describe("hazel transport", () => {
 			})
 			expect([edit?.method, edit?.url]).toEqual(["PATCH", "https://api.hazel.sh/api/v1/messages/m1"])
 			expect(sentBody(edit)).toEqual({ channelId: THREAD, content: "hello again", embeds: null })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect(
+		"streams a turn through the message's live state, and writes the message once at the end",
+		() => {
+			const http = stub([
+				["/messages/m1/live", { status: 200, body: JSON.stringify({ data: { stepId: null } }) }],
+				["/messages", { status: 200, body: JSON.stringify({ data: { id: "m1" } }) }],
+			])
+			return Effect.gen(function* () {
+				const transport = yield* hazelOutbound.transport
+				const ref = yield* transport.post(
+					target,
+					[{ kind: "notice", tone: "pending", text: "Working on it…" }],
+					"streaming",
+				)
+				yield* transport.edit(ref, [{ kind: "prose", markdown: "Check" }], "streaming")
+				yield* transport.edit(ref, [{ kind: "prose", markdown: "Checking it." }], "streaming")
+				yield* transport.edit(ref, [{ kind: "prose", markdown: "Checking it." }], "streaming")
+				// Words taken back: the text is replaced, not appended to.
+				yield* transport.edit(ref, [{ kind: "prose", markdown: "Done." }], "streaming")
+				yield* transport.edit(ref, [{ kind: "prose", markdown: "Done." }], "final")
+
+				const calls = http.seen.map((request) => {
+					const body = sentBody(request)
+					const route = request.url.replace("https://api.hazel.sh/api/v1", "")
+					return `${request.method} ${route}${route.endsWith("/live") ? ` ${JSON.stringify(body.action)}` : ""}`
+				})
+				expect(calls).toEqual([
+					"POST /messages",
+					'POST /messages/m1/live {"_tag":"Start"}',
+					'POST /messages/m1/live {"_tag":"AppendText","text":"Check"}',
+					'POST /messages/m1/live {"_tag":"AppendText","text":"ing it."}',
+					'POST /messages/m1/live {"_tag":"SetText","text":"Done."}',
+					'POST /messages/m1/live {"_tag":"Complete","persist":false}',
+					"PATCH /messages/m1",
+				])
+				expect(sentBody(http.seen[0])).toEqual({
+					channelId: THREAD,
+					content: "_Working on it…_",
+					embeds: [{ liveState: { enabled: true, loading: { text: "Working on it" } } }],
+					replyToMessageId: null,
+					threadChannelId: null,
+				})
+				expect(sentBody(http.seen[1])).toMatchObject({ channelId: THREAD })
+				// The finished message: its content for history and search, the snapshot for the embed.
+				expect(sentBody(http.seen.at(-1))).toEqual({
+					channelId: THREAD,
+					content: "Done.",
+					embeds: [
+						{
+							liveState: {
+								enabled: true,
+								cached: { status: "completed", data: {}, text: "Done." },
+							},
+						},
+					],
+				})
+			}).pipe(Effect.provide(http.layer))
+		},
+	)
+
+	it.effect("writes a card that arrives mid-turn to the message, and keeps it when the turn fails", () => {
+		const http = stub([
+			["/messages/m1/live", { status: 200, body: JSON.stringify({ data: { stepId: null } }) }],
+			["/messages", { status: 200, body: JSON.stringify({ data: { id: "m1" } }) }],
+		])
+		const approval = {
+			kind: "approval" as const,
+			toolName: "restart_service",
+			summary: "",
+			token: encodeChatActionToken("call_1"),
+			outcome: null,
+		}
+		const card = {
+			title: "Approve restart_service?",
+			actions: [
+				{ id: "approve:call_1", label: "Run restart_service", style: "primary" },
+				{ id: "deny:call_1", label: "Skip", style: "secondary" },
+			],
+		}
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			const ref = yield* transport.post(
+				target,
+				[{ kind: "prose", markdown: "Restarting" }],
+				"streaming",
+			)
+			yield* transport.edit(ref, [{ kind: "prose", markdown: "Restarting" }, approval], "streaming")
+			yield* transport.edit(
+				ref,
+				[
+					{ kind: "prose", markdown: "Restarting" },
+					approval,
+					{ kind: "notice", tone: "error", text: "Failed: boom" },
+				],
+				"final",
+			)
+			const routes = http.seen.map((request) => `${request.method} ${request.url.split("/v1")[1]}`)
+			expect(routes).toEqual([
+				"POST /messages",
+				"POST /messages/m1/live",
+				"POST /messages/m1/live",
+				"PATCH /messages/m1",
+				"POST /messages/m1/live",
+				"PATCH /messages/m1",
+			])
+			expect(sentBody(http.seen[3])).toEqual({
+				channelId: THREAD,
+				content: "Restarting",
+				embeds: [{ liveState: { enabled: true } }, card],
+			})
+			expect(sentBody(http.seen[4]).action).toEqual({
+				_tag: "Fail",
+				error: "Failed: boom",
+				persist: false,
+			})
+			expect(sentBody(http.seen[5])).toEqual({
+				channelId: THREAD,
+				content: "Restarting\n\n**Failed: boom**",
+				embeds: [
+					{
+						liveState: {
+							enabled: true,
+							cached: { status: "failed", data: {}, text: "Restarting", error: "Failed: boom" },
+						},
+					},
+					card,
+				],
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("keeps a post whose live state would not start, and starts it on the next write", () => {
+		const http = stub([
+			[
+				"/messages/m1/live",
+				[
+					{ status: 500, body: "" },
+					{ status: 200, body: JSON.stringify({ data: { stepId: null } }) },
+				],
+			],
+			["/messages", { status: 200, body: JSON.stringify({ data: { id: "m1" } }) }],
+		])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			const ref = yield* transport.post(target, [], "streaming")
+			expect(ref.messageId).toBe("m1")
+			yield* transport.edit(ref, [{ kind: "prose", markdown: "Hi" }], "streaming")
+			expect(http.seen.slice(1).map((request) => sentBody(request).action)).toEqual([
+				{ _tag: "Start" },
+				{ _tag: "Start" },
+				{ _tag: "AppendText", text: "Hi" },
+			])
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("finishes a message an earlier run streamed by replacing its text", () => {
+		const http = stub([
+			["/messages/m1/live", { status: 200, body: JSON.stringify({ data: { stepId: null } }) }],
+			["/messages", { status: 200, body: JSON.stringify({ data: { id: "m1" } }) }],
+		])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			yield* transport.edit(
+				{ target, messageId: "m1" },
+				[{ kind: "prose", markdown: "Done." }],
+				"final",
+			)
+			expect(http.seen.map((request) => sentBody(request).action ?? request.method)).toEqual([
+				{ _tag: "SetText", text: "Done." },
+				{ _tag: "Complete", persist: false },
+				"PATCH",
+			])
 		}).pipe(Effect.provide(http.layer))
 	})
 

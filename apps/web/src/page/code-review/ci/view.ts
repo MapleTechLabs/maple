@@ -23,7 +23,8 @@ import { sectionHeading } from "../../kit/section-heading"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { runsList } from "./view-runs"
-import { chartsRow, ciSkeleton, headlineStrip, RESULT_SERIES } from "./view-stats"
+import { ciSkeleton } from "../kit/skeletons"
+import { chartsRow, headlineStrip, RESULT_SERIES } from "./view-stats"
 import { jobsTable, workflowsTable } from "./view-tables"
 
 // `CodeReviewCiPage` and `CiAnalyticsView`.

@@ -32,6 +32,24 @@ export interface HazelEmbed {
 	/** ISO 8601. */
 	readonly timestamp?: string
 	readonly actions?: ReadonlyArray<HazelEmbedAction>
+	/** Turns live rendering on: Hazel shows the message's live state in place of its content. */
+	readonly liveState?: HazelLiveState
+}
+
+/** `MessageEmbedLiveState`, as far as this connector writes one. */
+export interface HazelLiveState {
+	readonly enabled: true
+	readonly loading?: HazelLiveLoading
+	/**
+	 * The finished state, for a client without the live socket. Written with the message's final
+	 * content, so the two never disagree.
+	 */
+	readonly cached?: {
+		readonly status: "completed" | "failed"
+		readonly data: Readonly<Record<string, never>>
+		readonly text?: string
+		readonly error?: string
+	}
 }
 
 export interface HazelMessageBody {
@@ -68,6 +86,52 @@ export const defuseMentions = (text: string): string => text.replaceAll("@[", "@
 
 /** What one message's worth of blocks becomes. */
 export const renderHazelMessage = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
+	const { content, embeds } = renderParts(blocks)
+	return { content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : content, embeds }
+}
+
+/**
+ * `MessageEmbedLiveState`'s loading indicator: what a live message shows before it has any text.
+ * Hazel animates the dots itself.
+ */
+export interface HazelLiveLoading {
+	readonly text: string
+}
+
+/**
+ * A message streamed through Hazel's live state: the message body, for search, notifications and
+ * history, and what the live state shows while the turn runs.
+ */
+export interface HazelLiveBody extends HazelMessageBody {
+	/**
+	 * The live state's text: the content without a pending notice, which Hazel's own loading
+	 * indicator stands in for, and without the failure a turn closes on, which is `error`.
+	 */
+	readonly text: string
+	/** The failure the turn closed on, shown by Hazel as the live state's error card. */
+	readonly error: string | null
+	/** What a pending notice said, for the loading indicator. */
+	readonly loading: HazelLiveLoading | null
+}
+
+export const renderHazelLive = (blocks: ReadonlyArray<ChatBlock>): HazelLiveBody => {
+	const last = blocks.at(-1)
+	const failure = last?.kind === "notice" && last.tone === "error" ? last : null
+	const pending = blocks.find((block) => block.kind === "notice" && block.tone === "pending")
+	const shown = blocks.filter(
+		(block) => block !== failure && !(block.kind === "notice" && block.tone === "pending"),
+	)
+	return {
+		...renderHazelMessage(blocks),
+		text: renderParts(shown).content,
+		error: failure === null ? null : defuseMentions(failure.text),
+		loading:
+			pending?.kind === "notice" ? { text: defuseMentions(pending.text.replace(/…$/u, "")) } : null,
+	}
+}
+
+/** The content, possibly empty, and the embeds. */
+const renderParts = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
 	const lines: Array<string> = []
 	const embeds: Array<HazelEmbed> = []
 
@@ -137,9 +201,8 @@ export const renderHazelMessage = (blocks: ReadonlyArray<ChatBlock>): HazelMessa
 		}
 	}
 
-	const content = defuseMentions(lines.join("\n\n"))
 	return {
-		content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : clamp(content, MAX_CONTENT_CHARS),
+		content: clamp(defuseMentions(lines.join("\n\n")), MAX_CONTENT_CHARS),
 		embeds: embeds.map(defuseEmbed),
 	}
 }

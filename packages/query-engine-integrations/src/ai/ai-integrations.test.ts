@@ -581,3 +581,26 @@ describe("stringArray decoding rejects malformed arrays", () => {
 		expect(mapped.genAi.responseFinishReasons).toEqual(["length"])
 	})
 })
+
+describe("MCP tool calls", () => {
+	const TOOL_CALL = {
+		"mcp.method.name": "tools/call",
+		"gen_ai.operation.name": "execute_tool",
+		"gen_ai.tool.name": "run_sql",
+	}
+
+	it("leave the server side of a shared trace as the app's own work", () => {
+		const [client, server] = mapAiSpans([
+			row({ ...TOOL_CALL, "maple_ai.vendor.id": "unknown:genai" }, { spanKind: "Client" }),
+			row(TOOL_CALL, { spanKind: "Server" }),
+		])
+		expect({ isAiSpan: client?.isAiSpan, operation: client?.genAi.operationName }).toEqual({
+			isAiSpan: true,
+			operation: "execute_tool",
+		})
+		expect({ isAiSpan: server?.isAiSpan, operation: server?.genAi.operationName }).toEqual({
+			isAiSpan: false,
+			operation: undefined,
+		})
+	})
+})

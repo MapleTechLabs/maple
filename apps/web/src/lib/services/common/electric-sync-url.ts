@@ -9,3 +9,6 @@ export const electricSyncBaseUrl =
 	configuredElectricSyncUrl && configuredElectricSyncUrl.length > 0
 		? configuredElectricSyncUrl.replace(/\/$/, "")
 		: "http://127.0.0.1:3476"
+
+/** Off on a deploy with no Electric upstream (`VITE_ELECTRIC_SYNC_DISABLED=1`, `preview:web`). */
+export const electricSyncEnabled = import.meta.env.VITE_ELECTRIC_SYNC_DISABLED !== "1"

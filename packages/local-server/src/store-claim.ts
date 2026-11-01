@@ -26,6 +26,21 @@ export const parseElapsedSeconds = (raw: string): number | undefined => {
 }
 
 /**
+ * Start time of a Linux process from `/proc/<pid>/stat` (field 22, ticks since
+ * boot) and `/proc/stat` (`btime`), for images that ship no `ps`. Fields are
+ * counted after the last `)` because the command name may hold spaces and parens.
+ */
+export const parseProcStartedAtMs = (pidStat: string, systemStat: string): number | undefined => {
+	const commEnd = pidStat.lastIndexOf(")")
+	// `state` is field 3, so `starttime` (field 22) is index 19 after the comm.
+	const ticks = pidStat.slice(commEnd + 2).split(" ")[19] ?? ""
+	const boot = systemStat.match(/^btime (\d+)$/m)
+	if (commEnd < 0 || !boot || !/^\d+$/.test(ticks)) return undefined
+	// /proc reports times in USER_HZ, which the kernel ABI fixes at 100 per second.
+	return Number(boot[1]) * 1000 + Number(ticks) * 10
+}
+
+/**
  * Could a live process that started at `startedAtMs` have written a PID file
  * last modified at `writtenAtMs`? A reused PID belongs to a process started
  * after the writer died, so after the write. The slack covers `etime`'s
@@ -85,8 +100,21 @@ export const readPidSnapshot = (path: string): Effect.Effect<Option.Option<PidFi
 export const sameSnapshot = (a: PidFileSnapshot, b: PidFileSnapshot): boolean =>
 	a.raw === b.raw && a.ino === b.ino && a.mtimeMs === b.mtimeMs
 
-/** Wall-clock start of a live process (`ps -o etime=`), when it can be known. */
-const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+/** Wall-clock start of a live process from `/proc`, on Linux. */
+const procStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+	Effect.try({
+		try: () =>
+			parseProcStartedAtMs(
+				readFileSync(`/proc/${pid}/stat`, "utf8"),
+				readFileSync("/proc/stat", "utf8"),
+			),
+		catch: (error) => error,
+	}).pipe(
+		Effect.map(Option.fromUndefinedOr),
+		Effect.orElseSucceed(() => Option.none<number>()),
+	)
+
+const psStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
 	Effect.try({
 		try: () =>
 			Bun.spawnSync(["ps", "-o", "etime=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" }),
@@ -101,6 +129,15 @@ const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =
 		Effect.orElseSucceed(() => Option.none<number>()),
 	)
 
+/** Wall-clock start of a live process (`/proc`, else `ps -o etime=`), when it can be known.
+ *  `/proc` first: slim and distroless container images ship no `ps`. */
+const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
+	procStartedAtMs(pid).pipe(
+		Effect.flatMap((startedAt) =>
+			Option.isSome(startedAt) ? Effect.succeed(startedAt) : psStartedAtMs(pid),
+		),
+	)
+
 export type PidOwner =
 	| { readonly kind: "stale" }
 	/** `verified`: the process provably started before the file was written. */
@@ -112,7 +149,7 @@ const livePid = (pid: number, verified: boolean): PidOwner => ({ kind: "live", p
 /**
  * Does the process named by a PID file still own it? After a crash or reboot
  * the number may belong to an unrelated process, which necessarily started
- * after the file was written. Without `ps` the answer is "live, unverified",
+ * after the file was written. Without `/proc` or `ps` the answer is "live, unverified",
  * the conservative reading for every caller.
  */
 export const pidOwner = (snapshot: PidFileSnapshot): Effect.Effect<PidOwner> =>
