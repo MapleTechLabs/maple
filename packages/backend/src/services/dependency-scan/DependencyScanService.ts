@@ -180,26 +180,20 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 			const listFindings: DependencyScanServiceApi["listFindings"] = Effect.fn(
 				"DependencyScanService.listFindings",
 			)(function* (orgId, query) {
+				// Only repositories the org still has: a purged or removed one's findings are not shown.
+				const connected = yield* connectedRepositories(orgId).pipe(
+					Effect.mapError(persistence("Could not list repositories")),
+				)
+				const names = new Map(connected.map((repository) => [repository.id, repository.fullName]))
 				const rows = yield* store
 					.listFindings({
 						orgId,
 						limit: FINDINGS_LIMIT,
 						status: query.status,
 						repositoryId: query.repositoryId,
+						repositoryIds: [...names.keys()],
 					})
 					.pipe(Effect.mapError(persistence("Could not list findings")))
-				const repositories = yield* vcs
-					.getRepositoriesByIds(
-						orgId,
-						rows.map((row) => row.repositoryId),
-					)
-					.pipe(Effect.mapError(persistence("Could not read repositories")))
-				// A purged or removed repository's findings stay in the table but are not shown.
-				const names = new Map(
-					repositories
-						.filter((repository) => repository.status === "active")
-						.map((repository) => [repository.id, repository.fullName]),
-				)
 				const findings = rows.flatMap((row) => {
 					const name = names.get(row.repositoryId)
 					return name === undefined ? [] : [findingViewOf(row, name)]
