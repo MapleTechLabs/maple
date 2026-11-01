@@ -322,7 +322,7 @@ const articleJsonLd = {
                             <li>Alert when a drive passes 85% full, and again at 95%.</li>
                             <li>Performance Monitor and Event Viewer cover one server, but keep no history across servers and send no alerts.</li>
                             <li>The OpenTelemetry Collector, installed as a Windows service, collects counters, service status and the Event Log in one place.</li>
-                            <li>A switched-off server sends nothing, so page on it with an HTTP check from another machine.</li>
+                            <li>A switched-off server sends nothing, so add an alert that fires when a server stops reporting.</li>
                         </ul>
                     </div>
                 </section>
@@ -467,7 +467,7 @@ const articleJsonLd = {
                     <div class="guide-callout">
                         <p class="guide-kicker">A server that is switched off</p>
                         <p>
-                            A server that is off or offline sends nothing, and a rule without data stays quiet. The Hosts page lists it under <strong>Stopped reporting</strong> after 5 minutes. To get paged for it, point an HTTP check at the server from a Collector on another machine, as in <a href="/docs/alerting/uptime-monitoring">Uptime monitoring</a>.
+                            A server that is off or offline sends nothing, and a rule without data stays quiet. The Hosts page lists it under <strong>Stopped reporting</strong> after 5 minutes. To get paged for it, add a rule on the server's metrics with <strong>Alert when there is no data</strong> turned on, so missing data counts as a breach. The <a href="/guides/remote-server-monitoring#heartbeat">remote server monitoring guide</a> has a ready-made rule that does this for each server.
                         </p>
                     </div>
 
