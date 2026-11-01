@@ -11,8 +11,8 @@ describe("mcpServerSpan", () => {
 	it("names a prompt span after the prompt", () => {
 		const span = mcpServerSpan(request("prompts/get", { name: "debug-errors" }), "2025-06-18", caller)
 		expect(span.name).toBe("prompts/get debug-errors")
-		expect(span.attributes["gen_ai.prompt.name"]).toBe("debug-errors")
-		expect(span.attributes["gen_ai.operation.name"]).toBeUndefined()
+		expect(span.attributes.get("gen_ai.prompt.name")).toBe("debug-errors")
+		expect(span.attributes.get("gen_ai.operation.name")).toBeUndefined()
 	})
 
 	it("keeps a resource URI out of the span name", () => {
@@ -22,14 +22,14 @@ describe("mcpServerSpan", () => {
 			caller,
 		)
 		expect(span.name).toBe("resources/read")
-		expect(span.attributes["mcp.resource.uri"]).toBe("maple://instructions")
+		expect(span.attributes.get("mcp.resource.uri")).toBe("maple://instructions")
 	})
 
 	it("falls back to the method when a tool call has no name", () => {
 		const span = mcpServerSpan(request("tools/call", { arguments: {} }), "2025-06-18", caller)
 		expect(span.name).toBe("tools/call")
-		expect(span.attributes["gen_ai.tool.name"]).toBeUndefined()
-		expect(span.attributes["gen_ai.operation.name"]).toBe("execute_tool")
+		expect(span.attributes.get("gen_ai.tool.name")).toBeUndefined()
+		expect(span.attributes.get("gen_ai.operation.name")).toBe("execute_tool")
 	})
 })
 
