@@ -2930,10 +2930,10 @@ SELECT
         GROUP BY service, bucket
         FORMAT JSON
 
--- builder:mcp:mcpServerStatsQuery:twoServers  [9100de19]
+-- builder:mcp:mcpServerStatsQuery:twoServers  [2b165cff]
 SELECT
           traces.ServiceName AS service,
-          any(traces.SpanAttributes['mcp.protocol.version']) AS protocolVersion,
+          anyIf(traces.SpanAttributes['mcp.protocol.version'], traces.SpanAttributes['mcp.protocol.version'] != '') AS protocolVersion,
           count() AS calls,
           countIf(traces.SpanAttributes['error.type'] != '') AS errors,
           ifNull(ifNotFinite(quantile(0.95)(traces.Duration), 0), 0) AS p95,
@@ -2963,7 +2963,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:mcp:mcpSpanSummaryQuery:default  [cd3ce7e4]
+-- builder:mcp:mcpSpanSummaryQuery:default  [1fd4b8fa]
 SELECT
           traces.SpanAttributes['mcp.method.name'] AS method,
           traces.SpanAttributes['error.type'] AS errorType,
@@ -2974,8 +2974,8 @@ SELECT
           countIf(arrayElement(traces.LinksTraceId, 1) != '') AS withCallerTrace,
           countIf(traces.StatusMessage != '') AS withMessage,
           min(traces.Timestamp) AS firstSpan,
-          any(traces.SpanAttributes['mcp.protocol.version']) AS protocolVersion,
-          any(traces.SpanAttributes['network.transport']) AS transport
+          anyIf(traces.SpanAttributes['mcp.protocol.version'], traces.SpanAttributes['mcp.protocol.version'] != '') AS protocolVersion,
+          anyIf(traces.SpanAttributes['network.transport'], traces.SpanAttributes['network.transport'] != '') AS transport
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'

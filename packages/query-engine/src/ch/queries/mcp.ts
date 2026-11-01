@@ -35,6 +35,9 @@ const errorType = ($: TracesRow) => $.SpanAttributes.get("error.type")
 const userAgent = ($: TracesRow) => $.SpanAttributes.get("user_agent.original")
 const failed = ($: TracesRow) => errorType($).neq("")
 
+/** Any non-empty value in the group, `''` only when no span sent one. */
+const nonEmpty = (value: CH.Expr<string>) => CH.anyIf(value, value.neq(""))
+
 const knownClient = ($: TracesRow, prefix: string) =>
 	CH.positionCaseInsensitive(userAgent($), CH.lit(prefix)).eq(1)
 
@@ -137,7 +140,7 @@ export function mcpServerStatsQuery(services: ReadonlyArray<string>) {
 	return from(Traces)
 		.select(($) => ({
 			service: $.ServiceName,
-			protocolVersion: CH.any_($.SpanAttributes.get("mcp.protocol.version")),
+			protocolVersion: nonEmpty($.SpanAttributes.get("mcp.protocol.version")),
 			calls: CH.count(),
 			errors: CH.countIf(failed($)),
 			p95: finiteOrZero(CH.quantile(0.95)($.Duration)),
@@ -197,8 +200,8 @@ export function mcpSpanSummaryQuery() {
 			withCallerTrace: CH.countIf(CH.arrayElement($.LinksTraceId, 1).neq("")),
 			withMessage: CH.countIf($.StatusMessage.neq("")),
 			firstSpan: CH.min_($.Timestamp),
-			protocolVersion: CH.any_($.SpanAttributes.get("mcp.protocol.version")),
-			transport: CH.any_($.SpanAttributes.get("network.transport")),
+			protocolVersion: nonEmpty($.SpanAttributes.get("mcp.protocol.version")),
+			transport: nonEmpty($.SpanAttributes.get("network.transport")),
 		}))
 		.where(serverSpans)
 		.groupBy("method", "errorType")
