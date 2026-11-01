@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { type PackageAdvisory, PackageEcosystem, packageKey } from "@maple/domain/package-advisories"
 import { parseLockfile } from "@maple/lockfiles"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Context, Effect, Layer, Option, Schema } from "effect"
 import type {
 	VcsProviderClient,
 	VcsTreeFile,
@@ -340,7 +340,15 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					const completed = yield* run.pipe(
 						Effect.onError((cause) =>
 							store
-								.failScan({ orgId, scanId: started.id, error: summarizeCause(cause) })
+								.failScan({
+									orgId,
+									scanId: started.id,
+									// A typed failure keeps its own message, which the next push compares against.
+									error: Option.match(Cause.findErrorOption(cause), {
+										onNone: () => summarizeCause(cause),
+										onSome: (error) => error.message,
+									}),
+								})
 								.pipe(Effect.ignore),
 						),
 					)
