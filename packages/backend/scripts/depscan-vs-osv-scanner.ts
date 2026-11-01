@@ -40,7 +40,7 @@ const compare = (path: string) =>
 		const content = yield* Effect.promise(() => Bun.file(path).text())
 		const parsed = yield* parseLockfile({ path: basename(path), content, manifests })
 		const catalog = yield* PackageAdvisoryCatalog
-		const ours = yield* catalog.advisories(parsed.packages)
+		const { byPackage: ours } = yield* catalog.advisories(parsed.packages)
 
 		const theirs = new Map(
 			(osvScanner(path).results ?? [])

@@ -28,14 +28,18 @@ describe("selectLockfiles", () => {
 			["crates/core/Cargo.lock", "cargo-lock"],
 			["services/api/go.mod", "go-mod"],
 		])
-		expect(skipped).toBe(0)
+		expect(skipped).toEqual([])
 	})
 
 	it("caps the lockfiles a scan reads and counts the rest", () => {
 		const many = Array.from({ length: MAX_LOCKFILES + 3 }, (_, i) => file(`pkg${i}/bun.lock`))
 		const { selected, skipped } = selectLockfiles(many)
 		expect(selected).toHaveLength(MAX_LOCKFILES)
-		expect(skipped).toBe(3)
+		expect(skipped).toHaveLength(3)
+		// Every lockfile is either read or recorded as skipped, never dropped.
+		expect(new Set([...selected, ...skipped].map((lockfile) => lockfile.file.path)).size).toBe(
+			many.length,
+		)
 	})
 })
 

@@ -1,5 +1,8 @@
 import { OrgId } from "@maple/domain"
 import {
+	DependencyScanPersistenceError,
+	type DependencyFindingsResponse,
+	type DependencyScanRepositoriesResponse,
 	SecurityAuditDisabledError,
 	SecurityAuditForbiddenError,
 	SecurityAuditTargetExistsError,
@@ -10,6 +13,8 @@ import type { Command } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
 import type { PageContext } from "../../page/contract"
 import * as AddTarget from "../../page/security/kit/add-target"
+import * as DependenciesPage from "../../page/security/dependencies/model"
+import * as DependenciesUpdate from "../../page/security/dependencies/update"
 import * as FindingPage from "../../page/security/finding/model"
 import * as FindingUpdate from "../../page/security/finding/update"
 import * as RunPage from "../../page/security/run/model"
@@ -39,6 +44,14 @@ import {
 	targetsOf,
 	unitsOf,
 } from "../security-fixture"
+import {
+	FINDING_IDS,
+	findingsOf as dependencyFindingsOf,
+	neverScannedOf,
+	noFindings,
+	noRepositories,
+	repositoriesOf,
+} from "../security-dependencies-fixture"
 import { emptyExposureOf, exposureOf, runtimesOf } from "../security-telemetry-fixture"
 
 // Every Security Center state the lab renders, built by sending each page the fixture answers its
@@ -68,6 +81,13 @@ export const SCENARIOS = [
 	"exposure",
 	"exposure-empty",
 	"runtimes",
+	"dependencies",
+	"dependencies-finding",
+	"dependencies-clean",
+	"dependencies-never-scanned",
+	"dependencies-no-github",
+	"dependencies-error",
+	"dependencies-loading",
 ] as const
 export const Scenario = Schema.Literals(SCENARIOS)
 export type Scenario = typeof Scenario.Type
@@ -319,6 +339,56 @@ const exposure = (nowMs: number, data: TelemetryPage.Exposure): TelemetryStep =>
 		T.CompletedFetchExposure({ key: model.exposure.key ?? "", result: Result.succeed(data) }),
 	)
 
+// DEPENDENCIES
+
+type DependenciesStep = Step<DependenciesPage.Model, DependenciesPage.Message>
+const D = DependenciesPage.Message
+
+type DependencyAnswers = Readonly<{
+	repositories: DependencyScanRepositoriesResponse | "failed"
+	findings: DependencyFindingsResponse
+}>
+
+const dependencies = (
+	nowMs: number,
+	answers: DependencyAnswers | null,
+	then: ReadonlyArray<(model: DependenciesPage.Model) => DependenciesPage.Message> = [],
+): DependenciesStep => {
+	const entered = DependenciesUpdate.init(AppRoute.SecurityDependencies(), context)
+	return fold<DependenciesPage.Model, DependenciesPage.Message>(
+		{ model: entered.model, commands: entered.commands ?? [] },
+		(model, message) => DependenciesUpdate.update(model, message, context),
+		[
+			() => D.ReadClock({ nowMs }),
+			() => D.CompletedReadIsAdmin({ isAdmin: true }),
+			...(answers === null
+				? []
+				: [
+						(model: DependenciesPage.Model) =>
+							D.CompletedFetchRepositories({
+								key: model.repositories.key ?? "",
+								result:
+									answers.repositories === "failed"
+										? Result.fail(
+												toLoadFailure(
+													new DependencyScanPersistenceError({
+														message: "Dependency scans are unavailable",
+													}),
+												),
+											)
+										: Result.succeed(answers.repositories),
+							}),
+						(model: DependenciesPage.Model) =>
+							D.CompletedFetchFindings({
+								key: model.findings.key ?? "",
+								result: Result.succeed(answers.findings),
+							}),
+					]),
+			...then,
+		],
+	)
+}
+
 // SCENARIOS
 
 export type Built =
@@ -326,6 +396,7 @@ export type Built =
 	| Readonly<{ _tag: "Run"; step: RunStep }>
 	| Readonly<{ _tag: "Finding"; step: FindingStep }>
 	| Readonly<{ _tag: "Telemetry"; step: TelemetryStep }>
+	| Readonly<{ _tag: "Dependencies"; step: DependenciesStep }>
 
 const overviewRoute = AppRoute.Security()
 
@@ -450,5 +521,50 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 					}),
 				),
 			}
+		case "dependencies":
+			return { _tag: "Dependencies", step: populatedDependencies(nowMs) }
+		case "dependencies-finding":
+			return {
+				_tag: "Dependencies",
+				step: populatedDependencies(nowMs, [
+					() => D.ClickedFinding({ findingId: FINDING_IDS.axios }),
+				]),
+			}
+		case "dependencies-clean":
+			return {
+				_tag: "Dependencies",
+				step: dependencies(nowMs, {
+					repositories: repositoriesOf(nowMs),
+					findings: {
+						...dependencyFindingsOf(nowMs),
+						findings: dependencyFindingsOf(nowMs).findings.filter(
+							(finding) => finding.status !== "open",
+						),
+					},
+				}),
+			}
+		case "dependencies-never-scanned":
+			return {
+				_tag: "Dependencies",
+				step: dependencies(nowMs, { repositories: neverScannedOf(nowMs), findings: noFindings }),
+			}
+		case "dependencies-no-github":
+			return {
+				_tag: "Dependencies",
+				step: dependencies(nowMs, { repositories: noRepositories, findings: noFindings }),
+			}
+		case "dependencies-error":
+			return {
+				_tag: "Dependencies",
+				step: dependencies(nowMs, { repositories: "failed", findings: noFindings }),
+			}
+		case "dependencies-loading":
+			return { _tag: "Dependencies", step: dependencies(nowMs, null) }
 	}
 }
+
+const populatedDependencies = (
+	nowMs: number,
+	then: ReadonlyArray<(model: DependenciesPage.Model) => DependenciesPage.Message> = [],
+): DependenciesStep =>
+	dependencies(nowMs, { repositories: repositoriesOf(nowMs), findings: dependencyFindingsOf(nowMs) }, then)

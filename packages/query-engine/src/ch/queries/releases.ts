@@ -126,6 +126,44 @@ export function releasesListQuery(opts: ReleasesListOpts = {}) {
 		.format("JSON")
 }
 
+// Running commits
+//
+// Which commit each service served traffic from in the window, for the dependency scanner: a
+// vulnerable package matters most in the commit a busy service is running.
+
+/** At most this many (service, environment, commit) rows, busiest first. */
+export const RUNNING_COMMITS_CAP = 200
+
+export interface RunningCommitsOutput {
+	readonly serviceName: string
+	readonly environment: string
+	readonly commitSha: string
+	readonly spanCount: number
+}
+
+export const runningCommitsRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	environment: Schema.String,
+	commitSha: Schema.String,
+	spanCount: CHNumber,
+}) satisfies CompiledQueryRowSchema<RunningCommitsOutput>
+
+/** The releases list without its latency and error columns, ordered by traffic. */
+export function runningCommitsQuery() {
+	return serviceOverviewWindows({})
+		.select(($) => ({
+			serviceName: $.bServiceName,
+			environment: $.bEnvironment,
+			commitSha: $.bCommitSha,
+			spanCount: CH.sum($.bSpanCount),
+		}))
+		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS)])
+		.groupBy("serviceName", "environment", "commitSha")
+		.orderBy(["spanCount", "desc"])
+		.limit(RUNNING_COMMITS_CAP)
+		.format("JSON")
+}
+
 // Releases timeline
 //
 // The org-wide sibling of `serviceReleasesTimelineQuery`: per bucket, per

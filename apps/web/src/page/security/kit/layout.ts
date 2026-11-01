@@ -6,9 +6,10 @@ import { pageTitle } from "../../../ui/page-layout"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 // The frame of the Security tabs: title block, the tab strip, content. Overview, Findings and Runs
-// are the code audits' page; Exposure and Runtimes read the org's telemetry.
+// are the code audits' page; Exposure and Runtimes read the org's telemetry; Dependencies reads
+// the connected repositories' lockfiles.
 
-export type SecurityTab = "overview" | "findings" | "runs" | "exposure" | "runtimes"
+export type SecurityTab = "overview" | "findings" | "runs" | "exposure" | "runtimes" | "dependencies"
 
 const TABS: ReadonlyArray<{ tab: SecurityTab; label: string; icon: IconName; href: string }> = [
 	{ tab: "overview", label: "Overview", icon: "ShieldCheckIcon", href: hrefOf(AppRoute.Security()) },
@@ -26,6 +27,12 @@ const TABS: ReadonlyArray<{ tab: SecurityTab; label: string; icon: IconName; hre
 	},
 	{ tab: "exposure", label: "Exposure", icon: "GlobeIcon", href: hrefOf(AppRoute.SecurityExposure()) },
 	{ tab: "runtimes", label: "Runtimes", icon: "MicrochipIcon", href: hrefOf(AppRoute.SecurityRuntimes()) },
+	{
+		tab: "dependencies",
+		label: "Dependencies",
+		icon: "CubeIcon",
+		href: hrefOf(AppRoute.SecurityDependencies()),
+	},
 ]
 
 export const breadcrumbsOf = (tab: SecurityTab): ReadonlyArray<BreadcrumbEntry> => {
@@ -59,6 +66,8 @@ const DESCRIPTION = {
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
 	runtimes:
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",
+	dependencies:
+		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
 } satisfies Record<SecurityTab, string>
 
 /** The title block: the page `<h1>` and its one line of context, like every other page header. */

@@ -1759,6 +1759,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// Dependency scanner: which commit each service runs, ranked by traffic.
+	{
+		module: "releases",
+		name: "runningCommitsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.runningCommitsQuery(), window),
+	},
 	{
 		module: "releases",
 		name: "releasesTimelineQuery",

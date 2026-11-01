@@ -10,7 +10,7 @@ export const HttpDependencyScanLive = HttpApiBuilder.group(MapleInternalApi, "de
 
 		return handlers
 			.handle("listRepositories", () =>
-				Effect.flatMap(CurrentTenant.Context, (tenant) => scans.listRepositories(tenant.orgId)),
+				Effect.flatMap(CurrentTenant.Context, (tenant) => scans.listRepositories(tenant)),
 			)
 			.handle("scanRepository", ({ params }) =>
 				Effect.flatMap(CurrentTenant.Context, (tenant) =>
@@ -18,7 +18,7 @@ export const HttpDependencyScanLive = HttpApiBuilder.group(MapleInternalApi, "de
 				),
 			)
 			.handle("listFindings", ({ query }) =>
-				Effect.flatMap(CurrentTenant.Context, (tenant) => scans.listFindings(tenant.orgId, query)),
+				Effect.flatMap(CurrentTenant.Context, (tenant) => scans.listFindings(tenant, query)),
 			)
 			.handle("updateFinding", ({ params, payload }) =>
 				Effect.gen(function* () {

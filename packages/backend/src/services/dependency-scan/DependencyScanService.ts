@@ -1,4 +1,4 @@
-import type { DependencyFindingRow, DependencyScanRow } from "@maple/db/tables"
+import type { DependencyFindingRow, DependencyScanMatchRow, DependencyScanRow } from "@maple/db/tables"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
 import {
 	DependencyFindingNotFoundError,
@@ -9,28 +9,139 @@ import {
 	type DependencyScanRepositoriesResponse,
 	DependencyScanRepositoryNotFoundError,
 	type DependencyScanSummary,
+	type DependencyRunningCommit,
+	type DependencyRunningService,
+	GitCommitSha,
 	isInstallationProcessable,
+	type VcsInstallation,
 	type VcsRepo,
 	type VcsRepositoryId,
+	type VcsSyncJob,
 } from "@maple/domain/http"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { DependencyFindingStatus } from "@maple/domain/dependency-scan"
-import { Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { DependencyScanStore } from "./DependencyScanStore"
+import {
+	findingKey,
+	latestCompletedPerCommit,
+	latestScanPerCommit,
+	needsScan,
+	productionByFinding,
+	type RunningService,
+	riskScore,
+	scanAt,
+} from "./production"
 
 // The Dependencies tab's reads and writes: repositories with their latest scan, findings with
 // their repository named, triage, and "scan now", which goes through the VCS sync queue.
 
 /** Findings returned per read; the table sorts worst first, so the cut drops the least severe. */
 export const FINDINGS_LIMIT = 500
-/** Scans read to find each repository's latest. */
-const SCANS_LIMIT = 500
+/** Production is what services served over the last day. */
+const RUNNING_WINDOW_MS = 24 * 60 * 60 * 1000
+/** Unscanned running commits queued per read, busiest first; the next read queues more. */
+export const PRODUCTION_SCANS_PER_READ = 10
+
+export type RunningCommitRow = typeof CH.runningCommitsRowSchema.Type
+
+export class RunningCommitsReadError extends Schema.TaggedError<RunningCommitsReadError>()(
+	"@maple/dependency-scan/RunningCommitsReadError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+/** Which commit each service served traffic from in a window, busiest first. */
+export class RunningCommits extends Context.Service<
+	RunningCommits,
+	{
+		readonly read: (
+			tenant: TenantContext,
+			window: { readonly startMs: number; readonly endMs: number },
+		) => Effect.Effect<ReadonlyArray<RunningCommitRow>, RunningCommitsReadError>
+	}
+>()("@maple/backend/services/dependency-scan/RunningCommits") {
+	static readonly layer = Layer.effect(
+		this,
+		Effect.gen(function* () {
+			const warehouse = yield* WarehouseQueryService
+			return {
+				read: (tenant, window) =>
+					warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(
+								CH.runningCommitsQuery(),
+								{
+									orgId: tenant.orgId,
+									startTime: formatWarehouseDateTime(window.startMs),
+									endTime: formatWarehouseDateTime(window.endMs),
+								},
+								{ rowSchema: CH.runningCommitsRowSchema },
+							),
+							{ profile: "list", context: "dependencyRunningCommits" },
+						)
+						.pipe(
+							Effect.mapError(
+								(cause) =>
+									new RunningCommitsReadError({
+										message: "Could not read running commits",
+										cause,
+									}),
+							),
+						),
+			}
+		}),
+	).pipe(Layer.provide(WarehouseQueryService.layer))
+}
+
+interface Connected {
+	readonly installation: VcsInstallation
+	readonly repository: VcsRepo
+}
+
+interface Production {
+	readonly available: boolean
+	/** Running (service, environment, commit) rows whose commit belongs to a connected repository. */
+	readonly running: ReadonlyArray<RunningService>
+	/** Distinct services reporting a commit. */
+	readonly runningServices: number
+	/** Latest scan per running commit, any status: what the repository list shows. */
+	readonly latest: ReadonlyMap<string, DependencyScanRow>
+	/** The matches of each running commit's latest completed scan. */
+	readonly matches: ReadonlyArray<DependencyScanMatchRow>
+	readonly completed: ReadonlyMap<string, DependencyScanRow>
+}
+
+const NO_PRODUCTION: Production = {
+	available: false,
+	running: [],
+	runningServices: 0,
+	latest: new Map(),
+	matches: [],
+	completed: new Map(),
+}
+
+const distinctServices = (services: ReadonlyArray<{ readonly serviceName: string }>): number =>
+	new Set(services.map((service) => service.serviceName)).size
+
+const decodeSha = Schema.decodeUnknownOption(GitCommitSha)
+
+const toRunningService = (service: RunningService): DependencyRunningService => ({
+	serviceName: service.serviceName,
+	environment: service.environment,
+	commitSha: service.commitSha,
+	spanCount: service.spanCount,
+})
 
 export interface DependencyScanServiceApi {
+	/** Each repository with its latest scan and the commits services run from it. */
 	readonly listRepositories: (
-		orgId: OrgId,
+		tenant: TenantContext,
 	) => Effect.Effect<DependencyScanRepositoriesResponse, DependencyScanPersistenceError>
 	readonly requestScan: (
 		orgId: OrgId,
@@ -39,8 +150,9 @@ export interface DependencyScanServiceApi {
 		{ readonly queued: boolean },
 		DependencyScanPersistenceError | DependencyScanRepositoryNotFoundError
 	>
+	/** Most urgent first; production comes from telemetry and is left out when it cannot be read. */
 	readonly listFindings: (
-		orgId: OrgId,
+		tenant: TenantContext,
 		query: {
 			readonly status?: DependencyFindingStatus | undefined
 			readonly repositoryId?: VcsRepositoryId | undefined
@@ -56,8 +168,8 @@ export interface DependencyScanServiceApi {
 
 const persistence =
 	(message: string) =>
-	(error: { readonly message: string }): DependencyScanPersistenceError =>
-		new DependencyScanPersistenceError({ message: `${message}: ${error.message}` })
+	(error: { readonly _tag: string; readonly message: string }): DependencyScanPersistenceError =>
+		new DependencyScanPersistenceError({ message: `${message}: ${error.message}`, cause: error._tag })
 
 export const scanSummaryOf = (row: DependencyScanRow): DependencyScanSummary => ({
 	id: row.id,
@@ -111,6 +223,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 			const store = yield* DependencyScanStore
 			const vcs = yield* VcsRepository
 			const queue = yield* VcsSyncQueue
+			const runningCommits = yield* RunningCommits
 
 			/** The org's repositories under a processable installation, active ones only. */
 			const connectedRepositories = Effect.fn("DependencyScanService.connectedRepositories")(function* (
@@ -120,30 +233,173 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					isInstallationProcessable,
 				)
 				const repositories = yield* Effect.forEach(installations, (installation) =>
-					vcs.listRepositoriesByInstallation(installation.id, "active"),
+					vcs
+						.listRepositoriesByInstallation(installation.id, "active")
+						.pipe(
+							Effect.map((list) =>
+								list.map((repository): Connected => ({ installation, repository })),
+							),
+						),
 				)
 				return repositories.flat()
 			})
 
+			/**
+			 * Queues a scan of each running commit that needs one, busiest first and capped. A queue
+			 * failure is logged here: the read it runs beside still answers.
+			 */
+			const queueProductionScans = Effect.fn("DependencyScanService.queueProductionScans")(function* (
+				connected: ReadonlyArray<Connected>,
+				production: Production,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				// Rows come busiest first, so a commit's first row is its busiest.
+				const unscanned = production.running
+					.filter((service) => needsScan(production.latest, service, now))
+					.filter(
+						(service, index, all) =>
+							all.findIndex(
+								(other) =>
+									other.repositoryId === service.repositoryId &&
+									other.commitSha === service.commitSha,
+							) === index,
+					)
+					.slice(0, PRODUCTION_SCANS_PER_READ)
+				const jobs = unscanned.flatMap((service): ReadonlyArray<VcsSyncJob> => {
+					const owner = connected.find((entry) => entry.repository.id === service.repositoryId)
+					return owner === undefined
+						? []
+						: [
+								{
+									kind: "dependency-scan",
+									provider: owner.repository.provider,
+									externalInstallationId: owner.installation.externalInstallationId,
+									externalRepoId: owner.repository.externalRepoId,
+									trigger: "production",
+									commitSha: service.commitSha,
+								},
+							]
+				})
+				yield* Effect.annotateCurrentSpan({ "maple.depscan.production_queued": jobs.length })
+				if (jobs.length === 0) return
+				yield* queue
+					.sendBatch(jobs)
+					.pipe(
+						Effect.catch((error) =>
+							Effect.logWarning("[DependencyScan] could not queue production scans").pipe(
+								Effect.annotateLogs({ error: error.message }),
+							),
+						),
+					)
+			})
+
+			/** The commits services ran over the last day, joined to connected repositories and their scans. */
+			const readProduction = Effect.fn("DependencyScanService.readProduction")(function* (
+				tenant: TenantContext,
+				connected: ReadonlyArray<Connected>,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const rows = yield* runningCommits.read(tenant, {
+					startMs: now - RUNNING_WINDOW_MS,
+					endMs: now,
+				})
+				const withSha = rows.flatMap((row) =>
+					Option.match(decodeSha(row.commitSha), {
+						onNone: () => [],
+						onSome: (sha) => [{ ...row, sha }],
+					}),
+				)
+				const connectedIds = new Set(connected.map((entry) => entry.repository.id))
+				const commits = yield* vcs.findCommitsByShas(
+					tenant.orgId,
+					withSha.map((row) => row.sha),
+				)
+				const repositoryOf = new Map(
+					commits
+						.filter((commit) => connectedIds.has(commit.repositoryId))
+						.map((commit) => [commit.sha, commit.repositoryId] as const),
+				)
+				const running = withSha.flatMap((row): ReadonlyArray<RunningService> => {
+					const repositoryId = repositoryOf.get(row.sha)
+					return repositoryId === undefined
+						? []
+						: [
+								{
+									repositoryId,
+									commitSha: row.sha,
+									serviceName: row.serviceName,
+									environment: row.environment,
+									spanCount: row.spanCount,
+								},
+							]
+				})
+				const scans = yield* store.scansAtCommits({
+					orgId: tenant.orgId,
+					repositoryIds: running.map((service) => service.repositoryId),
+					commitShas: running.map((service) => service.commitSha),
+				})
+				const completed = latestCompletedPerCommit(scans)
+				const matches = yield* store.matchesOfScans({
+					orgId: tenant.orgId,
+					scanIds: [...completed.values()].map((scan) => scan.id),
+				})
+				const production: Production = {
+					available: true,
+					running,
+					runningServices: distinctServices(rows),
+					latest: latestScanPerCommit(scans),
+					matches,
+					completed,
+				}
+				yield* Effect.annotateCurrentSpan({
+					"maple.depscan.running_services": production.runningServices,
+					"maple.depscan.linked_services": distinctServices(running),
+				})
+				yield* queueProductionScans(connected, production)
+				return production
+			})
+
+			/** Production when telemetry and the scans can be read; the tab still lists findings without it. */
+			const productionOrNone = (tenant: TenantContext, connected: ReadonlyArray<Connected>) =>
+				readProduction(tenant, connected).pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("[DependencyScan] production read failed").pipe(
+							Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
+							Effect.as(NO_PRODUCTION),
+						),
+					),
+				)
+
 			const listRepositories: DependencyScanServiceApi["listRepositories"] = Effect.fn(
 				"DependencyScanService.listRepositories",
-			)(function* (orgId) {
-				const repositories = yield* connectedRepositories(orgId).pipe(
+			)(function* (tenant) {
+				const orgId = tenant.orgId
+				const connected = yield* connectedRepositories(orgId).pipe(
 					Effect.mapError(persistence("Could not list repositories")),
 				)
-				const scans = yield* store
-					.listScans({ orgId, limit: SCANS_LIMIT })
+				const branchScans = yield* store
+					.latestBranchScans({ orgId })
 					.pipe(Effect.mapError(persistence("Could not list scans")))
-				// Newest first, so the first tracked-branch scan per repository is its latest.
-				const latest = scans
-					.filter((scan) => scan.defaultBranchHead)
-					.reduce((byRepository, scan) => {
-						if (!byRepository.has(scan.repositoryId)) byRepository.set(scan.repositoryId, scan)
-						return byRepository
-					}, new Map<VcsRepositoryId, DependencyScanRow>())
+				const latest = new Map(branchScans.map((scan) => [scan.repositoryId, scan]))
+				const production = yield* productionOrNone(tenant, connected)
+				const runningCommitsOf = (
+					repositoryId: VcsRepositoryId,
+				): ReadonlyArray<DependencyRunningCommit> => {
+					const services = production.running.filter(
+						(service) => service.repositoryId === repositoryId,
+					)
+					const shas = [...new Set(services.map((service) => service.commitSha))]
+					return shas.map((commitSha) => ({
+						commitSha,
+						scanStatus: scanAt(production.latest, { repositoryId, commitSha })?.status ?? null,
+						services: services
+							.filter((service) => service.commitSha === commitSha)
+							.map(toRunningService),
+					}))
+				}
 				return {
-					repositories: repositories
-						.map((repository: VcsRepo) => {
+					repositories: connected
+						.map(({ repository }) => {
 							const scan = latest.get(repository.id)
 							return {
 								id: repository.id,
@@ -151,6 +407,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 								htmlUrl: repository.htmlUrl,
 								trackedBranch: repository.trackedBranch ?? repository.defaultBranch,
 								latestScan: scan === undefined ? null : scanSummaryOf(scan),
+								runningCommits: runningCommitsOf(repository.id),
 							}
 						})
 						.sort((a, b) => a.fullName.localeCompare(b.fullName)),
@@ -187,7 +444,8 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 
 			const listFindings: DependencyScanServiceApi["listFindings"] = Effect.fn(
 				"DependencyScanService.listFindings",
-			)(function* (orgId, query) {
+			)(function* (tenant, query) {
+				const orgId = tenant.orgId
 				const rows = yield* store
 					.listFindings({
 						orgId,
@@ -196,18 +454,39 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 						repositoryId: query.repositoryId,
 					})
 					.pipe(Effect.mapError(persistence("Could not list findings")))
-				const repositories = yield* vcs
-					.getRepositoriesByIds(
-						orgId,
-						rows.map((row) => row.repositoryId),
-					)
-					.pipe(Effect.mapError(persistence("Could not read repositories")))
-				const names = new Map(repositories.map((repository) => [repository.id, repository.fullName]))
-				yield* Effect.annotateCurrentSpan({ "result.rowCount": rows.length })
+				const connected = yield* connectedRepositories(orgId).pipe(
+					Effect.mapError(persistence("Could not list repositories")),
+				)
+				const production = yield* productionOrNone(tenant, connected)
+				const byFinding = productionByFinding(
+					production.running,
+					production.completed,
+					production.matches,
+				)
+				const names = new Map(connected.map(({ repository }) => [repository.id, repository.fullName]))
+				const ranked = rows
+					.map((row, order) => {
+						const services = byFinding.get(findingKey(row)) ?? []
+						const spans = services.reduce((sum, service) => sum + service.spanCount, 0)
+						return { row, order, services, score: riskScore(row, spans) }
+					})
+					.sort((a, b) => b.score - a.score || a.order - b.order)
+				yield* Effect.annotateCurrentSpan({
+					"result.rowCount": rows.length,
+					"maple.depscan.findings_in_production": ranked.filter(
+						(entry) => entry.services.length > 0,
+					).length,
+				})
 				return {
-					findings: rows.map((row) =>
-						findingViewOf(row, names.get(row.repositoryId) ?? "unknown repository"),
-					),
+					findings: ranked.map(({ row, services }) => ({
+						...findingViewOf(row, names.get(row.repositoryId) ?? "unknown repository"),
+						production: services.map(toRunningService),
+					})),
+					production: {
+						available: production.available,
+						runningServices: production.runningServices,
+						linkedServices: distinctServices(production.running),
+					},
 				}
 			})
 
@@ -257,6 +536,13 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(DependencyScanStore.layer, VcsRepository.layer, VcsSyncQueue.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				DependencyScanStore.layer,
+				VcsRepository.layer,
+				VcsSyncQueue.layer,
+				RunningCommits.layer,
+			),
+		),
 	)
 }

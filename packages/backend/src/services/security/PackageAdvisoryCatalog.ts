@@ -15,9 +15,11 @@ const CACHE_BUCKET = "osv-vulns"
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 const CACHE_READ_TIMEOUT_MS = 150
 const REQUEST_TIMEOUT = "15 seconds"
-/** Distinct vulnerabilities read per call; a scan past it fails rather than store a partial answer. */
+/** Distinct vulnerabilities read per call; past it the answer says how many it left unread. */
 export const MAX_VULNERABILITIES = 500
 const CONCURRENCY = 16
+/** Pages followed per query past the first; a package with more than a page of advisories is rare. */
+const MAX_EXTRA_PAGES = 5
 const RETRY = { times: 2, schedule: Schedule.exponential("250 millis") } as const
 
 const QueryBatchResponse = Schema.Struct({
@@ -44,11 +46,16 @@ export class PackageAdvisoryCatalogError extends Schema.TaggedError<PackageAdvis
 export interface PackageAdvisoryCatalogApi {
 	/**
 	 * Advisories per `packageKey`; packages without any are absent. Fails as a whole when any read
-	 * fails, so a scan never mistakes an outage for a clean dependency.
+	 * fails, so a scan never mistakes an outage for a clean dependency. `unread` counts the
+	 * vulnerabilities past `MAX_VULNERABILITIES`, whose advisories are left out.
 	 */
-	readonly advisories: (
-		packages: ReadonlyArray<PackageRef>,
-	) => Effect.Effect<ReadonlyMap<string, ReadonlyArray<PackageAdvisory>>, PackageAdvisoryCatalogError>
+	readonly advisories: (packages: ReadonlyArray<PackageRef>) => Effect.Effect<
+		{
+			readonly byPackage: ReadonlyMap<string, ReadonlyArray<PackageAdvisory>>
+			readonly unread: number
+		},
+		PackageAdvisoryCatalogError
+	>
 }
 
 interface Pending {
@@ -113,27 +120,36 @@ export class PackageAdvisoryCatalog extends Context.Service<
 		const queryAll = (
 			pending: ReadonlyArray<Pending>,
 			found: ReadonlyMap<string, ReadonlyArray<VulnRef>>,
+			depth = 0,
 		): Effect.Effect<ReadonlyMap<string, ReadonlyArray<VulnRef>>, PackageAdvisoryCatalogError> =>
 			pending.length === 0
 				? Effect.succeed(found)
-				: Effect.forEach(Arr.chunksOf(pending, BATCH_SIZE), queryBatch, { concurrency: 2 }).pipe(
-						Effect.flatMap((batches) => {
-							const pages = batches.flat()
-							const next = new Map(found)
-							pages.forEach((page) => {
-								const key = packageKey(page.ref)
-								next.set(key, [...(next.get(key) ?? []), ...page.vulns])
-							})
-							return queryAll(
-								pages.flatMap((page) =>
-									page.nextPageToken === undefined
-										? []
-										: [{ ref: page.ref, pageToken: page.nextPageToken }],
-								),
-								next,
-							)
-						}),
-					)
+				: depth > MAX_EXTRA_PAGES
+					? Effect.fail(
+							new PackageAdvisoryCatalogError({
+								message: `OSV kept paging past ${MAX_EXTRA_PAGES} pages`,
+								cause: undefined,
+							}),
+						)
+					: Effect.forEach(Arr.chunksOf(pending, BATCH_SIZE), queryBatch, { concurrency: 2 }).pipe(
+							Effect.flatMap((batches) => {
+								const pages = batches.flat()
+								const next = new Map(found)
+								pages.forEach((page) => {
+									const key = packageKey(page.ref)
+									next.set(key, [...(next.get(key) ?? []), ...page.vulns])
+								})
+								return queryAll(
+									pages.flatMap((page) =>
+										page.nextPageToken === undefined
+											? []
+											: [{ ref: page.ref, pageToken: page.nextPageToken }],
+									),
+									next,
+									depth + 1,
+								)
+							}),
+						)
 
 		const fetchRecord = (vuln: VulnRef) =>
 			edgeCache
@@ -172,19 +188,15 @@ export class PackageAdvisoryCatalog extends Context.Service<
 				"maple.depscan.package_count": distinct.length,
 				"maple.depscan.vulnerability_count": vulns.length,
 			})
-			if (vulns.length > MAX_VULNERABILITIES) {
-				return yield* new PackageAdvisoryCatalogError({
-					message: `${vulns.length} known vulnerabilities, more than the ${MAX_VULNERABILITIES} a scan reads`,
-					cause: undefined,
-				})
-			}
+			// Sorted, so the same vulnerabilities are read each time the cap bites.
+			const read = [...vulns].sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_VULNERABILITIES)
 			const records = new Map(
-				(yield* Effect.forEach(vulns, fetchRecord, { concurrency: CONCURRENCY })).map((record) => [
+				(yield* Effect.forEach(read, fetchRecord, { concurrency: CONCURRENCY })).map((record) => [
 					record.id,
 					record,
 				]),
 			)
-			return new Map(
+			const byPackage = new Map(
 				distinct.flatMap((ref) => {
 					const matched = (found.get(packageKey(ref)) ?? []).flatMap((vuln) => {
 						const record = records.get(vuln.id)
@@ -194,6 +206,7 @@ export class PackageAdvisoryCatalog extends Context.Service<
 					return list.length === 0 ? [] : [[packageKey(ref), list] as const]
 				}),
 			)
+			return { byPackage, unread: vulns.length - read.length }
 		})
 
 		return { advisories } satisfies PackageAdvisoryCatalogApi
