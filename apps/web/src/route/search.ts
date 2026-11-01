@@ -602,6 +602,7 @@ export const ReplaysSearch = Schema.Struct({
 	userId: Schema.optional(Schema.String),
 	user: Schema.optional(Schema.String),
 	group: Schema.optional(Schema.String),
+	groupId: Schema.optional(Schema.String),
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	durationMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),

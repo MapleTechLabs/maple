@@ -343,7 +343,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:audit-log:auditLogEntriesQuery:filtered  [802d9622]
+-- builder:audit-log:auditLogEntriesQuery:filtered  [73672fd7]
 SELECT
           audit_log.Id AS id,
           audit_log.OccurredAt AS occurredAt,
@@ -381,6 +381,7 @@ SELECT
           AND audit_log.RequestId = 'ray'
           AND audit_log.OccurredAt >= '2026-01-01 10:30:00'
           AND audit_log.OccurredAt <= '2026-01-03 14:15:00'
+          AND NOT ((endsWith(audit_log.Action, '.read') OR endsWith(audit_log.Action, '.called')))
         ORDER BY occurredAt DESC, id DESC
         LIMIT 50
         OFFSET 50
@@ -405,6 +406,171 @@ SELECT
         GROUP BY namespace, region
         ORDER BY dataPoints DESC
         LIMIT 200
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationAlertChecksQuery:default  [d962b560]
+SELECT
+          alert_checks.Status AS status,
+          alert_checks.SkipReason AS skipReason,
+          alert_checks.ErrorCategory AS errorCategory,
+          count() AS checks,
+          groupUniqArray(alert_checks.RuleId) AS ruleIds
+        FROM alert_checks
+        WHERE alert_checks.OrgId = 'org_sql_catalog'
+          AND alert_checks.Timestamp >= '2026-01-01 10:30:00'
+          AND alert_checks.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY status, skipReason, errorCategory
+        ORDER BY checks DESC
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationAuditActionsQuery:default  [6ad263fe]
+SELECT
+          audit_log.Action AS action,
+          countIf(audit_log.OccurredAt >= '2026-01-01 10:30:00') AS recent,
+          countIf(NOT (audit_log.OccurredAt >= '2026-01-01 10:30:00')) AS prior,
+          countIf(audit_log.Outcome != 'allowed') AS denied,
+          count() AS entries
+        FROM audit_log
+        WHERE audit_log.OrgId = 'org_sql_catalog'
+          AND audit_log.OccurredAt >= '2026-01-01 10:30:00'
+          AND audit_log.OccurredAt <= '2026-01-03 14:15:00'
+          AND audit_log.ActorType != 'system'
+        GROUP BY action
+        ORDER BY entries DESC, action ASC
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationAuditActorsQuery:default  [4f7f69dd]
+SELECT
+          audit_log.ActorType AS actorType,
+          countIf(audit_log.OccurredAt >= '2026-01-01 10:30:00') AS recent,
+          countIf(NOT (audit_log.OccurredAt >= '2026-01-01 10:30:00')) AS prior
+        FROM audit_log
+        WHERE audit_log.OrgId = 'org_sql_catalog'
+          AND audit_log.OccurredAt >= '2026-01-01 10:30:00'
+          AND audit_log.OccurredAt <= '2026-01-03 14:15:00'
+        GROUP BY actorType
+        ORDER BY actorType ASC
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationErrorFingerprintsQuery:default  [e803241e]
+SELECT
+          uniqIf(error_events_by_time.FingerprintHash, error_events_by_time.Timestamp >= '2026-01-01 10:30:00') AS distinctRecent,
+          uniqIf(error_events_by_time.FingerprintHash, error_events_by_time.Timestamp < '2026-01-01 10:30:00') AS distinctPrior
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationErrorsByDayQuery:default  [7d58d8d7]
+SELECT
+          toStartOfInterval(error_events_by_time.Timestamp, INTERVAL 86400 SECOND) AS day,
+          count() AS errors
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY day
+        ORDER BY day ASC
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationProductEventsQuery:default  [293bcbda]
+SELECT
+          product_events.EventName AS eventName,
+          product_events.Source AS source,
+          countIf(product_events.Timestamp >= '2026-01-01 10:30:00') AS recent,
+          countIf(NOT (product_events.Timestamp >= '2026-01-01 10:30:00')) AS prior,
+          max(product_events.Timestamp) AS lastAt,
+          count() AS events
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.GroupId = 'org_customer'
+          AND product_events.Kind = 'custom'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY eventName, source
+        ORDER BY events DESC, eventName ASC, source ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationResourceAttributesQuery:default  [084a915f]
+SELECT
+          attribute_values_hourly.AttributeKey AS attributeKey,
+          attribute_values_hourly.AttributeValue AS attributeValue,
+          sum(attribute_values_hourly.UsageCount) AS spans
+        FROM attribute_values_hourly
+        WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
+          AND attribute_values_hourly.AttributeScope = 'resource'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND attribute_values_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND attribute_values_hourly.AttributeKey IN ('deployment.environment', 'deployment.environment.name', 'telemetry.sdk.language', 'telemetry.sdk.name', 'telemetry.sdk.version')
+        GROUP BY attributeKey, attributeValue
+        ORDER BY spans DESC, attributeKey ASC, attributeValue ASC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationResourceSpansQuery:default  [14b942a7]
+SELECT
+          sum(attribute_values_hourly.UsageCount) AS spans
+        FROM attribute_values_hourly
+        WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
+          AND attribute_values_hourly.AttributeScope = 'resource'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND attribute_values_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND attribute_values_hourly.AttributeKey = 'service.name'
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationServiceCountsQuery:default  [e3e57a86]
+SELECT
+          uniqIf(service_usage.ServiceName, service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS distinctRecent,
+          uniqIf(service_usage.ServiceName, service_usage.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS distinctPrior
+        FROM service_usage
+        WHERE service_usage.OrgId = 'org_sql_catalog'
+          AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_usage.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationServiceUsageQuery:default  [c58bb08c]
+SELECT
+          service_usage.ServiceName AS serviceName,
+          sumIf(service_usage.TraceSizeBytes, service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS recentTraceBytes,
+          sumIf(service_usage.LogSizeBytes, service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS recentLogBytes,
+          sumIf(service_usage.SumMetricSizeBytes + service_usage.GaugeMetricSizeBytes + service_usage.HistogramMetricSizeBytes + service_usage.ExpHistogramMetricSizeBytes, service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS recentMetricBytes,
+          sumIf(service_usage.TraceSizeBytes, service_usage.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS priorTraceBytes,
+          sumIf(service_usage.LogSizeBytes, service_usage.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS priorLogBytes,
+          sumIf(service_usage.SumMetricSizeBytes + service_usage.GaugeMetricSizeBytes + service_usage.HistogramMetricSizeBytes + service_usage.ExpHistogramMetricSizeBytes, service_usage.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS priorMetricBytes,
+          sum(service_usage.TraceSizeBytes + service_usage.LogSizeBytes + (service_usage.SumMetricSizeBytes + service_usage.GaugeMetricSizeBytes + service_usage.HistogramMetricSizeBytes + service_usage.ExpHistogramMetricSizeBytes)) AS totalBytes,
+          min(service_usage.Hour) AS firstHour,
+          max(service_usage.Hour) AS lastHour,
+          uniqIf(toStartOfInterval(service_usage.Hour, INTERVAL 86400 SECOND), service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS activeDaysRecent,
+          uniqIf(toStartOfInterval(service_usage.Hour, INTERVAL 86400 SECOND), service_usage.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))) AS activeDaysPrior
+        FROM service_usage
+        WHERE service_usage.OrgId = 'org_sql_catalog'
+          AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_usage.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        ORDER BY totalBytes DESC, serviceName ASC
+        LIMIT 15
+        FORMAT JSON
+
+-- builder:cancellation-evidence:cancellationToolCallsQuery:default  [1d61f7aa]
+SELECT
+          JSONExtractString(audit_log.Metadata, 'tool') AS tool,
+          JSONExtractString(audit_log.Metadata, 'surface') AS surface,
+          countIf(audit_log.OccurredAt >= '2026-01-01 10:30:00') AS recent,
+          countIf(NOT (audit_log.OccurredAt >= '2026-01-01 10:30:00')) AS prior,
+          countIf(JSONExtractBool(audit_log.Metadata, 'is_error')) AS errors,
+          count() AS calls
+        FROM audit_log
+        WHERE audit_log.OrgId = 'org_sql_catalog'
+          AND audit_log.OccurredAt >= '2026-01-01 10:30:00'
+          AND audit_log.OccurredAt <= '2026-01-03 14:15:00'
+          AND audit_log.ActorType != 'system'
+          AND audit_log.Action = 'mcp_tool.called'
+        GROUP BY tool, surface
+        ORDER BY calls DESC, tool ASC
+        LIMIT 15
         FORMAT JSON
 
 -- builder:ci-runs:ciActorStatsQuery:allWorkflows  [890fdba4]

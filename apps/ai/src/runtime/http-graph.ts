@@ -11,6 +11,8 @@
  *     worth pinning.
  *   - `/internal/mcp/tools`: the public tool catalog for Settings > MCP, typed and
  *     served here because the registry lives in this Worker.
+ *   - `/internal/cancellation-review/read`: the model's read of a plan
+ *     cancellation, asked by api's cancellation review over the same binding.
  *   - `/api/security-audit/*`: scheduled security audits, typed and served here because the
  *     Workflow that runs them is hosted in this Worker.
  *   - `/internal/triage/classify` — the decision model behind the investigation
@@ -26,6 +28,10 @@ import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
+import {
+	CancellationModelLive,
+	HttpCancellationReviewLive,
+} from "../routes/internal/cancellation-review.http"
 import { HttpMcpToolsLive } from "../routes/internal/mcp-tools.http"
 import { HttpSecurityAuditLive } from "../routes/security-audit.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
@@ -65,6 +71,7 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 		),
 	),
 	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
+	Layer.provide(HttpCancellationReviewLive.pipe(Layer.provide(CancellationModelLive))),
 	Layer.provide(ApiErrorBoundaryLive),
 )
 

@@ -163,6 +163,7 @@ export {
 	sessionActivityAggregateQuery,
 	IDLE_GAP_THRESHOLD_MS,
 	type SessionTranscriptOutput,
+	type SessionTranscriptOpts,
 	type SessionEventMatchOpts,
 	type SessionActivityOpts,
 	type SessionActivityOutput,
@@ -611,6 +612,22 @@ export {
 	type AuditLogEntriesOpts,
 	type AuditLogEntriesOutput,
 } from "./queries/audit-log"
+
+// Queries — Cancellation evidence (what a cancelling org sent and did)
+export {
+	CANCELLATION_RESOURCE_KEYS,
+	cancellationAlertChecksQuery,
+	cancellationAuditActionsQuery,
+	cancellationAuditActorsQuery,
+	cancellationErrorFingerprintsQuery,
+	cancellationErrorsByDayQuery,
+	cancellationProductEventsQuery,
+	cancellationResourceAttributesQuery,
+	cancellationResourceSpansQuery,
+	cancellationServiceCountsQuery,
+	cancellationServiceUsageQuery,
+	cancellationToolCallsQuery,
+} from "./queries/cancellation-evidence"
 
 // Queries — Cloudflare integration usage (integrations-page ingest proof)
 

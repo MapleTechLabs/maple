@@ -7,33 +7,13 @@
  * cron tick with no tenant of its own, so the internal service token is the
  * whole identity, and nothing of the org's is read or written on this path.
  */
-import { timingSafeEqual } from "node:crypto"
-import {
-	INTERNAL_SERVICE_BEARER_PREFIX,
-	IncidentTriageModelError,
-	IncidentTriageUnauthorizedError,
-	MapleAiApi,
-} from "@maple/domain/http"
+import { IncidentTriageModelError, IncidentTriageUnauthorizedError, MapleAiApi } from "@maple/domain/http"
 import { Effect, Option, Redacted } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { loadLlmSettings, resolveDecisionModel } from "../../platform/Llm"
 import { classifyIncident } from "../../triage/incident-classifier"
-
-/**
- * Constant-time check of `Authorization: Bearer maple_svc_<token>` against the
- * configured `INTERNAL_SERVICE_TOKEN`; the same check `resolveMcpTenantContext`
- * makes for the chat agent. Compares UTF-8 bytes, because `timingSafeEqual`
- * throws on unequal buffer lengths.
- */
-const isValidServiceBearer = (authorization: string, expected: string): boolean => {
-	const [scheme, token] = authorization.split(" ")
-	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return false
-	if (!token.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)) return false
-	const provided = Buffer.from(token.slice(INTERNAL_SERVICE_BEARER_PREFIX.length), "utf8")
-	const wanted = Buffer.from(expected, "utf8")
-	return provided.length === wanted.length && timingSafeEqual(provided, wanted)
-}
+import { isValidServiceBearer } from "./service-bearer"
 
 export const HttpTriageLive = HttpApiBuilder.group(MapleAiApi, "triage", (handlers) =>
 	handlers.handle("classify", ({ headers, payload }) =>
