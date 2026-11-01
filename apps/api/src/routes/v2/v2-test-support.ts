@@ -536,6 +536,7 @@ export const PlanetScaleServiceStubsLayer = Layer.mergeAll(
 		hasConnection: die,
 		connectedByUserId: die,
 		grantStatus: die,
+		markRevoked: die,
 		disconnect: die,
 	}),
 	Layer.succeed(PlanetScaleService, {
