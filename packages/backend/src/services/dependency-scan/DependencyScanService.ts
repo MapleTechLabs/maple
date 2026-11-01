@@ -20,6 +20,7 @@ import {
 } from "@maple/domain/http"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { DependencyFindingStatus } from "@maple/domain/dependency-scan"
+import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -49,6 +50,10 @@ const RUNNING_WINDOW_MS = 24 * 60 * 60 * 1000
 export const PRODUCTION_SCANS_PER_READ = 10
 
 export type RunningCommitRow = typeof CH.runningCommitsRowSchema.Type
+const RunningCommitRows = Schema.Array(CH.runningCommitsRowSchema)
+const RUNNING_COMMITS_CACHE_BUCKET = "dependency-running-commits"
+/** Running commits move with deploys, not by the second: one warehouse read per org a minute. */
+const RUNNING_COMMITS_CACHE_MS = 60_000
 
 export class RunningCommitsReadError extends Schema.TaggedError<RunningCommitsReadError>()(
 	"@maple/dependency-scan/RunningCommitsReadError",
@@ -69,23 +74,34 @@ export class RunningCommits extends Context.Service<
 		this,
 		Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService
+			const edgeCache = yield* EdgeCacheService
 			return {
+				// The tab's two reads land together: the first reads the warehouse, the second the cache.
 				read: (tenant, window) =>
-					warehouse
-						.compiledQuery(
-							tenant,
-							CH.compile(
-								CH.runningCommitsQuery(),
-								{
-									orgId: tenant.orgId,
-									startTime: formatWarehouseDateTime(window.startMs),
-									endTime: formatWarehouseDateTime(window.endMs),
-								},
-								{ rowSchema: CH.runningCommitsRowSchema },
+					edgeCache
+						.getOrCompute(
+							{
+								bucket: RUNNING_COMMITS_CACHE_BUCKET,
+								key: `${tenant.orgId}:${Math.floor(window.endMs / RUNNING_COMMITS_CACHE_MS)}`,
+								ttlSeconds: (2 * RUNNING_COMMITS_CACHE_MS) / 1000,
+								schema: RunningCommitRows,
+							},
+							warehouse.compiledQuery(
+								tenant,
+								CH.compile(
+									CH.runningCommitsQuery(),
+									{
+										orgId: tenant.orgId,
+										startTime: formatWarehouseDateTime(window.startMs),
+										endTime: formatWarehouseDateTime(window.endMs),
+									},
+									{ rowSchema: CH.runningCommitsRowSchema },
+								),
+								{ profile: "list", context: "dependencyRunningCommits" },
 							),
-							{ profile: "list", context: "dependencyRunningCommits" },
 						)
 						.pipe(
+							Effect.map((result) => result.value),
 							Effect.mapError(
 								(cause) =>
 									new RunningCommitsReadError({
