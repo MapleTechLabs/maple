@@ -236,6 +236,26 @@ describe("github connect flow", () => {
 		)
 	})
 
+	test("a relayed authorization (popup lost its opener) still opens the picker, not a success", () => {
+		const started = inner(disconnected(), IntegrationMessage.ClickedConnect())
+		const relayed = inner(
+			started,
+			IntegrationMessage.ReceivedConnectRelay({
+				provider: "github",
+				status: "success",
+				message: "Choose an account",
+				github: selection,
+			}),
+		)
+		expect(relayed.integrations.connect.active).toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(relayed),
+			expectView(role("button", { name: "Connect acme" })).toExist(),
+			expectView(text("GitHub connected")).not.toExist(),
+		)
+	})
+
 	test("an authorization failure ends the waiting state and keeps recovery available", () => {
 		const started = inner(disconnected(), IntegrationMessage.ClickedConnect())
 		const failed = inner(

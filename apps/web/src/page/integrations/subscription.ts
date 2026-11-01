@@ -263,9 +263,10 @@ const callbackMessages = (provider: ConnectProvider) =>
 	Stream.map(openerReturns(provider), (callback) => Message.ReceivedConnectMessage(callback))
 
 /** Every provider's status lives on this page, so every relayed return re-reads one. */
-const relayMessages = Stream.map(relayedReturns, ({ provider, status, message }) =>
-	Message.ReceivedConnectRelay({ provider, status, message: message ?? "" }),
-)
+const relayMessages = Stream.map(relayedReturns, ({ provider, status, message, github }) => {
+	const relay = { provider, status, message: message ?? "" }
+	return Message.ReceivedConnectRelay(github === undefined ? relay : { ...relay, github })
+})
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({

@@ -521,8 +521,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		EndedConnectGrace: ({ attempt }) => Connect.endedGrace(model, attempt),
 		ReceivedConnectMessage: ({ provider, status, message: text, github }) =>
 			Connect.receivedCallback(model, context, provider, status, text, github),
-		ReceivedConnectRelay: ({ provider, status, message: text }) =>
-			Connect.receivedRelay(model, context, provider, status, text),
+		ReceivedConnectRelay: ({ provider, status, message: text, github }) =>
+			Connect.receivedRelay(model, context, provider, status, text, github),
 		CompletedOAuthReturn: ({ outcome }) => completedOAuthReturn(model, context, outcome),
 		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Supersede"),
 		ClickedRetryFailedStatuses: () =>

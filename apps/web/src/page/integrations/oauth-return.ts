@@ -64,6 +64,7 @@ export const RelayMessage = Schema.Struct({
 	provider: ConnectProvider,
 	status: Schema.String,
 	message: Schema.String,
+	github: Schema.optionalKey(GithubInstallationSelection),
 })
 const decodeRelay = Schema.decodeUnknownOption(RelayMessage)
 
@@ -86,7 +87,8 @@ const handOff = (
 		const opener: unknown = window.opener
 		if (!isOpener(opener) || opener.closed) {
 			const channel = new BroadcastChannel(RELAY_CHANNEL)
-			channel.postMessage({ sender: RELAY_SENDER, provider, status, message })
+			const relay = { sender: RELAY_SENDER, provider, status, message }
+			channel.postMessage(github === undefined ? relay : { ...relay, github })
 			channel.close()
 			return false
 		}

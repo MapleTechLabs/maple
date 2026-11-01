@@ -70,8 +70,8 @@ export const completedInstallation = (
 		return toast(
 			settled,
 			"error",
-			"Failed to connect GitHub",
-			`${failure.message} Authorize again to retry.`,
+			"Couldn't connect GitHub",
+			`${failure.message} Click Connect GitHub to retry.`,
 		)
 	return chain(settled, [
 		(next) => ({ model: next, commands: [TrackConnected({ provider: "github" })] }),

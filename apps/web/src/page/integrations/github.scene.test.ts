@@ -111,6 +111,32 @@ describe("github card", () => {
 			expectView(text(/Choosing a different account replaces it/)).not.toExist(),
 		)
 	})
+	test("a failed rediscovery keeps the synced repositories listed under its error", () => {
+		const model = loaded()
+		const failed = pageUpdate(
+			model,
+			Message.CompletedLoadGithub({
+				key: model.statuses.github.key ?? "",
+				result: Result.succeed(
+					new GithubIntegrationStatus({
+						...status,
+						repositoryDiscovery: {
+							_tag: "Failed",
+							requestId: "discovery-2",
+							message: "GitHub rate limit exhausted.",
+						},
+					}),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("GitHub rate limit exhausted.")).toExist(),
+			expectView(text("acme-shop/shop")).toExist(),
+		)
+	})
+
 	test("the CI traces switch flips optimistically, writes once, and reverts on failure", () => {
 		const model = loaded()
 		scene({ update: pageUpdate, view }, given(model), expectView(role("switch")).toExist())

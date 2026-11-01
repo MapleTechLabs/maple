@@ -387,6 +387,7 @@ export const Message = defineMessageUnion({
 		provider: ConnectProvider,
 		status: Schema.String,
 		message: Schema.String,
+		github: Schema.optionalKey(GithubInstallationSelection),
 	},
 	/** The provider return this page was opened with, finished (`null`: there was none). */
 	CompletedOAuthReturn: { outcome: Schema.NullOr(OAuthReturnOutcome) },

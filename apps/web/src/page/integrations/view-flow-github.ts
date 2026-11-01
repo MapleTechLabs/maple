@@ -367,7 +367,7 @@ const liveStep = (h: H, model: Model): Html => {
 				: status !== null && !status.connected && !isDiscovering
 					? [installButton(h, model, "Reconnect GitHub")]
 					: []),
-			...(!isDiscovering && !discoveryFailed ? [repoTable(h, repos)] : []),
+			...(repos.length > 0 || (!isDiscovering && !discoveryFailed) ? [repoTable(h, repos)] : []),
 		],
 		showsUpRail(h),
 	)

@@ -183,7 +183,11 @@ export const receivedRelay = (
 	provider: ConnectProvider,
 	status: string,
 	message: string,
+	github?: GithubInstallationSelection,
 ): Return => {
+	// GitHub authorization that found accounts: the picker, same as a direct callback.
+	if (provider === "github" && status === "success" && github !== undefined)
+		return receivedCallback(model, context, provider, status, message, github)
 	const ended =
 		model.connect.active?.provider === provider
 			? withConnect(model, { active: null, isClosed: false })

@@ -62,8 +62,11 @@ export const relayedReturns: Stream.Stream<ConnectReturn> = Stream.callback<Conn
 			channel.onmessage = (event: MessageEvent) =>
 				Option.match(relayOf(event.data), {
 					onNone: () => undefined,
-					onSome: ({ provider, status, message }) => {
-						Queue.offerUnsafe(queue, { provider, status, message })
+					onSome: ({ provider, status, message, github }) => {
+						Queue.offerUnsafe(
+							queue,
+							github === undefined ? { provider, status, message } : { provider, status, message, github },
+						)
 					},
 				})
 			return channel
