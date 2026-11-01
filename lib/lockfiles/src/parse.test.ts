@@ -243,6 +243,27 @@ describe("npm lockfile details", () => {
 	})
 })
 
+describe("yarn berry aliases", () => {
+	it("reports an npm: alias under the real package name", async () => {
+		const lock = [
+			"__metadata:",
+			"  version: 8",
+			"",
+			'"string-width-cjs@npm:string-width@^4.2.0":',
+			"  version: 4.2.3",
+			'  resolution: "string-width-cjs@npm:string-width@4.2.3"',
+			"",
+			'"@scoped/alias@npm:@babel/core@^7.0.0":',
+			"  version: 7.0.0",
+			'  resolution: "@scoped/alias@npm:@babel/core@7.0.0"',
+			"",
+		].join("\n")
+		expect(summary(await parse("yarn.lock", lock))).toEqual(
+			expect.arrayContaining(["string-width@4.2.3:unknown", "@babel/core@7.0.0:unknown"]),
+		)
+	})
+})
+
 describe("package-lock v1 aliases", () => {
 	it("reports an npm: alias under the real package name and version", async () => {
 		const lock = {
