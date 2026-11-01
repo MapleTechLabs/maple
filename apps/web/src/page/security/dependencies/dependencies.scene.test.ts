@@ -575,6 +575,20 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("a reason at the cap with a trailing space is written without a length error", () => {
+		const reason = "x".repeat(500)
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(loaded())),
+			mounted,
+			type(role("textbox", { name: "Reason" }), `${reason} `),
+			click(role("button", { name: "Dismiss" })),
+			Command.expectHas(UpdateFinding({ findingId: FINDING_IDS.axios, status: "dismissed", reason })),
+			expectView(text(/Keep the reason under/)).toBeAbsent(),
+			Command.resolve(UpdateFinding, Message.CompletedTriage({ result: forbidden })),
+		)
+	})
+
 	test("a dismissed finding is reopened without a reason", () => {
 		const dismissed = apply(loaded(), [
 			() =>

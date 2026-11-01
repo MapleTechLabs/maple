@@ -112,7 +112,8 @@ const REASON_IDS: Field.FieldIds = {
 }
 
 const reasonField = (h: H, model: Model): Html => {
-	const error = model.isReasonSubmitted ? reasonErrorOf(model.reason.value) : null
+	// Trimmed as triage sends it, so the field never errors on a reason that was written.
+	const error = model.isReasonSubmitted ? reasonErrorOf(model.reason.value.trim()) : null
 	const state = Field.stateOf(model.reason, error !== null)
 	return Field.field(h, { state }, [
 		Field.fieldLabel(h, { ids: REASON_IDS, state }, "Reason"),
