@@ -483,7 +483,7 @@ export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	])
 
 /** `repositoryList`: the access line, then one row per repository with Configure and its switch. */
-/** `isNested` drops the busy region where a page-wide one already announces the load. */
+/** Only the rows are busy: the header's access link works while they load. `isNested` drops the slow-load note. */
 export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html => {
 	const list = panel(h, {}, [
 		panelHeader(h, {
@@ -492,7 +492,7 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): 
 			children: [line(h, "h-4", "h-2.5 w-40")],
 		}),
 		h.ul(
-			[h.Class("divide-y")],
+			[h.Class("divide-y"), h.AriaBusy(true), h.AriaLabel("Loading repositories")],
 			rows(5, (index) =>
 				h.li(
 					[h.Class("flex items-center gap-3 px-5 py-2.5")],
@@ -506,13 +506,17 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): 
 			),
 		),
 	])
-	return isNested ? list : busy(h, "Loading repositories", list)
+	return isNested ? list : h.div([h.Class("relative")], [list, slowNote(h)])
 }
 
 /** The Reviewer row: the model picker in its card. */
 export const reviewerSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class("relative flex items-center justify-between gap-6 rounded-md border bg-card px-5 py-4")],
+		[
+			h.Class("relative flex items-center justify-between gap-6 rounded-md border bg-card px-5 py-4"),
+			h.AriaBusy(true),
+			h.AriaLabel("Loading the reviewer model"),
+		],
 		[
 			h.div([h.Class("flex flex-col gap-1.5")], [bar(h, "h-3 w-24"), bar(h, "h-2.5 w-56")]),
 			bar(h, "h-8 w-56 rounded-md"),

@@ -55,14 +55,10 @@ const toggleSkeleton = <M>(
 			})
 		: fieldSkeleton(h, { mode, ...options, control: "h-8 sm:w-1/2" })
 
-/** `isNested` drops its own busy region where a page-wide one already announces the load. */
-export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode, isNested = false): Html => {
+export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 	const isRepository = mode === "repository"
 	return h.div(
-		[
-			h.Class("flex min-w-0 flex-col gap-6"),
-			...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading review rules")]),
-		],
+		[h.Class("flex min-w-0 flex-col gap-6"), h.AriaBusy(true), h.AriaLabel("Loading review rules")],
 		[
 			fieldSkeleton(h, {
 				mode,

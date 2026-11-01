@@ -1,7 +1,7 @@
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
 import * as DialogView from "../../../ui/dialog-view"
@@ -200,9 +200,9 @@ type SectionBodies = Readonly<{
 }>
 
 /** The page's three sections at the settings column width, filled with content or its skeleton. */
-const sections = (h: H, bodies: SectionBodies, attributes: ReadonlyArray<Attribute<Message>> = []): Html =>
+const sections = (h: H, bodies: SectionBodies): Html =>
 	h.div(
-		[h.Class("max-w-4xl"), ...attributes],
+		[h.Class("max-w-4xl")],
 		[
 			settingsSections(h, [
 				settingsSection(
@@ -246,15 +246,11 @@ const sections = (h: H, bodies: SectionBodies, attributes: ReadonlyArray<Attribu
 const content = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.settings.data, {
 		onEmpty: () =>
-			sections(
-				h,
-				{
-					reviewer: [reviewerSkeleton(h)],
-					defaults: [rulesFormSkeleton(h, "organization", true)],
-					repositories: [repositoryListSkeleton(h, true)],
-				},
-				[h.AriaBusy(true), h.AriaLabel("Loading review settings")],
-			),
+			sections(h, {
+				reviewer: [reviewerSkeleton(h)],
+				defaults: [rulesFormSkeleton(h, "organization")],
+				repositories: [repositoryListSkeleton(h, true)],
+			}),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
