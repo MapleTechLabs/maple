@@ -21,6 +21,8 @@ import { registerGetDashboardTool } from "./get-dashboard"
 import { registerGetIncidentTimelineTool } from "./get-incident-timeline"
 import { registerAuditSetupTool } from "./audit-setup"
 import { registerListIntegrationsTool } from "./list-integrations"
+import { registerListSecurityFindingsTool } from "./list-security-findings"
+import { registerInspectSecurityFindingTool } from "./inspect-security-finding"
 import { registerListSourcesTool } from "./list-sources"
 import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
@@ -433,6 +435,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)
 	registerListIntegrationsTool(registrar)
+	registerListSecurityFindingsTool(registrar)
+	registerInspectSecurityFindingTool(registrar)
 	registerListSourcesTool(registrar)
 	registerCiRunsTool(registrar)
 	registerCompareCommitsTool(registrar)
