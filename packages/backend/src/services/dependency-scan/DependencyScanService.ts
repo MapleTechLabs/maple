@@ -25,8 +25,6 @@ import { DependencyScanStore } from "./DependencyScanStore"
 
 /** Findings returned per read; the table sorts worst first, so the cut drops the least severe. */
 export const FINDINGS_LIMIT = 500
-/** Scans read to find each repository's latest. */
-const SCANS_LIMIT = 500
 
 export interface DependencyScanServiceApi {
 	readonly listRepositories: (
@@ -131,16 +129,10 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 				const repositories = yield* connectedRepositories(orgId).pipe(
 					Effect.mapError(persistence("Could not list repositories")),
 				)
-				const scans = yield* store
-					.listScans({ orgId, limit: SCANS_LIMIT })
+				const branchScans = yield* store
+					.latestBranchScans({ orgId })
 					.pipe(Effect.mapError(persistence("Could not list scans")))
-				// Newest first, so the first tracked-branch scan per repository is its latest.
-				const latest = scans
-					.filter((scan) => scan.defaultBranchHead)
-					.reduce((byRepository, scan) => {
-						if (!byRepository.has(scan.repositoryId)) byRepository.set(scan.repositoryId, scan)
-						return byRepository
-					}, new Map<VcsRepositoryId, DependencyScanRow>())
+				const latest = new Map(branchScans.map((scan) => [scan.repositoryId, scan]))
 				return {
 					repositories: repositories
 						.map((repository: VcsRepo) => {

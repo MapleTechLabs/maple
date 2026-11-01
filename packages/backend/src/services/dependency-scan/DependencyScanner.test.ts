@@ -9,6 +9,7 @@ import { PackageAdvisoryCatalog } from "@maple/backend/services/security/Package
 import osvFixture from "../security/__fixtures__/osv.json"
 import { DependencyScanner, DependencySources, MAX_LOCKFILE_BYTES } from "./DependencyScanner"
 import { DependencyScanStore } from "./DependencyScanStore"
+import { MAX_LOCKFILES } from "./lockfile-selection"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -273,6 +274,29 @@ describe("DependencyScanner", () => {
 			assert.isTrue(
 				lodash.every((finding) => finding.status === "fixed" && finding.fixedSha === sha("c")),
 			)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("skips an unchanged push in a repository with more lockfiles than a scan reads", () => {
+		const many = Object.fromEntries(
+			Array.from({ length: MAX_LOCKFILES + 2 }, (_, i) => [
+				`pkg${i}/package-lock.json`,
+				packageLock("4.17.15"),
+			]),
+		)
+		const state = world(many)
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const first = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(
+				first._tag === "Scanned"
+					? first.scan.lockfiles.filter((lockfile) => lockfile.status === "skipped").length
+					: 0,
+				2,
+			)
+			state.head = sha("b")
+			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
+			assert.strictEqual(again._tag, "Unchanged")
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
