@@ -106,14 +106,7 @@ export const LocalStatus = Schema.Struct({
 })
 export type LocalStatus = typeof LocalStatus.Type
 
-/** `<sidecar>/maple-server.json`, written once a server is listening. */
-export const ServerDiscovery = Schema.Struct({
-	pid: Schema.Int,
-	url: Schema.String,
-	dataDir: Schema.String,
-	startedAt: Schema.String,
-})
-export type ServerDiscovery = typeof ServerDiscovery.Type
+export { ServerDiscovery } from "@maple/local-server/server-discovery"
 
 /** Does telemetry ingested since `sinceMs` need a fresh checkpoint? Unknown
  * ingest state (`undefined`) always does. */

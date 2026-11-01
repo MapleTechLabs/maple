@@ -4,7 +4,8 @@ import type { LocalProps } from "./Local"
 
 export interface LocalConfig {
 	readonly dataDir: string
-	readonly port: number
+	/** `undefined`: 4318, or a free port when it is taken. */
+	readonly port: number | undefined
 	readonly onDirtyStore: "fail" | "wipe"
 }
 
@@ -25,7 +26,7 @@ export const localConfig = (
 			props.dataDir !== undefined
 				? resolve(props.dataDir)
 				: resolve(identity.dotAlchemy, "maple-local", key, "data"),
-		port: props.port ?? 4318,
+		port: props.port,
 		onDirtyStore: props.onDirtyStore ?? "fail",
 	}
 }

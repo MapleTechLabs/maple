@@ -16,7 +16,8 @@ describe("Maple.Local configuration", () => {
 	it("uses stable isolated storage per project, stack, stage and namespace", () => {
 		const config = localConfig({}, identity)
 		expect(config).toEqual(localConfig({}, identity))
-		expect(config.port).toBe(4318)
+		expect(config.port).toBeUndefined()
+	expect(localConfig({ port: 5000 }, identity).port).toBe(5000)
 		expect(config.onDirtyStore).toBe("fail")
 		expect(config.dataDir.startsWith("/project/.alchemy/maple-local/")).toBe(true)
 		for (const changed of [

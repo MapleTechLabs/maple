@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest"
-import { ConfigProvider, Effect, Exit, Scope } from "effect"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { ConfigProvider, Effect, Exit, Logger, Scope } from "effect"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { startLocal } from "../src/runtime"
 import { CURRENT_LOCAL_SCHEMA } from "../src/schema-identity"
-import { markStoreOpen, serverPidPath, storeMarkerPath, storeOpenMarkerPath } from "../src/store-version"
+import {
+	markStoreOpen,
+	serverDiscoveryPath,
+	serverPidPath,
+	storeMarkerPath,
+	storeOpenMarkerPath,
+} from "../src/store-version"
 import { CHDB_VERSION } from "../src/version"
 
 const withStore = async (run: (dataDir: string) => Promise<void>) => {
@@ -117,6 +123,86 @@ describe("scoped local runtime safety", () => {
 				Effect.scoped(startLocal({ dataDir, port: 0 })).pipe(Effect.flip),
 			)
 			expect(error._tag).toBe("@maple/cli/LocalStoreIncompatibleError")
+			expect(existsSync(serverPidPath(dataDir))).toBe(false)
+		})
+	})
+
+	it("binds exactly an explicit port and fails when it is taken", async () => {
+		await withStore(async (dataDir) => {
+			const holder = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } })
+			try {
+				const error = await Effect.runPromise(
+					Effect.scoped(startLocal({ dataDir, port: holder.port })).pipe(Effect.flip),
+				)
+				expect(error._tag).toBe("@maple/cli/ServerBindError")
+				expect(error.message).toContain("the `port` option")
+				expect(existsSync(serverPidPath(dataDir))).toBe(false)
+			} finally {
+				holder.stop(true)
+			}
+		})
+	})
+})
+
+/** A live process that owns `dataDir` the way another `alchemy dev` sidecar would. */
+const withForeignOwner = async (dataDir: string, run: (owner: Bun.Subprocess) => Promise<void>) => {
+	const owner = Bun.spawn(["sleep", "30"])
+	// The claim must postdate the process, or it reads as a reused PID.
+	await Bun.sleep(1100)
+	writeFileSync(serverPidPath(dataDir), String(owner.pid))
+	writeFileSync(
+		serverDiscoveryPath(dataDir),
+		JSON.stringify({
+			pid: owner.pid,
+			url: "http://127.0.0.1:47123",
+			dataDir,
+			startedAt: new Date().toISOString(),
+		}),
+	)
+	try {
+		await run(owner)
+	} finally {
+		owner.kill()
+	}
+}
+
+describe("a store another process already serves", () => {
+	it("shares the owner's server instead of opening the store", async () => {
+		await withStore(async (dataDir) => {
+			await withForeignOwner(dataDir, async (owner) => {
+				const server = await Effect.runPromise(Effect.scoped(startLocal({ dataDir })))
+				expect(server.endpoint).toBe("http://127.0.0.1:47123")
+				expect(server.dashboardUrl).toContain("port=47123")
+				expect(server.sharedWith).toBe(owner.pid)
+				// The owner's claim is untouched.
+				expect(readFileSync(serverPidPath(dataDir), "utf8")).toBe(String(owner.pid))
+			})
+		})
+	})
+
+	it("takes the store over once the owner exits", async () => {
+		await withStore(async (dataDir) => {
+			// Dirty, so the takeover stops at the store check without loading chDB.
+			markStoreOpen(dataDir)
+			const logs: string[] = []
+			const capture = Logger.layer([
+				Logger.make(({ message }) => {
+					logs.push(String(Array.isArray(message) ? message.join(" ") : message))
+				}),
+			])
+			await withForeignOwner(dataDir, async (owner) => {
+				const scope = await Effect.runPromise(Scope.make())
+				await Effect.runPromise(
+					startLocal({ dataDir }).pipe(Scope.provide(scope), Effect.provide(capture)),
+				)
+				owner.kill()
+				await owner.exited
+				for (let i = 0; i < 50 && !logs.some((line) => line.includes("cannot take over")); i++)
+					await Bun.sleep(100)
+				await Effect.runPromise(Scope.close(scope, Exit.void))
+			})
+			expect(logs.some((line) => line.includes("taking it over"))).toBe(true)
+			expect(logs.find((line) => line.includes("cannot take over"))).toContain("not cleanly closed")
 			expect(existsSync(serverPidPath(dataDir))).toBe(false)
 		})
 	})

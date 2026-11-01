@@ -44,6 +44,7 @@ import {
 	sameSnapshot,
 	STALE_PID,
 } from "@maple/local-server/store-claim"
+import { readDiscovery, removeDiscoveryFor, removeStaleDiscovery } from "@maple/local-server/server-discovery"
 import {
 	describeError,
 	DirtyStorePolicy as DirtyStorePolicySchema,
@@ -260,39 +261,6 @@ const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileErro
 // ---------------------------------------------------------------------------
 // Discovery file and status probe.
 // ---------------------------------------------------------------------------
-
-const decodeDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
-
-const readDiscovery = (path: string): Effect.Effect<Option.Option<ServerDiscovery>> =>
-	Effect.try({
-		try: () => readFileSync(path, "utf8"),
-		catch: (error) => error,
-	}).pipe(
-		Effect.map(decodeDiscovery),
-		Effect.orElseSucceed(() => Option.none<ServerDiscovery>()),
-	)
-
-/** Delete the discovery file when (and only when) it names `pid`. */
-const removeDiscoveryFor = (path: string, pid: number): Effect.Effect<void> =>
-	Effect.gen(function* () {
-		const current = yield* readDiscovery(path)
-		if (Option.isSome(current) && current.value.pid === pid) {
-			yield* ignoreFailure(() => unlinkSync(path))
-		}
-	})
-
-/** Delete a discovery file whose server is gone (crash, `kill -9`). */
-const removeStaleDiscovery = (path: string): Effect.Effect<void> =>
-	Effect.gen(function* () {
-		const current = yield* readDiscovery(path)
-		if (
-			Option.isSome(current) &&
-			current.value.pid !== process.pid &&
-			!isProcessAlive(current.value.pid)
-		) {
-			yield* ignoreFailure(() => unlinkSync(path))
-		}
-	})
 
 /**
  * `GET /local/status`, untraced: readiness polls hit ECONNREFUSED until the

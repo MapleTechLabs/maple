@@ -225,8 +225,12 @@ machine); ingest and queries never leave it.
 - **One server per stack.** Every Worker that passes the same `Local` shares it; the server
   survives stack hot reloads and closes its store when `alchemy dev` exits.
 - **Storage.** Data persists per stack, stage and resource under
-  `.alchemy/maple-local/<hash>/data`. Set `dataDir` to keep it elsewhere and `port` (default
-  `4318`) to move the listener; an occupied port fails startup rather than picking another.
+  `.alchemy/maple-local/<hash>/data`. Set `dataDir` to keep it elsewhere.
+- **Several `alchemy dev` sessions.** The listener takes `4318`, or any free port when another
+  project or worktree already holds it; the Workers get the bound endpoint either way. Setting
+  `port` binds exactly that port and fails if it is taken. A second session of the same stack and
+  stage shares the running server instead of opening the store again, and takes the store over on
+  the same port when the first session exits.
 - **libchdb.** On first use the sidecar downloads the chDB release Maple pins (the same one the
   `maple` CLI ships with), verifies its sha256, and caches it in `~/.maple/cache/libchdb`
   (~330 MB, shared by every project). Set `MAPLE_LIBCHDB` to use a library you already have; a

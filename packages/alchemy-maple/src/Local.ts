@@ -10,7 +10,10 @@ import type { LocalConfig } from "./LocalConfig"
 export interface LocalProps {
 	/** Persistent store override. Defaults to an identity-specific directory inside `.alchemy`. */
 	readonly dataDir?: string | undefined
-	/** Loopback listener port. Defaults to 4318; an occupied port fails startup. */
+	/**
+	 * Bind exactly this loopback port, failing when it is taken. Unset: 4318, or
+	 * any free port when 4318 is taken (another project or worktree).
+	 */
 	readonly port?: number | undefined
 	/**
 	 * A store whose sidecar was killed before closing it (OOM, `kill -9`, power

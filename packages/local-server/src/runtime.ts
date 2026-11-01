@@ -1,6 +1,6 @@
 /// <reference path="./assets.d.ts" />
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Config, Effect, Exit, Option, Schema, Scope } from "effect"
+import { Config, Duration, Effect, Exit, Option, Schedule, Schema, Scope } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { resolve } from "node:path"
 import { DEFAULT_REMOTE_UI_URL, hostedDashboardUrl, hostedUiOrigin, serverUrl } from "./local-address"
@@ -15,7 +15,8 @@ import { isMigrationIncomplete, readMigrationJournalStructure } from "./local-st
 import { NO_REMOTE_AUTH } from "./remote-auth"
 import { CURRENT_LOCAL_SCHEMA } from "./schema-identity"
 import { ensurePortFree, startServer } from "./serve"
-import { acquireStoreClaim } from "./store-claim"
+import { readDiscovery, removeDiscoveryFor, type ServerDiscovery, writeDiscovery } from "./server-discovery"
+import { acquireStoreClaim, locatePidFile, pidOwner } from "./store-claim"
 import {
 	describeError,
 	type DirtyStorePolicy,
@@ -32,6 +33,7 @@ import {
 	isSchemaIdentityStale,
 	isStoreDirty,
 	newerStoreSchemaVersion,
+	serverDiscoveryPath,
 } from "./store-version"
 import { resolveUiAssets } from "./ui-assets"
 import { CHDB_VERSION } from "./version"
@@ -46,6 +48,7 @@ export type LocalDirtyStorePolicy = Extract<DirtyStorePolicy, "fail" | "wipe">
 
 export interface LocalOptions {
 	readonly dataDir: string
+	/** Bind exactly this port, failing when it is taken. Unset: 4318, or any free port when 4318 is taken. */
 	readonly port?: number
 	/** Load libchdb from this path instead of `MAPLE_LIBCHDB` or the default locations. */
 	readonly libchdb?: string
@@ -58,9 +61,43 @@ export interface LocalServer {
 	readonly endpoint: string
 	readonly dashboardUrl: string
 	readonly dataDir: string
+	/** The PID serving this store when another process owns it (a second `alchemy dev`). */
+	readonly sharedWith?: number
 }
 
 const HOSTNAME = "127.0.0.1"
+const DEFAULT_PORT = 4318
+
+/** Another live process owns the store. */
+export class LocalStoreBusyError extends Schema.TaggedError<LocalStoreBusyError>()(
+	"@maple/local-server/LocalStoreBusyError",
+	{ dataDir: Schema.String, pid: Schema.UndefinedOr(Schema.Int), message: Schema.String },
+) {}
+
+const storeBusy = (dataDir: string) => (pid: number | undefined) =>
+	new LocalStoreBusyError({
+		dataDir,
+		pid,
+		message: `the local store at ${dataDir} is already in use${pid === undefined ? "" : ` by PID ${pid}`}`,
+	})
+
+/** `port` is what to try first; `strict` refuses a fallback to a free one. */
+interface PortChoice {
+	readonly port: number
+	readonly strict: boolean
+}
+
+const bindablePort = ({ port, strict }: PortChoice) =>
+	strict
+		? ensurePortFree(HOSTNAME, port, "the `port` option").pipe(Effect.as(port))
+		: ensurePortFree(HOSTNAME, port).pipe(
+				Effect.as(port),
+				Effect.catchTag("@maple/cli/ServerBindError", () =>
+					Effect.logInfo(`port ${port} is in use; Maple Local takes a free port instead`).pipe(
+						Effect.as(0),
+					),
+				),
+			)
 
 /** Fail closed on any store the CLI would only open after an explicit choice. */
 const refuseUnsafeStore = (dataDir: string, onDirtyStore: LocalDirtyStorePolicy) =>
@@ -179,10 +216,9 @@ const remoteUiUrl = Effect.gen(function* () {
 const processState = globalThis as typeof globalThis & { __mapleLocalRuntimeOwner?: string }
 
 /** Acquires into the ambient scope; {@link startLocal} owns that scope's failure path. */
-const acquireLocal = (options: LocalOptions) =>
+const acquireLocal = (options: LocalOptions, portChoice: PortChoice) =>
 	Effect.gen(function* () {
 		const dataDir = resolve(options.dataDir)
-		const port = options.port ?? 4318
 
 		// chDB holds process-global native state, even across re-imported modules (HMR).
 		yield* Effect.acquireRelease(
@@ -198,14 +234,8 @@ const acquireLocal = (options: LocalOptions) =>
 					delete processState.__mapleLocalRuntimeOwner
 				}),
 		)
-		yield* acquireStoreClaim(
-			dataDir,
-			(pid) =>
-				new ServerStateError({
-					message: `the local store at ${dataDir} is already in use${pid === undefined ? "" : ` by PID ${pid}`}`,
-				}),
-		)
-		yield* ensurePortFree(HOSTNAME, port, "the `port` option")
+		yield* acquireStoreClaim(dataDir, storeBusy(dataDir))
+		const port = yield* bindablePort(portChoice)
 		const ui = yield* remoteUiUrl
 		// Per start, never sticky: a retry without `libchdb` falls back to MAPLE_LIBCHDB.
 		yield* Effect.acquireRelease(
@@ -228,9 +258,21 @@ const acquireLocal = (options: LocalOptions) =>
 			auth: NO_REMOTE_AUTH,
 			assets: yield* resolveUiAssets(),
 		})
+		const endpoint = serverUrl(HOSTNAME, boundPort)
+		// How a second `alchemy dev` of the same stack finds this server (and `maple status` too).
+		const discoveryPath = serverDiscoveryPath(dataDir)
+		yield* Effect.acquireRelease(
+			writeDiscovery(discoveryPath, {
+				pid: process.pid,
+				url: endpoint,
+				dataDir,
+				startedAt: new Date().toISOString(),
+			}),
+			() => removeDiscoveryFor(discoveryPath, process.pid),
+		)
 		return {
 			port: boundPort,
-			endpoint: serverUrl(HOSTNAME, boundPort),
+			endpoint,
 			dashboardUrl: hostedDashboardUrl(ui.url, boundPort),
 			dataDir,
 		} satisfies LocalServer
@@ -238,10 +280,101 @@ const acquireLocal = (options: LocalOptions) =>
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	}).pipe(Effect.provide(BunServices.layer))
 
+/** The live process holding the store's claim, if any. */
+const claimOwner = (dataDir: string) =>
+	Effect.gen(function* () {
+		const located = yield* locatePidFile(dataDir)
+		if (Option.isNone(located)) return undefined
+		const owner = yield* pidOwner(located.value.snapshot)
+		return owner.kind === "live" ? owner.pid : undefined
+	})
+
+/** Opens the store in a scope forked from `parent`, closed again if the start fails. */
+const own = (options: LocalOptions, portChoice: PortChoice, parent: Scope.Scope) =>
+	Effect.gen(function* () {
+		const attempt = yield* Scope.fork(parent)
+		return yield* acquireLocal(options, portChoice).pipe(
+			Scope.provide(attempt),
+			Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(attempt, exit) : Effect.void)),
+		)
+	})
+
+/**
+ * The owner's discovery record, or `None` once nobody holds the claim. It is
+ * written right after the owner binds, so a claim moments old may lack one.
+ */
+const awaitOwnerServer = (dataDir: string, busy: LocalStoreBusyError) =>
+	Effect.gen(function* () {
+		const pid = yield* claimOwner(dataDir)
+		if (pid === undefined) return Option.none<ServerDiscovery>()
+		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
+		if (Option.isNone(discovery) || discovery.value.pid !== pid) return yield* busy
+		return discovery
+	}).pipe(Effect.retry({ schedule: Schedule.spaced(Duration.millis(250)), times: 40 }))
+
+const ownOrShare = (
+	options: LocalOptions,
+	portChoice: PortChoice,
+	parent: Scope.Scope,
+): Effect.Effect<LocalServer, Effect.Error<ReturnType<typeof acquireLocal>> | LocalUiUrlError> =>
+	own(options, portChoice, parent).pipe(
+		Effect.catchTag("@maple/local-server/LocalStoreBusyError", (busy) =>
+			share(options, portChoice, parent, busy),
+		),
+	)
+
+/**
+ * Serve from the process that already owns this store (the same stack in a
+ * second `alchemy dev`) rather than fail, and take the store over on the
+ * owner's port once that process lets go of it, so the Workers' endpoint holds.
+ */
+const share = (
+	options: LocalOptions,
+	portChoice: PortChoice,
+	parent: Scope.Scope,
+	busy: LocalStoreBusyError,
+) =>
+	Effect.gen(function* () {
+		const dataDir = resolve(options.dataDir)
+		const found = yield* awaitOwnerServer(dataDir, busy)
+		// The owner let go while we looked (its own start failed): try to own it again.
+		if (Option.isNone(found)) return yield* ownOrShare(options, portChoice, parent)
+		const owner = found.value
+		const ui = yield* remoteUiUrl
+		const port = Number(new URL(owner.url).port)
+		yield* Effect.logInfo(
+			`Maple Local for ${dataDir} is already running in PID ${owner.pid} (another alchemy dev of this stack); sharing it`,
+		)
+		yield* Effect.gen(function* () {
+			yield* claimOwner(dataDir).pipe(
+				Effect.repeat({
+					while: (pid) => pid !== undefined,
+					schedule: Schedule.spaced(Duration.seconds(1)),
+				}),
+			)
+			yield* Effect.logInfo(`PID ${owner.pid} let go of Maple Local at ${dataDir}; taking it over`)
+			yield* ownOrShare(options, { port, strict: false }, parent).pipe(
+				Effect.catch((error) =>
+					Effect.logError(`cannot take over Maple Local at ${dataDir}: ${error.message}`),
+				),
+			)
+		}).pipe(Effect.forkIn(parent))
+		return {
+			port,
+			endpoint: owner.url,
+			dashboardUrl: hostedDashboardUrl(ui.url, port),
+			dataDir,
+			sharedWith: owner.pid,
+		} satisfies LocalServer
+	})
+
 /**
  * Own one embedded loopback Maple server until the caller's scope closes. No CLI
  * command or Maple executable runs. Unsafe stores fail closed; recovery stays
  * explicit. Periodic checkpoints belong to `maple start`.
+ *
+ * When another live process already owns the store, it shares that server
+ * instead (see {@link share}).
  *
  * A failed start releases everything it acquired (process ownership, the PID
  * claim) before failing, even when the caller keeps its scope open: Alchemy
@@ -249,9 +382,9 @@ const acquireLocal = (options: LocalOptions) =>
  */
 export const startLocal = (options: LocalOptions) =>
 	Effect.gen(function* () {
-		const attempt = yield* Scope.fork(yield* Scope.Scope)
-		return yield* acquireLocal(options).pipe(
-			Scope.provide(attempt),
-			Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(attempt, exit) : Effect.void)),
-		)
+		const portChoice: PortChoice =
+			options.port === undefined
+				? { port: DEFAULT_PORT, strict: false }
+				: { port: options.port, strict: true }
+		return yield* ownOrShare(options, portChoice, yield* Scope.Scope)
 	})
