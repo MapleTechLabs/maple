@@ -339,8 +339,8 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 	)
 }
 
-const toolView = (h: H, model: Model, tool: string, timeZone: string): Html => {
-	const detail = dataFor(model.tool.data, (value) => value.tool === tool)
+const toolView = (h: H, model: Model, service: string, tool: string, timeZone: string): Html => {
+	const detail = dataFor(model.tool.data, (value) => value.service === service && value.tool === tool)
 	const data = AsyncData.getOrElse(detail, () => undefined)
 	const window = windowOf(model)
 	const filters = { ...filtersOf(model), search: "" }
@@ -410,7 +410,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				? serversView(h, model, timeZone)
 				: model.view._tag === "Server"
 					? serverView(h, model, model.view.service, timeZone)
-					: toolView(h, model, model.view.tool, timeZone),
+					: toolView(h, model, model.view.service, model.view.tool, timeZone),
 		],
 	)
 })

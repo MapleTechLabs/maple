@@ -104,6 +104,7 @@ const splitSeries = (
 type ClientReach = Readonly<{
 	client: string
 	kind: string
+	calls: number
 	connects: number
 	sources: number
 	lastSeen: DateTime.Utc
@@ -114,6 +115,7 @@ const kindOf = (value: string) => MCP_CLIENT_KINDS.find((kind) => kind === value
 /**
  * Tool-call clients with their reach. `quiet` also lists the clients that connected but called
  * no tool, after the callers; only a selection that tool calls alone can match leaves them out.
+ * A quiet row is one with no tool call at all, so a caller past the calls read's limit stays out.
  */
 export const clientItems = (
 	rows: ReadonlyArray<Readonly<{ client: string; kind: string; calls: number; errors: number }>>,
@@ -136,7 +138,7 @@ export const clientItems = (
 			}
 		}),
 		...quiet
-			.filter((row) => !callers.has(row.client))
+			.filter((row) => row.calls === 0 && !callers.has(row.client))
 			.map((row) => ({
 				name: row.client,
 				kind: kindOf(row.kind),
@@ -482,6 +484,7 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 	const total = totals[0]
 	const hasCalls = total !== undefined && total.calls > 0
 	return new McpToolResponse({
+		service: payload.service,
 		tool: payload.tool,
 		calls: total?.calls ?? 0,
 		errors: total?.errors ?? 0,

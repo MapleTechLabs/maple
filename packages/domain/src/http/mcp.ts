@@ -189,6 +189,7 @@ export const McpErrorGroupItem = Schema.Struct({
 export type McpErrorGroupItem = typeof McpErrorGroupItem.Type
 
 export class McpToolResponse extends Schema.Class<McpToolResponse>("McpToolResponse")({
+	service: Schema.String,
 	tool: Schema.String,
 	calls: Schema.Number,
 	errors: Schema.Number,

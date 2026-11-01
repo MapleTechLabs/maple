@@ -2,17 +2,18 @@ import { DateTime } from "effect"
 import { describe, expect, it } from "vitest"
 import { clientItems } from "./mcp-reads"
 
-const seen = (client: string, kind: string, connects: number, sources: number) => ({
+const seen = (client: string, kind: string, connects: number, sources: number, calls = 0) => ({
 	client,
 	kind,
+	calls,
 	connects,
 	sources,
 	lastSeen: DateTime.makeUnsafe(Date.UTC(2026, 10, 1, 12, 0)),
 })
 
 const reach = [
-	seen("Claude Code", "agent", 620, 25),
-	seen("curl", "script", 0, 3),
+	seen("Claude Code", "agent", 620, 25, 242),
+	seen("curl", "script", 0, 3, 2283),
 	seen("executor", "internal", 45, 1),
 ]
 const calls = [
@@ -39,6 +40,11 @@ describe("clientItems", () => {
 			["executor", 0],
 		])
 		expect(items[2]).toMatchObject({ kind: "internal", connects: 45, errors: 0 })
+	})
+
+	it("never files a caller past the calls read's limit as connected without calling", () => {
+		const items = clientItems(calls, reach, [...reach, seen("Cursor", "agent", 3, 1, 7)])
+		expect(items.map((item) => item.name)).not.toContain("Cursor")
 	})
 
 	it("reads an unrecognised kind as unknown and a client without reach as unseen", () => {
