@@ -172,13 +172,10 @@ const markIcon = (h: HtmlBuilder<Message>, mark: Mark): Html =>
 		[icon(h, mark.icon, { size: 12, className: mark.className })],
 	)
 
-/** An empty tech slot, so names align whether or not a row has a mark. */
-const emptySlot = (h: HtmlBuilder<Message>): Html => h.span([h.Class("w-3 shrink-0")], [])
-
-/** What the span called (Postgres, Kafka, an LLM), left of its name. */
-const techIcon = (h: HtmlBuilder<Message>, span: SpanNodeData): Html => {
+/** What the span called (Postgres, Kafka, an LLM), left of its name; nothing when unknown. */
+const techIcon = (h: HtmlBuilder<Message>, span: SpanNodeData): ReadonlyArray<Html> => {
 	const tech = spanTech({ ...span.spanAttributes })
-	return tech === null ? emptySlot(h) : markIcon(h, tech)
+	return tech === null ? [] : [markIcon(h, tech)]
 }
 
 const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Html => {
@@ -198,7 +195,6 @@ const missingRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext): Htm
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
-					emptySlot(h),
 					badge(
 						h,
 						{
@@ -481,7 +477,7 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 				[
 					...treeGuides(h, row, ctx.isExpanded),
 					toggle(h, span, ctx.isExpanded),
-					techIcon(h, span),
+					...techIcon(h, span),
 					nameLabel(h, span, httpInfo),
 					...serviceLabel(h, row),
 					...edgeLabel(h, span),
