@@ -487,6 +487,35 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("the plan bumps to the highest fix any lockfile needs for one advisory", () => {
+		const findings = findingsOf(NOW)
+		// The critical axios advisory again, in a lockfile whose line is fixed later.
+		const copies = findings.findings.flatMap((finding) =>
+			finding.id === FINDING_IDS.axios
+				? [
+						{
+							...finding,
+							id: FINDING_IDS.jwt,
+							lockfilePath: "apps/admin/pnpm-lock.yaml",
+							fixedIn: "1.13.0",
+						},
+					]
+				: [],
+		)
+		const routed = routeChanged(
+			loaded(repositoriesOf(NOW), { ...findings, findings: [...copies, ...findings.findings] }),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		const plan = role("table", { name: "Upgrade plan for acme/payments-api" })
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(within(plan, text("1.13.0"))).toExist(),
+			expectView(within(plan, text("2 advisories"))).toExist(),
+		)
+	})
+
 	test("the plan counts an advisory once however many lockfiles carry it", () => {
 		const findings = findingsOf(NOW)
 		// The critical axios advisory again, locked in a second lockfile.
@@ -571,11 +600,18 @@ describe("security dependencies tab", () => {
 				isReplace: true,
 			}),
 		)
-		const routed = routeChanged(
+		const navigated = routeChanged(
 			loaded(),
 			AppRoute.SecurityDependencies({ search: { repo: "gone" } }),
 			context,
-		).model
+		)
+		expect(navigated.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.SecurityDependencies({ search: {} })),
+				isReplace: true,
+			}),
+		)
+		const routed = navigated.model
 		scene(
 			{ update: pageUpdate, view },
 			given(routed),

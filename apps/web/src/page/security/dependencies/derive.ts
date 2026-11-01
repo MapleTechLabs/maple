@@ -218,8 +218,10 @@ const byAdvisory = (findings: ReadonlyArray<DependencyFindingView>): ReadonlyArr
 const stepOf = (key: string, findings: ReadonlyArray<DependencyFindingView>): UpgradeStep => {
 	const [first] = findings
 	const ecosystem = first?.ecosystem ?? "npm"
-	const fixes = byAdvisory(findings.filter((finding) => finding.fixedIn !== null))
-	const target = fixes.reduce<string | null>(
+	const fixable = findings.filter((finding) => finding.fixedIn !== null)
+	const fixes = byAdvisory(fixable)
+	// Every lockfile's fix counts: one advisory can need a higher version in another lockfile.
+	const target = fixable.reduce<string | null>(
 		(highest, finding) =>
 			finding.fixedIn !== null &&
 			(highest === null || compareVersions(ecosystem, finding.fixedIn, highest) > 0)

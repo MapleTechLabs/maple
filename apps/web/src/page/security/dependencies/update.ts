@@ -99,13 +99,8 @@ export const init = (route: SecurityDependenciesRoute, context: PageContext): Re
 }
 
 /** Same instance: only the focused repository changed, so nothing is read again. */
-export const routeChanged = (
-	model: Model,
-	route: SecurityDependenciesRoute,
-	_context: PageContext,
-): Return => ({
-	model: withRoute(model, route),
-})
+export const routeChanged = (model: Model, route: SecurityDependenciesRoute, _context: PageContext): Return =>
+	dropUnknownRepository({ model: withRoute(model, route) })
 
 const selectStep = (
 	model: Model,
