@@ -117,7 +117,13 @@ export const serverError = <M>(
 /** The server answered nothing in the window; `lastCall` when the page knows when it last did. */
 export const quietWindow = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ service: string; window: string; lastCall?: string; onWiden: M; widenLabel: string }>,
+	options: Readonly<{
+		service: string
+		window: string
+		lastCall?: string
+		/** Absent at the widest window the page offers. */
+		widen?: Readonly<{ onWiden: M; label: string }>
+	}>,
 ): Html =>
 	h.div(
 		[h.Class("border-t border-border px-6 py-14")],
@@ -132,11 +138,21 @@ export const quietWindow = <M>(
 							: `${options.service} last answered a tool call ${options.lastCall}.`,
 					]),
 				]),
-				emptyContent(h, [
-					button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(options.onWiden)] }, [
-						options.widenLabel,
-					]),
-				]),
+				...(options.widen === undefined
+					? []
+					: [
+							emptyContent(h, [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(options.widen.onWiden)],
+									},
+									[options.widen.label],
+								),
+							]),
+						]),
 			]),
 		],
 	)

@@ -2766,7 +2766,7 @@ SELECT
         GROUP BY bucket, key
         FORMAT JSON
 
--- builder:mcp:mcpCallTotalsQuery:filtered  [9f07a7b9]
+-- builder:mcp:mcpCallTotalsQuery:filtered  [b5358d3d]
 SELECT
           count() AS calls,
           countIf(traces.SpanAttributes['error.type'] != '') AS errors,
@@ -2774,7 +2774,7 @@ SELECT
           ifNull(ifNotFinite(quantile(0.5)(traces.Duration), 0), 0) AS p50,
           ifNull(ifNotFinite(quantile(0.9)(traces.Duration), 0), 0) AS p90,
           ifNull(ifNotFinite(quantile(0.95)(traces.Duration), 0), 0) AS p95,
-          uniqExact(traces.SpanAttributes['gen_ai.tool.name']) AS tools,
+          uniqExact(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
           min(traces.Timestamp) AS firstCall,
           max(traces.Timestamp) AS lastCall
         FROM traces
@@ -2930,14 +2930,14 @@ SELECT
         GROUP BY service, bucket
         FORMAT JSON
 
--- builder:mcp:mcpServerStatsQuery:twoServers  [06393e6b]
+-- builder:mcp:mcpServerStatsQuery:twoServers  [9100de19]
 SELECT
           traces.ServiceName AS service,
           any(traces.SpanAttributes['mcp.protocol.version']) AS protocolVersion,
           count() AS calls,
           countIf(traces.SpanAttributes['error.type'] != '') AS errors,
           ifNull(ifNotFinite(quantile(0.95)(traces.Duration), 0), 0) AS p95,
-          uniqExact(traces.SpanAttributes['gen_ai.tool.name']) AS tools,
+          uniqExact(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
           max(traces.Timestamp) AS lastCall
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -3007,7 +3007,7 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- builder:mcp:mcpToolStatsQuery:default  [0b3ebd3f]
+-- builder:mcp:mcpToolStatsQuery:default  [02f92705]
 SELECT
           traces.SpanAttributes['gen_ai.tool.name'] AS tool,
           count() AS calls,
@@ -3024,6 +3024,7 @@ SELECT
           AND traces.ServiceName = 'maple-ai'
           AND traces.SpanAttributes['mcp.method.name'] != ''
           AND traces.SpanAttributes['mcp.method.name'] = 'tools/call'
+          AND traces.SpanAttributes['gen_ai.tool.name'] != ''
         GROUP BY tool
         ORDER BY calls DESC
         LIMIT 500

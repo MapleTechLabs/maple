@@ -125,10 +125,18 @@ const requestView = (model: Model, context: PageContext, mode: RequestMode): Ret
 }
 
 /** The quiet window's way out: a week, or a month once the page already shows a week or more. */
-export const widerPreset = (search: Search): string =>
-	search.startTime === undefined && ["7d", "1w", "2w", "30d", "1mo"].includes(search.timePreset ?? "")
-		? "30d"
-		: "7d"
+const DAY_MS = 86_400_000
+const WIDER_PRESETS = [
+	["1w", 7 * DAY_MS],
+	["1mo", 30 * DAY_MS],
+	["3mo", 90 * DAY_MS],
+] as const
+
+/** The quiet window's way out: the first preset longer than the window shown, none past three months. */
+export const widerPreset = (window: TimeWindow | null): string | undefined => {
+	const length = window === null ? 0 : toEpochMs(window.endTime) - toEpochMs(window.startTime)
+	return WIDER_PRESETS.find(([, ms]) => ms > length * 1.01)?.[0]
+}
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -290,13 +298,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				endTime: undefined,
 				timePreset: DEFAULT_MCP_PRESET,
 			}),
-		ClickedWiden: () =>
-			navigate(model, {
-				...model.search,
-				startTime: undefined,
-				endTime: undefined,
-				timePreset: widerPreset(model.search),
-			}),
+		ClickedWiden: () => {
+			const preset = widerPreset(model.window)
+			return preset === undefined
+				? { model }
+				: navigate(model, {
+						...model.search,
+						startTime: undefined,
+						endTime: undefined,
+						timePreset: preset,
+					})
+		},
 		ClickedOpenServer: ({ service }) =>
 			navigateTo(
 				model,

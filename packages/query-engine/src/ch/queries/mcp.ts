@@ -141,7 +141,7 @@ export function mcpServerStatsQuery(services: ReadonlyArray<string>) {
 			calls: CH.count(),
 			errors: CH.countIf(failed($)),
 			p95: finiteOrZero(CH.quantile(0.95)($.Duration)),
-			tools: CH.uniqExact(toolName($)),
+			tools: CH.uniqExact(CH.nullIf(toolName($), "")),
 			lastCall: CH.max_($.Timestamp),
 		}))
 		.where(($) => serverCalls($, services))
@@ -240,7 +240,7 @@ export function mcpCallTotalsQuery(filter: McpCallFilter = {}) {
 			errors: CH.countIf(failed($)),
 			statusErrors: CH.countIf($.StatusCode.eq("Error")),
 			...percentiles($),
-			tools: CH.uniqExact(toolName($)),
+			tools: CH.uniqExact(CH.nullIf(toolName($), "")),
 			firstCall: CH.min_($.Timestamp),
 			lastCall: CH.max_($.Timestamp),
 		}))
@@ -277,7 +277,7 @@ export function mcpCallSplitSeriesQuery(split: "tool" | "client", filter: McpCal
 		.format("JSON")
 }
 
-/** The tools table: per tool, calls, failures, percentiles and last call. */
+/** The tools table: per named tool, calls, failures, percentiles and last call. */
 export function mcpToolStatsQuery(filter: McpCallFilter = {}) {
 	return from(Traces)
 		.select(($) => ({
@@ -287,7 +287,7 @@ export function mcpToolStatsQuery(filter: McpCallFilter = {}) {
 			...percentiles($),
 			lastCall: CH.max_($.Timestamp),
 		}))
-		.where(($) => calls($, filter))
+		.where(($) => [...calls($, filter), toolName($).neq("")])
 		.groupBy("tool")
 		.orderBy(["calls", "desc"])
 		.limit(500)

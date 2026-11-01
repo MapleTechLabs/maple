@@ -1,5 +1,6 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "../../../charts/chart"
@@ -268,8 +269,13 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 				return quietWindow(h, {
 					service,
 					window: window.label.replace(/^Last /, "last "),
-					onWiden: Message.ClickedWiden(),
-					widenLabel: `Show the ${presetLabel(widerPreset(model.search)).toLowerCase()}`,
+					widen: Option.match(Option.fromUndefinedOr(widerPreset(model.window)), {
+						onNone: () => undefined,
+						onSome: (preset) => ({
+							onWiden: Message.ClickedWiden(),
+							label: `Show the ${presetLabel(preset).toLowerCase()}`,
+						}),
+					}),
 				})
 			return chartsReady(h, model, (theme) =>
 				serverBody(h, overviewOf(response, model.nowMs), {
