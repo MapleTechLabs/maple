@@ -40,13 +40,13 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 	])
 
 /** Linear's priority marks: bars by severity, the warning glyph for critical, a dashed ring for
- * an unproven lead. Only critical is coloured, so the eye goes there first. */
-/** `isQuiet` draws a severity a step quieter, for an estimate that is not confirmed yet. */
+ * an unproven lead. Only critical is coloured, so the eye goes there first. `isQuiet` draws an
+ * unconfirmed estimate a text step quieter; critical keeps its colour. */
 export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, isQuiet = false): Html => {
 	const quiet = isQuiet ? "text-foreground-subtle" : undefined
 	switch (bucket) {
 		case "critical":
-			return severityIcon(h, "critical", 14, quiet)
+			return severityIcon(h, "critical", 14)
 		case "high":
 		case "medium":
 		case "low":

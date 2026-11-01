@@ -2,20 +2,19 @@ import { OrgId } from "@maple/domain"
 import { Effect, Result, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { NOW, ORG } from "../../page/alerts/shared/test-rows"
 import type { PageContext } from "../../page/contract"
 import { selectField, textField } from "../../page/status-pages/shared/fields"
 import { PRESETS, presetCards } from "../../page/status-pages/shared/look"
-import { pageId, statusPage } from "../../page/status-pages/shared/test-pages"
 import { Message as ListMessage } from "../../page/status-pages/list/message"
 import { Model as ListModel } from "../../page/status-pages/list/model"
 import { init as listInit, update as listUpdate } from "../../page/status-pages/list/update"
 import { view as listView } from "../../page/status-pages/list/view"
 import { defineShellLab } from "../shell-lab"
+import { LAB_NOW_MS, LAB_ORG, LAB_PAGES } from "../status-pages-fixture"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture pages.
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = { orgId: Schema.decodeSync(OrgId)(LAB_ORG), pinnedNamespace: null, timeZone: "UTC" }
 
 const Model = Schema.Struct({ list: ListModel })
 type Model = typeof Model.Type
@@ -26,24 +25,10 @@ const Flags = Schema.Struct({})
 const listModel = (): ListModel => {
 	const step = (model: ListModel, message: ListMessage) => listUpdate(model, message, context).model
 	const entered = [
-		ListMessage.ReadClock({ nowMs: NOW }),
-		ListMessage.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
+		ListMessage.ReadClock({ nowMs: LAB_NOW_MS }),
+		ListMessage.CompletedFetchSession({ orgId: LAB_ORG, isAdmin: true }),
 	].reduce(step, listInit({ _tag: "StatusPages" }, context).model)
-	const pages = [
-		{ page: statusPage(), overall: "operational" as const, componentCount: 4, openIncidents: 0 },
-		{
-			page: statusPage({
-				id: pageId(2),
-				name: "Internal tools",
-				slug: "acme-internal",
-				last_publish_error: "The custom domain did not verify",
-			}),
-			overall: "partial_outage" as const,
-			componentCount: 2,
-			openIncidents: 1,
-		},
-	]
-	return step(entered, ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(pages) }))
+	return step(entered, ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(LAB_PAGES) }))
 }
 
 const section = (h: HtmlBuilder<Message>, title: string, children: ReadonlyArray<Html>): Html =>
