@@ -2,8 +2,9 @@ import { defineConfig } from "tsdown"
 import libchdb from "../local-server/libchdb.json" with { type: "json" }
 
 // The chDB release the sidecar pairs with: the manifest scripts/build-local-binary.sh
-// also reads. The runtime refuses to start against any other libchdb.
-const libchdbVersion = process.env.LIBCHDB_VERSION ?? libchdb.version
+// also reads. No env override: provisionLibchdb always fetches the manifest's
+// release, and the runtime refuses to start against any other libchdb.
+const libchdbVersion = libchdb.version
 
 export default defineConfig({
 	entry: {

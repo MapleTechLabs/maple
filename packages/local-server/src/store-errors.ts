@@ -36,8 +36,9 @@ export class ServerStateFileError extends Schema.TaggedError<ServerStateFileErro
 	{ path: Schema.String, message: Schema.String },
 ) {}
 
-/** The dirty-store policy in force when the store turned out to be unclean. */
-export const DirtyStorePolicy = Schema.Literals(["fail", "restore-checkpoint", "reset"])
+/** What to do with an unclean store: the CLI's `--on-dirty-store` and the embedded runtime's subset. */
+export const DirtyStorePolicy = Schema.Literals(["fail", "wipe", "restore-checkpoint"])
+export type DirtyStorePolicy = typeof DirtyStorePolicy.Type
 
 /**
  * The store was left open by a server that died without closing chDB. Reopening

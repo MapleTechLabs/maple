@@ -78,6 +78,19 @@ describe("provisionLibchdb", () => {
 		})
 	})
 
+	it("downloads again when the cached library no longer matches its install digest", async () => {
+		await withReleaseServer(async ({ baseUrl, cacheRoot, archive, requests }) => {
+			const release = { version: "v1.0.0", sha256: { [asset]: sha256(archive) } }
+			const first = await Effect.runPromise(provision({ cacheRoot, baseUrl, release }))
+			writeFileSync(first.path, "tampered")
+
+			const second = await Effect.runPromise(provision({ cacheRoot, baseUrl, release }))
+			expect(second.downloaded).toBe(true)
+			expect(readFileSync(second.path, "utf8")).toBe("fake libchdb bytes")
+			expect(requests).toEqual([`/v1.0.0/${asset}`, `/v1.0.0/${asset}`])
+		})
+	})
+
 	it("refuses an archive whose checksum does not match the pin and installs nothing", async () => {
 		await withReleaseServer(async ({ baseUrl, cacheRoot }) => {
 			const release = { version: "v1.0.0", sha256: { [asset]: "0".repeat(64) } }

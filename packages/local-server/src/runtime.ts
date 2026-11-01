@@ -1,6 +1,6 @@
 /// <reference path="./assets.d.ts" />
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Effect, Exit, Scope } from "effect"
+import { Config, Effect, Exit, Option, Schema, Scope } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { resolve } from "node:path"
 import { DEFAULT_REMOTE_UI_URL, hostedDashboardUrl, hostedUiOrigin, serverUrl } from "./local-address"
@@ -18,6 +18,7 @@ import { ensurePortFree, startServer } from "./serve"
 import { acquireStoreClaim } from "./store-claim"
 import {
 	describeError,
+	type DirtyStorePolicy,
 	LocalStoreDirtyError,
 	LocalStoreFromNewerMapleError,
 	LocalStoreIncompatibleError,
@@ -39,8 +40,9 @@ import { CHDB_VERSION } from "./version"
  * What to do with a store whose last process was killed before it could close
  * chDB (reopening such a store can crash chDB natively). `"fail"` refuses;
  * `"wipe"` discards its live data, keeping any checkpoints, and starts fresh.
+ * Checkpoint restore stays a `maple restore` choice.
  */
-export type DirtyStorePolicy = "fail" | "wipe"
+export type LocalDirtyStorePolicy = Extract<DirtyStorePolicy, "fail" | "wipe">
 
 export interface LocalOptions {
 	readonly dataDir: string
@@ -48,7 +50,7 @@ export interface LocalOptions {
 	/** Load libchdb from this path instead of `MAPLE_LIBCHDB` or the default locations. */
 	readonly libchdb?: string
 	/** Default `"fail"`: an unclean store is never wiped implicitly. */
-	readonly onDirtyStore?: DirtyStorePolicy
+	readonly onDirtyStore?: LocalDirtyStorePolicy
 }
 
 export interface LocalServer {
@@ -61,7 +63,7 @@ export interface LocalServer {
 const HOSTNAME = "127.0.0.1"
 
 /** Fail closed on any store the CLI would only open after an explicit choice. */
-const refuseUnsafeStore = (dataDir: string, onDirtyStore: DirtyStorePolicy) =>
+const refuseUnsafeStore = (dataDir: string, onDirtyStore: LocalDirtyStorePolicy) =>
 	Effect.gen(function* () {
 		const journal = yield* Effect.tryPromise({
 			try: () => readMigrationJournalStructure(dataDir),
@@ -120,7 +122,7 @@ const refuseUnsafeStore = (dataDir: string, onDirtyStore: DirtyStorePolicy) =>
 						`the local store at ${dataDir} was not cleanly closed: the process that owned it was killed before closing chDB, and reopening it can crash chDB. ` +
 						`Start with onDirtyStore: "wipe" to discard its live data and start fresh` +
 						(availability.available
-							? ", or run `maple restore` on it to recover its last checkpoint."
+							? `, or run \`maple restore --data-dir ${dataDir}\` to recover its last checkpoint.`
 							: "."),
 				})
 			}
@@ -144,15 +146,34 @@ const refuseUnsafeStore = (dataDir: string, onDirtyStore: DirtyStorePolicy) =>
  */
 const requirePinnedLibchdb = Effect.gen(function* () {
 	if (CHDB_VERSION === "dev") return
-	const loaded = yield* Effect.try({
-		try: loadedLibchdbRelease,
-		catch: (error) =>
-			new ChdbError({ message: `cannot read the libchdb release: ${describeError(error)}` }),
-	})
+	const loaded = yield* loadedLibchdbRelease
 	if (loaded !== CHDB_VERSION)
 		return yield* new ChdbError({
 			message: `libchdb ${loaded} is loaded, but this build is pinned to ${CHDB_VERSION}; point MAPLE_LIBCHDB at libchdb ${CHDB_VERSION}`,
 		})
+})
+
+/** `MAPLE_LOCAL_UI_URL` names a dashboard origin that is not a valid URL. */
+export class LocalUiUrlError extends Schema.TaggedError<LocalUiUrlError>()(
+	"@maple/local-server/LocalUiUrlError",
+	{ rawUrl: Schema.String, message: Schema.String },
+) {}
+
+/** The dashboard the server trusts (CORS) and advertises; `maple start` reads the same override. */
+const remoteUiUrl = Effect.gen(function* () {
+	const configured = yield* Config.option(Config.String("MAPLE_LOCAL_UI_URL")).pipe(
+		Effect.map(Option.getOrUndefined),
+		Effect.orElseSucceed(() => undefined),
+	)
+	const url = configured?.trim() || DEFAULT_REMOTE_UI_URL
+	return yield* Effect.try({
+		try: () => ({ url, origin: hostedUiOrigin(url) }),
+		catch: (error) =>
+			new LocalUiUrlError({
+				rawUrl: url,
+				message: `invalid MAPLE_LOCAL_UI_URL: ${describeError(error)}`,
+			}),
+	})
 })
 
 const processState = globalThis as typeof globalThis & { __mapleLocalRuntimeOwner?: string }
@@ -185,7 +206,12 @@ const acquireLocal = (options: LocalOptions) =>
 				}),
 		)
 		yield* ensurePortFree(HOSTNAME, port)
-		if (options.libchdb !== undefined) configureLibchdb(options.libchdb)
+		const ui = yield* remoteUiUrl
+		// Per start, never sticky: a retry without `libchdb` falls back to MAPLE_LIBCHDB.
+		yield* Effect.acquireRelease(
+			Effect.sync(() => configureLibchdb(options.libchdb)),
+			() => Effect.sync(() => configureLibchdb(undefined)),
+		)
 		yield* requirePinnedLibchdb
 		yield* reconcileCheckpointRecovery(dataDir)
 		yield* refuseUnsafeStore(dataDir, options.onDirtyStore ?? "fail")
@@ -195,7 +221,7 @@ const acquireLocal = (options: LocalOptions) =>
 			hostname: HOSTNAME,
 			browserHosts: [HOSTNAME],
 			advertiseHost: HOSTNAME,
-			corsOrigin: hostedUiOrigin(DEFAULT_REMOTE_UI_URL),
+			corsOrigin: ui.origin,
 			port,
 			dataDir,
 			configFile: yield* resolveChdbConfigFile(dataDir, undefined),
@@ -205,7 +231,7 @@ const acquireLocal = (options: LocalOptions) =>
 		return {
 			port: boundPort,
 			endpoint: serverUrl(HOSTNAME, boundPort),
-			dashboardUrl: hostedDashboardUrl(DEFAULT_REMOTE_UI_URL, boundPort),
+			dashboardUrl: hostedDashboardUrl(ui.url, boundPort),
 			dataDir,
 		} satisfies LocalServer
 		// Native-host entry point: the caller's Scope still owns all acquired resources.

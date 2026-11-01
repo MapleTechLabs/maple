@@ -3,7 +3,9 @@ import { homedir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "@maple/local-server/local-address"
 
-export type DirtyStorePolicy = "wipe" | "fail" | "restore-checkpoint"
+import type { DirtyStorePolicy } from "@maple/local-server/store-errors"
+
+export type { DirtyStorePolicy }
 
 export {
 	canonicalUrlHostname,

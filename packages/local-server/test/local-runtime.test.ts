@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Scope } from "effect"
+import { ConfigProvider, Effect, Exit, Scope } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -85,6 +85,19 @@ describe("scoped local runtime safety", () => {
 			)
 			expect(JSON.stringify(exit)).not.toContain("LocalStoreDirtyError")
 			expect(existsSync(liveData)).toBe(false)
+			expect(existsSync(serverPidPath(dataDir))).toBe(false)
+		})
+	})
+
+	it("refuses an invalid MAPLE_LOCAL_UI_URL before opening the store", async () => {
+		await withStore(async (dataDir) => {
+			const env = ConfigProvider.layer(
+				ConfigProvider.fromEnvRecord({ MAPLE_LOCAL_UI_URL: "not a url" }),
+			)
+			const error = await Effect.runPromise(
+				Effect.scoped(startLocal({ dataDir, port: 0 })).pipe(Effect.flip, Effect.provide(env)),
+			)
+			expect(error._tag).toBe("@maple/local-server/LocalUiUrlError")
 			expect(existsSync(serverPidPath(dataDir))).toBe(false)
 		})
 	})

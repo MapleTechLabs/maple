@@ -40,10 +40,10 @@ let configuredLibchdb: string | undefined
 
 /**
  * Load libchdb from exactly `path` (a host that provisioned it, e.g. the
- * @maple-dev/alchemy sidecar). Must run before the first connection: chDB is
- * loaded once per process.
+ * @maple-dev/alchemy sidecar), or clear it with `undefined`. Must run before the
+ * first connection: chDB is loaded once per process.
  */
-export const configureLibchdb = (path: string): void => {
+export const configureLibchdb = (path: string | undefined): void => {
 	configuredLibchdb = path
 }
 
@@ -75,20 +75,33 @@ function resolveLibchdb(): string {
 	return found
 }
 
+// Never dlclose'd: unloading libchdb runs its static destructors, and the real
+// connection would then load it a second time into the same process.
+const releaseByPath = new Map<string, string>()
+
 /**
  * The release tag (`v26.7.3`) of the libchdb this process would load, read from
  * the library itself via `chdb_version`. Loads only that symbol and opens no
- * connection, so it is safe before any store is touched. Throws when the
+ * connection, so it is safe before any store is touched. Fails when the
  * library is missing or predates `chdb_version`.
  */
-export const loadedLibchdbRelease = (): string => {
-	const lib = dlopen(resolveLibchdb(), { chdb_version: { args: [], returns: FFIType.ptr } })
-	const version = lib.symbols.chdb_version()
-	const release = version === null ? undefined : new CString(version).toString()
-	lib.close()
-	if (release === undefined) throw new Error("libchdb reported no version")
-	return `v${release}`
-}
+export const loadedLibchdbRelease: Effect.Effect<string, ChdbError> = Effect.gen(function* () {
+	const path = yield* Effect.try({
+		try: resolveLibchdb,
+		catch: (error) => new ChdbError({ message: error instanceof Error ? error.message : String(error) }),
+	})
+	const cached = releaseByPath.get(path)
+	if (cached !== undefined) return cached
+	const version = yield* Effect.try({
+		try: () => dlopen(path, { chdb_version: { args: [], returns: FFIType.ptr } }).symbols.chdb_version(),
+		catch: (error) =>
+			new ChdbError({ message: `cannot load chdb_version from ${path}: ${String(error)}` }),
+	})
+	if (version === null) return yield* new ChdbError({ message: `libchdb at ${path} reported no version` })
+	const release = `v${new CString(version).toString()}`
+	releaseByPath.set(path, release)
+	return release
+})
 
 type ChdbSymbols = ReturnType<typeof openLib>["symbols"]
 

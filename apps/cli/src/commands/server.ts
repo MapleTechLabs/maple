@@ -46,6 +46,7 @@ import {
 } from "@maple/local-server/store-claim"
 import {
 	describeError,
+	DirtyStorePolicy as DirtyStorePolicySchema,
 	LocalStoreDirtyError,
 	LocalStoreFromNewerMapleError,
 	LocalStoreIncompatibleError,
@@ -407,7 +408,7 @@ const checkpointIntervalFlag = Flag.optional(
 )
 
 const onDirtyStoreFlag = Flag.optional(
-	Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
+	Flag.Literals("on-dirty-store", DirtyStorePolicySchema.literals).pipe(
 		Flag.withDescription(
 			"Recovery policy when the local chDB store was not cleanly closed (default: fail)",
 		),
