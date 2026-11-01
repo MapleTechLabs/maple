@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "60125b86561aea299e16a5351ebc10f3a9d9668970dc4e73a0b4a385cae4a84a",
+	"id": "d52a8e635c1044fb0b3a185564d23c0f18b662017080280d8b1332700532d4bc",
 	"prevIds": [
-		"397cb487206e0634792f38995a5c1a2ffcbeeff8f6ec9e5afb827f9fd2a62a32"
+		"26ae470d0ccd149ef78d9c982d48d5f6fec32536c70ecae71a436dc8856e468f"
 	],
 	"entities": [
 		{
@@ -269,6 +269,41 @@
 				"name": "dashboards_org_id_id_pk",
 				"columns": [
 					"org_id",
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "dependency_findings",
+			"primaryKey": {
+				"name": "dependency_findings_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "dependency_scan_matches",
+			"primaryKey": {
+				"name": "dependency_scan_matches_pkey",
+				"columns": [
+					"scan_id",
+					"lockfile_path",
+					"ecosystem",
+					"package_name",
+					"version",
+					"advisory_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "dependency_scans",
+			"primaryKey": {
+				"name": "dependency_scans_pkey",
+				"columns": [
 					"id"
 				]
 			}
@@ -4997,6 +5032,516 @@
 		},
 		{
 			"kind": "column",
+			"table": "dependency_findings",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "repository_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "lockfile_path",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "ecosystem",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "package_name",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "advisory_id",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "aliases",
+			"position": 7,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "severity",
+			"position": 8,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "summary",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "versions",
+			"position": 10,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "fixed_in",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "relation",
+			"position": 12,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status",
+			"position": 13,
+			"type": "text",
+			"notNull": true,
+			"default": "'open'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "first_seen_scan_id",
+			"position": 14,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "last_seen_scan_id",
+			"position": 15,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "first_seen_sha",
+			"position": 16,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "last_seen_sha",
+			"position": 17,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "fixed_scan_id",
+			"position": 18,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "fixed_sha",
+			"position": 19,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status_reason",
+			"position": 20,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status_changed_by",
+			"position": 21,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "status_changed_at",
+			"position": 22,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "created_at",
+			"position": 23,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_findings",
+			"name": "updated_at",
+			"position": 24,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "scan_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "lockfile_path",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "ecosystem",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "package_name",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "version",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "relation",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "advisory_id",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "aliases",
+			"position": 8,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "severity",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "summary",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scan_matches",
+			"name": "fixed_in",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "repository_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "commit_sha",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "ref",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "trigger",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "default_branch_head",
+			"position": 6,
+			"type": "boolean",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "status",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": "'running'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "lockfiles",
+			"position": 8,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "package_count",
+			"position": 9,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "vulnerable_count",
+			"position": 10,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "error",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "started_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dependency_scans",
+			"name": "finished_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "device_credentials",
 			"name": "id",
 			"position": 0,
@@ -8318,8 +8863,18 @@
 		{
 			"kind": "column",
 			"table": "oauth_auth_states",
-			"name": "created_at",
+			"name": "github_installation_ids",
 			"position": 7,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "oauth_auth_states",
+			"name": "created_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -8329,7 +8884,7 @@
 			"kind": "column",
 			"table": "oauth_auth_states",
 			"name": "expires_at",
-			"position": 8,
+			"position": 9,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -15058,8 +15613,18 @@
 		{
 			"kind": "column",
 			"table": "vcs_installations",
-			"name": "installed_by_user_id",
+			"name": "repository_discovery",
 			"position": 13,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vcs_installations",
+			"name": "installed_by_user_id",
+			"position": 14,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -15069,7 +15634,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "created_at",
-			"position": 14,
+			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -15079,7 +15644,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "updated_at",
-			"position": 15,
+			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -16115,6 +16680,93 @@
 			"columns": [
 				"\"org_id\"",
 				"\"updated_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_findings",
+			"name": "dependency_findings_key_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"repository_id\"",
+				"\"lockfile_path\"",
+				"\"ecosystem\"",
+				"\"package_name\"",
+				"\"advisory_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_findings",
+			"name": "dependency_findings_org_status_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"status\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_findings",
+			"name": "dependency_findings_org_updated_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"updated_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scan_matches",
+			"name": "dependency_scan_matches_org_scan_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"scan_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scans",
+			"name": "dependency_scans_org_started_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"started_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scans",
+			"name": "dependency_scans_repo_commit_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"repository_id\"",
+				"\"commit_sha\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "dependency_scans",
+			"name": "dependency_scans_repo_started_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"repository_id\"",
+				"\"started_at\""
 			],
 			"where": null
 		},
