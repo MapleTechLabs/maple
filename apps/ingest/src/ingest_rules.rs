@@ -909,9 +909,19 @@ impl Redactor<'_> {
         let cut = floor_char_boundary(text, SCAN_BYTES);
         let rewritten = {
             let mut head: Cow<'_, str> = Cow::Borrowed(&text[..cut]);
-            for detector in &redaction.detectors {
-                if let Some(next) = self.replace_detector(*detector, &head) {
-                    head = Cow::Owned(next);
+            // A mask is a fresh boundary, so it can complete a match an earlier pass rejected:
+            // masking repeats until a pass finds nothing. Masks never match a detector; a hash
+            // can, so hashing runs once.
+            loop {
+                let mut found = false;
+                for detector in &redaction.detectors {
+                    if let Some(next) = self.replace_detector(*detector, &head) {
+                        head = Cow::Owned(next);
+                        found = true;
+                    }
+                }
+                if !found || matches!(redaction.method, RedactMethod::Hash) {
+                    break;
                 }
             }
             for pattern in &redaction.patterns {
