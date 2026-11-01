@@ -85,11 +85,12 @@ const parseYarnV1 = (blocks: ReadonlyArray<Block>, manifest: ManifestDeps) => {
 const percentDecode = (s: string): string =>
 	s.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
 
-/** Berry `resolution`: `name@npm:1.0.0`, or a patch wrapping one (`name@patch:name@npm%3A1.0.0#...`). */
+/** Berry `resolution`: `name@npm:1.0.0`, an alias, or a patch wrapping one (`name@patch:name@npm%3A1.0.0#...`). */
 const berryRegistryName = (resolution: string): string | undefined => {
 	const at = splitNameAt(resolution)
 	if (at === undefined) return undefined
-	if (at.rest.startsWith("npm:")) return at.name
+	// An alias resolves as `alias@npm:real@1.0.0`; a plain entry as `name@npm:1.0.0`.
+	if (at.rest.startsWith("npm:")) return splitNameAt(at.rest.slice("npm:".length))?.name ?? at.name
 	if (!at.rest.startsWith("patch:")) return undefined
 	const inner = at.rest.slice("patch:".length).split("#")[0] ?? ""
 	return berryRegistryName(percentDecode(inner))
