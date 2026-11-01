@@ -65,7 +65,7 @@ processors:
     batch: {}
 
 exporters:
-    otlphttp/maple:
+    otlp_http/maple:
         endpoint: https://ingest.maple.dev
         compression: gzip
         headers:
@@ -76,7 +76,7 @@ service:
         metrics/uptime:
             receivers: [http_check]
             processors: [resource/uptime, batch]
-            exporters: [otlphttp/maple]
+            exporters: [otlp_http/maple]
 ```
 
 Start the Collector with your key in the environment:
@@ -87,7 +87,7 @@ MAPLE_INGEST_KEY=YOUR_INGEST_KEY otelcol-contrib --config config.yaml
 
 Notes on the config:
 
-- **Older Collector releases name the receiver `httpcheck`.** Use that name in both places if your release rejects `http_check`.
+- **Older Collector releases use the previous names:** `httpcheck` and `otlphttp`. Use those if your release rejects `http_check` or `otlp_http`.
 - **`resource/uptime` sets `service.name`.** The checks appear in Maple under the service `uptime-checks`.
 - **EU organizations** use `https://ingest.eu.maple.dev` as the endpoint.
 - **Run the Collector outside the system it checks.** On the same machine as the service, it goes down with it.

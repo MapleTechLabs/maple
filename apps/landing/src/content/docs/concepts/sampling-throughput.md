@@ -74,7 +74,7 @@ A typical Collector pipeline:
 
 ```yaml
 connectors:
-    spanmetrics:
+    span_metrics:
         namespace: span.metrics
 
 service:
@@ -82,10 +82,10 @@ service:
         traces:
             receivers: [otlp]
             processors: [batch]
-            exporters: [otlp, spanmetrics] # fork to both export + metrics
+            exporters: [otlp_http, span_metrics] # fork to both export + metrics
         metrics:
-            receivers: [spanmetrics]
-            exporters: [otlp]
+            receivers: [span_metrics]
+            exporters: [otlp_http]
 ```
 
-The metrics pipeline sees every request while the traces pipeline samples as aggressively as you like.
+The metrics pipeline sees every request while the traces pipeline samples as aggressively as you like. Older Collector releases name the connector `spanmetrics` and the exporter `otlphttp`.
