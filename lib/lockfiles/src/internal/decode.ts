@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { parse as parseToml } from "smol-toml"
-import { parse as parseYaml, parseAllDocuments } from "yaml"
+import { parse as parseYaml, parseAllDocuments, type ParseOptions } from "yaml"
 import { LockfileParseError } from "../errors.ts"
 
 const parseError = (path: string, what: string) => (cause: unknown) =>
@@ -33,10 +33,14 @@ export const decodeUnknown = <T>(
 		Effect.mapError(parseError(path, "unexpected lockfile shape")),
 	)
 
-export const parseYamlText = (path: string, content: string): Effect.Effect<unknown, LockfileParseError> =>
+export const parseYamlText = (
+	path: string,
+	content: string,
+	options?: Pick<ParseOptions, "uniqueKeys">,
+): Effect.Effect<unknown, LockfileParseError> =>
 	Effect.try({
 		// The library's alias cap stops a lockfile of nested anchors from expanding past memory.
-		try: () => parseYaml(content),
+		try: () => parseYaml(content, options),
 		catch: parseError(path, "invalid YAML"),
 	})
 

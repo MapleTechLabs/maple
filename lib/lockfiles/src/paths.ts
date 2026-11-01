@@ -20,6 +20,13 @@ const segmentsOf = (path: string): ReadonlyArray<string> => path.split(/[\\/]+/)
 export const lockfileKindOf = (path: string): LockfileKind | undefined =>
 	KIND_BY_NAME.get(segmentsOf(path).at(-1) ?? "")
 
+export const BUN_LOCKB_UNSUPPORTED =
+	"bun.lockb is binary: run `bun install --save-text-lockfile` and commit the generated bun.lock"
+
+/** Why a kind of lockfile cannot be read, known from its path alone; undefined when it can. */
+export const unsupportedReason = (kind: LockfileKind): string | undefined =>
+	kind === "bun-lockb" ? BUN_LOCKB_UNSUPPORTED : undefined
+
 /** Paths a scan skips: vendored, test or dependency trees. */
 export const isIgnoredLockfilePath = (path: string): boolean =>
 	segmentsOf(path).some((segment) => IGNORED_SEGMENTS.has(segment))

@@ -86,6 +86,9 @@ const MAX_ANNOTATION_PAGES = 3
  */
 const JOB_LOG_NOT_READY_RETRIES = 3
 const JOB_LOG_NOT_READY_BACKOFF = Duration.seconds(2)
+/** The log store's 503 (`ServerBusy`) passes; three retries from one second wait about seven. */
+const JOB_LOG_BUSY_RETRIES = 3
+const JOB_LOG_BUSY_BACKOFF = Duration.seconds(1)
 /** GitHub lists at most 3,000 files for one pull request. */
 const MAX_PR_FILE_PAGES = 30
 
@@ -237,6 +240,12 @@ const GithubApiUser = Schema.Struct({
 	avatar_url: Schema.optionalKey(Schema.String),
 })
 
+// A commit's `author` is a user, null, or `{}` when its email maps to no account.
+const GithubApiCommitUser = Schema.Struct({
+	login: Schema.optionalKey(Schema.String),
+	avatar_url: Schema.optionalKey(Schema.String),
+})
+
 const GithubApiCommitSchema = Schema.Struct({
 	sha: GitCommitSha, // validated at decode — the 40-hex shape lives in the brand
 	html_url: Schema.String,
@@ -245,7 +254,7 @@ const GithubApiCommitSchema = Schema.Struct({
 		author: Schema.NullOr(GithubApiCommitAuthor),
 		committer: Schema.optionalKey(Schema.NullOr(GithubApiCommitAuthor)),
 	}),
-	author: Schema.NullOr(GithubApiUser),
+	author: Schema.NullOr(GithubApiCommitUser),
 })
 export type GithubApiCommit = Schema.Schema.Type<typeof GithubApiCommitSchema>
 
@@ -359,6 +368,8 @@ const GithubApiGitTreeListing = Schema.Struct({
 })
 
 /** A recursive listing; `size` is set on blobs only, `truncated` when GitHub cut the listing short. */
+/** Git's well-known hash of a tree with no entries. */
+const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 const GithubApiRecursiveTree = Schema.Struct({
 	sha: Schema.String,
 	truncated: Schema.Boolean,
@@ -1151,9 +1162,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
-				// 404 (not in this repo) and 422 ("No commit found for SHA") are answers, not
-				// failures: none, so the span stays Ok.
-				if (response.status === 404 || response.status === 422) return Option.none<GithubApiCommit>()
+				// 404 (not in this repo), 409 (the repository is empty) and 422 ("No commit found for
+				// SHA") are answers, not failures: none, so the span stays Ok.
+				if (response.status === 404 || response.status === 409 || response.status === 422)
+					return Option.none<GithubApiCommit>()
 				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
@@ -2193,6 +2205,27 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(treeish)}?recursive=1`,
 				)
+				if (response.status === 404) {
+					// GitHub 404s the recursive tree of a commit whose tree is git's empty tree.
+					const commit = yield* authedGet(
+						config,
+						token,
+						`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/commits/${encodeURIComponent(treeish)}`,
+					)
+					const treeSha = isOk(commit)
+						? yield* parseJson(commit, "Read commit").pipe(
+								Effect.flatMap(decodeGitCommit),
+								Effect.map((decoded) => decoded.tree.sha),
+								Effect.orElseSucceed(() => undefined),
+							)
+						: undefined
+					if (treeSha === EMPTY_TREE_SHA)
+						return {
+							sha: EMPTY_TREE_SHA,
+							truncated: false,
+							tree: [],
+						} satisfies GithubRecursiveTree
+				}
 				if (!isOk(response)) return yield* failure(response, "Read tree", "repository")
 				return yield* decodeRecursiveTree(yield* parseJson(response, "Read tree")).pipe(
 					Effect.mapError(
@@ -2299,7 +2332,23 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							downloadUrl,
 							{ headers: { "user-agent": USER_AGENT } },
 							"GitHub job log download failed",
+						).pipe(
+							Effect.flatMap((response) =>
+								response.status === 503
+									? failure(response, "Download job log", "repository")
+									: Effect.succeed(response),
+							),
+							Effect.retry({
+								while: (error) => error.status === 503,
+								schedule: Schedule.exponential(JOB_LOG_BUSY_BACKOFF),
+								times: JOB_LOG_BUSY_RETRIES,
+							}),
 						)
+						// A 404 from the log store is a log past retention: nothing to read, not a failure.
+						if (download.status === 404) {
+							yield* Effect.annotateCurrentSpan("maple.cicd.job_log", "expired")
+							return Stream.empty
+						}
 						if (!isOk(download)) return yield* failure(download, "Download job log", "repository")
 						return download.stream.pipe(
 							Stream.mapError(

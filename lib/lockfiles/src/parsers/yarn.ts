@@ -27,7 +27,8 @@ const parseSpecifiers = (header: string): ReadonlyArray<Specifier> =>
 			return at === undefined ? [] : [{ name: at.name, range: at.rest }]
 		})
 
-const VERSION_LINE = /^ {2}version:? +"?([^"\s]+)"?\s*$/
+/** `version "1.2.3"`, or `"version" "1.2.3"` as npm 7+ rewrites a yarn.lock. */
+const VERSION_LINE = /^ {2}"?version"?:? +"?([^"\s]+)"?\s*$/
 
 /** yarn v1: unindented `"a@^1", a@^1.2:` headers, each followed by an indented `version "1.2.3"`. */
 const parseV1Blocks = (content: string): ReadonlyArray<Block> =>
@@ -110,7 +111,8 @@ const parseYarnBerry = (doc: Record<string, unknown>, manifest: ManifestDeps) =>
 }
 
 const berryResult = Effect.fn(function* (input: LockfileInput, manifest: ManifestDeps) {
-	const doc = yield* parseYamlText(input.path, input.content)
+	// Yarn reads a lockfile whose merge left an entry twice; so must we.
+	const doc = yield* parseYamlText(input.path, input.content, { uniqueKeys: false })
 	if (!isRecord(doc))
 		return yield* new LockfileParseError({ path: input.path, message: "yarn.lock is not a YAML mapping" })
 	return parseYarnBerry(doc, manifest)
