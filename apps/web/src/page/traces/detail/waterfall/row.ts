@@ -262,7 +262,11 @@ const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html
 					],
 					[span.serviceName],
 				),
-				h.span([h.Class("shrink-0 text-foreground-subtle")], [getSpanKindLabel(span.spanKind)]),
+				// The kind yields first on narrow rows so the service name stays readable.
+				h.span(
+					[h.Class("hidden shrink-0 text-foreground-subtle @min-[720px]/row:inline")],
+					[getSpanKindLabel(span.spanKind)],
+				),
 			],
 		),
 	]
