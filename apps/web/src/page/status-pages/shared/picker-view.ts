@@ -145,7 +145,7 @@ const editFields = <M>(
 			),
 			...(error === null
 				? []
-				: [h.p([h.Id(`${nameId}-error`), h.Class("text-xs text-destructive")], [error])]),
+				: [h.p([h.Id(`${nameId}-error`), h.Class("text-xs text-destructive-foreground")], [error])]),
 		],
 	)
 }
@@ -352,7 +352,7 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 						[h.Class("text-xs text-muted-foreground")],
 						["Maple checks it every minute and the page shows its uptime."],
 					)
-				: h.p([h.Id(`${id}-error`), h.Class("text-xs text-destructive")], [picker.urlIssue]),
+				: h.p([h.Id(`${id}-error`), h.Class("text-xs text-destructive-foreground")], [picker.urlIssue]),
 		],
 	)
 }

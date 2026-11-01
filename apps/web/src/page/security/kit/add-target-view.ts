@@ -182,7 +182,7 @@ const profileField = (h: H, model: Model): Html => {
 							h.Class(
 								cn(
 									"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-									isChecked ? "border-border-strong bg-accent/50" : "hover:bg-accent/30 active:bg-accent/30",
+									isChecked ? "border-border-strong bg-surface-strong" : "hover:bg-surface-sunken active:bg-surface-sunken",
 								),
 							),
 						],
@@ -328,7 +328,7 @@ const modelsField = (h: H, model: Model, error?: string): Html => {
 			),
 			...(error === undefined
 				? []
-				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive")], [error])]),
+				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive-foreground")], [error])]),
 			...(settings === null
 				? []
 				: [

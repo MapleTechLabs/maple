@@ -238,7 +238,7 @@ export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
 					? []
 					: [
 							h.p(
-								[h.Class("mt-3 font-prose text-sm text-destructive"), h.Role("alert")],
+								[h.Class("mt-3 font-prose text-sm text-destructive-foreground"), h.Role("alert")],
 								[model.linkRejection],
 							),
 						]),

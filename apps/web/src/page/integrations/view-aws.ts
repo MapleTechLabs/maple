@@ -57,7 +57,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 			...dataPicker(h, model, connection),
 			...(card.metricsError === null
 				? []
-				: [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [card.metricsError])]),
+				: [h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [card.metricsError])]),
 			h.div(
 				[h.Class("flex flex-wrap gap-2")],
 				[

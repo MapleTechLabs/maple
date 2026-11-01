@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../../ui/copy-button"
 import { detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
 import { icon, type IconName } from "../../../../ui/icon"
+import { textLinkClass } from "../../../../ui/text-link"
 import type { ZoneRow } from "../data"
 import type { ZoneRailDns } from "./derive"
 import { Message, type Model, type ZoneTab } from "./model"
@@ -16,9 +17,7 @@ const railLink = (h: H, name: IconName, tab: ZoneTab, children: ReadonlyArray<st
 		[
 			h.Type("button"),
 			h.OnClick(Message.ClickedTab({ tab })),
-			h.Class(
-				"flex items-center gap-1.5 text-left font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80",
-			),
+			h.Class(textLinkClass("primary", true, "gap-1.5 text-left text-xs")),
 		],
 		[icon(h, name, { className: "size-3.5 shrink-0" }), ...children],
 	)

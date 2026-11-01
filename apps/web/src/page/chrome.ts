@@ -67,7 +67,7 @@ export const notFoundContent = <Message>(h: HtmlBuilder<Message>): Html =>
 			],
 			[
 				h.div(
-					[h.AriaHidden(true), h.Class("rounded-md border bg-card/50 p-2.5 text-muted-foreground")],
+					[h.AriaHidden(true), h.Class("rounded-md border bg-surface-faint p-2.5 text-muted-foreground")],
 					[icon(h, "CircleWarningIcon", { size: 18 })],
 				),
 				h.div(

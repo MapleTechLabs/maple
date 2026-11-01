@@ -137,7 +137,7 @@ export const investigateBar = <M>(
 			h.Class(
 				cn(
 					"flex h-10 items-center gap-3 rounded-lg border bg-card px-3.5 transition-colors focus-within:border-ring",
-					options.isAccent === true ? "border-primary/60" : "border-input",
+					options.isAccent === true ? "border-primary-a4" : "border-input",
 				),
 			),
 			h.OnSubmit(options.onSubmit),

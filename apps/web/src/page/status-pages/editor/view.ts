@@ -55,7 +55,7 @@ const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Ht
 	if (page.draft) return h.span([h.Class(className)], ["Draft. Nothing is public until you publish."])
 	if (page.last_publish_error !== null)
 		return h.span(
-			[h.Class("text-xs text-destructive")],
+			[h.Class("text-xs text-destructive-foreground")],
 			[`Last publish failed: ${page.last_publish_error}`],
 		)
 	if (page.published_at === null) return h.span([h.Class(className)], ["Publishing within a minute"])

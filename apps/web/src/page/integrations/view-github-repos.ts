@@ -279,7 +279,7 @@ export const repositoriesPanels = (
 						h.div(
 							[h.Class("flex flex-col items-start gap-3 px-4 py-6 text-sm")],
 							[
-								h.p([h.Class("text-severity-error")], [discovery.message]),
+								h.p([h.Class("text-destructive-foreground")], [discovery.message]),
 								button(
 									h,
 									{
