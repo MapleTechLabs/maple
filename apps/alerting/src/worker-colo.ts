@@ -40,3 +40,26 @@ export const lookupColo = Effect.fn("alerting.lookup_colo")(
 			}),
 		),
 )
+
+/**
+ * Caches the isolate's colo once known. No single-flight: a request awaiting another request's
+ * in-flight lookup is resumed in that request's I/O context, and workerd cancels it as hung.
+ */
+export const isolateColoCache = <R>(lookup: Effect.Effect<string, ColoLookupError, R>) =>
+	Effect.sync(() => {
+		let known: string | undefined
+		return Effect.suspend(() =>
+			known === undefined
+				? lookup.pipe(
+						Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
+						// A failed lookup stays "unknown" for the isolate rather than costing every fire a timeout.
+						Effect.orElseSucceed(() => "unknown"),
+						Effect.tap((colo) =>
+							Effect.sync(() => {
+								known = colo
+							}),
+						),
+					)
+				: Effect.succeed(known),
+		)
+	})

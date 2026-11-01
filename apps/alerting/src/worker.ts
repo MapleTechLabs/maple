@@ -43,7 +43,7 @@ import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
-import { lookupColo } from "./worker-colo.ts"
+import { isolateColoCache, lookupColo } from "./worker-colo.ts"
 import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
 /**
@@ -164,15 +164,10 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		const statusBucket = yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket)
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
-		// Once per isolate too: an isolate never changes data center. A failed lookup stays
-		// "unknown" for the isolate rather than costing every fire another timeout.
+		// Once per isolate too: an isolate never changes data center.
 		const http = yield* HttpClient.HttpClient
-		const isolateColo = yield* Effect.cached(
-			lookupColo().pipe(
-				Effect.provideService(HttpClient.HttpClient, http),
-				Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
-				Effect.orElseSucceed(() => "unknown"),
-			),
+		const isolateColo = yield* isolateColoCache(
+			lookupColo().pipe(Effect.provideService(HttpClient.HttpClient, http)),
 		)
 
 		const runTick = (cron: string, lane: string, env: Record<string, unknown>) =>
