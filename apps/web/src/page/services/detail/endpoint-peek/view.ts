@@ -556,7 +556,8 @@ const header = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Html =>
 		title: [peek.endpoint.route],
 		description: inputs.scopeLabel,
 		meta: [
-			h.span([h.Class("text-xs text-muted-foreground")], [inputs.scopeLabel]),
+			// The header's hidden description already reads the scope to screen readers.
+			h.span([h.AriaHidden(true), h.Class("text-xs text-muted-foreground")], [inputs.scopeLabel]),
 			h.div(
 				[h.Class("ml-auto flex shrink-0 items-center gap-1")],
 				[

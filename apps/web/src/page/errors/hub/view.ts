@@ -32,22 +32,16 @@ const stableSparkWindow = stableSlice((window: Model["window"]) =>
 	window === null ? { startMs: 0, endMs: 0, bucketMs: 0 } : sparkWindowOf(window),
 )
 
-/** The stat strip and toolbar, pinned under the title like the other list pages' toolbars. */
-const pinnedToolbar = (h: H, model: Model): Html => {
-	const strip = statStrip(h, model)
-	// The sticky area pads the page edge, so the toolbar adds no gap under itself.
-	const bar = toolbar(h, model, countReadout(model, signalsOf(model).length), "pb-0")
-	return strip === null ? bar : h.div([], [strip, bar])
-}
-
 const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const signals = signalsOf(model)
 	const status = listStatusOf(model)
 	const sparkWindow = stableSparkWindow(model.window)
 	const isSelecting = model.selectedIds.length > 0
+	const strip = statStrip(h, model)
 	return h.div(
 		[],
 		[
+			...(strip === null ? [] : [strip]),
 			...listBody(h, model, {
 				status,
 				signals,
@@ -79,7 +73,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Errors",
 			filters: filtersRail(h, model),
-			sticky: pinnedToolbar(h, model),
+			// Only the toolbar row is pinned, like replays and anomalies; the stats scroll with the list.
+			// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+			sticky: toolbar(h, model, countReadout(model, signalsOf(model).length), "pb-0"),
 			actions: refreshButton(h, {
 				onRefresh: Message.ClickedReload(),
 				isPending: model.isReloading,
