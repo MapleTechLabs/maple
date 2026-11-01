@@ -133,6 +133,22 @@ describe("GithubAppClient responses that are normal states", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("keeps the 404 of a tree in a repository the installation lost", () => {
+		const layer = clientLayer(
+			[
+				tokenResponse(),
+				new Response('{"message":"Not Found"}', { status: 404 }),
+				new Response('{"message":"Not Found"}', { status: 404 }),
+			],
+			[],
+		)
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const error = yield* Effect.flip(client.getRecursiveTree("42", "octo", "shop", SHA))
+			assert.deepStrictEqual([error.status, error.scope], [404, "repository"])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("reads an expired job log as empty", () => {
 		const layer = clientLayer([tokenResponse(), logRedirect(), storeError(404, "BlobNotFound")], [])
 		return Effect.gen(function* () {

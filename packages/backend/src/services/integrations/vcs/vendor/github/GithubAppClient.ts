@@ -367,9 +367,9 @@ const GithubApiGitTreeListing = Schema.Struct({
 	),
 })
 
-/** A recursive listing; `size` is set on blobs only, `truncated` when GitHub cut the listing short. */
 /** Git's well-known hash of a tree with no entries. */
 const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+/** A recursive listing; `size` is set on blobs only, `truncated` when GitHub cut the listing short. */
 const GithubApiRecursiveTree = Schema.Struct({
 	sha: Schema.String,
 	truncated: Schema.Boolean,
