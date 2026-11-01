@@ -33,6 +33,7 @@ import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { UpdateFinding } from "./command"
+import { reasonErrorOf } from "./derive"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
@@ -149,6 +150,42 @@ describe("security dependencies tab", () => {
 			expectView(text("Not running")).toExist(),
 			expectView(text(/vcs\.ref\.head\.revision/)).toBeAbsent(),
 		)
+	})
+
+	test("says a finding is being scanned, not absent, while a running commit's scan is pending", () => {
+		const repositories = repositoriesOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					{
+						repositories: repositories.repositories.map((repository) =>
+							repository.id === PAYMENTS_ID
+								? {
+										...repository,
+										runningCommits: repository.runningCommits.map((commit) => ({
+											...commit,
+											scanStatus: null,
+										})),
+									}
+								: repository,
+						),
+					},
+					{
+						...findingsOf(NOW),
+						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
+					},
+				),
+			),
+			expectView(text("Scanning")).toExist(),
+			expectView(text("api-gateway +1")).toBeAbsent(),
+		)
+	})
+
+	test("caps a triage reason as the API does, untrimmed", () => {
+		expect(reasonErrorOf(" ".repeat(10) + "x".repeat(495))).not.toBeNull()
+		expect(reasonErrorOf("x".repeat(500))).toBeNull()
+		expect(reasonErrorOf("   ")).not.toBeNull()
 	})
 
 	test("explains why findings cannot be tied to production when no service reports its commit", () => {

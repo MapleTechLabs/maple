@@ -24,7 +24,6 @@ export const STATUS_FILTER_LABEL = {
 	all: "All",
 } satisfies Record<StatusFilter, string>
 
-
 export const SEVERITY_LABEL = {
 	critical: "Critical",
 	high: "High",
@@ -151,7 +150,8 @@ export const selectedFindingOf = (model: Model): DependencyFindingView | null =>
 export const reasonErrorOf = (reason: string): string | null =>
 	reason.trim() === ""
 		? "Add a reason. It is shown on the finding with your name."
-		: reason.trim().length > DEPENDENCY_FINDING_REASON_MAX_LENGTH
+		: // The API checks the reason as sent, so the cap applies to it untrimmed.
+			reason.length > DEPENDENCY_FINDING_REASON_MAX_LENGTH
 			? `Keep the reason under ${DEPENDENCY_FINDING_REASON_MAX_LENGTH} characters.`
 			: null
 
