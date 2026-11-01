@@ -293,7 +293,11 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						"maple.depscan.tree_truncated": tree.truncated,
 					})
 
-					if (request.trigger === "push") {
+					// A yarn scan also reads package.json for direct and dev, which a lockfile sha does not cover.
+					const readsManifests = selected.some(
+						(lockfile) => lockfile.kind === "yarn-v1" || lockfile.kind === "yarn-berry",
+					)
+					if (request.trigger === "push" && !readsManifests) {
 						const latest = yield* store
 							.latestScan({ orgId, repositoryId: repository.id, defaultBranchHead: true })
 							.pipe(Effect.mapError(scanError("Could not read the last scan")))

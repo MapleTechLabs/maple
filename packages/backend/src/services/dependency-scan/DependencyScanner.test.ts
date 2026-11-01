@@ -302,6 +302,25 @@ describe("DependencyScanner", () => {
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
+	it.effect("rescans a yarn repository on every push, since package.json decides direct and dev", () => {
+		const yarnLock = '"lodash@4.17.15":\n  version "4.17.15"\n'
+		const state = world({
+			"yarn.lock": yarnLock,
+			"package.json": '{"dependencies":{"lodash":"4.17.15"}}',
+		})
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			state.head = sha("b")
+			state.files.set("package.json", {
+				sha: "pkg-2",
+				content: '{"devDependencies":{"lodash":"4.17.15"}}',
+			})
+			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
+			assert.strictEqual(again._tag, "Scanned")
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
 	it.effect("reads a lockfile's packages from the parse cache on a rescan", () => {
 		const state = world({ "package-lock.json": packageLock("4.17.15") })
 		return Effect.gen(function* () {
