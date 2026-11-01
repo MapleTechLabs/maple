@@ -301,7 +301,7 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
  * column-restricted server-side (the encrypted `secret_*` columns are dropped —
  * see the proxy whitelist), so this struct intentionally lists only the synced
  * columns. `config_json` carries ONLY public config (summary / channel label /
- * hazel metadata); the webhook secrets live in the excluded encrypted columns.
+ * chat workspace); the webhook secrets live in the excluded encrypted columns.
  */
 export const AlertDestinationRowSchema = Schema.Struct({
 	id: Schema.String,
@@ -321,8 +321,7 @@ export type AlertDestinationRow = typeof AlertDestinationRowSchema.Type
 
 /**
  * The public projection of a destination's `config_json` the browser renders —
- * mirrors the server's `DestinationPublicConfigSchema` (summary + channelLabel;
- * the hazel-* fields are excess and ignored here). The server stringifies the
+ * mirrors the server's `DestinationPublicConfigSchema`. The server stringifies the
  * jsonb before decoding; Electric's default parser already gives us the parsed
  * object, so we decode it directly.
  */

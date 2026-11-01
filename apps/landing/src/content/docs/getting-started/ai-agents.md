@@ -83,7 +83,7 @@ You get better answers when you name the **service**, the **time window** and th
 1. The agent finds the error with `find_errors` or `list_error_issues`.
 2. `error_detail` gives sample occurrences, stack traces and related logs.
 3. `inspect_trace` shows the full request: which service called which, and where it failed.
-4. With the GitHub integration, `read_source_file` opens the code at the commit that was running.
+4. The agent reads the code at the commit that was running, in your local checkout.
 5. The agent proposes a fix in your repository.
 
 From the **Errors** page you can skip step 1: right-click an issue and choose **Copy agent prompt** to hand your agent the issue with its context.
@@ -110,6 +110,34 @@ For heavier dashboard work, give your agent the [maple-dashboard-widgets](https:
 ### Answer anything else with SQL
 
 When no tool fits, `describe_warehouse_tables` lists the tables and columns, and `run_sql` runs a read-only query scoped to your organization. See [SQL](/docs/reference/sql).
+
+## Check whether a Maple Cloud fix is deployed
+
+Each region reports the commit its dashboard and API are running. Both are public `GET` requests, no sign-in needed.
+
+| Region | Dashboard                               | API                               |
+| ------ | --------------------------------------- | --------------------------------- |
+| US     | `https://app.maple.dev/version.json`    | `https://api.maple.dev/health`    |
+| EU     | `https://app.eu.maple.dev/version.json` | `https://api.eu.maple.dev/health` |
+
+```bash
+curl -fsS https://app.maple.dev/version.json | jq -r .commit
+curl -fsS -D - -o /dev/null https://api.maple.dev/health | grep -i x-maple-revision
+```
+
+The dashboard and API deploy separately, so compare each one. No `x-maple-revision` header means the API revision is unknown.
+
+To check whether a serving commit includes a merged PR, compare it with the PR's merge commit, not the branch's own commits (PRs are squash-merged):
+
+```bash
+repo=https://api.github.com/repos/MapleTechLabs/maple
+curl -fsS "$repo/pulls/<pr-number>" | jq -r 'select(.merged) | .merge_commit_sha'
+curl -fsS "$repo/compare/<merge-sha>...<serving-sha>" | jq -r .status
+```
+
+Empty output from the first request means the PR is not merged yet. A status of `identical` or `ahead` means the fix is deployed; `behind` or `diverged` means it is not.
+
+Ingest and the MCP server deploy on their own and are not covered by these checks. A [changelog](/changelog) entry or a merged PR does not show what a region is running.
 
 ## Instrument with a coding agent
 

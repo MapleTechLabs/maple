@@ -14,6 +14,7 @@ import { spinner } from "../../../ui/spinner"
 import { docsLink } from "../../kit/signal-empty-state"
 import { stableSlice } from "../../kit/stable-slice"
 import {
+	COMPLETE_ATTRIBUTE,
 	CONTROL_ATTRIBUTE,
 	HOLD_ATTRIBUTE,
 	IDLE_ATTRIBUTE,
@@ -24,7 +25,15 @@ import { MARKER_STYLES } from "../kit/replay-meta"
 import { replayFormat } from "../kit/replay-window"
 import { FeedEvents, MountEngine } from "./command"
 import { type PlayerStatus, timelineFrom, timelineOf } from "./derive"
-import { isBuffering, seedEvents, seedShiftMs, trailingRanges } from "./loader"
+import {
+	hasMoreChunks,
+	isBuffering,
+	loadedFromMs,
+	loadedUntilMs,
+	seedEvents,
+	seedShiftMs,
+	trailingRanges,
+} from "./loader"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -120,6 +129,38 @@ const markersView = (
 	)
 }
 
+const bufferedView = (
+	h: H,
+	fromMs: number,
+	untilMs: number,
+	intervals: ReadonlyArray<Interval>,
+	totalMs: number,
+	isSkippingIdle: boolean,
+): Html => {
+	const timeline = timelineFrom({ inactiveIntervals: intervals, totalMs, isSkippingIdle })
+	const total = timeline.activeTotalMs
+	if (total <= 0 || untilMs <= fromMs) return h.div([h.Class("absolute inset-0")], [])
+	const start = timeline.toDisplay(fromMs)
+	const leftPct = Math.max(0, Math.min(100, (start / total) * 100))
+	const widthPct = Math.max(
+		0,
+		Math.min(100 - leftPct, ((timeline.toDisplay(untilMs) - start) / total) * 100),
+	)
+	return h.div(
+		[h.Class("absolute inset-0")],
+		[
+			h.span(
+				[
+					h.Class("absolute inset-y-0 rounded-full bg-foreground/20"),
+					h.Style({ left: `${leftPct}%`, width: `${widthPct}%` }),
+					h.Title("Downloaded"),
+				],
+				[],
+			),
+		],
+	)
+}
+
 // The tracks change with the recording, not the playhead: one cache entry per surface they sit on.
 const trackSlots = createKeyedLazy()
 
@@ -128,6 +169,17 @@ export type TrackSurface = "docked" | "fullscreen" | "timeline"
 export const idleBandsTrack = (h: H, model: Model, surface: TrackSurface): Html =>
 	trackSlots(`idle-${surface}`, idleBandsView, [
 		h,
+		model.meta.inactiveIntervals,
+		model.player.totalMs,
+		model.player.isSkippingIdle,
+	])
+
+/** The downloaded, playable span under the progress fill, like a video's buffered range. */
+export const bufferedTrack = (h: H, model: Model, surface: TrackSurface): Html =>
+	trackSlots(`buffered-${surface}`, bufferedView, [
+		h,
+		model.loader.seedCount === 0 ? 0 : loadedFromMs(model),
+		model.loader.seedCount === 0 ? 0 : Math.min(loadedUntilMs(model), model.player.totalMs),
 		model.meta.inactiveIntervals,
 		model.player.totalMs,
 		model.player.isSkippingIdle,
@@ -255,6 +307,7 @@ const stageOf = stableSlice((model: Model) => ({
 	originMs: model.loader.originMs,
 	seedCount: model.loader.seedCount,
 	loaded: model.loader.loaded,
+	complete: hasMoreChunks(model) ? "" : String(trailingRanges(model.loader).length),
 }))
 type Stage = ReturnType<typeof stageOf>
 
@@ -275,6 +328,7 @@ const engineMount = (
 		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(stage.isSkippingIdle ? stage.inactiveIntervals : [])),
 		h.DataAttribute(HOLD_ATTRIBUTE, String(isHolding)),
 		h.DataAttribute(TOTAL_ATTRIBUTE, String(stage.totalMs)),
+		h.DataAttribute(COMPLETE_ATTRIBUTE, stage.complete),
 	]
 	return status === "ready"
 		? h.div(
@@ -449,6 +503,7 @@ const scrubber = (h: H, model: Model, surface: TrackSurface): Html => {
 					),
 				],
 				[
+					bufferedTrack(h, model, surface),
 					idleBandsTrack(h, model, surface),
 					h.div(
 						[h.Class("relative h-full rounded-full bg-primary"), h.Style({ width: `${pct}%` })],
@@ -509,7 +564,8 @@ const settings = (h: H, speed: number, isSkippingIdle: boolean, isFullscreen: bo
 				{
 					label: isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
 					size: "icon",
-					className: "text-muted-foreground hover:text-foreground active:text-foreground max-sm:ml-auto",
+					className:
+						"text-muted-foreground hover:text-foreground active:text-foreground max-sm:ml-auto",
 					attributes: [h.OnClick(Message.ClickedFullscreen())],
 				},
 				[icon(h, isFullscreen ? "MinimizeIcon" : "MaximizeIcon")],

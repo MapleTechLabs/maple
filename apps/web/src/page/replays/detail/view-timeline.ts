@@ -25,7 +25,7 @@ import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
 import { timelineFrom } from "./derive"
 import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
-import { idleBandsTrack, markersTrack, type Playhead, playheadOf } from "./view-player"
+import { bufferedTrack, idleBandsTrack, markersTrack, type Playhead, playheadOf } from "./view-player"
 
 // The replay editor timeline.
 // TODO(tooltip): the trace and span bars' hover tooltips.
@@ -106,6 +106,7 @@ const activityTrack = (h: H, model: Model, playhead: Playhead): Html =>
 							),
 						],
 						[
+							bufferedTrack(h, model, "timeline"),
 							idleBandsTrack(h, model, "timeline"),
 							h.div(
 								[
@@ -221,7 +222,9 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 		[
 			h.div(
 				[
-					h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6")),
+					h.Class(
+						cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6"),
+					),
 					h.Title(`${span.serviceName} · ${span.spanName}`),
 				],
 				[
@@ -469,7 +472,11 @@ const tracesSlot = createLazy()
 
 const timelineHeader = (h: H): Html =>
 	h.div(
-		[h.Class("flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2")],
+		[
+			h.Class(
+				"flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2",
+			),
+		],
 		[eyebrow(h, { variant: "label" }, ["Timeline"]), markerLegend(h)],
 	)
 

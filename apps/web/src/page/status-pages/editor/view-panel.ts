@@ -9,7 +9,6 @@ import * as Checkbox from "../../../ui/checkbox"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
 import {
@@ -41,20 +40,30 @@ export type TimeInputs = Readonly<{ nowMs: number; timeZone: string }>
 
 const frame = (
 	h: H,
-	options: Readonly<{ kind: string; title: string; status?: Html; label: string }>,
+	options: Readonly<{ kind: string; title: string; status?: Html }>,
 	children: ReadonlyArray<Html>,
 ): Html =>
 	h.aside(
 		[
 			h.AriaLabelledBy(PANEL_TITLE_ID),
-			h.Class("flex min-w-0 flex-col gap-5 rounded-lg border bg-background p-4 lg:sticky lg:top-0"),
+			h.Class("flex min-w-0 flex-col gap-5 rounded-lg border bg-background p-4"),
 		],
 		[
 			h.div(
-				[h.Class("flex items-start justify-between gap-3")],
+				[h.Class("flex flex-col items-start gap-3")],
 				[
+					button(
+						h,
+						{
+							size: "xs",
+							variant: "ghost",
+							className: "-ml-2",
+							attributes: [h.OnClick(Message.ClickedClosePanel())],
+						},
+						[icon(h, "ArrowLeftIcon"), "On this page"],
+					),
 					h.div(
-						[h.Class("flex min-w-0 flex-col gap-1")],
+						[h.Class("flex min-w-0 max-w-full flex-col gap-1")],
 						[
 							eyebrow(h, {}, [options.kind]),
 							h.h2(
@@ -67,15 +76,6 @@ const frame = (
 							),
 							...(options.status === undefined ? [] : [options.status]),
 						],
-					),
-					iconButton(
-						h,
-						{
-							label: `Close ${options.label}`,
-							size: "icon-xs",
-							attributes: [h.OnClick(Message.ClickedClosePanel())],
-						},
-						[icon(h, "XmarkIcon")],
 					),
 				],
 			),
@@ -122,7 +122,6 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 		{
 			kind: "Component",
 			title: form.name.trim() === "" ? component.name : form.name.trim(),
-			label: "component",
 			status: h.div(
 				[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
 				[`Visitors see ${COMPONENT_STATUS_LABEL[status]}`, saveIndicator(h, model)],
@@ -401,7 +400,6 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 		{
 			kind: incident.kind === "incident" ? "Incident" : "Maintenance",
 			title: incident.title,
-			label: incident.kind,
 			status: h.div(
 				[h.Class("flex flex-wrap items-center gap-1.5")],
 				[
@@ -509,152 +507,149 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 	const form = model.incidentForm
 	const isMaintenance = form.kind === "maintenance"
 	const issues = incidentIssues(form, timeZone)
-	return frame(
-		h,
-		{ kind: "New", title: isMaintenance ? "Schedule maintenance" : "Post incident", label: "composer" },
-		[
-			h.form(
-				[
-					h.AriaLabelledBy(PANEL_TITLE_ID),
-					h.OnSubmit(Message.SubmittedIncident()),
-					h.Class("flex flex-col gap-4"),
-				],
-				[
-					segmentedSelect(h, {
-						size: "sm",
-						ariaLabel: "Kind",
-						className: "self-start",
-						value: form.kind,
-						onChange: (kind) => Message.ChangedIncidentKind({ kind }),
-						options: [
-							{ value: "incident", label: "Incident" },
-							{ value: "maintenance", label: "Maintenance" },
-						],
-					}),
-					textField(h, {
-						id: "status-page-incident-title-field",
-						label: "Title",
-						value: form.title,
-						placeholder: isMaintenance ? "Database upgrade" : "Elevated API errors",
-						onInput: (value) => Message.ChangedIncidentField({ field: "title", value }),
-					}),
-					h.div(
-						[h.Class("grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2")],
-						[
-							selectField(h, {
-								id: "status-page-incident-status",
-								label: "Status",
-								value: form.status,
-								entries: statusEntries(form.kind, true),
-								onInput: (value) => Message.ChangedIncidentField({ field: "status", value }),
+	return frame(h, { kind: "New", title: isMaintenance ? "Schedule maintenance" : "Post incident" }, [
+		h.form(
+			[
+				h.AriaLabelledBy(PANEL_TITLE_ID),
+				h.OnSubmit(Message.SubmittedIncident()),
+				h.Class("flex flex-col gap-4"),
+			],
+			[
+				segmentedSelect(h, {
+					size: "sm",
+					ariaLabel: "Kind",
+					className: "self-start",
+					value: form.kind,
+					onChange: (kind) => Message.ChangedIncidentKind({ kind }),
+					options: [
+						{ value: "incident", label: "Incident" },
+						{ value: "maintenance", label: "Maintenance" },
+					],
+				}),
+				textField(h, {
+					id: "status-page-incident-title-field",
+					label: "Title",
+					value: form.title,
+					placeholder: isMaintenance ? "Database upgrade" : "Elevated API errors",
+					onInput: (value) => Message.ChangedIncidentField({ field: "title", value }),
+				}),
+				h.div(
+					[h.Class("grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2")],
+					[
+						selectField(h, {
+							id: "status-page-incident-status",
+							label: "Status",
+							value: form.status,
+							entries: statusEntries(form.kind, true),
+							onInput: (value) => Message.ChangedIncidentField({ field: "status", value }),
+						}),
+						...(isMaintenance
+							? []
+							: [
+									selectField(h, {
+										id: "status-page-incident-impact",
+										label: "Impact",
+										value: form.impact,
+										entries: IMPACT_ENTRIES,
+										onInput: (value) =>
+											Message.ChangedIncidentField({ field: "impact", value }),
+									}),
+								]),
+					],
+				),
+				...(isMaintenance
+					? [
+							textField(h, {
+								id: "status-page-incident-start",
+								label: "Starts",
+								type: "datetime-local",
+								value: form.scheduledStart,
+								onInput: (value) =>
+									Message.ChangedIncidentField({ field: "scheduledStart", value }),
 							}),
-							...(isMaintenance
-								? []
-								: [
-										selectField(h, {
-											id: "status-page-incident-impact",
-											label: "Impact",
-											value: form.impact,
-											entries: IMPACT_ENTRIES,
-											onInput: (value) =>
-												Message.ChangedIncidentField({ field: "impact", value }),
-										}),
-									]),
-						],
-					),
-					...(isMaintenance
-						? [
-								textField(h, {
-									id: "status-page-incident-start",
-									label: "Starts",
-									type: "datetime-local",
-									value: form.scheduledStart,
-									onInput: (value) =>
-										Message.ChangedIncidentField({ field: "scheduledStart", value }),
-								}),
-								textField(h, {
-									id: "status-page-incident-end",
-									label: "Ends",
-									type: "datetime-local",
-									value: form.scheduledEnd,
-									hint: `Times are in ${timeZone}.`,
-									onInput: (value) =>
-										Message.ChangedIncidentField({ field: "scheduledEnd", value }),
-								}),
-							]
-						: []),
-					componentChecklist(h, model),
-					textareaField(h, {
-						id: "status-page-incident-body",
-						label: "Message",
-						value: form.body,
-						placeholder: isMaintenance
-							? "We are upgrading the primary database. Expect brief read-only periods."
-							: "We are looking into elevated error rates on the API.",
-						onInput: (value) => Message.ChangedIncidentField({ field: "body", value }),
-					}),
-					h.div(
-						[h.Class("flex flex-col gap-1.5")],
-						[
-							h.span([h.Class("text-xs text-muted-foreground")], ["Visibility"]),
-							segmentedSelect(h, {
-								ariaLabel: "Visibility",
+							textField(h, {
+								id: "status-page-incident-end",
+								label: "Ends",
+								type: "datetime-local",
+								value: form.scheduledEnd,
+								hint: `Times are in ${timeZone}.`,
+								onInput: (value) =>
+									Message.ChangedIncidentField({ field: "scheduledEnd", value }),
+							}),
+						]
+					: []),
+				componentChecklist(h, model),
+				textareaField(h, {
+					id: "status-page-incident-body",
+					label: "Message",
+					value: form.body,
+					placeholder: isMaintenance
+						? "We are upgrading the primary database. Expect brief read-only periods."
+						: "We are looking into elevated error rates on the API.",
+					onInput: (value) => Message.ChangedIncidentField({ field: "body", value }),
+				}),
+				h.div(
+					[h.Class("flex flex-col gap-1.5")],
+					[
+						h.span([h.Class("text-xs text-muted-foreground")], ["Visibility"]),
+						segmentedSelect(h, {
+							ariaLabel: "Visibility",
+							size: "sm",
+							className: "self-start",
+							value: form.isPublished ? "publish" : "draft",
+							onChange: (value) =>
+								Message.PickedIncidentPublished({ isPublished: value === "publish" }),
+							options: [
+								{ value: "publish", label: "Publish now" },
+								{ value: "draft", label: "Save as draft" },
+							],
+						}),
+					],
+				),
+				...failureAlert(
+					h,
+					isMaintenance ? "Couldn't schedule it" : "Couldn't open the incident",
+					model.incidentFailure,
+				),
+				h.div(
+					[h.Class("flex items-center justify-between gap-3 border-t pt-4")],
+					[
+						h.p([h.Class("text-xs text-muted-foreground")], [issues[0] ?? ""]),
+						button(
+							h,
+							{
 								size: "sm",
-								className: "self-start",
-								value: form.isPublished ? "publish" : "draft",
-								onChange: (value) =>
-									Message.PickedIncidentPublished({ isPublished: value === "publish" }),
-								options: [
-									{ value: "publish", label: "Publish now" },
-									{ value: "draft", label: "Save as draft" },
-								],
-							}),
-						],
-					),
-					...failureAlert(
-						h,
-						isMaintenance ? "Couldn't schedule it" : "Couldn't open the incident",
-						model.incidentFailure,
-					),
-					h.div(
-						[h.Class("flex items-center justify-between gap-3 border-t pt-4")],
-						[
-							h.p([h.Class("text-xs text-muted-foreground")], [issues[0] ?? ""]),
-							button(
-								h,
-								{
-									size: "sm",
-									type: "submit",
-									isLoading: model.isCreatingIncident,
-									isDisabled: issues.length > 0,
-								},
-								[
-									form.isPublished
-										? isMaintenance
-											? "Schedule"
-											: "Publish incident"
-										: "Save draft",
-								],
-							),
-						],
-					),
-				],
-			),
-		],
-	)
+								type: "submit",
+								isLoading: model.isCreatingIncident,
+								isDisabled: issues.length > 0,
+							},
+							[
+								form.isPublished
+									? isMaintenance
+										? "Schedule"
+										: "Publish incident"
+									: "Save draft",
+							],
+						),
+					],
+				),
+			],
+		),
+	])
 }
 
 // ADD
 
 export const addPanel = (h: H, model: Model): Html => {
 	const count = checkedRows(model.addPicker).length
-	return frame(h, { kind: "Add", title: "Add components", label: "Add components" }, [
+	return frame(h, { kind: "Add", title: "Add monitors" }, [
 		pickerView(h, {
 			picker: model.addPicker,
 			monitors: monitorsOf(model),
 			toMessage: (message) => Message.GotAddPickerMessage({ message }),
 			idPrefix: ADD_PICKER_ID,
-			isDisabled: model.isAddingComponents,
+			// Locked while a URL is being monitored: its completion submits what is ticked.
+			isDisabled: model.isAddingComponents || model.addPicker.isCreatingMonitor,
 			focusOnMount: h.OnMount(FocusNewRow()),
 			isOrderable: false,
 		}),
@@ -666,7 +661,8 @@ export const addPanel = (h: H, model: Model): Html => {
 					{
 						size: "sm",
 						isLoading: model.isAddingComponents,
-						isDisabled: count === 0 || hasRowIssues(model.addPicker),
+						isDisabled:
+							count === 0 || hasRowIssues(model.addPicker) || model.addPicker.isCreatingMonitor,
 						attributes: [h.OnClick(Message.ClickedSubmitAdd())],
 					},
 					[count <= 1 ? "Add component" : `Add ${count} components`],

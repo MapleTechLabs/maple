@@ -64,6 +64,13 @@ describe("routes", () => {
 		)
 	})
 
+	test("the old Hazel integration link opens the Hazel chat connector", () => {
+		expect(routeRedirect(parse("/integrations?integration=hazel"))).toEqual(
+			Option.some({ url: "/integrations?integration=chat-hazel", isReplace: true }),
+		)
+		expect(routeRedirect(parse("/integrations?integration=chat-hazel"))).toEqual(Option.none())
+	})
+
 	test("an org outside the statusPages rollout is sent home from every status page route", () => {
 		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
 			expect(flaggedRouteRedirect(parse(path), { statusPages: false })).toEqual(
@@ -135,6 +142,13 @@ describe("routes", () => {
 			search: { rejected: true },
 		})
 		expect(parse("/security/runs")._tag).toBe("SecurityRuns")
+		expect(parse("/security/exposure")._tag).toBe("SecurityExposure")
+		expect(parse("/security/runtimes")._tag).toBe("SecurityRuntimes")
+		expect(parse("/security/dependencies")._tag).toBe("SecurityDependencies")
+		expect(parse("/security/dependencies?repo=repo_1")).toMatchObject({
+			_tag: "SecurityDependencies",
+			search: { repo: "repo_1" },
+		})
 		expect(parse("/security/runs/run_9f3c2a1e7b")).toMatchObject({
 			_tag: "SecurityRun",
 			runId: "run_9f3c2a1e7b",

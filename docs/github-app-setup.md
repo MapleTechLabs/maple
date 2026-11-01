@@ -75,7 +75,7 @@ This closes the loop after a user installs your app, so Maple can record the ins
 3. Check **Request user authorization (OAuth) during installation**. **Do not skip this. It is a security control.** See the box below.
 4. Leave **Expire user authorization tokens** at its default (checked).
 
-> **Why this is required (confused-deputy guard).** `installation_id` values are small, **enumerable** integers and are not tied to the connect `state`. Without OAuth, anyone who starts a connect flow could submit _someone else's_ `installation_id` and bind another org's private repos to their own Maple org. With OAuth on, GitHub also returns a `code`. Maple exchanges it, calls `GET /user/installations` to confirm the user can access that installation, then confirms they administer its account (an active org `admin` via `GET /user/memberships/orgs/{org}`, or the personal account itself) before binding it. GitHub delivers `code`, `installation_id`, and `state` to the Callback URL above. There is no separate Setup URL.
+> **Why this is required (confused-deputy guard).** `installation_id` values are small, **enumerable** integers and are not tied to the connect `state`. Without OAuth, anyone who starts a connect flow could submit _someone else's_ `installation_id` and bind another org's private repos to their own Maple org. With OAuth on, GitHub also returns a `code`. Maple exchanges it, calls `GET /user/installations` to confirm the user can access that installation, then confirms they administer its account (an active org `admin` via `GET /user/memberships/orgs/{org}`, or the personal account itself) before binding it. GitHub delivers `code`, `installation_id`, and `state` to the Callback URL above. There is no separate Setup URL. Maple's **Connect GitHub** button starts with plain user authorization against the same Callback URL, so an app installed directly on GitHub can still be connected.
 
 ---
 
@@ -161,7 +161,7 @@ Near the top of the **General** tab, find **App ID** (a number, e.g. `123456`). 
 
 Look at the page URL: `https://github.com/settings/apps/<your-slug>`. The final path segment is your **slug** (a lowercase, hyphenated version of the app name, e.g. `maple-example-com`). This is your `GITHUB_APP_SLUG`.
 
-> Maple builds the install link from this slug: `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`. If the slug is wrong, the "Connect GitHub" button will 404 on GitHub.
+> Maple builds the install link from this slug: `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`. If the slug is wrong, the install page (reached after authorization, or from "Install on another GitHub account") will 404 on GitHub.
 
 ### 8c. Client ID and client secret
 
@@ -220,8 +220,8 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 
 ## Step 10: Verify the setup
 
-1. **Confirm the dashboard sees the app.** Open **Integrations → GitHub** in your Maple dashboard. The **Connect GitHub** button should be active. (If you get "GitHub App is not configured (set GITHUB_APP_SLUG)", the slug env var is missing or the API wasn't restarted.)
-2. **Run the connect flow.** Click **Connect GitHub**. A popup should open `https://github.com/apps/<your-slug>/installations/new`. Install the app on a test account and pick at least one repository.
+1. **Confirm the dashboard sees the app.** Open **Integrations → GitHub** in your Maple dashboard. The **Connect GitHub** button should be active. (If you get "GitHub App is not configured (set GITHUB_APP_SLUG)" or "(set GITHUB_APP_CLIENT_ID)", that env var is missing or the API wasn't restarted.)
+2. **Run the connect flow.** Click **Connect GitHub**. A popup should open GitHub's authorization page (`/login/oauth/authorize`). After you authorize Maple it lists the accounts where the app is installed; with none, the popup goes on to `https://github.com/apps/<your-slug>/installations/new`. Install the app on a test account and pick at least one repository.
 3. **Confirm the callback completes.** After installing (and authorizing when GitHub prompts), the popup should close and the card should flip to **Connected**, then move repositories from **Queued → Syncing → Synced**. If it doesn't, recheck your **Callback URL** (Step 3) first.
 4. **Confirm webhooks are signed correctly.** In your app's settings, open the **Advanced** tab → **Recent Deliveries**. The initial `ping` and the install events should show a **`200`** response. A non-`200` here means the webhook URL is wrong or the **webhook secret in GitHub doesn't match `GITHUB_APP_WEBHOOK_SECRET`**.
 5. **Confirm live sync.** Push a commit to a tracked branch in the test repository, check **Recent Deliveries** for a `push` event returning `200`, and confirm the commit appears in Maple.
@@ -270,10 +270,11 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 ## Troubleshooting
 
 - **"GitHub App is not configured" in the dashboard.** A required env var (`GITHUB_APP_SLUG`, `GITHUB_APP_ID`, or `GITHUB_APP_PRIVATE_KEY`) is missing, or the API wasn't restarted after setting it.
-- **Install succeeds on GitHub but never connects in Maple.** The **Callback URL** is missing or incorrect, or **Request user authorization (OAuth) during installation** is unchecked, or `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` are unset. The flow fails closed: with no OAuth `code`, Maple rejects a new installation binding with "Could not verify you own this GitHub installation." Fix Step 3 / Step 8c and reinstall.
+- **The app was installed directly on GitHub.** An installation created outside Maple has no Maple organization binding, and its webhooks cannot choose one. Click **Connect GitHub** in Maple: it starts with GitHub user authorization, lists the installations that user administers, and binds the one they pick without reinstalling the app.
+- **GitHub authorization does not return to Maple.** The **Callback URL** is missing or incorrect, or **Request user authorization (OAuth) during installation** is unchecked, or `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` are unset. The flow fails closed: with no OAuth `code`, Maple rejects a new installation binding with "Could not verify you own this GitHub installation." Fix Step 3 / Step 8c, then click **Connect GitHub** again.
 - **Webhook deliveries return `401` or signature errors.** The webhook secret in GitHub does not match `GITHUB_APP_WEBHOOK_SECRET`. Regenerate it, paste it into both places, and restart the API.
 - **Webhook deliveries return `404`.** The Webhook URL is wrong, or your Maple API isn't publicly reachable at `https://YOUR_MAPLE_DOMAIN`.
-- **`Connect GitHub` opens a GitHub 404.** `GITHUB_APP_SLUG` does not match the app's real slug (the last path segment of `https://github.com/settings/apps/<slug>`).
+- **`Connect GitHub` opens a GitHub 404.** Authorization uses `GITHUB_APP_CLIENT_ID`; check it matches the app's Client ID. A 404 only on the install page means `GITHUB_APP_SLUG` does not match the app's real slug (the last path segment of `https://github.com/settings/apps/<slug>`).
 - **CI traces arrive but have no logs.** The App lacks **Actions: Read**, or an installation has not accepted it yet. GitHub still delivers `workflow_job` webhooks without it, but answers every job log download with `403 Resource not accessible by integration`. Add the permission (Step 5) and have each installation accept the request.
 - **Connecting an organization fails with "Maple could not confirm you are an owner".** GitHub answered `403` to the org role read: the App lacks **Members: Read**, the installation has not accepted it yet, or the organization blocks the App. Maple refuses rather than guess. Add the permission (Step 5) and have an organization owner accept the request (organization Settings > GitHub Apps > Review request), then retry. Refusals are counted on the `GithubConnectService.completeConnect` span as `maple.vcs.connect.refused=true` with `vcs.connect.outcome`.
 - **Private key errors when minting tokens.** The PEM was truncated or had its newlines stripped. Re-paste the full key, including the BEGIN/END lines, preserving line breaks.

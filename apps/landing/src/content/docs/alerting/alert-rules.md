@@ -131,7 +131,7 @@ Click **Add destination** to attach an existing destination, or create one from 
 
 **Send test** delivers a test notification for this rule to the selected destinations.
 
-**Message template** customizes the **Title** and **Body (Markdown)** of Slack, Discord, Telegram and PagerDuty notifications with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. Leave it blank for the built-in format. Email, webhook and Hazel destinations always use the built-in format.
+**Message template** customizes the **Title** and **Body (Markdown)** of Slack, Hazel, Discord, Telegram and PagerDuty notifications with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. Leave it blank for the built-in format. Email and webhook destinations always use the built-in format.
 
 ## Name it
 

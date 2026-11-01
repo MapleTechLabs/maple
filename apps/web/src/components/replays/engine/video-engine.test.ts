@@ -54,6 +54,23 @@ const touchEvent = (offsetMs: number) => ({
 	data: { source: 2, type: 7, pointerType: 2 },
 })
 
+describe("segment identity", () => {
+	// Ranges loaded after the seed reach the engine one event at a time, so an id
+	// must not depend on where in its batch a segment was found.
+	it("keeps the SDK's numeric chunk sequence as the id across separate extractions", () => {
+		const seed = extractVideoSegments([videoEvent(0, 5_000, { segmentId: 0 })], T0)
+		const late = extractVideoSegments([videoEvent(5_000, 5_000, { segmentId: 1 })], T0)
+		expect(seed.map((segment) => segment.segmentId)).toEqual(["0"])
+		expect(late.map((segment) => segment.segmentId)).toEqual(["1"])
+	})
+
+	it("falls back to the timestamp, not the batch position, when the id is missing", () => {
+		const first = extractVideoSegments([videoEvent(0, 5_000, { segmentId: undefined })], T0)
+		const second = extractVideoSegments([videoEvent(5_000, 5_000, { segmentId: undefined })], T0)
+		expect(first[0]?.segmentId).not.toBe(second[0]?.segmentId)
+	})
+})
+
 describe("videoSegmentPayload", () => {
 	it("recognises the SDK's video custom event", () => {
 		expect(videoSegmentPayload(videoEvent(0, 30_000))).toMatchObject({ encoding: "h264" })

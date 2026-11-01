@@ -1,4 +1,4 @@
-import { Schema, SchemaGetter } from "effect"
+import { Effect, Schema, SchemaGetter } from "effect"
 import { OrgId, UserId } from "../primitives"
 import { PullRequestLinkState } from "./fix-verification"
 
@@ -82,6 +82,14 @@ export const VcsRepoSelection = Schema.Literals(["all", "selected"]).annotate({
 })
 export type VcsRepoSelection = Schema.Schema.Type<typeof VcsRepoSelection>
 
+/** Completion of the repository enumeration requested by one connect operation. */
+export const VcsRepositoryDiscovery = Schema.Union([
+	Schema.Struct({ _tag: Schema.Literal("Pending"), requestId: Schema.String }),
+	Schema.Struct({ _tag: Schema.Literal("Complete"), requestId: Schema.String }),
+	Schema.Struct({ _tag: Schema.Literal("Failed"), requestId: Schema.String, message: Schema.String }),
+])
+export type VcsRepositoryDiscovery = Schema.Schema.Type<typeof VcsRepositoryDiscovery>
+
 export const VcsRepoSyncStatus = Schema.Literals(["pending", "backfilling", "ready", "error"]).annotate({
 	identifier: "@maple/VcsRepoSyncStatus",
 	title: "VCS Repository Sync Status",
@@ -116,6 +124,9 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	suspendedAt: Schema.NullOr(Schema.Number),
 	/** Whether finished CI workflow runs become traces. On unless the org turned it off. */
 	ciTracesEnabled: Schema.Boolean,
+	repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery).pipe(
+		Schema.withConstructorDefault(Effect.succeed(null)),
+	),
 	installedByUserId: UserId,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
@@ -445,6 +456,8 @@ export const InstallationSyncJob = Schema.Struct({
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	reason: VcsInstallationSyncReason,
+	/** Only this connect's job may acknowledge its repository discovery. */
+	requestId: Schema.optionalKey(Schema.String),
 	deliveryId: Schema.optionalKey(Schema.String),
 })
 export type InstallationSyncJob = Schema.Schema.Type<typeof InstallationSyncJob>
@@ -740,6 +753,22 @@ export const PullRequestHead = Schema.Struct({
 })
 export type PullRequestHead = Schema.Schema.Type<typeof PullRequestHead>
 
+/** What started a dependency scan; only a scan of the tracked branch head reconciles findings. */
+export const DependencyScanTrigger = Schema.Literals(["push", "schedule", "manual", "production"])
+export type DependencyScanTrigger = typeof DependencyScanTrigger.Type
+
+// Scan one repository's lockfiles. Without `commitSha` the scanner reads the tracked branch's
+// head at scan time, so a push's truncated commit list never decides what is scanned.
+export const DependencyScanJob = Schema.Struct({
+	kind: Schema.Literal("dependency-scan"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	trigger: DependencyScanTrigger,
+	commitSha: Schema.optionalKey(GitCommitSha),
+})
+export type DependencyScanJob = Schema.Schema.Type<typeof DependencyScanJob>
+
 export const VcsSyncJob = Schema.Union([
 	InstallationSyncJob,
 	SyncCommitsJob,
@@ -752,6 +781,7 @@ export const VcsSyncJob = Schema.Union([
 	PullRequestCiApprovedJob,
 	WorkflowRunJob,
 	WorkflowJobJob,
+	DependencyScanJob,
 ])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 

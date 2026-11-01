@@ -53,7 +53,7 @@ The built-in format carries:
 - The evaluation window.
 - An **Open in Maple** link to the incident (or, without one, the affected service or the alerts list).
 
-A rule's **Message template** replaces the title and body for Slack, Discord, Telegram and PagerDuty destinations. Email, webhook and Hazel destinations use the built-in format. PagerDuty receives a stable `dedup_key` so the trigger and resolve land on the same PagerDuty incident. The webhook payload is in the [alert webhooks reference](/docs/reference/webhooks).
+A rule's **Message template** replaces the title and body for Slack, Hazel, Discord, Telegram and PagerDuty destinations. Email and webhook destinations use the built-in format. PagerDuty receives a stable `dedup_key` so the trigger and resolve land on the same PagerDuty incident. The webhook payload is in the [alert webhooks reference](/docs/reference/webhooks).
 
 If a delivery fails with an error that can be retried, Maple retries it up to 5 attempts, with a delay that doubles from 1 minute up to 15 minutes.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { encodeChatActionToken } from "../../action-token"
-import { EMPTY_CONTENT, renderHazelMessage } from "./render"
+import { EMPTY_CONTENT, renderHazelLive, renderHazelMessage } from "./render"
 
 describe("hazel render", () => {
 	it("writes prose as markdown and never lets it mention anybody", () => {
@@ -109,5 +109,36 @@ describe("hazel render", () => {
 
 	it("says something when there is nothing to say yet", () => {
 		expect(renderHazelMessage([])).toEqual({ content: EMPTY_CONTENT, embeds: [] })
+	})
+
+	it("streams the placeholder as Hazel's loading indicator rather than as text", () => {
+		const body = renderHazelLive([{ kind: "notice", tone: "pending", text: "Working on it…" }])
+		expect(body).toEqual({
+			content: "_Working on it…_",
+			embeds: [],
+			text: "",
+			error: null,
+			loading: { text: "Working on it" },
+		})
+	})
+
+	it("streams the text a turn ends on, and the failure it ends with as the live state's error", () => {
+		const body = renderHazelLive([
+			{ kind: "prose", markdown: "Checkout is slow because @[userId:abc]" },
+			{ kind: "notice", tone: "error", text: "Failed: the model stopped answering" },
+		])
+		expect(body.text).toBe("Checkout is slow because @​[userId:abc]")
+		expect(body.error).toBe("Failed: the model stopped answering")
+		// The message itself still says it failed, for history and search.
+		expect(body.content).toBe(
+			"Checkout is slow because @​[userId:abc]\n\n**Failed: the model stopped answering**",
+		)
+		// Only the notice a turn closes on is a failure; one in the middle is just text.
+		expect(
+			renderHazelLive([
+				{ kind: "notice", tone: "error", text: "A tool failed." },
+				{ kind: "prose", markdown: "Answered anyway." },
+			]).error,
+		).toBeNull()
 	})
 })

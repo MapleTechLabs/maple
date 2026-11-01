@@ -9,7 +9,6 @@ import { LINEAR_ACCENT } from "../../integrations/catalog"
 // `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
 
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
-const HAZEL_ACCENT_TEXT = "light-dark(#A34209, #F46F0F)"
 const INK_ON_DARK_ACCENT = "#FFFFFF"
 const INK_ON_BRIGHT_ACCENT = "#1E1B17"
 
@@ -60,21 +59,6 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 			accentText: "light-dark(#8F5A00, #F59E0B)",
 			accentOn: INK_ON_BRIGHT_ACCENT,
 			fallbackIcon: "CodeIcon",
-		},
-	],
-	[
-		"hazel-oauth",
-		{
-			type: "hazel-oauth",
-			label: "Hazel",
-			description: "Connect Hazel via OAuth and pick a workspace to route alerts into.",
-			accent: "#F46F0F",
-			accentBg: "rgba(244,111,15,0.16)",
-			accentText: HAZEL_ACCENT_TEXT,
-			accentOn: INK_ON_BRIGHT_ACCENT,
-			fallbackIcon: "HazelIcon",
-			docsUrl: "https://hazel.sh/docs/integrations/maple",
-			docsLabel: "Hazel integration guide",
 		},
 	],
 	[
@@ -212,7 +196,6 @@ export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"webhook",
 	"telegram",
 	"google-chat",
-	"hazel-oauth",
 	"linear",
 ]
 export const destinationTypesFor = (isDiscordLinked: boolean): ReadonlyArray<AlertDestinationType> =>

@@ -1936,7 +1936,7 @@ describe("AlertsService", () => {
 			const fixedTime = 1_710_000_200_000
 			const testDb = createTestDb(trackedDbs)
 			let requestCount = 0
-			// An empty-bodied 400 — the exact shape prod sees from Hazel.
+			// An empty-bodied 400, the shape a rejecting webhook returns.
 			const rejectingFetch = (async () => {
 				requestCount += 1
 				return new Response("", { status: 400, headers: { "content-type": "application/json" } })

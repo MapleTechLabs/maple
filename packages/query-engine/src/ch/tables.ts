@@ -184,6 +184,12 @@ export const AiTraceIndex = Datasources.aiTraceIndex
  */
 export const AiCrawlerRequests = Datasources.aiCrawlerRequests
 
+/** Scanner probe requests (migration 0050), one row per Server span: requests are `uniq(TraceId)`. */
+export const ScannerRequests = Datasources.scannerRequests
+
+/** Runtime and telemetry SDK versions per service and hour (migration 0050). SummingMergeTree. */
+export const ServiceRuntimesHourly = Datasources.serviceRuntimesHourly
+
 /** CI workflow runs (migration 0047): the root span of each `github-actions` trace. */
 export const CiRuns = Datasources.ciRuns
 

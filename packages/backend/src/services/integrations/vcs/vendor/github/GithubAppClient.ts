@@ -358,6 +358,21 @@ const GithubApiGitTreeListing = Schema.Struct({
 	),
 })
 
+/** A recursive listing; `size` is set on blobs only, `truncated` when GitHub cut the listing short. */
+const GithubApiRecursiveTree = Schema.Struct({
+	sha: Schema.String,
+	truncated: Schema.Boolean,
+	tree: Schema.Array(
+		Schema.Struct({
+			path: Schema.String,
+			type: Schema.String,
+			sha: Schema.String,
+			size: Schema.optionalKey(Schema.Number),
+		}),
+	),
+})
+export type GithubRecursiveTree = typeof GithubApiRecursiveTree.Type
+
 const GithubApiReviewCommentList = Schema.Array(
 	Schema.Struct({
 		id: Schema.Number,
@@ -562,6 +577,7 @@ const decodeCreatedComment = Schema.decodeUnknownEffect(GithubApiCreatedComment)
 const decodeCollaboratorPermission = Schema.decodeUnknownEffect(GithubApiCollaboratorPermission)
 const decodeGitCommit = Schema.decodeUnknownEffect(GithubApiGitCommit)
 const decodeGitTreeListing = Schema.decodeUnknownEffect(GithubApiGitTreeListing)
+const decodeRecursiveTree = Schema.decodeUnknownEffect(GithubApiRecursiveTree)
 const decodeComparison = Schema.decodeUnknownEffect(GithubApiComparison)
 const decodeReviewThreads = Schema.decodeUnknownEffect(GithubReviewThreadsResponse)
 const decodeMutation = Schema.decodeUnknownEffect(GithubMutationResponse)
@@ -621,13 +637,35 @@ const decodeContentFile = Schema.decodeUnknownEffect(GithubContentFileSchema)
 const base64UrlString = (value: string) => Buffer.from(value, "utf8").toString("base64url")
 const base64UrlBytes = (value: ArrayBuffer) => Buffer.from(value).toString("base64url")
 
-const pemToPkcs8 = (pem: string): ArrayBuffer => {
+const derLength = (length: number): Buffer =>
+	length < 0x80
+		? Buffer.from([length])
+		: length < 0x100
+			? Buffer.from([0x81, length])
+			: length < 0x10000
+				? Buffer.from([0x82, length >> 8, length & 0xff])
+				: Buffer.from([0x83, length >> 16, (length >> 8) & 0xff, length & 0xff])
+
+const derNode = (tag: number, content: Buffer): Buffer =>
+	Buffer.concat([Buffer.from([tag]), derLength(content.length), content])
+
+// INTEGER 0 (version) + AlgorithmIdentifier { rsaEncryption, NULL }.
+const PKCS8_RSA_PREFIX = Buffer.from("020100300d06092a864886f70d0101010500", "hex")
+
+/**
+ * GitHub hands out PKCS#1 keys (`BEGIN RSA PRIVATE KEY`) but WebCrypto only imports PKCS#8,
+ * so a PKCS#1 body is wrapped in a PKCS#8 PrivateKeyInfo.
+ */
+export const pemToPkcs8 = (pem: string): ArrayBuffer => {
 	const body = pem
 		.replace(/-----BEGIN[^-]+-----/g, "")
 		.replace(/-----END[^-]+-----/g, "")
 		.replace(/\s+/g, "")
-	const buf = Buffer.from(body, "base64")
-	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+	const der = Buffer.from(body, "base64")
+	const buf = pem.includes("BEGIN RSA PRIVATE KEY")
+		? derNode(0x30, Buffer.concat([PKCS8_RSA_PREFIX, derNode(0x04, der)]))
+		: der
+	return new Uint8Array(buf).buffer
 }
 
 /** GitHub answers 401 to a revoked or expired token; some endpoints answer 403 "Bad credentials". */
@@ -910,14 +948,19 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return grantsActions(yield* installationToken(externalInstallationId))
 			})
 
-			const authedGet = (_config: ResolvedAppConfig, token: string, url: string) =>
+			const authedGet = (
+				_config: ResolvedAppConfig,
+				token: string,
+				url: string,
+				accept = "application/vnd.github+json",
+			) =>
 				rateLimitedFetch(
 					tracedFetch(
 						url,
 						{
 							headers: {
 								authorization: `token ${token}`,
-								accept: "application/vnd.github+json",
+								accept,
 								"x-github-api-version": GITHUB_API_VERSION,
 								"user-agent": USER_AGENT,
 							},
@@ -2136,6 +2179,54 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			/** Every entry under a commit's tree in one call; GitHub truncates past 100,000 entries or 7 MB. */
+			const getRecursiveTree = Effect.fn("GithubAppClient.getRecursiveTree")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				treeish: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(treeish)}?recursive=1`,
+				)
+				if (!isOk(response)) return yield* failure(response, "Read tree", "repository")
+				return yield* decodeRecursiveTree(yield* parseJson(response, "Read tree")).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected tree payload", cause }),
+					),
+				)
+			})
+
+			/**
+			 * One blob's bytes as text, by its sha; unlike the contents API it serves files up to 100 MB.
+			 * Read raw, so a large lockfile is never held as base64 JSON as well.
+			 */
+			const getBlobText = Effect.fn("GithubAppClient.getBlobText")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				sha: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(sha)}`,
+					"application/vnd.github.raw+json",
+				)
+				if (!isOk(response)) return yield* failure(response, "Read blob", "repository")
+				return yield* response.text.pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Could not read the blob", cause }),
+					),
+				)
+			})
+
 			// An Actions job id is its check run id. Reading annotations needs only `checks: read`,
 			// which the App's `checks: write` covers. Paging stops at the first page holding a failure:
 			// that is what CI traces want, and warnings before it should not hide it.
@@ -2407,6 +2498,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,
+				getRecursiveTree,
+				getBlobText,
 				listCheckRunAnnotations,
 				streamJobLog,
 				canReadActions,

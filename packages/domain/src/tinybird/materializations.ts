@@ -34,6 +34,8 @@ import {
 	errorFingerprintsMinutely,
 	aiTraceIndex,
 	aiCrawlerRequests,
+	scannerRequests,
+	serviceRuntimesHourly,
 	CI_SERVICE_NAME,
 	ciJobs,
 	ciRuns,
@@ -77,6 +79,22 @@ import {
 	REQUEST_PATH_SQL,
 	RESPONSE_STATUS_SQL,
 } from "./ai-crawler-columns"
+import {
+	CLIENT_ADDRESS_SQL,
+	CRITICAL_PROBE_INDEX_SQL,
+	EXECUTABLE_NAME_SQL,
+	OTHER_PROBE_INDEX_SQL,
+	PROBE_SIGNATURE_SQL,
+	RUNTIME_NAME_SQL,
+	RUNTIME_VERSION_SQL,
+	SCANNER_HOST_SQL,
+	SCANNER_INDEX_SQL,
+	SCANNER_NAME_SQL,
+	SCANNER_USER_AGENT_SQL,
+	SDK_LANGUAGE_SQL,
+	SDK_NAME_SQL,
+	SDK_VERSION_SQL,
+} from "./security-telemetry-columns"
 import {
 	GENAI_AGENT_NAME_SQL,
 	GENAI_CACHE_READ_TOKENS_SQL,
@@ -1281,6 +1299,68 @@ export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_m
         WHERE SpanKind = 'Server'
           AND ${AI_CRAWLER_INDEX_SQL} > 0
           AND ${REQUEST_PATH_SQL} != ''
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `scanner_requests` with Server spans that probe for something an application should
+ * not serve, or come from a named scanning tool. Spans without a request path are skipped.
+ */
+export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
+	description:
+		"Populates scanner_requests with Server spans whose path matches a probe signature or whose user agent names a scanning tool, pre-extracting the signature, scanner, host, path, status, client address and user agent.",
+	datasource: scannerRequests,
+	nodes: [
+		node({
+			name: "scanner_requests_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          ServiceName,
+          ${PROBE_SIGNATURE_SQL} AS Signature,
+          ${SCANNER_NAME_SQL} AS Scanner,
+          ${SCANNER_HOST_SQL} AS Host,
+          ${REQUEST_PATH_SQL} AS Path,
+          ${RESPONSE_STATUS_SQL} AS HttpStatus,
+          ${CLIENT_ADDRESS_SQL} AS ClientAddress,
+          ${SCANNER_USER_AGENT_SQL} AS UserAgent
+        FROM traces
+        WHERE SpanKind = 'Server'
+          AND (${CRITICAL_PROBE_INDEX_SQL} > 0 OR ${OTHER_PROBE_INDEX_SQL} > 0 OR ${SCANNER_INDEX_SQL} > 0)
+          AND ${REQUEST_PATH_SQL} != ''
+      `,
+		}),
+	],
+})
+
+/** Populates `service_runtimes_hourly` with the runtime and SDK each service reports, per hour. */
+export const serviceRuntimesHourlyMv = defineMaterializedView("service_runtimes_hourly_mv", {
+	description:
+		"Counts spans hourly per service, environment, process runtime and telemetry SDK name and version, for the Security Center Runtimes tab.",
+	datasource: serviceRuntimesHourly,
+	nodes: [
+		node({
+			name: "service_runtimes_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          ${RUNTIME_NAME_SQL} AS RuntimeName,
+          ${RUNTIME_VERSION_SQL} AS RuntimeVersion,
+          ${EXECUTABLE_NAME_SQL} AS ExecutableName,
+          ${SDK_LANGUAGE_SQL} AS SdkLanguage,
+          ${SDK_NAME_SQL} AS SdkName,
+          ${SDK_VERSION_SQL} AS SdkVersion,
+          count() AS SpanCount
+        FROM traces
+        WHERE ServiceName != ''
+        GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, ExecutableName, SdkLanguage, SdkName, SdkVersion
       `,
 		}),
 	],

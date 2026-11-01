@@ -23,6 +23,7 @@ import {
 	PullRequestCommentSinkLive,
 } from "@maple/backend/services/pr-review/pull-request-comment-handler"
 import { CiTraceSinkLive } from "@maple/backend/services/integrations/ci-traces/CiTraceService"
+import { DependencyScanSinkLive } from "@maple/backend/services/dependency-scan/DependencyScanner"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import type { Message } from "@cloudflare/workers-types"
@@ -70,6 +71,8 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestChecklistSinkLive.pipe(Layer.provide(PrReviewLive))),
 	// Finished CI runs and jobs, written as spans into the org's traces.
 	Layer.provide(CiTraceSinkLive),
+	// Lockfile scans for known vulnerable dependencies, on pushes and installation syncs.
+	Layer.provide(DependencyScanSinkLive),
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
 

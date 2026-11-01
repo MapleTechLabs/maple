@@ -31,9 +31,9 @@ import type { Resources } from "../../../platform/resources"
 import * as Dialog from "../../../ui/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
+import { connectReturns } from "../../integrations/connect-returns"
 import * as ChatFields from "./chat-fields"
 import * as EmailFields from "./email-fields"
-import * as HazelFields from "./hazel-fields"
 import * as LinearFields from "./linear-fields"
 import { DestinationForm, TextField, toFormState } from "./form"
 
@@ -60,8 +60,6 @@ export const Model = Schema.Struct({
 	chatConnect: ChatConnect.Model,
 	/** `EmailMemberPicker`: the org's members, read from Clerk once the picker mounts. */
 	email: EmailFields.Model,
-	/** `HazelOAuthFields`: the connection, its organizations and the picked one's channels. */
-	hazel: HazelFields.Model,
 	/** `LinearFields`: the org's Linear connection and its teams. */
 	linear: LinearFields.Model,
 	brokenLogos: Schema.Array(Schema.String),
@@ -83,7 +81,6 @@ export const init = (id: string): Model => ({
 	chat: ChatFields.init(),
 	chatConnect: ChatConnect.init(),
 	email: EmailFields.init(),
-	hazel: HazelFields.init(),
 	linear: LinearFields.init(),
 })
 
@@ -118,7 +115,6 @@ export const Message = defineMessageUnion({
 	ClickedConnectChat: { connector: Schema.String },
 	GotChatConnectMessage: { message: ChatConnect.Message },
 	GotEmailFieldsMessage: { message: EmailFields.Message },
-	GotHazelFieldsMessage: { message: HazelFields.Message },
 	GotLinearFieldsMessage: { message: LinearFields.Message },
 })
 export type Message = typeof Message.Type
@@ -179,8 +175,6 @@ const createRequest = (payload: V2AlertDestinationCreateParams) => {
 			return { payload }
 		case "webhook":
 			return { payload }
-		case "hazel-oauth":
-			return { payload }
 		case "discord":
 			return { payload }
 		case "telegram":
@@ -202,8 +196,6 @@ const updateRequest = (id: AlertDestinationId, payload: V2AlertDestinationUpdate
 		case "pagerduty":
 			return { params, payload }
 		case "webhook":
-			return { params, payload }
-		case "hazel-oauth":
 			return { params, payload }
 		case "discord":
 			return { params, payload }
@@ -263,8 +255,6 @@ export const isValidGoogleChatWebhookUrl = (raw: string): boolean =>
 export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean => {
 	if (isEditing && form.name.trim().length === 0) return false
 	switch (form.type) {
-		case "hazel-oauth":
-			return form.hazelOrganizationId.trim().length > 0 && form.hazelChannelId.trim().length > 0
 		case "discord":
 			return isEditing || form.webhookUrl.trim().length > 0
 		case "google-chat":
@@ -322,15 +312,6 @@ const liftEmail = (model: Model, step: EmailFields.Return): Return => ({
 	commands: Command.mapMessages(step.commands, (message) => Message.GotEmailFieldsMessage({ message })),
 })
 
-const liftHazel = (model: Model, step: HazelFields.Return): Return => ({
-	model: {
-		...model,
-		hazel: step.model,
-		form: step.form === undefined ? model.form : { ...model.form, ...step.form },
-	},
-	commands: Command.mapMessages(step.commands, (message) => Message.GotHazelFieldsMessage({ message })),
-})
-
 const liftLinear = (model: Model, step: LinearFields.Return): Return => ({
 	model: {
 		...model,
@@ -345,8 +326,6 @@ const mountFields = (step: Return): Return => {
 	const { form } = step.model
 	if (form.type === "chat")
 		return withCommands(liftChat(step.model, ChatFields.reset(step.model.chat, form)), step.commands)
-	if (form.type === "hazel-oauth")
-		return withCommands(liftHazel(step.model, HazelFields.reset(step.model.hazel, form)), step.commands)
 	if (form.type === "linear")
 		return withCommands(
 			liftLinear(step.model, LinearFields.reset(step.model.linear, form)),
@@ -487,6 +466,20 @@ export const chatConnectStream = (dependencies: ChatConnectStream.Dependencies) 
 		Message.GotChatConnectMessage({ message }),
 	)
 
+/** The Linear fields on screen: their connect popup's return re-reads the connection. */
+export const ConnectReturnDependencies = { isListening: Schema.Boolean }
+
+export const connectReturnDependencies = (model: Model) => ({
+	isListening: model.dialog.isOpen && model.form.type === "linear",
+})
+
+export const connectReturnStream = ({ isListening }: ReturnType<typeof connectReturnDependencies>) =>
+	isListening
+		? Stream.map(connectReturns("linear"), () =>
+				Message.GotLinearFieldsMessage({ message: LinearFields.Message.ReturnedConnect() }),
+			)
+		: Stream.empty
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
@@ -573,8 +566,6 @@ export const update = (model: Model, message: Message): Return =>
 		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
 		GotEmailFieldsMessage: ({ message: inner }) =>
 			liftEmail(model, EmailFields.update(model.email, inner)),
-		GotHazelFieldsMessage: ({ message: inner }) =>
-			liftHazel(model, HazelFields.update(model.hazel, inner, model.form)),
 		GotLinearFieldsMessage: ({ message: inner }) =>
 			liftLinear(model, LinearFields.update(model.linear, inner, model.form)),
 	})

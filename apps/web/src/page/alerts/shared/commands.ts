@@ -47,8 +47,6 @@ export const updateDestination = (
 				return yield* client.alertDestinations.update({ params, payload })
 			case "webhook":
 				return yield* client.alertDestinations.update({ params, payload })
-			case "hazel-oauth":
-				return yield* client.alertDestinations.update({ params, payload })
 			case "discord":
 				return yield* client.alertDestinations.update({ params, payload })
 			case "telegram":

@@ -88,7 +88,7 @@ const themeColor = (what: string) =>
 
 const themeFields = {
 	preset: StatusPageThemePreset.annotate({
-		description: "Base palette for light and dark: `default`, `mono`, `midnight` or `paper`.",
+		description: "Base palette for light and dark: `default`, `maple`, `mono`, `midnight` or `paper`.",
 		examples: ["midnight"],
 	}),
 	appearance: StatusPageThemeAppearance.annotate({

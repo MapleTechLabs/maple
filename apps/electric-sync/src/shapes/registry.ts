@@ -54,8 +54,8 @@ const SUBSCRIPTIONS = {
 			"created_by_email",
 		],
 	},
-	// `config_json` holds only public config (summary / channel label / hazel
-	// metadata); the encrypted webhook secrets live in separate `secret_*` columns
+	// `config_json` holds only public config (summary / channel label / chat
+	// workspace); the encrypted webhook secrets live in separate `secret_*` columns
 	// that MUST NOT reach the browser, so the projection drops them (and the
 	// unused `created_by`/`updated_by`). The PK `id` is required in the projection.
 	alert_destinations: {

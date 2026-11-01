@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
+import { GithubIntegrationStatus } from "@maple/domain/http"
 import { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { Clock, Effect, Ref, Result, Schema, Stream } from "effect"
+import { Clock, Effect, Fiber, Ref, Result, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -191,5 +192,56 @@ describe("planetscale first-metrics watch", () => {
 		)
 		const read = step(loaded, Message.CompletedReadClock({ nowMs: stuck.model.nowMs + 1_000 }))
 		expect(isWatching(read)).toBe(true)
+	})
+})
+
+describe("GitHub repository discovery", () => {
+	test("keeps issuing reads beyond a twenty-second provider retry delay", async () => {
+		const entered = init({ search: { integration: "github" } }, context).model
+		const pending = new GithubIntegrationStatus({
+			connected: true,
+			state: "connected",
+			accountLogin: "acme",
+			accountType: "organization",
+			repositorySelection: "selected",
+			ciTracesEnabled: true,
+			repositories: [],
+			repositoryDiscovery: { _tag: "Pending", requestId: "discovery-1" },
+		})
+		let model = step(
+			entered,
+			Message.CompletedLoadGithub({
+				key: entered.statuses.github.key ?? "",
+				result: Result.succeed(pending),
+			}),
+		)
+		const dependency = subscriptions.githubPoll.modelToDependencies({ model, context })
+		const polls = await Effect.gen(function* () {
+			const fiber = yield* Effect.forkChild(
+				subscriptions.githubPoll.dependenciesToStream(dependency).pipe(
+					Stream.take(8),
+					Stream.mapEffect((message) =>
+						Effect.map(Clock.currentTimeMillis, (at) => ({ message, at })),
+					),
+					Stream.runCollect,
+				),
+			)
+			yield* Effect.yieldNow
+			yield* TestClock.adjust("30 seconds")
+			return yield* Fiber.join(fiber)
+		}).pipe(Effect.provide([TestClock.layer(), ResourcesLive]), Effect.runPromise)
+		expect(polls.at(-1)?.at).toBeGreaterThanOrEqual(20_000)
+		for (const { message } of polls) {
+			const read = update(model, message, context)
+			expect(names(read.commands)).toContain("LoadIntegrationsGithubStatus")
+			model = step(
+				read.model,
+				Message.CompletedLoadGithub({
+					key: read.model.statuses.github.key ?? "",
+					result: Result.succeed(pending),
+				}),
+			)
+		}
+		expect(subscriptions.githubPoll.modelToDependencies({ model, context }).isPolling).toBe(true)
 	})
 })

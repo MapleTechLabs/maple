@@ -244,23 +244,27 @@ export const FetchEditorPreview = Command.define("FetchStatusPageEditorPreview",
 })
 
 export const CreateEditorMonitor = Command.define("CreateStatusPageEditorMonitor", {
-	args: { url: Schema.String },
+	args: { session: Schema.Number, url: Schema.String },
 	messages: [Message.CompletedCreateMonitor],
-	execute: ({ url }) =>
+	execute: ({ session, url }) =>
 		saveMonitor(null, monitorPayloadFor(url)).pipe(
 			Effect.result,
-			Effect.map((result) => Message.CompletedCreateMonitor({ result })),
+			Effect.map((result) => Message.CompletedCreateMonitor({ session, result })),
 		),
 })
 
 /** Adds the picked components in order, one create each; the first failure stops the rest. */
 export const AddComponents = Command.define("AddStatusPageComponents", {
-	args: { pageId: StatusPageId, components: Schema.Array(StatusPageDraftComponent) },
+	args: {
+		session: Schema.Number,
+		pageId: StatusPageId,
+		components: Schema.Array(StatusPageDraftComponent),
+	},
 	messages: [Message.CompletedAddComponents],
-	execute: ({ pageId, components }) =>
+	execute: ({ session, pageId, components }) =>
 		Effect.forEach(components, (component) => saveComponent(pageId, null, component)).pipe(
 			Effect.result,
-			Effect.map((result) => Message.CompletedAddComponents({ result })),
+			Effect.map((result) => Message.CompletedAddComponents({ session, result })),
 		),
 })
 
