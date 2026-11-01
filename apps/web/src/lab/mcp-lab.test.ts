@@ -49,6 +49,8 @@ describe("mcp lab", () => {
 			)
 		}
 		expect(searched.totals.calls).toBe(115)
+		expect(searched.clients).toHaveLength(5)
+		expect(searched.clients.reduce((total, client) => total + client.calls, 0)).toBe(115)
 	})
 
 	test("kind and failing only narrow the chart's failures with the totals", () => {

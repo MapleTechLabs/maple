@@ -69,7 +69,8 @@ export type ServerBodyOptions<M> = Readonly<{
 	/** Every tool the server answered in the window, before the filters. */
 	toolCount: number
 	/** Durations have no per-client split: the tile says so while a client filter is set. */
-	isDurationServerWide: boolean
+	/** A filter narrows the page: durations stay server-wide, an empty table blames the filters. */
+	isFiltered: boolean
 	metric: McpMetric
 	percentile: ToolPercentile
 	onSelectMetric: (metric: McpMetric) => M
@@ -147,7 +148,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 						eyebrow: "Duration",
 						value: formatDurationNs(totals[options.percentile]),
 						spark: data.series.map((point) => point[options.percentile]).slice(-SPARK_BUCKETS),
-						subline: options.isDurationServerWide
+						subline: options.isFiltered
 							? subline(h, "all calls", `· p50 ${formatDurationNs(totals.p50)}`)
 							: subline(
 									h,
@@ -329,7 +330,13 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 				toolTableBody(
 					h,
 					data.tools.length === 0
-						? [emptyMessage(h, { className: "py-8 font-mono" }, ["No tools match the filters."])]
+						? [
+								emptyMessage(h, { className: "py-8 font-mono" }, [
+									options.isFiltered
+										? "No tools match the filters."
+										: "No tool calls in the selected window.",
+								]),
+							]
 						: data.tools.map((row, index) => toolRow(h, row, index, maxRate, options)),
 				),
 			]),
@@ -550,7 +557,9 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			attr(h, "user_agent.original"),
 			". ",
 			attr(h, "clientInfo"),
-			` arrives on initialize only: ${initializers}${rest > 0 ? ` · ${rest} more` : ""}.`,
+			initializers === ""
+				? " arrives on initialize only; none seen in this window."
+				: ` arrives on initialize only: ${initializers}${rest > 0 ? ` · ${rest} more` : ""}.`,
 		]),
 	])
 }

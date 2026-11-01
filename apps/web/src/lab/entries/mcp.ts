@@ -25,7 +25,7 @@ import { pageDescription, pageTitle } from "../../ui/page-layout"
 import { skeleton } from "../../ui/skeleton"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { serviceDot } from "../../ui/values"
-import { filteredOverview, filteredTool } from "../mcp-filter"
+import { filteredOverview, filteredTool, hasFilter } from "../mcp-filter"
 import {
 	decodeCallList,
 	decodeIdentity,
@@ -112,12 +112,19 @@ const toolbar = (h: H, model: Model, withSearch: boolean): Html => {
 		model: model.clientSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "client", message }),
 	})
+	const kindSelect = facetSelect(h, {
+		label: "kind",
+		value: model.kind,
+		options: KIND_OPTIONS,
+		model: model.kindSelect,
+		toMessage: (message) => Message.GotSelectMessage({ facet: "kind", message }),
+	})
 	const base = {
 		isFailingOnly: model.isFailingOnly,
 		onToggleFailingOnly: Message.ToggledFailingOnly(),
 		isWaiting: false,
 	}
-	if (!withSearch) return toolFilterToolbar(h, { ...base, selects: [clientSelect] })
+	if (!withSearch) return toolFilterToolbar(h, { ...base, selects: [clientSelect, kindSelect] })
 	return toolFilterToolbar(h, {
 		...base,
 		nameSearch: {
@@ -126,16 +133,7 @@ const toolbar = (h: H, model: Model, withSearch: boolean): Html => {
 			onInput: (value: string) => Message.ChangedSearchInput({ value }),
 			onClear: Message.ChangedSearchInput({ value: "" }),
 		},
-		selects: [
-			clientSelect,
-			facetSelect(h, {
-				label: "kind",
-				value: model.kind,
-				options: KIND_OPTIONS,
-				model: model.kindSelect,
-				toMessage: (message) => Message.GotSelectMessage({ facet: "kind", message }),
-			}),
-		],
+		selects: [clientSelect, kindSelect],
 	})
 }
 
@@ -256,11 +254,7 @@ const pageView = (model: Model, h: H): Html => {
 							scope: scopeText("all tools", filters),
 							window: WINDOW,
 							toolCount: MCP_OVERVIEW.tools.length,
-							isDurationServerWide:
-								filters.client !== undefined ||
-								filters.kind !== undefined ||
-								filters.isFailingOnly ||
-								filters.search.trim() !== "",
+							isFiltered: hasFilter(filters),
 							metric: model.metric,
 							percentile: pressed(model.percentileToggle, decodePercentile, "p90"),
 							onSelectMetric: (metric: McpMetric) => Message.ClickedMetric({ metric }),
@@ -315,7 +309,6 @@ const pageView = (model: Model, h: H): Html => {
 								scope: scopeText(MCP_RUN_SQL.tool, {
 									...filters,
 									search: "",
-									kind: undefined,
 								}),
 								window: WINDOW,
 								percentile: pressed(model.percentileToggle, decodePercentile, "p90"),
