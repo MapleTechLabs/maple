@@ -15,9 +15,11 @@ const CargoLock = Schema.Struct({
 	package: Schema.optionalKey(Schema.Array(CargoPackage)),
 })
 
-/** Registry sources: `registry+<index url>` or `sparse+<index url>`; git and path sources are not. */
-const isRegistrySource = (source: string | undefined): boolean =>
-	source !== undefined && (source.startsWith("registry+") || source.startsWith("sparse+"))
+/** crates.io, through either index; an alternate registry's crate is not the crates.io one of that name. */
+const CRATES_IO_SOURCES: ReadonlySet<string> = new Set([
+	"registry+https://github.com/rust-lang/crates.io-index",
+	"sparse+https://index.crates.io/",
+])
 
 /** Member dependency entries: `name`, `name version` or `name version (source)`. */
 const parseDependency = (entry: string): { readonly name: string; readonly version: string | undefined } => {
@@ -36,12 +38,12 @@ export const parseCargoLock = Effect.fn("lockfiles.parseCargoLock")(function* (i
 	const isDirect = (name: string, version: string): boolean =>
 		direct.has(name) || direct.has(`${name}@${version}`)
 	const packages = all.flatMap((p): ReadonlyArray<LockedPackage> =>
-		isRegistrySource(p.source)
+		p.source !== undefined && CRATES_IO_SOURCES.has(p.source)
 			? [pkg("crates.io", p.name, p.version, isDirect(p.name, p.version) ? "direct" : "transitive")]
 			: [],
 	)
 	const skipped = all.length - members.length - packages.length
-	const warnings = skipped > 0 ? [`skipped ${skipped} git or path packages`] : []
+	const warnings = skipped > 0 ? [`skipped ${skipped} git, path or alternate-registry packages`] : []
 	const output: ParserOutput = { kind: "cargo-lock", packages, warnings }
 	return output
 })
