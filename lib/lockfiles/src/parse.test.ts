@@ -243,6 +243,66 @@ describe("npm lockfile details", () => {
 	})
 })
 
+describe("pnpm 11 multi-document lockfiles", () => {
+	it("reads every document, the package manager's env document and the project's", async () => {
+		const lock = [
+			"---",
+			"lockfileVersion: '9.0'",
+			"importers:",
+			"  .:",
+			"    packageManagerDependencies:",
+			"      pnpm:",
+			"        specifier: 11.0.0",
+			"        version: 11.0.0",
+			"packages:",
+			"  pnpm@11.0.0:",
+			"    resolution: {integrity: sha512-x}",
+			"---",
+			"lockfileVersion: '9.0'",
+			"importers:",
+			"  .:",
+			"    dependencies:",
+			"      lodash:",
+			"        specifier: 4.17.15",
+			"        version: 4.17.15",
+			"packages:",
+			"  lodash@4.17.15:",
+			"    resolution: {integrity: sha512-y}",
+			"",
+		].join("\n")
+		expect(summary(await parse("pnpm-lock.yaml", lock))).toEqual(
+			expect.arrayContaining(["lodash@4.17.15:direct", "pnpm@11.0.0:transitive"]),
+		)
+	})
+})
+
+describe("Cargo registries", () => {
+	it("keeps crates.io crates from either index and skips alternate registries", async () => {
+		const lock = [
+			"version = 4",
+			"[[package]]",
+			'name = "app"',
+			'version = "0.1.0"',
+			"[[package]]",
+			'name = "serde"',
+			'version = "1.0.0"',
+			'source = "sparse+https://index.crates.io/"',
+			"[[package]]",
+			'name = "time"',
+			'version = "0.1.43"',
+			'source = "registry+https://github.com/rust-lang/crates.io-index"',
+			"[[package]]",
+			'name = "internal"',
+			'version = "2.0.0"',
+			'source = "sparse+https://crates.example.com/index/"',
+			"",
+		].join("\n")
+		const parsed = await parse("Cargo.lock", lock)
+		expect(parsed.packages.map((p) => p.name).sort()).toEqual(["serde", "time"])
+		expect(parsed.warnings).toEqual(["skipped 1 git, path or alternate-registry packages"])
+	})
+})
+
 describe("yarn berry aliases", () => {
 	it("reports an npm: alias under the real package name", async () => {
 		const lock = [
@@ -364,6 +424,6 @@ describe("Go and Cargo details", () => {
 		].join("\n")
 		const parsed = await parse("Cargo.lock", lock)
 		expect(summary(parsed)).toEqual(["serde@0.9.0:transitive", "serde@1.0.100:direct"])
-		expect(parsed.warnings).toEqual(["skipped 1 git or path packages"])
+		expect(parsed.warnings).toEqual(["skipped 1 git, path or alternate-registry packages"])
 	})
 })

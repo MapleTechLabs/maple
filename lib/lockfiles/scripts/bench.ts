@@ -22,7 +22,10 @@ const benchOne = (path: string) =>
 		const first = timings[0]
 		if (first === undefined) return
 		const { parsed } = first
-		const direct = parsed.packages.filter((p) => p.relation === "direct").length
+		// Without manifests some formats (yarn) cannot tell direct dependencies apart.
+		const direct = parsed.packages.some((p) => p.relation === "unknown")
+			? "unknown"
+			: String(parsed.packages.filter((p) => p.relation === "direct").length)
 		yield* Effect.log(
 			`${path}: ${parsed.kind}, ${parsed.packages.length} packages (${direct} direct), ${(content.length / 1024).toFixed(0)} KiB, ` +
 				`first ${first.ms.toFixed(1)} ms, median ${(sorted[Math.floor(RUNS / 2)] ?? 0).toFixed(1)} ms over ${RUNS} runs` +

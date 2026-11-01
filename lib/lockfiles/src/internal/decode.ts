@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { parse as parseToml } from "smol-toml"
-import { parse as parseYaml } from "yaml"
+import { parse as parseYaml, parseAllDocuments } from "yaml"
 import { LockfileParseError } from "../errors.ts"
 
 const parseError = (path: string, what: string) => (cause: unknown) =>
@@ -42,3 +42,28 @@ export const parseYamlText = (path: string, content: string): Effect.Effect<unkn
 
 export const parseTomlText = (path: string, content: string): Effect.Effect<unknown, LockfileParseError> =>
 	Effect.try({ try: () => parseToml(content), catch: parseError(path, "invalid TOML") })
+
+/** Every document of a YAML stream, as plain values; a document with errors fails the whole read. */
+export const parseYamlDocuments = (
+	path: string,
+	content: string,
+): Effect.Effect<ReadonlyArray<unknown>, LockfileParseError> =>
+	Effect.try({
+		try: () => {
+			const parsed = parseAllDocuments(content)
+			return Array.isArray(parsed) ? parsed : []
+		},
+		catch: parseError(path, "invalid YAML"),
+	}).pipe(
+		Effect.flatMap((docs) => {
+			const broken = docs.find((doc) => doc.errors.length > 0)
+			return broken === undefined
+				? Effect.try({
+						try: () => docs.map((doc) => doc.toJS()),
+						catch: parseError(path, "invalid YAML"),
+					})
+				: Effect.fail(
+						parseError(path, "invalid YAML")(broken.errors[0]?.message ?? "unreadable document"),
+					)
+		}),
+	)
