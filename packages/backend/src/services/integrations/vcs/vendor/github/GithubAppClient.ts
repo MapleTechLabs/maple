@@ -637,13 +637,35 @@ const decodeContentFile = Schema.decodeUnknownEffect(GithubContentFileSchema)
 const base64UrlString = (value: string) => Buffer.from(value, "utf8").toString("base64url")
 const base64UrlBytes = (value: ArrayBuffer) => Buffer.from(value).toString("base64url")
 
-const pemToPkcs8 = (pem: string): ArrayBuffer => {
+const derLength = (length: number): Buffer =>
+	length < 0x80
+		? Buffer.from([length])
+		: length < 0x100
+			? Buffer.from([0x81, length])
+			: length < 0x10000
+				? Buffer.from([0x82, length >> 8, length & 0xff])
+				: Buffer.from([0x83, length >> 16, (length >> 8) & 0xff, length & 0xff])
+
+const derNode = (tag: number, content: Buffer): Buffer =>
+	Buffer.concat([Buffer.from([tag]), derLength(content.length), content])
+
+// INTEGER 0 (version) + AlgorithmIdentifier { rsaEncryption, NULL }.
+const PKCS8_RSA_PREFIX = Buffer.from("020100300d06092a864886f70d0101010500", "hex")
+
+/**
+ * GitHub hands out PKCS#1 keys (`BEGIN RSA PRIVATE KEY`) but WebCrypto only imports PKCS#8,
+ * so a PKCS#1 body is wrapped in a PKCS#8 PrivateKeyInfo.
+ */
+export const pemToPkcs8 = (pem: string): ArrayBuffer => {
 	const body = pem
 		.replace(/-----BEGIN[^-]+-----/g, "")
 		.replace(/-----END[^-]+-----/g, "")
 		.replace(/\s+/g, "")
-	const buf = Buffer.from(body, "base64")
-	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+	const der = Buffer.from(body, "base64")
+	const buf = pem.includes("BEGIN RSA PRIVATE KEY")
+		? derNode(0x30, Buffer.concat([PKCS8_RSA_PREFIX, derNode(0x04, der)]))
+		: der
+	return new Uint8Array(buf).buffer
 }
 
 /** GitHub answers 401 to a revoked or expired token; some endpoints answer 403 "Bad credentials". */
