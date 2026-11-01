@@ -6,10 +6,10 @@ import { TestClock } from "effect/testing"
 import { InternalScrapeTarget } from "@maple/domain/http"
 import { convertFamiliesToOtlp, parsePrometheusText, type OtlpExportRequest } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
-import { scrapeError, type ScrapeError } from "./ScrapeError"
+import { scrapeError, type ScrapeError, type ScrapeFailureReason } from "./ScrapeError"
 import { otlpContext, Scraper } from "./Scraper"
 import { TargetFetcher } from "./TargetFetcher"
-import type { TargetGroup } from "./TargetRegistry"
+import { type TargetGroup, targetKey } from "./TargetRegistry"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 
 const decodeTarget = Schema.decodeUnknownSync(InternalScrapeTarget)
@@ -59,10 +59,10 @@ const scraperLayer = (harness: Harness) =>
 		),
 	)
 
-const cycle = (harness: Harness, targets: TargetGroup) =>
+const cycle = (harness: Harness, targets: TargetGroup, failing?: ReadonlyMap<string, ScrapeFailureReason>) =>
 	Effect.gen(function* () {
 		const scraper = yield* Scraper
-		return yield* scraper.scrapeCycle(targets, yield* Semaphore.make(10))
+		return yield* scraper.scrapeCycle(targets, yield* Semaphore.make(10), failing)
 	}).pipe(Effect.provide(scraperLayer(harness)))
 
 /** A one-target cycle, failing with that target's result. */
@@ -152,6 +152,38 @@ describe("Scraper", () => {
 
 	// A billing block is the ingest key's, so it fails every delivered sub-target.
 	// Its span lives on `OtlpIngest.send`; the fetch spans stay Ok.
+	it.effect("closes a streak's repeated failure Ok and a changed failure as an error", () =>
+		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
+			const harness = makeHarness()
+			harness.fetch = () =>
+				Effect.fail(
+					scrapeError({ message: "returned HTTP 404", reason: "target_rejected", statusCode: 404 }),
+				)
+			const failingWith = (reason: ScrapeFailureReason) => new Map([[targetKey(TARGET), reason]])
+			const repeated = yield* cycle(harness, [TARGET], failingWith("target_rejected")).pipe(
+				Effect.provide(tracer.layer),
+			)
+			const changed = yield* cycle(harness, [TARGET], failingWith("target_error")).pipe(
+				Effect.provide(tracer.layer),
+			)
+
+			// Both still report the failure; only the span status differs.
+			for (const outcome of [repeated, changed]) {
+				assert.isTrue(Result.isFailure(outcome.scrapes[0]!.result))
+			}
+			const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
+			assert.deepStrictEqual(
+				spans.map((span) => Exit.isSuccess(span.exit)),
+				[true, false],
+			)
+			assert.deepStrictEqual(
+				spans.map((span) => span.attributes.get("error.type")),
+				["target_rejected", "target_rejected"],
+			)
+		}),
+	)
+
 	it.effect("attributes a shared delivery failure to every delivered sub-target", () =>
 		Effect.gen(function* () {
 			const tracer = makeCapturingTracer()
