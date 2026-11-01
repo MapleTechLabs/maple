@@ -4086,6 +4086,62 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
+-- builder:releases:runningCommitsQuery:default  [aa2f361b]
+SELECT
+          service_windows.bServiceName AS serviceName,
+          service_windows.bEnvironment AS environment,
+          service_windows.bCommitSha AS commitSha,
+          sum(service_windows.bEstimatedSpanCount) AS spanCount
+        FROM (
+SELECT
+          toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bServiceName,
+          service_overview_hourly.ServiceNamespace AS bServiceNamespace,
+          service_overview_hourly.DeploymentEnv AS bEnvironment,
+          service_overview_hourly.CommitSha AS bCommitSha,
+          sum(service_overview_hourly.SpanCount) AS bSpanCount,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_hourly.ErrorCount) AS bErrorCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_hourly.FirstSeen) AS bFirstSeen,
+          sum(service_overview_hourly.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_hourly.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')
+        GROUP BY serviceName, environment, commitSha
+        ORDER BY spanCount DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:releases:serviceDeploymentsQuery:hourInterior  [ae47e5db]
 SELECT
           ranked.serviceName AS serviceName,
@@ -4295,6 +4351,97 @@ SELECT
         WHERE ranked.versionRank <= 20
         ORDER BY serviceName ASC, firstSeen DESC
         LIMIT 500
+        FORMAT JSON
+
+-- builder:security-telemetry:runtimeVersionsQuery:default  [7bc01cfb]
+SELECT
+          service_runtimes_hourly.ServiceName AS service,
+          service_runtimes_hourly.DeploymentEnv AS environment,
+          service_runtimes_hourly.RuntimeName AS runtimeName,
+          service_runtimes_hourly.RuntimeVersion AS runtimeVersion,
+          service_runtimes_hourly.ExecutableName AS executableName,
+          service_runtimes_hourly.SdkLanguage AS sdkLanguage,
+          service_runtimes_hourly.SdkName AS sdkName,
+          service_runtimes_hourly.SdkVersion AS sdkVersion,
+          sum(service_runtimes_hourly.SpanCount) AS spans,
+          max(service_runtimes_hourly.Hour) AS lastSeen
+        FROM service_runtimes_hourly
+        WHERE service_runtimes_hourly.OrgId = 'org_sql_catalog'
+          AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_runtimes_hourly.Hour <= '2026-01-03 14:15:00'
+        GROUP BY service, environment, runtimeName, runtimeVersion, executableName, sdkLanguage, sdkName, sdkVersion
+        ORDER BY service ASC, environment ASC, runtimeName ASC, runtimeVersion ASC, executableName ASC, sdkLanguage ASC, sdkName ASC, sdkVersion ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerExposedQuery:default  [d1c58739]
+SELECT
+          scanner_requests.ServiceName AS service,
+          scanner_requests.Host AS host,
+          scanner_requests.Path AS path,
+          scanner_requests.Signature AS signature,
+          scanner_requests.HttpStatus AS httpStatus,
+          uniq(scanner_requests.TraceId) AS requests,
+          max(scanner_requests.Timestamp) AS lastSeen,
+          any(scanner_requests.TraceId) AS sampleTraceId
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+          AND scanner_requests.Signature IN ('/.env', '/.aws/', '/.ssh/', '/id_rsa', '/.npmrc', '/.htpasswd', '/.docker/config.json', '/.vscode/sftp.json', '/.s3cfg', '/wp-config.php', '/.git/', '/.svn/', '/.hg/', '/.ds_store', '/actuator/env', '/actuator/heapdump', '/actuator/configprops', '/actuator/gateway', '/server-status', '/server-info', 'phpinfo', '/info.php', '/_profiler', '/debug/pprof', '/telescope/requests', '../', '..%2f', '%2e%2e', '..%5c', '%252e%252e', '/etc/passwd', '/proc/self/environ', 'win.ini', '/phpmyadmin', '/pma/', '/adminer', '/vendor/phpunit', 'eval-stdin.php', '/boaform', '/hnap1', '/goform/', '/cgi-bin/luci')
+          AND (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)
+        GROUP BY service, host, path, signature, httpStatus
+        ORDER BY lastSeen DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerSignaturesQuery:default  [60ddb44e]
+SELECT
+          scanner_requests.Signature AS signature,
+          scanner_requests.ServiceName AS service,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered,
+          uniqIf(scanner_requests.ClientAddress, scanner_requests.ClientAddress != '') AS sources,
+          max(scanner_requests.Timestamp) AS lastSeen
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY signature, service
+        ORDER BY requests DESC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerSourcesQuery:default  [913fd82e]
+SELECT
+          scanner_requests.ClientAddress AS clientAddress,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.Signature, scanner_requests.Signature != '') AS signatures,
+          max(scanner_requests.Scanner) AS scanner,
+          argMax(scanner_requests.UserAgent, scanner_requests.Scanner) AS userAgent,
+          max(scanner_requests.Timestamp) AS lastSeen
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+          AND scanner_requests.ClientAddress != ''
+        GROUP BY clientAddress
+        ORDER BY requests DESC, clientAddress ASC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:security-telemetry:scannerTimelineQuery:default  [6cddc38a]
+SELECT
+          toStartOfInterval(scanner_requests.Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          uniq(scanner_requests.TraceId) AS requests,
+          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 300)) AS answered
+        FROM scanner_requests
+        WHERE scanner_requests.OrgId = 'org_sql_catalog'
+          AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
+          AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
         FORMAT JSON
 
 -- builder:service-api:serviceApiTimeseriesQuery:mergedSubHour  [d9a67a8b]
@@ -13808,7 +13955,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:span_hierarchy:unwindowed:baseline  [ce7c380b]
+-- pipe:span_hierarchy:unwindowed:baseline  [eb5aec43]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -13821,8 +13968,8 @@ SELECT
           traces.Timestamp AS startTime,
           traces.StatusCode AS statusCode,
           traces.StatusMessage AS statusMessage,
-          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'url.full', SpanAttributes['url.full'], 'http.url', SpanAttributes['http.url'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'url.path', SpanAttributes['url.path'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'cache.system', SpanAttributes['cache.system'], 'cache.result', SpanAttributes['cache.result'], 'cache.name', SpanAttributes['cache.name'], 'cache.operation', SpanAttributes['cache.operation'], 'cache.lookup_performed', SpanAttributes['cache.lookup_performed'], 'db.system.name', SpanAttributes['db.system.name'], 'db.system', SpanAttributes['db.system'], 'cloud.platform', SpanAttributes['cloud.platform'], 'cloudflare.colo', SpanAttributes['cloudflare.colo'], 'faas.invoked_region', SpanAttributes['faas.invoked_region'], 'cloudflare.outcome', SpanAttributes['cloudflare.outcome'])) AS spanAttributes,
-          toJSONString(map('deployment.environment', ResourceAttributes['deployment.environment'], 'vcs.ref.head.revision', ResourceAttributes['vcs.ref.head.revision'])) AS resourceAttributes,
+          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'url.full', SpanAttributes['url.full'], 'http.url', SpanAttributes['http.url'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'url.path', SpanAttributes['url.path'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'cache.system', SpanAttributes['cache.system'], 'cache.result', SpanAttributes['cache.result'], 'cache.name', SpanAttributes['cache.name'], 'cache.operation', SpanAttributes['cache.operation'], 'cache.lookup_performed', SpanAttributes['cache.lookup_performed'], 'db.system.name', SpanAttributes['db.system.name'], 'db.system', SpanAttributes['db.system'], 'cloud.platform', SpanAttributes['cloud.platform'], 'cloudflare.colo', SpanAttributes['cloudflare.colo'], 'faas.invoked_region', SpanAttributes['faas.invoked_region'], 'cloudflare.outcome', SpanAttributes['cloudflare.outcome'], 'messaging.system', SpanAttributes['messaging.system'], 'rpc.system', SpanAttributes['rpc.system'], 'gen_ai.provider.name', SpanAttributes['gen_ai.provider.name'], 'gen_ai.system', SpanAttributes['gen_ai.system'])) AS spanAttributes,
+          toJSONString(map('deployment.environment', ResourceAttributes['deployment.environment'], 'vcs.ref.head.revision', ResourceAttributes['vcs.ref.head.revision'], 'process.runtime.name', ResourceAttributes['process.runtime.name'], 'telemetry.sdk.language', ResourceAttributes['telemetry.sdk.language'], 'telemetry.sdk.name', ResourceAttributes['telemetry.sdk.name'], 'cloud.platform', ResourceAttributes['cloud.platform'])) AS resourceAttributes,
           'related' AS relationship
         FROM traces
         WHERE traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
@@ -13838,7 +13985,7 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_hierarchy:windowed:baseline  [c4559257]
+-- pipe:span_hierarchy:windowed:baseline  [48e4da1f]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -13851,8 +13998,8 @@ SELECT
           traces.Timestamp AS startTime,
           traces.StatusCode AS statusCode,
           traces.StatusMessage AS statusMessage,
-          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'url.full', SpanAttributes['url.full'], 'http.url', SpanAttributes['http.url'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'url.path', SpanAttributes['url.path'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'cache.system', SpanAttributes['cache.system'], 'cache.result', SpanAttributes['cache.result'], 'cache.name', SpanAttributes['cache.name'], 'cache.operation', SpanAttributes['cache.operation'], 'cache.lookup_performed', SpanAttributes['cache.lookup_performed'], 'db.system.name', SpanAttributes['db.system.name'], 'db.system', SpanAttributes['db.system'], 'cloud.platform', SpanAttributes['cloud.platform'], 'cloudflare.colo', SpanAttributes['cloudflare.colo'], 'faas.invoked_region', SpanAttributes['faas.invoked_region'], 'cloudflare.outcome', SpanAttributes['cloudflare.outcome'])) AS spanAttributes,
-          toJSONString(map('deployment.environment', ResourceAttributes['deployment.environment'], 'vcs.ref.head.revision', ResourceAttributes['vcs.ref.head.revision'])) AS resourceAttributes,
+          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'url.full', SpanAttributes['url.full'], 'http.url', SpanAttributes['http.url'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'url.path', SpanAttributes['url.path'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'cache.system', SpanAttributes['cache.system'], 'cache.result', SpanAttributes['cache.result'], 'cache.name', SpanAttributes['cache.name'], 'cache.operation', SpanAttributes['cache.operation'], 'cache.lookup_performed', SpanAttributes['cache.lookup_performed'], 'db.system.name', SpanAttributes['db.system.name'], 'db.system', SpanAttributes['db.system'], 'cloud.platform', SpanAttributes['cloud.platform'], 'cloudflare.colo', SpanAttributes['cloudflare.colo'], 'faas.invoked_region', SpanAttributes['faas.invoked_region'], 'cloudflare.outcome', SpanAttributes['cloudflare.outcome'], 'messaging.system', SpanAttributes['messaging.system'], 'rpc.system', SpanAttributes['rpc.system'], 'gen_ai.provider.name', SpanAttributes['gen_ai.provider.name'], 'gen_ai.system', SpanAttributes['gen_ai.system'])) AS spanAttributes,
+          toJSONString(map('deployment.environment', ResourceAttributes['deployment.environment'], 'vcs.ref.head.revision', ResourceAttributes['vcs.ref.head.revision'], 'process.runtime.name', ResourceAttributes['process.runtime.name'], 'telemetry.sdk.language', ResourceAttributes['telemetry.sdk.language'], 'telemetry.sdk.name', ResourceAttributes['telemetry.sdk.name'], 'cloud.platform', ResourceAttributes['cloud.platform'])) AS resourceAttributes,
           if(traces.SpanId = '00f067aa0ba902b7', 'target', 'related') AS relationship
         FROM traces
         WHERE traces.TraceId = '0af7651916cd43dd8448eb211c80319c'

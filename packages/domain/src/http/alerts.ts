@@ -8,8 +8,6 @@ import {
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
-	HazelChannelId,
-	HazelOrganizationId,
 	IsoDateTimeString,
 	PostgresTransactionId,
 	RoleName,
@@ -21,7 +19,6 @@ import { HttpTaggedError } from "./error-policy"
 export const AlertDestinationType = Schema.Literals([
 	"pagerduty",
 	"webhook",
-	"hazel-oauth",
 	"discord",
 	"telegram",
 	"google-chat",
@@ -299,19 +296,6 @@ export class WebhookAlertDestinationConfig extends Schema.Class<WebhookAlertDest
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
-export class HazelOAuthAlertDestinationConfig extends Schema.Class<HazelOAuthAlertDestinationConfig>(
-	"HazelOAuthAlertDestinationConfig",
-)({
-	type: Schema.Literal("hazel-oauth"),
-	name: ChannelLabel,
-	hazelOrganizationId: HazelOrganizationId,
-	hazelOrganizationName: NonEmptyString,
-	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(NonEmptyString)),
-	hazelChannelId: HazelChannelId,
-	hazelChannelName: NonEmptyString,
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
-
 export class DiscordAlertDestinationConfig extends Schema.Class<DiscordAlertDestinationConfig>(
 	"DiscordAlertDestinationConfig",
 )({
@@ -417,7 +401,6 @@ export class EmailAlertDestinationConfig extends Schema.Class<EmailAlertDestinat
 export const AlertDestinationCreateRequest = Schema.Union([
 	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
-	HazelOAuthAlertDestinationConfig,
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	GoogleChatAlertDestinationConfig,
@@ -441,18 +424,6 @@ export class UpdateWebhookAlertDestinationConfig extends Schema.Class<UpdateWebh
 	name: OptionalNonEmptyString,
 	url: Schema.optionalKey(Schema.String),
 	signingSecret: Schema.optionalKey(Schema.String),
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
-
-export class UpdateHazelOAuthAlertDestinationConfig extends Schema.Class<UpdateHazelOAuthAlertDestinationConfig>(
-	"UpdateHazelOAuthAlertDestinationConfig",
-)({
-	name: OptionalNonEmptyString,
-	hazelOrganizationId: Schema.optionalKey(HazelOrganizationId),
-	hazelOrganizationName: Schema.optionalKey(Schema.String),
-	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	hazelChannelId: Schema.optionalKey(HazelChannelId),
-	hazelChannelName: Schema.optionalKey(Schema.String),
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
@@ -514,10 +485,6 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("webhook"),
 		...UpdateWebhookAlertDestinationConfig.fields,
-	}),
-	Schema.Struct({
-		type: Schema.Literal("hazel-oauth"),
-		...UpdateHazelOAuthAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("discord"),

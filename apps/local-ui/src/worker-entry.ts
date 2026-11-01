@@ -12,10 +12,12 @@ interface AssetsBinding {
  * injected script must not run. Every script is an external same-origin file
  * (the pre-paint theme script is `public/theme-init.js`, never inline); the
  * inline-style allowance covers the highlighted JSON views' `style` attributes.
+ * `'wasm-unsafe-eval'` lets the code highlighter compile its WebAssembly lexer;
+ * it does not enable JavaScript `eval`.
  */
 const CONTENT_SECURITY_POLICY = [
 	"default-src 'self'",
-	"script-src 'self'",
+	"script-src 'self' 'wasm-unsafe-eval'",
 	"style-src 'self' 'unsafe-inline'",
 	"img-src 'self' data:",
 	"font-src 'self' data:",

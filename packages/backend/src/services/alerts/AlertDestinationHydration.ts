@@ -12,11 +12,6 @@ import { decryptAes256Gcm } from "@maple/backend/platform/Crypto"
 export const DestinationPublicConfigSchema = Schema.Struct({
 	summary: Schema.String,
 	channelLabel: Schema.NullOr(Schema.String),
-	hazelOrganizationId: Schema.optionalKey(Schema.String),
-	hazelOrganizationName: Schema.optionalKey(Schema.String),
-	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	hazelChannelId: Schema.optionalKey(Schema.String),
-	hazelChannelName: Schema.optionalKey(Schema.String),
 	memberUserIds: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** `chat` only: which connector draws the row, and the workspace an edit lists channels from. */
 	chatConnector: Schema.optionalKey(ChatConnectorId),
@@ -34,16 +29,6 @@ const DestinationSecretConfigSchema = Schema.Union([
 		type: Schema.Literal("webhook"),
 		url: Schema.String,
 		signingSecret: Schema.NullOr(Schema.String),
-	}),
-	Schema.Struct({
-		type: Schema.Literal("hazel-oauth"),
-		hazelOrganizationId: Schema.String,
-		hazelOrganizationName: Schema.String,
-		hazelChannelId: Schema.String,
-		hazelChannelName: Schema.String,
-		webhookId: Schema.String,
-		webhookUrl: Schema.String,
-		webhookToken: Schema.String,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("discord"),
@@ -89,8 +74,6 @@ const DestinationSecretConfigSchema = Schema.Union([
 
 export type DestinationPublicConfig = Schema.Schema.Type<typeof DestinationPublicConfigSchema>
 export type DestinationSecretConfig = Schema.Schema.Type<typeof DestinationSecretConfigSchema>
-
-export type EnrichedDestinationSecretConfig = DestinationSecretConfig
 
 export const SecretConfigFromJson = Schema.fromJsonString(DestinationSecretConfigSchema)
 

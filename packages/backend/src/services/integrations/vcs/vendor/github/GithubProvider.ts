@@ -1304,6 +1304,26 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						Effect.mapError(toVcsCommitError),
 					)
 
+			const fetchTreeFiles: VcsProviderClient["fetchTreeFiles"] = (installation, repo, commitSha) =>
+				client
+					.getRecursiveTree(installation.externalInstallationId, repo.owner, repo.name, commitSha)
+					.pipe(
+						Effect.map((listing) => ({
+							truncated: listing.truncated,
+							files: listing.tree.flatMap((entry) =>
+								entry.type === "blob"
+									? [{ path: entry.path, sha: entry.sha, size: entry.size ?? 0 }]
+									: [],
+							),
+						})),
+						Effect.mapError(toVcsCommitError),
+					)
+
+			const fetchBlobText: VcsProviderClient["fetchBlobText"] = (installation, repo, blobSha) =>
+				client
+					.getBlobText(installation.externalInstallationId, repo.owner, repo.name, blobSha)
+					.pipe(Effect.mapError(toVcsCommitError))
+
 			const resolveRef: VcsProviderClient["resolveRef"] = (installation, repo, ref) =>
 				client.getCommit(installation.externalInstallationId, repo.owner, repo.name, ref).pipe(
 					// None when the ref is absent (404) or parses but names nothing (422).
@@ -1873,6 +1893,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				searchCode,
 				fetchSourceFile,
 				resolveRef,
+				fetchTreeFiles,
+				fetchBlobText,
 				repositorySizeBytes,
 				fetchCloneCredentials,
 				fetchWorkflowJobAnnotations,

@@ -210,6 +210,22 @@ export {
 	type WebAnalyticsAiCrawledPagesOutput,
 } from "./queries/web-analytics-ai"
 
+// Queries — Security Center telemetry (scanner probes, runtime versions)
+export {
+	scannerSignaturesQuery,
+	scannerExposedQuery,
+	scannerSourcesQuery,
+	scannerTimelineQuery,
+	SCANNER_TIMELINE_MAX_BUCKETS,
+	SCANNER_SIGNATURES_MAX_ROWS,
+	runtimeVersionsQuery,
+	type ScannerSignaturesOutput,
+	type ScannerExposedOutput,
+	type ScannerSourcesOutput,
+	type ScannerTimelineOutput,
+	type RuntimeVersionsOutput,
+} from "./queries/security-telemetry"
+
 // Queries — Product events (funnels over `product_events`)
 export {
 	productEventsFunnelQuery,
@@ -324,6 +340,9 @@ export {
 // Queries — Releases
 export {
 	releasesListQuery,
+	runningCommitsQuery,
+	runningCommitsRowSchema,
+	RUNNING_COMMITS_CAP,
 	releasesListRowSchema,
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,

@@ -51,6 +51,8 @@ const TOKEN_NAMES = [
 	"major",
 	"maint",
 	"none",
+	"primary",
+	"primaryFg",
 	"okTint",
 	"degradedTint",
 	"partialTint",

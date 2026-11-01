@@ -55,6 +55,14 @@ export interface VcsCodeSearchMatch {
 	readonly snippets: ReadonlyArray<string>
 }
 
+/** A file (blob) in a repository's tree at one commit. */
+export interface VcsTreeFile {
+	readonly path: string
+	/** The blob's sha: the same content always has the same sha. */
+	readonly sha: string
+	readonly size: number
+}
+
 /** A text source file fetched from a repository at an explicit ref. */
 export interface VcsSourceFile {
 	readonly path: string
@@ -490,6 +498,26 @@ export interface VcsProviderClient {
 		repo: VcsRepositoryRef,
 	) => Effect.Effect<
 		{ readonly remoteUrl: string; readonly token: string },
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/** Every file in the tree of a commit; `truncated` when the provider cut the listing short. */
+	readonly fetchTreeFiles: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		commitSha: GitCommitSha,
+	) => Effect.Effect<
+		{ readonly files: ReadonlyArray<VcsTreeFile>; readonly truncated: boolean },
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/** A file's content as UTF-8 by its blob sha, without the size cap of `fetchSourceFile`. */
+	readonly fetchBlobText: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		blobSha: string,
+	) => Effect.Effect<
+		string,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 

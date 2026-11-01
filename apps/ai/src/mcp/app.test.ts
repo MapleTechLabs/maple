@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Option, Schema, Tracer } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -630,5 +630,139 @@ describe("MCP HTTP authorization", () => {
 		} finally {
 			await dispose()
 		}
+	})
+})
+
+describe("MCP server spans", () => {
+	it("follow the OpenTelemetry MCP conventions", async () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			ErrorActorsService.layer,
+			AuthService.layer,
+			// The tool fails the way a tool does: a result with `isError`, not a JSON-RPC error.
+			makeMcpToolExecutorStubLayer(() =>
+				Effect.succeed({ isError: true, content: [{ type: "text" as const, text: "bad input" }] }),
+			),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Span conventions test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const routes = McpLive.pipe(Layer.provideMerge(services))
+		const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+		const post = (body: unknown) =>
+			handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${key.secret}`,
+						accept: "application/json, text/event-stream",
+						"content-type": "application/json",
+						host: "api.example.com",
+						"x-forwarded-proto": "https",
+						"user-agent": "claude-code/2.1.312 (cli)",
+					},
+					body: JSON.stringify(body),
+				}),
+				Context.make(Tracer.Tracer, tracer) as never,
+			)
+		const callerTrace = "4bf92f3577b34da6a3ce929d0e0e4736"
+		const callerSpan = "00f067aa0ba902b7"
+		try {
+			await post({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "initialize",
+				params: {
+					protocolVersion: "2025-06-18",
+					capabilities: {},
+					clientInfo: { name: "claude-code", version: "2.1.312" },
+				},
+			})
+			const called = await post({
+				jsonrpc: "2.0",
+				id: 2,
+				method: "tools/call",
+				// An unsampled caller: Maple still records its own server.
+				params: {
+					name: "inspect_trace",
+					arguments: {},
+					_meta: { traceparent: `00-${callerTrace}-${callerSpan}-00` },
+				},
+			})
+			expect(called.status).toBe(200)
+		} finally {
+			await dispose()
+		}
+
+		const server = spans.filter(
+			(span) => span.kind === "server" && span.attributes.has("mcp.method.name"),
+		)
+		expect(
+			server.map((span) => ({
+				name: span.name,
+				sampled: span.sampled,
+				method: span.attributes.get("mcp.method.name"),
+				client: span.attributes.get("maple.mcp.client.name"),
+				tool: span.attributes.get("gen_ai.tool.name"),
+				operation: span.attributes.get("gen_ai.operation.name"),
+				errorType: span.attributes.get("error.type"),
+				requestId: span.attributes.get("jsonrpc.request.id"),
+				userAgent: span.attributes.get("user_agent.original"),
+			})),
+		).toEqual([
+			{
+				name: "initialize",
+				sampled: true,
+				method: "initialize",
+				client: "claude-code",
+				tool: undefined,
+				operation: undefined,
+				errorType: undefined,
+				requestId: "1",
+				userAgent: "claude-code/2.1.312 (cli)",
+			},
+			{
+				name: "tools/call inspect_trace",
+				sampled: true,
+				method: "tools/call",
+				client: undefined,
+				tool: "inspect_trace",
+				operation: "execute_tool",
+				errorType: "tool_error",
+				requestId: "2",
+				userAgent: "claude-code/2.1.312 (cli)",
+			},
+		])
+
+		// The handshake the transport synthesises for the tool call is not recorded.
+		const handshakes = spans.filter((span) => span.name.endsWith("/initialize"))
+		expect(handshakes.map((span) => span.sampled)).toEqual([false])
+
+		// The caller's span is the parent; the HTTP request's span is only a link.
+		const toolCall = server[1]
+		const parent = toolCall === undefined ? Option.none() : toolCall.parent
+		expect(Option.map(parent, (span) => ({ traceId: span.traceId, spanId: span.spanId }))).toEqual(
+			Option.some({ traceId: callerTrace, spanId: callerSpan }),
+		)
+		expect(toolCall?.links.map((link) => link.span._tag === "Span" && link.span.name)).toEqual(["POST"])
+		// Without a caller span the HTTP span is the parent, and not linked a second time.
+		const initialize = server[0]
+		expect(initialize?.links).toEqual([])
 	})
 })

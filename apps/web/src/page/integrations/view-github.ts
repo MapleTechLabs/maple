@@ -18,16 +18,133 @@ import { GITHUB_ACCENT } from "./catalog"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { ciTracesShown } from "./update-github"
+import { ciTracesShown, githubStatusOf } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
 import { repositoriesPanels, repoDialogs } from "./view-github-repos"
 
 // `GithubIntegrationCard`.
 
-const ACCOUNT_TYPE = new Map([
-	["organization", "Organization"],
-	["user", "Personal account"],
-])
+const ACCOUNT_TYPE = { organization: "Organization", user: "Personal account" } as const
+
+/** Starts GitHub authorization again, which finds installations made outside Maple too. */
+export const githubReconnectButton = (h: H, model: Model, label = "Reconnect GitHub"): Html =>
+	button(
+		h,
+		{
+			variant: "outline",
+			className: "w-fit",
+			isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
+			isLoading: model.connect.isStarting,
+			attributes: [h.OnClick(Message.ClickedConnect())],
+		},
+		[label],
+	)
+
+const needsApprovalNote = (h: H, login: string): Html =>
+	h.p(
+		[h.Class("text-sm text-muted-foreground")],
+		[
+			`Maple could not confirm you are an owner of ${login}: GitHub did not share organization roles with the Maple app. An owner of ${login} can approve the app's pending permission request (organization Settings > GitHub Apps > Review request), then connect again.`,
+		],
+	)
+
+export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html> => {
+	const selection = model.githubCard.selection
+	if (selection === null) return []
+	const status = githubStatusOf(model)
+	const current = status?.accountLogin ?? null
+	const replacesCurrent =
+		current !== null && selection.installations.some((choice) => choice.accountLogin !== current)
+	return [
+		h.p(
+			[h.Class("text-sm text-muted-foreground")],
+			[
+				selection.installations.length > 0
+					? "Choose the GitHub account to connect to this Maple organization."
+					: "No GitHub account is ready to connect yet.",
+			],
+		),
+		...(replacesCurrent
+			? [
+					h.p(
+						[h.Class("text-sm text-muted-foreground")],
+						[
+							status?.connected === true
+								? `This Maple organization is connected to ${current}. Choosing a different account replaces it and removes ${current}'s synced repositories and commit history from Maple.`
+								: `This Maple organization was connected to ${current} before it lost access. Choosing a different account replaces it and removes ${current}'s synced repositories and commit history from Maple.`,
+						],
+					),
+				]
+			: []),
+		h.div(
+			[h.Class("flex flex-col gap-2")],
+			selection.installations.map((choice) =>
+				h.div(
+					[
+						h.Class(
+							"flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3",
+						),
+					],
+					[
+						h.div(
+							[h.Class("flex min-w-0 flex-col gap-1")],
+							[
+								h.span([h.Class("truncate text-sm font-medium")], [choice.accountLogin]),
+								h.span(
+									[h.Class("text-xs text-muted-foreground")],
+									[
+										ACCOUNT_TYPE[choice.accountType],
+										" · ",
+										choice.repositorySelection === "selected"
+											? "Selected repositories"
+											: "All repositories",
+									],
+								),
+							],
+						),
+						button(
+							h,
+							{
+								isDisabled: model.githubCard.selectingInstallation !== null,
+								isLoading: model.githubCard.selectingInstallation === choice.id,
+								attributes: [
+									h.AriaLabel(`Connect ${choice.accountLogin}`),
+									h.OnClick(
+										Message.ClickedSelectGithubInstallation({
+											installationId: choice.id,
+										}),
+									),
+								],
+							},
+							["Connect"],
+						),
+					],
+				),
+			),
+		),
+		...selection.needsApproval.map((login) => needsApprovalNote(h, login)),
+		...(selection.unavailable > 0
+			? [
+					h.p(
+						[h.Class("text-sm text-muted-foreground")],
+						[
+							`${countLabel(selection.unavailable, "installation", "installations")} of the Maple app can't be connected here: another Maple organization already has it, you aren't an admin of its GitHub account, or GitHub didn't answer. Ask an admin of that account, or connect again later.`,
+						],
+					),
+				]
+			: []),
+		button(
+			h,
+			{
+				variant: "outline",
+				className: "w-fit",
+				isDisabled: model.connect.isStarting || model.githubCard.selectingInstallation !== null,
+				attributes: [h.OnClick(Message.ClickedOpenGithubInstallPage())],
+			},
+			[icon(h, "GithubIcon"), "Install on another GitHub account"],
+		),
+	]
+}
 
 const ciTracesRow = (h: H, model: Model): Html => {
 	const isChecked = ciTracesShown(model)
@@ -94,7 +211,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 							],
 						),
 						itemDescription(h, [
-							ACCOUNT_TYPE.get(status.accountType ?? "") ?? "GitHub App",
+							status.accountType === null ? "GitHub App" : ACCOUNT_TYPE[status.accountType],
 							" ",
 							"· ",
 							status.repositorySelection === "selected"
@@ -185,11 +302,20 @@ export const githubCard = (h: H, model: Model, timeZone: string): ReadonlyArray<
 }
 
 const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: string): Html =>
-	status.connected
-		? connectedView(h, model, status, timeZone)
-		: status.state === "disconnected" || status.state === "suspended"
-			? githubDeactivated(h, model, status)
-			: githubReconnect(h)
+	model.githubCard.selection !== null
+		? h.div([h.Class("flex flex-col gap-3")], githubInstallationPicker(h, model))
+		: !status.connected && status.repositoryDiscovery?._tag === "Pending"
+			? integrationNotice(h, { message: "Discovering repositories…" })
+			: !status.connected && status.repositoryDiscovery?._tag === "Failed"
+				? integrationNotice(h, {
+						message: status.repositoryDiscovery.message,
+						action: githubReconnectButton(h, model),
+					})
+				: status.connected
+					? connectedView(h, model, status, timeZone)
+					: status.state === "disconnected" || status.state === "suspended"
+						? githubDeactivated(h, model, status)
+						: githubReconnect(h)
 // TODO(clerk): `useIsOrgAdmin` gates the CI traces switch; self-hosted is the root admin.
 
 type H = HtmlBuilder<Message>
@@ -295,7 +421,7 @@ export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationS
 					),
 					h.p(
 						[h.Class("text-xs text-muted-foreground")],
-						["You'll be sent to GitHub to reinstall the Maple app."],
+						["GitHub opens in a new window to reconnect the Maple app."],
 					),
 				],
 			),

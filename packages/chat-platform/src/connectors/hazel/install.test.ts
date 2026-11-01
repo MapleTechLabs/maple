@@ -11,11 +11,16 @@ const config: ChatConnectorConfig = new Map([
 ])
 const redirectUri = "https://api.maple.dev/oauth/chat/hazel/callback"
 
-const stub = (status: number, body: string) => {
+/** Answers the redemption with `status`/`body`, and the settings PATCH with `settingsStatus`. */
+const stub = (status: number, body: string, settingsStatus = 200) => {
 	const seen: Array<HttpClientRequest.HttpClientRequest> = []
 	const client = HttpClient.make((request) => {
 		seen.push(request)
-		return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body, { status })))
+		const response =
+			request.method === "PATCH"
+				? new Response(JSON.stringify({ success: true }), { status: settingsStatus })
+				: new Response(body, { status })
+		return Effect.succeed(HttpClientResponse.fromWeb(request, response))
 	})
 	return { seen, layer: Layer.succeed(HttpClient.HttpClient)(client) }
 }
@@ -61,6 +66,28 @@ describe("hazel install", () => {
 			expect(request?.url).toBe("https://api.hazel.sh/api/v1/bot-installs/token")
 			expect(request?.headers["authorization"]).toBe("Bearer hzl_bot_token")
 			expect(sentBody(request!)).toEqual({ code: "org-1.secret", redirectUri })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("makes the bot mentionable with its own token once the install is redeemed", () => {
+		const http = stub(200, JSON.stringify({ organizationId: "org-1", organizationName: "Acme" }))
+		return Effect.gen(function* () {
+			yield* hazelInstall.complete({ config, params: new URLSearchParams({ code: "c" }), redirectUri })
+			const [, settings] = http.seen
+			expect(settings?.method).toBe("PATCH")
+			expect(settings?.url).toBe("https://api.hazel.sh/bot-commands/settings")
+			expect(settings?.headers["authorization"]).toBe("Bearer hzl_bot_token")
+			expect(sentBody(settings!)).toEqual({ mentionable: true })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("fails the install when Hazel refuses to make the bot mentionable", () => {
+		const http = stub(200, JSON.stringify({ organizationId: "org-1", organizationName: "Acme" }), 500)
+		return Effect.gen(function* () {
+			const failed = yield* Effect.flip(
+				hazelInstall.complete({ config, params: new URLSearchParams({ code: "c" }), redirectUri }),
+			)
+			expect(failed.message).toContain("mentionable failed with HTTP 500")
 		}).pipe(Effect.provide(http.layer))
 	})
 

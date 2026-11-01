@@ -9,7 +9,7 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { API_BASE, API_HOST, BOT_ID_CONFIG, BOT_TOKEN_CONFIG, INSTALL_URL } from "./api"
+import { API_BASE, API_HOST, BOT_ID_CONFIG, BOT_SETTINGS_URL, BOT_TOKEN_CONFIG, INSTALL_URL } from "./api"
 import { HAZEL_CONNECTOR_ID } from "./id"
 
 /**
@@ -66,6 +66,38 @@ const redeem = Effect.fn("Hazel.request", { kind: "client" })(function* (
 	return response
 })
 
+/**
+ * Let people @mention the bot. Hazel creates every bot unmentionable and only the bot's own token
+ * can change that, so without this call the bot never shows in the composer's mention list and no
+ * one can start a conversation with it. Idempotent: every install sets it again.
+ */
+const markMentionable = Effect.fn("Hazel.request", { kind: "client" })(function* (token: string) {
+	yield* Effect.annotateCurrentSpan({
+		"peer.service": "hazel",
+		"http.request.method": "PATCH",
+		"server.address": API_HOST,
+		"url.template": "/bot-commands/settings",
+	})
+	const client = yield* HttpClient.HttpClient
+	const response = yield* client
+		.execute(
+			HttpClientRequest.patch(BOT_SETTINGS_URL, {
+				headers: { accept: "application/json", authorization: `Bearer ${token}` },
+			}).pipe(HttpClientRequest.bodyJsonUnsafe({ mentionable: true })),
+		)
+		.pipe(
+			Effect.mapError((error) =>
+				installFailed(`Making the Hazel bot mentionable failed: ${error.reason._tag}`),
+			),
+		)
+	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+	if (response.status < 200 || response.status >= 300) {
+		return yield* Effect.fail(
+			installFailed(`Making the Hazel bot mentionable failed with HTTP ${response.status}`),
+		)
+	}
+})
+
 const installFailed = (message: string) => new ChatInstallFailed({ connector: HAZEL_CONNECTOR_ID, message })
 
 /**
@@ -99,6 +131,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const redeemed = yield* decodeRedeemedInstall(json).pipe(
 		Effect.mapError(() => installFailed("Hazel returned an unexpected install response")),
 	)
+	yield* markMentionable(token)
 	return { externalWorkspaceId: redeemed.organizationId, name: redeemed.organizationName }
 })
 

@@ -43,6 +43,13 @@ export const GET: APIRoute = ({ site }) => {
 		`- Example: [${url("/docs/getting-started/introduction.md")}](${url("/docs/getting-started/introduction.md")})`,
 		"",
 
+		"## Use Maple with an AI agent",
+		"",
+		"Query and operate Maple through MCP, find instrumentation skills, and check the dashboard and API revisions deployed to your region without a browser.",
+		"",
+		`- [AI agent guide: connection, workflows, deployed revisions and skills](${url("/docs/getting-started/ai-agents.md")})`,
+		"",
+
 		"## Pricing",
 		"",
 		"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $5 per million (page views not counted).",
@@ -59,7 +66,8 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Changelog",
 		"",
-		`Maple product updates, one entry per shipped change. The index enumerates every entry. ${CONVENTION("changelog")}`,
+		`Maple product announcements, one entry per announced change. The index enumerates every entry. ${CONVENTION("changelog")}`,
+		`An entry does not show which commit a region is running. To check the deployed dashboard and API revisions, see the [AI agent guide](${url("/docs/getting-started/ai-agents.md#check-whether-a-maple-cloud-fix-is-deployed")}).`,
 		"",
 		...both("Changelog index", "/changelog"),
 		`- [RSS feed](${url("/changelog/rss.xml")})`,

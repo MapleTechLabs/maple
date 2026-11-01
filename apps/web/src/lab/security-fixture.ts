@@ -1210,6 +1210,7 @@ export const githubStatusOf = (connected = true) =>
 		accountType: connected ? "organization" : null,
 		repositorySelection: connected ? "selected" : null,
 		ciTracesEnabled: true,
+		repositoryDiscovery: null,
 		repositories: connected
 			? ["payments-api", "api-gateway", "web-dashboard", "billing-service"].map((name, index) => ({
 					id: `00000c01-0000-4000-8000-00000000000${index + 1}`,

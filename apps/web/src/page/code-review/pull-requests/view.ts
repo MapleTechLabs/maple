@@ -15,7 +15,7 @@ import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
 import { searchBox } from "../kit/search"
 import { Message, type Model } from "./model"
-import { DEFAULT_PRESET, MAX_ROWS, STATUS_LABELS } from "./update"
+import { DEFAULT_PRESET, MAX_ROWS, sortOf, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
 
 // The code review pull requests page.
@@ -67,7 +67,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 			return h.div(
 				[h.Class("flex flex-col gap-3")],
 				[
-					reviewTable(h, response.reviews, {
+					reviewTable(h, response.reviews, sortOf(model.search), {
 						selected: model.search.review,
 						nowMs: model.frame.nowMs,
 						timeZone,

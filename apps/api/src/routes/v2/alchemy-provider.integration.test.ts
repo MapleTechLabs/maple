@@ -49,7 +49,6 @@ import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertRead
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { LinearIssueTracker } from "@maple/backend/services/alerts/LinearIssueTracker"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -121,7 +120,6 @@ const makeHarness = () => {
 		schedulerEvalTimeoutMs: () => 15_000,
 		schedulerSpreadMs: () => 0,
 	})
-	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 	const linearOAuthLive = LinearOAuthService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
 	)
@@ -152,7 +150,6 @@ const makeHarness = () => {
 				envLive,
 				testDb.layer,
 				runtimeLive,
-				hazelOAuthLive,
 				linearOAuthLive,
 				linearIssuesLive,
 				emailLive,
@@ -183,7 +180,6 @@ const makeHarness = () => {
 				queryEngineLive,
 				warehouseLive,
 				runtimeLive,
-				hazelOAuthLive,
 				linearOAuthLive,
 				linearIssuesLive,
 				emailLive,

@@ -1,3 +1,6 @@
+import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
+import { DependencyScanService } from "@maple/backend/services/dependency-scan/DependencyScanService"
+import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { Layer } from "effect"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -13,7 +16,6 @@ import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScal
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
@@ -116,7 +118,6 @@ export const HttpServicesLive = Layer.mergeAll(
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
-	HazelOAuthService.layer,
 	LinearOAuthService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,
@@ -165,6 +166,9 @@ export const HttpServicesLive = Layer.mergeAll(
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	RuntimeReleaseCatalog.layer,
+	RuntimeAdvisoryCatalog.layer,
+	DependencyScanService.layer,
 	TelemetryReadService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,

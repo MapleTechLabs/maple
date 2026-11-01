@@ -34,6 +34,8 @@ const PageLimit = Schema.NumberFromString.check(
 )
 /** `<createdAtMs>_<id>` of the last row on the previous page. */
 const PageCursor = Schema.String.check(Schema.isPattern(/^\d+_[0-9a-zA-Z-]+$/u))
+/** A sorted list's cursor: the last row's sort value (`n` for none) ahead of its `PageCursor`. */
+const ListCursor = Schema.String.check(Schema.isPattern(/^(?:(?:\d+(?:\.\d+)?|n):)?\d+_[0-9a-zA-Z-]+$/u))
 const AuthorLogin = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100))
 /** Free text over a list's titles, paths, repositories and authors; `#123` or `123` also matches the number. */
 const SearchTerm = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
@@ -48,13 +50,21 @@ const filterFields = {
 export const CodeReviewAnalyticsQuery = Schema.Struct(filterFields)
 export type CodeReviewAnalyticsQuery = Schema.Schema.Type<typeof CodeReviewAnalyticsQuery>
 
+/** The review list's sort columns; reviews without the value sort last either way. */
+export const CodeReviewSortKey = Schema.Literals(["reviewed", "issues", "quality", "confidence"])
+export type CodeReviewSortKey = Schema.Schema.Type<typeof CodeReviewSortKey>
+export const CodeReviewSortDir = Schema.Literals(["asc", "desc"])
+export type CodeReviewSortDir = Schema.Schema.Type<typeof CodeReviewSortDir>
+
 export const CodeReviewListQuery = Schema.Struct({
 	...filterFields,
 	status: Schema.optional(PrReviewStatus),
 	verdict: Schema.optional(PrReviewVerdict),
 	q: Schema.optional(SearchTerm),
+	sortBy: Schema.optional(CodeReviewSortKey),
+	sortDir: Schema.optional(CodeReviewSortDir),
 	limit: Schema.optional(PageLimit),
-	cursor: Schema.optional(PageCursor),
+	cursor: Schema.optional(ListCursor),
 })
 export type CodeReviewListQuery = Schema.Schema.Type<typeof CodeReviewListQuery>
 

@@ -43,7 +43,7 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 | Repository sandbox (`apps/sandbox`)               | prd Worker, US                                        | per instance, EU Worker                                                                 |
 | Landing, billing                                  | shared                                                | shared, no customer data                                                                |
 | GitHub App, chat connector apps                   | US apps                                               | EU apps of their own, see Phase 0 step 8                                                |
-| OAuth clients (Cloudflare, PlanetScale, Hazel)    | US redirect URIs                                      | same clients, EU redirect URIs added                                                    |
+| OAuth clients (Cloudflare, PlanetScale)           | US redirect URIs                                      | same clients, EU redirect URIs added                                                    |
 | Scraper (Fargate)                                 | US service                                            | EU service of its own, in the EU ingest VPC                                             |
 
 The landing site stays one site. Billing metadata is not customer telemetry. The GitHub App was
@@ -100,7 +100,6 @@ across regions because there is no routing.
       allowlist). The US client is reusable; add the EU URL to its allowlist:
         - Cloudflare OAuth: `https://api.eu.maple.dev/api/integrations/cloudflare/callback`
         - PlanetScale OAuth: `https://api.eu.maple.dev/api/integrations/planetscale/callback`
-        - Hazel OAuth: `https://api.eu.maple.dev/api/integrations/hazel/callback`
     - **One URL per app** (registered on the app, not sent per request). These need an EU app:
         - **GitHub App.** Register "Maple EU" per `docs/github-app-setup.md` with webhook
           `https://api.eu.maple.dev/api/integrations/github/webhook` and callback

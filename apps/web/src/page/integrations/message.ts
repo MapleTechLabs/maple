@@ -4,7 +4,7 @@ import {
 	CloudflareUsageResponse,
 	GcpResourcesResponse,
 	GithubIntegrationStatus,
-	HazelIntegrationStatus,
+	GithubInstallationSelection,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
@@ -62,7 +62,6 @@ export const StatusName = Schema.Literals([
 	"gcp",
 	"aws",
 	"supabase",
-	"hazel",
 	"linear",
 	"github",
 	"chat",
@@ -84,7 +83,6 @@ export const Message = defineMessageUnion({
 	CompletedLoadGcp: result(V2GcpIntegration),
 	CompletedLoadAws: result(V2AwsIntegration),
 	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
-	CompletedLoadHazel: result(HazelIntegrationStatus),
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadChat: result(V2ChatConnectorList),
@@ -102,6 +100,17 @@ export const Message = defineMessageUnion({
 	CompletedChatToast: {},
 	/** The header or card Connect button: a new popup attempt for the page's provider. */
 	ClickedConnect: {},
+	/**
+	 * Opens the GitHub App install page, not authorization: the picker's "Install on another
+	 * GitHub account", and "Change repos on GitHub" (an installed account gets its settings).
+	 */
+	ClickedOpenGithubInstallPage: {},
+	ClickedSelectGithubInstallation: { installationId: Schema.String },
+	CompletedSelectGithubInstallation: {
+		state: Schema.String,
+		installationId: Schema.String,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	SucceededStartConnect: { attempt: Schema.Number },
 	FailedStartConnect: { attempt: Schema.Number, title: Schema.String, description: Schema.String },
 	/** The authorize URL arrived but the popup was gone and could not be reopened. */
@@ -374,6 +383,14 @@ export const Message = defineMessageUnion({
 		provider: ConnectProvider,
 		status: Schema.String,
 		message: Schema.NullOr(Schema.String),
+		github: Schema.optionalKey(GithubInstallationSelection),
+	},
+	/** Another tab finished a return whose popup lost its opener (`RELAY_CHANNEL`). */
+	ReceivedConnectRelay: {
+		provider: ConnectProvider,
+		status: Schema.String,
+		message: Schema.String,
+		github: Schema.optionalKey(GithubInstallationSelection),
 	},
 	/** The provider return this page was opened with, finished (`null`: there was none). */
 	CompletedOAuthReturn: { outcome: Schema.NullOr(OAuthReturnOutcome) },

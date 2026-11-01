@@ -52,10 +52,12 @@ import type {
 	WebAnalyticsBreakdownsRequest,
 	WebAnalyticsAiReferralsRequest,
 	WebAnalyticsAiCrawlersRequest,
+	SecurityExposureRequest,
+	SecurityRuntimesRequest,
 } from "@maple/domain/http"
 import { Match } from "effect"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { formatWarehouseDateTime } from "../datetime"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
@@ -1086,6 +1088,67 @@ export const webAnalyticsAiCrawledPages = defineQuery({
 			}),
 			aiCrawlerWindow(payload, orgId),
 		),
+})
+
+// Security Center telemetry. The four exposure reads share one request; each is a small scan of
+// `scanner_requests`.
+const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+export const scannerSignatures = defineQuery({
+	id: "scannerSignatures",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSignaturesQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerExposed = defineQuery({
+	id: "scannerExposed",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerExposedQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerSources = defineQuery({
+	id: "scannerSources",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSourcesQuery(), securityWindow(payload, orgId)),
+})
+
+/**
+ * The requested bucket, widened so the window never needs more buckets than the query returns. Buckets
+ * sit on the epoch grid, so a window can straddle one more than its length divided by the bucket.
+ */
+export const scannerTimelineBucketSeconds = (payload: SecurityExposureRequest): number => {
+	const requested = payload.bucketSeconds ?? 3600
+	const windowMs = parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)
+	return Math.max(requested, Math.ceil(windowMs / 1000 / (CH.SCANNER_TIMELINE_MAX_BUCKETS - 1)))
+}
+
+export const scannerTimeline = defineQuery({
+	id: "scannerTimeline",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.scannerTimelineQuery({ bucketSeconds: scannerTimelineBucketSeconds(payload) }),
+			securityWindow(payload, orgId),
+		),
+})
+
+export const runtimeVersions = defineQuery({
+	id: "runtimeVersions",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityRuntimesRequest, orgId: OrgId) =>
+		CH.compile(CH.runtimeVersionsQuery(), securityWindow(payload, orgId)),
 })
 
 export const podFacets = defineQuery({
