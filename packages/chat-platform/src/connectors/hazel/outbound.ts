@@ -13,6 +13,13 @@
  * thread is answered again), the people behind ids are `GET /organizations/{id}/users?ids=`, and
  * the channels the bot can post in are `GET /organizations/{id}/bot-channels`.
  * A thread IS a channel, so once a turn answers in one every call addresses the thread's id.
+ *
+ * A turn streams through the message's live state (`POST /messages/{id}/live`, `@hazel/domain/live`)
+ * rather than through edits: the message is created with a `liveState` embed, its text goes out as
+ * `AppendText` (or `SetText`, when a render takes words back), and the final write closes the live
+ * state with `Complete` or `Fail` and writes the finished message — its content, for search,
+ * notifications and history, and the same state as the embed's snapshot, for a client without the
+ * live socket.
  */
 import { ChatConversationKey } from "@maple/primitives"
 import { Array as Arr, Clock, Duration, Effect, Option, Redacted, Schema } from "effect"
@@ -29,12 +36,20 @@ import {
 	type ChatOutboundOperation,
 	type ChatTarget,
 	type ChatThreadRequest,
+	type ChatWritePhase,
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
 import { API_BASE, API_HOST, BOT_TOKEN_CONFIG } from "./api"
 import { mentionOf } from "./gateway-events"
 import { HAZEL_CONNECTOR_ID } from "./id"
-import { MAX_CONTENT_CHARS, renderHazelMessage } from "./render"
+import {
+	MAX_CONTENT_CHARS,
+	renderHazelLive,
+	renderHazelMessage,
+	type HazelEmbed,
+	type HazelLiveBody,
+	type HazelMessageBody,
+} from "./render"
 
 const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
 	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
@@ -44,9 +59,11 @@ const MAX_MESSAGE_CHARS = MAX_CONTENT_CHARS - 400
 
 /**
  * Hazel allows a bot 120 message writes a minute, edits included, shared by every conversation it
- * is answering in. One edit a second keeps a streaming turn live and leaves room for several.
+ * is answering in. A streamed turn spends almost none of it: its text goes to the message's live
+ * state, which that limit does not count, and the message itself is written when it is created,
+ * when its embeds change, and once at the end. So the driver writes as often as a reader can tell.
  */
-const MIN_EDIT_INTERVAL = Duration.seconds(1)
+const MIN_EDIT_INTERVAL = Duration.millis(250)
 
 /** How many times a 429 is waited out before the turn gives up on the message. */
 const MAX_RATE_LIMIT_ATTEMPTS = 3
@@ -63,6 +80,57 @@ const MAX_HISTORY_LIMIT = 100
 const RateLimited = Schema.Struct({
 	retryAfterMs: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 3_600_000 })),
 })
+
+/** The live-state actions this connector sends (`@hazel/domain/live` `LiveAction`). */
+type LiveAction =
+	| { readonly _tag: "Start" }
+	| { readonly _tag: "AppendText"; readonly text: string }
+	| { readonly _tag: "SetText"; readonly text: string }
+	| { readonly _tag: "Complete"; readonly persist: false }
+	| { readonly _tag: "Fail"; readonly error: string; readonly persist: false }
+
+/** What a live message holds as far as this transport last wrote it. */
+interface Streamed {
+	/** Unknown while a write is in flight, or for a message an earlier run streamed. */
+	readonly text: string | undefined
+	/** A fingerprint of its embeds: a change is the one message write a turn makes before its end. */
+	readonly embeds: string | undefined
+	/** Whether its live state was started. Until it is, Hazel shows the loading indicator over any text. */
+	readonly started: boolean
+}
+
+/** The cheapest action that takes the live text from `previous` to `next`, or none at all. */
+const textUpdate = (previous: string | undefined, next: string): LiveAction | null => {
+	if (previous === next) return null
+	if (previous !== undefined && next.startsWith(previous))
+		return { _tag: "AppendText", text: next.slice(previous.length) }
+	return { _tag: "SetText", text: next }
+}
+
+/** Only ever compared with the previous write's; nothing decodes it. */
+const fingerprint = (embeds: ReadonlyArray<HazelEmbed>): string => JSON.stringify(embeds)
+
+/** A live message's embeds while it streams: the live state first, then its cards. */
+const streamingEmbeds = (body: HazelLiveBody): ReadonlyArray<HazelEmbed> => [
+	{ liveState: { enabled: true, ...(body.loading === null ? undefined : { loading: body.loading }) } },
+	...body.embeds,
+]
+
+/** A finished live message's embeds: the state it ended in, for a client without the live socket. */
+const finishedEmbeds = (body: HazelLiveBody): ReadonlyArray<HazelEmbed> => [
+	{
+		liveState: {
+			enabled: true,
+			cached: {
+				status: body.error === null ? "completed" : "failed",
+				data: {},
+				...(body.text === "" ? undefined : { text: body.text }),
+				...(body.error === null ? undefined : { error: body.error }),
+			},
+		},
+	},
+	...body.embeds,
+]
 
 const MessageCreated = Schema.Struct({ data: Schema.Struct({ id: Schema.String }) })
 
@@ -128,6 +196,7 @@ class HazelRateLimited extends Schema.TaggedError<HazelRateLimited>()(
 export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: HAZEL_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
+	liveMessages: true,
 	requiredConfig: [{ name: BOT_TOKEN_CONFIG, secret: true }],
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
@@ -209,10 +278,7 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				),
 			)
 
-		const postBody = (
-			channelId: string,
-			body: { readonly content: string; readonly embeds: ReadonlyArray<unknown> },
-		) =>
+		const postBody = (channelId: string, body: HazelMessageBody) =>
 			HttpClientRequest.bodyJsonUnsafe({
 				channelId,
 				content: body.content,
@@ -234,6 +300,104 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			)
 			const created = yield* read("post", response, MessageCreated, "no message id")
 			return { target, messageId: created.data.id }
+		})
+
+		const patch = (ref: ChatMessageRef, body: HazelMessageBody) =>
+			send(
+				"edit",
+				"/messages/{message_id}",
+				HttpClientRequest.patch(`${API_BASE}/messages/${encodeURIComponent(ref.messageId)}`).pipe(
+					HttpClientRequest.bodyJsonUnsafe({
+						channelId: channelOf(ref.target),
+						content: body.content,
+						embeds: body.embeds.length === 0 ? null : body.embeds,
+					}),
+				),
+			).pipe(Effect.asVoid)
+
+		/** Not a message write: Hazel does not count these against the bot's 120 a minute. */
+		const writeLive = (ref: ChatMessageRef, action: LiveAction) =>
+			send(
+				"edit",
+				"/messages/{message_id}/live",
+				HttpClientRequest.post(`${API_BASE}/messages/${encodeURIComponent(ref.messageId)}/live`).pipe(
+					HttpClientRequest.bodyJsonUnsafe({ channelId: channelOf(ref.target), action }),
+				),
+			).pipe(Effect.asVoid)
+
+		// The live messages this turn is writing. The driver acquires a transport per turn, and only
+		// a turn's driver writes with a phase, so this lives as long as the turn and no longer.
+		const streamed = new Map<string, Streamed>()
+
+		/** Bring a live message up to `body`: its embeds if they changed, then its text. */
+		const stream = Effect.fn("Hazel.stream")(function* (ref: ChatMessageRef, body: HazelLiveBody) {
+			let state = streamed.get(ref.messageId) ?? { text: undefined, embeds: undefined, started: true }
+			const embeds = fingerprint(body.embeds)
+			if (state.embeds !== embeds) {
+				yield* patch(ref, { content: body.content, embeds: streamingEmbeds(body) })
+				state = { ...state, embeds }
+				streamed.set(ref.messageId, state)
+			}
+			if (!state.started) {
+				yield* writeLive(ref, { _tag: "Start" })
+				state = { ...state, started: true }
+				streamed.set(ref.messageId, state)
+			}
+			const update = textUpdate(state.text, body.text)
+			if (update === null) return
+			// Unknown until Hazel answers: an append that landed but whose answer was lost must not be
+			// appended again, so the next write replaces the text instead.
+			streamed.set(ref.messageId, { ...state, text: undefined })
+			yield* writeLive(ref, update)
+			streamed.set(ref.messageId, { ...state, text: body.text })
+		})
+
+		const postLive = Effect.fn("Hazel.postLive")(function* (
+			target: ChatTarget,
+			blocks: ReadonlyArray<ChatBlock>,
+		) {
+			const body = renderHazelLive(blocks)
+			const response = yield* send(
+				"post",
+				"/messages",
+				HttpClientRequest.post(`${API_BASE}/messages`).pipe(
+					postBody(channelOf(target), { content: body.content, embeds: streamingEmbeds(body) }),
+				),
+			)
+			const created = yield* read("post", response, MessageCreated, "no message id")
+			const ref = { target, messageId: created.data.id }
+			streamed.set(ref.messageId, { text: "", embeds: fingerprint(body.embeds), started: false })
+			// The message exists, so the post succeeded: a live state that would not start is retried
+			// by the next write, and the final one writes the whole answer into the message anyway.
+			yield* stream(ref, body).pipe(
+				Effect.tapError(report("A live message could not be started")),
+				Effect.ignore,
+			)
+			return ref
+		})
+
+		const finishLive = Effect.fn("Hazel.finishLive")(function* (
+			ref: ChatMessageRef,
+			blocks: ReadonlyArray<ChatBlock>,
+		) {
+			const body = renderHazelLive(blocks)
+			const state = streamed.get(ref.messageId)
+			streamed.delete(ref.messageId)
+			// Best effort: the message write below carries the same finished state to every client, and
+			// a reader with the live socket open only misses the moment it completed.
+			yield* Effect.gen(function* () {
+				const update = textUpdate(state?.text, body.text)
+				if (update !== null) yield* writeLive(ref, update)
+				// `persist: false`: the write below is the snapshot. Hazel's own would replace the
+				// message's embeds with it, and an approval's buttons with them.
+				yield* writeLive(
+					ref,
+					body.error === null
+						? { _tag: "Complete", persist: false }
+						: { _tag: "Fail", error: body.error, persist: false },
+				)
+			}).pipe(Effect.tapError(report("A live message could not be closed")), Effect.ignore)
+			yield* patch(ref, { content: body.content, embeds: finishedEmbeds(body) })
 		})
 
 		const openThread = Effect.fn("Hazel.openThread")(function* (request: ChatThreadRequest) {
@@ -267,21 +431,18 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 					)
 
 		return {
-			post,
+			/** A turn's message streams; anything else — a notice, a tail posted at the end — is plain. */
+			post: (target: ChatTarget, blocks: ReadonlyArray<ChatBlock>, phase?: ChatWritePhase) =>
+				phase === "streaming" ? postLive(target, blocks) : post(target, blocks),
 
-			edit: (ref: ChatMessageRef, blocks: ReadonlyArray<ChatBlock>) => {
-				const body = renderHazelMessage(blocks)
-				return send(
-					"edit",
-					"/messages/{message_id}",
-					HttpClientRequest.patch(`${API_BASE}/messages/${encodeURIComponent(ref.messageId)}`).pipe(
-						HttpClientRequest.bodyJsonUnsafe({
-							channelId: channelOf(ref.target),
-							content: body.content,
-							embeds: body.embeds.length === 0 ? null : body.embeds,
-						}),
-					),
-				).pipe(Effect.asVoid)
+			/**
+			 * A write without a phase — a settled approval — is a plain edit, and leaves the message
+			 * plain: its content then says everything, buttons gone.
+			 */
+			edit: (ref: ChatMessageRef, blocks: ReadonlyArray<ChatBlock>, phase?: ChatWritePhase) => {
+				if (phase === "streaming") return stream(ref, renderHazelLive(blocks))
+				if (phase === "final") return finishLive(ref, blocks)
+				return patch(ref, renderHazelMessage(blocks))
 			},
 
 			/**
@@ -425,6 +586,15 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		}
 	}),
 }
+
+/** What failed, never the request it failed on: its body is the conversation. */
+const report = (message: string) => (error: ChatOutboundError) =>
+	Effect.logWarning(message).pipe(
+		Effect.annotateLogs({
+			"error.message": error.message,
+			"http.response.status_code": error.status ?? 0,
+		}),
+	)
 
 const failed = (
 	operation: ChatOutboundOperation,

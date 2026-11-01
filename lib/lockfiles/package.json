@@ -8,7 +8,9 @@
 	},
 	"scripts": {
 		"typecheck": "tsrs --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"bench": "bun scripts/bench.ts",
+		"fixtures:generate": "bash scripts/generate-fixtures.sh"
 	},
 	"dependencies": {
 		"effect": "catalog:effect",

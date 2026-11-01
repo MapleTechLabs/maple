@@ -16,7 +16,9 @@
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsrs --noEmit",
-		"typecheck:test": "tsrs --noEmit -p tsconfig.test.json"
+		"typecheck:test": "tsrs --noEmit -p tsconfig.test.json",
+		"osv:capture-fixtures": "bun scripts/capture-osv-fixtures.ts",
+		"osv:compare": "bun scripts/depscan-vs-osv-scanner.ts"
 	},
 	"dependencies": {
 		"@alchemy.run/cloudflare": "catalog:alchemy",

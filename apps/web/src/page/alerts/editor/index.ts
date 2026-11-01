@@ -49,6 +49,14 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 		dependenciesToStream: (dependencies) =>
 			Stream.map(ChatConnectStream.streamOf(dependencies), (message) => Message.GotChatConnectMessage({ message })),
 	}),
+	/** The destination dialog's Linear connect popup coming back. */
+	destinationConnectReturn: entry(DestinationDialog.ConnectReturnDependencies, {
+		modelToDependencies: ({ model }) => DestinationDialog.connectReturnDependencies(model.destinationDialog),
+		dependenciesToStream: (dependencies) =>
+			Stream.map(DestinationDialog.connectReturnStream(dependencies), (message) =>
+				Message.GotDestinationDialogMessage({ message }),
+			),
+	}),
 	destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
 		modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
 		dependenciesToStream: (dependencies) =>
