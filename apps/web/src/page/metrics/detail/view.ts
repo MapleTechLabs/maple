@@ -6,10 +6,10 @@ import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { chartLoading } from "../../../ui/chart-state"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
-import { pageTitle } from "../../../ui/page-layout"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { detailTitle } from "../../kit/detail-header"
 import { docsLink } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -118,11 +118,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					// A metric name is an identifier, so it is set in mono like elsewhere.
-					titleContent: pageTitle(
-						h,
-						{ title: model.metricName, className: "font-mono text-xl leading-8 tracking-normal" },
-						[model.metricName],
-					),
+					titleContent: detailTitle(h, {
+						kind: ["Metric", summaryOf(model)?.metricType ?? null],
+						title: [h.span([h.Class("font-mono")], [model.metricName])],
+						titleText: model.metricName,
+					}),
 					actions: actions(h, model),
 				},
 				[body(h, model, inputs.context.timeZone)],
