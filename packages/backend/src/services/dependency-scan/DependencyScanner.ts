@@ -319,6 +319,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							.pipe(Effect.mapError(scanError("Could not read the last scan")))
 						if (
 							Option.isSome(latest) &&
+							// An incomplete scan never reconciled, so its findings are not current.
+							latest.value.error === null &&
 							!tree.truncated &&
 							// Skipped lockfiles are on the last scan too, so they count toward "unchanged".
 							sameLockfiles(latest.value.lockfiles, [...selected, ...skipped])
@@ -384,7 +386,16 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 									.resolveRef(installation, repo, ref)
 									.pipe(Effect.mapError(scanError(`Could not resolve ${ref}`)))
 							: Option.none()
-						const movedTo = Option.filter(headNow, (sha) => sha !== commitSha)
+						// Only the same SHA proves the head unchanged: a deleted branch is no head either.
+						const headChange = !defaultBranchHead
+							? undefined
+							: Option.match(headNow, {
+									onNone: () => `${ref} was deleted during the scan`,
+									onSome: (sha) =>
+										sha === commitSha
+											? undefined
+											: `${ref} moved on to ${sha.slice(0, 7)} during the scan`,
+								})
 						return yield* store
 							.completeScan({
 								orgId,
@@ -402,14 +413,12 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								],
 								packageCount: packages.length,
 								matches,
-								// Either reason keeps this scan from reconciling: the branch moved on, or advisories were left unread.
-								incomplete: Option.match(movedTo, {
-									onNone: () =>
-										advisories.unread === 0
-											? undefined
-											: `${advisories.unread} known vulnerabilities past the ${MAX_VULNERABILITIES} a scan reads were left out`,
-									onSome: (sha) => `${ref} moved on to ${sha.slice(0, 7)} during the scan`,
-								}),
+								// Either reason keeps this scan from reconciling: the branch changed, or advisories were left unread.
+								incomplete:
+									headChange ??
+									(advisories.unread === 0
+										? undefined
+										: `${advisories.unread} known vulnerabilities past the ${MAX_VULNERABILITIES} a scan reads were left out`),
 							})
 							.pipe(Effect.mapError(scanError("Could not store the scan")))
 					})
