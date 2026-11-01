@@ -3,7 +3,8 @@
 // its own Tailwind classes, so "warning" is the same amber everywhere.
 
 // `done` is the finished/resolved state: blue, distinct from the green "ok" healthy state.
-export type Tone = "crit" | "warn" | "ok" | "info" | "done" | "neutral"
+// `live` is work in flight (running, reviewing, investigating), in the primary hue.
+export type Tone = "crit" | "warn" | "ok" | "info" | "done" | "live" | "neutral"
 
 /** Value text: table cells, stat values, inline numbers. */
 export const TONE_TEXT: Record<Tone, string> = {
@@ -12,6 +13,7 @@ export const TONE_TEXT: Record<Tone, string> = {
 	ok: "text-foreground",
 	info: "text-severity-info",
 	done: "text-severity-debug",
+	live: "text-primary",
 	neutral: "text-muted-foreground",
 } satisfies Record<Tone, string>
 
@@ -22,6 +24,7 @@ export const TONE_FILL: Record<Tone, string> = {
 	ok: "bg-severity-info",
 	info: "bg-severity-info",
 	done: "bg-severity-debug",
+	live: "bg-primary",
 	neutral: "bg-foreground-subtle",
 } satisfies Record<Tone, string>
 
@@ -32,6 +35,7 @@ export const TONE_SOFT: Record<Tone, string> = {
 	ok: "bg-severity-info-a2 text-severity-info",
 	info: "bg-severity-info-a2 text-severity-info",
 	done: "bg-severity-debug-a2 text-severity-debug",
+	live: "bg-primary-a2 text-primary",
 	neutral: "bg-muted text-muted-foreground",
 } satisfies Record<Tone, string>
 
@@ -42,6 +46,7 @@ export const TONE_BORDER: Record<Tone, string> = {
 	ok: "border-severity-info-a4",
 	info: "border-severity-info-a4",
 	done: "border-severity-debug-a4",
+	live: "border-primary-a4",
 	neutral: "border-border",
 } satisfies Record<Tone, string>
 
@@ -52,6 +57,7 @@ export const TONE_COLOR: Record<Tone, string> = {
 	ok: "var(--color-severity-info)",
 	info: "var(--color-severity-info)",
 	done: "var(--color-severity-debug)",
+	live: "var(--color-primary)",
 	neutral: "var(--color-muted-foreground)",
 } satisfies Record<Tone, string>
 

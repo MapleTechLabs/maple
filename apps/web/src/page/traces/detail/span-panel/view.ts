@@ -2,6 +2,7 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getActiveInfraCorrelations } from "../../../../components/infra/infra-correlations"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -16,7 +17,7 @@ import { spanEventsSection } from "./events"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { getCloudPlatform } from "./platform"
-import { cacheSummary, formatTimestamp, panelHeader, platformSummary, summaryStats } from "./view-header"
+import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, tabsView } from "./view-tabs"
 
 export type ViewInputs = Readonly<{ timeZone: string }>
@@ -83,7 +84,7 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 					keyValueList(h, { className: "gap-1" }, [
 						keyValue(h, { label: "Start time", mono: true }, [
 							copyableValue(h, model, { id: "start-time", value: span.startTime }, [
-								formatTimestamp(span.startTime, timeZone, true),
+								formatTimestampInTimezone(span.startTime, { timeZone, withMilliseconds: true }),
 							]),
 						]),
 						keyValue(h, { label: "Span ID", mono: true }, [

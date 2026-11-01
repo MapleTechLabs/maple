@@ -54,6 +54,8 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	ClickedReload: {},
+	/** The chart's failure card: asks again for the failed content reads only, no Reload spin. */
+	ClickedRetryChart: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
 	GotAggregationSelectMessage: { message: Select.Message },

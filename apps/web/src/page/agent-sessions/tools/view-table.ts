@@ -1,10 +1,10 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import { formatErrorRate } from "@maple/ui/lib/error-rate"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	breakdownKeyLabel,
 	errorRate,
 	formatDurationNs,
-	formatToolCount,
 	toolsTableFooter,
 } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -143,7 +143,7 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 		}),
 		h.span(
 			[h.Class("w-20 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
-			[formatToolCount(row.calls)],
+			[formatNumber(row.calls)],
 		),
 		duration(h, row.p50, inputs.percentile === "p50", "hidden @min-[900px]/panel:block"),
 		duration(h, row.p90, inputs.percentile === "p90"),
@@ -164,7 +164,7 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 					),
 				),
 			],
-			[formatToolCount(row.errors)],
+			[formatNumber(row.errors)],
 		),
 		h.span(
 			[
@@ -172,7 +172,7 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 					"hidden w-20 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
 				),
 			],
-			[formatToolCount(row.sessions)],
+			[formatNumber(row.sessions)],
 		),
 		relativeTime(h, {
 			value: row.lastSeen,
@@ -236,7 +236,7 @@ export const toolsTable = (h: H, inputs: ToolsTableInputs): Html =>
 					h.span([h.Class("text-xs font-medium text-foreground")], ["Tools"]),
 					h.span(
 						[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
-						[formatToolCount(inputs.rows.length)],
+						[formatNumber(inputs.rows.length)],
 					),
 				],
 			),

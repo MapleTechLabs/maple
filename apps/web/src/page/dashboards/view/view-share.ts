@@ -95,7 +95,7 @@ export const shareLinkRow = (
 		model: model.sharing.replaceDialog,
 		toParentMessage: (message) => wrap(ShareMessage.GotReplaceDialogMessage({ message })),
 		title: "Replace this link?",
-		description: `${replaceWarning} This can't be undone.`,
+		description: `${replaceWarning} This cannot be undone.`,
 		confirmLabel: "Replace link",
 		isNested: true,
 		onConfirm: wrap(ShareMessage.ConfirmedReplace()),
@@ -112,7 +112,7 @@ const accessOption = (
 			h.For(`share-${option.value}`),
 			h.Id(`share-${option.value}-label`),
 			h.Class(
-				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-accent/64",
+				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-surface-strong",
 			),
 		],
 		[

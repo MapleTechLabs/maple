@@ -1,4 +1,4 @@
-import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkTabStrip } from "../../kit/underline-tabs"
@@ -16,7 +16,7 @@ const pickWindow = (search: TimeRangeSearch | undefined): TimeRangeSearch =>
 		: { startTime: search.startTime, endTime: search.endTime, timePreset: search.timePreset }
 
 const countOf = (count: number | undefined): string | undefined =>
-	count === undefined ? undefined : formatToolCount(count)
+	count === undefined ? undefined : formatNumber(count)
 
 export const agentSessionsTabs = <M>(
 	h: HtmlBuilder<M>,

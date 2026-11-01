@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon, type IconName } from "../../../ui/icon"
-import { severityIcon } from "../../errors/kit/severity"
+import { severityBadge, severityIcon } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
 
 // Marks and states the Security Center's pages share.
@@ -32,42 +32,19 @@ export const severityMark = <M>(
 			)
 		: severityIcon(h, issueSeverityOf(severity), size)
 
-type RankedSeverity = Exclude<SecurityAuditSeverity, "informational">
-
-/** Security's own ramp: four hues far apart, so a dot reads without its label. */
-export const SECURITY_SEVERITY_FILL = {
-	critical: "bg-severity-fatal",
-	high: "bg-severity-warn",
-	medium: "bg-severity-debug",
-	low: "bg-severity-trace",
-} satisfies Record<RankedSeverity, string>
-
-const SECURITY_SEVERITY_TINT = {
-	critical: "bg-severity-fatal text-white",
-	high: "bg-severity-warn-a2 text-severity-warn",
-	medium: "bg-severity-debug-a2 text-severity-debug",
-	low: "bg-severity-trace-a2 text-severity-trace",
-} satisfies Record<RankedSeverity, string>
-
-/** The severity badge: critical is filled so it never reads as one more tinted label. The muted
- * variant carries no dark-mode background, so the tint is the one that renders. */
+/** The errors kit's severity badge, so "High" is one colour everywhere; informational stays a quiet
+ * "Info" chip (the shared badge draws nothing for an unset severity). */
 export const securitySeverityBadge = <M>(
 	h: HtmlBuilder<M>,
 	severity: SecurityAuditSeverity,
 	className?: string,
 ): Html => {
 	const level = issueSeverityOf(severity)
-	return badge(
-		h,
-		{
-			variant: "muted",
-			className: cn(
-				level === null ? "text-muted-foreground" : SECURITY_SEVERITY_TINT[level],
-				className,
-			),
-		},
-		[SECURITY_SEVERITY_LABEL[severity]],
-	)
+	return level === null
+		? badge(h, { variant: "muted", className: cn("text-muted-foreground", className) }, [
+				SECURITY_SEVERITY_LABEL[severity],
+			])
+		: severityBadge(h, level, className)
 }
 
 /** A still loading block: the skeleton's surface without its sweep. */

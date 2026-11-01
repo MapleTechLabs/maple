@@ -62,7 +62,7 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 					className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
 					attributes: [h.OnClick(Message.ClickedCreateKey())],
 				},
-				[plus, "Create key"],
+				[plus, "New key"],
 			),
 			h.submodel({
 				slotId: "keys-create-menu",

@@ -238,7 +238,7 @@ export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
 					? []
 					: [
 							h.p(
-								[h.Class("mt-3 font-prose text-sm text-destructive"), h.Role("alert")],
+								[h.Class("mt-3 font-prose text-sm text-destructive-foreground"), h.Role("alert")],
 								[model.linkRejection],
 							),
 						]),
@@ -286,7 +286,7 @@ export const accountDialogs = (h: H, model: Model, account: BillingAccount | nul
 				: {
 						title: `Remove ${nameOf(removing)}?`,
 						description: `${nameOf(removing)} stops being billed through this organization. Its usage from now on leaves this invoice, and it will need its own plan.`,
-						confirmLabel: "Remove",
+						confirmLabel: "Remove organization",
 					}),
 			isPending: model.isUnlinking,
 			onConfirm: Message.ClickedConfirmUnlink(),

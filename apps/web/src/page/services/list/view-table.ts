@@ -45,7 +45,6 @@ import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
 
-export const ERROR_RATE_COLOR = TONE_COLOR.crit
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
 const CHART_MODEL = Chart.init()
@@ -276,14 +275,23 @@ const serviceRow = (
 						h.AriaLabel(`Error rate: ${formatErrorRate(service.errorRate)}`),
 					],
 					[
-						sparkline(h, ctx, `err-${rowKey}`, errorRates, ERROR_RATE_COLOR),
+						sparkline(
+							h,
+							ctx,
+							`err-${rowKey}`,
+							errorRates,
+							// Red for any error in the window, so a spike under a low average still reads.
+							service.errorRate > 0 || errorRates.some((rate) => rate > 0)
+								? TONE_COLOR.crit
+								: TONE_COLOR.neutral,
+						),
 						h.div(
 							[h.Class("absolute inset-0 flex items-center justify-center")],
 							[
-								h.span(
-									[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
-									[formatErrorRate(service.errorRate)],
-								),
+								errorRateValue(h, {
+									rate: service.errorRate,
+									className: cn("text-xs font-semibold", TEXT_HALO),
+								}),
 							],
 						),
 					],

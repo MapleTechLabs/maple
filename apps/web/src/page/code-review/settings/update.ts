@@ -392,7 +392,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					...saved,
 					outMessage: Option.match(failure, {
 						onNone: () => toast("success", `Reviews now run on ${label}`),
-						onSome: (error) => toast("error", "Couldn't save the review model.", error.message),
+						onSome: (error) => toast("error", "Couldn't save the review model", error.message),
 					}),
 				}
 			}
@@ -405,7 +405,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						: RulesForm.completeSave(
 								form,
 								Option.map(failure, (error) =>
-									messageOf(error, "Couldn't save the default rules."),
+									messageOf(error, "Couldn't save the default rules"),
 								),
 							),
 			}
@@ -456,7 +456,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 					outMessage: toast(
 						"error",
-						"Couldn't change pull request reviews.",
+						"Couldn't change pull request reviews",
 						result.failure.message,
 					),
 				}
@@ -504,7 +504,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						: RulesForm.completeSave(
 								form,
 								Option.map(failure, (error) =>
-									messageOf(error, "Couldn't save the repository's rules."),
+									messageOf(error, "Couldn't save the repository's rules"),
 								),
 							),
 			}

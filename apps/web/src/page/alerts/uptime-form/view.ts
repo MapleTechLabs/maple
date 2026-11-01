@@ -107,7 +107,7 @@ const describeAssertion = (row: AssertionDraft): string => {
 
 const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (model.testFailure !== null)
-		return [h.p([h.Role("alert"), h.Class("text-sm text-destructive")], [model.testFailure.message])]
+		return [h.p([h.Role("alert"), h.Class("text-sm text-destructive-foreground")], [model.testFailure.message])]
 	const result = model.testResult
 	if (result === null)
 		return [

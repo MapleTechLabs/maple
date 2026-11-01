@@ -23,11 +23,12 @@ import { initSheet, syncSheet, updateSheet, type SheetReturn } from "../kit/revi
 import { draftQuery, syncedDraft } from "../kit/search"
 import { FetchReviewAuthors, FetchReviews, WaitSearchDebounce } from "./command"
 import { Message, type Model } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
 
 export type Search = typeof CodeReviewPullRequestsSearch.Type
 type Return = PageReturn<Model, Message>
 
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 export const PAGE = 50
 export const MAX_ROWS = 200
 const FRAME_ID = "code-review-pull-requests"

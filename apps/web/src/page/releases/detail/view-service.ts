@@ -20,6 +20,7 @@ import { errorState } from "../../../ui/error-state"
 import { panel } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { textLinkClass } from "../../../ui/text-link"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { CHART_TOKENS, metricsGridOf } from "../../services/detail/view-charts"
@@ -125,7 +126,7 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 					h.Href(commit.htmlUrl),
 					h.Target("_blank"),
 					h.Rel("noreferrer"),
-					h.Class("font-mono text-primary hover:underline active:underline"),
+					h.Class(textLinkClass("primary", true)),
 				],
 				[shortReleaseLabel(model.commitSha), " ↗"],
 			),

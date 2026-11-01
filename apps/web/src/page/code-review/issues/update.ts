@@ -31,11 +31,12 @@ import {
 	type Model,
 	WaitSearchDebounce,
 } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
 
 export type Search = typeof CodeReviewIssuesSearch.Type
 type Return = PageReturn<Model, Message>
 
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 export const PAGE = 50
 export const MAX_ROWS = 200
 const FRAME_ID = "code-review-issues"

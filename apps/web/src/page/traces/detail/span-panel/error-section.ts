@@ -83,7 +83,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 						iconSize: 12,
 						tooltipId: "span-panel-error-prompt",
 						className:
-							"ml-auto size-5 shrink-0 rounded-sm text-severity-error/70 hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
+							"ml-auto size-5 shrink-0 rounded-sm text-muted-foreground hover:bg-severity-error-a2 active:bg-severity-error-a2 hover:text-severity-error active:text-severity-error sm:size-5",
 					}),
 				],
 			),
@@ -122,7 +122,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 								)
 							: splitErrorText(body.full).map((line) =>
 									h.span(
-										[h.Class(cn("block", line.frame && "text-severity-error/55"))],
+										[h.Class(cn("block", line.frame && "text-foreground-subtle"))],
 										[line.text === "" ? " " : line.text],
 									),
 								),
@@ -135,7 +135,7 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 							[
 								h.AriaExpanded(model.isErrorExpanded),
 								h.Class(
-									"mt-1 rounded-sm text-2xs text-severity-error/70 hover:text-severity-error active:text-severity-error",
+									"mt-1 rounded-sm text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 								h.Type("button"),
 								h.OnClick(Message.ToggledErrorExpanded()),

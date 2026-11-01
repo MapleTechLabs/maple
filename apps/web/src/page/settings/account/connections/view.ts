@@ -81,7 +81,7 @@ const providerRow = (h: H, model: Model, user: AccountUser, provider: (typeof PR
 						button(
 							h,
 							{
-								variant: "ghost",
+								variant: "outline",
 								size: "sm",
 								isDisabled: isBusy,
 								attributes: [

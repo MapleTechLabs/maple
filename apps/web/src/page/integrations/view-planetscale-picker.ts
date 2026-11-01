@@ -246,7 +246,7 @@ const dialogPicker = (h: H, model: Model): Html => {
 						isLoading: card.isSelecting,
 						attributes: [h.OnClick(Message.SubmittedOrganization())],
 					},
-					["Save"],
+					["Save changes"],
 				),
 			]),
 		],

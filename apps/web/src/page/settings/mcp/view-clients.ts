@@ -100,7 +100,7 @@ export const connectedClientsSection = (h: H, model: Model, inputs: Inputs): Htm
 								),
 								" loses access right away and has to be approved again to reconnect.",
 							],
-				confirmLabel: "Revoke",
+				confirmLabel: "Revoke client",
 				onConfirm: Message.ClickedConfirmRevoke(),
 				isPending: model.isRevoking,
 			}),

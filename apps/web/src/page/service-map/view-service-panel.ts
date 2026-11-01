@@ -3,10 +3,7 @@ import {
 	CLOUDFLARE_COLOR,
 	getServiceMapNodeColor,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { errorRateClass } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
-import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { cn } from "@maple/ui/lib/utils"
+import { EMPTY_VALUE, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -17,7 +14,9 @@ import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
 import { scrollArea } from "../../ui/scroll-area"
 import { statusDot } from "../../ui/status-dot"
+import { errorRateValue, latencyValue } from "../../ui/values"
 import * as TabsView from "../../ui/tabs-view"
+import { textLinkClass } from "../../ui/text-link"
 import type { ScopedRows } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -79,7 +78,7 @@ const header = (
 			),
 			h.a(
 				[
-					h.Class("text-3xs text-primary hover:text-primary/80 active:text-primary/80"),
+					h.Class(textLinkClass("primary", false, "text-3xs")),
 					h.Href(hrefOf(AppRoute.Service({ serviceName: inputs.serviceId, search: {} }))),
 				],
 				["View service"],
@@ -122,39 +121,35 @@ const metrics = (h: H, overview: Overview): Html => {
 					metricTile(
 						h,
 						"Error rate",
-						metricValue(h, overview === undefined ? undefined : errorRateClass(errorRate), [
-							overview === undefined ? EMPTY_VALUE : formatErrorRate(errorRate),
+						metricValue(h, undefined, [
+							overview === undefined ? EMPTY_VALUE : errorRateValue(h, { rate: errorRate }),
 						]),
 					),
 					metricTile(
 						h,
 						"P50 latency",
-						metricValue(
-							h,
+						metricValue(h, undefined, [
 							overview === undefined
-								? undefined
-								: latencyToneClass(overview.p50LatencyMs, "p50"),
-							[overview === undefined ? EMPTY_VALUE : formatLatency(overview.p50LatencyMs)],
-						),
+								? EMPTY_VALUE
+								: latencyValue(h, { ms: overview.p50LatencyMs, scale: "p50" }),
+						]),
 					),
 					metricTile(
 						h,
 						"P95 latency",
-						metricValue(
-							h,
-							cn(
-								overview === undefined
-									? undefined
-									: (overview.p95LatencyMs ?? 0) > overview.p50LatencyMs * 3
-										? "text-severity-warn"
-										: latencyToneClass(overview.p95LatencyMs ?? 0, "p95"),
-							),
-							[
-								overview === undefined
-									? EMPTY_VALUE
-									: formatLatency(overview.p95LatencyMs ?? 0),
-							],
-						),
+						metricValue(h, undefined, [
+							overview === undefined
+								? EMPTY_VALUE
+								: latencyValue(h, {
+										ms: overview.p95LatencyMs ?? 0,
+										scale: "p95",
+										// A p95 three times its p50 is a long tail, whatever the absolute level.
+										className:
+											(overview.p95LatencyMs ?? 0) > overview.p50LatencyMs * 3
+												? "text-severity-warn"
+												: undefined,
+									}),
+						]),
 					),
 				],
 			),
@@ -186,31 +181,21 @@ const cloudflareSection = (h: H, cloudflare: NonNullable<ReturnType<typeof cloud
 					metricTile(
 						h,
 						"Error rate",
-						metricValue(h, errorRateClass(cloudflare.errorRate), [
-							formatErrorRate(cloudflare.errorRate),
-						]),
+						metricValue(h, undefined, [errorRateValue(h, { rate: cloudflare.errorRate })]),
 					),
 					metricTile(
 						h,
 						"CPU p99",
-						metricValue(
-							h,
+						metricValue(h, undefined, [
 							cloudflare.cpuP99Ms === undefined
-								? undefined
-								: latencyToneClass(cloudflare.cpuP99Ms, "cpu"),
-							[
-								cloudflare.cpuP99Ms === undefined
-									? EMPTY_VALUE
-									: formatLatency(cloudflare.cpuP99Ms),
-							],
-						),
+								? EMPTY_VALUE
+								: latencyValue(h, { ms: cloudflare.cpuP99Ms, scale: "cpu" }),
+						]),
 					),
 					metricTile(
 						h,
 						"Duration p99",
-						metricValue(h, cn(latencyToneClass(cloudflare.latencyP99Ms, "p99")), [
-							formatLatency(cloudflare.latencyP99Ms),
-						]),
+						metricValue(h, undefined, [latencyValue(h, { ms: cloudflare.latencyP99Ms, scale: "p99" })]),
 					),
 				],
 			),

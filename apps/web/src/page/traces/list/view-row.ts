@@ -1,7 +1,7 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { Option } from "effect"
@@ -16,31 +16,12 @@ import { truncatedText } from "../../../ui/truncated-text"
 import { servicePills, traceStatusBadge } from "../../../ui/trace-badges"
 import { button } from "../../../ui/button"
 import { rowLink, tableCell } from "../../../ui/table"
+import { latencyValue } from "../../../ui/values"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
 
 // One row of the traces table.
-
-/** The row's timestamp formats in the page's time zone. */
-export interface TimeFormat {
-	readonly row: Intl.DateTimeFormat
-	readonly withYear: Intl.DateTimeFormat
-}
-
-export const timeFormat = (timeZone: string): TimeFormat => {
-	const options = {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	} as const
-	return {
-		row: new Intl.DateTimeFormat("en-US", options),
-		withYear: new Intl.DateTimeFormat("en-US", { ...options, year: "numeric" }),
-	}
-}
 
 const epochOf = (startTime: string): number => new Date(warehouseDateTimeToIso(startTime)).getTime()
 
@@ -63,12 +44,12 @@ const rootSpanCell = (
 	h: HtmlBuilder<Message>,
 	row: TraceRow,
 	index: number,
-	time: TimeFormat,
+	timeZone: string,
 	nowMs: number,
 	search: Search,
 ): Html => {
 	const epochMs = epochOf(row.startTime)
-	const stamp = time.row.format(epochMs)
+	const stamp = formatTimestampInTimezone(epochMs, { timeZone })
 	const duration = formatDuration(row.durationMs)
 	return tableCell(
 		h,
@@ -94,14 +75,7 @@ const rootSpanCell = (
 							[h.Class("text-foreground-subtle")],
 							[
 								"(",
-								h.time(
-									[
-										h.Attribute("class", ""),
-										h.Attribute("datetime", new Date(epochMs).toISOString()),
-										h.Title(time.withYear.format(epochMs)),
-									],
-									[formatRelativeTime(epochMs, nowMs)],
-								),
+								listRelativeTime(h, { value: epochMs, nowMs, timeZone }),
 								")",
 							],
 						),
@@ -120,7 +94,7 @@ export const traceRow = (
 	h: HtmlBuilder<Message>,
 	row: TraceRow,
 	index: number,
-	time: TimeFormat,
+	timeZone: string,
 	nowMs: number,
 	state: RowState,
 ): Html =>
@@ -167,7 +141,7 @@ export const traceRow = (
 				],
 				cn(CELL, ROW_LANE, state.isActive ? "before:bg-primary" : "before:bg-transparent"),
 			),
-			rootSpanCell(h, row, index, time, nowMs, state.search),
+			rootSpanCell(h, row, index, timeZone, nowMs, state.search),
 			tableCell(
 				h,
 				[servicePills(h, row.services) ?? ""],
@@ -180,7 +154,7 @@ export const traceRow = (
 			),
 			tableCell(
 				h,
-				[h.span([h.Class("font-mono text-xs")], [formatDuration(row.durationMs)])],
+				[latencyValue(h, { ms: row.durationMs, className: "text-xs" })],
 				cn(CELL, "hidden @min-[480px]/page:table-cell"),
 			),
 			tableCell(

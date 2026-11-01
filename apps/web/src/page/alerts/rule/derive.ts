@@ -17,12 +17,12 @@ import {
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { presetLabel } from "../../kit/time-controls"
+import { type PresetValue, presetLabel } from "../../kit/time-controls"
 import { previewPayload } from "../shared/preview"
 import { isoMs } from "../shared/time"
 import type { ChecksResponse, Model } from "./model"
 
-export const DEFAULT_PRESET = "24h"
+export const DEFAULT_PRESET: PresetValue = "24h"
 
 /** `formatBucketSpan`. */
 export const formatBucketSpan = (seconds: number): string => {

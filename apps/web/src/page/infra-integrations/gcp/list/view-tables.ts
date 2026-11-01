@@ -41,6 +41,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
 import { meter, segmentedBar } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
+import { textLinkClass } from "../../../../ui/text-link"
 import {
 	columnHead,
 	dataTable,
@@ -541,7 +542,7 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 					off.map((row) =>
 						h.a(
 							[
-								h.Class("text-primary hover:text-primary/80 active:text-primary/80"),
+								h.Class(textLinkClass()),
 								h.Href(gcpQueryInsightsConsoleUrl(row.project ?? "", row.name)),
 								h.Rel("noreferrer"),
 								h.Target("_blank"),

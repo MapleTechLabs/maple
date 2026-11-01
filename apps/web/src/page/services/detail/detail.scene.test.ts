@@ -305,6 +305,30 @@ describe("service detail view", () => {
 		)
 	})
 
+	test("Try again on a failed Operations or Dependencies tab asks for that read again", () => {
+		const operations = entered({ tab: "operations" })
+		const failedOperations = pageUpdate(
+			operations,
+			Message.CompletedFetchOperations({
+				key: operations.operations.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const retriedOperations = pageUpdate(failedOperations, Message.ClickedRetry({ target: "Operations" }))
+		expect(names(retriedOperations.commands)).toEqual([FetchOperations.name])
+
+		const dependencies = entered({ tab: "dependencies" })
+		const failedDependencies = pageUpdate(
+			dependencies,
+			Message.CompletedFetchDependencies({
+				key: dependencies.dependencies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const retriedDependencies = pageUpdate(failedDependencies, Message.ClickedRetry({ target: "Dependencies" }))
+		expect(names(retriedDependencies.commands)).toEqual([FetchDependencies.name])
+	})
+
 	test("the Dependencies tab shows a skeleton, not an empty table, until its read answers", () => {
 		const model = entered({ tab: "dependencies" })
 		scene(

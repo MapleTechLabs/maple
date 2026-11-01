@@ -1,4 +1,4 @@
-import { countLabel } from "@maple/ui/lib/format"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -28,11 +28,11 @@ const toolbarSearch = (h: H, model: Model): Html =>
 		onClear: Message.ChangedSearchInput({ value: "" }),
 	})
 
-/** "6 sessions", or "6 of 1,666 sessions" when the total is known and larger. */
+/** "6 sessions", or "6 of 1.7K sessions" when the total is known and larger. */
 const count = (h: H, value: number, total: number | undefined): Html =>
 	toolbarCount(h, [
 		total !== undefined && total > value
-			? `${value.toLocaleString()} of ${countLabel(total, "session")}`
+			? `${formatNumber(value)} of ${formatNumber(total)} sessions`
 			: countLabel(value, "session"),
 	])
 

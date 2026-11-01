@@ -5,6 +5,15 @@ import { refreshButton } from "../../ui/refresh-button"
 
 // The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 
+/** The picker's preset rail (`PRESET_OPTIONS`); a page default must be one so the open picker marks it.
+ * "24h" is rolling; "1d" would be today since midnight (`resolveRelativeRange` counts calendar days). */
+export const PRESET_VALUES = ["5m", "15m", "30m", "1h", "6h", "12h", "24h", "3d", "1w", "2w", "1mo"] as const
+export const LONG_RANGE_PRESET_VALUES = [...PRESET_VALUES, "3mo", "6mo", "12mo"] as const
+export type PresetValue = (typeof LONG_RANGE_PRESET_VALUES)[number]
+
+export const isPresetValue = (value: string): value is PresetValue =>
+	LONG_RANGE_PRESET_VALUES.some((preset) => preset === value)
+
 // `PRESET_OPTIONS` labels and `presetLabel`.
 const PRESET_LABELS = new Map<string, string>([
 	["5m", "Last 5 minutes"],
@@ -13,6 +22,7 @@ const PRESET_LABELS = new Map<string, string>([
 	["1h", "Last 1 hour"],
 	["6h", "Last 6 hours"],
 	["12h", "Last 12 hours"],
+	["24h", "Last 24 hours"],
 	["1d", "Last 1 day"],
 	["3d", "Last 3 days"],
 	["1w", "Last 1 week"],
@@ -41,15 +51,24 @@ export const presetLabel = (shorthand: string): string => {
 	return `Last ${amount} ${amount === 1 ? singular : plural}`
 }
 
+/** The span a preset names, for "vs previous …" copy: "1mo" is "month", "2w" is "2 weeks". */
+export const presetSpanLabel = (shorthand: string): string => {
+	const label = presetLabel(shorthand)
+	if (label === "Today") return "day"
+	if (!label.startsWith("Last ")) return label
+	const span = label.slice("Last ".length)
+	return span.startsWith("1 ") ? span.slice(2) : span
+}
+
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 /** `resolveSearchPreset`: the URL's own preset, else the default unless it pins an absolute range. */
-export const searchPreset = (search: TimeSearch, defaultPreset: string): string | undefined =>
+export const searchPreset = (search: TimeSearch, defaultPreset: PresetValue): string | undefined =>
 	search.timePreset ?? (search.startTime !== undefined ? undefined : defaultPreset)
 
 export type TimeControlsOptions<M> = Readonly<{
 	search: TimeSearch
-	defaultPreset: string
+	defaultPreset: PresetValue
 	/** The effective window, shown for an absolute range. */
 	window: Readonly<{ startTime: string; endTime: string }> | null
 	/** The picker trigger, with the popover wiring the page passes (`page/kit/time-range-picker.ts`). */

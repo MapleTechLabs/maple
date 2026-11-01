@@ -2,6 +2,7 @@ import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { AWS_METRIC_NAMESPACES, type AwsMetricNamespace } from "@maple/domain/primitives"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import * as Checkbox from "../../ui/checkbox"
 import { switchControl } from "../../ui/switch"
 import { type AwsSelection, selectionOf } from "./aws"
 import { Message } from "./message"
@@ -58,25 +59,22 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 		[h.Class("grid grid-cols-1 gap-x-4 @2xl/page:grid-cols-2"), h.AriaLabel("Regions")],
 		[...REGIONS, ...extra].map((region) => {
 			const isPicked = selection.regions.includes(region.code)
+			const inputId = `aws-region-${region.code}`
 			return h.li(
 				[h.Class("border-b border-border-subtle")],
 				[
 					h.label(
 						[h.Class("flex cursor-pointer items-center gap-3 py-2 text-sm")],
 						[
-							h.input([
-								h.Type("checkbox"),
-								h.Checked(isPicked),
-								h.AriaLabel(
-									region.location === ""
-										? region.code
-										: `${region.code}, ${region.location}`,
-								),
-								h.Class("size-3.5 accent-primary"),
-								h.OnClick(
+							...Checkbox.view(h, {
+								model: { isChecked: isPicked },
+								toParentMessage: () =>
 									Message.ToggledAwsRegion({ id: connection.id, region: region.code }),
-								),
-							]),
+								id: `${inputId}-root`,
+								inputId,
+								ariaLabel:
+									region.location === "" ? region.code : `${region.code}, ${region.location}`,
+							}),
 							h.span([h.Class("font-mono")], [region.code]),
 							h.span([h.Class("ml-auto text-xs text-muted-foreground")], [region.location]),
 						],

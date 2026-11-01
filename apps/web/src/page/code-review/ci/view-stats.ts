@@ -1,7 +1,7 @@
 import type { CodeReviewCiAnalytics, CodeReviewCiTotals } from "@maple/domain/http"
 import { rateChange, successRate } from "../../../components/code-review/ci/ci-format"
-import { bucketIso, formatCount, formatSpan } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE, formatDuration, formatPercent } from "@maple/ui/lib/format"
+import { bucketIso, formatSpan } from "../../../components/code-review/code-review-format"
+import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "../../../charts/area-chart"
 import * as BarChart from "../../../charts/bar-chart"
@@ -47,7 +47,7 @@ export const headlineStrip = (
 	const stats: ReadonlyArray<{ label: string; value: string; delta: Html | undefined; hint?: string }> = [
 		{
 			label: CI_HEADLINE_LABELS.runs,
-			value: formatCount(current.runs),
+			value: formatNumber(current.runs),
 			delta: runsRatio === null ? undefined : delta(h, { ratio: runsRatio, muteWorse: true }),
 		},
 		{

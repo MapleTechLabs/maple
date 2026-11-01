@@ -22,6 +22,7 @@ export const filterChipPressedBorderStyles = {
 	ok: "data-pressed:border-severity-info-a4",
 	info: "data-pressed:border-severity-info-a4",
 	done: "data-pressed:border-severity-debug-a4",
+	live: "data-pressed:border-primary-a4",
 	neutral: "data-pressed:border-border",
 } satisfies Record<Tone, string>
 
