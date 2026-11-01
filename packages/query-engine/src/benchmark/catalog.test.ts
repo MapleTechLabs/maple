@@ -36,6 +36,7 @@ import * as livenessQueries from "../ch/queries/liveness"
 import * as signalPresenceQueries from "../ch/queries/signal-presence"
 import * as sourceUsageQueries from "../ch/queries/source-usage"
 import * as logQueries from "../ch/queries/logs"
+import * as mcpQueries from "../ch/queries/mcp"
 import * as metricQueries from "../ch/queries/metrics"
 import * as serviceInfraQueries from "../ch/queries/service-infra"
 import * as serviceMapRollupQueries from "../ch/queries/service-map-rollup"
@@ -278,6 +279,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	infra: infraQueries,
 	liveness: livenessQueries,
 	logs: logQueries,
+	mcp: mcpQueries,
 	metrics: metricQueries,
 	"service-infra": serviceInfraQueries,
 	"service-map-rollup": serviceMapRollupQueries,

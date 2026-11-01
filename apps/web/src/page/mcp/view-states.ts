@@ -114,10 +114,18 @@ export const serverError = <M>(
 		],
 	)
 
-/** The server exists but answered nothing in the window. */
+/** The server answered nothing in the window; `lastCall` when the page knows when it last did. */
 export const quietWindow = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ service: string; window: string; lastCall: string; onWiden: M; widenLabel: string }>,
+	options: Readonly<{
+		service: string
+		window: string
+		lastCall?: string
+		/** The server sent other MCP spans (initialize, tools/list) in the window, just no tool call. */
+		hasOtherSpans?: boolean
+		/** Absent at the widest window the page offers. */
+		widen?: Readonly<{ onWiden: M; label: string }>
+	}>,
 ): Html =>
 	h.div(
 		[h.Class("border-t border-border px-6 py-14")],
@@ -127,14 +135,28 @@ export const quietWindow = <M>(
 					emptyMedia(h, { variant: "icon" }, [icon(h, "ClockIcon")]),
 					emptyTitle(h, [`No tool calls in the ${options.window}`]),
 					emptyDescription(h, [
-						`${options.service} last answered a tool call ${options.lastCall}.`,
+						options.lastCall !== undefined
+							? `${options.service} last answered a tool call ${options.lastCall}.`
+							: options.hasOtherSpans === true
+								? `${options.service} answered MCP requests but no tool call in this window.`
+								: `No MCP server span from ${options.service} in this window.`,
 					]),
 				]),
-				emptyContent(h, [
-					button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(options.onWiden)] }, [
-						options.widenLabel,
-					]),
-				]),
+				...(options.widen === undefined
+					? []
+					: [
+							emptyContent(h, [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(options.widen.onWiden)],
+									},
+									[options.widen.label],
+								),
+							]),
+						]),
 			]),
 		],
 	)

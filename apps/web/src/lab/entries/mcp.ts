@@ -377,8 +377,10 @@ const pageView = (model: Model, h: H): Html => {
 					service: MCP_OVERVIEW.service,
 					window: "last 15 minutes",
 					lastCall: "42 minutes ago",
-					onWiden: Message.ClickedView({ view: "server" }),
-					widenLabel: "Show the last 6 hours",
+					widen: {
+						onWiden: Message.ClickedView({ view: "server" }),
+						label: "Show the last 6 hours",
+					},
 				}),
 			)
 	}
