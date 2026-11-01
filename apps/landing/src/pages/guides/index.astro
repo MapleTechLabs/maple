@@ -44,18 +44,26 @@ const itemListJsonLd = {
         </p>
 
         <div class="mt-12 border-b border-border">
-            {guideCategories.map((category) => (
+            {guideCategories.map(({ icon: CategoryIcon, ...category }) => (
                 <section id={category.id} class="grid scroll-mt-24 gap-6 border-t border-border py-10 lg:grid-cols-[15rem_1fr] lg:gap-12" aria-labelledby={`${category.id}-title`}>
                     <div>
-                        <h2 id={`${category.id}-title`} class="font-display text-xl font-medium tracking-[-0.015em] text-fg">{category.title}</h2>
+                        <h2 id={`${category.id}-title`} class="flex items-center gap-2.5 font-display text-xl font-medium tracking-[-0.015em] text-fg">
+                            <CategoryIcon className="size-5 text-primary" />
+                            {category.title}
+                        </h2>
                         <p class="mt-2 text-[13px] leading-relaxed text-fg-muted">{category.description}</p>
                     </div>
                     <ul class="grid gap-x-10 gap-y-7 sm:grid-cols-2">
-                        {category.guides.map((item) => (
+                        {category.guides.map(({ icon: GuideIcon, ...item }) => (
                             <li>
-                                <a href={item.href} class="group block">
+                                <a href={item.href} class="group flex gap-4">
+                                    <span class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-bg-deep text-primary transition-colors group-hover:border-primary/45 group-hover:text-primary">
+                                        <GuideIcon className="size-[18px]" />
+                                    </span>
+                                    <span class="min-w-0">
                                     <span class="font-display text-[16px] font-medium leading-snug text-fg transition-colors group-hover:text-primary">{item.title}</span>
                                     <span class="mt-1.5 block text-[13px] leading-relaxed text-fg-muted">{item.description}</span>
+                                    </span>
                                 </a>
                             </li>
                         ))}
