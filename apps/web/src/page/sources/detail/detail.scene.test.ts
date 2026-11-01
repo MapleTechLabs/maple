@@ -263,6 +263,17 @@ describe("source detail tabs", () => {
 		expect(saved.settings !== null && isSettingsDirty(saved.settings)).toBe(false)
 	})
 
+	test("discard restores the saved name, so the save bar has nothing to save", () => {
+		const edited = pageUpdate(
+			loaded(source(), "settings"),
+			Message.ChangedSettingsName({ value: "Renamed" }),
+		).model
+		expect(edited.settings !== null && isSettingsDirty(edited.settings)).toBe(true)
+		const discarded = pageUpdate(edited, Message.ClickedDiscardSettings()).model
+		expect(discarded.settings?.name).toBe("Checkout API")
+		expect(discarded.settings !== null && isSettingsDirty(discarded.settings)).toBe(false)
+	})
+
 	test("an empty name blocks the save", () => {
 		const model = pageUpdate(
 			loaded(source(), "settings"),
