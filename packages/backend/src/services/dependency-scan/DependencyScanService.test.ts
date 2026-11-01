@@ -354,6 +354,26 @@ describe("DependencyScanService production", () => {
 		},
 	)
 
+	it.effect("leaves a commit two connected repositories share unlinked", () => {
+		const sent: Array<VcsSyncJob> = []
+		const telemetry: Telemetry = { rows: [running("api-server", "production", "e", 500)] }
+		return Effect.gen(function* () {
+			const service = yield* DependencyScanService
+			const vcs = yield* VcsRepository
+			const api = yield* seed
+			const repositories = yield* vcs.listRepositoriesByInstallation(api.installationId, "active")
+			yield* Effect.forEach(repositories, (repository) =>
+				vcs.upsertCommits(repository, [commitOf("e")]),
+			)
+			const { repositories: listed } = yield* service.listRepositories(tenant)
+			assert.deepStrictEqual(
+				listed.map((repository) => repository.runningCommits.length),
+				[0, 0],
+			)
+			assert.deepStrictEqual(sent, [])
+		}).pipe(Effect.provide(serviceFor(sent, telemetry)))
+	})
+
 	it.effect("queues at most a handful of unscanned commits per read", () => {
 		const sent: Array<VcsSyncJob> = []
 		const digits = "0123456789abcdef".split("")

@@ -337,10 +337,17 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					tenant.orgId,
 					withSha.map((row) => row.sha),
 				)
+				// A commit in two connected repositories (a fork, a mirror) cannot say which one a service
+				// was built from, so it stays unlinked rather than credited to either.
+				const linked = commits.filter((commit) => connectedIds.has(commit.repositoryId))
+				const owners = linked.reduce((acc, commit) => {
+					acc.set(commit.sha, new Set([...(acc.get(commit.sha) ?? []), commit.repositoryId]))
+					return acc
+				}, new Map<string, ReadonlySet<VcsRepositoryId>>())
 				const repositoryOf = new Map(
-					commits
-						.filter((commit) => connectedIds.has(commit.repositoryId))
-						.map((commit) => [commit.sha, commit.repositoryId] as const),
+					[...owners].flatMap(([sha, ids]) =>
+						ids.size === 1 ? [[sha, [...ids][0]] as const] : [],
+					),
 				)
 				const running = withSha.flatMap((row): ReadonlyArray<RunningService> => {
 					const repositoryId = repositoryOf.get(row.sha)
