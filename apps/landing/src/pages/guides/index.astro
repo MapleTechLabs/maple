@@ -7,6 +7,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import type { BlogPost } from "../../lib/blog";
+import { FileIcon } from "@maple/ui/components/icons/file";
 import { allGuides, guideCategories } from "../../lib/guides";
 
 const pageTitle = "Guides to APM, Observability & OpenTelemetry | Maple";
@@ -47,6 +48,20 @@ const itemListJsonLd = {
                 Practical guides to APM, observability and OpenTelemetry: what the terms mean, which signals to watch, and how to debug production software.
             </p>
         </header>
+
+        <a
+            href="/docs"
+            class="group mt-8 flex items-center gap-4 rounded-xl border border-border p-4 transition-colors hover:border-primary/40 hover:bg-bg-elevated md:p-5"
+        >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary" aria-hidden="true">
+                <FileIcon className="h-4 w-4" />
+            </span>
+            <span class="min-w-0 flex-1">
+                <span class="block text-[14px] font-medium text-fg">Looking for Maple's documentation?</span>
+                <span class="mt-0.5 block text-[13px] leading-relaxed text-fg-muted">Setup, instrumentation for every language, alerting and the API reference are in the docs.</span>
+            </span>
+            <span class="shrink-0 text-[13px] text-primary transition-colors group-hover:text-fg">Go to docs →</span>
+        </a>
 
         <section class="mt-10" aria-labelledby="start-here">
             <h2 id="start-here" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
