@@ -483,7 +483,9 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					production.matches,
 				)
 				const names = new Map(connected.map(({ repository }) => [repository.id, repository.fullName]))
+				// A purged or removed repository's findings stay in the table but are not shown.
 				const ranked = rows
+					.filter((row) => names.has(row.repositoryId))
 					.map((row, order) => {
 						const services = byFinding.get(findingKey(row)) ?? []
 						const spans = services.reduce((sum, service) => sum + service.spanCount, 0)
@@ -491,7 +493,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					})
 					.sort((a, b) => b.score - a.score || a.order - b.order)
 				yield* Effect.annotateCurrentSpan({
-					"result.rowCount": rows.length,
+					"result.rowCount": ranked.length,
 					"maple.depscan.findings_in_production": ranked.filter(
 						(entry) => entry.services.length > 0,
 					).length,
@@ -500,7 +502,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					findings: ranked.map(({ row, services }) =>
 						findingViewOf(
 							row,
-							names.get(row.repositoryId) ?? "unknown repository",
+							names.get(row.repositoryId) ?? "",
 							services.map(toRunningService),
 						),
 					),
