@@ -11,7 +11,7 @@ import { errorState } from "../../../ui/error-state"
 import { listFooter } from "../../../ui/list-footer"
 import type * as Select from "../../../ui/select"
 import { type SelectEntry, view as selectView } from "../../../ui/select-view"
-import { skeletonList } from "../../../ui/skeleton"
+import { findingsListSkeleton } from "../kit/skeletons"
 import type { PageViewInputs } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ALL } from "../kit/frame"
@@ -99,7 +99,7 @@ const isFiltered = (model: Model) =>
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.findings.data, {
-		onEmpty: () => skeletonList(h, { rows: 6, rowClassName: "h-16", gap: "2" }),
+		onEmpty: () => findingsListSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

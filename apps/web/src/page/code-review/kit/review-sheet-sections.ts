@@ -48,6 +48,18 @@ const stat = (h: H, label: string, value: string, tone?: string): Html =>
 		valueClassName: cn("min-w-0 shrink truncate text-sm font-medium", tone),
 	})
 
+/** The stat tiles' labels, in order; the loading skeleton shows them too. */
+export const SHEET_STAT_LABELS = {
+	outcome: "Outcome",
+	confidence: "Confidence",
+	quality: "Quality",
+	issues: "Issues",
+	duration: "Duration",
+	model: "Model",
+	tokens: "Tokens",
+	reviewed: "Reviewed",
+} as const
+
 const stats = (h: H, detail: CodeReviewDetail, nowMs: number): Html => {
 	const { review } = detail
 	const outcome = outcomeOf(review)
@@ -56,14 +68,22 @@ const stats = (h: H, detail: CodeReviewDetail, nowMs: number): Html => {
 			? null
 			: (review.finishedAt - (detail.startedAt ?? review.createdAt)) / 1000
 	return statRail(h, {}, [
-		stat(h, "Outcome", outcome.label, outcome.tone),
-		stat(h, "Confidence", review.confidence === null ? EMPTY_VALUE : `${review.confidence}/10`),
-		stat(h, "Quality", review.score === null ? EMPTY_VALUE : `${review.score}/100`),
-		stat(h, "Issues", formatCount(review.findings)),
-		stat(h, "Duration", formatSpan(durationSeconds)),
-		stat(h, "Model", modelLabel(review.model)),
-		stat(h, "Tokens", formatCount((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0))),
-		stat(h, "Reviewed", formatRelativeFrom(review.createdAt, nowMs)),
+		stat(h, SHEET_STAT_LABELS.outcome, outcome.label, outcome.tone),
+		stat(
+			h,
+			SHEET_STAT_LABELS.confidence,
+			review.confidence === null ? EMPTY_VALUE : `${review.confidence}/10`,
+		),
+		stat(h, SHEET_STAT_LABELS.quality, review.score === null ? EMPTY_VALUE : `${review.score}/100`),
+		stat(h, SHEET_STAT_LABELS.issues, formatCount(review.findings)),
+		stat(h, SHEET_STAT_LABELS.duration, formatSpan(durationSeconds)),
+		stat(h, SHEET_STAT_LABELS.model, modelLabel(review.model)),
+		stat(
+			h,
+			SHEET_STAT_LABELS.tokens,
+			formatCount((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0)),
+		),
+		stat(h, SHEET_STAT_LABELS.reviewed, formatRelativeFrom(review.createdAt, nowMs)),
 	])
 }
 

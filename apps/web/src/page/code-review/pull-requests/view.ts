@@ -5,7 +5,6 @@ import { errorState } from "../../../ui/error-state"
 import { listFooter } from "../../../ui/list-footer"
 import type * as Select from "../../../ui/select"
 import { type SelectEntry, view as selectView } from "../../../ui/select-view"
-import { skeletonList } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { filtersView } from "../kit/filters-view"
@@ -13,6 +12,7 @@ import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
+import { reviewTableSkeleton } from "../kit/skeletons"
 import { searchBox } from "../kit/search"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS, sortOf, STATUS_LABELS } from "./update"
@@ -35,7 +35,7 @@ const isFiltered = (model: Model) =>
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.reviews.data, {
-		onEmpty: () => skeletonList(h, { rows: 6, rowClassName: "h-14", gap: "2" }),
+		onEmpty: () => reviewTableSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

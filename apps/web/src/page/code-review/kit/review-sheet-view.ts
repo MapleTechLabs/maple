@@ -5,7 +5,7 @@ import * as DialogView from "../../../ui/dialog-view"
 import { linkButton } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
-import { skeleton } from "../../../ui/skeleton"
+import { reviewSheetSkeleton } from "./skeletons"
 import { truncatedId } from "../../../ui/truncated-id"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { authorLabel } from "./author"
@@ -72,15 +72,7 @@ const body = (h: H, sheet: ReviewSheet, timeZone: string): ReadonlyArray<Html> =
 	const id = sheet.dialog.id
 	if (sheet.reviewId === null) return []
 	return AsyncData.matchData(sheet.detail.data, {
-		onEmpty: () => [
-			DialogView.dialogHeader(
-				h,
-				"sheet",
-				[DialogView.dialogTitle(h, "sheet", id, [skeleton(h, "h-6 w-72")])],
-				"gap-1.5 pr-14",
-			),
-			panel(h, id, "space-y-4", [skeleton(h, "h-20 w-full"), skeleton(h, "h-40 w-full")]),
-		],
+		onEmpty: () => reviewSheetSkeleton(h, id),
 		onFailure: (failure) => [
 			panel(h, id, undefined, [
 				errorState(h, {
