@@ -12,7 +12,7 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
 import { panel } from "../../../ui/panel"
-import { skeletonList } from "../../../ui/skeleton"
+import { runsTableSkeleton } from "../kit/skeletons"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { nothingInWindow } from "../../kit/nothing-in-window"
@@ -97,7 +97,10 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 											h.Attribute("target", "_blank"),
 											h.Attribute("rel", "noreferrer"),
 											h.Class(
-												cn("shrink-0 font-medium hover:underline active:underline", TONE_TEXT.crit),
+												cn(
+													"shrink-0 font-medium hover:underline active:underline",
+													TONE_TEXT.crit,
+												),
 											),
 										],
 										[job.job],
@@ -217,7 +220,7 @@ const footer = (h: H, model: Model, firstNext: string | null): Html | null => {
 
 export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolean): Html =>
 	AsyncData.matchData(model.runs.data, {
-		onEmpty: () => skeletonList(h, { rows: 6, rowClassName: "h-14", gap: "2" }),
+		onEmpty: () => runsTableSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

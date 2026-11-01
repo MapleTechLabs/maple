@@ -18,6 +18,25 @@ export const changeOf = <M>(
 	return ratio === null ? undefined : delta(h, { ratio, invert })
 }
 
+/** The headline tiles' labels, in order; the loading skeleton shows them too. */
+export const HEADLINE_LABELS = {
+	reviewed: "Pull requests reviewed",
+	reviews: "Total reviews",
+	mergeTime: "Avg time to merge",
+	issues: "Issues caught",
+} as const
+
+/** The secondary tiles' labels, in order; the loading skeleton shows them too. */
+export const SECONDARY_LABELS = {
+	confidence: "Avg confidence",
+	quality: "Avg quality",
+	reviewTime: "Avg review time",
+	fixRate: "Fixed rate",
+	dismissed: "Dismissed",
+	critical: "Critical issues",
+	tokens: "Tokens",
+} as const
+
 export const headlineStrip = <M>(
 	h: HtmlBuilder<M>,
 	current: CodeReviewTotals,
@@ -28,14 +47,14 @@ export const headlineStrip = <M>(
 	return statRail(h, {}, [
 		statRailItem(h, {
 			compact: true,
-			eyebrow: "Pull requests reviewed",
+			eyebrow: HEADLINE_LABELS.reviewed,
 			value: formatCount(current.pullRequests),
 			delta: changeOf(h, current.pullRequests, previous.pullRequests),
 			subline: versus,
 		}),
 		statRailItem(h, {
 			compact: true,
-			eyebrow: "Total reviews",
+			eyebrow: HEADLINE_LABELS.reviews,
 			value: formatCount(current.reviews),
 			delta: changeOf(h, current.reviews, previous.reviews),
 			subline: versus,
@@ -45,7 +64,7 @@ export const headlineStrip = <M>(
 			[
 				statRailItem(h, {
 					compact: true,
-					eyebrow: "Avg time to merge",
+					eyebrow: HEADLINE_LABELS.mergeTime,
 					value: formatSpan(current.avgMergeSeconds),
 					delta: changeOf(h, current.avgMergeSeconds, previous.avgMergeSeconds, true),
 					subline: versus,
@@ -54,7 +73,7 @@ export const headlineStrip = <M>(
 		),
 		statRailItem(h, {
 			compact: true,
-			eyebrow: "Issues caught",
+			eyebrow: HEADLINE_LABELS.issues,
 			value: formatCount(current.findings),
 			subline:
 				current.repositoriesWithFindings > 0
@@ -70,22 +89,22 @@ const secondaryStatList = (current: CodeReviewTotals): ReadonlyArray<Stat> => {
 	const settled = current.resolvedFindings + current.dismissedFindings
 	return [
 		{
-			label: "Avg confidence",
+			label: SECONDARY_LABELS.confidence,
 			value: current.avgConfidence === null ? EMPTY_VALUE : `${current.avgConfidence.toFixed(1)}/10`,
 			hint: "How safe the reviewer judged each change to merge",
 		},
 		{
-			label: "Avg quality",
+			label: SECONDARY_LABELS.quality,
 			value: current.avgScore === null ? EMPTY_VALUE : `${Math.round(current.avgScore)}/100`,
 			hint: "100 minus a fixed penalty per open finding",
 		},
 		{
-			label: "Avg review time",
+			label: SECONDARY_LABELS.reviewTime,
 			value: formatSpan(current.avgReviewSeconds),
 			hint: "From the push to the posted review",
 		},
 		{
-			label: "Fixed rate",
+			label: SECONDARY_LABELS.fixRate,
 			value:
 				current.findings === 0
 					? EMPTY_VALUE
@@ -93,13 +112,13 @@ const secondaryStatList = (current: CodeReviewTotals): ReadonlyArray<Stat> => {
 			hint: "Issues a later push resolved",
 		},
 		{
-			label: "Dismissed",
+			label: SECONDARY_LABELS.dismissed,
 			value: settled === 0 ? EMPTY_VALUE : formatCount(current.dismissedFindings),
 			hint: "Issues a person dismissed as not worth fixing",
 		},
-		{ label: "Critical issues", value: formatCount(current.criticalFindings) },
+		{ label: SECONDARY_LABELS.critical, value: formatCount(current.criticalFindings) },
 		{
-			label: "Tokens",
+			label: SECONDARY_LABELS.tokens,
 			value: formatCount(current.inputTokens + current.outputTokens),
 			hint: `${formatCount(current.inputTokens)} in, ${formatCount(current.outputTokens)} out`,
 		},

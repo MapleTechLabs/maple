@@ -7,7 +7,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { DateTime } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { skeleton } from "../../../ui/skeleton"
+import { ciRunsSkeleton } from "./skeletons"
 import { truncatedId } from "../../../ui/truncated-id"
 import { relativeTime } from "../../kit/relative-time"
 import { bulletList, ciResultBadge, section, traceLink } from "./parts"
@@ -120,9 +120,9 @@ const ciSection = (h: H, children: ReadonlyArray<Html>): Html => section(h, "CI 
 /** `PullRequestCiRuns`: the pull request's runs over the last 90 days. */
 export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 	AsyncData.matchData(sheet.ciRuns.data, {
-		onEmpty: () => ciSection(h, [skeleton(h, "h-16 w-full")]),
+		onEmpty: () => ciSection(h, [ciRunsSkeleton(h)]),
 		onFailure: () =>
-			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["Couldn't load cI runs"])]),
+			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["Couldn't load CI runs"])]),
 		onData: (response) =>
 			response.runs.length === 0
 				? ciSection(h, [emptyMessage(h, {}, ["No CI runs in the last 90 days"])])
@@ -187,7 +187,9 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 								h.Class(
 									cn(
 										"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-										isCurrent ? "bg-muted" : "hover:bg-surface-sunken active:bg-surface-sunken",
+										isCurrent
+											? "bg-muted"
+											: "hover:bg-surface-sunken active:bg-surface-sunken",
 									),
 								),
 								...(isCurrent ? [h.Disabled(true)] : []),

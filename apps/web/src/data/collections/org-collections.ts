@@ -1,5 +1,5 @@
 import { createEffectCollection } from "@maple/effect-db/electric"
-import { electricSyncBaseUrl } from "../../lib/services/common/electric-sync-url"
+import { electricSyncBaseUrl, electricSyncEnabled } from "../../lib/services/common/electric-sync-url"
 import {
 	Context,
 	Duration,
@@ -34,20 +34,26 @@ const syncProxyUrl = `${electricSyncBaseUrl}/api/sync/shape`
 /**
  * Electric's `fetchClient` contract is a `fetch`, so this is one; it adds the session bearer like
  * `mapleSyncFetch` and leaves `init.signal` alone (live requests long-poll and abort themselves).
+ * With sync off it answers the proxy's 503 itself, so collections give up without a request.
  */
-const makeSyncFetch =
-	(context: Context.Context<SessionBearer>): typeof globalThis.fetch =>
+export const makeSyncFetch =
+	(
+		context: Context.Context<SessionBearer>,
+		enabled: boolean = electricSyncEnabled,
+	): typeof globalThis.fetch =>
 	(input, init) =>
-		Effect.runPromiseWith(context)(
-			Effect.gen(function* () {
-				const bearer = yield* SessionBearer
-				const token = yield* bearer.token
-				const headers = new Headers(init?.headers)
-				if (Option.isSome(token) && !headers.has("authorization"))
-					headers.set("authorization", `Bearer ${token.value}`)
-				return { ...init, headers }
-			}),
-		).then((authorized) => globalThis.fetch(input, authorized))
+		!enabled
+			? Promise.resolve(new Response("Electric sync is not configured", { status: 503 }))
+			: Effect.runPromiseWith(context)(
+					Effect.gen(function* () {
+						const bearer = yield* SessionBearer
+						const token = yield* bearer.token
+						const headers = new Headers(init?.headers)
+						if (Option.isSome(token) && !headers.has("authorization"))
+							headers.set("authorization", `Bearer ${token.value}`)
+						return { ...init, headers }
+					}),
+				).then((authorized) => globalThis.fetch(input, authorized))
 
 const makeSet = (
 	orgId: string,
@@ -180,7 +186,10 @@ export class OrgCollections extends Context.Service<
 	{
 		readonly forOrg: (orgId: string) => Effect.Effect<OrgCollectionSet>
 		/** A fresh scoped collection for one investigation; the caller releases it. */
-		readonly forInvestigation: (orgId: string, investigationId: string) => Effect.Effect<InvestigationCollection>
+		readonly forInvestigation: (
+			orgId: string,
+			investigationId: string,
+		) => Effect.Effect<InvestigationCollection>
 		/** Cleans the collection up once its last live query has let go (in the background). */
 		readonly releaseInvestigation: (collection: InvestigationCollection) => Effect.Effect<void>
 		/** `retryOrgCollections`: a fresh set for the open org; live streams move onto it. */

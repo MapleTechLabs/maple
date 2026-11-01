@@ -4,13 +4,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { errorState } from "../../../ui/error-state"
-import { skeleton, skeletonSlowNote } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { seriesTokens } from "../kit/analytics-panel"
 import { filtersView } from "../kit/filters-view"
 import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
+import { analyticsSkeleton } from "../kit/skeletons"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
@@ -24,30 +24,11 @@ type H = HtmlBuilder<Message>
 
 const THEME_TOKENS = seriesTokens(["PRs reviewed", "Reviews", ...Object.values(SEVERITY_SERIES)])
 
-export const loadingSkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-6")],
-		[
-			// The note sits in the gap under the first block, so it takes no space before it shows.
-			h.div(
-				[h.Class("relative")],
-				[
-					skeleton(h, "h-[118px] w-full rounded-md"),
-					skeletonSlowNote(h, "absolute inset-x-0 top-full mt-1"),
-				],
-			),
-			h.div(
-				[h.Class("grid gap-6 lg:grid-cols-2")],
-				[skeleton(h, "h-[440px] w-full rounded-md"), skeleton(h, "h-[440px] w-full rounded-md")],
-			),
-		],
-	)
-
 const isFiltered = (model: Model) => model.search.repo !== undefined || model.search.author !== undefined
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.analytics.data, {
-		onEmpty: () => loadingSkeleton(h),
+		onEmpty: () => analyticsSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -66,7 +47,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				})
 			}
 			const theme = model.themeColors
-			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return loadingSkeleton(h)
+			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return analyticsSkeleton(h)
 			const windowLabel =
 				model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
 			return h.div(

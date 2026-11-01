@@ -8,13 +8,12 @@ import * as BarChart from "../../../charts/bar-chart"
 import type * as Chart from "../../../charts/chart"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { delta, relativeChange } from "../../../ui/delta"
-import { skeleton } from "../../../ui/skeleton"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { changeOf } from "../analytics/view-stats"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message, type Model } from "./model"
 
-// `HeadlineStrip`, `RunsCard`, `DurationCard` and `CiAnalyticsSkeleton`.
+// `HeadlineStrip`, `RunsCard` and `DurationCard`.
 
 type H = HtmlBuilder<Message>
 
@@ -25,18 +24,15 @@ const durationOf = (ms: number | null) => (ms === null ? EMPTY_VALUE : formatDur
 const rateOf = (rate: number | null) => (rate === null ? EMPTY_VALUE : formatPercent(rate))
 const points = (magnitude: number) => `${(magnitude * 100).toFixed(1)}pp`
 
-export const ciSkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-6")],
-		[
-			skeleton(h, "h-[118px] w-full rounded-md"),
-			h.div(
-				[h.Class("grid gap-6 lg:grid-cols-2")],
-				[skeleton(h, "h-[300px] w-full rounded-md"), skeleton(h, "h-[300px] w-full rounded-md")],
-			),
-			skeleton(h, "h-64 w-full rounded-md"),
-		],
-	)
+/** The headline tiles' labels, in order; the loading skeleton shows them too. */
+export const CI_HEADLINE_LABELS = {
+	runs: "Runs",
+	successRate: "Success rate",
+	p50: "p50 run time",
+	p95: "p95 run time",
+	runnerWait: "Runner wait",
+	ciTime: "CI time",
+} as const
 
 export const headlineStrip = (
 	h: H,
@@ -50,34 +46,34 @@ export const headlineStrip = (
 	const runsRatio = relativeChange(current.runs, previous.runs)
 	const stats: ReadonlyArray<{ label: string; value: string; delta: Html | undefined; hint?: string }> = [
 		{
-			label: "Runs",
+			label: CI_HEADLINE_LABELS.runs,
 			value: formatCount(current.runs),
 			delta: runsRatio === null ? undefined : delta(h, { ratio: runsRatio, muteWorse: true }),
 		},
 		{
-			label: "Success rate",
+			label: CI_HEADLINE_LABELS.successRate,
 			value: rateOf(rate),
 			delta: rateDelta === null ? undefined : delta(h, { ratio: rateDelta, format: points }),
 			hint: "Passed runs over passed and failed ones; cancelled runs are left out",
 		},
 		{
-			label: "p50 run time",
+			label: CI_HEADLINE_LABELS.p50,
 			value: durationOf(current.p50DurationMs),
 			delta: changeOf(h, current.p50DurationMs, previous.p50DurationMs, true),
 		},
 		{
-			label: "p95 run time",
+			label: CI_HEADLINE_LABELS.p95,
 			value: durationOf(current.p95DurationMs),
 			delta: changeOf(h, current.p95DurationMs, previous.p95DurationMs, true),
 		},
 		{
-			label: "Runner wait",
+			label: CI_HEADLINE_LABELS.runnerWait,
 			value: durationOf(current.p50QueueMs),
 			delta: changeOf(h, current.p50QueueMs, previous.p50QueueMs, true),
 			hint: "Median time a job waited for a runner to pick it up",
 		},
 		{
-			label: "CI time",
+			label: CI_HEADLINE_LABELS.ciTime,
 			value: formatSpan(current.totalDurationMs / 1000),
 			delta: changeOf(h, current.totalDurationMs, previous.totalDurationMs, true),
 			hint: "Wall-clock time of every run added up",

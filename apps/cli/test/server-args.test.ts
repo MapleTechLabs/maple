@@ -11,6 +11,7 @@ import {
 	storeChangedSince,
 	mapleCommand,
 	parseElapsedSeconds,
+	parseProcStartedAtMs,
 	prettyPath,
 	shellWord,
 	startedBeforeWrite,
@@ -233,6 +234,16 @@ describe("PID identity", () => {
 		strictEqual(parseElapsedSeconds("2-00:00:01"), 172_801)
 		strictEqual(parseElapsedSeconds(""), undefined)
 		strictEqual(parseElapsedSeconds("garbage"), undefined)
+	})
+
+	it("reads a process start time from /proc, for images without ps", () => {
+		const systemStat = "cpu  1 2 3\nbtime 1761998400\nprocesses 42\n"
+		// Field 22 (starttime) is 12345 ticks; the comm holds a space and a paren.
+		const pidStat = "1 (tini (init)) S 0 1 1 0 -1 4194560 1 0 0 0 0 0 0 0 20 0 1 0 12345 2 3 4"
+		strictEqual(parseProcStartedAtMs(pidStat, systemStat), 1_761_998_400_000 + 123_450)
+		strictEqual(parseProcStartedAtMs(pidStat, "cpu 1 2 3\n"), undefined)
+		strictEqual(parseProcStartedAtMs("1 (maple) S 0 1", systemStat), undefined)
+		strictEqual(parseProcStartedAtMs("garbage", systemStat), undefined)
 	})
 
 	it("only a process started before the write can own the file", () => {
