@@ -235,6 +235,36 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("does not call a repository clean when its scan could not read a lockfile", () => {
+		const repositories = repositoriesOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					{
+						repositories: repositories.repositories.map((repository) =>
+							repository.latestScan === null
+								? repository
+								: {
+										...repository,
+										latestScan: {
+											...repository.latestScan,
+											status: "completed" as const,
+											lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
+												...lockfile,
+												status: "too_large" as const,
+											})),
+										},
+									},
+						),
+					},
+					noFindings,
+				),
+			),
+			expectView(text("No known vulnerable packages")).toBeAbsent(),
+		)
+	})
+
 	test("says Unknown, not Not running, when more commits ran than were read", () => {
 		scene(
 			{ update: pageUpdate, view },
@@ -272,10 +302,27 @@ describe("security dependencies tab", () => {
 	})
 
 	test("scanned with nothing open shows the calm clean state", () => {
+		// Clean needs every lockfile read; the fixture's unsupported and failed ones are not.
+		const allParsed = {
+			repositories: repositoriesOf(NOW).repositories.map((repository) =>
+				repository.latestScan === null
+					? repository
+					: {
+							...repository,
+							latestScan: {
+								...repository.latestScan,
+								lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
+									...lockfile,
+									status: "parsed" as const,
+								})),
+							},
+						},
+			),
+		}
 		const settled = findingsOf(NOW).findings.filter((finding) => finding.status !== "open")
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(repositoriesOf(NOW), { ...findingsOf(NOW), findings: settled })),
+			given(loaded(allParsed, { ...findingsOf(NOW), findings: settled })),
 			expectView(text("No known vulnerable packages")).toExist(),
 			expectView(text("axios")).toBeAbsent(),
 		)

@@ -178,6 +178,25 @@ export const repositoriesOf = (nowMs: number): DependencyScanRepositoriesRespons
 })
 
 /** Connected, before the repository's first scan. */
+/** The same repositories with every lockfile read, as the clean state requires. */
+export const cleanRepositoriesOf = (nowMs: number): DependencyScanRepositoriesResponse => ({
+	repositories: repositoriesOf(nowMs).repositories.map((repository) =>
+		repository.latestScan === null
+			? repository
+			: {
+					...repository,
+					latestScan: {
+						...repository.latestScan,
+						lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
+							...lockfile,
+							status: "parsed" as const,
+							message: null,
+						})),
+					},
+				},
+	),
+})
+
 export const neverScannedOf = (nowMs: number): DependencyScanRepositoriesResponse => ({
 	repositories: [{ ...payments(nowMs), latestScan: null }],
 })

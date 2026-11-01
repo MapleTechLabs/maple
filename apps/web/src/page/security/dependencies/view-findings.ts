@@ -341,6 +341,11 @@ const findingsTable = (
 const packagesChecked = (repositories: ReadonlyArray<DependencyScanRepository>): number =>
 	repositories.reduce((sum, repository) => sum + (repository.latestScan?.packageCount ?? 0), 0)
 
+/** A repository is only clean when its latest scan completed and read every lockfile it found. */
+const readEverything = (repository: DependencyScanRepository): boolean =>
+	repository.latestScan?.status === "completed" &&
+	repository.latestScan.lockfiles.every((lockfile) => lockfile.status === "parsed")
+
 /** Scanned and nothing open: a calm line, not an alarm. */
 const cleanState = (h: H, repositories: ReadonlyArray<DependencyScanRepository>): Html =>
 	empty(
@@ -375,9 +380,7 @@ export const findingsSection = (
 		rows.length > 0
 			? findingsTable(h, rows, model.selectedId, clock, production, productionScanStates(repositories))
 			: // Clean only when every repository's latest scan read its lockfiles; a failed or missing one is not a clean bill.
-				status === "open" &&
-				  repositoryId === null &&
-				  repositories.every((repository) => repository.latestScan?.status === "completed")
+				status === "open" && repositoryId === null && repositories.every(readEverything)
 				? cleanState(h, repositories)
 				: h.div(
 						[h.Class("p-4")],

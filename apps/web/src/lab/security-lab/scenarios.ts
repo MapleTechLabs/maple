@@ -45,6 +45,7 @@ import {
 	unitsOf,
 } from "../security-fixture"
 import {
+	cleanRepositoriesOf,
 	FINDING_IDS,
 	findingsOf as dependencyFindingsOf,
 	neverScannedOf,
@@ -534,7 +535,7 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 			return {
 				_tag: "Dependencies",
 				step: dependencies(nowMs, {
-					repositories: repositoriesOf(nowMs),
+					repositories: cleanRepositoriesOf(nowMs),
 					findings: {
 						...dependencyFindingsOf(nowMs),
 						findings: dependencyFindingsOf(nowMs).findings.filter(
