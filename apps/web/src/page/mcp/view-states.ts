@@ -121,6 +121,8 @@ export const quietWindow = <M>(
 		service: string
 		window: string
 		lastCall?: string
+		/** The server sent other MCP spans (initialize, tools/list) in the window, just no tool call. */
+		hasOtherSpans?: boolean
 		/** Absent at the widest window the page offers. */
 		widen?: Readonly<{ onWiden: M; label: string }>
 	}>,
@@ -133,9 +135,11 @@ export const quietWindow = <M>(
 					emptyMedia(h, { variant: "icon" }, [icon(h, "ClockIcon")]),
 					emptyTitle(h, [`No tool calls in the ${options.window}`]),
 					emptyDescription(h, [
-						options.lastCall === undefined
-							? `No MCP server span from ${options.service} in this window.`
-							: `${options.service} last answered a tool call ${options.lastCall}.`,
+						options.lastCall !== undefined
+							? `${options.service} last answered a tool call ${options.lastCall}.`
+							: options.hasOtherSpans === true
+								? `${options.service} answered MCP requests but no tool call in this window.`
+								: `No MCP server span from ${options.service} in this window.`,
 					]),
 				]),
 				...(options.widen === undefined

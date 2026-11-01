@@ -256,7 +256,7 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 		data === undefined || data.firstSpanMs === 0
 			? "MCP server"
 			: [
-					`MCP ${data.protocolVersion}`,
+					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
 					`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
 					...(isNew ? [`first MCP span ${formatClock(data.firstSpanMs, timeZone)}`] : []),
 				].join(" · ")
@@ -269,6 +269,7 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 				return quietWindow(h, {
 					service,
 					window: window.label.replace(/^Last /, "last "),
+					hasOtherSpans: response.methods.length > 0,
 					widen: Option.match(Option.fromUndefinedOr(widerPreset(model.window)), {
 						onNone: () => undefined,
 						onSome: (preset) => ({
