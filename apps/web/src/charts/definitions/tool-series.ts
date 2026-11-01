@@ -55,10 +55,10 @@ const formatOf = (spec: ToolSeriesSpec): ((value: number) => string) => {
 	}
 }
 
-/** Tooltips read count series exactly; the axis keeps the compact ticks. */
+/** Tooltips read whole counts exactly; a fractional value (an average) keeps its decimals. */
 const tooltipFormatOf = (spec: ToolSeriesSpec): ((value: number) => string) =>
 	spec.format === "number" || spec.format === "calls" || spec.format === "sessions"
-		? (value) => formatExactCount(value)
+		? (value) => (Number.isInteger(value) ? formatExactCount(value) : formatOf(spec)(value))
 		: formatOf(spec)
 
 const bucketOf = (row: Row): string => {
