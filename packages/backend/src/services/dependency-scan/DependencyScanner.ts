@@ -376,10 +376,11 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							})
 							.pipe(Effect.mapError(scanError("Could not store the scan")))
 					})
+					// Any end but success settles the row, an interruption or a defect included.
 					const completed = yield* run.pipe(
-						Effect.tapError((error) =>
+						Effect.onError((cause) =>
 							store
-								.failScan({ orgId, scanId: started.id, error: error.message })
+								.failScan({ orgId, scanId: started.id, error: summarizeCause(cause) })
 								.pipe(Effect.ignore),
 						),
 					)
