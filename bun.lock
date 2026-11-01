@@ -139,7 +139,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "bin": {
         "maple": "./src/bin.ts",
       },
@@ -156,6 +156,7 @@
         "@effect/vitest": "catalog:effect",
         "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -387,7 +388,7 @@
     },
     "examples/effect-todo": {
       "name": "@maple-examples/effect-todo",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "@effect/atom-react": "4.1.0",
         "@effect/platform-bun": "catalog:effect",
@@ -516,7 +517,7 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.2.5",
+      "version": "0.3.0",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
@@ -613,7 +614,7 @@
     },
     "packages/browser": {
       "name": "@maple-dev/browser",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "dependencies": {
         "@opentelemetry/api": "^1.9.0",
         "@opentelemetry/instrumentation": "^0.222.0",
@@ -732,7 +733,7 @@
     },
     "packages/effect-sdk": {
       "name": "@maple-dev/effect-sdk",
-      "version": "0.12.1",
+      "version": "0.13.0",
       "dependencies": {
         "std-env": "^4.0.0",
       },
@@ -822,6 +823,7 @@
       "devDependencies": {
         "@types/bun": "^1.4.4",
         "@types/node": "catalog:tooling",
+        "fast-check": "^4.10.2",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },

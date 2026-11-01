@@ -36,6 +36,7 @@ import {
 	type LocalEventingRuntimeApi,
 } from "./eventing/runtime"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
+import { checkOtlpJson } from "./otlp/json"
 import {
 	decodeLogsRequest,
 	decodeMetricsRequest,
@@ -356,12 +357,20 @@ function decodeOtlp(
 		bytes = inflated.success
 	}
 	const decodedBytes = bytes
+	if (contentType.includes("json"))
+		return Result.try({
+			try: (): unknown =>
+				Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+					new TextDecoder().decode(decodedBytes),
+				),
+			catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
+		}).pipe(
+			Result.flatMap((body) =>
+				Result.mapError(checkOtlpJson(signal, body), (message) => new OtlpDecodeFailed({ message })),
+			),
+		)
 	return Result.try({
 		try: (): unknown => {
-			if (contentType.includes("json"))
-				return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
-					new TextDecoder().decode(decodedBytes),
-				)
 			switch (signal) {
 				case "traces":
 					return decodeTraceRequest(decodedBytes)
