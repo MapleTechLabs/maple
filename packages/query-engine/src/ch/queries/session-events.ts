@@ -171,7 +171,7 @@ export function sessionEventMatchQuery(opts: SessionEventMatchOpts) {
 // the row's own Timestamp, so its gap is 0 and counts as neither active nor idle.
 //
 // IDLE_GAP_THRESHOLD_MS is deliberately larger than the rrweb player's 2s idle
-// threshold (replay-timeline.ts): `session_events` are sparse semantic events
+// threshold (replay-meta.ts): `session_events` are sparse semantic events
 // (no continuous mouse-move samples), so a 2s threshold would flag nearly every
 // gap as idle. 15s is a heuristic — tune if it proves too coarse/fine.
 
