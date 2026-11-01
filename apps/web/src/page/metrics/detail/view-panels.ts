@@ -43,7 +43,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Couldn't load metric data", onRetry: Message.ClickedReload() }),
+			errorState(h, { failure, title: "Couldn't load metric data", onRetry: Message.ClickedRetryChart() }),
 		onData: (rows) =>
 			rows.length === 0
 				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
