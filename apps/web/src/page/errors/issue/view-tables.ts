@@ -151,7 +151,7 @@ export const occurrencesTable = <M>(
 				emptyHeader(h, [
 					emptyTitle(h, ["No samples in this window"]),
 					emptyDescription(h, [
-						"This fingerprint was not seen in the selected range. Widen the time range to find traces to open.",
+						"This fingerprint was not seen in this window. Widen the time range to find traces to open.",
 					]),
 				]),
 			])

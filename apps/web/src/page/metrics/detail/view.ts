@@ -6,16 +6,17 @@ import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { chartLoading } from "../../../ui/chart-state"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
-import { pageTitle } from "../../../ui/page-layout"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { detailTitle } from "../../kit/detail-header"
 import { docsLink } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { CatalogSummary } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { metricTypeLabel } from "../shared"
 import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
@@ -56,7 +57,7 @@ const loading = (h: H): Html =>
 
 const noData = (h: H, metricName: string): Html =>
 	emptyMessage(h, { dashed: true, className: "flex flex-col items-center p-12" }, [
-		h.p([h.Class("font-medium text-foreground")], ["No data for this metric in the selected range"]),
+		h.p([h.Class("font-medium text-foreground")], ["No data for this metric in this window"]),
 		h.p(
 			[h.Class("mt-2 max-w-md")],
 			[
@@ -110,6 +111,12 @@ const body = (h: H, model: Model, timeZone: string): Html =>
 		},
 	})
 
+/** The eyebrow's type, as the type badge names it; none until the catalog answers. */
+const typeLabelOf = (model: Model): string | null => {
+	const summary = summaryOf(model)
+	return summary === null ? null : metricTypeLabel(summary.metricType)
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))],
@@ -118,11 +125,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					// A metric name is an identifier, so it is set in mono like elsewhere.
-					titleContent: pageTitle(
-						h,
-						{ title: model.metricName, className: "font-mono text-xl leading-8 tracking-normal" },
-						[model.metricName],
-					),
+					titleContent: detailTitle(h, {
+						kind: ["Metric", typeLabelOf(model)],
+						title: [h.span([h.Class("font-mono")], [model.metricName])],
+						titleText: model.metricName,
+					}),
 					actions: actions(h, model),
 				},
 				[body(h, model, inputs.context.timeZone)],

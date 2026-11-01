@@ -235,7 +235,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 			? h.a(
 					[
 						h.Href(data.href),
-						h.Class(cn(shell, "hover:border-primary/60 active:border-primary/60")),
+						h.Class(cn(shell, "hover:border-primary-a4 active:border-primary-a4")),
 						h.Title(data.titleHint ?? data.title),
 						nodeLink(h),
 					],
@@ -290,7 +290,7 @@ const actionGhostNode = (h: H, id: string): ReadonlyArray<Html> => [
 		[
 			h.AriaHidden(true),
 			h.Class(
-				"pointer-events-none flex size-full items-center gap-2.5 rounded-md border border-dashed bg-card/40 px-3",
+				"pointer-events-none flex size-full items-center gap-2.5 rounded-md border border-dashed bg-surface-faint px-3",
 			),
 		],
 		[
@@ -326,7 +326,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 				h.OnClick(Message.ClickedAction({ index: data.index })),
 				h.OnKeyDownPreventDefault(openKey(data.index)),
 				h.Class(
-					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 hover:border-primary/60 active:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+					"flex size-full cursor-pointer items-center gap-2.5 rounded-md border bg-card px-3 hover:border-primary-a4 active:border-primary-a4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
 				),
 			],
 			[
@@ -628,7 +628,7 @@ const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	)
 }
 
-const PANEL = "shrink-0 gap-3.5 bg-card/40 px-6 pb-5.5 pt-4.5"
+const PANEL = "shrink-0 gap-3.5 bg-surface-faint px-6 pb-5.5 pt-4.5"
 
 /** `ProvenanceCanvas`; a chain of fewer than two cards draws nothing (or the ghost, mid-run). */
 export const provenanceCanvas = (

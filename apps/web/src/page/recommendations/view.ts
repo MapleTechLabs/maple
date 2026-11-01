@@ -14,7 +14,7 @@ import { icon } from "../../ui/icon"
 import { skeleton } from "../../ui/skeleton"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
-import { detailTitle } from "../kit/detail-header"
+import { detailTitle, detailTitleSkeleton } from "../kit/detail-header"
 import { relativeTime } from "../kit/relative-time"
 import { resourceNotFound } from "../kit/resource-not-found"
 import { selectedOf } from "./update"
@@ -237,8 +237,8 @@ const column = { width: "narrow", gap: "lg" } as const
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	AsyncData.match(model.list.data, {
-		onIdle: () => dashboardPage(h, column, loadingBody(h)),
-		onLoading: () => dashboardPage(h, column, loadingBody(h)),
+		onIdle: () => dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
+		onLoading: () => dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
 		onFailure: (failure) =>
 			dashboardPage(h, column, [
 				errorState(h, {

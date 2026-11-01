@@ -127,10 +127,10 @@ const volumePanel = (h: H, model: Model, timeZone: string, nowMs: number): Html 
 	const isFailed = AsyncData.isFailure(model.usage.data)
 	const body = Option.match(usage, {
 		onNone: () =>
-			isFailed ? emptyMessage(h, {}, ["Volume is unavailable right now."]) : skeleton(h, "h-48 w-full"),
+			isFailed ? emptyMessage(h, {}, ["Volume is unavailable right now"]) : skeleton(h, "h-48 w-full"),
 		onSome: (value) =>
 			value.buckets.length === 0
-				? emptyMessage(h, {}, ["Nothing stored from this source in the last 24 hours."])
+				? emptyMessage(h, {}, ["Nothing stored from this source in the last 24 hours"])
 				: usageChart(h, model, usageRows(value), timeZone, nowMs),
 	})
 	return panel(h, { padded: true, className: "gap-3" }, [

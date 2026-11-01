@@ -70,7 +70,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CheckIcon", { size: 18 })]),
 					emptyTitle(h, ["No checks in this window"]),
 					emptyDescription(h, [
-						"No evaluations were recorded for the selected time range. Try widening the range, or wait for the scheduler to record the next check.",
+						"No evaluations were recorded in this window. Try widening the range, or wait for the scheduler to record the next check.",
 					]),
 				]),
 				docsLink(h, "alertRules"),

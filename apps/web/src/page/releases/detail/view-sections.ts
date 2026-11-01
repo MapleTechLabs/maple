@@ -272,7 +272,7 @@ export type ChangesetState =
 export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, clock: Clock): Html => {
 	if (state._tag === "NoBase")
 		return sectionCard(h, { title: "What shipped" }, [
-			emptyMessage(h, {}, ["No earlier version in this window to compare against."]),
+			emptyMessage(h, {}, ["No earlier version in this window to compare against"]),
 		])
 	if (state._tag === "NotShas")
 		return sectionCard(h, { title: "What shipped" }, [

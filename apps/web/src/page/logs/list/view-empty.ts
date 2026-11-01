@@ -33,7 +33,7 @@ const searchEmpty = (h: HtmlBuilder<Message>, model: Model): Html => {
 							"No logs on trace",
 							" ",
 							h.span([h.Class("font-mono text-foreground break-all")], [traceId]),
-							" in this time range",
+							" in this window",
 						]
 					: [
 							"No log message contains",

@@ -1,7 +1,6 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { cacheResultStyles, getCacheInfo } from "@maple/ui/lib/cache"
 import { calculateSelfTime, getServiceColor } from "@maple/ui/lib/colors"
-import { EMPTY_VALUE, formatDuration, formatPercent } from "@maple/ui/lib/format"
+import { formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -21,21 +20,6 @@ import { outcomeBadgeStyle, type PlatformInfo } from "./platform"
 // The panel's header, summary stats, cache and platform blocks (`SpanDetailPanel`).
 
 type H = HtmlBuilder<Message>
-
-/** A warehouse timestamp in `timeZone`, optionally with milliseconds. */
-export const formatTimestamp = (value: string, timeZone: string, withMilliseconds: boolean): string => {
-	const date = new Date(warehouseDateTimeToIso(value))
-	if (Number.isNaN(date.getTime())) return EMPTY_VALUE
-	return new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		fractionalSecondDigits: withMilliseconds ? 3 : undefined,
-	}).format(date)
-}
 
 export const panelHeader = (h: H, model: Model): Html => {
 	const { span } = model

@@ -183,7 +183,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					title: "Web Analytics",
+					title: "Web analytics",
 					gap: "lg",
 					filters: filtersRail(h, model),
 					actions: h.div(

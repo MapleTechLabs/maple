@@ -80,7 +80,7 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 				issueList(h, {
 					title: "New with this release",
 					issues: split.fresh,
-					empty: "No issue first appeared while this release was live.",
+					empty: "No issue first appeared while this release was live",
 					tone: "error",
 					isServiceShown,
 					clock,
@@ -88,7 +88,7 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 				issueList(h, {
 					title: "Regressed with this release",
 					issues: split.regressed,
-					empty: "Nothing fixed before came back while this release was live.",
+					empty: "Nothing fixed before came back while this release was live",
 					tone: "warn",
 					isServiceShown,
 					clock,

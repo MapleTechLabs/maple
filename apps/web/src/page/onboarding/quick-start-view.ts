@@ -338,7 +338,7 @@ const languageGroup = (h: H, state: QuickStartState, query: string): Html => {
 					searchInput(h, {
 						id: "stack-language-search",
 						value: query,
-						placeholder: "Search languages",
+						placeholder: "Search languages…",
 						ariaLabel: "Search languages",
 						onInput: (value) => Message.ChangedLanguageQuery({ query: value }),
 						onClear: Message.ChangedLanguageQuery({ query: "" }),
@@ -887,7 +887,7 @@ const percent = (rate: number): string => `${(rate * 100).toFixed(rate < 0.01 ? 
 const startCards = (findings: LiveFindings | null): ReadonlyArray<StartCard> => [
 	{
 		glyph: "nodes-3",
-		title: "Service Map",
+		title: "Service map",
 		finding:
 			findings === null || findings.serviceCount === 0
 				? "Draws itself from your first traces: which services call which."

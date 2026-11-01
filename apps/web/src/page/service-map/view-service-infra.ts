@@ -8,6 +8,7 @@ import { inlineCode } from "../../ui/inline-code"
 import { keyValue, keyValueList } from "../../ui/key-value"
 import { panel } from "../../ui/panel"
 import { scrollArea } from "../../ui/scroll-area"
+import { textLinkClass } from "../../ui/text-link"
 import { docsLink } from "../kit/signal-empty-state"
 import { type RuntimeLink, runtimeLink, type ServiceRuntime, workloadLink } from "../kit/service-runtimes"
 import type { TimeSearch } from "../kit/time-controls"
@@ -22,7 +23,7 @@ type KnownKind = "deployment" | "statefulset" | "daemonset"
 const knownKindOf = (kind: string): KnownKind | null =>
 	kind === "deployment" || kind === "statefulset" || kind === "daemonset" ? kind : null
 
-const LINK = "inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 active:text-primary/80"
+const LINK = textLinkClass("primary", false, "text-3xs")
 
 const podsHref = (workload: ServiceWorkload, kind: KnownKind | null, time: TimeSearch): string => {
 	const namespaces = workload.namespace ? [workload.namespace] : undefined
@@ -99,12 +100,12 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 					: [
 							h.a(
 								[h.Class(LINK), h.Href(workloadLink(workload, time).href)],
-								["View workload ", icon(h, "ArrowRightIcon", { size: 10 })],
+								["View workload →"],
 							),
 						]),
 				h.a(
 					[h.Class(LINK), h.Href(podsHref(workload, kind, time))],
-					["View pods ", icon(h, "ArrowRightIcon", { size: 10 })],
+					["View pods →"],
 				),
 			],
 		),

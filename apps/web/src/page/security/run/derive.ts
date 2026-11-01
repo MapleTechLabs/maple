@@ -60,7 +60,7 @@ export const UNIT_LABEL = {
 export const UNIT_TONE = {
 	covered: "ok",
 	candidate: "warn",
-	in_progress: "done",
+	in_progress: "live",
 	planned: "neutral",
 	blocked: "crit",
 	deferred: "neutral",

@@ -60,7 +60,7 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 	if (page.draft) return h.span([h.Class("flex justify-end")], [badge(h, { variant: "meta" }, ["Draft"])])
 	if (page.last_publish_error !== null)
 		return h.span(
-			[h.Class("text-right text-xs text-destructive"), h.Title(page.last_publish_error)],
+			[h.Class("text-right text-xs text-destructive-foreground"), h.Title(page.last_publish_error)],
 			["Publish failed"],
 		)
 	return page.published_at === null
@@ -77,7 +77,7 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
 	return h.li(
-		[h.Key(page.id), h.Class("relative py-3 pr-4 pl-4 hover:bg-muted/25 active:bg-muted/25")],
+		[h.Key(page.id), h.Class("relative py-3 pr-4 pl-4 hover:bg-surface-sunken active:bg-surface-sunken")],
 		[
 			h.div(
 				[h.Class(ROW_GRID)],

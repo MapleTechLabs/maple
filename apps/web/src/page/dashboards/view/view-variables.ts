@@ -101,7 +101,7 @@ const chipView = Submodel.defineView<Combobox.Model, Combobox.Message, ChipInput
 					listPopup(h, model, {
 						slot: "combobox",
 						items,
-						emptyText: inputs.options.loading ? "Loading values…" : "No matching values.",
+						emptyText: inputs.options.loading ? "Loading values…" : "No matching values",
 						anchorSelector: anchor,
 						className: "min-w-52",
 						listClassName: "max-h-72 overflow-y-auto p-1",

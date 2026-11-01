@@ -21,7 +21,7 @@ import type { ToolMetric, ToolPercentile, ToolSeriesPoint } from "./model"
 // A tool series chart in a bare `ChartCard`.
 
 const PLOT_HEIGHT = 220
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 /** The tokens the chart reads off the theme. */
 export const TOOL_CHART_TOKENS = [

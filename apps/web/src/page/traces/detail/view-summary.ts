@@ -6,6 +6,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { traceIdBadge } from "../../../ui/trace-badges"
 import { statFigure } from "../../../ui/stat-figure"
@@ -17,17 +18,6 @@ import type { LoadedTrace } from "./select"
 
 // The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): spectrum segment tooltips, the commit hover card and the copy badge's feedback.
-
-const stampFormat = (timeZone: string) =>
-	new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		fractionalSecondDigits: 3,
-	})
 
 const httpStatusColor = (code: number): string => {
 	const tone = httpStatusTone(code)
@@ -47,7 +37,10 @@ const startedAt = (
 	return h.time(
 		[h.Attribute("datetime", new Date(epochMs).toISOString()), h.Class("tabular-nums")],
 		[
-			h.span([h.Class("text-foreground")], [stampFormat(timeZone).format(epochMs)]),
+			h.span(
+				[h.Class("text-foreground")],
+				[formatTimestampInTimezone(epochMs, { timeZone, withMilliseconds: true })],
+			),
 			" ",
 			"· ",
 			formatRelativeTime(epochMs, nowMs),

@@ -74,7 +74,7 @@ const metricCard = (
 						onRetry: Message.ClickedRetry({ section: "timeseries" }),
 						render: (rows) =>
 							rows.length === 0
-								? chartCardMessage(h, "No metrics in this time range.")
+								? chartCardMessage(h, "No metrics in this window")
 								: options.theme === null || model.chartRuntime._tag !== "Ready"
 									? chartLoading(h, { variant: "line", height: CHART_HEIGHT })
 									: metricPlot(h, model, options.chart, rows, options.theme, timeZone),

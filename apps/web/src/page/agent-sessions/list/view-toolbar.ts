@@ -1,9 +1,10 @@
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { refreshButton } from "../../../ui/refresh-button"
 import { switchControl } from "../../../ui/switch"
-import { toolbarStat } from "../../kit/list-toolbar"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
@@ -20,19 +21,20 @@ const toolbarSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: "agent-sessions-search",
 		size: "sm",
-		className: cn("max-w-sm", "w-full sm:max-w-sm"),
+		className: "w-full max-w-sm",
 		placeholder: "Session or trace ID…",
 		value: model.searchInput,
 		onInput: (value) => Message.ChangedSearchInput({ value }),
 		onClear: Message.ChangedSearchInput({ value: "" }),
 	})
 
-/** `ToolbarStat`: "6 of 1,666" when the total is known and larger, else "6 shown". */
-const stat = (h: H, value: number, total: number | undefined): Html =>
-	toolbarStat(h, {
-		value: value.toLocaleString(),
-		label: total !== undefined && total > value ? `of ${total.toLocaleString()}` : "shown",
-	})
+/** "6 sessions", or "6 of 1.7K sessions" when the total is known and larger. */
+const count = (h: H, value: number, total: number | undefined): Html =>
+	toolbarCount(h, [
+		total !== undefined && total > value
+			? `${formatNumber(value)} of ${formatNumber(total)} sessions`
+			: countLabel(value, "session"),
+	])
 
 const tooltipTrigger = <M>(h: HtmlBuilder<M>, id: string) => [
 	h.DataAttribute("base-ui-tooltip-trigger", ""),
@@ -51,10 +53,11 @@ export const toolbar = (
 		isFailed?: boolean
 	}>,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-3")],
-		[
-			toolbarSearch(h, model),
+	// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+	listToolbar(h, {
+		className: "pb-0",
+		leading: toolbarSearch(h, model),
+		trailing: [
 			h.div(
 				[
 					...(options.isWaiting ? [h.AriaBusy(true)] : []),
@@ -69,7 +72,7 @@ export const toolbar = (
 										h.Class("hidden sm:block"),
 										...tooltipTrigger(h, "agent-sessions-count"),
 									],
-									[stat(h, options.sessionCount, options.totalCount)],
+									[count(h, options.sessionCount, options.totalCount)],
 								),
 							]),
 					h.label(
@@ -102,4 +105,4 @@ export const toolbar = (
 				],
 			),
 		],
-	)
+	})

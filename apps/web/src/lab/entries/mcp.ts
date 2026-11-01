@@ -224,7 +224,7 @@ const pageView = (model: Model, h: H): Html => {
 			return dashboardPage(
 				h,
 				{
-					title: "MCP Servers",
+					title: "MCP servers",
 					description:
 						"Every service that answers MCP requests: the tools agents call, the clients calling them, and why calls fail.",
 					actions: timeActions(h, model),
@@ -443,8 +443,8 @@ export const lab = defineShellLab("MCP hub", {
 		model.view === "service"
 			? [{ label: "Services" }, { label: MCP_OVERVIEW.service }]
 			: model.view === "list" || model.view === "empty"
-				? [{ label: "MCP Servers", isPageHeading: true }]
+				? [{ label: "MCP servers", isPageHeading: true }]
 				: model.view === "tool"
-					? [{ label: "MCP Servers" }, { label: MCP_OVERVIEW.service }, { label: MCP_RUN_SQL.tool }]
-					: [{ label: "MCP Servers" }],
+					? [{ label: "MCP servers" }, { label: MCP_OVERVIEW.service }, { label: MCP_RUN_SQL.tool }]
+					: [{ label: "MCP servers" }],
 })

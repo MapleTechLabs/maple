@@ -105,7 +105,7 @@ const podsSection = (h: H, model: Model, inputs: PageViewInputs, pods: ReadonlyA
 				onData: (page) =>
 					page.data.length === 0
 						? emptyMessage(h, { dashed: true, className: "py-12" }, [
-								"No pods reported for this workload in the selected window.",
+								"No pods reported for this workload in this window",
 							])
 						: podTable(h, page.data, {
 								sortBy: "saturation",

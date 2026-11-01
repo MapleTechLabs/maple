@@ -1,8 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
+import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { errorState } from "../../../ui/error-state"
 import { meter } from "../../../ui/meter"
 import { spinner } from "../../../ui/spinner"
 import type { LoadProgress } from "./derive"
@@ -13,21 +14,21 @@ import type { Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
+/** A later page of a large session failed; what already loaded stays on screen. */
+export const REST_LOAD_FAILURE = makeClientErrorBody({
+	_tag: "@maple/web/errors/SessionRestLoadFailed",
+	code: "session_rest_unavailable",
+	title: "Couldn't load the rest of this session",
+	message: "The spans loaded so far are still shown.",
+	retryable: false,
+	recovery: "retry",
+})
+
 export const loadIndicator = (h: H, model: Model, progress: LoadProgress, className?: string): Html => {
 	if (progress.phase === "failed")
 		return h.div(
-			[
-				h.DataAttribute("testid", "session-load-indicator"),
-				h.Class(cn("flex items-center gap-2 text-xs text-muted-foreground", className)),
-			],
-			[
-				h.span([], ["Couldn't load the rest of this session."]),
-				button(
-					h,
-					{ variant: "outline", size: "xs", attributes: [h.OnClick(Message.ClickedRetryLoad())] },
-					["Retry"],
-				),
-			],
+			[h.DataAttribute("testid", "session-load-indicator"), h.Class(cn("flex", className))],
+			[errorState(h, { failure: REST_LOAD_FAILURE, variant: "quiet", onRetry: Message.ClickedRetryLoad() })],
 		)
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
 	const isAgent = progress.phase === "agent"

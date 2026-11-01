@@ -195,7 +195,7 @@ const optionEntries = (
 			: []),
 		{ _tag: "Item", value: "collapsible", label: isCollapsible ? "Always expanded" : "Allow collapsing" },
 		{ _tag: "Separator" },
-		{ _tag: "Item", value: "delete", label: "Delete group…", icon: "TrashIcon", variant: "destructive" },
+		{ _tag: "Item", value: "delete", label: "Delete group", icon: "TrashIcon", variant: "destructive" },
 	]
 }
 
@@ -309,7 +309,7 @@ const sectionBody = (h: H, inputs: SectionViewInputs): Html => {
 					"Add widget",
 				]),
 			])
-		: emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty."])
+		: emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty"])
 }
 
 const trash = (h: H) => icon(h, "TrashIcon", { className: "text-destructive" })

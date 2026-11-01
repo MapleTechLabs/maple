@@ -1,8 +1,8 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { pluralize } from "@maple/ui/lib/format"
+import { formatBytes, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
-import { formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -28,12 +28,14 @@ const SAMPLES_PAGE = 25
 
 const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const paging = pagingOf(model)
+	const last = model.pages.at(-1)?.data
+	const failure = paging === "failed" && last !== undefined && AsyncData.isFailure(last) ? last.error : undefined
 	return h.div(
 		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
 		[
 			h.span(
 				[h.Class("text-muted-foreground")],
-				["Showing ", formatToolCount(shown), " of ", formatToolCount(total)],
+				["Showing ", formatNumber(shown), " of ", formatNumber(total)],
 			),
 			...(paging === "more"
 				? [
@@ -48,18 +50,15 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 					]
 				: paging === "loading"
 					? [h.span([h.Class("text-foreground-subtle")], ["Loading…"])]
-					: paging === "failed"
+					: failure !== undefined
 						? [
-								h.button(
-									[
-										h.Class(
-											"text-severity-error hover:text-foreground active:text-foreground",
-										),
-										h.Type("button"),
-										h.OnClick(Message.ClickedLoadMore()),
-									],
-									["Couldn't load more. Retry"],
-								),
+								errorState(h, {
+									// Loading the next page again is always worth a try, whatever the cause.
+									failure: { ...failure, recovery: "retry" },
+									title: "Couldn't load more",
+									variant: "quiet",
+									onRetry: Message.ClickedLoadMore(),
+								}),
 							]
 						: []),
 		],
@@ -89,7 +88,7 @@ export const samplesPane = (
 						),
 					]
 				: rows.length === 0
-					? [emptyMessage(h, {}, ["No samples in the selected window."])]
+					? [emptyMessage(h, {}, ["No samples in this window"])]
 					: rows.map((row, index) =>
 							sampleRow(h, model, inputs, row, {
 								index,
@@ -114,7 +113,7 @@ export const samplesPane = (
 							h.span(
 								[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 								[
-									formatToolCount(options.total),
+									formatNumber(options.total),
 									" failed ",
 									pluralize(options.total, "call"),
 									" · newest first",
@@ -146,7 +145,7 @@ export const samplesPane = (
 								[
 									rows.length === 0 ? "0" : String(current + 1),
 									" of ",
-									formatToolCount(options.total),
+									formatNumber(options.total),
 								],
 							),
 							iconButton(
@@ -266,7 +265,7 @@ const sampleRow = (
 											"hidden shrink-0 text-2xs tabular-nums text-foreground-subtle md:block",
 										),
 									],
-									["args ", formatToolCount(row.argumentsBytes), " B"],
+									["args ", formatBytes(row.argumentsBytes)],
 								),
 							]),
 					h.span(

@@ -1,8 +1,9 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
+import { tableHeadLabelStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
+import { sortButton } from "../../../ui/table"
 import type { SortDir } from "../../kit/table-sort"
 
 // `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
@@ -29,13 +30,15 @@ export type ColumnHeadOptions<M> = Readonly<{
 	hidden?: string
 }>
 
+/** A column head in the kit's table-head type; a sortable one is the kit `sortButton`. */
 export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>): Html => {
 	const sort = options.sort
 	return h.div(
 		[
 			h.Class(
 				cn(
-					"flex items-center text-2xs font-medium",
+					"flex items-center",
+					tableHeadLabelStyles,
 					options.align === "right" && "justify-end",
 					options.width,
 					options.hidden,
@@ -43,32 +46,17 @@ export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>):
 			),
 		],
 		[
-			sort === undefined
-				? h.span([h.Class("text-muted-foreground")], [options.label])
-				: h.button(
-						[
-							h.Type("button"),
-							...(sort.onSort === undefined ? [] : [h.OnClick(sort.onSort)]),
-							h.Class(
-								cn(
-									"inline-flex items-center gap-1 transition-colors",
-									sort.isActive
-										? "text-foreground"
-										: "text-muted-foreground hover:text-foreground active:text-foreground",
-								),
-							),
-						],
-						[
-							options.label,
-							icon(h, "ArrowUpDownIcon", {
-								size: 12,
-								className: cn(
-									"transition-opacity",
-									sort.isActive ? "opacity-100" : "opacity-40",
-									sort.isActive && sort.dir === "asc" && "rotate-180",
-								),
-							}),
-						],
+			sort?.onSort === undefined
+				? h.span([], [options.label])
+				: sortButton(
+						h,
+						{
+							isActive: sort.isActive,
+							direction: sort.dir,
+							onClick: sort.onSort,
+							align: options.align,
+						},
+						[options.label],
 					),
 		],
 	)

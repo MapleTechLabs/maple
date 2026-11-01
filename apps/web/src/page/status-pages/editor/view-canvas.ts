@@ -123,7 +123,7 @@ const itemClass = (isSelected: boolean) =>
 		"flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
 		isSelected
 			? "bg-muted font-medium text-foreground"
-			: "text-muted-foreground hover:bg-muted/50 hover:text-foreground active:bg-muted/50 active:text-foreground",
+			: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground active:bg-surface-sunken active:text-foreground",
 	)
 
 const componentItem = (

@@ -63,7 +63,7 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 	{
 		value: "critical",
 		label: "Critical",
-		selected: "border-severity-error/60 bg-severity-error-a2 text-severity-error",
+		selected: "border-severity-error-a4 bg-severity-error-a2 text-severity-error",
 		dot: "bg-severity-error",
 	},
 ]
@@ -287,7 +287,7 @@ const intervalPicker = (
 						isSelected
 							? isBlocked
 								? "border-severity-warn/60 bg-severity-warn-a2 text-severity-warn"
-								: "border-primary/50 bg-primary-a2 text-foreground"
+								: "border-primary-a4 bg-primary-a2 text-foreground"
 							: "text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 						!isSelected && isBlocked && "text-foreground-subtle",
 					),

@@ -108,8 +108,8 @@ const workloads = (h: H, model: Model, className: string): Html => {
 				: [
 						emptyMessage(h, { className: "px-3 py-10" }, [
 							fleet === "failed"
-								? "Not available right now."
-								: "No workload reported metrics in 24 hours.",
+								? "Not available right now"
+								: "No workload reported metrics in 24 hours",
 						]),
 					]
 			: [

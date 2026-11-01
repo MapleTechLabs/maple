@@ -525,18 +525,19 @@ describe("security tabs", () => {
 		})
 	})
 
-	test("an empty status tab offers Clear filters only when a filter besides the status is set", () => {
+	test("an empty status tab reads as filtered, with Clear filters, only when a filter besides the status is set", () => {
 		const atStatus = (search: { q?: string; status: "accepted_risk" }) =>
 			routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search }), context).model
 		scene(
 			{ update: pageUpdate, view },
 			given(atStatus({ status: "accepted_risk" })),
-			expectView(text("No findings match")).toExist(),
+			expectView(text("No findings in this status")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(atStatus({ q: "exports", status: "accepted_risk" })),
+			expectView(text("No findings match these filters")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toExist(),
 		)
 	})

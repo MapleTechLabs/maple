@@ -1,4 +1,4 @@
-import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -7,7 +7,6 @@ import type {
 	ErrorTextToken,
 	FailureStatus,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { inlineCodeClassName } from "../../../ui/inline-code"
@@ -190,7 +189,7 @@ export const failureStatusLine = <M>(
 					scope === "tool"
 						? `No failures since ${dateTime(status.since)}`
 						: `None since ${shortDate(status.since)}`,
-					`· ${formatToolCount(status.callsSince)} ${pluralize(status.callsSince, "call")} since`,
+					`· ${formatNumber(status.callsSince)} ${pluralize(status.callsSince, "call")} since`,
 				]
 			: status.kind === "quiet"
 				? [
@@ -201,7 +200,7 @@ export const failureStatusLine = <M>(
 					? [
 							`Last failure ${formatRelativeTimeOrDate(status.lastSeen, options.nowMs, timeZone)}`,
 							options.calls > 0
-								? `· ${formatErrorRate(options.failures / options.calls)} of ${formatToolCount(options.calls)} calls`
+								? `· ${formatErrorRate(options.failures / options.calls)} of ${formatNumber(options.calls)} calls`
 								: undefined,
 						]
 					: [

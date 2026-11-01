@@ -381,7 +381,7 @@ const loaded = (
 			rows.length === 0
 				? filteredEmpty(h, {
 						noun: "monitors",
-						description: "No monitor matches the filter, status and type.",
+						description: "Nothing matches the search, status and type.",
 						onClear: Message.ClickedClearUptimeFilters(),
 						clearLabel: "Clear filters",
 					})

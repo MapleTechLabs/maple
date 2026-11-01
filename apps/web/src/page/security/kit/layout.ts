@@ -2,7 +2,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { IconName } from "../../../ui/icon"
-import { pageTitle } from "../../../ui/page-layout"
 import { dashboardPage, type DashboardPageOptions } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { navShell, type NavShellSection } from "../../settings/kit/nav-shell"
@@ -131,16 +130,6 @@ const DESCRIPTION = {
 		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
 } satisfies Record<SecuritySource, string>
 
-/** The title block: the page `<h1>` and its one line of context, like every other page header. */
-const securityTitle = <M>(h: HtmlBuilder<M>, source: SecuritySource): Html =>
-	h.div(
-		[h.Class("min-w-0 space-y-0.5")],
-		[
-			pageTitle(h, { className: "leading-8 text-foreground" }, [SOURCE_LABEL[source]]),
-			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [DESCRIPTION[source]]),
-		],
-	)
-
 /** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */
 export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex shrink-0 flex-col gap-6")], children)
@@ -163,7 +152,8 @@ export const securityLayout = <M>(
 		h,
 		{
 			...securityRailOptions(h, options.source),
-			titleContent: securityTitle(h, options.source),
+			title: SOURCE_LABEL[options.source],
+			description: DESCRIPTION[options.source],
 			actions: options.actions,
 			tabs: options.source === "code" ? codeTabs(h, options.codeTab ?? "overview") : undefined,
 			scrollClassName: "pb-8",

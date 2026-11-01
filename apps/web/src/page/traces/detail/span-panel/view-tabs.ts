@@ -10,6 +10,7 @@ import {
 	tabsStyles,
 	tabsTabStyles,
 } from "@maple/ui/styles/ui/tabs"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Schema } from "effect"
 import { AsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,7 +26,6 @@ import { LOG_LIMIT } from "./command"
 import { Message } from "./message"
 import type { LogEntry, Model } from "./model"
 import { TAB_VALUES } from "./update"
-import { formatTimestamp } from "./view-header"
 
 // The panel's Details / Logs / Infrastructure tabs: Base UI's Tabs DOM (`ui/tabs-view.ts`) with
 // icon labels and the logs count badge, which that view's string labels cannot carry.
@@ -138,7 +138,7 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 			h.div(
 				[h.Class("flex items-center gap-2 text-3xs text-muted-foreground mb-1")],
 				[
-					h.span([], [formatTimestamp(log.timestamp, timeZone, false)]),
+					h.span([], [formatTimestampInTimezone(log.timestamp, { timeZone })]),
 					severityBadge(h, { severity: log.severityText, className: "h-4 px-1" }),
 				],
 			),

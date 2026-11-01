@@ -80,7 +80,7 @@ const CHARTS: ReadonlyArray<{
 	{
 		id: "error-rate",
 		kind: "ErrorRate",
-		title: "Error Rate",
+		title: "Error rate",
 		ariaLabel: "Error rate",
 		skeleton: "area",
 		gradientPrefix: "errorRate",

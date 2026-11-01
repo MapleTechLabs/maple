@@ -278,8 +278,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 							],
 						),
 					])
-				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range." }, [
-						"No data in this window.",
+				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range" }, [
+						"No data in this window",
 					])
 
 	const thresholdCaption = h.div(

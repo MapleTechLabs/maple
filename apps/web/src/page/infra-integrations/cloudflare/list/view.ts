@@ -190,7 +190,7 @@ const zonesView = (
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: "Filter zones",
+			placeholder: "Filter zones…",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -208,7 +208,7 @@ const zonesView = (
 				: undefined,
 			sort: model.zoneSort,
 			emptyMessage:
-				filtered.length === zones.length ? undefined : "No zones match. Clear the search or scope.",
+				filtered.length === zones.length ? undefined : "No zones match these filters",
 			spark,
 		}),
 	])
@@ -233,7 +233,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: "Filter Workers",
+			placeholder: "Filter Workers…",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -263,7 +263,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 			accounts: scope.showAccountColumn ? scope.accountNames : undefined,
 			emptyMessage:
 				filtered.length === 0 && rows.length > 0
-					? "No Workers match. Clear the search or scope."
+					? "No Workers match these filters"
 					: undefined,
 		}),
 	])

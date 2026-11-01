@@ -120,6 +120,27 @@ describe("web analytics", () => {
 			resolveTheme,
 			expectView(text("Couldn't load AI crawlers")).toExist(),
 		)
+		expect(names(pageUpdate(failed, Message.ClickedRetryAiCrawlers()).commands)).toEqual([
+			"FetchWebAnalyticsAiCrawlers",
+		])
+
+		// Referrals failed but the previous window answered: Try again asks for the failed one only.
+		const referralsFailed = [
+			Message.CompletedFetch({
+				slot: "aiReferrals",
+				key: failed.aiReferrals.key ?? "",
+				result: Result.fail(toLoadFailure("referrals store down")),
+			}),
+			Message.CompletedFetch({
+				slot: "previousAiReferrals",
+				key: failed.previousAiReferrals.key ?? "",
+				result: Result.succeed([]),
+			}),
+		].reduce((model, message) => pageUpdate(model, message).model, failed)
+		const retried = pageUpdate(referralsFailed, Message.ClickedRetryAiReferrals()).commands ?? []
+		expect(retried.map(({ name, args }) => [name, args?.["slot"]])).toEqual([
+			["FetchWebAnalyticsAiReferrals", "aiReferrals"],
+		])
 	})
 
 	test("a breakdown row toggles its filter through the URL", () => {

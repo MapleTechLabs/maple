@@ -22,7 +22,7 @@ import { resolveColor, type ThemeColors } from "./theme-colors"
 
 export const INFRA_METRIC_CHART_HEIGHT = 220
 /** The empty-chart message. */
-export const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+export const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 export type InfraMetricSpec = Extract<ChartSpec, { readonly _tag: "InfraMetric" }>
 

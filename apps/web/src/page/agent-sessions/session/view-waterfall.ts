@@ -329,7 +329,7 @@ const spanRow = (
 					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 					isErrored && "bg-severity-error-a1",
-					state.isFocused && "bg-accent/60",
+					state.isFocused && "bg-surface-strong",
 					rowSelectedClass(state.isSelected || state.isRevealed),
 					state.isRevealed && "bg-primary-a2",
 				),
@@ -481,7 +481,7 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 				],
 				[
 					rows.length === 0
-						? emptyMessage(h, {}, ["No spans match this filter."])
+						? emptyMessage(h, {}, ["No spans match this filter"])
 						: h.div(
 								[h.Class("relative w-full"), h.Style({ height: `${totalSize}px` })],
 								items.flatMap((item) => {

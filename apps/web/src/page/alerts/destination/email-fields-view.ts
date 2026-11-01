@@ -176,7 +176,7 @@ export const emailFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 			viewInputs: {
 				byId: new Map(options.map((option) => [option.userId, option] as const)),
 				placeholder: form.memberUserIds.length === 0 ? "Select members…" : "Add member…",
-				emptyText: isLoaded ? "No members found in this workspace." : "Loading members…",
+				emptyText: isLoaded ? "No members found in this workspace" : "Loading members…",
 			},
 		}),
 		fieldDescription(

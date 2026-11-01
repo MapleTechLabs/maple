@@ -31,6 +31,7 @@ import * as SelectView from "../../../ui/select-view"
 import { skeletonList } from "../../../ui/skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
 import { relativeTime } from "../../kit/relative-time"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
 import { ANYONE } from "./update"
@@ -385,20 +386,6 @@ const headerRow = (h: H): Html =>
 		],
 	)
 
-const emptyState = (h: H, title: string, description: string, action: ReadonlyArray<Html>): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "HistoryIcon", { size: 16 })]),
-				emptyTitle(h, [title]),
-				emptyDescription(h, [description]),
-			]),
-			...action,
-		],
-		"py-8",
-	)
-
 const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): Html => {
 	const view = model.view
 	if (view === null && model.failure !== null)
@@ -411,28 +398,23 @@ const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): 
 	if (view === null)
 		return skeletonList(h, { rows: 3, rowClassName: "h-[44px]", gap: "2", className: "p-4" })
 	if (view.entries.length === 0 && isFiltered)
-		return emptyState(
-			h,
-			"No entries match these filters",
-			"Nothing recorded for this range, person, actor type and outcome.",
-			[
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedClearFilters())],
-					},
-					["Clear filters"],
-				),
-			],
-		)
+		return filteredEmpty(h, {
+			noun: "entries",
+			description: "Nothing recorded for this range, person, actor type and outcome.",
+			onClear: Message.ClickedClearFilters(),
+			className: "py-8",
+		})
 	if (view.entries.length === 0)
-		return emptyState(
+		return empty(
 			h,
-			"No audit log entries",
-			"Actions and data reads by users, API keys, and agents will appear here.",
-			[],
+			[
+				emptyHeader(h, [
+					emptyMedia(h, { variant: "icon" }, [icon(h, "HistoryIcon")]),
+					emptyTitle(h, ["No audit log entries"]),
+					emptyDescription(h, ["Actions and data reads by users, API keys, and agents will appear here."]),
+				]),
+			],
+			"py-8",
 		)
 	return h.div(
 		[h.Class("divide-border divide-y")],

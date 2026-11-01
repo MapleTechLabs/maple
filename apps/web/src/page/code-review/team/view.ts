@@ -1,6 +1,7 @@
 import type { CodeReviewTeam, CodeReviewTeamMember, CodeReviewTeamTotals } from "@maple/domain/http"
-import { formatCount, formatSpan } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
+import { formatSpan } from "../../../components/code-review/code-review-format"
+import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatExactCount } from "../../kit/locale"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,7 +14,7 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { PageViewInputs } from "../../contract"
-import { nothingInWindow } from "../../kit/nothing-in-window"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
@@ -50,7 +51,7 @@ const rateOf = (rate: number | null) => (rate === null ? EMPTY_VALUE : formatPer
 const spanOf = (seconds: number | null) => (seconds === null ? EMPTY_VALUE : formatSpan(seconds))
 /** Runner time in hours past the first: days of CI read as a calendar span, not as work. */
 const runnerTimeOf = (ms: number) =>
-	ms < 3_600_000 ? formatSpan(ms / 1000) : `${formatCount(Math.round(ms / 3_600_000))}h`
+	ms < 3_600_000 ? formatSpan(ms / 1000) : `${formatExactCount(Math.round(ms / 3_600_000))}h`
 
 type Column = Readonly<{
 	metric: Metric
@@ -69,7 +70,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 		label: "Merged",
 		hint: "Pull requests merged, of the ones first reviewed in this window",
 		className: "hidden w-24 sm:table-cell",
-		format: (value) => (value === null ? EMPTY_VALUE : formatCount(value)),
+		format: (value) => (value === null ? EMPTY_VALUE : formatNumber(value)),
 		detail: (member) =>
 			`${member.mergedPullRequests} of ${member.pullRequests} reviewed pull requests merged`,
 	},
@@ -161,8 +162,8 @@ const headlineStrip = (h: H, totals: CodeReviewTeamTotals): Html => {
 	const stats: ReadonlyArray<{ label: string; value: string; subline?: string; hint: string }> = [
 		{
 			label: HEADLINE_LABELS.merged,
-			value: formatCount(totals.mergedPullRequests),
-			subline: `of ${formatCount(totals.pullRequests)} reviewed`,
+			value: formatNumber(totals.mergedPullRequests),
+			subline: `of ${formatNumber(totals.pullRequests)} reviewed`,
 			hint: "Pull requests by people, first reviewed in this window, that merged",
 		},
 		{
@@ -180,7 +181,7 @@ const headlineStrip = (h: H, totals: CodeReviewTeamTotals): Html => {
 		{
 			label: HEADLINE_LABELS.defaultRed,
 			value: rateOf(failRate),
-			subline: `of ${formatCount(totals.defaultBranchRuns)} pushes`,
+			subline: `of ${formatNumber(totals.defaultBranchRuns)} pushes`,
 			hint: "CI runs on pushes to a repository's default branch that failed",
 		},
 		{
@@ -221,7 +222,7 @@ const headlineStrip = (h: H, totals: CodeReviewTeamTotals): Html => {
 const highlightLine = (key: "fixed" | "steady" | "fast", value: number) => {
 	switch (key) {
 		case "fixed":
-			return `${formatCount(value)} findings fixed before merge`
+			return `${formatNumber(value)} findings fixed before merge`
 		case "steady":
 			return `${formatPercent(value)} green on the first try`
 		case "fast":
@@ -499,14 +500,24 @@ const content = (h: H, model: Model): Html =>
 		onData: (team) => {
 			if (team.members.length > 0) return teamView(h, model, team)
 			if (model.search.repo === undefined && team.totals.runnerMs === 0) return noTeamData(h)
-			return nothingInWindow(h, {
-				title: "Nobody in this window",
-				description:
-					model.search.repo === undefined
-						? "No pull request was reviewed and no CI run finished in this window. Widen the window."
-						: "Nothing matches this repository. Widen the window or clear the filter.",
-				onClear: model.search.repo === undefined ? undefined : Message.ClickedClearFilters(),
-			})
+			const filtered = model.search.repo !== undefined
+			if (filtered)
+				return filteredEmpty(h, {
+					noun: "team members",
+					description: "Widen the window or clear the filter.",
+					onClear: Message.ClickedClearFilters(),
+					className: "rounded-md border border-dashed md:py-14",
+				})
+			return empty(
+				h,
+				[
+					emptyHeader(h, [
+						emptyTitle(h, ["Nobody in this window"]),
+						emptyDescription(h, ["No pull request was reviewed and no CI run finished in this window. Widen the window."]),
+					]),
+				],
+				"rounded-md border border-dashed md:py-14",
+			)
 		},
 	})
 

@@ -88,7 +88,7 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 				? []
 				: [
 						h.p(
-							[h.Class("text-xs text-severity-error")],
+							[h.Class("text-xs text-destructive-foreground")],
 							[
 								model.connectNote === "Blocked"
 									? "Allow pop-ups for Maple, then try again."
@@ -195,7 +195,7 @@ export const linearFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 			[h.Class("space-y-2")],
 			[
 				h.p(
-					[h.Class("text-xs text-severity-error")],
+					[h.Class("text-xs text-destructive-foreground")],
 					["Couldn't check your Linear connection. This may be a temporary issue."],
 				),
 				retry(h, inputs, "Try again"),

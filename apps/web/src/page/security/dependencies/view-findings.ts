@@ -5,6 +5,7 @@ import type {
 } from "@maple/domain/http"
 import { type AdvisorySeverity, displayAdvisoryId } from "@maple/domain/package-advisories"
 import { countLabel, formatRate } from "@maple/ui/lib/format"
+import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
@@ -15,8 +16,8 @@ import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { relativeTime } from "../../kit/relative-time"
 import { securitySeverityBadge } from "../kit/parts"
 import {
@@ -236,7 +237,11 @@ const findingRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(h, [dependencySeverityBadge(h, finding.severity)], "w-24"),
+			tableCell(
+				h,
+				[dependencySeverityBadge(h, finding.severity)],
+				cn("w-24", rowSelectedClass(isSelected)),
+			),
 			tableCell(h, [
 				h.button(
 					[
@@ -395,12 +400,13 @@ export const findingsSection = (
 				: h.div(
 						[h.Class("p-4")],
 						[
-							nothingInWindow(h, {
-								title: "No findings match",
+							filteredEmpty(h, {
+								noun: "findings",
+								className: "rounded-md border border-dashed md:py-14",
 								description:
 									status === "all"
-										? "No findings for these filters."
-										: `No ${STATUS_FILTER_LABEL[status].toLowerCase()} findings for these filters.`,
+										? ""
+										: `Showing ${STATUS_FILTER_LABEL[status].toLowerCase()} findings only.`,
 							}),
 						],
 					)

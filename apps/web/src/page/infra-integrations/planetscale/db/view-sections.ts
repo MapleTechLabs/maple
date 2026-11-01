@@ -140,7 +140,7 @@ export const activitySection = (
 }
 
 const insightsNotice = (h: H, children: ReadonlyArray<Html | string>): Html =>
-	emptyMessage(h, { dashed: true, className: "bg-card/50 px-3 py-4 text-xs" }, children)
+	emptyMessage(h, { dashed: true, className: "bg-surface-faint px-3 py-4 text-xs" }, children)
 
 /** `PlanetScaleTopQueries`. */
 export const topQueries = (

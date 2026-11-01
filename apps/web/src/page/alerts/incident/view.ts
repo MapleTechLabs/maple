@@ -38,7 +38,7 @@ import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
 import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
 import { msIso } from "../shared/time"
-import { groupPreviewOf, type IncidentView, incidentViewOf } from "./derive"
+import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { incidentRail } from "./view-rail"
@@ -230,7 +230,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		ruleIncidents: view.ruleIncidents,
-		states: (model.states ?? []).filter((row) => row.rule_id === incident.ruleId),
+		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),
 		isPreviewLoading: previewState.isLoading || !isChartReady,
 		previewError: previewState.error,

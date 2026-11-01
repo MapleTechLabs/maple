@@ -6,6 +6,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetails } from "../../kit/commit-card"
+import { loadSignalPresences } from "../../kit/signal-presence"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message, RequestMode } from "./message"
 import { ReleasesData } from "./model"
@@ -112,6 +113,13 @@ export const FetchReleaseRanges = Command.define("FetchReleaseRanges", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRanges({ key, result })),
 		),
+})
+
+export const LoadReleasesSignalPresence = Command.define("LoadReleasesSignalPresence", {
+	args: { orgId: Schema.String },
+	messages: [Message.CompletedLoadSignalPresence],
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 export const CompleteReleasesReloadSpin = Command.define("CompleteReleasesReloadSpin", {

@@ -12,6 +12,7 @@ import {
 	LinkChatIdentity,
 	UnlinkChatIdentity,
 } from "./chat"
+import { disconnectSpec } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
@@ -140,9 +141,6 @@ export const completedDisconnect = (
 	return chain(closed.model, [
 		() => closed,
 		(next) =>
-			outcome(next, context, failure, {
-				success: "Workspace disconnected",
-				error: "Couldn't disconnect the workspace",
-			}),
+			outcome(next, context, failure, disconnectSpec("chat")),
 	])
 }

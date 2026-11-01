@@ -40,6 +40,7 @@ export const Message = defineMessageUnion({
 	ChangedSettingsName: { value: Schema.String },
 	ChangedSettingsDescription: { value: Schema.String },
 	SubmittedSettings: {},
+	ClickedDiscardSettings: {},
 	CompletedSave: { result: Schema.Result(V2Source, LoadFailure) },
 	GotConnectionMessage: { message: IntegrationMessage },
 })

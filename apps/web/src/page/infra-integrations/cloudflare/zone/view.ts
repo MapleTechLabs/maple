@@ -112,7 +112,7 @@ const zoneEmpty = (h: H): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "CloudflareBrandIcon", { size: 16 })]),
-				emptyTitle(h, ["No traffic for this zone in the selected window"]),
+				emptyTitle(h, ["No traffic for this zone in this window"]),
 				emptyDescription(h, [
 					"Widen the time range, clear the filters, or check the zone list for where traffic is landing.",
 				]),

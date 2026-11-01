@@ -49,7 +49,7 @@ const countryField = (h: H, model: Model): Html => {
 			viewInputs: {
 				items: COUNTRY_NAMES,
 				placeholder: "Search countries…",
-				emptyText: "No country found.",
+				emptyText: "No country found",
 				className: "h-8 w-full",
 				toView: ({ field: control, rest }) => h.div([h.Class("contents")], [control, ...rest]),
 			},

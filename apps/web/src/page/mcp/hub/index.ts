@@ -18,11 +18,11 @@ export const page = definePage(
 		view,
 		breadcrumbs: (model) =>
 			model.view._tag === "Servers"
-				? [{ label: "MCP Servers", isPageHeading: true }]
+				? [{ label: "MCP servers", isPageHeading: true }]
 				: model.view._tag === "Server"
-					? [{ label: "MCP Servers", href: "/mcp-servers" }, { label: model.view.service }]
+					? [{ label: "MCP servers", href: "/mcp-servers" }, { label: model.view.service }]
 					: [
-							{ label: "MCP Servers", href: "/mcp-servers" },
+							{ label: "MCP servers", href: "/mcp-servers" },
 							{
 								label: model.view.service,
 								href: `/mcp-servers/${encodeURIComponent(model.view.service)}`,

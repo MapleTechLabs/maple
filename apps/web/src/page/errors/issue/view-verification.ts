@@ -9,6 +9,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
+import { textLinkClass } from "../../../ui/text-link"
 import { sectionHeading } from "../../kit/section-heading"
 
 // The issue verification card: the post-merge fix check.
@@ -131,7 +132,7 @@ export const verificationCard = <M>(
 									AppRoute.Investigation({ id: verification.investigationId, search: {} }),
 								),
 							),
-							h.Class("mt-2 inline-block text-xs text-primary hover:underline active:underline"),
+							h.Class(textLinkClass("primary", false, "mt-2 text-xs")),
 						],
 						["View the verification run"],
 					),

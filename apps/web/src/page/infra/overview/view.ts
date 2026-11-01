@@ -10,7 +10,6 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import * as Frame from "../kit/frame"
 import * as InstallModal from "../kit/install-modal"
 import * as InstallModalView from "../kit/install-modal-view"
-import { pageHeroParts } from "../kit/page-parts"
 import { pickTimeSearch } from "../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, SOURCE_IDS, type SourceId } from "./model"
@@ -81,24 +80,22 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	// "Needs attention" states a failure every source shares once, so the rows need not repeat it.
 	const isFailureExplained = states !== null && sharedFailure(states) !== undefined
 	// "connected", not "reporting": presence says a source exists, not that its read just succeeded.
-	const hero = pageHeroParts(h, {
-		title: "Infrastructure",
-		description:
-			sources === null
-				? "Checking which sources report. What needs a look comes first."
-				: sources.length > 0
-					? isFailureExplained
-						? `${countLabel(sources.length, "source")} configured. Status unavailable right now.`
-						: `${countLabel(sources.length, "source")} connected. What needs a look comes first.`
-					: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
-	})
+	const description =
+		sources === null
+			? "Checking which sources report. What needs a look comes first."
+			: sources.length > 0
+				? isFailureExplained
+					? `${countLabel(sources.length, "source")} configured. Status unavailable right now.`
+					: `${countLabel(sources.length, "source")} connected. What needs a look comes first.`
+				: "Nothing is reporting yet. Install a collector or connect a provider to get started."
 	return h.div(
 		[h.Class("contents")],
 		[
 			dashboardPage(
 				h,
 				{
-					titleContent: hero.title,
+					title: "Infrastructure",
+					description,
 					actions: Frame.controls(
 						h,
 						model.frame,
@@ -110,7 +107,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h.div(
 						[h.Class("space-y-10")],
 						[
-							hero.body,
 							...(sources === null || sources.length > 0
 								? [
 										needsAttention(h, states, time, Message.ClickedRetry()),

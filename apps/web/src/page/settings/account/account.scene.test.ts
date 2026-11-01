@@ -6,6 +6,8 @@ import { Message as EmailPreferencesMessage } from "./email-preferences/model"
 import * as Password from "./password/update"
 import { Message as PasswordMessage } from "./password/model"
 import { canRemove } from "./emails/update"
+import * as Profile from "./profile/update"
+import { Message as ProfileMessage } from "./profile/model"
 import type { AccountUser } from "./user"
 import { OrgId } from "@maple/domain"
 import { REVERIFICATION_CANCELLED } from "../../../platform/clerk"
@@ -149,5 +151,16 @@ describe("email preferences tab", () => {
 		const edited = EmailPreferences.update(saved, EmailPreferencesMessage.ChangedSchedule({ field: "dayOfWeek", value: "2" })).model
 		const toggling = EmailPreferences.update(edited, EmailPreferencesMessage.ToggledOps()).model
 		expect(EmailPreferences.update(toggling, EmailPreferencesMessage.ClickedSave()).commands ?? []).toEqual([])
+	})
+})
+
+describe("profile", () => {
+	test("discard drops the name edit, so the save bar has nothing to save", () => {
+		const loaded = Profile.update(Profile.init().model, ProfileMessage.CompletedReadUser({ user })).model
+		const edited = Profile.update(loaded, ProfileMessage.ChangedFirstName({ value: "Augusta" })).model
+		expect(Profile.isNameDirty(edited, user)).toBe(true)
+		const discarded = Profile.update(edited, ProfileMessage.ClickedDiscardName()).model
+		expect(Profile.namesOf(discarded, user).firstName).toBe("Ada")
+		expect(Profile.isNameDirty(discarded, user)).toBe(false)
 	})
 })

@@ -1,9 +1,10 @@
-import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
-import { formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../ui/empty"
+import { filteredEmpty } from "../kit/signal-empty-state"
 import { icon } from "../../ui/icon"
 import { meter } from "../../ui/meter"
 import { miniBars } from "../../ui/mini-bars"
@@ -80,7 +81,7 @@ const charts = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOpti
 			mcpPlot(h, env, {
 				chartId: "mcp-tool-error-rate",
 				title: "Failure rate",
-				action: headingNote(h, `${data.errors} of ${formatToolCount(data.calls)}`),
+				action: headingNote(h, `${formatNumber(data.errors)} of ${formatNumber(data.calls)}`),
 				rows,
 				series: [{ key: "errorRate", label: "Failure rate", token: "--color-severity-error" }],
 				format: "errorRate",
@@ -205,7 +206,7 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 					data.errorGroups.length === 0
 						? [
 								emptyMessage(h, { className: "py-8 font-mono" }, [
-									"No failed calls in this window.",
+									"No failed calls in this window",
 								]),
 							]
 						: data.errorGroups.map((group) => errorRow(h, group, data.errors, options)),
@@ -329,13 +330,13 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 				toolTableBody(
 					h,
 					list.length === 0
-						? [emptyMessage(h, { className: "py-8 font-mono" }, ["No calls match the filters."])]
+						? [filteredEmpty(h, { noun: "calls", description: "", className: "py-10 md:py-12" })]
 						: list.map((call) => callRow(h, call, max, options)),
 				),
 			]),
 			toolTableFooter(
 				h,
-				`${list.length} ${LIST_NOUN[options.callList]} of ${formatToolCount(data.calls)}`,
+				`${list.length} ${LIST_NOUN[options.callList]} of ${formatNumber(data.calls)}`,
 				"· each row opens its trace",
 			),
 		],
@@ -348,7 +349,12 @@ export const toolBody = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: Too
 		[h.Class("flex flex-col")],
 		[
 			options.toolbar,
-			mcpScopeRow(h, options.scope, formatToolCount(data.calls), `calls · ${data.errors} failed`),
+			mcpScopeRow(
+				h,
+				options.scope,
+				formatNumber(data.calls),
+				`calls · ${formatNumber(data.errors)} failed`,
+			),
 			charts(h, data, options),
 			failures(h, data, options),
 			calls(h, data, options),

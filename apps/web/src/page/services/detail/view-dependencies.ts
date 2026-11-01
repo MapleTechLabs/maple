@@ -288,7 +288,12 @@ export const dependenciesTab = (h: H, model: Model): Html =>
 	AsyncData.match(model.dependencies.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load dependencies" }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load dependencies",
+				onRetry: Message.ClickedRetry({ target: "Dependencies" }),
+			}),
 		// A failed reload keeps the last rows on screen, as before.
 		onStale: ({ data }) => dependenciesBody(h, model, data, false),
 		onRefreshing: (bundle) => dependenciesBody(h, model, bundle, true),

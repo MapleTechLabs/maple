@@ -24,7 +24,8 @@ import { resourceNotFound } from "../../kit/resource-not-found"
 import { crumbOf, pageStateOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { anomalyHero, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
+import { detailTitleSkeleton } from "../../kit/detail-header"
+import { anomalySummary, anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
 import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"
 
@@ -86,7 +87,7 @@ const loadedBody = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZ
 			[
 				h.section(
 					[h.Class("space-y-4")],
-					[anomalyHero(h, incident, model.nowMs), signalChart(h, model, incident, timeZone)],
+					[anomalySummary(h, incident, model.nowMs), signalChart(h, model, incident, timeZone)],
 				),
 				h.section(
 					[h.AriaLabelledBy("linked-issue-heading")],
@@ -123,6 +124,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			? dashboardPage(
 					h,
 					{
+						titleContent: anomalyTitle(h, state.incident),
 						actions: headerActions(h, model, state.incident, timeZone),
 						rightPanel: anomalySidebar(h, {
 							incident: state.incident,
@@ -145,10 +147,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					? dashboardPage(h, {}, [
 							errorState(h, { failure: state.failure, title: "Couldn't load anomaly", onRetry: Message.ClickedRetry() }),
 						])
-					: dashboardPage(h, {}, [
+					: dashboardPage(h, { titleContent: detailTitleSkeleton(h, false) }, [
 							h.div(
 								[h.Class("space-y-4")],
-								[skeleton(h, "h-24 w-full"), skeleton(h, "h-64 w-full"), skeleton(h, "h-32 w-full")],
+								[skeleton(h, "h-5 w-2/3"), skeleton(h, "h-64 w-full"), skeleton(h, "h-32 w-full")],
 							),
 						])
 	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))], [page])

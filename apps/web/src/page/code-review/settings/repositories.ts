@@ -155,7 +155,7 @@ const searchBox = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html =>
 		id: "code-review-repo-search",
 		size: "sm",
 		className: "min-w-48 flex-1",
-		placeholder: "Search repositories",
+		placeholder: "Search repositories…",
 		value: options.state.search,
 		onInput: options.onSearch,
 		onClear: options.onSearch(""),
