@@ -264,14 +264,16 @@ describe("DependencyScanService production", () => {
 						["api-server", "staging", "a", 100],
 					],
 				)
+				// Only the repositories read queues: the tab fires both reads together.
+				assert.deepStrictEqual(sent, [])
+
+				const { repositories } = yield* service.listRepositories(tenant)
 				assert.deepStrictEqual(
 					sent.map((job) =>
 						job.kind === "dependency-scan" ? [job.trigger, job.commitSha] : [job.kind],
 					),
 					[["production", sha("d")]],
 				)
-
-				const { repositories } = yield* service.listRepositories(tenant)
 				assert.deepStrictEqual(
 					repositories[0]?.runningCommits?.map((commit) => [
 						commit.commitSha.slice(0, 1),

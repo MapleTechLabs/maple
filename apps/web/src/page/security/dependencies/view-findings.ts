@@ -149,14 +149,19 @@ const toolbar = (
 const muted = (h: H, text: string, className?: string): Html =>
 	h.span([h.Class(cn("text-xs text-muted-foreground", className))], [text])
 
-/** Repositories with a running commit whose scan has not completed. */
-const pendingRepositories = (repositories: ReadonlyArray<DependencyScanRepository>): ReadonlySet<string> =>
-	new Set(
-		repositories
-			.filter((repository) =>
-				repository.runningCommits.some((commit) => commit.scanStatus !== "completed"),
-			)
-			.map((repository) => repository.id),
+type ProductionScanState = "pending" | "failed"
+
+/** Repositories whose running commits are not all scanned: one still pending, or one whose scan failed. */
+const productionScanStates = (
+	repositories: ReadonlyArray<DependencyScanRepository>,
+): ReadonlyMap<string, ProductionScanState> =>
+	new Map(
+		repositories.flatMap((repository): ReadonlyArray<readonly [string, ProductionScanState]> => {
+			const statuses = repository.runningCommits.map((commit) => commit.scanStatus)
+			if (statuses.some((status) => status === null || status === "running"))
+				return [[repository.id, "pending"]]
+			return statuses.includes("failed") ? [[repository.id, "failed"]] : []
+		}),
 	)
 
 /** Spans a finding's running services served over the last day. */
@@ -168,11 +173,13 @@ const productionCell = (
 	h: H,
 	finding: DependencyFindingView,
 	production: DependencyProductionCoverage,
-	pending: ReadonlySet<string>,
+	scans: ReadonlyMap<string, ProductionScanState>,
 ): Html => {
 	const [busiest] = finding.production
 	// A running commit not scanned yet may carry the finding: no answer until its scan lands.
-	if (busiest === undefined && pending.has(finding.repositoryId)) return muted(h, "Scanning")
+	const scan = scans.get(finding.repositoryId)
+	if (busiest === undefined && scan !== undefined)
+		return muted(h, scan === "pending" ? "Scanning" : "Scan failed")
 	if (busiest === undefined)
 		return muted(h, production.available && production.linkedServices > 0 ? "Not running" : "Unknown")
 	const others = new Set(finding.production.map((service) => service.serviceName)).size - 1
@@ -211,7 +218,7 @@ const findingRow = (
 	isSelected: boolean,
 	clock: Clock,
 	production: DependencyProductionCoverage,
-	pending: ReadonlySet<string>,
+	scans: ReadonlyMap<string, ProductionScanState>,
 ): Html => {
 	const open = Message.ClickedFinding({ findingId: finding.id })
 	return tableRow(
@@ -241,7 +248,7 @@ const findingRow = (
 				),
 			]),
 			tableCell(h, [advisoryLink(h, finding)]),
-			tableCell(h, [productionCell(h, finding, production, pending)]),
+			tableCell(h, [productionCell(h, finding, production, scans)]),
 			tableCell(h, [
 				finding.fixedIn === null
 					? muted(h, "No fix yet")
@@ -305,7 +312,7 @@ const findingsTable = (
 	selectedId: string | null,
 	clock: Clock,
 	production: DependencyProductionCoverage,
-	pending: ReadonlySet<string>,
+	scans: ReadonlyMap<string, ProductionScanState>,
 ): Html =>
 	table(h, { ariaLabel: "Vulnerable packages" }, [
 		tableHeader(h, [
@@ -323,7 +330,7 @@ const findingsTable = (
 		tableBody(
 			h,
 			rows.map((finding) =>
-				findingRow(h, finding, finding.id === selectedId, clock, production, pending),
+				findingRow(h, finding, finding.id === selectedId, clock, production, scans),
 			),
 		),
 	])
@@ -363,7 +370,7 @@ export const findingsSection = (
 	const rows = filteredFindings(findings, status, repositoryId)
 	const content =
 		rows.length > 0
-			? findingsTable(h, rows, model.selectedId, clock, production, pendingRepositories(repositories))
+			? findingsTable(h, rows, model.selectedId, clock, production, productionScanStates(repositories))
 			: status === "open" && repositoryId === null
 				? cleanState(h, repositories)
 				: h.div(

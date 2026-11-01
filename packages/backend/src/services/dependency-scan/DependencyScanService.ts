@@ -373,7 +373,6 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					"maple.depscan.running_services": production.runningServices,
 					"maple.depscan.linked_services": distinctServices(running),
 				})
-				yield* queueProductionScans(connected, production)
 				return production
 			})
 
@@ -400,6 +399,8 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					.pipe(Effect.mapError(persistence("Could not list scans")))
 				const latest = new Map(branchScans.map((scan) => [scan.repositoryId, scan]))
 				const production = yield* productionOrNone(tenant, connected)
+				// The tab reads repositories and findings together; only this read queues, so each commit is queued once.
+				yield* queueProductionScans(connected, production)
 				const runningCommitsOf = (
 					repositoryId: VcsRepositoryId,
 				): ReadonlyArray<DependencyRunningCommit> => {

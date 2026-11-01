@@ -182,6 +182,36 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("says a running commit's scan failed instead of claiming it is still scanning", () => {
+		const repositories = repositoriesOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					{
+						repositories: repositories.repositories.map((repository) =>
+							repository.id === PAYMENTS_ID
+								? {
+										...repository,
+										runningCommits: repository.runningCommits.map((commit) => ({
+											...commit,
+											scanStatus: "failed" as const,
+										})),
+									}
+								: repository,
+						),
+					},
+					{
+						...findingsOf(NOW),
+						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
+					},
+				),
+			),
+			expectView(text("Scan failed")).toExist(),
+			expectView(text("Scanning")).toBeAbsent(),
+		)
+	})
+
 	test("caps a triage reason as the API does, untrimmed", () => {
 		expect(reasonErrorOf(" ".repeat(10) + "x".repeat(495))).not.toBeNull()
 		expect(reasonErrorOf("x".repeat(500))).toBeNull()
