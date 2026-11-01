@@ -115,7 +115,7 @@ const capEditor = (h: H, model: Model, feature: FeatureSpend): Html => {
 				],
 			),
 			h.p(
-				[h.Class(cn("text-2xs", parsed.valid ? "text-muted-foreground" : "text-destructive"))],
+				[h.Class(cn("text-2xs", parsed.valid ? "text-muted-foreground" : "text-destructive-foreground"))],
 				[
 					!parsed.valid
 						? "Enter zero or more, or leave empty for no cap."

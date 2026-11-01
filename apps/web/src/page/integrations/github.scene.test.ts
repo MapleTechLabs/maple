@@ -158,6 +158,7 @@ describe("github card", () => {
 		expect(picked.model.githubCard.branchDialog.isOpen).toBe(true)
 		const confirmed = pageUpdate(picked.model, Message.ConfirmedBranch())
 		expect(names(confirmed.commands)).toContain("SetGithubTrackedBranch")
+		expect(confirmed.model.githubCard.branchDialog.isOpen).toBe(true)
 		const done = pageUpdate(
 			confirmed.model,
 			Message.CompletedTrackedBranch({
@@ -168,6 +169,7 @@ describe("github card", () => {
 			}),
 		)
 		expect(done.model.githubCard.isForcePolling).toBe(true)
+		expect(done.model.githubCard.branchDialog.isOpen).toBe(false)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "success",

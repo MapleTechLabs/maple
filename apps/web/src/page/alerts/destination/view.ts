@@ -1,14 +1,12 @@
 import type { AlertDestinationType } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { dialogTitleStyles } from "@maple/ui/styles/ui/dialog"
 import { suggestedDestinationName } from "@maple/web-data/alerts/form-utils"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { cardButton } from "../../../ui/card-button"
-import * as DialogView from "../../../ui/dialog-view"
-import { titleId } from "../../../ui/dialog"
+import { formDialog } from "../../../ui/form-dialog"
 import { eyebrow } from "../../../ui/eyebrow"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input } from "../../../ui/field"
 import type { FieldState } from "../../../ui/input"
@@ -564,199 +562,158 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 	const isEditing = model.editingId !== null
 	const provider = destinationProvider(model.form.type, model.form.chatConnector)
 	const nameIds = ids("name")
-	return h.submodel({
+	return formDialog(h, {
 		slotId: `${inputs.id}-dialog`,
 		model: model.dialog,
-		view: DialogView.view,
-		viewInputs: {
-			hasTrigger: false,
-			className: "sm:max-w-xl",
-			toView: ({ portal }) => portal ?? h.empty,
-			toContent: (close) => [
-				DialogView.dialogHeader(h, "dialog", [
-					h.h2(
-						[
-							h.Class(cn(dialogTitleStyles, "flex items-center gap-2.5")),
-							h.DataAttribute("slot", "dialog-title"),
-							h.Id(titleId(model.dialog.id)),
-						],
-						[
-							...(isEditing
-								? [logo(h, model, model.form.type, 28, model.form.chatConnector)]
-								: []),
-							isEditing ? `Edit ${provider.label} destination` : "Add destination",
-						],
-					),
-					DialogView.dialogDescription(
-						h,
-						"dialog",
-						model.dialog.id,
-						"Where Maple sends a rule's notifications. Any rule can reuse it.",
-					),
-				]),
-				h.div(
-					[h.Class("min-h-0 flex-1 space-y-5 overflow-y-auto px-6")],
-					[
-						...(isEditing
-							? []
-							: [
-									h.div(
-										[h.Class("space-y-2")],
-										[
-											eyebrow(h, { variant: "label", as: "div" }, ["Send to"]),
-											model.isProviderLocked
-												? panel(
-														h,
-														{
-															className:
-																"flex-row items-center justify-between gap-3 px-3 py-2",
-														},
-														[
-															h.span(
-																[
-																	h.Class(
-																		"flex min-w-0 items-center gap-2.5",
-																	),
-																],
-																[
-																	logo(
-																		h,
-																		model,
-																		model.form.type,
-																		28,
-																		model.form.chatConnector,
-																	),
-																	h.span(
-																		[
-																			h.Class(
-																				"truncate text-sm font-medium",
-																			),
-																		],
-																		[provider.label],
-																	),
-																],
-															),
-															button(
-																h,
-																{
-																	variant: "ghost",
-																	size: "xs",
-																	attributes: [
-																		h.OnClick(
-																			Message.ClickedUnlockProvider(),
-																		),
-																	],
-																},
-																["Change"],
-															),
-														],
-													)
-												: providerPicker(h, model),
-										],
-									),
-								]),
+		toParentMessage: (message) => Message.GotDialogMessage({ message }),
+		className: "sm:max-w-xl",
+		titleClassName: "flex items-center gap-2.5",
+		title: [
+			...(isEditing ? [logo(h, model, model.form.type, 28, model.form.chatConnector)] : []),
+			isEditing ? `Edit ${provider.label} destination` : "Add destination",
+		],
+		description: "Where Maple sends a rule's notifications. Any rule can reuse it.",
+		panelClassName: "space-y-5",
+		fields: [
+			...(isEditing
+				? []
+				: [
 						h.div(
 							[h.Class("space-y-2")],
 							[
-								h.div(
-									[h.Class("flex items-center justify-between")],
-									[
-										eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
-										...fieldHelper(h, model.form.type),
-									],
-								),
-								panel(h, { padded: true, className: "space-y-3" }, [
-									fieldBlock(h, [
-										fieldLabel(
+								eyebrow(h, { variant: "label", as: "div" }, ["Send to"]),
+								model.isProviderLocked
+									? panel(
 											h,
 											{
-												ids: nameIds,
-												className: "text-xs",
-												state: stateOf(model.form.name),
+												className:
+													"flex-row items-center justify-between gap-3 px-3 py-2",
 											},
 											[
-												"Name",
-												...(isEditing
-													? []
-													: [
-															h.span(
-																[
-																	h.Class(
-																		"font-normal text-muted-foreground",
-																	),
-																],
-																["optional"],
+												h.span(
+													[
+														h.Class(
+															"flex min-w-0 items-center gap-2.5",
+														),
+													],
+													[
+														logo(
+															h,
+															model,
+															model.form.type,
+															28,
+															model.form.chatConnector,
+														),
+														h.span(
+															[
+																h.Class(
+																	"truncate text-sm font-medium",
+																),
+															],
+															[provider.label],
+														),
+													],
+												),
+												button(
+													h,
+													{
+														variant: "ghost",
+														size: "xs",
+														attributes: [
+															h.OnClick(
+																Message.ClickedUnlockProvider(),
 															),
-														]),
+														],
+													},
+													["Change"],
+												),
 											],
-										),
-										textInput(h, model, {
-											name: "name",
-											field: "name",
-											placeholder:
-												suggestedDestinationName(toFormState(model.form)) ||
-												"Production paging",
-										}),
-									]),
-									...connectionFields(h, model, isEditing),
-								]),
+										)
+									: providerPicker(h, model),
 							],
 						),
-						...(isEditing
-							? [
-									h.div(
-										[h.Class("space-y-2")],
-										[
-											eyebrow(h, { variant: "label", as: "div" }, ["Delivery"]),
-											settingRow(h, {
-												ids: {
-													control: "destination-enabled-input",
-													label: "destination-enabled-label",
-													description: "destination-enabled-description",
-												},
-												framed: true,
-												className: "border-border-subtle bg-card px-4 py-3",
-												label: "Enabled",
-												description:
-													"Disabled destinations stay attached to rules but won't receive notifications.",
-												filled: model.form.enabled,
-												control: switchControl(h, {
-													id: "destination-enabled",
-													inputId: "destination-enabled-input",
-													isChecked: model.form.enabled,
-													labelledBy: "destination-enabled-label",
-													onToggle: Message.ToggledEnabled(),
-												}),
-											}),
-										],
-									),
-								]
-							: []),
-					],
-				),
-				DialogView.dialogFooter(h, "dialog", [
-					button(h, { variant: "outline", attributes: [...close] }, ["Cancel"]),
-					button(
-						h,
-						{
-							isLoading: model.isSaving,
-							isDisabled: !isFormReady(model.form, isEditing),
-							attributes: [
-								h.OnClick(Message.ClickedSave()),
-								h.Style({
-									background: providerOf(model.form.type).accent,
-									"border-color": providerOf(model.form.type).accent,
-									color: model.isSaving
-										? "transparent"
-										: providerOf(model.form.type).accentOn,
+					]),
+			h.div(
+				[h.Class("space-y-2")],
+				[
+					h.div(
+						[h.Class("flex items-center justify-between")],
+						[
+							eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
+							...fieldHelper(h, model.form.type),
+						],
+					),
+					panel(h, { padded: true, className: "space-y-3" }, [
+						fieldBlock(h, [
+							fieldLabel(
+								h,
+								{
+									ids: nameIds,
+									className: "text-xs",
+									state: stateOf(model.form.name),
+								},
+								[
+									"Name",
+									...(isEditing
+										? []
+										: [
+												h.span(
+													[
+														h.Class(
+															"font-normal text-muted-foreground",
+														),
+													],
+													["optional"],
+												),
+											]),
+								],
+							),
+							textInput(h, model, {
+								name: "name",
+								field: "name",
+								placeholder:
+									suggestedDestinationName(toFormState(model.form)) ||
+									"Production paging",
+							}),
+						]),
+						...connectionFields(h, model, isEditing),
+					]),
+				],
+			),
+			...(isEditing
+				? [
+						h.div(
+							[h.Class("space-y-2")],
+							[
+								eyebrow(h, { variant: "label", as: "div" }, ["Delivery"]),
+								settingRow(h, {
+									ids: {
+										control: "destination-enabled-input",
+										label: "destination-enabled-label",
+										description: "destination-enabled-description",
+									},
+									framed: true,
+									className: "border-border-subtle bg-card px-4 py-3",
+									label: "Enabled",
+									description:
+										"Disabled destinations stay attached to rules but won't receive notifications.",
+									filled: model.form.enabled,
+									control: switchControl(h, {
+										id: "destination-enabled",
+										inputId: "destination-enabled-input",
+										isChecked: model.form.enabled,
+										labelledBy: "destination-enabled-label",
+										onToggle: Message.ToggledEnabled(),
+									}),
 								}),
 							],
-						},
-						[isEditing ? "Save changes" : `Add ${provider.label} destination`],
-					),
-				]),
-			],
-		},
-		toParentMessage: (message) => Message.GotDialogMessage({ message }),
+						),
+					]
+				: []),
+		],
+		onSubmit: Message.ClickedSave(),
+		submitLabel: isEditing ? "Save changes" : `Add ${provider.label} destination`,
+		isPending: model.isSaving,
+		isSubmitDisabled: !isFormReady(model.form, isEditing),
 	})
 })

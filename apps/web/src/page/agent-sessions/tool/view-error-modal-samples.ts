@@ -1,8 +1,8 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { pluralize } from "@maple/ui/lib/format"
+import { formatBytes, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
-import { formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -35,7 +35,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 		[
 			h.span(
 				[h.Class("text-muted-foreground")],
-				["Showing ", formatToolCount(shown), " of ", formatToolCount(total)],
+				["Showing ", formatNumber(shown), " of ", formatNumber(total)],
 			),
 			...(paging === "more"
 				? [
@@ -113,7 +113,7 @@ export const samplesPane = (
 							h.span(
 								[h.Class("text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
 								[
-									formatToolCount(options.total),
+									formatNumber(options.total),
 									" failed ",
 									pluralize(options.total, "call"),
 									" · newest first",
@@ -145,7 +145,7 @@ export const samplesPane = (
 								[
 									rows.length === 0 ? "0" : String(current + 1),
 									" of ",
-									formatToolCount(options.total),
+									formatNumber(options.total),
 								],
 							),
 							iconButton(
@@ -265,7 +265,7 @@ const sampleRow = (
 											"hidden shrink-0 text-2xs tabular-nums text-foreground-subtle md:block",
 										),
 									],
-									["args ", formatToolCount(row.argumentsBytes), " B"],
+									["args ", formatBytes(row.argumentsBytes)],
 								),
 							]),
 					h.span(

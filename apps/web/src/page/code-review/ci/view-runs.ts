@@ -17,7 +17,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { truncatedId } from "../../../ui/truncated-id"
 import { ciResultBadge, traceLink } from "../kit/parts"
 import { filteredEmpty } from "../../kit/signal-empty-state"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 
 // `CiRunsList`, `RunRows` and the paging footers.
@@ -152,7 +152,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			),
 			tableCell(
 				h,
-				[relativeTime(h, { tooltip: "title", value: run.startedAt, variant: "short", ...time })],
+				[listRelativeTime(h, { value: run.startedAt, variant: "short", ...time })],
 				"hidden px-3 text-right align-top text-muted-foreground tabular-nums md:table-cell",
 			),
 			tableCell(

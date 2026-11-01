@@ -198,7 +198,7 @@ export const update = (model: Model, message: Message): Step =>
 				onFailure: (error) =>
 					fresh({
 						model: { ...model, isSaving: false },
-						outMessage: toast("error", "Billing details could not be saved.", error.message),
+						outMessage: toast("error", "Couldn't save billing details", error.message),
 					}),
 			}),
 		GotTaxTypeMessage: ({ message: child }) => {
@@ -222,7 +222,7 @@ export const update = (model: Model, message: Message): Step =>
 				onFailure: (error) =>
 					fresh({
 						model: { ...model, isAddingTax: false },
-						outMessage: toast("error", "The tax ID could not be added.", error.message),
+						outMessage: toast("error", "Couldn't add the tax ID", error.message),
 					}),
 			}),
 		ClickedRemoveTax: ({ taxId }) => fresh(liftRemove({ ...model, removingTax: taxId }, Dialog.open(model.removeDialog))),
@@ -250,7 +250,7 @@ export const update = (model: Model, message: Message): Step =>
 				onSuccess: () =>
 					stale({ model: next, outMessage: toast("success", `Removed ${taxIdLabel(taxId.type)} ${taxId.value}`) }),
 				onFailure: (error) =>
-					fresh({ model: next, outMessage: toast("error", "The tax ID could not be removed.", error.message) }),
+					fresh({ model: next, outMessage: toast("error", "Couldn't remove the tax ID", error.message) }),
 			})
 		},
 	})

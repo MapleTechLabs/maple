@@ -1,7 +1,7 @@
 import type { CodeReviewCiJob, CodeReviewCiPipeline, CodeReviewCiRedStreak } from "@maple/domain/http"
 import { failRate } from "../../../components/code-review/ci/ci-format"
-import { formatCount, formatSpan } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE, formatDuration, formatPercent } from "@maple/ui/lib/format"
+import { formatSpan } from "../../../components/code-review/code-review-format"
+import { EMPTY_VALUE, formatDuration, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { TONE_SOFT, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
@@ -13,7 +13,7 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { ciResultBadge, traceKept } from "../kit/parts"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime, relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
 // `WorkflowsTable`, `RedStreakLine` and `JobsTable`.
@@ -123,7 +123,7 @@ const workflowRow = (
 								? [
 										badge(h, { size: "sm", className: cn("shrink-0", TONE_SOFT.crit) }, [
 											"Failing · ",
-											formatCount(row.red.failedRuns),
+											formatNumber(row.red.failedRuns),
 											" ",
 											row.red.failedRuns === 1 ? "run" : "runs",
 										]),
@@ -146,7 +146,7 @@ const workflowRow = (
 					isActive ? "before:bg-primary" : "before:bg-transparent",
 				),
 			),
-			tableCell(h, [formatCount(row.runs)], "px-3 text-right tabular-nums"),
+			tableCell(h, [formatNumber(row.runs)], "px-3 text-right tabular-nums"),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,
@@ -170,8 +170,7 @@ const workflowRow = (
 						[h.Class("flex items-center gap-2")],
 						[
 							ciResultBadge(h, row.lastResult),
-							relativeTime(h, {
-								tooltip: "title",
+							listRelativeTime(h, {
 								value: row.lastStartedAt,
 								variant: "short",
 								className: "text-xs text-muted-foreground",
@@ -236,11 +235,11 @@ const jobRow = (h: H, row: CodeReviewCiJob): Html => {
 				],
 				"px-4 py-2.5 leading-normal",
 			),
-			tableCell(h, [formatCount(row.runs)], "px-3 text-right tabular-nums"),
+			tableCell(h, [formatNumber(row.runs)], "px-3 text-right tabular-nums"),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,
-				[formatCount(row.retried)],
+				[formatNumber(row.retried)],
 				"hidden px-3 text-right tabular-nums text-muted-foreground md:table-cell",
 			),
 			tableCell(

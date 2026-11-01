@@ -5,7 +5,6 @@ import {
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
 } from "../../../components/code-review/code-review-format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
@@ -15,6 +14,7 @@ import { listRow } from "../../../ui/list-row"
 import { middleTruncate } from "../../../ui/middle-truncate"
 import { panel } from "../../../ui/panel"
 import * as Tooltip from "../../../ui/tooltip"
+import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 
 // `FindingRow` under one `RelativeTime` tooltip.
@@ -29,6 +29,7 @@ const timeTriggerId = (finding: CodeReviewFinding) => `code-review-finding-time-
 type RowContext = Readonly<{
 	selected: string | undefined
 	nowMs: number
+	timeZone: string
 	trigger: (id: string) => ReadonlyArray<ChildAttribute>
 }>
 
@@ -70,17 +71,13 @@ const findingRow = (h: H, finding: CodeReviewFinding, context: RowContext): Html
 						[CATEGORY_LABELS[finding.category]],
 					),
 					badge(h, { variant: "outline", size: "sm" }, [FINDING_STATUS_LABELS[finding.status]]),
-					h.time(
-						[
-							h.Class(
-								"cursor-default hidden w-20 text-right text-xs text-muted-foreground md:block",
-							),
-							h.DataAttribute("slot", "tooltip-trigger"),
-							h.Attribute("datetime", new Date(finding.createdAt).toISOString()),
-							...context.trigger(timeTriggerId(finding)),
-						],
-						[formatRelativeFrom(finding.createdAt, context.nowMs)],
-					),
+					relativeTime(h, {
+						value: finding.createdAt,
+						nowMs: context.nowMs,
+						timeZone: context.timeZone,
+						trigger: context.trigger(timeTriggerId(finding)),
+						className: "hidden w-20 text-right text-xs text-muted-foreground md:block",
+					}),
 				],
 			}),
 		],
@@ -116,6 +113,7 @@ export const findingsList = (
 									findingRow(h, finding, {
 										selected: model.search.review,
 										nowMs: model.frame.nowMs,
+										timeZone,
 										trigger,
 									}),
 								),

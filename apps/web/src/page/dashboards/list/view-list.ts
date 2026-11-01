@@ -158,7 +158,7 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 			{
 				_tag: "Item",
 				value: "delete",
-				label: "Delete…",
+				label: "Delete",
 				variant: "destructive",
 				isDisabled: isReadOnly,
 			},

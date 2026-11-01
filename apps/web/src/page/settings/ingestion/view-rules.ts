@@ -422,7 +422,7 @@ export const deleteMappingDialog = (h: H, model: Model): Html =>
 			h.span([h.Class("text-foreground font-medium")], [model.deleting?.name ?? ""]),
 			"? This action cannot be undone.",
 		],
-		confirmLabel: "Delete",
+		confirmLabel: "Delete mapping",
 		onConfirm: Message.ClickedConfirmDelete(),
 		isPending: model.isDeleting,
 	})

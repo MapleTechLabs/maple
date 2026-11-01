@@ -58,7 +58,7 @@ const stepNode = (h: H, node: FlowNode, isSelected: boolean): ReadonlyArray<Html
 				cn(
 					"flex size-full cursor-pointer flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring active:border-ring",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-					node.isErrored ? "border-severity-error/60" : "border-border",
+					node.isErrored ? "border-severity-error-a4" : "border-border",
 					isSelected && "border-primary bg-primary-a1",
 				),
 			),

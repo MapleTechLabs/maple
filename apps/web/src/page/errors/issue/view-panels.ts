@@ -12,6 +12,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { item, itemContent, itemDescription, itemMedia } from "../../../ui/item"
 import { panel, panelHeader } from "../../../ui/panel"
+import { textLinkClass } from "../../../ui/text-link"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import { sectionHeading } from "../../kit/section-heading"
@@ -269,7 +270,7 @@ export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.AlertRule({ ruleId, search: {} }))),
-							h.Class("text-sm text-primary underline-offset-4 hover:underline active:underline"),
+							h.Class(textLinkClass("primary", false, "text-sm")),
 						],
 						["View alert rule →"],
 					),

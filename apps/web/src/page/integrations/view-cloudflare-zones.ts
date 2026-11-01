@@ -122,7 +122,7 @@ export const zonesDialog = (h: H, model: Model): Html => {
 		description:
 			"Maple collects analytics only for checked zones. Data already collected for a paused zone stays.",
 		onSubmit: Message.SubmittedZoneSettings(),
-		submitLabel: "Save",
+		submitLabel: "Save zones",
 		isPending: card.isSavingZones,
 		panelClassName: "flex flex-col gap-5",
 		fields: [

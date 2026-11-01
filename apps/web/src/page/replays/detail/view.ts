@@ -239,7 +239,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(h, { fill: isLoaded }, [
 		AsyncData.matchData(model.detail.data, {
 			onEmpty: () => detailSkeleton(h),
-			onFailure: (failure) => errorState(h, { failure, title: "Couldn't load session replay" }),
+			onFailure: (failure) => errorState(h, {
+					failure,
+					title: "Couldn't load session replay",
+					onRetry: Message.ClickedRetryDetail(),
+				}),
 			onData: (row) =>
 				row === null ? notFound(h, model.sessionId) : studio(h, model, row, inputs.context.timeZone),
 		}),

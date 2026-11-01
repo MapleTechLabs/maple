@@ -2,7 +2,6 @@ import type { AiSessionSortKey } from "@maple/domain/http"
 import { formatCost, sessionLinkWindow, sessionRowIdParts } from "@maple/agent-sessions"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -14,6 +13,7 @@ import { tableSkeleton } from "../../../ui/table-skeleton"
 import { emptyValue, measure, NIL_VALUE } from "../../../ui/values"
 import { servicePills } from "../../../ui/trace-badges"
 import type { DetectedModel } from "../kit/detected-models"
+import { listRelativeTime } from "../../kit/relative-time"
 import { modelLabel } from "../kit/model-label"
 import { type VirtualWindow, virtualAttributes } from "../kit/virtualize"
 import { sessionHeading } from "../kit/session-name"
@@ -201,7 +201,9 @@ export const sessionHref = (row: DisplayRow): string =>
 	hrefOf(AppRoute.AgentSession({ sessionId: row.sessionId, search: sessionLinkWindow(row) }))
 
 const startedAt = (h: H, row: DisplayRow, context: RowContext, className: string): Html =>
-	hint(h, className, [formatRelativeTimeOrDate(row.startTime, context.nowMs, context.timeZone)])
+	hint(h, className, [
+		listRelativeTime(h, { value: row.startTime, nowMs: context.nowMs, timeZone: context.timeZone }),
+	])
 
 /** The agent it ran beside the framework's mark, over the id it is cited by and, while the Model
  *  column is hidden, the model it ran on. */

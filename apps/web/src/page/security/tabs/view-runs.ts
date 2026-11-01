@@ -9,7 +9,7 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import {
 	formatElapsed,
 	formatUsd,
@@ -178,13 +178,7 @@ const runRow = (
 					h.span(
 						[h.Class("flex flex-col items-end")],
 						[
-							relativeTime(h, {
-								value: run.startedAt,
-								nowMs,
-								timeZone,
-								variant: "short",
-								tooltip: "title",
-							}),
+							listRelativeTime(h, { value: run.startedAt, nowMs, timeZone, variant: "short" }),
 							h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
 						],
 					),

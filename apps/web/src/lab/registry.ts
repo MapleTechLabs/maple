@@ -262,7 +262,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-api",
 		title: "Service API tab",
 		description:
-			"The service page's API tab over 12 hours of the ingest service: KPI strip, responses by status, the non-2xx breakdown, the endpoint table and its drawer (?endpoint=POST%20/v1/traces).",
+			"The service page's API tab over 12 hours of the ingest service: KPI strip, responses by status, the non-2xx breakdown, the endpoint table and its drawer (?endpoint=POST%20/v1/traces); ?failed=1 fails the first endpoints read.",
 		kind: "lab",
 		session: "none",
 	},
@@ -279,6 +279,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Service map runtimes",
 		description:
 			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/settings-dialogs",
+		title: "Settings dialogs",
+		description:
+			"The integration disconnect, dashboard delete, key create and alert destination dialogs, open, and the settings danger zones and save bars (General, Profile, a source's Settings) over fixtures. Pick one with ?item=.",
 		kind: "lab",
 		session: "none",
 	},
@@ -319,6 +327,13 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Worst case",
 		description:
 			"Existing components over worst-case fixture data (long names, extreme numbers, unbroken URLs, 8KB messages) behind a Demo data / Worst case toggle, for before and after screenshots.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/status-pages",
+		title: "Status pages",
+		description: "The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
 		kind: "lab",
 		session: "none",
 	},

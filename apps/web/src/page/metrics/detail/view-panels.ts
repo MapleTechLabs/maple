@@ -18,7 +18,7 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
 import { metricTypeBadge } from "../shared"
-import { formatSeen } from "../time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import {
 	breakdownAggregation,
 	breakdownGroupBy,
@@ -42,7 +42,8 @@ const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownCombob
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load metric data" }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load metric data", onRetry: Message.ClickedRetryChart() }),
 		onData: (rows) =>
 			rows.length === 0
 				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
@@ -246,8 +247,12 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 		),
 		keyValueList(h, { className: "gap-2" }, [
 			keyValue(h, { label: "Datapoints in range", mono: true }, [formatNumber(summary.dataPointCount)]),
-			keyValue(h, { label: "First seen", mono: true }, [formatSeen(summary.firstSeen, timeZone)]),
-			keyValue(h, { label: "Last seen", mono: true }, [formatSeen(summary.lastSeen, timeZone)]),
+			keyValue(h, { label: "First seen", mono: true }, [
+				formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
+			]),
+			keyValue(h, { label: "Last seen", mono: true }, [
+				formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
+			]),
 		]),
 		...(summary.services.length === 0
 			? []

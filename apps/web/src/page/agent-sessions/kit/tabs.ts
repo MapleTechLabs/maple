@@ -1,4 +1,4 @@
-import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
@@ -60,7 +60,7 @@ const tabLink = <M>(
 									),
 								),
 							],
-							[formatToolCount(options.count)],
+							[formatNumber(options.count)],
 						),
 					]),
 		],

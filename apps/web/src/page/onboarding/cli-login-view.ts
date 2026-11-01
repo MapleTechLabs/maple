@@ -42,7 +42,7 @@ const entry = (h: H, model: Model): Html => {
 				],
 			),
 			...(model.state._tag === "Failed"
-				? [h.p([h.Role("alert"), h.Class("text-sm text-destructive")], [model.state.message])]
+				? [h.p([h.Role("alert"), h.Class("text-sm text-destructive-foreground")], [model.state.message])]
 				: []),
 		],
 	)

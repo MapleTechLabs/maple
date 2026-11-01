@@ -32,6 +32,7 @@ import { segmentedBar } from "../../../../ui/meter"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { skeleton } from "../../../../ui/skeleton"
 import { statusDot } from "../../../../ui/status-dot"
+import { textLinkClass } from "../../../../ui/text-link"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
@@ -134,9 +135,7 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							figure(h, formatNumber(tracedErrors), "traces"),
 							h.a(
 								[
-									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80 @2xl:ml-0",
-									),
+									h.Class(textLinkClass("primary", true, "ml-auto text-xs @2xl:ml-0")),
 									h.Href(hrefOf(AppRoute.Logs({ search: { services: [tracedService] } }))),
 								],
 								["Logs in this window"],
@@ -431,7 +430,7 @@ const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 				].filter((node): node is Html => node !== null),
 				h.a(
 					[
-						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80"),
+						h.Class(textLinkClass("primary", true, "pt-1 text-xs")),
 						h.Href(hrefOf(AppRoute.Service({ serviceName: traced.service, search: {} }))),
 					],
 					["Open ", traced.service],

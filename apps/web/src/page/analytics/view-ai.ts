@@ -20,7 +20,7 @@ import { skeleton } from "../../ui/skeleton"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink, emptyActions } from "../kit/signal-empty-state"
 import { statRail, statRailItem } from "../kit/stat-rail"
-import type { FilterKey, Message } from "./message"
+import { type FilterKey, Message } from "./message"
 import type { AiCrawlers, Model } from "./model"
 import { filtersOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
@@ -138,7 +138,12 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
 						CARD_PRODUCTS.map(() => skeleton(h, "h-[148px] w-full")),
 					),
-				onFailure: (failure) => errorState(h, { failure, title: "Couldn't load AI referrals" }),
+				onFailure: (failure) =>
+					errorState(h, {
+						failure,
+						title: "Couldn't load AI referrals",
+						onRetry: Message.ClickedRetryAiReferrals(),
+					}),
 				onData: () =>
 					h.div(
 						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
@@ -163,7 +168,11 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 					AsyncData.matchData(model.aiCrawlers.data, {
 						onEmpty: () => skeleton(h, "h-64 w-full"),
 						onFailure: (failure) =>
-							errorState(h, { failure, title: "Couldn't load AI crawlers" }),
+							errorState(h, {
+								failure,
+								title: "Couldn't load AI crawlers",
+								onRetry: Message.ClickedRetryAiCrawlers(),
+							}),
 						onData: (data) => crawlersPanel(h, data, clock),
 					}),
 				],

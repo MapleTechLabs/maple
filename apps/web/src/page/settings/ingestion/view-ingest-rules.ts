@@ -280,7 +280,7 @@ export const deleteRuleDialog = (h: H, model: Model): Html =>
 			h.span([h.Class("text-foreground font-medium")], [model.deleting?.name ?? ""]),
 			"? Data already stored is unchanged.",
 		],
-		confirmLabel: "Delete",
+		confirmLabel: "Delete rule",
 		onConfirm: lift(RulesMessage.ClickedConfirmDelete()),
 		isPending: model.isDeleting,
 	})

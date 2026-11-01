@@ -4,7 +4,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
-import { severityIcon } from "../../errors/kit/severity"
+import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
 import { locationOf } from "./format"
 import {
 	BUCKET_LABEL,
@@ -15,7 +15,7 @@ import {
 	type SeverityBucket,
 	SCORED_BUCKETS,
 } from "./findings"
-import { SECURITY_SEVERITY_FILL, securitySeverityBadge } from "./parts"
+import { securitySeverityBadge } from "./parts"
 
 // The findings list the run page and the Findings tab share, laid out like Linear's issue list:
 // severity tabs on top, collapsible groups, one dense line per finding.
@@ -33,24 +33,26 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 						? "border-2 border-dashed border-muted-foreground"
 						: bucket === "rejected"
 							? "bg-foreground-faint"
-							: SECURITY_SEVERITY_FILL[bucket],
+							: SEVERITY_FILL[bucket],
 				className,
 			),
 		),
 	])
 
 /** Linear's priority marks: bars by severity, the warning glyph for critical, a dashed ring for
- * an unproven lead. Only critical is coloured, so the eye goes there first. */
-export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket): Html => {
+ * an unproven lead. Only critical is coloured, so the eye goes there first. `isQuiet` draws an
+ * unconfirmed estimate a text step quieter; critical keeps its colour. */
+export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, isQuiet = false): Html => {
+	const quiet = isQuiet ? "text-foreground-subtle" : undefined
 	switch (bucket) {
 		case "critical":
 			return severityIcon(h, "critical", 14)
 		case "high":
 		case "medium":
 		case "low":
-			return severityIcon(h, bucket, 14, "text-foreground")
+			return severityIcon(h, bucket, 14, quiet ?? "text-foreground")
 		case "informational":
-			return severityIcon(h, null, 14)
+			return severityIcon(h, null, 14, quiet)
 		case "needs_validation":
 			return h.span(
 				[
@@ -190,9 +192,7 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 		),
 	]
 	const children = [
-		isUnverified(finding)
-			? h.span([h.Class("inline-flex opacity-50")], [bucketIcon(h, bucketOf(finding))])
-			: bucketIcon(h, bucketOf(finding)),
+		bucketIcon(h, bucketOf(finding), isUnverified(finding)),
 		h.span(
 			[
 				h.Class(

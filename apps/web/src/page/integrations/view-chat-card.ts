@@ -2,7 +2,6 @@ import type { ChatConnectorId } from "@maple/domain/primitives"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
 import { errorState } from "../../ui/error-state"
 import { item, itemContent, itemMedia } from "../../ui/item"
 import { statusDot } from "../../ui/status-dot"
@@ -20,6 +19,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { chatConnectorStatus } from "./update-chat"
 import { chatCardLoading, identityRow, monoGlyph } from "./view-chat"
+import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
 
 // `ChatIntegrationCard`.
@@ -154,13 +154,13 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 					),
 				],
 			),
-			confirmDialog(h, {
+			disconnectConfirm(h, {
+				provider: "chat",
 				slotId: "integration-disconnect",
 				model: model.disconnect.dialog,
 				toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
-				title: confirmWorkspace ? `Disconnect ${confirmWorkspace.name}?` : "Disconnect workspace",
+				subject: confirmWorkspace?.name,
 				description: `${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`,
-				confirmLabel: "Disconnect",
 				onConfirm: Message.ConfirmedDisconnect(),
 				isPending: busy !== null && busy === model.chatCard.confirmId,
 			}),

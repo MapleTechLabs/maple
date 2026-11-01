@@ -22,12 +22,13 @@ import * as QuickPick from "../kit/quick-pick"
 import type * as ContextMenu from "../../../ui/context-menu"
 import * as ContextMenuView from "../../../ui/context-menu-view"
 import { contextMenuTriggerStyles } from "@maple/ui/styles/ui/context-menu"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
+import { formatExactCount } from "../../kit/locale"
 import { rowMenuEntries } from "./row-menu"
 import { Message } from "./message"
 import {
 	formatLastSeen,
-	formatTimestamp,
 	GENERIC_TYPES,
 	signalActivity,
 	signalSpark,
@@ -277,8 +278,8 @@ const volumeLane = (
 					h.Class(cn(LANE.count, "text-xs tabular-nums")),
 					h.Title(
 						signal.windowCount === null
-							? `None in the last 24 hours · ${signal.totalCount.toLocaleString("en-US")} all time`
-							: `${signal.windowCount.toLocaleString("en-US")} in the last 24 hours${isSurging ? ", surging" : ""} · ${signal.totalCount.toLocaleString("en-US")} all time`,
+							? `None in the last 24 hours · ${formatExactCount(signal.totalCount)} all time`
+							: `${formatExactCount(signal.windowCount)} in the last 24 hours${isSurging ? ", surging" : ""} · ${formatExactCount(signal.totalCount)} all time`,
 					),
 				],
 				[
@@ -315,7 +316,7 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 	h.span(
 		[
 			h.Class(cn(LANE.lastSeen, "text-right text-xs tabular-nums text-muted-foreground")),
-			h.Title(`Last seen ${formatTimestamp(signal.lastSeenAt, state.timeZone, true)}`),
+			h.Title(`Last seen ${formatTimestampInTimezone(signal.lastSeenAt, { timeZone: state.timeZone, withYear: true })}`),
 		],
 		[formatLastSeen(signal.lastSeenAt, state.timeZone, state.nowMs)],
 	),

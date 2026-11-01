@@ -17,7 +17,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
-import { timeControls } from "../../kit/time-controls"
+import { presetSpanLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { agentSessionsTabs } from "../kit/tabs"
 import { metricStrip, metricStripLoading } from "../tools-kit/metric-strip"
@@ -186,7 +186,10 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 							metric,
 							percentile,
 							allSessions: totals.allSessions,
-							windowLabel: model.search.timePreset ?? DEFAULT_TOOL_PRESET,
+							windowLabel:
+								model.search.startTime !== undefined
+									? "period"
+									: presetSpanLabel(model.search.timePreset ?? DEFAULT_TOOL_PRESET),
 							onSelectMetric: (next) => Message.ClickedMetric({ metric: next }),
 							percentileToggle: model.percentileToggle,
 							toPercentileMessage: (message) => Message.GotPercentileMessage({ message }),
