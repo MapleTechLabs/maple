@@ -5,6 +5,7 @@ import type {
 } from "@maple/domain/http"
 import { type AdvisorySeverity, displayAdvisoryId } from "@maple/domain/package-advisories"
 import { countLabel, formatRate } from "@maple/ui/lib/format"
+import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
@@ -236,7 +237,11 @@ const findingRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(h, [dependencySeverityBadge(h, finding.severity)], "w-24"),
+			tableCell(
+				h,
+				[dependencySeverityBadge(h, finding.severity)],
+				cn("w-24", rowSelectedClass(isSelected)),
+			),
 			tableCell(h, [
 				h.button(
 					[

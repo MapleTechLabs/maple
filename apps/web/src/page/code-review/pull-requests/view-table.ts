@@ -3,7 +3,7 @@ import { formatCount, outcomeOf, SKIP_LABELS } from "../../../components/code-re
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
@@ -89,11 +89,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 						],
 					),
 				],
-				cn(
-					"px-4 py-2.5 leading-normal",
-					ROW_LANE,
-					isSelected ? "before:bg-primary" : "before:bg-transparent",
-				),
+				cn("px-4 py-2.5 leading-normal", rowSelectedClass(isSelected)),
 			),
 			tableCell(
 				h,
