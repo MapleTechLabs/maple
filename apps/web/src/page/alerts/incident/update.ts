@@ -1,7 +1,11 @@
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
-import { AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
+import {
+	AlertIncidentRowSchema,
+	AlertRuleRowSchema,
+	AlertRuleStateRowSchema,
+} from "@maple/web-data/collections/alerts"
 import { Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
@@ -18,7 +22,7 @@ import {
 	FetchIncidentPreview,
 	ReadIncidentClock,
 } from "./command"
-import { incidentViewOf, minuteOf } from "./derive"
+import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -150,6 +154,38 @@ const withRows = (model: Model, context: PageContext, orgId: string, patch: Part
 	orgId === context.orgId ? followData({ ...model, ...patch }, context) : { model }
 
 const isSameIncidentRow = Schema.toEquivalence(AlertIncidentRowSchema)
+const isSameRuleRows = Schema.toEquivalence(Schema.Array(AlertRuleRowSchema))
+const isSameStateRows = Schema.toEquivalence(Schema.Array(AlertRuleStateRowSchema))
+
+const incidentRuleIdOf = (model: Model) =>
+	model.incidents?.find((row) => row.id === model.incidentId)?.rule_id
+
+/**
+ * The live rules and states are the whole org's and change on every alert tick. Once the incident
+ * is known, a change that leaves its own rule as it was keeps the model, so the page does not redraw.
+ */
+const withRuleRows = (
+	model: Model,
+	context: PageContext,
+	orgId: string,
+	patch: Readonly<{ rules: NonNullable<Model["rules"]> } | { states: NonNullable<Model["states"]> }>,
+): Return => {
+	const ruleId = incidentRuleIdOf(model)
+	if (orgId !== context.orgId || ruleId === undefined) return withRows(model, context, orgId, patch)
+	const isUnchanged =
+		"rules" in patch
+			? model.rules !== null &&
+				isSameRuleRows(
+					model.rules.filter((row) => row.id === ruleId),
+					patch.rules.filter((row) => row.id === ruleId),
+				)
+			: model.states !== null &&
+				isSameStateRows(
+					ruleStatesOf(model, ruleId),
+					ruleStatesOf({ ...model, states: patch.states }, ruleId),
+				)
+	return isUnchanged ? { model } : withRows(model, context, orgId, patch)
+}
 const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
 	Option.fromNullishOr((rows ?? []).find((row) => row.id === model.incidentId))
 
@@ -175,8 +211,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs) }, context),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
-		UpdatedRules: ({ orgId, rows }) => withRows(model, context, orgId, { rules: rows }),
-		UpdatedRuleStates: ({ orgId, rows }) => withRows(model, context, orgId, { states: rows }),
+		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
+		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
 		CompletedFetchPreview: ({ key, result }) => ({
 			model: { ...model, preview: Keyed.accept(model.preview, key, result) },
 		}),
