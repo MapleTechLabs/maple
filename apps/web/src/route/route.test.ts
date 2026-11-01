@@ -144,6 +144,7 @@ describe("routes", () => {
 		expect(parse("/security/runs")._tag).toBe("SecurityRuns")
 		expect(parse("/security/exposure")._tag).toBe("SecurityExposure")
 		expect(parse("/security/runtimes")._tag).toBe("SecurityRuntimes")
+		expect(parse("/security/dependencies")._tag).toBe("SecurityDependencies")
 		expect(parse("/security/runs/run_9f3c2a1e7b")).toMatchObject({
 			_tag: "SecurityRun",
 			runId: "run_9f3c2a1e7b",

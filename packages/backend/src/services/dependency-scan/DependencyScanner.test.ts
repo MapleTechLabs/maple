@@ -271,6 +271,8 @@ describe("DependencyScanner", () => {
 			const scanner = yield* DependencyScanner
 			yield* scanner.scan(installation, repository, { trigger: "schedule" })
 
+			// A production scan of an older commit in between does not hide the branch's last scan.
+			yield* scanner.scan(installation, repository, { trigger: "production", commitSha: sha("9") })
 			state.head = sha("b")
 			state.files.set("README.md", { sha: "readme-2", content: "# shop 2" })
 			const unchanged = yield* scanner.scan(installation, repository, { trigger: "push" })
@@ -455,6 +457,23 @@ describe("DependencyScanner", () => {
 		},
 	)
 
+	it.effect("records a tree too large to list once, not on every push", () => {
+		const state = world({ "package-lock.json": packageLock("4.17.15") })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const store = yield* DependencyScanStore
+			state.truncated = true
+			yield* Effect.flip(scanner.scan(installation, repository, { trigger: "push" }))
+			state.head = sha("b")
+			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
+			assert.strictEqual(again._tag, "Unchanged")
+			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 1)
+			// Scan now records its own result, so the page sees the scan it asked for.
+			yield* Effect.flip(scanner.scan(installation, repository, { trigger: "manual" }))
+			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 2)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
 	it.effect("records an oversized lockfile without reading it and keeps its findings open", () => {
 		const state = world({ "package-lock.json": packageLock("4.17.15") })
 		return Effect.gen(function* () {
@@ -489,6 +508,14 @@ describe("DependencyScanner", () => {
 				7,
 			)
 			assert.deepStrictEqual(yield* findingsOf, [])
+			// A commit's content never changes, so asking again reads nothing.
+			const reads = state.blobReads.length
+			const again = yield* scanner.scan(installation, repository, {
+				trigger: "production",
+				commitSha: sha("e"),
+			})
+			assert.strictEqual(again._tag, "Unchanged")
+			assert.strictEqual(state.blobReads.length, reads)
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 })

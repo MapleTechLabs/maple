@@ -10,7 +10,14 @@ import {
 	recordingQueueLayer,
 	testRepoLayer,
 } from "@maple/backend/services/integrations/vcs/__tests__/harness"
-import { DependencyScanService } from "./DependencyScanService"
+import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import {
+	DependencyScanService,
+	PRODUCTION_SCANS_PER_READ,
+	type RunningCommitRow,
+	RunningCommits,
+	RunningCommitsReadError,
+} from "./DependencyScanService"
 import { DependencyScanStore } from "./DependencyScanStore"
 
 const trackedDbs: TestDb[] = []
@@ -20,12 +27,25 @@ const org = Schema.decodeSync(OrgId)("org_deps")
 const admin = Schema.decodeSync(UserId)("user_admin")
 const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(digit.repeat(40))
 
-const serviceFor = (sent: Array<VcsSyncJob>) => {
+const tenant = systemTenant(org)
+
+/** What telemetry says services ran; `undefined` makes the read fail. */
+interface Telemetry {
+	rows: ReadonlyArray<RunningCommitRow> | undefined
+}
+
+const serviceFor = (sent: Array<VcsSyncJob>, telemetry: Telemetry = { rows: [] }) => {
 	const db = createTestDb(trackedDbs)
 	const store = DependencyScanStore.layer.pipe(Layer.provide(db.layer))
 	const vcs = testRepoLayer(db)
+	const running = Layer.succeed(RunningCommits, {
+		read: () =>
+			telemetry.rows === undefined
+				? Effect.fail(new RunningCommitsReadError({ message: "warehouse down", cause: undefined }))
+				: Effect.succeed(telemetry.rows),
+	})
 	return Layer.effect(DependencyScanService, DependencyScanService.make).pipe(
-		Layer.provideMerge(Layer.mergeAll(store, vcs, recordingQueueLayer(sent))),
+		Layer.provideMerge(Layer.mergeAll(store, vcs, recordingQueueLayer(sent), running)),
 	)
 }
 
@@ -110,7 +130,7 @@ describe("DependencyScanService", () => {
 		return Effect.gen(function* () {
 			const service = yield* DependencyScanService
 			const api = yield* seed
-			const before = yield* service.listRepositories(org)
+			const before = yield* service.listRepositories(tenant)
 			assert.deepStrictEqual(
 				before.repositories.map((repository) => [repository.fullName, repository.latestScan]),
 				[
@@ -122,7 +142,7 @@ describe("DependencyScanService", () => {
 			const latest = yield* recordScan(api.id, "b", true)
 			// An older commit scanned because it runs in production is not the branch's latest scan.
 			yield* recordScan(api.id, "c", false)
-			const after = yield* service.listRepositories(org)
+			const after = yield* service.listRepositories(tenant)
 			assert.strictEqual(after.repositories[0]?.latestScan?.id, latest.id)
 			assert.strictEqual(after.repositories[0]?.latestScan?.vulnerableCount, 1)
 		}).pipe(Effect.provide(serviceFor(sent)))
@@ -159,10 +179,10 @@ describe("DependencyScanService", () => {
 			const vcs = yield* VcsRepository
 			const api = yield* seed
 			yield* recordScan(api.id, "a", true)
-			assert.strictEqual((yield* service.listFindings(org, {})).findings.length, 1)
-			const [finding] = (yield* service.listFindings(org, {})).findings
+			assert.strictEqual((yield* service.listFindings(tenant, {})).findings.length, 1)
+			const [finding] = (yield* service.listFindings(tenant, {})).findings
 			yield* vcs.markRepositoryRemoved(api.id)
-			assert.deepStrictEqual((yield* service.listFindings(org, {})).findings, [])
+			assert.deepStrictEqual((yield* service.listFindings(tenant, {})).findings, [])
 			if (finding === undefined) return
 			const error = yield* Effect.flip(
 				service.updateFinding(org, admin, finding.id, { status: "dismissed", reason: "gone" }),
@@ -177,7 +197,7 @@ describe("DependencyScanService", () => {
 			const service = yield* DependencyScanService
 			const api = yield* seed
 			yield* recordScan(api.id, "a", true)
-			const { findings } = yield* service.listFindings(org, {})
+			const { findings } = yield* service.listFindings(tenant, {})
 			assert.deepStrictEqual(
 				findings.map((finding) => [finding.repositoryFullName, finding.packageName, finding.status]),
 				[["octo/api", "lodash", "open"]],
@@ -192,11 +212,202 @@ describe("DependencyScanService", () => {
 				[dismissed.status, dismissed.statusReason, dismissed.statusChangedBy],
 				["dismissed", "Only used in a build script", admin],
 			)
-			assert.deepStrictEqual((yield* service.listFindings(org, { status: "open" })).findings, [])
+			assert.deepStrictEqual((yield* service.listFindings(tenant, { status: "open" })).findings, [])
 
 			const missing = Schema.decodeSync(DependencyFindingId)("0".repeat(32))
 			const error = yield* Effect.flip(service.updateFinding(org, admin, missing, { status: "open" }))
 			assert.strictEqual(error._tag, "@maple/http/dependency-scan/DependencyFindingNotFoundError")
 		}).pipe(Effect.provide(serviceFor(sent)))
+	})
+})
+
+const commitOf = (digit: string) => ({
+	sha: digit.repeat(40),
+	message: `commit ${digit}`,
+	authorName: null,
+	authorEmail: null,
+	authorLogin: null,
+	authorAvatarUrl: null,
+	authoredAt: null,
+	committedAt: 1,
+	htmlUrl: `https://github.com/octo/api/commit/${digit.repeat(40)}`,
+})
+
+const running = (
+	serviceName: string,
+	environment: string,
+	commit: string,
+	spanCount: number,
+): RunningCommitRow => ({
+	serviceName,
+	environment,
+	commitSha: commit.length === 1 ? commit.repeat(40) : commit,
+	spanCount,
+})
+
+describe("DependencyScanService production", () => {
+	it.effect(
+		"joins findings to the services running a commit whose scan matched them, and queues unscanned commits",
+		() => {
+			const sent: Array<VcsSyncJob> = []
+			const telemetry: Telemetry = {
+				rows: [
+					running("api-server", "production", "c", 9000),
+					running("worker", "production", "d", 50),
+					running("api-server", "staging", "a", 100),
+					// Not a commit of a connected repository, and a placeholder revision.
+					running("billing", "production", "f", 400),
+					running("legacy", "production", "unknown", 10),
+				],
+			}
+			return Effect.gen(function* () {
+				const service = yield* DependencyScanService
+				const vcs = yield* VcsRepository
+				const api = yield* seed
+				yield* vcs.upsertCommits(api, [commitOf("a"), commitOf("c"), commitOf("d")])
+				yield* recordScan(api.id, "c", false)
+				yield* recordScan(api.id, "a", true)
+
+				const { findings, production } = yield* service.listFindings(tenant, {})
+				// Services, not rows: api-server runs two commits and counts once.
+				assert.deepStrictEqual(production, {
+					available: true,
+					runningServices: 4,
+					linkedServices: 2,
+					complete: true,
+				})
+				assert.deepStrictEqual(
+					findings[0]?.production?.map((s) => [
+						s.serviceName,
+						s.environment,
+						s.commitSha.slice(0, 1),
+						s.spanCount,
+					]),
+					[
+						["api-server", "production", "c", 9000],
+						["api-server", "staging", "a", 100],
+					],
+				)
+				// Only the repositories read queues: the tab fires both reads together.
+				assert.deepStrictEqual(sent, [])
+
+				const { repositories } = yield* service.listRepositories(tenant)
+				assert.deepStrictEqual(
+					sent.map((job) =>
+						job.kind === "dependency-scan" ? [job.trigger, job.commitSha] : [job.kind],
+					),
+					[["production", sha("d")]],
+				)
+				assert.deepStrictEqual(
+					repositories[0]?.runningCommits?.map((commit) => [
+						commit.commitSha.slice(0, 1),
+						commit.scanStatus,
+					]),
+					[
+						["c", "completed"],
+						["d", null],
+						["a", "completed"],
+					],
+				)
+			}).pipe(Effect.provide(serviceFor(sent, telemetry)))
+		},
+	)
+
+	it.effect(
+		"retries a running commit whose scan failed an hour ago, and keeps its older completed scan's matches",
+		() => {
+			const sent: Array<VcsSyncJob> = []
+			const telemetry: Telemetry = { rows: [running("api-server", "production", "c", 9000)] }
+			return Effect.gen(function* () {
+				const service = yield* DependencyScanService
+				const store = yield* DependencyScanStore
+				const vcs = yield* VcsRepository
+				const api = yield* seed
+				yield* vcs.upsertCommits(api, [commitOf("c")])
+				yield* recordScan(api.id, "a", true)
+				yield* recordScan(api.id, "c", false)
+				yield* TestClock.adjust("1 second")
+				const failed = yield* store.startScan({
+					orgId: org,
+					repositoryId: api.id,
+					commitSha: sha("c"),
+					ref: null,
+					trigger: "production",
+					defaultBranchHead: false,
+				})
+				yield* store.failScan({ orgId: org, scanId: failed.id, error: "GitHub answered 502" })
+
+				const { findings } = yield* service.listFindings(tenant, {})
+				assert.deepStrictEqual(
+					findings.map((finding) => finding.production?.map((s) => s.serviceName)),
+					[["api-server"]],
+				)
+				assert.deepStrictEqual(sent, [])
+
+				yield* TestClock.adjust("61 minutes")
+				yield* service.listRepositories(tenant)
+				assert.deepStrictEqual(
+					sent.map((job) => (job.kind === "dependency-scan" ? job.commitSha : undefined)),
+					[sha("c")],
+				)
+			}).pipe(Effect.provide(serviceFor(sent, telemetry)))
+		},
+	)
+
+	it.effect("leaves a commit two connected repositories share unlinked", () => {
+		const sent: Array<VcsSyncJob> = []
+		const telemetry: Telemetry = { rows: [running("api-server", "production", "e", 500)] }
+		return Effect.gen(function* () {
+			const service = yield* DependencyScanService
+			const vcs = yield* VcsRepository
+			const api = yield* seed
+			const repositories = yield* vcs.listRepositoriesByInstallation(api.installationId, "active")
+			yield* Effect.forEach(repositories, (repository) =>
+				vcs.upsertCommits(repository, [commitOf("e")]),
+			)
+			const { repositories: listed } = yield* service.listRepositories(tenant)
+			assert.deepStrictEqual(
+				listed.map((repository) => repository.runningCommits.length),
+				[0, 0],
+			)
+			assert.deepStrictEqual(sent, [])
+		}).pipe(Effect.provide(serviceFor(sent, telemetry)))
+	})
+
+	it.effect("queues at most a handful of unscanned commits per read", () => {
+		const sent: Array<VcsSyncJob> = []
+		const digits = "0123456789abcdef".split("")
+		const telemetry: Telemetry = {
+			rows: digits.map((digit, i) => running(`svc-${i}`, "production", digit, 100 - i)),
+		}
+		return Effect.gen(function* () {
+			const service = yield* DependencyScanService
+			const vcs = yield* VcsRepository
+			const api = yield* seed
+			yield* vcs.upsertCommits(api, digits.map(commitOf))
+			yield* service.listRepositories(tenant)
+			assert.strictEqual(sent.length, PRODUCTION_SCANS_PER_READ)
+			assert.strictEqual(sent[0]?.kind === "dependency-scan" ? sent[0].commitSha : undefined, sha("0"))
+		}).pipe(Effect.provide(serviceFor(sent, telemetry)))
+	})
+
+	it.effect("still lists findings, unranked by traffic, when telemetry cannot be read", () => {
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const service = yield* DependencyScanService
+			const api = yield* seed
+			yield* recordScan(api.id, "a", true)
+			const { findings, production } = yield* service.listFindings(tenant, {})
+			assert.deepStrictEqual(production, {
+				available: false,
+				runningServices: 0,
+				linkedServices: 0,
+				complete: false,
+			})
+			assert.deepStrictEqual(
+				findings.map((finding) => [finding.packageName, finding.production]),
+				[["lodash", []]],
+			)
+		}).pipe(Effect.provide(serviceFor(sent, { rows: undefined })))
 	})
 })

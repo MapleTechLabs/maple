@@ -1320,14 +1320,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 
 			const fetchBlobText: VcsProviderClient["fetchBlobText"] = (installation, repo, blobSha) =>
-				client.getBlob(installation.externalInstallationId, repo.owner, repo.name, blobSha).pipe(
-					Effect.map((blob) =>
-						blob.encoding === "base64"
-							? Buffer.from(blob.content.replace(/\s/g, ""), "base64").toString("utf8")
-							: blob.content,
-					),
-					Effect.mapError(toVcsCommitError),
-				)
+				client
+					.getBlobText(installation.externalInstallationId, repo.owner, repo.name, blobSha)
+					.pipe(Effect.mapError(toVcsCommitError))
 
 			const resolveRef: VcsProviderClient["resolveRef"] = (installation, repo, ref) =>
 				client.getCommit(installation.externalInstallationId, repo.owner, repo.name, ref).pipe(

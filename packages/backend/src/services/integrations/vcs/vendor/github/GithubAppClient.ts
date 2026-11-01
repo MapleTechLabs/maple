@@ -373,14 +373,6 @@ const GithubApiRecursiveTree = Schema.Struct({
 })
 export type GithubRecursiveTree = typeof GithubApiRecursiveTree.Type
 
-const GithubApiBlob = Schema.Struct({
-	sha: Schema.String,
-	size: Schema.Number,
-	encoding: Schema.String,
-	content: Schema.String,
-})
-export type GithubBlob = typeof GithubApiBlob.Type
-
 const GithubApiReviewCommentList = Schema.Array(
 	Schema.Struct({
 		id: Schema.Number,
@@ -586,7 +578,6 @@ const decodeCollaboratorPermission = Schema.decodeUnknownEffect(GithubApiCollabo
 const decodeGitCommit = Schema.decodeUnknownEffect(GithubApiGitCommit)
 const decodeGitTreeListing = Schema.decodeUnknownEffect(GithubApiGitTreeListing)
 const decodeRecursiveTree = Schema.decodeUnknownEffect(GithubApiRecursiveTree)
-const decodeBlob = Schema.decodeUnknownEffect(GithubApiBlob)
 const decodeComparison = Schema.decodeUnknownEffect(GithubApiComparison)
 const decodeReviewThreads = Schema.decodeUnknownEffect(GithubReviewThreadsResponse)
 const decodeMutation = Schema.decodeUnknownEffect(GithubMutationResponse)
@@ -935,14 +926,19 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return grantsActions(yield* installationToken(externalInstallationId))
 			})
 
-			const authedGet = (_config: ResolvedAppConfig, token: string, url: string) =>
+			const authedGet = (
+				_config: ResolvedAppConfig,
+				token: string,
+				url: string,
+				accept = "application/vnd.github+json",
+			) =>
 				rateLimitedFetch(
 					tracedFetch(
 						url,
 						{
 							headers: {
 								authorization: `token ${token}`,
-								accept: "application/vnd.github+json",
+								accept,
 								"x-github-api-version": GITHUB_API_VERSION,
 								"user-agent": USER_AGENT,
 							},
@@ -2183,8 +2179,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
-			/** One blob by its sha; unlike the contents API it serves files up to 100 MB. */
-			const getBlob = Effect.fn("GithubAppClient.getBlob")(function* (
+			/**
+			 * One blob's bytes as text, by its sha; unlike the contents API it serves files up to 100 MB.
+			 * Read raw, so a large lockfile is never held as base64 JSON as well.
+			 */
+			const getBlobText = Effect.fn("GithubAppClient.getBlobText")(function* (
 				externalInstallationId: string,
 				owner: string,
 				repo: string,
@@ -2196,11 +2195,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					config,
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(sha)}`,
+					"application/vnd.github.raw+json",
 				)
 				if (!isOk(response)) return yield* failure(response, "Read blob", "repository")
-				return yield* decodeBlob(yield* parseJson(response, "Read blob")).pipe(
+				return yield* response.text.pipe(
 					Effect.mapError(
-						(cause) => new GithubAppError({ message: "Unexpected blob payload", cause }),
+						(cause) => new GithubAppError({ message: "Could not read the blob", cause }),
 					),
 				)
 			})
@@ -2477,7 +2477,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				searchCode,
 				getSourceFile,
 				getRecursiveTree,
-				getBlob,
+				getBlobText,
 				listCheckRunAnnotations,
 				streamJobLog,
 				canReadActions,

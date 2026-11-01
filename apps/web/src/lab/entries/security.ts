@@ -2,6 +2,9 @@ import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
+import * as DependenciesPage from "../../page/security/dependencies/model"
+import * as DependenciesUpdate from "../../page/security/dependencies/update"
+import { view as dependenciesView } from "../../page/security/dependencies/view"
 import * as FindingPage from "../../page/security/finding/model"
 import * as FindingUpdate from "../../page/security/finding/update"
 import { breadcrumbsOf as findingCrumbs, view as findingView } from "../../page/security/finding/view"
@@ -27,6 +30,7 @@ const Model = Schema.Struct({
 	run: Schema.NullOr(RunPage.Model),
 	finding: Schema.NullOr(FindingPage.Model),
 	telemetry: Schema.NullOr(TelemetryPage.Model),
+	dependencies: Schema.NullOr(DependenciesPage.Model),
 })
 type Model = typeof Model.Type
 
@@ -35,6 +39,7 @@ const Message = defineMessageUnion({
 	GotRunMessage: { message: RunPage.Message },
 	GotFindingMessage: { message: FindingPage.Message },
 	GotTelemetryMessage: { message: TelemetryPage.Message },
+	GotDependenciesMessage: { message: DependenciesPage.Message },
 })
 type Message = typeof Message.Type
 
@@ -54,7 +59,14 @@ const flags = Effect.all({
 
 const init = (input: typeof Flags.Type) => {
 	const built = build(input.scenario, input.nowMs)
-	const empty: Model = { scenario: input.scenario, tabs: null, run: null, finding: null, telemetry: null }
+	const empty: Model = {
+		scenario: input.scenario,
+		tabs: null,
+		run: null,
+		finding: null,
+		telemetry: null,
+		dependencies: null,
+	}
 	switch (built._tag) {
 		case "Tabs":
 			return {
@@ -82,6 +94,13 @@ const init = (input: typeof Flags.Type) => {
 				model: { ...empty, telemetry: built.step.model },
 				commands: Command.mapMessages(built.step.commands, (message) =>
 					Message.GotTelemetryMessage({ message }),
+				),
+			}
+		case "Dependencies":
+			return {
+				model: { ...empty, dependencies: built.step.model },
+				commands: Command.mapMessages(built.step.commands, (message) =>
+					Message.GotDependenciesMessage({ message }),
 				),
 			}
 	}
@@ -129,6 +148,16 @@ const update = (model: Model, message: Message) =>
 				),
 			}
 		},
+		GotDependenciesMessage: ({ message: inner }) => {
+			if (model.dependencies === null) return { model }
+			const next = DependenciesUpdate.update(model.dependencies, inner, context)
+			return {
+				model: { ...model, dependencies: next.model },
+				commands: Command.mapMessages((next.commands ?? []).filter(isLocalCommand), (child) =>
+					Message.GotDependenciesMessage({ message: child }),
+				),
+			}
+		},
 	})
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -164,7 +193,15 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							viewInputs: { context },
 							toParentMessage: (message) => Message.GotTelemetryMessage({ message }),
 						})
-					: h.empty
+					: model.dependencies !== null
+						? h.submodel({
+								slotId: "security-lab-dependencies",
+								model: model.dependencies,
+								view: dependenciesView,
+								viewInputs: { context },
+								toParentMessage: (message) => Message.GotDependenciesMessage({ message }),
+							})
+						: h.empty
 
 export const lab = defineShellLab("Security Center", {
 	Model,
@@ -184,5 +221,7 @@ export const lab = defineShellLab("Security Center", {
 					? findingCrumbs(model.finding)
 					: model.telemetry !== null
 						? tabsCrumbs(model.telemetry.tab)
-						: [],
+						: model.dependencies !== null
+							? tabsCrumbs("dependencies")
+							: [],
 })

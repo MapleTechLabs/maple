@@ -340,6 +340,9 @@ export {
 // Queries — Releases
 export {
 	releasesListQuery,
+	runningCommitsQuery,
+	runningCommitsRowSchema,
+	RUNNING_COMMITS_CAP,
 	releasesListRowSchema,
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,

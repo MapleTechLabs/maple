@@ -53,7 +53,11 @@ const osv = (fake: FakeOsv) =>
 			const id = decodeURIComponent(url.pathname.replace("/v1/vulns/", ""))
 			fake.requests.push(`vuln:${id}`)
 			const vuln = fixture.vulns.find((candidate) => candidate.id === id)
-			return vuln === undefined ? json(request, { message: "not found" }, 404) : json(request, vuln)
+			if (vuln !== undefined) return json(request, vuln)
+			// Synthetic ids a test invents answer with a bare record.
+			return id.startsWith("GHSA-many-")
+				? json(request, { id, aliases: [] })
+				: json(request, { message: "not found" }, 404)
 		}),
 	)
 
@@ -88,7 +92,7 @@ describe("PackageAdvisoryCatalog", () => {
 		const fake: FakeOsv = { requests: [] }
 		return Effect.gen(function* () {
 			const catalog = yield* PackageAdvisoryCatalog
-			const first = yield* catalog.advisories([...refs, ...refs])
+			const { byPackage: first } = yield* catalog.advisories([...refs, ...refs])
 			assert.deepStrictEqual(
 				first
 					.get(keyOf("minimist"))
@@ -105,7 +109,7 @@ describe("PackageAdvisoryCatalog", () => {
 			assert.strictEqual(reads.length, fixture.vulns.length)
 
 			fake.requests.length = 0
-			const second = yield* catalog.advisories(refs)
+			const { byPackage: second } = yield* catalog.advisories(refs)
 			assert.deepStrictEqual(fake.requests, [`querybatch:${refs.length}`])
 			assert.deepStrictEqual([...second.keys()], [...first.keys()])
 		}).pipe(Effect.provide(catalogWith(fake)))
@@ -123,7 +127,7 @@ describe("PackageAdvisoryCatalog", () => {
 		}
 		return Effect.gen(function* () {
 			const catalog = yield* PackageAdvisoryCatalog
-			const advisories = yield* catalog.advisories(refs)
+			const { byPackage: advisories } = yield* catalog.advisories(refs)
 			assert.deepStrictEqual(
 				advisories
 					.get(keyOf("lodash"))
@@ -148,9 +152,9 @@ describe("PackageAdvisoryCatalog", () => {
 		}).pipe(Effect.provide(catalogWith(fake)))
 	})
 
-	it.effect("refuses more distinct vulnerabilities than a scan reads", () => {
-		const many = Array.from({ length: MAX_VULNERABILITIES + 1 }, (_, i) => ({
-			id: `GHSA-many-${i}`,
+	it.effect("reads at most the capped number of vulnerabilities and counts the rest as unread", () => {
+		const many = Array.from({ length: MAX_VULNERABILITIES + 3 }, (_, i) => ({
+			id: `GHSA-many-${String(i).padStart(4, "0")}`,
 			modified: "1",
 		}))
 		const fake: FakeOsv = {
@@ -159,9 +163,12 @@ describe("PackageAdvisoryCatalog", () => {
 		}
 		return Effect.gen(function* () {
 			const catalog = yield* PackageAdvisoryCatalog
-			const error = yield* Effect.flip(catalog.advisories(refs))
-			assert.strictEqual(error._tag, "@maple/security/PackageAdvisoryCatalogError")
-			assert.isFalse(fake.requests.some((request) => request.startsWith("vuln:")))
+			const { unread } = yield* catalog.advisories(refs)
+			assert.strictEqual(unread, 3)
+			assert.strictEqual(
+				fake.requests.filter((request) => request.startsWith("vuln:")).length,
+				MAX_VULNERABILITIES,
+			)
 		}).pipe(Effect.provide(catalogWith(fake)))
 	})
 })
