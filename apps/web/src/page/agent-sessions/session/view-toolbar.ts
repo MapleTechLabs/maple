@@ -119,7 +119,7 @@ const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 							{
 								variant: "outline",
 								size: "xs",
-								className: "data-[popup-open]:bg-accent/50",
+								className: "data-[popup-open]:bg-surface-strong",
 								attributes: [
 									h.AriaLabel(`Display options, ${on} of ${rows.length} shown`),
 									...trigger,

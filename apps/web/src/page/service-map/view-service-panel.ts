@@ -18,6 +18,7 @@ import { iconButton } from "../../ui/icon-button"
 import { scrollArea } from "../../ui/scroll-area"
 import { statusDot } from "../../ui/status-dot"
 import * as TabsView from "../../ui/tabs-view"
+import { textLinkClass } from "../../ui/text-link"
 import type { ScopedRows } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -79,7 +80,7 @@ const header = (
 			),
 			h.a(
 				[
-					h.Class("text-3xs text-primary hover:text-primary/80 active:text-primary/80"),
+					h.Class(textLinkClass("primary", false, "text-3xs")),
 					h.Href(hrefOf(AppRoute.Service({ serviceName: inputs.serviceId, search: {} }))),
 				],
 				["View service"],

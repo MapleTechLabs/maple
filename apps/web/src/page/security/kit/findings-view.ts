@@ -40,17 +40,19 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 	])
 
 /** Linear's priority marks: bars by severity, the warning glyph for critical, a dashed ring for
- * an unproven lead. Only critical is coloured, so the eye goes there first. */
-export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket): Html => {
+ * an unproven lead. Only critical is coloured, so the eye goes there first. `isQuiet` draws an
+ * unconfirmed estimate a text step quieter; critical keeps its colour. */
+export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, isQuiet = false): Html => {
+	const quiet = isQuiet ? "text-foreground-subtle" : undefined
 	switch (bucket) {
 		case "critical":
 			return severityIcon(h, "critical", 14)
 		case "high":
 		case "medium":
 		case "low":
-			return severityIcon(h, bucket, 14, "text-foreground")
+			return severityIcon(h, bucket, 14, quiet ?? "text-foreground")
 		case "informational":
-			return severityIcon(h, null, 14)
+			return severityIcon(h, null, 14, quiet)
 		case "needs_validation":
 			return h.span(
 				[
@@ -190,9 +192,7 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 		),
 	]
 	const children = [
-		isUnverified(finding)
-			? h.span([h.Class("inline-flex opacity-50")], [bucketIcon(h, bucketOf(finding))])
-			: bucketIcon(h, bucketOf(finding)),
+		bucketIcon(h, bucketOf(finding), isUnverified(finding)),
 		h.span(
 			[
 				h.Class(

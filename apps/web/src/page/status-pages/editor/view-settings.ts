@@ -157,7 +157,7 @@ export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 		? []
 		: [
 				h.div(
-					[h.Class("flex flex-col gap-2 rounded-md border bg-muted/30 p-3")],
+					[h.Class("flex flex-col gap-2 rounded-md border bg-surface-faint p-3")],
 					[
 						copyableField(h, {
 							id: "status-page-break-glass-token",

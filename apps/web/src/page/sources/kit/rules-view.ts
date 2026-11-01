@@ -63,7 +63,7 @@ const signalCard = <P>(
 			h.Class(
 				cn(
 					"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-					isChecked ? "border-primary/60 bg-primary/[0.06]" : "hover:bg-surface-sunken active:bg-surface-sunken",
+					isChecked ? "border-primary-a4 bg-primary-a1" : "hover:bg-surface-sunken active:bg-surface-sunken",
 				),
 			),
 		],
@@ -168,7 +168,7 @@ const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html =
 						? []
 						: [
 								h.span(
-									[h.Class("text-destructive text-xs"), h.Role("alert")],
+									[h.Class("text-destructive-foreground text-xs"), h.Role("alert")],
 									[attributeProblem],
 								),
 							]),

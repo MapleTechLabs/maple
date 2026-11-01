@@ -61,7 +61,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 				? h.span(
 						[
 							h.Class(
-								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error",
+								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error-a4 px-1.5 text-2xs leading-4 text-severity-error",
 							),
 						],
 						['"', line.missingKey, '"', h.span([h.Class("opacity-80")], ["missing, required"])],

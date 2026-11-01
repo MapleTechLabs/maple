@@ -66,7 +66,7 @@ export const connectedIntegrationCard = (
 
 /** Access is gone: says what stopped and how to resume. */
 export const integrationAlertNotice = (h: H, text: string): Html =>
-	h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [text])
+	h.p([h.Class("text-xs text-destructive-foreground"), h.Role("alert")], [text])
 
 /** The last sync error, clamped to two lines with the full text on hover. */
 export const integrationErrorNotice = (h: H, label: string, error: string): Html =>

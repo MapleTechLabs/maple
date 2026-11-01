@@ -104,7 +104,7 @@ type H = HtmlBuilder<Message>
 const confirm = (h: H, token: string, state: State): ReadonlyArray<Html> => [
 	authTitle(h, ["Unsubscribe"]),
 	authDescription(h, ["Stop receiving ", labelForToken(token), " from Maple?"]),
-	...(state._tag === "Failed" ? [h.p([h.Class("mt-3 text-sm text-destructive")], [state.message])] : []),
+	...(state._tag === "Failed" ? [h.p([h.Class("mt-3 text-sm text-destructive-foreground")], [state.message])] : []),
 	h.div(
 		[h.Class("mt-4")],
 		[

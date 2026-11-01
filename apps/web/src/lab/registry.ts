@@ -315,6 +315,13 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/status-pages",
+		title: "Status pages",
+		description: "The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/time-range",
 		title: "Time range picker",
 		description:

@@ -141,7 +141,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 					]),
 			reportSheet(h, model, report, trigger),
 		],
-		"gap-4 border-primary-a3 bg-card/60 p-5",
+		"gap-4 border-primary-a3 bg-card p-5",
 	)
 }
 
