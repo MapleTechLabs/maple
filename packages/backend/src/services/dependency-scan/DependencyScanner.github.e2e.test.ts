@@ -172,10 +172,11 @@ const scanAndCompare = (fullName: string) =>
 		if (cloned !== scan.commitSha) yield* Console.log(`  clone is at ${cloned}, comparison may differ`)
 
 		const results = scan.lockfiles.map((lockfile) => {
+			// An unsupported format or an oversized file is an expected outcome; a failed read is not.
 			if (lockfile.status !== "parsed")
 				return {
 					line: `  SKIP  ${lockfile.path}: ${lockfile.status} (${lockfile.message})`,
-					ok: true,
+					ok: lockfile.status === "unsupported" || lockfile.status === "too_large",
 				}
 			const ours = new Map<string, Array<Set<string>>>()
 			matches
@@ -219,7 +220,12 @@ const scanAndCompare = (fullName: string) =>
 			}
 		})
 		yield* Effect.forEach(results, (result) => Console.log(result.line))
-		return results.flatMap((result) => (result.ok ? [] : [result.line]))
+		// A scan that compared no lockfile proves nothing.
+		const compared = scan.lockfiles.filter((lockfile) => lockfile.status === "parsed").length
+		return [
+			...results.flatMap((result) => (result.ok ? [] : [result.line])),
+			...(compared === 0 ? [`  no lockfile of ${fullName} was parsed and compared`] : []),
+		]
 	})
 
 const layer = () => {
