@@ -35,16 +35,19 @@ const metaOf = (message: FromClientEncoded): unknown =>
 		: undefined
 
 /**
- * The caller's span from `params._meta` (unprefixed `traceparent`, SEP-414).
- * Always sampled: Maple records its own server whatever the caller decided.
+ * The caller's span from `params._meta` (unprefixed `traceparent`, SEP-414), and
+ * only from there: Effect's JSON-RPC decoder also copies unvalidated top-level
+ * `traceId`/`spanId`/`sampled` from the body, which are always dropped. Always
+ * sampled: Maple records its own server whatever the caller decided.
  */
 export const withMetaTraceContext = (message: FromClientEncoded): FromClientEncoded => {
 	if (message._tag !== "Request") return message
+	const { traceId: _traceId, spanId: _spanId, sampled: _sampled, ...untraced } = message
 	const traceparent = stringField(metaOf(message), "traceparent")
-	if (traceparent === undefined) return message
+	if (traceparent === undefined) return untraced
 	return Option.match(HttpTraceContext.w3c(Headers.fromInput({ traceparent })), {
-		onNone: () => message,
-		onSome: (parent) => ({ ...message, traceId: parent.traceId, spanId: parent.spanId, sampled: true }),
+		onNone: () => untraced,
+		onSome: (parent) => ({ ...untraced, traceId: parent.traceId, spanId: parent.spanId, sampled: true }),
 	})
 }
 
@@ -118,7 +121,13 @@ export const mcpMessageTracer = (
 			}
 			if (options.synthetic) return base.span({ ...spanOptions, sampled: false })
 			const conventions = mcpServerSpan(message, match[1] ?? "", caller)
-			const span = base.span({ ...spanOptions, name: conventions.name })
+			// `RpcServer` links the HTTP span even when, with no caller span, it is
+			// already the parent.
+			const links = Option.match(spanOptions.parent, {
+				onNone: () => spanOptions.links,
+				onSome: (parent) => spanOptions.links.filter((link) => link.span.spanId !== parent.spanId),
+			})
+			const span = base.span({ ...spanOptions, name: conventions.name, links })
 			for (const [key, value] of Object.entries(conventions.attributes)) span.attribute(key, value)
 			return span
 		},

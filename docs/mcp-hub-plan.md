@@ -22,7 +22,7 @@ split out of semantic-conventions at v1.44.0. The registry has no releases; ever
 | Protocol        | `mcp.protocol.version`, `jsonrpc.request.id`, `network.transport` (`tcp` / `pipe`), `client.address`                      |
 | Tool failure    | `isError: true` → `error.type = tool_error`                                                                               |
 | JSON-RPC error  | `rpc.response.status_code` and `error.type` = the code; `-32700/-32600/-32601/-32602/-32002` are NOT errors on the server |
-| Parent          | from `params._meta` (`traceparent`, `tracestate`, `baggage`); the HTTP span is a **link**, not the parent                 |
+| Parent          | from `params._meta` `traceparent` (we ignore `tracestate`/`baggage`); the HTTP span is a **link**                         |
 | Opt-in payloads | `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, `gen_ai.prompt.variable.<name>`                                  |
 | Metrics         | `mcp.server.operation.duration`, `mcp.server.session.duration`: histograms, seconds, buckets `[0.01 … 300]`               |
 | Client identity | **not in the spec.** No `clientInfo` attribute exists                                                                     |

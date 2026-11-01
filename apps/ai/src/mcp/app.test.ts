@@ -761,5 +761,8 @@ describe("MCP server spans", () => {
 			Option.some({ traceId: callerTrace, spanId: callerSpan }),
 		)
 		expect(toolCall?.links.map((link) => link.span._tag === "Span" && link.span.name)).toEqual(["POST"])
+		// Without a caller span the HTTP span is the parent, and not linked a second time.
+		const initialize = server[0]
+		expect(initialize?.links).toEqual([])
 	})
 })

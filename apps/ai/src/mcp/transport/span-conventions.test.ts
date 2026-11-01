@@ -48,6 +48,24 @@ describe("withMetaTraceContext", () => {
 		})
 	})
 
+	it("drops trace fields set at the top level of the JSON-RPC body", () => {
+		const spoofed = {
+			...request("tools/call", { name: "x" }),
+			traceId: "abc",
+			spanId: "zz",
+			sampled: false,
+		}
+		expect(traced(spoofed)).toEqual({ traceId: undefined, spanId: undefined })
+	})
+
+	it("takes the caller's span from a valid traceparent", () => {
+		const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"
+		expect(traced(request("tools/call", { name: "x", _meta: { traceparent } }))).toEqual({
+			traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+			spanId: "00f067aa0ba902b7",
+		})
+	})
+
 	it("ignores a request without _meta", () => {
 		expect(traced(request("tools/list", {}))).toEqual({ traceId: undefined, spanId: undefined })
 	})
