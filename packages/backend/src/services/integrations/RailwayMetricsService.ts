@@ -45,7 +45,7 @@ import {
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
-import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import { IngestRefused, keepRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 
 const SAMPLE_RATE_SECONDS = 60
 const SAMPLE_MS = SAMPLE_RATE_SECONDS * 1000
@@ -557,7 +557,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				const ingested = yield* emitMetrics(ingestKey, rows, sourceId)
 				yield* Effect.annotateCurrentSpan("maple.railway.rows_ingested", ingested)
 				return ingested
-			})
+			}, keepRefusal)
 
 			const pollOrg = Effect.fn("RailwayMetricsService.pollOrg")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
@@ -682,6 +682,26 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 											pollEnvironment(row, token, ingestKey.value, window, sourceId),
 										)
 										if (result._tag === "Success") {
+											const ingested = result.success
+											if (ingested instanceof IngestRefused) {
+												// Billing limit or a refused key: back off instead of retrying every tick.
+												const message = ingested.error.message
+												yield* Effect.logInfo(
+													"railway metrics ingest refused the org",
+													{
+														orgId,
+														environmentId: row.environmentId,
+														error: message,
+													},
+												)
+												yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
+												return {
+													...called,
+													failures: called.failures + 1,
+													lastError: message,
+													stopped: true,
+												}
+											}
 											yield* updateEnvironment(row.id, {
 												watermarkAt: window.endMs,
 												lastSuccessAt: now,
@@ -691,7 +711,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 											})
 											return {
 												...called,
-												rowsIngested: called.rowsIngested + result.success,
+												rowsIngested: called.rowsIngested + ingested,
 											}
 										}
 										const error = result.failure
@@ -718,10 +738,6 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 												)
 												return { ...failed, stopped: true }
 											}
-										} else if (isRefusal(error)) {
-											// Billing limit or a refused key: back off instead of retrying every tick.
-											yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
-											return { ...failed, stopped: true }
 										}
 										yield* updateEnvironment(row.id, {
 											lastError: error.message.slice(0, 500),

@@ -1,7 +1,7 @@
 // The one way backend code sends telemetry to the ingest gateway: OTLP JSON, the org's public key,
 // one timeout and one error. Pollers map `IngestSendError` onto their own failure handling.
 
-import { Duration, Effect, Schema } from "effect"
+import { Data, Duration, Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { isIngestRefusal, summarizeUpstreamBody } from "@maple/backend/services/integrations/upstream-body"
@@ -37,12 +37,31 @@ export class IngestSendError extends Schema.TaggedError<IngestSendError>()(
 export const isRefusal = (error: IngestSendError) =>
 	error.status !== undefined && isIngestRefusal(error.status)
 
+export const isIngestSendError = (error: unknown): error is IngestSendError =>
+	error instanceof IngestSendError
+
+/** A refusal carried out of a span as a value, so the span ends Ok instead of opening an error issue. */
+export class IngestRefused extends Data.TaggedClass("IngestRefused")<{ readonly error: IngestSendError }> {}
+
+/** Inside a span: a refusal (billing, revoked key) becomes an {@link IngestRefused} value, other failures stay. */
+export const keepRefusal = <A, E, R>(self: Effect.Effect<A, E | IngestSendError, R>) =>
+	self.pipe(
+		Effect.catchIf(isIngestSendError, (error) =>
+			isRefusal(error)
+				? Effect.annotateCurrentSpan("maple.ingest.outcome", "refused").pipe(
+						Effect.as(new IngestRefused({ error })),
+					)
+				: Effect.fail(error),
+		),
+	)
+
 export const makeIngestSender = Effect.gen(function* () {
 	const env = yield* Env
 	const httpClient = yield* HttpClient.HttpClient
 	const baseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
 
-	const send = Effect.fn("IngestSender.send")(
+	// A refusal is the org's state, not a fault: the span ends Ok and the error fails outside it.
+	const attempt = Effect.fn("IngestSender.send")(
 		function* (request: IngestRequest) {
 			yield* Effect.annotateCurrentSpan("maple.ingest.signal", request.signal)
 			const post = HttpClientRequest.post(`${baseUrl}/v1/${request.signal}`).pipe(
@@ -69,6 +88,7 @@ export const makeIngestSender = Effect.gen(function* () {
 		},
 		(effect, request) =>
 			effect.pipe(
+				keepRefusal,
 				Effect.timeoutOrElse({
 					duration: request.timeout ?? DEFAULT_TIMEOUT,
 					orElse: () =>
@@ -76,6 +96,13 @@ export const makeIngestSender = Effect.gen(function* () {
 				}),
 			),
 	)
+
+	const send = (request: IngestRequest): Effect.Effect<void, IngestSendError> =>
+		attempt(request).pipe(
+			Effect.flatMap((result) =>
+				result instanceof IngestRefused ? Effect.fail(result.error) : Effect.void,
+			),
+		)
 
 	return { send }
 })

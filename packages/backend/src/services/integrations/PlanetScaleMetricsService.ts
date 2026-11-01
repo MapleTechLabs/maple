@@ -28,7 +28,7 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import { IngestRefused, keepRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { stampedSourceId } from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
@@ -261,7 +261,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 			yield* recordBranch(connection, branch, { nextStartMs })
 			yield* Effect.annotateCurrentSpan("maple.planetscale.metrics.rows", rows.length)
 			return rows.length
-		})
+		}, keepRefusal)
 
 		const pollOrg = Effect.fn("PlanetScaleMetricsService.pollOrg")(function* (
 			connection: PlanetScaleConnectionRow,
@@ -324,6 +324,17 @@ export class PlanetScaleMetricsService extends Context.Service<
 							watermarks.get(branch.branchId) ?? null,
 							ingestKey,
 						)
+						// Billing or a refused key: the org's state, recorded on the branch but not a fault.
+						if (rows instanceof IngestRefused) {
+							const error = rows.error.message
+							yield* recordBranch(connection, branch, { error }).pipe(
+								Effect.ignore({ log: "Warn" }),
+							)
+							return {
+								_tag: "Failed" as const,
+								error: `${branch.database}/${branch.branch}: ${error}`,
+							}
+						}
 						return { _tag: "Ingested" as const, rows }
 					}).pipe(
 						// One branch's failure costs that branch a retry, not the org its poll.
