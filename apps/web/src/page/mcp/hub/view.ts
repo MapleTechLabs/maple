@@ -30,12 +30,14 @@ import { bucketSecondsOf, widerPreset } from "./update"
 
 type H = HtmlBuilder<Message>
 
-const bucketLabel = (seconds: number): string =>
-	seconds % 86_400 === 0
-		? `${seconds / 86_400}d`
-		: seconds % 3_600 === 0
-			? `${seconds / 3_600}h`
-			: `${Math.round(seconds / 60)}m`
+/** A bucket width as `1d`, `6h`, `1h 45m` or `15m`: chart buckets are whole minutes, not always whole hours. */
+export const bucketLabel = (seconds: number): string => {
+	const days = Math.floor(seconds / 86_400)
+	const hours = Math.floor((seconds % 86_400) / 3_600)
+	const minutes = Math.round((seconds % 3_600) / 60)
+	const parts = [days > 0 ? `${days}d` : "", hours > 0 ? `${hours}h` : "", minutes > 0 ? `${minutes}m` : ""]
+	return parts.filter((part) => part !== "").join(" ") || "1m"
+}
 
 const windowOf = (model: Model): McpWindow | undefined =>
 	model.window === null
