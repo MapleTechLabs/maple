@@ -353,6 +353,19 @@ describe("error fingerprint normalization", () => {
 				expect(signature(a)).toBe(signature(b))
 			}
 			expect(signature("RouteNotFound (GET /.env)")).not.toBe(signature("RouteNotFound (POST /.env)"))
+			// The fold ends at the path: a cause on the next line still separates two bugs.
+			for (const prefix of [
+				"Cannot GET /missing",
+				"RouteNotFound (GET /missing)",
+				"Route GET:/missing not found",
+			]) {
+				expect(signature(`${prefix}\nDatabaseTimeout`)).not.toBe(
+					signature(`${prefix}\nPermissionDenied`),
+				)
+			}
+			expect(signature('No route found for "GET /a\nDatabaseTimeout"')).not.toBe(
+				signature('No route found for "GET /a\nPermissionDenied"'),
+			)
 		})
 
 		it("splits a malformed-ExceptionType bucket (JSON-prefix leak) by message", () => {

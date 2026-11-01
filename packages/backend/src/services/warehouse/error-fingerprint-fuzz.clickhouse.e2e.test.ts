@@ -82,6 +82,7 @@ const messagePart = fc.oneof(
 		"RouteNotFound (GET /.env)",
 		"RouteNotFound (POST /a/b?x=1) extra",
 		"Cannot GET /wp-login.php",
+		"Cannot GET /x\nDatabaseTimeout",
 		"Route GET:/x not found",
 		'No route found for "GET https://x.dev/y"',
 		"StatusCode error (404 GET https://host.dev/f956aa438ac39eff/codex~maple-in-process)",

@@ -265,10 +265,14 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
 	],
 	// A route-not-found error names a path that by definition matched no route: a
 	// scanner probing `/.env`, `/wp-login.php` and so on minted one issue per probe.
-	["RouteNotFound \\(([A-Z]+) [^ ]*\\)", "RouteNotFound ($1 PATH)"],
-	["\\bCannot (GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) /[^ ]*", "Cannot $1 PATH"],
-	["\\bRoute (GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS):/[^ ]* not found", "Route $1:PATH not found"],
-	['No route found for "([A-Z]+) [^"]*"', 'No route found for "$1 PATH"'],
+	// The path stops at any whitespace, so a cause on the next line still counts.
+	["RouteNotFound \\(([A-Z]+) [^ \\t\\r\\n]*\\)", "RouteNotFound ($1 PATH)"],
+	["\\bCannot (GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) /[^ \\t\\r\\n]*", "Cannot $1 PATH"],
+	[
+		"\\bRoute (GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS):/[^ \\t\\r\\n]* not found",
+		"Route $1:PATH not found",
+	],
+	['No route found for "([A-Z]+) [^"\\r\\n]*"', 'No route found for "$1 PATH"'],
 	[`(^|[ \\t\\r\\n'"(\`=])~/[^ '"\`:,)]*`, "$1PATH"],
 	// The root must end at "/", "." or a delimiter, so `/datasets` is not `/data`.
 	// Twice: a match consumes the delimiter the next adjacent path starts after.
