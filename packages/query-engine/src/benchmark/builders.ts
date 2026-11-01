@@ -1884,6 +1884,22 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "mcp",
+		name: "mcpFirstSeenQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.mcpFirstSeenQuery(), { ...window, serviceName: "maple-ai" }),
+	},
+	{
+		module: "mcp",
+		name: "mcpToolErrorsQuery",
+		label: "searched",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpToolErrorsQuery({ search: "sql" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
 		name: "mcpServerStatsQuery",
 		label: "twoServers",
 		compile: () => CH.compileUnsafe(CH.mcpServerStatsQuery(["maple-ai", "docs-mcp"]), window),

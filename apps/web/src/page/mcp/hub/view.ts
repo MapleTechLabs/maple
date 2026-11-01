@@ -250,10 +250,15 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 	const data = AsyncData.getOrElse(model.overview.data, () => undefined)
 	const window = windowOf(model)
 	const filters = filtersOf(model)
+	const isNew = data !== undefined && window !== undefined && data.firstSpanMs >= window.startMs
 	const description =
 		data === undefined || data.firstSpanMs === 0
 			? "MCP server"
-			: `MCP ${data.protocolVersion} · ${data.tools.length} tools called · first MCP span in the window ${formatClock(data.firstSpanMs, timeZone)}`
+			: [
+					`MCP ${data.protocolVersion}`,
+					`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
+					...(isNew ? [`first MCP span ${formatClock(data.firstSpanMs, timeZone)}`] : []),
+				].join(" · ")
 	const body = AsyncData.matchData(model.overview.data, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
@@ -278,7 +283,7 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 					),
 					scope: scopeText("all tools", filters),
 					window,
-					toolCount: response.tools.length,
+					toolCount: response.toolCount,
 					isFiltered: hasFilter(filters),
 					metric: model.search.metric ?? "calls",
 					percentile: model.search.percentile ?? "p90",

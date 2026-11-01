@@ -2766,7 +2766,7 @@ SELECT
         GROUP BY bucket, key
         FORMAT JSON
 
--- builder:mcp:mcpCallTotalsQuery:filtered  [650ab584]
+-- builder:mcp:mcpCallTotalsQuery:filtered  [89064ba4]
 SELECT
           count() AS calls,
           countIf(traces.SpanAttributes['error.type'] != '') AS errors,
@@ -2774,6 +2774,7 @@ SELECT
           ifNull(ifNotFinite(quantile(0.5)(traces.Duration), 0), 0) AS p50,
           ifNull(ifNotFinite(quantile(0.9)(traces.Duration), 0), 0) AS p90,
           ifNull(ifNotFinite(quantile(0.95)(traces.Duration), 0), 0) AS p95,
+          uniqExact(traces.SpanAttributes['gen_ai.tool.name']) AS tools,
           min(traces.Timestamp) AS firstCall,
           max(traces.Timestamp) AS lastCall
         FROM traces
@@ -2850,6 +2851,16 @@ SELECT
           AND traces.SpanAttributes['error.type'] != ''
           AND traces.StatusMessage IN ('', 'Query error')
         GROUP BY bucket, errorType, message
+        FORMAT JSON
+
+-- builder:mcp:mcpFirstSeenQuery:default  [4ade2e18]
+SELECT
+          min(service_operations_hourly.Hour) AS firstHour
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'maple-ai'
+          AND service_operations_hourly.Hour <= '2026-01-03 14:15:00'
+          AND (service_operations_hourly.SpanName LIKE 'tools/call %' OR service_operations_hourly.SpanName = 'tools/call')
         FORMAT JSON
 
 -- builder:mcp:mcpInitializersQuery:default  [81478181]
@@ -2938,7 +2949,7 @@ SELECT
         GROUP BY service
         FORMAT JSON
 
--- builder:mcp:mcpServicesQuery:default  [d672eeac]
+-- builder:mcp:mcpServicesQuery:default  [083d9dc7]
 SELECT
           service_operations_hourly.ServiceName AS service,
           sum(service_operations_hourly.ServerSpanCount) AS serverSpans
@@ -2946,7 +2957,7 @@ SELECT
         WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
           AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND service_operations_hourly.Hour <= '2026-01-03 14:15:00'
-          AND service_operations_hourly.SpanName LIKE 'tools/call %'
+          AND (service_operations_hourly.SpanName LIKE 'tools/call %' OR service_operations_hourly.SpanName = 'tools/call')
         GROUP BY service
         ORDER BY serverSpans DESC
         LIMIT 100
@@ -2976,7 +2987,27 @@ SELECT
         LIMIT 1000
         FORMAT JSON
 
--- builder:mcp:mcpToolStatsQuery:default  [eba76c5d]
+-- builder:mcp:mcpToolErrorsQuery:searched  [dd41aad9]
+SELECT
+          traces.SpanAttributes['gen_ai.tool.name'] AS tool,
+          traces.SpanAttributes['error.type'] AS errorType,
+          count() AS count
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName = 'maple-ai'
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND traces.SpanAttributes['mcp.method.name'] = 'tools/call'
+          AND traces.SpanAttributes['gen_ai.tool.name'] ILIKE '%sql%'
+          AND traces.SpanAttributes['error.type'] != ''
+        GROUP BY tool, errorType
+        ORDER BY count DESC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:mcp:mcpToolStatsQuery:default  [0b3ebd3f]
 SELECT
           traces.SpanAttributes['gen_ai.tool.name'] AS tool,
           count() AS calls,
@@ -2984,7 +3015,6 @@ SELECT
           ifNull(ifNotFinite(quantile(0.5)(traces.Duration), 0), 0) AS p50,
           ifNull(ifNotFinite(quantile(0.9)(traces.Duration), 0), 0) AS p90,
           ifNull(ifNotFinite(quantile(0.95)(traces.Duration), 0), 0) AS p95,
-          anyIf(traces.SpanAttributes['error.type'], traces.SpanAttributes['error.type'] != '') AS topError,
           max(traces.Timestamp) AS lastCall
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'

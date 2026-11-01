@@ -129,8 +129,10 @@ export class McpOverviewResponse extends Schema.Class<McpOverviewResponse>("McpO
 	service: Schema.String,
 	protocolVersion: Schema.String,
 	transport: Schema.String,
-	/** The first MCP span in the window; `0` when there is none. */
+	/** The service's first MCP tool call on record (hour precision before the window); `0` when none. */
 	firstSpanMs: Schema.Number,
+	/** Tools called in the window before the selection narrows it. */
+	toolCount: Schema.Number,
 	series: Schema.Array(McpSeriesPoint),
 	clientSeries: Schema.Array(McpSeriesPoint),
 	totals: Schema.Struct({ ...measures, statusErrors: Schema.Number }),
@@ -141,7 +143,7 @@ export class McpOverviewResponse extends Schema.Class<McpOverviewResponse>("McpO
 	allClients: Schema.Array(McpClientItem),
 	/** `clientInfo.name` from real `initialize` requests. */
 	initializers: Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number })),
-	/** Failed spans per `error.type`, every method. */
+	/** Failed calls per `error.type` under the selection. */
 	failures: Schema.Array(Schema.Struct({ errorType: Schema.String, count: Schema.Number })),
 	methods: Schema.Array(McpMethodItem),
 	coverage: McpCoverage,

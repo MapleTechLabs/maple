@@ -199,6 +199,9 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		toolSeries,
 		clientSeries,
 		tools,
+		toolErrors,
+		allTotals,
+		firstSeen,
 	] = yield* Effect.all(
 		[
 			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSpanSummaryQuery(), params), {
@@ -245,6 +248,18 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				...aggregate,
 				context: "mcpToolStats",
 			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpToolErrorsQuery(filter), params), {
+				...aggregate,
+				context: "mcpToolErrors",
+			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpCallTotalsQuery(), params), {
+				...aggregate,
+				context: "mcpAllTotals",
+			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpFirstSeenQuery(), params), {
+				profile: "list",
+				context: "mcpFirstSeen",
+			}),
 		],
 		{ concurrency: "unbounded" },
 	)
@@ -253,18 +268,26 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 	const calls = summary.filter((row) => row.method === TOOLS_CALL)
 	const failedCalls = calls.filter((row) => row.errorType !== "")
 	const firstSpans = summary.map((row) => toMs(row.firstSpan)).filter((ms) => ms > 0)
+	const firstInWindow = firstSpans.length === 0 ? 0 : Math.min(...firstSpans)
+	// The rollup knows calls before the window; within it, the window's own first span is exact.
+	const firstHour = toMs(firstSeen[0]?.firstHour ?? DateTime.makeUnsafe(0))
+	const firstSpanMs =
+		firstHour > 0 && firstHour < parseWarehouseDateTime(window.startTime) ? firstHour : firstInWindow
+	// Rows arrive most frequent first, so a tool's first row is its top error.
+	const topErrors = new Map<string, string>()
+	toolErrors.forEach((row) => {
+		if (!topErrors.has(row.tool)) topErrors.set(row.tool, row.errorType)
+	})
 	const protocolVersion = summary.find((row) => row.protocolVersion !== "")?.protocolVersion ?? ""
 	const transport = summary.find((row) => row.transport !== "")?.transport ?? ""
-	const failures = Arr.groupBy(
-		summary.filter((row) => row.errorType !== ""),
-		(row) => row.errorType,
-	)
+	const failures = Arr.groupBy(toolErrors, (row) => row.errorType)
 	const total = totals[0]
 	return new McpOverviewResponse({
 		service: payload.service,
 		protocolVersion,
 		transport,
-		firstSpanMs: firstSpans.length === 0 ? 0 : Math.min(...firstSpans),
+		firstSpanMs,
+		toolCount: allTotals[0]?.tools ?? 0,
 		series: mergedSeries(buckets, series),
 		clientSeries: splitSeries(buckets, clientSeries),
 		totals: {
@@ -286,7 +309,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				p50: row.p50,
 				p90: row.p90,
 				p95: row.p95,
-				topError: row.topError === "" ? null : row.topError,
+				topError: topErrors.get(row.tool) ?? null,
 				lastCallMs: toMs(row.lastCall),
 				spark: buckets.map((bucket) => spark.get(bucket) ?? 0),
 			}
@@ -295,7 +318,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		allClients: clientItems(allClients),
 		initializers,
 		failures: Object.entries(failures)
-			.map(([errorType, rows]) => ({ errorType, count: sumBy(rows, (row) => row.spans) }))
+			.map(([errorType, rows]) => ({ errorType, count: sumBy(rows, (row) => row.count) }))
 			.sort((a, b) => b.count - a.count),
 		methods: methods.map((row) => ({ method: row.method, calls: row.calls, p50: row.p50, p95: row.p95 })),
 		coverage: {

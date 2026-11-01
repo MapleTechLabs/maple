@@ -109,11 +109,24 @@ export function mcpServicesQuery() {
 			// The hour holding the window's start counts.
 			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
 			$.Hour.lte(utcSecondsParam("endTime")),
-			$.SpanName.like("tools/call %"),
+			$.SpanName.like("tools/call %").or($.SpanName.eq("tools/call")),
 		])
 		.groupBy("service")
 		.orderBy(["serverSpans", "desc"])
 		.limit(100)
+		.format("JSON")
+}
+
+/** The hour of one service's first MCP tool call on record, from the hourly operations rollup. */
+export function mcpFirstSeenQuery() {
+	return from(ServiceOperationsHourly)
+		.select(($) => ({ firstHour: CH.min_($.Hour) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.ServiceName.eq(param.string("serviceName")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+			$.SpanName.like("tools/call %").or($.SpanName.eq("tools/call")),
+		])
 		.format("JSON")
 }
 
@@ -225,6 +238,7 @@ export function mcpCallTotalsQuery(filter: McpCallFilter = {}) {
 			errors: CH.countIf(failed($)),
 			statusErrors: CH.countIf($.StatusCode.eq("Error")),
 			...percentiles($),
+			tools: CH.uniqExact(toolName($)),
 			firstCall: CH.min_($.Timestamp),
 			lastCall: CH.max_($.Timestamp),
 		}))
@@ -261,7 +275,7 @@ export function mcpCallSplitSeriesQuery(split: "tool" | "client", filter: McpCal
 		.format("JSON")
 }
 
-/** The tools table: per tool, calls, failures, percentiles, one error type it failed with, last call. */
+/** The tools table: per tool, calls, failures, percentiles and last call. */
 export function mcpToolStatsQuery(filter: McpCallFilter = {}) {
 	return from(Traces)
 		.select(($) => ({
@@ -269,13 +283,23 @@ export function mcpToolStatsQuery(filter: McpCallFilter = {}) {
 			calls: CH.count(),
 			errors: CH.countIf(failed($)),
 			...percentiles($),
-			topError: CH.anyIf(errorType($), failed($)),
 			lastCall: CH.max_($.Timestamp),
 		}))
 		.where(($) => calls($, filter))
 		.groupBy("tool")
 		.orderBy(["calls", "desc"])
 		.limit(500)
+		.format("JSON")
+}
+
+/** Failed calls per (tool, error type) under the selection: each tool's top error and the failure kinds. */
+export function mcpToolErrorsQuery(filter: McpCallFilter = {}) {
+	return from(Traces)
+		.select(($) => ({ tool: toolName($), errorType: errorType($), count: CH.count() }))
+		.where(($) => [...calls($, filter), failed($)])
+		.groupBy("tool", "errorType")
+		.orderBy(["count", "desc"])
+		.limit(5_000)
 		.format("JSON")
 }
 
