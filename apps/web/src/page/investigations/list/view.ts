@@ -30,7 +30,7 @@ import { truncatedText } from "../../../ui/truncated-text"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarCount, toolbarStat } from "../../kit/list-toolbar"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import { docsLink, filteredEmpty } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { severityBadge } from "../../errors/kit/severity"
@@ -270,11 +270,10 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 						[severityBadge(h, investigationSeverity(investigation))],
 					),
 					h.span([h.Class("w-24 shrink-0 max-lg:hidden")], [statusBadge(h, investigation.status)]),
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: investigation.updated_at,
 						nowMs,
 						timeZone,
-						tooltip: "title",
 						className: "w-13 shrink-0 text-right text-xs text-muted-foreground",
 					}),
 				],

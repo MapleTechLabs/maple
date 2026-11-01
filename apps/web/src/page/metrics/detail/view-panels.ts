@@ -18,7 +18,7 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
 import { metricTypeBadge } from "../shared"
-import { formatSeen } from "../time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import {
 	breakdownAggregation,
 	breakdownGroupBy,
@@ -247,8 +247,12 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 		),
 		keyValueList(h, { className: "gap-2" }, [
 			keyValue(h, { label: "Datapoints in range", mono: true }, [formatNumber(summary.dataPointCount)]),
-			keyValue(h, { label: "First seen", mono: true }, [formatSeen(summary.firstSeen, timeZone)]),
-			keyValue(h, { label: "Last seen", mono: true }, [formatSeen(summary.lastSeen, timeZone)]),
+			keyValue(h, { label: "First seen", mono: true }, [
+				formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
+			]),
+			keyValue(h, { label: "Last seen", mono: true }, [
+				formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
+			]),
 		]),
 		...(summary.services.length === 0
 			? []

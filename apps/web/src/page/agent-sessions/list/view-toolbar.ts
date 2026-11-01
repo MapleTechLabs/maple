@@ -1,3 +1,4 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -27,11 +28,11 @@ const toolbarSearch = (h: H, model: Model): Html =>
 		onClear: Message.ChangedSearchInput({ value: "" }),
 	})
 
-/** `ToolbarStat`: "6 of 1,666" when the total is known and larger, else "6 shown". */
+/** `ToolbarStat`: "6 of 1.7K" when the total is known and larger, else "6 shown". */
 const stat = (h: H, value: number, total: number | undefined): Html =>
 	toolbarStat(h, {
-		value: value.toLocaleString(),
-		label: total !== undefined && total > value ? `of ${total.toLocaleString()}` : "shown",
+		value: formatNumber(value),
+		label: total !== undefined && total > value ? `of ${formatNumber(total)}` : "shown",
 	})
 
 const tooltipTrigger = <M>(h: HtmlBuilder<M>, id: string) => [

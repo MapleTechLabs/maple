@@ -1,6 +1,6 @@
 import type { CodeReviewDetail, PrReviewPostMerge, PrReviewTelemetry } from "@maple/domain/http"
-import { formatCount, outcomeOf } from "../../../components/code-review/code-review-format"
-import { countLabel, formatDuration, formatErrorRate } from "@maple/ui/lib/format"
+import { outcomeOf } from "../../../components/code-review/code-review-format"
+import { countLabel, formatDuration, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -62,7 +62,7 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 							h,
 							telemetry.linkedIssues.map(
 								(issue) =>
-									`Open error in ${issue.path}: ${issue.title} (${formatCount(issue.occurrences)} occurrences)`,
+									`Open error in ${issue.path}: ${issue.title} (${formatNumber(issue.occurrences)} occurrences)`,
 							),
 						),
 					]),
@@ -75,7 +75,7 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 								.slice(0, 5)
 								.map(
 									(file) =>
-										`${file.path}: ${formatCount(file.perDay)} calls/day (${file.operations[0]?.spanName ?? ""})`,
+										`${file.path}: ${formatNumber(file.perDay)} calls/day (${file.operations[0]?.spanName ?? ""})`,
 								),
 						),
 					]),

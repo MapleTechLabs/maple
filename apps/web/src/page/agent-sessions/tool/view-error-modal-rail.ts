@@ -1,8 +1,8 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import { unwrapToolErrorText, type VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
 import { sessionRowId } from "@maple/agent-sessions"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
-import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -61,7 +61,7 @@ const variantsSection = (
 					h.span([h.Class(RAIL_TITLE)], ["Variants"]),
 					h.span(
 						[h.Class("font-mono text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
-						[formatToolCount(total), " raw messages"],
+						[formatNumber(total), " raw messages"],
 					),
 				],
 			),
@@ -99,7 +99,7 @@ const variantsSection = (
 						}),
 						h.span(
 							[h.Class("w-7 shrink-0 text-right tabular-nums text-foreground")],
-							[formatToolCount(row.calls)],
+							[formatNumber(row.calls)],
 						),
 					],
 				)
@@ -207,7 +207,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 					h.span([h.Class(RAIL_TITLE)], ["Sessions"]),
 					h.span(
 						[h.Class("font-mono text-2xs leading-3.5 tabular-nums text-foreground-subtle")],
-						[formatToolCount(group.sessions)],
+						[formatNumber(group.sessions)],
 					),
 				],
 			),
@@ -235,7 +235,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 					h.span([h.Class("grow font-mono text-xs font-medium text-foreground")], ["All sessions"]),
 					h.span(
 						[h.Class("w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
-						[formatToolCount(group.calls)],
+						[formatNumber(group.calls)],
 					),
 					relativeTime(h, {
 						value: group.lastSeen,
@@ -305,7 +305,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 											"w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground",
 										),
 									],
-									[formatToolCount(row.hits)],
+									[formatNumber(row.hits)],
 								),
 								relativeTime(h, {
 									value: row.lastSeen,
@@ -325,9 +325,9 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 						[h.Class("text-muted-foreground")],
 						[
 							"Showing ",
-							formatToolCount(detail.sessions.length),
+							formatNumber(detail.sessions.length),
 							" of ",
-							formatToolCount(group.sessions),
+							formatNumber(group.sessions),
 						],
 					),
 					h.span([h.Class("text-foreground-subtle")], ["by hits"]),
@@ -421,7 +421,7 @@ const breakdown = (
 									),
 								),
 							],
-							[formatToolCount(calls)],
+							[formatNumber(calls)],
 						),
 					],
 				),

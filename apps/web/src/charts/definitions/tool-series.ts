@@ -8,6 +8,7 @@ import { type ChartValue, d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
+import { formatExactCount } from "../../page/kit/locale"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
@@ -16,6 +17,7 @@ import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 // card on the cursor plot's focus store; it follows the pointer.
 
 type ToolSeriesSpec = Extract<ChartSpec, { readonly _tag: "ToolSeries" }>
+type ToolSeriesFormat = ToolSeriesSpec["format"]
 type Row = ToolSeriesSpec["rows"][number]
 
 /** A series at a bucket: one vertex of a line. */
@@ -37,8 +39,8 @@ const valueAt = (row: Row, key: string): number | null => {
 }
 
 /** The overview formats in the metric's unit; the detail grid's cells each name their formatter. */
-const formatOf = (spec: ToolSeriesSpec): ((value: number) => string) => {
-	switch (spec.format) {
+const formatOf = (format: ToolSeriesFormat): ((value: number) => string) => {
+	switch (format) {
 		case "number":
 			return formatNumber
 		case "errorRate":
@@ -48,11 +50,17 @@ const formatOf = (spec: ToolSeriesSpec): ((value: number) => string) => {
 		case "oneDecimal":
 			return (value) => value.toFixed(1)
 		default: {
-			const metric = spec.format
+			const metric = format
 			return (value) => formatToolMetric(value, metric)
 		}
 	}
 }
+
+/** Tooltips read whole counts exactly; a fractional value (an average) keeps its decimals. */
+export const tooltipFormatOf = (format: ToolSeriesFormat): ((value: number) => string) =>
+	format === "number" || format === "calls" || format === "sessions"
+		? (value) => (Number.isInteger(value) ? formatExactCount(value) : formatOf(format)(value))
+		: formatOf(format)
 
 const bucketOf = (row: Row): string => {
 	const value = row["bucket"]
@@ -97,7 +105,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 							size: 0,
 							padding: 8,
 							count: spec.tickCount ?? undefined,
-							format: (value: number) => (value === 0 ? "0" : formatOf(spec)(value)),
+							format: (value: number) => (value === 0 ? "0" : formatOf(spec.format)(value)),
 						},
 					},
 				},
@@ -122,7 +130,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 										label: entry.label,
 										color: entry.color,
 										dashed: false,
-										value: formatOf(spec)(value),
+										value: tooltipFormatOf(spec.format)(value),
 									},
 								]
 					}),
