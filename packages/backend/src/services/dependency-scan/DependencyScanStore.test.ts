@@ -208,10 +208,17 @@ describe("DependencyScanStore findings lifecycle", () => {
 					match("x/net", { ecosystem: "Go", advisoryId: "GO-2026-1", aliases: ["CVE-2026-1"] }),
 					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-bbbb", aliases: ["CVE-2026-1"] }),
 				])
-				yield* scan(store, "b", [
+				const second = yield* scan(store, "b", [
 					match("x/net", { ecosystem: "Go", advisoryId: "GO-2026-1", aliases: ["CVE-2026-1"] }),
 					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-bbbb", aliases: ["CVE-2026-1"] }),
 				])
+				// Each match keeps its own id: renaming one onto the other would collapse them into one row.
+				assert.deepStrictEqual(
+					(yield* store.scanMatches({ orgId: orgA, scanId: second.id }))
+						.map((row) => row.advisoryId)
+						.sort(),
+					["GHSA-bbbb", "GO-2026-1"],
+				)
 				assert.deepStrictEqual(
 					(yield* findings(store)).map((row) => [row.advisoryId, row.status]).sort(),
 					[
