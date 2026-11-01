@@ -1,6 +1,6 @@
 import { DateTime } from "effect"
 import { describe, expect, it } from "vitest"
-import { clientItems } from "./mcp-reads"
+import { clientItems, quietClientsFor } from "./mcp-reads"
 
 const seen = (client: string, kind: string, connects: number, sources: number, calls = 0) => ({
 	client,
@@ -47,6 +47,11 @@ describe("clientItems", () => {
 		expect(items.map((item) => item.name)).not.toContain("Cursor")
 	})
 
+	it("never lists a client that only listed tools as connected", () => {
+		const items = clientItems(calls, reach, [seen("probe", "unknown", 0, 1)])
+		expect(items.map((item) => item.name)).not.toContain("probe")
+	})
+
 	it("reads an unrecognised kind as unknown and a client without reach as unseen", () => {
 		expect(clientItems([{ client: "mystery", kind: "robot", calls: 1, errors: 0 }])[0]).toMatchObject({
 			kind: "unknown",
@@ -54,5 +59,23 @@ describe("clientItems", () => {
 			sources: 0,
 			lastSeenMs: 0,
 		})
+	})
+})
+
+describe("quietClientsFor", () => {
+	const names = (rows: ReadonlyArray<{ client: string }>) => rows.map((row) => row.client)
+
+	it("keeps every reach row with no selection", () => {
+		expect(names(quietClientsFor(reach, {}))).toEqual(["Claude Code", "curl", "executor"])
+	})
+
+	it("narrows to the selected client and kind", () => {
+		expect(names(quietClientsFor(reach, { kind: "internal" }))).toEqual(["executor"])
+		expect(names(quietClientsFor(reach, { client: "curl" }))).toEqual(["curl"])
+	})
+
+	it("drops them all under a tool search or failing-only, which only tool calls match", () => {
+		expect(quietClientsFor(reach, { search: "sql" })).toEqual([])
+		expect(quietClientsFor(reach, { failingOnly: true })).toEqual([])
 	})
 })

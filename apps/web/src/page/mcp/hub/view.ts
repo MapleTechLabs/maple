@@ -286,6 +286,9 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 					service,
 					window: window.label.replace(/^Last /, "last "),
 					hasOtherSpans: response.methods.length > 0,
+					connected: response.clients
+						.filter((client) => client.connects > 0)
+						.map((client) => client.name),
 					widen: Option.match(Option.fromUndefinedOr(widerPreset(model.window)), {
 						onNone: () => undefined,
 						onSome: (preset) => ({

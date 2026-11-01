@@ -114,6 +114,10 @@ export const serverError = <M>(
 		],
 	)
 
+/** `executor`, `executor and Claude`, `executor, Claude and 2 more`. */
+const connectedText = (names: ReadonlyArray<string>): string =>
+	names.length <= 2 ? names.join(" and ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
+
 /** The server answered nothing in the window; `lastCall` when the page knows when it last did. */
 export const quietWindow = <M>(
 	h: HtmlBuilder<M>,
@@ -123,6 +127,8 @@ export const quietWindow = <M>(
 		lastCall?: string
 		/** The server sent other MCP spans (initialize, tools/list) in the window, just no tool call. */
 		hasOtherSpans?: boolean
+		/** Clients that connected in the window without calling a tool, most connects first. */
+		connected?: ReadonlyArray<string>
 		/** Absent at the widest window the page offers. */
 		widen?: Readonly<{ onWiden: M; label: string }>
 	}>,
@@ -137,9 +143,11 @@ export const quietWindow = <M>(
 					emptyDescription(h, [
 						options.lastCall !== undefined
 							? `${options.service} last answered a tool call ${options.lastCall}.`
-							: options.hasOtherSpans === true
-								? `${options.service} answered MCP requests but no tool call in this window.`
-								: `No MCP server span from ${options.service} in this window.`,
+							: options.connected !== undefined && options.connected.length > 0
+								? `${connectedText(options.connected)} connected to ${options.service} but called no tool in this window.`
+								: options.hasOtherSpans === true
+									? `${options.service} answered MCP requests but no tool call in this window.`
+									: `No MCP server span from ${options.service} in this window.`,
 					]),
 				]),
 				...(options.widen === undefined

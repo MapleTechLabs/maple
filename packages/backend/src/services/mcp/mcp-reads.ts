@@ -113,9 +113,25 @@ type ClientReach = Readonly<{
 const kindOf = (value: string) => MCP_CLIENT_KINDS.find((kind) => kind === value) ?? "unknown"
 
 /**
+ * The reach rows the overview may list as connect-only: under the client and kind selection, and
+ * none under a tool search or failing-only, which tool calls alone can match.
+ */
+export const quietClientsFor = (
+	reach: ReadonlyArray<ClientReach>,
+	selection: Readonly<{ client?: string; kind?: string; search?: string; failingOnly?: boolean }>,
+): ReadonlyArray<ClientReach> =>
+	selection.search !== undefined || selection.failingOnly === true
+		? []
+		: reach.filter(
+				(row) =>
+					(selection.client === undefined || row.client === selection.client) &&
+					(selection.kind === undefined || row.kind === selection.kind),
+			)
+
+/**
  * Tool-call clients with their reach. `quiet` also lists the clients that connected but called
- * no tool, after the callers; only a selection that tool calls alone can match leaves them out.
- * A quiet row is one with no tool call at all, so a caller past the calls read's limit stays out.
+ * no tool, after the callers. A quiet row made no tool call and at least one connect, so a caller
+ * past the calls read's limit, or a client that only listed tools, stays out.
  */
 export const clientItems = (
 	rows: ReadonlyArray<Readonly<{ client: string; kind: string; calls: number; errors: number }>>,
@@ -138,7 +154,7 @@ export const clientItems = (
 			}
 		}),
 		...quiet
-			.filter((row) => row.calls === 0 && !callers.has(row.client))
+			.filter((row) => row.calls === 0 && row.connects > 0 && !callers.has(row.client))
 			.map((row) => ({
 				name: row.client,
 				kind: kindOf(row.kind),
@@ -311,14 +327,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		{ concurrency: MCP_READ_CONCURRENCY },
 	)
 	// A tool search or failing-only selection matches tool calls alone, so it hides quiet clients.
-	const quiet =
-		payload.search === undefined && payload.failingOnly !== true
-			? reach.filter(
-					(row) =>
-						(payload.client === undefined || row.client === payload.client) &&
-						(payload.kind === undefined || row.kind === payload.kind),
-				)
-			: []
+	const quiet = quietClientsFor(reach, payload)
 	const buckets = bucketsOf(window)
 	const sparks = Arr.groupBy(toolSeries, (row) => row.key)
 	const calls = summary.filter((row) => row.method === TOOLS_CALL)
