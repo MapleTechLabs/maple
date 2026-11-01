@@ -89,6 +89,46 @@ const scan = (
 const findings = (store: DependencyScanStoreApi, orgId: OrgId = orgA) =>
 	store.listFindings({ orgId, repositoryId: repo, limit: 100 })
 
+describe("DependencyScanStore bulk reads", () => {
+	it.effect("reads each repository's newest head scan, scans at commits and their matches", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const first = yield* scan(store, "a", [match("lodash")])
+				yield* TestClock.adjust("1 second")
+				const second = yield* scan(store, "b", [match("minimist")])
+				yield* TestClock.adjust("1 second")
+				yield* scan(store, "c", [match("axios")], { trigger: "production" })
+				assert.deepStrictEqual(
+					(yield* store.latestBranchScans({ orgId: orgA })).map((row) => row.id),
+					[second.id],
+				)
+				assert.deepStrictEqual(
+					(yield* store.scansAtCommits({
+						orgId: orgA,
+						repositoryIds: [repo],
+						commitShas: [sha("a"), sha("c")],
+					}))
+						.map((row) => row.commitSha)
+						.sort(),
+					[sha("a"), sha("c")],
+				)
+				assert.deepStrictEqual(
+					(yield* store.matchesOfScans({ orgId: orgA, scanIds: [first.id, second.id] }))
+						.map((row) => row.packageName)
+						.sort(),
+					["lodash", "minimist"],
+				)
+				assert.deepStrictEqual(yield* store.matchesOfScans({ orgId: orgA, scanIds: [] }), [])
+				assert.deepStrictEqual(
+					yield* store.scansAtCommits({ orgId: orgA, repositoryIds: [], commitShas: [] }),
+					[],
+				)
+				assert.deepStrictEqual(yield* store.latestBranchScans({ orgId: orgB }), [])
+			}),
+		),
+	)
+})
+
 describe("DependencyScanStore findings lifecycle", () => {
 	it.effect("keeps a finding's id and triage when OSV later links its advisory to a new record", () =>
 		withStore((store) =>
@@ -148,6 +188,28 @@ describe("DependencyScanStore findings lifecycle", () => {
 				assert.deepStrictEqual(
 					(yield* findings(store)).map((row) => [row.packageName, row.status]),
 					[["lodash", "open"]],
+				)
+			}),
+		),
+	)
+
+	it.effect("keeps a match on the finding with its exact id when another finding shares an alias", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				yield* scan(store, "a", [
+					match("x/net", { ecosystem: "Go", advisoryId: "GO-2026-1", aliases: ["CVE-2026-1"] }),
+					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-bbbb", aliases: ["CVE-2026-1"] }),
+				])
+				yield* scan(store, "b", [
+					match("x/net", { ecosystem: "Go", advisoryId: "GO-2026-1", aliases: ["CVE-2026-1"] }),
+					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-bbbb", aliases: ["CVE-2026-1"] }),
+				])
+				assert.deepStrictEqual(
+					(yield* findings(store)).map((row) => [row.advisoryId, row.status]).sort(),
+					[
+						["GHSA-bbbb", "open"],
+						["GO-2026-1", "open"],
+					],
 				)
 			}),
 		),

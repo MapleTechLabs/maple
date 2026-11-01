@@ -223,13 +223,18 @@ const keepKnownAdvisoryId = (
 	>,
 ): DependencyScanMatchInput => {
 	const names = new Set([match.advisoryId, ...match.aliases])
-	const same = known.find(
+	const samePackage = known.filter(
 		(finding) =>
 			finding.lockfilePath === match.lockfilePath &&
 			finding.ecosystem === match.ecosystem &&
-			finding.packageName === match.packageName &&
-			[finding.advisoryId, ...finding.aliases].some((name) => names.has(name)),
+			finding.packageName === match.packageName,
 	)
+	// An exact id wins; an alias overlap only renames a match no finding tracks by its own id.
+	const same =
+		samePackage.find((finding) => finding.advisoryId === match.advisoryId) ??
+		samePackage.find((finding) =>
+			[finding.advisoryId, ...finding.aliases].some((name) => names.has(name)),
+		)
 	if (same === undefined || same.advisoryId === match.advisoryId) return match
 	return {
 		...match,
