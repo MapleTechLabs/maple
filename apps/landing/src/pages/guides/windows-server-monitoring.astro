@@ -38,11 +38,11 @@ const sectionNav = toc.filter((h) => h.depth === 2);
 // that collects it in the config, and the alert that watches it.
 const signals = [
     {
-        id: "services",
-        name: "Services",
-        color: "oklch(0.8 0.14 95)",
-        why: "A stopped IIS or SQL Server service is an outage, even while CPU and memory look fine.",
-        alert: "A service you depend on is not running for 5 minutes",
+        id: "memory",
+        name: "Memory",
+        color: "var(--chart-5)",
+        why: "When memory runs out, Windows moves pages to disk and every request slows down.",
+        alert: "Above 90% for 15 minutes",
     },
     {
         id: "disk",
@@ -59,11 +59,11 @@ const signals = [
         alert: "Above 90% for 15 minutes",
     },
     {
-        id: "memory",
-        name: "Memory",
-        color: "var(--chart-5)",
-        why: "When memory runs out, Windows moves pages to disk and every request slows down.",
-        alert: "Above 90% for 15 minutes",
+        id: "services",
+        name: "Services",
+        color: "oklch(0.8 0.14 95)",
+        why: "A stopped IIS or SQL Server service is an outage, even while CPU and memory look fine.",
+        alert: "A service you depend on is not running for 5 minutes",
     },
     {
         id: "events",
@@ -97,7 +97,7 @@ const configHtml = highlight(collectorConfig.trimEnd(), "yaml").replace(/<span c
     return id ? `<span class="tok-name" style="--type: ${color[id]}">${key}</span>:` : match;
 });
 
-const tools: { group: string; rows: { name: string; href: string; goodFor: string; alerts: string; cost: string }[] }[] = [
+const tools: { group: string; rows: { name: string; href: string; goodFor: string; alerts: string; cost: string; compare?: string }[] }[] = [
     {
         group: "Built into Windows",
         rows: [
@@ -166,6 +166,7 @@ const tools: { group: string; rows: { name: string; href: string; goodFor: strin
                 goodFor: "Hosted metrics, logs and APM with a Windows agent",
                 alerts: "Built in",
                 cost: "Free for 5 hosts with 1-day retention. Pro from $15/host/month, billed annually.",
+                compare: "/compare/datadog",
             },
         ],
     },
@@ -365,7 +366,7 @@ const articleJsonLd = {
                                             <td class="guide-table__key"><a href={t.href} target="_blank" rel="noopener noreferrer">{t.name}</a></td>
                                             <td data-label="Good for">{t.goodFor}</td>
                                             <td data-label="Alerts">{t.alerts}</td>
-                                            <td data-label="Cost">{t.cost}</td>
+                                            <td data-label="Cost">{t.cost}{t.compare && <> <a href={t.compare}>How Datadog pricing compares</a></>}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -443,7 +444,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>05</span> · Alerts</p>
                     <h2>Alerts to set up first</h2>
                     <p>
-                        Start with the failures that take an app down. Each rule below covers every server that runs the Collector, so ten servers need the same rules as one. In Maple, rules live under <strong>Alerts</strong> and need a notification destination such as Slack or email. Set <strong>Minimum samples</strong> to 1 on each: the default of 50 is sized for request traffic, and a Windows server sends far fewer data points.
+                        Start with the failures that take an app down. The steps below use Maple as the example backend; any tool that receives the same OpenTelemetry data can alert on it the same way, with a threshold on the same metric or log query. Each rule covers every server that runs the Collector, so ten servers need the same rules as one. In Maple, rules live under <strong>Alerts</strong> and need a notification destination such as Slack or email. Set <strong>Minimum samples</strong> to 1 on each: the default of 50 is sized for request traffic, and a Windows server sends far fewer data points.
                     </p>
 
                     <ol class="guide-steps">
