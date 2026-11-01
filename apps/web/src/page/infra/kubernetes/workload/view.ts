@@ -112,7 +112,7 @@ const podsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 		onData: (page) =>
 			page.data.length === 0
 				? emptyMessage(h, { dashed: true, className: "py-12" }, [
-						"No pods reporting for this workload in the selected window.",
+						"No pods reporting for this workload in this window",
 					])
 				: podTable(h, page.data, {
 						sortBy: "saturation",

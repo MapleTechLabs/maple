@@ -47,7 +47,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 		onData: (rows) =>
 			rows.length === 0
 				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
-						"No datapoints match this query in the selected range.",
+						"No datapoints match this query in this window",
 					])
 				: model.themeColors === null || !isChartRuntimeReady(model.chartRuntime)
 					? chartSkeleton(h, "area")
@@ -114,7 +114,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 			errorState(h, { failure, title: "Couldn't load breakdown", variant: "inline" }),
 		onData: (rows) => {
 			if (rows.length === 0)
-				return emptyMessage(h, {}, ["No values for this attribute in the selected range."])
+				return emptyMessage(h, {}, ["No values for this attribute in this window"])
 			const max = Math.max(...rows.map((row) => row.value), 1)
 			return h.div(
 				[h.Class("space-y-1")],

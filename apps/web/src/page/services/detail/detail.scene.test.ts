@@ -679,7 +679,7 @@ describe("the API tab's endpoint drawer", () => {
 			themeResolved(),
 			expectView(text("/a")).toExist(),
 			click(role("button", { name: "Rejecting > 5%" })),
-			expectView(text("No endpoint matches this filter.")).toExist(),
+			expectView(text("No endpoint matches this filter")).toExist(),
 		)
 	})
 })

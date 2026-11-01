@@ -117,7 +117,7 @@ const emptyStrip = (
 		[
 			h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
 			h.Class("flex w-full select-none pt-1 text-muted-foreground"),
-			h.AriaLabel("Log volume by severity, no logs in the selected range"),
+			h.AriaLabel("Log volume by severity, no logs in this window"),
 		],
 		[
 			h.div(
@@ -213,7 +213,7 @@ const header = (h: HtmlBuilder<Message>, total: number): Html =>
 		[h.Class("mb-1 flex items-baseline gap-2")],
 		[
 			h.span([h.Class("text-sm font-medium")], [formatNumber(total), " logs"]),
-			h.span([h.Class("text-xs text-muted-foreground")], ["in selected range"]),
+			h.span([h.Class("text-xs text-muted-foreground")], ["in this window"]),
 		],
 	)
 

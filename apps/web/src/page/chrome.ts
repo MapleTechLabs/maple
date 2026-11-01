@@ -3,10 +3,9 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
-import { linkButton } from "../ui/button"
-import { icon } from "../ui/icon"
 import { skeleton, skeletonList } from "../ui/skeleton"
 import { dashboardPage, pageBody } from "./kit/dashboard-page"
+import { resourceNotFound } from "./kit/resource-not-found"
 import { resolveLegacySettingsTab } from "./settings/nav"
 
 /**
@@ -55,35 +54,12 @@ export const placeholderContent = <Message>(h: HtmlBuilder<Message>): Html =>
 		),
 	])
 
-/** An unknown path inside the shell: a dashed card at the top under a title, like a missing log. */
+/** An unknown path inside the shell: the kit's not-found card under the page title. */
 export const notFoundContent = <Message>(h: HtmlBuilder<Message>): Html =>
 	dashboardPage(h, { title: "Page not found", gap: "sm" }, [
-		h.div(
-			[
-				h.Role("status"),
-				h.Class(
-					"flex flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
-				),
-			],
-			[
-				h.div(
-					[h.AriaHidden(true), h.Class("rounded-md border bg-surface-faint p-2.5 text-muted-foreground")],
-					[icon(h, "CircleWarningIcon", { size: 18 })],
-				),
-				h.div(
-					[h.Class("max-w-md space-y-1")],
-					[
-						h.h2(
-							[h.Class("font-prose text-sm font-medium text-foreground")],
-							["The link may be out of date"],
-						),
-						h.p(
-							[h.Class("font-prose text-ui text-balance text-muted-foreground")],
-							["This page moved or never existed. Search with ⌘K, or start from Overview."],
-						),
-					],
-				),
-				linkButton(h, { variant: "outline", size: "sm", href: "/" }, ["Back to Overview"]),
-			],
-		),
+		resourceNotFound(h, {
+			title: "The link may be out of date",
+			description: "This page moved or never existed. Search with ⌘K, or start from Overview.",
+			back: { href: "/", label: "Back to Overview" },
+		}),
 	])

@@ -202,7 +202,7 @@ export const mcpPlot = <M>(
 				className: "px-0 pt-0",
 			}),
 			options.rows.length === 0
-				? chartEmpty(h, { height: options.height }, ["No calls in the selected window."])
+				? chartEmpty(h, { height: options.height }, ["No calls in this window"])
 				: h.submodel({
 						slotId: options.chartId,
 						model: Option.getOrElse(Record.get(env.charts, options.chartId), () => Chart.init()),

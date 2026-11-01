@@ -110,7 +110,7 @@ const unitsBody = (
 		onData: (response) => {
 			const shown = rows(response.units)
 			return shown.length === 0
-				? emptyMessage(h, {}, ["No units in this status."])
+				? emptyMessage(h, {}, ["No units in this status"])
 				: table(h, { variant: "bare", ariaLabel: "Coverage units" }, [
 						tableHeader(h, [
 							tableRow(h, [
@@ -299,10 +299,10 @@ export const eventsPanel = (
 						shown.length === 0
 							? emptyMessage(h, {}, [
 									events.length === 0
-										? "No events yet."
+										? "No events yet"
 										: model.eventFilter === "problems"
-											? "No problems in the events read so far."
-											: "No events about leads read so far.",
+											? "No problems in the events read so far"
+											: "No events about leads read so far",
 								])
 							: h.ol(
 									[h.Class("divide-y")],

@@ -145,7 +145,7 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 			searchToolbar(h, {
 				id: "aws-search",
 				value: model.search.q ?? "",
-				placeholder: `Filter ${pluralize(2, noun)}`,
+				placeholder: `Filter ${pluralize(2, noun)}…`,
 				onInput: (value) => Message.ChangedSearch({ value }),
 				onClear: Message.ClickedClearSearch(),
 				children: regionButtons(h, model, regionsOf(views)),

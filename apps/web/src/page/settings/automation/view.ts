@@ -426,7 +426,7 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 					}),
 				onData: (response) =>
 					response.attempts.length === 0
-						? emptyMessage(h, {}, ["No escalation attempts have been recorded."])
+						? emptyMessage(h, {}, ["No escalation attempts have been recorded"])
 						: h.div(
 								[],
 								response.attempts.map((attempt) =>

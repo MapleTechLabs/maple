@@ -93,7 +93,7 @@ export const servicesList = (
 	if (services.length === 0) {
 		return integrationNotConnected(h, {
 			icon: icon(h, "RailwayIcon", { size: 16 }),
-			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this time range",
+			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this window",
 			description: syncing
 				? "Some environments haven't finished their first sync. This page updates on its own as they land."
 				: "Services that ran in this window show up here. Try a wider time range, or check the connection for errors.",

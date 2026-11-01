@@ -221,7 +221,7 @@ const content = (
 						sort: sortOf(model),
 						isWaiting: AsyncData.isRefreshing(statsData) || AsyncData.isLoading(statsData),
 						metricsPaused: never,
-						emptyMessage: "No databases in the inventory.",
+						emptyMessage: "No databases in the inventory",
 					}),
 		],
 	)

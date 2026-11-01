@@ -189,7 +189,7 @@ const operationsTable = (
 							tableRow(h, [
 								tableCell(
 									h,
-									[emptyMessage(h, {}, ["No operations recorded in this window."])],
+									[emptyMessage(h, {}, ["No operations recorded in this window"])],
 									"whitespace-normal p-0",
 									[h.Attribute("colspan", "6")],
 								),

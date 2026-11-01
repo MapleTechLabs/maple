@@ -171,7 +171,7 @@ export const setupEmpty = <M>(
 /** `NoMetricsMessage`. */
 export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
 	emptyMessage(h, { dashed: true, className: "py-12" }, [
-		`No metrics arrived for this ${noun} in the selected window.`,
+		`No metrics arrived for this ${noun} in this window`,
 	])
 
 /** `countLabel`: "Top 50 of 541 pods" for a slice, "541 pods" for the whole list. */

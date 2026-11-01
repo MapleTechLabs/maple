@@ -14,7 +14,7 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { PageViewInputs } from "../../contract"
-import { nothingInWindow } from "../../kit/nothing-in-window"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
@@ -500,14 +500,24 @@ const content = (h: H, model: Model): Html =>
 		onData: (team) => {
 			if (team.members.length > 0) return teamView(h, model, team)
 			if (model.search.repo === undefined && team.totals.runnerMs === 0) return noTeamData(h)
-			return nothingInWindow(h, {
-				title: "Nobody in this window",
-				description:
-					model.search.repo === undefined
-						? "No pull request was reviewed and no CI run finished in this window. Widen the window."
-						: "Nothing matches this repository. Widen the window or clear the filter.",
-				onClear: model.search.repo === undefined ? undefined : Message.ClickedClearFilters(),
-			})
+			const filtered = model.search.repo !== undefined
+			if (filtered)
+				return filteredEmpty(h, {
+					noun: "team members",
+					description: "Widen the window or clear the filter.",
+					onClear: Message.ClickedClearFilters(),
+					className: "rounded-md border border-dashed md:py-14",
+				})
+			return empty(
+				h,
+				[
+					emptyHeader(h, [
+						emptyTitle(h, ["Nobody in this window"]),
+						emptyDescription(h, ["No pull request was reviewed and no CI run finished in this window. Widen the window."]),
+					]),
+				],
+				"rounded-md border border-dashed md:py-14",
+			)
 		},
 	})
 

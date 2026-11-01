@@ -98,7 +98,7 @@ export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean
 const issuesReady = (h: H, issues: ReadonlyArray<Issue>, clock: Clock, isLimited: boolean): Html =>
 	issuesFrame(h, isLimited, [
 		issues.length === 0
-			? emptyMessage(h, {}, ["No open issues for this service."])
+			? emptyMessage(h, {}, ["No open issues for this service"])
 			: h.div(
 					[h.Class("space-y-px p-2")],
 					issues.map((issue) => issueLine(h, issue, clock)),

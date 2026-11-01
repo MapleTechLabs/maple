@@ -58,7 +58,7 @@ const peekSummary = (h: H, model: Model, pod: PodRow): Html => {
 			errorState(h, { failure, title: "Couldn't load pod metrics", onRetry: Message.ClickedRetrySummary() }),
 		onData: (summary) =>
 			summary === null || summary === undefined
-				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window."])
+				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window"])
 				: statRail(h, { className: refreshingClass(AsyncData.isRefreshing(data)) }, [
 						compactItem(h, "CPU vs limit", summary.cpuLimitPct, true),
 						compactItem(h, "CPU vs request", summary.cpuRequestPct, false),

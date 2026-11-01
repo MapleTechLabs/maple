@@ -250,6 +250,6 @@ export const podTable = <M>(
 		{ ariaLabel: "Pods", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }, inputs.onSort),
 		pods.length === 0
-			? [dataTableEmpty(h, ["No pods match your filter."])]
+			? [dataTableEmpty(h, ["No pods match these filters"])]
 			: pods.map((pod) => podRow(h, pod, inputs)),
 	)

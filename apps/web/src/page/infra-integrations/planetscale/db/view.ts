@@ -206,7 +206,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: true,
-								emptyMessage: "No branches match these filters.",
+								emptyMessage: "No branches match these filters",
 							}),
 						onSuccess: () =>
 							breakdownPanel(h, {
@@ -215,7 +215,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: false,
-								emptyMessage: "No branches match these filters.",
+								emptyMessage: "No branches match these filters",
 							}),
 					}),
 				],

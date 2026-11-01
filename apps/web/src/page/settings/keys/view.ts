@@ -151,7 +151,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 				value: model.search,
 				onInput: (value) => Message.ChangedSearch({ value }),
 				onClear: Message.ClickedClearSearch(),
-				placeholder: "Search keys",
+				placeholder: "Search keys…",
 				className: "w-64",
 			}),
 		],

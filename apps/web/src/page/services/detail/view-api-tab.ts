@@ -395,7 +395,7 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 							),
 						)
 					: summaries.length === 0
-						? emptyMessage(h, {}, ["Every response in this window was below 400."])
+						? emptyMessage(h, {}, ["Every response in this window was below 400"])
 						: h.div(
 								[h.Class("flex flex-col gap-3")],
 								summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
@@ -562,7 +562,7 @@ const endpointsTable = (
 											h.Attribute("colspan", String(COLUMN_COUNT)),
 											h.Class("py-8 text-center text-xs text-muted-foreground"),
 										],
-										["No endpoint matches this filter."],
+										["No endpoint matches this filter"],
 									),
 								],
 								"hover:bg-transparent active:bg-transparent",

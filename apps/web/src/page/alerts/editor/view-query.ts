@@ -180,7 +180,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						chipsPicker(h, model, "rule-services", form.serviceNames, {
 							items: facets.services,
 							placeholder: hasServices ? "Add service…" : "All services",
-							emptyText: "No services found.",
+							emptyText: "No services found",
 						}),
 					),
 					builtinRow(
@@ -192,7 +192,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 							items: facets.environments,
 							placeholder:
 								form.environments.length === 0 ? "All environments" : "Add environment…",
-							emptyText: "No environments found.",
+							emptyText: "No environments found",
 						}),
 					),
 					builtinRow(
@@ -203,7 +203,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						chipsPicker(h, model, "rule-group-by", form.groupBy, {
 							items: groupByItems(model),
 							placeholder: form.groupBy.length === 0 ? "service.name" : "",
-							emptyText: "No fields found.",
+							emptyText: "No fields found",
 							className: "text-xs font-mono",
 							wrapperClassName: "w-full",
 							isDisabled: hasServices,
@@ -217,7 +217,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						chipsPicker(h, model, "rule-exclude", form.excludeServiceNames, {
 							items: facets.services,
 							placeholder: hasServices ? "Only applies to all services" : "Skip these services",
-							emptyText: "No services found.",
+							emptyText: "No services found",
 							isDisabled: hasServices,
 						}),
 					),

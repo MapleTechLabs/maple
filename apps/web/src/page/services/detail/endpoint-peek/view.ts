@@ -222,7 +222,7 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 		.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)[0]
 	return card(h, "Status codes", null, [
 		...(codes.length === 0
-			? [h.p([h.Class("text-2xs text-muted-foreground")], ["No status codes recorded in this window."])]
+			? [h.p([h.Class("text-2xs text-muted-foreground")], ["No status codes recorded in this window"])]
 			: codes.slice(0, 4).map((code) => {
 					const tone = code.name.startsWith("2")
 						? { text: TONE_TEXT.info, bar: TONE_FILL.ok }
@@ -418,7 +418,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 				],
 			),
 			...(detail.slowest.length === 0
-				? [emptyMessage(h, {}, ["No requests in this window."])]
+				? [emptyMessage(h, {}, ["No requests in this window"])]
 				: detail.slowest.map((request) =>
 						h.a(
 							[

@@ -57,7 +57,7 @@ const loading = (h: H): Html =>
 
 const noData = (h: H, metricName: string): Html =>
 	emptyMessage(h, { dashed: true, className: "flex flex-col items-center p-12" }, [
-		h.p([h.Class("font-medium text-foreground")], ["No data for this metric in the selected range"]),
+		h.p([h.Class("font-medium text-foreground")], ["No data for this metric in this window"]),
 		h.p(
 			[h.Class("mt-2 max-w-md")],
 			[

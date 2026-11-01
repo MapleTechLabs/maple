@@ -280,7 +280,7 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 		onData: (spans) =>
 			spans.length === 0
 				? emptyMessage(h, { dashed: true, className: "px-3 py-4 text-xs" }, [
-						"No traced call of it was kept in this window.",
+						"No traced call of it was kept in this window",
 					])
 				: h.div(
 						[

@@ -218,7 +218,7 @@ export const breakdownTable = (
 	]
 	const rows =
 		view.rows.length === 0
-			? [dataTableEmpty(h, [`No ${dimension.noun} matches that filter.`])]
+			? [dataTableEmpty(h, [`No ${dimension.noun} matches that filter`])]
 			: view.rows.map((row, index) => {
 					const isSelected = options.selected === row.name
 					const rowIcon =
@@ -368,7 +368,7 @@ export const breakdownPanel = (
 					emptyMessage(
 						h,
 						{ className: "py-10" },
-						dimension.emptyMessage?.(h) ?? [`No ${dimension.noun} data in the selected window.`],
+						dimension.emptyMessage?.(h) ?? [`No ${dimension.noun} data in this window`],
 					),
 				]
 			: [

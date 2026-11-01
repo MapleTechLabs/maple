@@ -192,7 +192,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 									emptyMessage(h, { className: "py-12 font-mono" }, [
 										"No sessions called ",
 										inputs.tool,
-										" in the selected window.",
+										" in this window",
 									]),
 								]
 							: inputs.rows.map((session) =>

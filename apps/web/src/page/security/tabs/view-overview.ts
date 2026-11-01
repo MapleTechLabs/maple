@@ -110,7 +110,7 @@ const spendTile = (h: H, model: Model): Html => {
 			valueClassName: "text-base",
 			compact: true,
 			action: textLink(h, { tone: "muted", className: "text-2xs", onClick: Message.ClickedRetry() }, [
-				"Retry",
+				"Try again",
 			]),
 			subline: "Couldn't load the spend limit",
 		})
@@ -504,7 +504,7 @@ const topFindingsList = (
 	return rows.length === 0
 		? emptyMessage(h, {}, [
 				coverage === null
-					? "No open leads yet."
+					? "No open leads yet"
 					: `No open leads. The latest runs closed ${coverage.closed} of ${coverage.total} units.`,
 			])
 		: h.ul(

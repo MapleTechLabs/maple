@@ -77,7 +77,7 @@ export const listFooter = <M>(h: HtmlBuilder<M>, options: ListFooterOptions<M>):
 								isLoading: options.isLoading ?? false,
 								attributes: [h.OnClick(options.onLoadMore)],
 							},
-							[options.isFailed === true ? "Retry" : "Load more"],
+							[options.isFailed === true ? "Try again" : "Load more"],
 						),
 					]
 				: []),

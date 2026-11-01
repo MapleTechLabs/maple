@@ -3,7 +3,7 @@ import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { spinner } from "../../../ui/spinner"
@@ -13,6 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { payloadSection } from "./transcript-blocks"
 import { avatar, CLOCK, clockOf, LABEL, META, row, SPEAKER } from "./transcript-shell"
+import { REST_LOAD_FAILURE } from "./view-load"
 
 // The transcript's structure: agent lanes, parallel markers, capture notes and dividers.
 
@@ -257,19 +258,12 @@ export const dividerBlock = (
 		],
 		progress?.phase === "failed"
 			? [
-					h.span(
-						[h.Class(cn(LABEL, "text-severity-warn"))],
-						["The rest of this session didn't load"],
-					),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedRetryLoad())],
-						},
-						["Retry"],
-					),
+					errorState(h, {
+						failure: REST_LOAD_FAILURE,
+						variant: "row",
+						onRetry: Message.ClickedRetryLoad(),
+						className: "w-full max-w-xl",
+					}),
 				]
 			: [
 					h.div(

@@ -309,7 +309,7 @@ const sectionBody = (h: H, inputs: SectionViewInputs): Html => {
 					"Add widget",
 				]),
 			])
-		: emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty."])
+		: emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty"])
 }
 
 const trash = (h: H) => icon(h, "TrashIcon", { className: "text-destructive" })

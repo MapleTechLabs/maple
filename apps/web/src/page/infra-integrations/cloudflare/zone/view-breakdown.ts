@@ -298,7 +298,7 @@ const stored = (
 							? `No listed ${dimension.noun} match "${model.breakdownSearch.trim()}".`
 							: notCollected
 								? `Not collected for this period. ${dimension.column} data starts once the poller has run.`
-								: "No traffic in the selected window.",
+								: "No traffic in this window",
 					sort: model.breakdownSort,
 					onSort: (key) => Message.ClickedBreakdownSort({ key }),
 					selected: selectedOf(filters, dimension),
@@ -405,7 +405,7 @@ const liveBody = (
 				dimension,
 				rows,
 				isWaiting,
-				emptyMessage: `No ${dimension.noun} match "${query}" in this window.`,
+				emptyMessage: `No ${dimension.noun} match "${query}" in this window`,
 				sort: model.liveSort,
 				onSort: (key) => Message.ClickedLiveSort({ key }),
 				selected: null,

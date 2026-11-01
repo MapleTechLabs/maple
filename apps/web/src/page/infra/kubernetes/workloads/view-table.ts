@@ -172,6 +172,6 @@ export const workloadTable = (h: H, workloads: ReadonlyArray<WorkloadRow>, input
 		{ ariaLabel: "Workloads", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort, inputs.kind),
 		workloads.length === 0
-			? [dataTableEmpty(h, ["No workloads match your filter."])]
+			? [dataTableEmpty(h, ["No workloads match these filters"])]
 			: workloads.map((wl) => workloadRow(h, wl, inputs)),
 	)

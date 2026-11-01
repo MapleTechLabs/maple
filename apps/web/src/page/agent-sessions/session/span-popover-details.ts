@@ -362,7 +362,7 @@ export const toolCallsSection = (
 	toolCalls: ReadonlyArray<SpanToolCall>,
 	keyPrefix: string,
 ): Html => {
-	if (toolCalls.length === 0) return emptyMessage(h, {}, ["No tool calls were captured on this span."])
+	if (toolCalls.length === 0) return emptyMessage(h, {}, ["No tool calls were captured on this span"])
 	const isFailed = spanFailed(span)
 	return h.div(
 		[h.Class("flex flex-col gap-3 pb-1")],

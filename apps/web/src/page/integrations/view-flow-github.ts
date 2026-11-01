@@ -304,7 +304,7 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 			columnHead(h, { label: "Status", width: "w-28", align: "right" }),
 		],
 		repos.length === 0
-			? [dataTableEmpty(h, ["No repositories granted yet."])]
+			? [dataTableEmpty(h, ["No repositories granted yet"])]
 			: repos.map((repo) => {
 					const presentation = SYNC_PRESENTATION[repo.syncStatus]
 					return h.div(

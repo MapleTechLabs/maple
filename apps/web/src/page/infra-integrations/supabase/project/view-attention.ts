@@ -96,7 +96,7 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 							]
 						: failures.length > 0
 							? []
-							: [panelEmpty(h, ["Nothing needs attention."])]),
+							: [panelEmpty(h, ["Nothing needs attention"])]),
 				],
 	)
 }
