@@ -239,6 +239,8 @@ export interface RuntimeEntry {
 	readonly row: RuntimeRow
 	readonly posture: RuntimePosture
 	readonly vulnerabilities: RuntimeVulnerabilities
+	/** Last seen before another row of its service and environment: a version since upgraded away from. */
+	readonly replaced: boolean
 }
 
 const releasesFor = (runtimes: Runtimes) => (product: RuntimeProduct) => runtimes.releases[product]
@@ -262,20 +264,40 @@ const urgencyRank = (vulnerabilities: RuntimeVulnerabilities): number => {
 	return vulnerabilities.summary.counts.high > 0 ? 1 : 2
 }
 
-export const runtimeEntries = (runtimes: Runtimes): ReadonlyArray<RuntimeEntry> =>
-	runtimes.runtimes
+const deploymentKey = (row: RuntimeRow): string => JSON.stringify([row.service, row.environment])
+
+/** The hour each service and environment was last seen in, on any version. */
+const newestSeenOf = (rows: ReadonlyArray<RuntimeRow>): ReadonlyMap<string, number> =>
+	rows.reduce((newest, row) => {
+		const seen = toEpochMs(row.lastSeen)
+		const key = deploymentKey(row)
+		return seen > (newest.get(key) ?? Number.NEGATIVE_INFINITY) ? newest.set(key, seen) : newest
+	}, new Map<string, number>())
+
+/** Current versions first, worst first; a replaced version only shows as history below them. */
+export const runtimeEntries = (runtimes: Runtimes): ReadonlyArray<RuntimeEntry> => {
+	const newestSeen = newestSeenOf(runtimes.runtimes)
+	return runtimes.runtimes
 		.map((row) => ({
 			row,
 			posture: runtimePosture(row, releasesFor(runtimes)),
 			vulnerabilities: vulnerabilitiesOf(runtimes, row),
+			replaced:
+				toEpochMs(row.lastSeen) < (newestSeen.get(deploymentKey(row)) ?? Number.NEGATIVE_INFINITY),
 		}))
 		.sort(
 			(a, b) =>
+				Number(a.replaced) - Number(b.replaced) ||
 				urgencyRank(a.vulnerabilities) - urgencyRank(b.vulnerabilities) ||
 				STATUS_RANK[a.posture.status] - STATUS_RANK[b.posture.status] ||
 				a.row.service.localeCompare(b.row.service) ||
 				a.row.environment.localeCompare(b.row.environment),
 		)
+}
+
+/** The versions services run now: what the totals and the upgrade list judge. */
+export const currentEntries = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray<RuntimeEntry> =>
+	entries.filter((entry) => !entry.replaced)
 
 export interface RuntimeTotals {
 	readonly services: number
@@ -286,7 +308,8 @@ export interface RuntimeTotals {
 	readonly noVersion: number
 }
 
-export const runtimeTotals = (entries: ReadonlyArray<RuntimeEntry>): RuntimeTotals => {
+export const runtimeTotals = (all: ReadonlyArray<RuntimeEntry>): RuntimeTotals => {
+	const entries = currentEntries(all)
 	const servicesWith = (status: RuntimeStatus) =>
 		distinct(entries.filter((entry) => entry.posture.status === status).map((entry) => entry.row.service))
 	return {
@@ -336,10 +359,12 @@ export interface CriticalUpgrade {
 
 /** Versions to upgrade now: most critical CVEs first, then most high, then most services. */
 export const criticalUpgrades = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray<CriticalUpgrade> => {
-	const byKey = entries.filter(isUrgent).reduce((groups, entry) => {
-		const key = entry.vulnerabilities.key
-		return groups.set(key, [...(groups.get(key) ?? []), entry])
-	}, new Map<string, ReadonlyArray<CheckedEntry>>())
+	const byKey = currentEntries(entries)
+		.filter(isUrgent)
+		.reduce((groups, entry) => {
+			const key = entry.vulnerabilities.key
+			return groups.set(key, [...(groups.get(key) ?? []), entry])
+		}, new Map<string, ReadonlyArray<CheckedEntry>>())
 	return [...byKey.entries()]
 		.flatMap(([key, group]): ReadonlyArray<CriticalUpgrade> => {
 			const entry = group[0]

@@ -332,6 +332,31 @@ export const runtimesOf = (nowMs: number): Runtimes => ({
 			spans: 26_000,
 			lastSeen: at(nowMs, 2 * MINUTE),
 		},
+		// Upgraded off the vulnerable Bun three hours ago: the old version is history, not a finding.
+		{
+			service: "crawler",
+			environment: "production",
+			runtimeName: "bun",
+			runtimeVersion: "1.4.0",
+			executableName: "bun",
+			sdkLanguage: "nodejs",
+			sdkName: "@maple-dev/effect-sdk",
+			sdkVersion: "0.9.0",
+			spans: 70_000,
+			lastSeen: at(nowMs, 3 * HOUR),
+		},
+		{
+			service: "crawler",
+			environment: "production",
+			runtimeName: "bun",
+			runtimeVersion: "1.4.4",
+			executableName: "bun",
+			sdkLanguage: "nodejs",
+			sdkName: "@maple-dev/effect-sdk",
+			sdkVersion: "0.9.0",
+			spans: 9_000,
+			lastSeen: at(nowMs, 4 * MINUTE),
+		},
 	],
 	// Java is absent: its release data could not be read.
 	releases: {
@@ -401,6 +426,7 @@ export const runtimesOf = (nowMs: number): Runtimes => ({
 			},
 		],
 		"nodejs@23.0.0": [],
+		"bun@1.4.4": [],
 		// Bun 1.4.0 against Bun's GitHub advisories.
 		"bun@1.4.0": [
 			{
