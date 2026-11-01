@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { DependencyScanForbiddenError, DependencyScanPersistenceError } from "@maple/domain/http"
 import type { DependencyFindingsResponse, DependencyScanRepositoriesResponse } from "@maple/domain/http"
 import { Result, Schema } from "effect"
@@ -522,6 +523,27 @@ describe("security dependencies tab", () => {
 			expectView(text("1.8.2")).toExist(),
 			expectView(text("pnpm-lock.yaml")).toExist(),
 			expectView(role("button", { name: "Accept risk" })).toExist(),
+		)
+	})
+
+	test("the sheet does not date Last seen by the finding's last triage", () => {
+		const triagedAt = NOW - 3 * 60 * 1000
+		const findings = findingsOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				opened(
+					loaded(repositoriesOf(NOW), {
+						...findings,
+						findings: findings.findings.map((finding) =>
+							finding.id === FINDING_IDS.axios ? { ...finding, updatedAt: triagedAt } : finding,
+						),
+					}),
+				),
+			),
+			mounted,
+			expectView(text("Last seen")).toExist(),
+			expectView(text(formatRelativeTimeOrDate(triagedAt, NOW, "UTC"))).toBeAbsent(),
 		)
 	})
 

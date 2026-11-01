@@ -94,18 +94,15 @@ const details = (h: H, finding: DependencyFindingView, clock: Clock): Html =>
 		detailRailRow(h, { label: "Repository" }, [value(h, finding.repositoryFullName)]),
 		detailRailRow(h, { label: "Lockfile" }, [value(h, finding.lockfilePath, true)]),
 		detailRailRow(h, { label: "First seen" }, [at(h, finding.firstSeenSha, finding.createdAt, clock)]),
-		detailRailRow(h, { label: "Last seen" }, [at(h, finding.lastSeenSha, finding.updatedAt, clock)]),
+		// Commit only: triage rewrites updatedAt, so no stored time says when a scan last matched.
+		detailRailRow(h, { label: "Last seen" }, [commit(h, finding.lastSeenSha)]),
 		...(finding.fixedSha === null
 			? []
-			: [
-					detailRailRow(h, { label: "Fixed at" }, [
-						h.span(
-							[h.Class("font-mono text-xs"), h.Title(finding.fixedSha)],
-							[shortSha(finding.fixedSha)],
-						),
-					]),
-				]),
+			: [detailRailRow(h, { label: "Fixed at" }, [commit(h, finding.fixedSha)])]),
 	])
+
+const commit = (h: H, sha: string): Html =>
+	h.span([h.Class("font-mono text-xs"), h.Title(sha)], [shortSha(sha)])
 
 const REASON_IDS: Field.FieldIds = {
 	control: "dependency-triage-reason",
