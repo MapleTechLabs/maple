@@ -12,11 +12,11 @@ import { highlight } from "../../lib/guide-highlight";
 import LanguageTabs from "../../components/docs/LanguageTabs.astro";
 import LanguageTab from "../../components/docs/LanguageTab.astro";
 
-const pageTitle = "Remote server monitoring: agents, checks, alerts | Maple";
+const pageTitle = "Remote server monitoring: agents, signals, alerts | Maple";
 const pageDescription =
     "Remote server monitoring with OpenTelemetry: agent vs agentless collection, the ports each needs, what to watch, and alerts for servers that go quiet.";
 const published = "2026-10-19";
-const updatedLabel = "October 20, 2026";
+const updatedLabel = "November 1, 2026";
 const author = CONTRIBUTORS.jeremyfunk;
 const authorUrl = `https://github.com/${author.github}`;
 
@@ -26,12 +26,11 @@ const toc = [
     { depth: 3, slug: "agent", text: "Agent: the server pushes" },
     { depth: 3, slug: "agentless", text: "Agentless: a poller pulls" },
     { depth: 3, slug: "tools", text: "Tools" },
-    { depth: 3, slug: "security", text: "Security" },
+    { depth: 3, slug: "opentelemetry", text: "Why OpenTelemetry" },
     { depth: 2, slug: "signals", text: "Signals to watch" },
     { depth: 3, slug: "ssh", text: "Checks over SSH" },
     { depth: 2, slug: "setup", text: "Collector setup" },
     { depth: 3, slug: "agent-config", text: "Agent config" },
-    { depth: 3, slug: "checker", text: "Checks from outside" },
     { depth: 3, slug: "fleet", text: "Many servers" },
     { depth: 2, slug: "maple", text: "Hosts in Maple" },
     { depth: 2, slug: "alerts", text: "Alerts" },
@@ -43,17 +42,10 @@ const sectionNav = toc.filter((h) => h.depth === 2);
 
 // One color per way of collecting, reused by the diagram, badges, tables and configs.
 const kinds = {
-    agent: { label: "Agent", color: "var(--chart-3)" },
-    poller: { label: "Poller", color: "var(--chart-2)" },
-    probe: { label: "Outside check", color: "var(--chart-5)" },
+    agent: { color: "var(--chart-3)" },
+    poller: { color: "var(--chart-2)" },
 } as const;
 type Kind = keyof typeof kinds;
-
-const silence: { cause: string; agent: string; probe: string }[] = [
-    { cause: "The server crashed or hung", agent: "Stops", probe: "Fails" },
-    { cause: "The agent stopped, the server is fine", agent: "Stops", probe: "Passes" },
-    { cause: "The web server died, the host is fine", agent: "Keeps arriving", probe: "Fails" },
-];
 
 const methods: { method: string; kind: Kind; opens: string; port: string; fits: string }[] = [
     { method: "OpenTelemetry Collector, or another agent", kind: "agent", opens: "The server, outbound", port: "Nothing", fits: "Linux and Windows servers you run" },
@@ -61,19 +53,16 @@ const methods: { method: string; kind: Kind; opens: string; port: string; fits: 
     { method: "SNMP", kind: "poller", opens: "The poller", port: "UDP 161", fits: "Switches, firewalls, UPS units" },
     { method: "WMI or WinRM", kind: "poller", opens: "The poller", port: "135 and dynamic RPC, or 5985/5986", fits: "Windows servers in a domain" },
     { method: "Prometheus scrape of node_exporter", kind: "poller", opens: "The scraper", port: "9100", fits: "Fleets already on Prometheus" },
-    { method: "HTTP or ping check", kind: "probe", opens: "A checker", port: "The service's own port", fits: "Reachability, TLS certificates" },
 ];
 
-const signals: { signal: string; kind: Kind; metric: string; alert: string }[] = [
-    { signal: "Heartbeat", kind: "agent", metric: "system.memory.utilization", alert: "No new points from the host for 5 minutes" },
-    { signal: "Reachability", kind: "probe", metric: "httpcheck.status", alert: "No 2xx for 2 minutes" },
-    { signal: "CPU", kind: "agent", metric: "system.cpu.utilization, system.cpu.load_average.15m", alert: "Above 90% for 15 minutes, or load above the core count" },
-    { signal: "Memory", kind: "agent", metric: "system.memory.utilization", alert: "Above 90% used, or OOM kills in the logs" },
-    { signal: "Disk space", kind: "agent", metric: "system.filesystem.utilization", alert: "Any writable mount above 90%" },
-    { signal: "Network", kind: "agent", metric: "system.network.errors, system.network.dropped", alert: "Errors or drops climbing" },
-    { signal: "Processes", kind: "agent", metric: "system.processes.count", alert: "Blocked processes piling up" },
-    { signal: "Logs", kind: "agent", metric: "file_log", alert: "Disk I/O errors, OOM kills, SSH auth failures" },
-    { signal: "Certificate", kind: "probe", metric: "httpcheck.tls.cert_remaining", alert: "Fewer than 14 days left" },
+const signals: { signal: string; metric: string; alert: string }[] = [
+    { signal: "Heartbeat", metric: "system.memory.utilization", alert: "No new points from the host for 5 minutes" },
+    { signal: "CPU", metric: "system.cpu.utilization, system.cpu.load_average.15m", alert: "Above 90% for 15 minutes, or load above the core count" },
+    { signal: "Memory", metric: "system.memory.utilization", alert: "Above 90% used, or OOM kills in the logs" },
+    { signal: "Disk space", metric: "system.filesystem.utilization", alert: "Any writable mount above 90%" },
+    { signal: "Network", metric: "system.network.errors, system.network.dropped", alert: "Errors or drops climbing" },
+    { signal: "Processes", metric: "system.processes.count", alert: "Blocked processes piling up" },
+    { signal: "Logs", metric: "file_log", alert: "Disk I/O errors, OOM kills, SSH auth failures" },
 ];
 
 const sshTabs: { id: string; label: string; code: string; read: string }[] = [
@@ -195,51 +184,6 @@ sudo systemctl enable otelcol-contrib
 sudo systemctl restart otelcol-contrib
 journalctl -u otelcol-contrib -f`;
 
-const checkerConfig = `receivers:
-    http_check:
-        collection_interval: 60s
-        metrics:
-            httpcheck.tls.cert_remaining:
-                enabled: true
-        targets:
-            - method: GET
-              endpoints:
-                  - https://web-01.example.com/health
-                  - https://web-02.example.com/health
-    ssh_check/db-01:
-        endpoint: db-01.example.com:22
-        username: monitor
-        key_file: /etc/otelcol-contrib/monitor_ed25519
-        known_hosts: /etc/otelcol-contrib/known_hosts
-        collection_interval: 60s
-        resource_attributes:
-            ssh.endpoint:
-                enabled: true
-
-processors:
-    resource/checks:
-        attributes:
-            - key: service.name
-              value: uptime-checks
-              action: upsert
-    batch: {}
-
-exporters:
-    otlp_http/maple:
-        endpoint: https://ingest.maple.dev
-        compression: gzip
-        headers:
-            x-maple-ingest-key: \${env:MAPLE_INGEST_KEY}
-
-service:
-    pipelines:
-        metrics/checks:
-            receivers: [http_check, ssh_check/db-01]
-            processors: [resource/checks, batch]
-            exporters: [otlp_http/maple]`;
-
-const knownHosts = `ssh-keyscan db-01.example.com | sudo tee /etc/otelcol-contrib/known_hosts`;
-
 const envTemplate = `OTELCOL_OPTIONS="--config=/etc/otelcol-contrib/config.yaml"
 MAPLE_INGEST_KEY={{ maple_ingest_key }}
 OTEL_RESOURCE_ATTRIBUTES=host.name={{ inventory_hostname }},deployment.environment.name={{ env_name }}`;
@@ -304,12 +248,12 @@ const faqs = [
     {
         question: "What is remote server monitoring?",
         answer:
-            "Remote server monitoring is collecting health data from servers you cannot physically reach, such as cloud VMs, machines in a colocation rack or a server in a branch office, and alerting when something goes wrong. It covers availability, CPU, memory, disk, network, processes and logs, collected by an agent on each server or by a central system that polls or probes them.",
+            "Remote server monitoring is collecting health data from servers you cannot physically reach, such as cloud VMs, machines in a colocation rack or a server in a branch office, and alerting when something goes wrong. It covers CPU, memory, disk, network, processes and logs, collected by an agent on each server or by a central system that polls them, plus an alert for a server that stops reporting.",
     },
     {
         question: "What is the difference between agent-based and agentless monitoring?",
         answer:
-            "An agent is a program on each server that reads local metrics and logs and sends them out over an outbound connection. Agentless monitoring has a central poller connect in over SSH, SNMP, WMI or a Prometheus scrape, or probe the server from outside with HTTP or ping. Agents see more, including logs and per-mount disk usage, and need no inbound port. Agentless methods suit devices that cannot run an agent, but every target needs an open port and the poller needs credentials for each one.",
+            "An agent is a program on each server that reads local metrics and logs and sends them out over an outbound connection. Agentless monitoring has a central poller connect in over SSH, SNMP, WMI or a Prometheus scrape. Agents see more, including logs and per-mount disk usage, and need no inbound port. Agentless methods suit devices that cannot run an agent, but every target needs an open port and the poller needs credentials for each one.",
     },
     {
         question: "How can I monitor a remote Linux server for free?",
@@ -319,12 +263,12 @@ const faqs = [
     {
         question: "How do I get alerted when a remote server goes down?",
         answer:
-            "Use two alerts. A heartbeat alert fires when the server's agent has sent nothing for a few minutes, which catches a crashed host, a broken network path and a stopped agent. An HTTP check from another machine fires when the service on the server stops answering. Run the check outside the server it watches, or it goes down with it.",
+            "Alert on missing data. A heartbeat alert fires when the server's agent has sent nothing for a few minutes, which catches a crashed host, a broken network path and a stopped agent. Threshold alerts on disk, memory and CPU catch a server that still reports but is running out of room.",
     },
     {
         question: "Which remote server monitoring tools are there?",
         answer:
-            "Agents include the OpenTelemetry Collector, Prometheus node_exporter, and the agents of Zabbix, Datadog and New Relic. Agentless tools poll over SNMP, SSH or WMI, as Zabbix, Nagios-based systems and PRTG can. Uptime services probe from outside. Many teams combine an agent on every server with an outside check.",
+            "Agents include the OpenTelemetry Collector, Prometheus node_exporter, and the agents of Zabbix, Datadog and New Relic. Agentless tools poll over SNMP, SSH or WMI, as Zabbix, Nagios-based systems and PRTG can. For servers you run, an agent on each one covers more than polling, which is best kept for devices that can't run an agent.",
     },
 ];
 
@@ -335,7 +279,7 @@ const articleJsonLd = {
     headline: "Remote server monitoring with OpenTelemetry",
     description: pageDescription,
     datePublished: published,
-    dateModified: "2026-10-20",
+    dateModified: "2026-11-01",
     author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
@@ -382,7 +326,7 @@ const articleJsonLd = {
                         <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
                         <span>By {author.name}</span>
                     </a>
-                    <time datetime="2026-10-20">Updated {updatedLabel}</time>
+                    <time datetime="2026-11-01">Updated {updatedLabel}</time>
                 </div>
             </div>
         </header>
@@ -406,45 +350,21 @@ const articleJsonLd = {
                     <h2>Remote server monitoring, defined</h2>
 
                     <p>
-                        A server under your desk tells you it is struggling: the fan spins up and the shell lags. A VM in another region tells you nothing, so you learn it died from a customer asking why the site is down. <strong>Remote server monitoring</strong> is software that collects health numbers and logs from servers you can't physically reach, such as a cloud VM or a machine in a branch office, and alerts you when a number crosses a limit or stops arriving. Without it, a full disk or a crashed VM stays broken until someone outside notices, and your users see every minute of that downtime first. This guide compares agent and agentless collection and the tools for each, lists the signals worth watching, sets up the OpenTelemetry Collector on each server, and ends with alerts that fire when a server goes quiet.
+                        You can't see or touch a cloud VM or a server in a branch office, so it has to report its own health and something has to tell you when that health goes wrong. <strong>Remote server monitoring</strong> is the software that does both: it collects CPU, memory, disk, network and log data from each server into one place, and alerts you when a number crosses a limit or a server stops reporting.
+                    </p>
+                    <p>
+                        Without it, a full disk or a crashed VM stays broken until a user notices. This guide compares agent and agentless collection and the tools for each, lists the signals worth watching, sets up the OpenTelemetry Collector on each server, and ends with alerts, including one for a server that stops reporting.
                     </p>
 
                     <div class="guide-callout guide-takeaways">
                         <p class="guide-kicker">Key takeaways</p>
                         <ul>
                             <li>An agent pushes data out over HTTPS on port 443 and needs no inbound port. A poller needs SSH, SNMP, WinRM or port 9100 open to it.</li>
-                            <li>Run an agent on servers you own, add an outside HTTP check for what users reach, and poll only devices that can't run an agent.</li>
+                            <li>Run an agent on servers you own, and poll only devices that can't run an agent.</li>
                             <li>A dead server sends nothing, so one alert has to treat missing data as a breach.</li>
                             <li>Full disks take servers down while CPU and memory look normal: alert on every writable mount above 90%.</li>
                         </ul>
                     </div>
-                    <p>
-                        Distance adds one problem a local machine doesn't have: silence. When a remote server stops reporting, you can't see why from your desk. Two signals from different places tell the common causes apart:
-                    </p>
-
-                    <div class="guide-table">
-                        <table class="silence">
-                            <thead>
-                                <tr>
-                                    <th>What happened</th>
-                                    <th><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent data</span></th>
-                                    <th><span class="kind-badge" style={`--kind: ${kinds.probe.color}`}>Outside check</span></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {silence.map((row) => (
-                                    <tr>
-                                        <td class="guide-table__key">{row.cause}</td>
-                                        <td data-result={row.agent === "Stops" ? "bad" : "ok"}>{row.agent}</td>
-                                        <td data-result={row.probe === "Fails" ? "bad" : "ok"}>{row.probe}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    <p>
-                        The agent reports what the server sees from the inside. The outside check reports what a client sees.
-                    </p>
                 </section>
 
                 <section id="methods" class="scroll-mt-24">
@@ -454,25 +374,25 @@ const articleJsonLd = {
                         The two approaches differ in who opens the network connection, and that decides which ports have to be open on the server.
                     </p>
 
-                    <figure class="flow" aria-label="Three ways to collect from a remote server. Agent: the server opens an outbound HTTPS connection on port 443 to Maple ingest and needs no inbound port. Poller: a central poller connects in to the server on port 22, 161, 5985 or 9100, which must be open to it. Outside check: a checker on another network sends GET /health to the server's public port 443 every 60 seconds and records status, latency and the certificate.">
-                        <svg viewBox="0 0 760 330" aria-hidden="true">
+                    <figure class="flow" aria-label="Two ways to collect from a remote server. Agent: the server opens an outbound HTTPS connection on port 443 to a backend such as Maple and needs no inbound port. Poller: a central poller connects in to the server on port 22, 161, 5985 or 9100, which must be open to it.">
+                        <svg viewBox="0 0 760 240" aria-hidden="true">
                             <defs>
-                                {(["agent", "poller", "probe"] as const).map((k) => (
+                                {(["agent", "poller"] as const).map((k) => (
                                     <marker id={`flow-${k}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                                         <path d="M0,0 L8,4 L0,8 z" style={`fill: ${kinds[k].color}`} />
                                     </marker>
                                 ))}
                             </defs>
 
-                            <line x1="380" y1="20" x2="380" y2="326" class="flow__edge" />
+                            <line x1="380" y1="20" x2="380" y2="236" class="flow__edge" />
                             <text x="386" y="14" class="flow__mono">firewall / NAT</text>
                             <text x="0" y="14" class="flow__mono">your side</text>
                             <text x="760" y="14" text-anchor="end" class="flow__mono">remote site</text>
 
                             <text x="0" y="36" class="flow__kind" style={`fill: ${kinds.agent.color}`}>AGENT · PUSH</text>
                             <rect x="0" y="44" width="170" height="60" rx="8" class="flow__box" />
-                            <text x="85" y="70" text-anchor="middle" class="flow__title">Maple ingest</text>
-                            <text x="85" y="90" text-anchor="middle" class="flow__mono">ingest.maple.dev</text>
+                            <text x="85" y="70" text-anchor="middle" class="flow__title">Backend</text>
+                            <text x="85" y="90" text-anchor="middle" class="flow__mono">e.g. Maple ingest</text>
                             <rect x="590" y="44" width="170" height="60" rx="8" class="flow__box" style={`stroke: ${kinds.agent.color}`} />
                             <text x="675" y="70" text-anchor="middle" class="flow__title">Server</text>
                             <text x="675" y="90" text-anchor="middle" class="flow__mono">Collector agent</text>
@@ -494,19 +414,6 @@ const articleJsonLd = {
                             <line x1="584" y1="196" x2="176" y2="196" marker-end="url(#flow-poller)" class="flow__line flow__line--reply" style={`stroke: ${kinds.poller.color}`} />
                             <text x="278" y="212" text-anchor="middle" class="flow__mono">readings</text>
                             <text x="675" y="230" text-anchor="middle" class="flow__mono" style={`fill: ${kinds.poller.color}`}>inbound: poller only</text>
-
-                            <text x="0" y="256" class="flow__kind" style={`fill: ${kinds.probe.color}`}>OUTSIDE CHECK</text>
-                            <rect x="0" y="264" width="170" height="60" rx="8" class="flow__box" />
-                            <text x="85" y="290" text-anchor="middle" class="flow__title">Checker</text>
-                            <text x="85" y="310" text-anchor="middle" class="flow__mono">another network</text>
-                            <rect x="590" y="264" width="170" height="60" rx="8" class="flow__box" style={`stroke: ${kinds.probe.color}`} />
-                            <text x="675" y="290" text-anchor="middle" class="flow__title">Server</text>
-                            <text x="675" y="310" text-anchor="middle" class="flow__mono">public site on 443</text>
-                            <line x1="176" y1="286" x2="584" y2="286" marker-end="url(#flow-probe)" class="flow__line" style={`stroke: ${kinds.probe.color}`} />
-                            <text x="278" y="278" text-anchor="middle" class="flow__mono" style={`fill: ${kinds.probe.color}`}>GET /health</text>
-                            <text x="482" y="278" text-anchor="middle" class="flow__mono">every 60 s</text>
-                            <line x1="584" y1="306" x2="176" y2="306" marker-end="url(#flow-probe)" class="flow__line flow__line--reply" style={`stroke: ${kinds.probe.color}`} />
-                            <text x="278" y="322" text-anchor="middle" class="flow__mono">status, latency, cert</text>
                         </svg>
                     </figure>
                     <p class="guide-caption">Solid arrows start at the side that opens the connection. Only the agent needs no inbound port on the server.</p>
@@ -516,12 +423,12 @@ const articleJsonLd = {
                         An agent is a program that runs on each server, reads the kernel's counters in <code>/proc</code> and the log files, and sends them to a backend over HTTPS. Because the server opens the connection, it works from behind NAT, from a private subnet, or from a customer site you can't reach. It also sees what nothing outside can: usage per mount, per-process counts, and the log line where the kernel killed a process.
                     </p>
                     <p>
-                        The cost is software on every server that you install, configure and upgrade. Push has one blind spot: a server that dies sends nothing, and nothing looks like a quiet day unless an alert watches for it. The <a href="#heartbeat">heartbeat rule</a> covers that.
+                        The cost is software on every server that you install, configure and upgrade. A server that dies sends nothing, so one alert has to watch for missing data: the <a href="#heartbeat">heartbeat rule</a>.
                     </p>
 
                     <h3 id="agentless" class="scroll-mt-24"><span class="kind-dot" style={`--kind: ${kinds.poller.color}`}></span>Agentless: a poller reaches in</h3>
                     <p>
-                        Agentless monitoring runs on one central machine, the <strong>poller</strong>, which logs in or queries each server on a schedule. Nothing extra runs on the server, but every server has to accept a connection from the poller, and the poller holds credentials for all of them. An <strong>outside check</strong> is a lighter case: it only requests a public URL, so it needs no credentials and no extra port.
+                        Agentless monitoring runs on one central machine, the <strong>poller</strong>, which logs in or queries each server on a schedule. Nothing extra runs on the server, but every server has to accept a connection from the poller, and the poller holds credentials for all of them.
                     </p>
 
                     <div class="guide-table">
@@ -542,7 +449,7 @@ const articleJsonLd = {
                         </table>
                     </div>
                     <p>
-                        For servers you run, use an agent and add outside checks for the services people reach. Keep polling for devices that can't run an agent. The OpenTelemetry Collector covers each of these: <code>host_metrics</code> and <code>file_log</code> on the server, <code>snmp</code> and <code>ssh_check</code> for polling, and <code>http_check</code> for outside checks.
+                        For servers you run, use an agent. Keep polling for devices that can't run one. The OpenTelemetry Collector does both: <code>host_metrics</code> and <code>file_log</code> on the server, and <code>snmp</code> for network devices.
                     </p>
 
                     <h3 id="tools" class="scroll-mt-24">Remote server monitoring tools</h3>
@@ -552,24 +459,23 @@ const articleJsonLd = {
                                 <tr><th>Tool</th><th>Type</th><th>License and price</th><th>Pick it if</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td class="guide-table__key"><a href="https://www.zabbix.com/features" target="_blank" rel="noopener noreferrer">Zabbix</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span> plus SNMP, SSH and HTTP checks</td><td>Open source (AGPL-3.0 since 7.0), paid support available</td><td>You want one self-hosted server for agents and network devices</td></tr>
-                                <tr><td class="guide-table__key"><a href="https://www.datadoghq.com/pricing/?product=infrastructure" target="_blank" rel="noopener noreferrer">Datadog</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span> with a hosted backend</td><td>Paid: Infrastructure Pro $15 per host per month, billed annually; free up to 5 hosts with 1-day retention</td><td>You want nothing to host and per-host pricing fits your fleet</td></tr>
-                                <tr><td class="guide-table__key"><a href="https://www.nagios.com/products/nagios-xi/" target="_blank" rel="noopener noreferrer">Nagios</a></td><td><span class="kind-badge" style={`--kind: ${kinds.poller.color}`}>Poller</span> with plugins; NRPE and NCPA agents optional</td><td>Nagios Core free (GPL v2); Nagios XI from $2,595 for 100 nodes, one-time</td><td>You need up/down checks and its large plugin library</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span>, plus SNMP polling, in one binary</td><td>Open source (Apache 2.0); sends to any OTLP backend</td><td>You want metrics and logs in an open format you can send anywhere</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://www.zabbix.com/features" target="_blank" rel="noopener noreferrer">Zabbix</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span> plus SNMP and SSH polling</td><td>Open source (AGPL-3.0 since 7.0), paid support available</td><td>You want one self-hosted server for agents and network devices</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://www.datadoghq.com/pricing/?product=infrastructure" target="_blank" rel="noopener noreferrer">Datadog</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span> with a hosted backend</td><td>Paid: Infrastructure Pro $15 per host per month, billed annually; free up to 5 hosts with 1-day retention. <a href="/compare/datadog">How Datadog pricing compares</a></td><td>You want nothing to host and per-host pricing fits your fleet</td></tr>
+                                <tr><td class="guide-table__key"><a href="https://www.nagios.com/products/nagios-xi/" target="_blank" rel="noopener noreferrer">Nagios</a></td><td><span class="kind-badge" style={`--kind: ${kinds.poller.color}`}>Poller</span> with plugins; NRPE and NCPA agents optional</td><td>Nagios Core free (GPL v2); Nagios XI from $2,595 for 100 nodes, one-time</td><td>You want its large plugin library</td></tr>
                                 <tr><td class="guide-table__key"><a href="https://www.paessler.com/prtg/pricing" target="_blank" rel="noopener noreferrer">PRTG</a></td><td><span class="kind-badge" style={`--kind: ${kinds.poller.color}`}>Poller</span> over SNMP, WMI and SSH</td><td>Paid by sensor: from $200 a month for 500 sensors, billed annually; free up to 100 sensors</td><td>You monitor Windows servers and network gear from one console</td></tr>
                                 <tr><td class="guide-table__key"><a href="https://github.com/prometheus/node_exporter" target="_blank" rel="noopener noreferrer">Prometheus + node_exporter</a></td><td><span class="kind-badge" style={`--kind: ${kinds.poller.color}`}>Poller</span> metrics stack: Prometheus scrapes port 9100</td><td>Open source (Apache 2.0)</td><td>You already run Prometheus and Grafana</td></tr>
-                                <tr><td class="guide-table__key"><a href="https://uptimerobot.com/pricing/" target="_blank" rel="noopener noreferrer">UptimeRobot</a></td><td><span class="kind-badge" style={`--kind: ${kinds.probe.color}`}>Outside check</span> as a hosted service</td><td>Free for 50 monitors at 5-minute intervals; paid plans check more often</td><td>You only need to know the site answers</td></tr>
-                                <tr><td class="guide-table__key"><a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a></td><td><span class="kind-badge" style={`--kind: ${kinds.agent.color}`}>Agent</span>, poller and outside checks in one binary</td><td>Open source (Apache 2.0); sends to any OTLP backend</td><td>You want metrics and logs in an open format you can send anywhere</td></tr>
                             </tbody>
                         </table>
                     </div>
-                    <p class="guide-caption">Prices from each vendor's pricing page, last verified October 31, 2026. This guide uses the Collector and sends to Maple.</p>
+                    <p class="guide-caption">Prices from each vendor's pricing page, last verified October 31, 2026. This guide uses the Collector, with Maple as the example backend.</p>
 
-                    <h3 id="security" class="scroll-mt-24">Security follows the direction</h3>
+                    <h3 id="opentelemetry" class="scroll-mt-24">Why we believe in OpenTelemetry</h3>
                     <ul class="guide-list">
-                        <li>With an agent, the server's firewall can deny all inbound monitoring traffic. Keep SSH for administration behind a VPN or a bastion host.</li>
-                        <li>Send to an <code>https://</code> endpoint and leave certificate verification on. Don't set <code>insecure_skip_verify</code> on an exporter that crosses the internet.</li>
-                        <li>A Maple ingest key can send telemetry and read nothing. Someone who copies it off a compromised server can send data to your organization and nothing more. Rotate it under <strong>Settings → Ingestion</strong>, which stops the old key at once, so roll out the new one first. See <a href="/docs/reference/authentication#ingest-keys">Authentication</a>.</li>
-                        <li>SNMP v1 and v2c send the community string in plain text, and syslog over UDP is unencrypted. Use SNMP v3, or keep both inside a VPN.</li>
+                        <li>OpenTelemetry is open: an open-source, vendor-neutral standard for metrics, logs and traces. The Collector is licensed under Apache 2.0.</li>
+                        <li>An agent priced per host adds to the bill with every VM, container or small instance, which pushes you toward fewer, bigger servers. The Collector costs nothing to run, and the backend you choose prices the data, often by volume, so the agent doesn't decide how many servers you run.</li>
+                        <li>Switching vendors means changing the exporter endpoint in the Collector config. The servers and the instrumentation stay as they are.</li>
+                        <li>The project is mature: a <a href="https://www.cncf.io/projects/opentelemetry/" target="_blank" rel="noopener noreferrer">graduated CNCF project</a> since May 2026, supported by the major cloud providers and observability vendors.</li>
                     </ul>
                 </section>
 
@@ -583,13 +489,12 @@ const articleJsonLd = {
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Signal</th><th>From</th><th>Collected as</th><th>Starting alert</th></tr>
+                                <tr><th>Signal</th><th>Collected as</th><th>Starting alert</th></tr>
                             </thead>
                             <tbody>
                                 {signals.map((row) => (
                                     <tr>
                                         <td class="guide-table__key">{row.signal}</td>
-                                        <td><span class="kind-badge" style={`--kind: ${kinds[row.kind].color}`}>{kinds[row.kind].label}</span></td>
                                         <td><code>{row.metric}</code></td>
                                         <td>{row.alert}</td>
                                     </tr>
@@ -626,7 +531,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>04</span> · Hands-on</p>
                     <h2>Set up remote server monitoring with the OpenTelemetry Collector</h2>
                     <p>
-                        The <strong>OpenTelemetry Collector</strong> is an open-source program that receives, processes and exports telemetry. Its Contrib distribution, <code>otelcol-contrib</code>, includes every receiver this guide uses. It runs in two roles here: as the <span class="kind-text" style={`--kind: ${kinds.agent.color}`}>agent</span> on each Debian, Ubuntu or RHEL-family server, and as the <span class="kind-text" style={`--kind: ${kinds.probe.color}`}>checker</span> on one small machine in a different network. Both send OTLP to Maple. Every config here was run on release 0.163.1.
+                        The <strong>OpenTelemetry Collector</strong> is an open-source program that receives, processes and exports telemetry. Its Contrib distribution, <code>otelcol-contrib</code>, includes every receiver this guide uses. It runs as the <span class="kind-text" style={`--kind: ${kinds.agent.color}`}>agent</span> on each Debian, Ubuntu or RHEL-family server and sends OTLP to Maple, the example backend in this guide. Any backend that accepts OTLP works the same way with its own endpoint and key. Every config here was run on release 0.163.1.
                     </p>
 
                     <h3 id="install" class="scroll-mt-24">1. Install the Collector on each server</h3>
@@ -650,13 +555,13 @@ const articleJsonLd = {
                     <div class="guide-callout">
                         <p class="guide-kicker">Older Collector releases</p>
                         <p>
-                            Releases before the component rename call these <code>hostmetrics</code>, <code>filelog</code>, <code>resourcedetection</code>, <code>otlphttp</code>, <code>httpcheck</code> and <code>sshcheck</code>. Release 0.163.1 still accepts the old names and logs a deprecation warning for each.
+                            Releases before the component rename call these <code>hostmetrics</code>, <code>filelog</code>, <code>resourcedetection</code> and <code>otlphttp</code>. Release 0.163.1 still accepts the old names and logs a deprecation warning for each.
                         </p>
                     </div>
 
                     <h3 id="start" class="scroll-mt-24">3. Add the key and start the service</h3>
                     <p>
-                        Put the private ingest key (<code>maple_sk_…</code>) from <strong>Settings → Ingestion</strong> in <code>/etc/otelcol-contrib/otelcol-contrib.conf</code>:
+                        Put the backend's ingest key in <code>/etc/otelcol-contrib/otelcol-contrib.conf</code>. In Maple, that is the private ingest key (<code>maple_sk_…</code>) from <strong>Settings → Ingestion</strong>:
                     </p>
                     <pre><code set:html={highlight(envFile, "shell")} /></pre>
                     <p>
@@ -667,25 +572,9 @@ const articleJsonLd = {
                         systemd reads the environment file as root before it drops to the service user, so the key never sits in <code>config.yaml</code>. A <code>401</code> in the journal means the key is wrong. On RHEL-family systems the log files are readable by root only and the <code>adm</code> step doesn't apply: give <code>otelcol-contrib</code> read access with an ACL, or leave <code>file_log</code> out.
                     </p>
 
-                    <h3 id="checker" class="scroll-mt-24">4. Check the servers from outside</h3>
-                    <p>
-                        Install the same package on one small VM in a different network or provider, so it keeps checking when a server's network fails. Its <code>http_check</code> receiver requests each URL every minute. An <code>ssh_check</code> receiver logs in to a server with no web endpoint and reports whether the login worked; add one per server, named <code>ssh_check/&lt;name&gt;</code>.
-                    </p>
-                    <div class="code-file" style={`--kind: ${kinds.probe.color}`}>
-                        <p class="code-file__name">config.yaml <span>on the checker</span></p>
-                        <pre><code set:html={highlight(checkerConfig, "yaml")} /></pre>
-                    </div>
-                    <p>
-                        Create a <code>monitor</code> user with a key on <code>db-01</code>, copy the private key to the checker with owner <code>otelcol-contrib</code> and mode <code>0600</code>, and record the server's host keys:
-                    </p>
-                    <pre><code set:html={highlight(knownHosts, "shell")} /></pre>
-                    <p>
-                        <code>ssh-keyscan</code> records every key type the server offers. With only one of them in <code>known_hosts</code>, the check can fail with <code>knownhosts: key mismatch</code>. The receivers report <code>httpcheck.status</code> per status class, <code>httpcheck.duration</code>, <code>httpcheck.tls.cert_remaining</code> in seconds, and <code>sshcheck.status</code> (1 or 0) per <code>ssh.endpoint</code>. The <a href="/docs/alerting/uptime-monitoring#alert-when-an-endpoint-stops-answering">uptime monitoring docs</a> have the alert rules for these metrics, and <a href="/guides/uptime-monitoring">Uptime monitoring with traces and HTTP checks</a> covers which failures a check catches.
-                    </p>
-
                     <h3 id="fleet" class="scroll-mt-24">Many servers, one config</h3>
                     <p>
-                        Maple lists each distinct <code>host.name</code> as its own host. A VM cloned from an image that kept its hostname merges two servers into one row, and a rename splits one into two. Pin the name in the environment file, where the <code>env</code> detector reads it before the <code>system</code> detector looks at the OS. With Ansible, template <code>otelcol-contrib.conf</code>:
+                        A backend lists each distinct <code>host.name</code> as its own host. A VM cloned from an image that kept its hostname merges two servers into one row, and a rename splits one into two. Pin the name in the environment file, where the <code>env</code> detector reads it before the <code>system</code> detector looks at the OS. With Ansible, template <code>otelcol-contrib.conf</code>:
                     </p>
                     <pre><code set:html={highlight(envTemplate, "shell")} /></pre>
                     <p>
@@ -694,10 +583,13 @@ const articleJsonLd = {
                 </section>
 
                 <section id="maple" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>05</span> · In Maple</p>
-                    <h2>Remote servers on the Maple Hosts page</h2>
+                    <p class="guide-eyebrow"><span>05</span> · Example</p>
+                    <h2>Example: remote servers on the Maple Hosts page</h2>
                     <p>
-                        Open <strong>Infrastructure → Hosts</strong>. A server appears within about a minute of its agent starting. The list shows each host's status, CPU, memory and disk usage, 15-minute load and last report, and you can filter it by status to find the servers that went quiet:
+                        Maple is the example backend here. Any backend that receives OpenTelemetry host metrics can show the same data; the menus differ.
+                    </p>
+                    <p>
+                        In Maple, open <strong>Infrastructure → Hosts</strong>. A server appears within about a minute of its agent starting. The list shows each host's status, CPU, memory and disk usage, 15-minute load and last report, and you can filter it by status to find the servers that went quiet:
                     </p>
 
                     <div class="guide-table">
@@ -737,7 +629,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>06</span> · Alerts</p>
                     <h2>Alert when a remote server goes down or quiet</h2>
                     <p>
-                        A Maple <a href="/docs/alerting/alert-rules">alert rule</a> checks a value every minute and opens an incident after two breaching checks in a row. A server that stops sending leaves empty windows, which rules skip unless <strong>Alert when there is no data</strong> is on. That switch doesn't apply to rules split into one incident per group, so the heartbeat gets its own rule.
+                        Any backend that receives OpenTelemetry data can alert on these metrics, including on missing data; Maple is the example here. A Maple <a href="/docs/alerting/alert-rules">alert rule</a> checks a value every minute and opens an incident after two breaching checks in a row. A server that stops sending leaves empty windows, which rules skip unless <strong>Alert when there is no data</strong> is on. That switch doesn't apply to rules split into one incident per group, so the heartbeat gets its own rule.
                     </p>
                     <p>
                         The rules below use the <strong>SQL</strong> signal on the <code>metrics_gauge</code> table (<a href="/docs/reference/sql">SQL reference</a>). Open <strong>Alerts</strong>, click <strong>New rule</strong>, choose <strong>Start blank</strong>, and set the signal to <strong>SQL</strong>.
@@ -786,13 +678,11 @@ const articleJsonLd = {
                     <ul>
                         <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/hostmetricsreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: Host Metrics receiver</a></li>
                         <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: File Log receiver</a></li>
-                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/httpcheckreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: HTTP Check receiver</a></li>
-                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/sshcheckreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: SSH Check receiver</a></li>
                         <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/resourcedetectionprocessor" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: Resource Detection processor</a></li>
                         <li><a href="https://github.com/open-telemetry/opentelemetry-collector-releases/releases" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector releases</a></li>
+                        <li><a href="https://www.cncf.io/projects/opentelemetry/" target="_blank" rel="noopener noreferrer">CNCF: OpenTelemetry project page</a></li>
                         <li><a href="/docs/infrastructure/hosts">Maple docs: Hosts</a></li>
                         <li><a href="/docs/alerting/alert-rules">Maple docs: Alert rules</a></li>
-                        <li><a href="/docs/alerting/uptime-monitoring">Maple docs: Uptime monitoring</a></li>
                         <li><a href="/docs/reference/sql">Maple docs: SQL reference</a></li>
                     </ul>
                 </section>
@@ -827,8 +717,6 @@ const articleJsonLd = {
     .rsm-guide .kind-dot { width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--kind); box-shadow: 0 0 0 4px color-mix(in oklab, var(--kind) 18%, transparent); }
     .rsm-guide .kind-text { font-weight: 600; color: color-mix(in oklab, var(--kind) 75%, var(--foreground)); }
 
-    .rsm-guide .silence td[data-result="bad"] { color: var(--destructive); }
-    .rsm-guide .silence td[data-result="ok"] { color: var(--success); }
 
     .flow { margin: 2rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
     .flow svg { display: block; width: 100%; min-width: 600px; height: auto; }
