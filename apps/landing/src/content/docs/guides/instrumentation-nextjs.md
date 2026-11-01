@@ -63,7 +63,9 @@ export function register() {
 			headers,
 		}),
 		logRecordProcessors: [
-			new BatchLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
+			new BatchLogRecordProcessor({
+				exporter: new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
+			}),
 		],
 		metricReaders: [
 			new PeriodicExportingMetricReader({
@@ -73,6 +75,8 @@ export function register() {
 	})
 }
 ```
+
+`BatchLogRecordProcessor` takes `{ exporter }` in `@opentelemetry/sdk-logs` 0.220.0 and later. Older releases take the exporter as the first argument. Passing it positionally to a current release raises no error, but no log record is exported.
 
 `traceExporter` takes an exporter instance. `OTLPHttpProtoTraceExporter` is exported by `@vercel/otel` and sends OTLP over HTTP with protobuf encoding. It also runs in the Edge runtime.
 

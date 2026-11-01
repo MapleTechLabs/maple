@@ -13,7 +13,7 @@ To have a coding agent do this setup, use the [maple-onboard](https://github.com
 
 ## Prerequisites
 
-- Node.js 18.19+ or 20.6+ (the versions that support `node --import`)
+- Node.js 22.22.3+, 24.11.1+ or 26+ (the versions whose `module.registerHooks` can run the ES module hook)
 - An ingest key from **Settings → Ingestion** in Maple. Use the private key (`maple_sk_…`) for server applications.
 
 ## Install
@@ -23,6 +23,7 @@ npm install @opentelemetry/api \
   @opentelemetry/sdk-node \
   @opentelemetry/auto-instrumentations-node \
   @opentelemetry/instrumentation \
+  import-in-the-middle \
   @opentelemetry/resources \
   @opentelemetry/sdk-logs \
   @opentelemetry/sdk-metrics \
@@ -37,7 +38,7 @@ Create `tracing.mjs` next to your entry point. It starts the SDK before any of y
 
 ```javascript
 // tracing.mjs
-import { register } from "node:module"
+import { register } from "import-in-the-middle/register-hooks.mjs"
 import { NodeSDK } from "@opentelemetry/sdk-node"
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
 import { resourceFromAttributes } from "@opentelemetry/resources"
@@ -48,7 +49,7 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
 
 // Lets the instrumentations patch ES modules. CommonJS apps can drop this line.
-register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
+register()
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = "YOUR_INGEST_KEY"
@@ -64,7 +65,9 @@ const sdk = new NodeSDK({
 	}),
 	traceExporter: new OTLPTraceExporter({ url: `${MAPLE_ENDPOINT}/v1/traces`, headers }),
 	logRecordProcessors: [
-		new BatchLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
+		new BatchLogRecordProcessor({
+			exporter: new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
+		}),
 	],
 	metricReaders: [
 		new PeriodicExportingMetricReader({
@@ -80,6 +83,10 @@ process.on("SIGTERM", () => {
 	sdk.shutdown().finally(() => process.exit(0))
 })
 ```
+
+`@opentelemetry/sdk-logs` 0.220.0 and later take `{ exporter }`. Older releases take the exporter as the first argument, `new BatchLogRecordProcessor(exporter)`. Passing it positionally to a current release raises no error, but no log record is exported.
+
+On Node.js versions older than those in [Prerequisites](#prerequisites), replace the `register()` call with `module.register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)` from `node:module`. Node.js 26 marks `module.register` as deprecated.
 
 The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 
@@ -112,7 +119,14 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repo
 node --require @opentelemetry/auto-instrumentations-node/register app.js
 ```
 
-For an ES module app, also pass `--experimental-loader=@opentelemetry/instrumentation/hook.mjs` so the instrumentations can patch ES modules.
+For an ES module app, also load a `hooks.mjs` with `--import ./hooks.mjs` so the instrumentations can patch ES modules:
+
+```javascript
+// hooks.mjs
+import { register } from "import-in-the-middle/register-hooks.mjs"
+
+register()
+```
 
 `OTEL_EXPORTER_OTLP_ENDPOINT` takes the base URL. The exporters append `/v1/traces`, `/v1/logs` and `/v1/metrics` themselves.
 
