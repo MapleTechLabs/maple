@@ -16,6 +16,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { CatalogSummary } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { metricTypeLabel } from "../shared"
 import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
@@ -110,6 +111,12 @@ const body = (h: H, model: Model, timeZone: string): Html =>
 		},
 	})
 
+/** The eyebrow's type, as the type badge names it; none until the catalog answers. */
+const typeLabelOf = (model: Model): string | null => {
+	const summary = summaryOf(model)
+	return summary === null ? null : metricTypeLabel(summary.metricType)
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))],
@@ -119,7 +126,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					// A metric name is an identifier, so it is set in mono like elsewhere.
 					titleContent: detailTitle(h, {
-						kind: ["Metric", summaryOf(model)?.metricType ?? null],
+						kind: ["Metric", typeLabelOf(model)],
 						title: [h.span([h.Class("font-mono")], [model.metricName])],
 						titleText: model.metricName,
 					}),
