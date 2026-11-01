@@ -221,10 +221,15 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 		render: (output) => {
 			const matched = output.areas.reduce((n, area) => n + area.matched, 0)
 			const nextCalls: Array<NextCall> = []
+			// Telemetry ids resolve over a window: hand inspect the one this listing read.
+			const inspectArgs = (row: Output["findings"][number]) =>
+				row.area === "exposure" || row.area === "runtimes"
+					? { id: row.id, start_time: output.window.startTime, end_time: output.window.endTime }
+					: { id: row.id }
 			const worst = output.findings[0]
 			if (worst !== undefined)
 				nextCalls.push(
-					doc.next("inspect_security_finding", { id: worst.id }, "the worst finding in full"),
+					doc.next("inspect_security_finding", inspectArgs(worst), "the worst finding in full"),
 				)
 			if (output.areaFilter === undefined)
 				nextCalls.push(
@@ -244,7 +249,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 					nextCalls.push(
 						doc.next(
 							"inspect_security_finding",
-							{ id: exposed.id },
+							inspectArgs(exposed),
 							"what that service answered, probe by probe",
 						),
 					)

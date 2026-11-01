@@ -1,7 +1,6 @@
-import { Clock, DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { DependencyFindingId } from "@maple/domain/dependency-scan"
 import { InspectSecurityFindingOutput } from "@maple/domain/mcp-outputs"
-import { formatWarehouseDateTime } from "@maple/query-engine"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
@@ -26,8 +25,8 @@ import {
 import type { McpToolRegistrar } from "./types"
 
 const TOOL = "inspect_security_finding"
-/** Runtime advisories are matched against what services ran over the last week. */
-const RUNTIME_WINDOW_MS = 7 * 24 * 3_600_000
+/** Probes and runtimes are read over the same window list_security_findings uses, so its ids resolve. */
+const WINDOW = P.timeWindow({ defaultHours: 24 * 7, maxHours: 24 * 30 })
 
 type Output = typeof InspectSecurityFindingOutput.Type
 type Match = Output["matches"][number]
@@ -54,21 +53,20 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			repository: P.optionalText(
 				"Only this repository (owner/name), when a fingerprint exists in several",
 			),
+			...WINDOW.fields,
 		}),
 		output: InspectSecurityFindingOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a security finding"],
-		handler: Effect.fn("McpTool.inspectSecurityFinding")(function* ({ id, repository }) {
+		handler: Effect.fn("McpTool.inspectSecurityFinding")(function* (params) {
+			const { id, repository } = params
 			const tenant = yield* CurrentMcpTenant
 			const query = id.trim()
 			const needle = query.toLowerCase()
 			const dependencyId = decodeDependencyId(query)
 			const isDependencyId = Option.isSome(dependencyId)
-			const now = yield* Clock.currentTimeMillis
-			const window = {
-				startTime: formatWarehouseDateTime(now - RUNTIME_WINDOW_MS),
-				endTime: formatWarehouseDateTime(now),
-			}
+			const { st, et } = yield* WINDOW.resolve(params, TOOL)
+			const window = { startTime: st, endTime: et }
 			// `service:/path` names an answered probe; nothing else reads scanner traffic.
 			const isExposureId = /^[^\s:]+:\//u.test(query)
 			const [code, dependencies, runtimes, exposure] = yield* Effect.all(
@@ -89,16 +87,17 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 				if (code._tag !== "not_connected") notSearched.push(`code: ${code.message}`)
 			} else if (code !== undefined) {
 				const repositoryServices = repositoryServicesOf(dependencies)
-				const hits = code.targets.flatMap(({ target, findings, latestRun }) =>
-					findings
-						.filter((row) => row.fingerprint.toLowerCase() === needle)
-						.filter(
-							(_) =>
-								repository === undefined ||
-								target.repository.toLowerCase() === repository.toLowerCase(),
-						)
-						.map((row) => ({ target, row, latestRun })),
-				)
+				const hits = code.targets
+					.filter(
+						({ target }) =>
+							repository === undefined ||
+							target.repository.toLowerCase() === repository.toLowerCase(),
+					)
+					.flatMap(({ target, findings, latestRun }) =>
+						findings
+							.filter((row) => row.fingerprint.toLowerCase() === needle)
+							.map((row) => ({ target, row, latestRun })),
+					)
 				matches.push(
 					...hits.map(({ target, row, latestRun }): Match => {
 						const record = row.record
@@ -421,7 +420,9 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 						message: `No security finding matches "${output.query}".`,
 						hints: [
 							"Pass an id from list_security_findings: a code fingerprint, a 32-character dependency finding id, a runtime key (nodejs@20.10.0), an answered probe (service:/path), or an advisory id (CVE-…, GHSA-…).",
-							...(output.notSearched.length === 0
+							// Only a complete search may read as clean: not after a failed read or a capped one.
+							...(output.notSearched.length === 0 &&
+							!output.coverage.some((line) => line.startsWith("Only the most urgent"))
 								? [
 										"An advisory id only matches packages and runtime versions Maple has seen in use: no match means none of your scanned lockfiles or running services is affected.",
 									]
