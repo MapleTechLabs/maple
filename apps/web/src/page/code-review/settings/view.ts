@@ -11,9 +11,9 @@ import { icon } from "../../../ui/icon"
 import type * as Select from "../../../ui/select"
 import { view as selectView } from "../../../ui/select-view"
 import { settingRow } from "../../../ui/setting-row"
-import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { codeReviewLayout } from "../kit/layout"
+import { repositoryListSkeleton, rulesFormSkeleton, settingsSkeleton } from "../kit/skeletons"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
 import { Message, type Model } from "./model"
@@ -117,7 +117,7 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 
 const repositoriesSection = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.githubStatus.data, {
-		onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
+		onEmpty: () => repositoryListSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -150,11 +150,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 /** `RepositoryConfig` in its dialog: skeleton, the error line, or the repository's rules form. */
 const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
-		onEmpty: () =>
-			h.div(
-				[h.Class("space-y-3")],
-				[skeleton(h, "h-20 w-full"), skeleton(h, "h-16 w-full"), skeleton(h, "h-8 w-1/2")],
-			),
+		onEmpty: () => rulesFormSkeleton(h),
 		onFailure: (failure) =>
 			h.p(
 				[h.Class("text-xs text-severity-error"), h.Role("alert")],
@@ -198,11 +194,7 @@ const repoDialog = (h: H, model: Model): Html => {
 
 const content = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.settings.data, {
-		onEmpty: () =>
-			h.div(
-				[h.Class("flex flex-col gap-6")],
-				[skeleton(h, "h-20 w-full rounded-md"), skeleton(h, "h-[520px] w-full rounded-md")],
-			),
+		onEmpty: () => settingsSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,

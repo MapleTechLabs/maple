@@ -8,13 +8,12 @@ import * as BarChart from "../../../charts/bar-chart"
 import type * as Chart from "../../../charts/chart"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { delta, relativeChange } from "../../../ui/delta"
-import { skeleton } from "../../../ui/skeleton"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { changeOf } from "../analytics/view-stats"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message, type Model } from "./model"
 
-// `HeadlineStrip`, `RunsCard`, `DurationCard` and `CiAnalyticsSkeleton`.
+// `HeadlineStrip`, `RunsCard` and `DurationCard`.
 
 type H = HtmlBuilder<Message>
 
@@ -24,19 +23,6 @@ export const RESULT_SERIES = { succeeded: "Succeeded", failed: "Failed", cancell
 const durationOf = (ms: number | null) => (ms === null ? EMPTY_VALUE : formatDuration(ms))
 const rateOf = (rate: number | null) => (rate === null ? EMPTY_VALUE : formatPercent(rate))
 const points = (magnitude: number) => `${(magnitude * 100).toFixed(1)}pp`
-
-export const ciSkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-6")],
-		[
-			skeleton(h, "h-[118px] w-full rounded-md"),
-			h.div(
-				[h.Class("grid gap-6 lg:grid-cols-2")],
-				[skeleton(h, "h-[300px] w-full rounded-md"), skeleton(h, "h-[300px] w-full rounded-md")],
-			),
-			skeleton(h, "h-64 w-full rounded-md"),
-		],
-	)
 
 export const headlineStrip = (
 	h: H,

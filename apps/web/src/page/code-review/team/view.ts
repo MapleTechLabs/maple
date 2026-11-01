@@ -11,7 +11,6 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { PageViewInputs } from "../../contract"
 import { nothingInWindow } from "../../kit/nothing-in-window"
@@ -20,6 +19,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "../kit/author"
 import { filtersView } from "../kit/filters-view"
 import { codeReviewLayout } from "../kit/layout"
+import { busyPage, headlineSkeleton, panelControl, tableSkeleton } from "../kit/skeletons"
 import {
 	ASCENDING,
 	highlightsOf,
@@ -397,11 +397,34 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 	])
 }
 
+/** The headline and scorecard with their real labels and columns, values still loading. */
 const teamSkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-6")],
-		[skeleton(h, "h-[118px] w-full rounded-md"), skeleton(h, "h-80 w-full rounded-md")],
-	)
+	busyPage(h, "Loading the team", [
+		headlineSkeleton(
+			h,
+			[
+				"Merged",
+				"Review to merge",
+				"First review",
+				"Default branch red",
+				"CI time per merge",
+				"Runner wait",
+			],
+			{ columns: 3, className: "xl:grid-cols-6" },
+		),
+		panel(h, {}, [
+			panelHeader(h, { title: "Scorecard", action: panelControl(h) }),
+			tableSkeleton(h, [
+				{ label: "Person", head: "px-4", cell: "px-4 py-2.5", bar: "h-3 w-28" },
+				...COLUMNS.map((column) => ({
+					label: column.label,
+					head: cn("px-3 text-right", column.className),
+					cell: cn("px-3 text-right", column.className),
+					bar: "h-3 w-10",
+				})),
+			]),
+		]),
+	])
 
 /** The on-ramp for an org with neither reviews nor CI runs. */
 const noTeamData = (h: H): Html =>
