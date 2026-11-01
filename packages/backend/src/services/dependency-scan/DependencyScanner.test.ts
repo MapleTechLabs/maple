@@ -362,6 +362,9 @@ describe("DependencyScanner", () => {
 			const again = yield* scanner.scan(installation, repository, { trigger: "push" })
 			assert.strictEqual(again._tag, "Unchanged")
 			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 1)
+			// Scan now records its own result, so the page sees the scan it asked for.
+			yield* Effect.flip(scanner.scan(installation, repository, { trigger: "manual" }))
+			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 2)
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 

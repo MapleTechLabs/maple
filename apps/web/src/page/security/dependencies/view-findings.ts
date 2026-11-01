@@ -21,7 +21,6 @@ import { relativeTime } from "../../kit/relative-time"
 import { securitySeverityBadge } from "../kit/parts"
 import {
 	filteredFindings,
-	matchesStatus,
 	RELATION_LABEL,
 	repositoryFilterOf,
 	SEVERITY_LABEL,
@@ -88,7 +87,6 @@ const filterSelect = (
 		viewInputs: {
 			entries,
 			size: "sm",
-			ariaLabel: label,
 			className: "h-7 w-auto min-w-28 text-xs",
 			renderValue: (value) => [
 				h.span([h.Class("text-muted-foreground")], [`${label} `]),
@@ -119,7 +117,7 @@ const toolbar = (
 				STATUS_FILTERS.map((status) =>
 					item(
 						status,
-						`${STATUS_FILTER_LABEL[status]} (${findings.filter((finding) => matchesStatus(finding, status)).length})`,
+						`${STATUS_FILTER_LABEL[status]} (${filteredFindings(findings, status, repositoryFilterOf(model)).length})`,
 					),
 				),
 				"Status",
@@ -376,10 +374,10 @@ export const findingsSection = (
 	const content =
 		rows.length > 0
 			? findingsTable(h, rows, model.selectedId, clock, production, productionScanStates(repositories))
-			: // Clean only when a scan has read something; a failed first scan is not a clean bill.
+			: // Clean only when every repository's latest scan read its lockfiles; a failed or missing one is not a clean bill.
 				status === "open" &&
 				  repositoryId === null &&
-				  repositories.some((repository) => repository.latestScan?.status === "completed")
+				  repositories.every((repository) => repository.latestScan?.status === "completed")
 				? cleanState(h, repositories)
 				: h.div(
 						[h.Class("p-4")],
