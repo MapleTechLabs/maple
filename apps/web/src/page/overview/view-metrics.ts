@@ -185,7 +185,7 @@ const gridItem = (
 		)
 		return {
 			id,
-			title: "Log Volume",
+			title: "Log volume",
 			skeleton: "area",
 			legend: body._tag === "Chart" ? throughputChips(rows, false, context) : [],
 			body,
@@ -225,7 +225,7 @@ const gridItem = (
 				: Option.none()
 			return {
 				id,
-				title: "Request Volume",
+				title: "Request volume",
 				skeleton: "area",
 				legend: body._tag === "Chart" ? throughputChips(rows, true, context) : [],
 				body,
@@ -249,7 +249,7 @@ const gridItem = (
 			const errors = points.reduce((sum, point) => sum + point.throughput * point.errorRate, 0)
 			return {
 				id,
-				title: "Error Rate",
+				title: "Error rate",
 				skeleton: "area",
 				legend: [],
 				body: overviewBody(

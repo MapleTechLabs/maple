@@ -12,7 +12,7 @@ import { FLEET_BAND_BOXED, fleetBandLoading } from "../../kit/fleet-band"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
-import { countLabel, pageHeroParts, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
 import { hostsViewTabs } from "../../kit/view-tabs"
@@ -116,11 +116,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					titleContent: pageHeroParts(h, {
-						title: "Hosts",
-						description:
-							"Every machine sending CPU, memory, disk and network metrics, busiest first.",
-					}).title,
+					title: "Hosts",
+					description: "Every machine sending CPU, memory, disk and network metrics, busiest first.",
 					actions: h.div(
 						[h.Class("flex flex-wrap items-center gap-2")],
 						[

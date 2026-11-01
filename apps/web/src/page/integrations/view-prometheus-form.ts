@@ -16,8 +16,8 @@ type H = HtmlBuilder<Message>
 
 const AUTH_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 	{ _tag: "Item", item: { value: "none", label: "None" } },
-	{ _tag: "Item", item: { value: "bearer", label: "Bearer Token" } },
-	{ _tag: "Item", item: { value: "basic", label: "Basic Auth" } },
+	{ _tag: "Item", item: { value: "bearer", label: "Bearer token" } },
+	{ _tag: "Item", item: { value: "basic", label: "Basic auth" } },
 ]
 
 const idsOf = (control: string, hasDescription = false): Field.FieldIds => ({
@@ -109,7 +109,7 @@ export const credentialFields = (h: H, model: Model): ReadonlyArray<Html> => {
 					textField(h, model, {
 						field: "token",
 						id: "scrape-auth-token",
-						label: "Bearer Token",
+						label: "Bearer token",
 						type: "password",
 						placeholder: keepPlaceholder(model, "bearer", "Enter bearer token"),
 					}),

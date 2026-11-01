@@ -133,7 +133,7 @@ const sourceToggle = (h: H, model: Model): Html =>
 				slotId: "widget-editor-source",
 				model: model.sourceTabs,
 				view: TabsView.view,
-				viewInputs: { labels: ["Query Builder", "Raw SQL"], panel: () => undefined },
+				viewInputs: { labels: ["Query builder", "Raw SQL"], panel: () => undefined },
 				toParentMessage: (message) => Message.GotSourceTabsMessage({ message }),
 			}),
 		],
