@@ -624,7 +624,7 @@ async function handleQuery(
 // (apps/local-ui/src/worker-entry.ts) minus HSTS, which plain-http loopback ignores.
 const UI_CONTENT_SECURITY_POLICY = [
 	"default-src 'self'",
-	"script-src 'self'",
+	"script-src 'self' 'wasm-unsafe-eval'",
 	"style-src 'self' 'unsafe-inline'",
 	"img-src 'self' data:",
 	"font-src 'self' data:",
