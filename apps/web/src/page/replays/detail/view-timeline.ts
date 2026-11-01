@@ -267,7 +267,7 @@ const spanLane = (h: H, view: TracesView, traceId: string): Html => {
 		onData: (spans) =>
 			spans.length === 0
 				? emptyMessage(h, { className: "bg-surface-faint py-2 text-2xs" }, [
-						"No spans found for this trace.",
+						"No spans found for this trace",
 					])
 				: h.div(
 						[h.Class("max-h-56 space-y-px overflow-y-auto bg-surface-faint py-1")],

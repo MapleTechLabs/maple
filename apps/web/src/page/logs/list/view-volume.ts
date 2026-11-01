@@ -117,7 +117,7 @@ const emptyStrip = (
 		[
 			h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
 			h.Class("flex w-full select-none pt-1 text-muted-foreground"),
-			h.AriaLabel("Log volume by severity, no logs in the selected range"),
+			h.AriaLabel("Log volume by severity, no logs in this window"),
 		],
 		[
 			h.div(

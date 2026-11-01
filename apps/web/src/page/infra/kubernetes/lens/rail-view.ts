@@ -83,7 +83,7 @@ export const lensRail = <M>(
 				: state.services.length === 0
 					? [
 							h.p([h.Class("px-2 text-2xs leading-relaxed text-muted-foreground")], [
-								"No service resolves to a Kubernetes workload in this window.",
+								"No service resolves to a Kubernetes workload in this window",
 							]),
 						]
 					: state.services.map((service) => railRow(h, service, service.serviceName === activeService, timeSearch))),

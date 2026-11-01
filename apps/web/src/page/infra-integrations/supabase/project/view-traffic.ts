@@ -118,7 +118,7 @@ const PATH_ROW = "flex items-center gap-4 border-t border-border-subtle px-4 py-
 
 const topPathsList = (h: H, paths: SupabaseApiTopPathsResponse): Html =>
 	paths.paths.length === 0
-		? panelEmpty(h, ["No paths in this time range."])
+		? panelEmpty(h, ["No paths in this window"])
 		: h.div(
 				[h.AriaLabel("Top paths")],
 				paths.paths.map((path) =>
@@ -169,7 +169,7 @@ const trafficBody = (
 ): Html => {
 	if (traffic.requests === 0)
 		return isLogsEnabled
-			? panelEmpty(h, ["No API requests in this time range."])
+			? panelEmpty(h, ["No API requests in this window"])
 			: panelEmpty(h, [
 					"API traffic comes from this project's logs. Turn on Logs for it to see requests here. ",
 					panelLink(h, MANAGE_HREF, "Manage projects"),

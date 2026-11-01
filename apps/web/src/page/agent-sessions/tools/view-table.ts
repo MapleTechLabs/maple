@@ -198,7 +198,7 @@ const body = (h: H, inputs: ToolsTableInputs): ReadonlyArray<Html> => {
 	if (inputs.isLoading)
 		return [skeletonList(h, { rows: 3, rowClassName: "h-[38px]", className: "gap-1.5 px-2.5 py-3" })]
 	if (inputs.rows.length === 0)
-		return [emptyMessage(h, { className: "py-12 font-mono" }, ["No tool calls in the selected window."])]
+		return [emptyMessage(h, { className: "py-12 font-mono" }, ["No tool calls in this window"])]
 	const prepared: ReadonlyArray<Prepared> = inputs.rows.map((row) => ({
 		...row,
 		errorRate: errorRate(row),

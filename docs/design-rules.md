@@ -64,3 +64,8 @@ load never flashes one. Every tooltip waits the one open delay, `Tooltip.OPEN_DE
 - Failures read "Couldn't {verb} {object}", never "Failed to …" (`maple/couldnt-copy`).
 - A button is a verb and its object: "Create dashboard", not "Submit".
 - No em dashes and no exclamation marks in UI strings.
+- A one-line empty message has no trailing period: "No spans in this window". Multi-sentence
+  descriptions keep their periods.
+- A time-window empty says "in this window", never "in the selected range" or "in window".
+- A filtered empty says "No {noun} match these filters" (`filteredEmpty` in `kit/signal-empty-state.ts`).
+- Search placeholders end in "…": "Search services…".

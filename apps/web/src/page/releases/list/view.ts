@@ -3,8 +3,6 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { ReleaseHealth } from "../../../components/releases/release-model"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
 import { inlineCode } from "../../../ui/inline-code"
@@ -13,11 +11,12 @@ import { skeleton } from "../../../ui/skeleton"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { docsLink } from "../../kit/signal-empty-state"
+import { filteredEmpty, signalEmptyState } from "../../kit/signal-empty-state"
+import { presenceOf } from "../../kit/signal-presence"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { RELEASE_HEALTH_LABEL } from "../kit"
-import { commitsOf, DEFAULT_PRESET, deriveOf, issueCountsOf, rangesOf } from "./derive"
+import { commitsOf, DEFAULT_PRESET, deriveOf, hasFilters, issueCountsOf, rangesOf } from "./derive"
 import { Message } from "./message"
 import type { Model, ReleasesData } from "./model"
 import { filtersRail } from "./view-filters"
@@ -86,18 +85,21 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 	const timeSearch = timeSearchOf(model)
 	if (groups.length === 0)
 		return panel(h, {}, [
-			emptyMessage(h, { className: "flex flex-col items-center gap-1 py-12 text-sm" }, [
-				h.span([], ["No releases detected in this window."]),
-				h.span(
-					[h.Class("text-xs text-foreground-subtle")],
-					[
-						"Releases compare errors and latency before and after each deploy. Release tracking needs spans to carry the ",
-						inlineCode(h, {}, ["vcs.ref.head.revision"]),
-						" resource attribute.",
-					],
-				),
-				h.span([h.Class("mt-2")], [docsLink(h, "github")]),
-			]),
+			hasFilters(model.search)
+				? filteredEmpty(h, { noun: "releases", onClear: Message.ClickedClearFilters() })
+				: signalEmptyState(h, {
+						signal: "traces",
+						presence: presenceOf(model.presence, "traces"),
+						nowMs: model.nowMs,
+						noun: "releases",
+						purpose: "Releases compare errors and latency before and after each deploy.",
+						setupDocs: "github",
+						guideDocs: "github",
+						detail: h.p(
+							[h.Class("text-xs text-muted-foreground")],
+							["Release tracking needs spans to carry the ", inlineCode(h, {}, ["vcs.ref.head.revision"]), " resource attribute."],
+						),
+					}),
 		])
 	const issues = AsyncData.getOrElse(model.issues.data, () => null)
 	const live_ = liveNow(h, live, timeSearch, model.search.environments)
@@ -132,12 +134,11 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 			}),
 			visibleGroups.length === 0
 				? panel(h, {}, [
-						emptyMessage(h, { className: "flex flex-col items-center gap-3 text-sm" }, [
-							"No releases match the health filter.",
-							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedClearHealthFilter())] }, [
-								"Clear filter",
-							]),
-						]),
+						filteredEmpty(h, {
+							noun: "releases",
+							onClear: Message.ClickedClearHealthFilter(),
+							clearLabel: "Clear filter",
+						}),
 					])
 				: h.div(
 						[h.Class("flex flex-col gap-1.5")],

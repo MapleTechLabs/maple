@@ -15,8 +15,8 @@ import { panel } from "../../../ui/panel"
 import { runsTableSkeleton } from "../kit/skeletons"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { ciResultBadge, traceLink } from "../kit/parts"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 
@@ -229,9 +229,10 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 			}),
 		onData: (response) => {
 			if (response.runs.length === 0)
-				return nothingInWindow(h, {
-					title: "No runs match",
+				return filteredEmpty(h, {
+					noun: "runs",
 					description: "No run in this window has this result or branch.",
+					className: "rounded-md border border-dashed md:py-14",
 					onClear: canClear ? Message.ClickedClearRunFilters() : undefined,
 				})
 			const rows = [...response.runs, ...model.cursors.flatMap((cursor) => runsOf(model, cursor))]

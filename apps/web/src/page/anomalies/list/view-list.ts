@@ -10,7 +10,7 @@ import { icon } from "../../../ui/icon"
 import { listFooter } from "../../../ui/list-footer"
 import { statusDot } from "../../../ui/status-dot"
 import { serviceDot } from "../../../ui/values"
-import { docsLink, emptyActions, filteredEmpty, presenceLoading } from "../../kit/signal-empty-state"
+import { docsLink, emptyActions, filteredEmpty, presenceLoading, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { anomalyRow } from "../kit/row"
 import { clusterByService, GROUP_LABEL, groupIncidents } from "./derive"
@@ -114,33 +114,29 @@ const PURPOSE =
 const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | null): Html => {
 	const presence = presenceOf(model.presence, "traces")
 	if (presence.status === "loading") return h.div([h.Class("p-4")], [presenceLoading(h)])
+	if (presence.status === "absent")
+		return h.div(
+			[h.Class("p-4")],
+			[
+				signalEmptyState(h, {
+					signal: "traces",
+					presence,
+					nowMs: model.nowMs,
+					noun: "anomalies",
+					purpose: PURPOSE,
+					detail: excludedHint,
+				}),
+			],
+		)
 	return h.div(
 		[h.Class("p-4")],
 		[
 			empty(h, [
 				emptyHeader(h, [
 					emptyTitle(h, [status === "open" ? "No open anomalies" : "No anomalies"]),
-					emptyDescription(h, [
-						PURPOSE,
-						...(presence.status === "absent"
-							? [" Anomaly detection learns a baseline from your traces and logs. Send telemetry to start."]
-							: []),
-					]),
+					emptyDescription(h, [PURPOSE]),
 				]),
-				...(presence.status === "absent"
-					? [
-							emptyContent(h, [
-								emptyActions(h, [
-									linkButton(
-										h,
-										{ size: "sm", className: "gap-2", href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })) },
-										[icon(h, "ConnectionIcon"), "Set up tracing"],
-									),
-									docsLink(h, "instrumentation", "Setup guide"),
-								]),
-							]),
-						]
-					: presence.status === "present"
+				...(presence.status === "present"
 						? [
 								emptyContent(h, [
 									emptyActions(h, [

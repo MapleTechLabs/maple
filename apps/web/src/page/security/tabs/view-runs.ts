@@ -9,7 +9,6 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { relativeTime } from "../../kit/relative-time"
 import {
 	formatElapsed,
@@ -305,11 +304,16 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 						[
 							targets.length === 0
 								? noTargets(h, model)
-								: nothingInWindow(h, {
-										title: "No runs yet",
-										description:
-											"Runs start manually for now: pick a target and start one.",
-									}),
+								: empty(
+										h,
+										[
+											emptyHeader(h, [
+												emptyTitle(h, ["No runs yet"]),
+												emptyDescription(h, ["Runs start manually for now: pick a target and start one."]),
+											]),
+										],
+										"rounded-md border border-dashed md:py-14",
+									),
 						],
 					)
 				: table(h, { variant: "bare", ariaLabel: "Audit runs" }, [

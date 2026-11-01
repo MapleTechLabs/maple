@@ -135,6 +135,6 @@ export const containerTable = (h: H, containers: ReadonlyArray<ContainerRow>, in
 		{ ariaLabel: "Containers", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }),
 		containers.length === 0
-			? [dataTableEmpty(h, ["No containers match your filter."])]
+			? [dataTableEmpty(h, ["No containers match these filters"])]
 			: containers.map((container) => containerRow(h, container, inputs)),
 	)

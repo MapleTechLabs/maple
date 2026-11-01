@@ -12,7 +12,7 @@ import { skeletonList } from "../../../ui/skeleton"
 import { sectionNote, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { emptyMessage } from "../../../ui/empty"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 
 // `McpToolsList`.
 
@@ -143,13 +143,19 @@ const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>):
 					value: model.toolSearch,
 					onInput: (value) => Message.ChangedToolSearch({ value }),
 					onClear: Message.ClickedClearToolSearch(),
-					placeholder: `Search ${tools.length} tools`,
+					placeholder: `Search ${tools.length} tools…`,
 					ariaLabel: "Search tools",
 				}),
 			],
 		),
 		groups.length === 0
-			? emptyMessage(h, {}, ["No tools match “", model.toolSearch, "”."])
+			? filteredEmpty(h, {
+					noun: "tools",
+					description: `Nothing matches “${model.toolSearch}”.`,
+					onClear: Message.ClickedClearToolSearch(),
+					clearLabel: "Clear search",
+					className: "py-10 md:py-12",
+				})
 			: h.div(
 					[h.Class("divide-y")],
 					groups.map((group, index) =>

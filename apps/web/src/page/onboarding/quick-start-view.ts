@@ -338,7 +338,7 @@ const languageGroup = (h: H, state: QuickStartState, query: string): Html => {
 					searchInput(h, {
 						id: "stack-language-search",
 						value: query,
-						placeholder: "Search languages",
+						placeholder: "Search languages…",
 						ariaLabel: "Search languages",
 						onInput: (value) => Message.ChangedLanguageQuery({ query: value }),
 						onClear: Message.ChangedLanguageQuery({ query: "" }),

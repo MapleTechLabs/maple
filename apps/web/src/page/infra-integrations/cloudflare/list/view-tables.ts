@@ -329,7 +329,7 @@ export const zoneTable = (
 		{ ariaLabel: "Cloudflare zones" },
 		zoneColumns(h, options.sort, options.accounts !== undefined, showLatency),
 		sorted.length === 0
-			? [dataTableEmpty(h, [options.emptyMessage ?? "No zone traffic in the selected window."])]
+			? [dataTableEmpty(h, [options.emptyMessage ?? "No zone traffic in this window"])]
 			: sorted.map((zone) =>
 					zoneRow(h, zone, {
 						sparks: options.sparks,
@@ -478,7 +478,7 @@ export const workerTable = (
 			columnHead(h, { label: "Duration p99", align: "right", width: "w-24" }),
 		],
 		options.rows.length === 0
-			? [dataTableEmpty(h, [options.emptyMessage ?? "No Worker invocations in the selected window."])]
+			? [dataTableEmpty(h, [options.emptyMessage ?? "No Worker invocations in this window"])]
 			: options.rows.map((row) => workerRow(h, row, options.accounts)),
 	)
 
@@ -535,7 +535,7 @@ export const queueTable = (
 			queueHead(h, "Consumers", "consumerConcurrency", sort, "w-28", "right"),
 		],
 		sorted.length === 0
-			? [dataTableEmpty(h, ["No queue activity in the selected window."])]
+			? [dataTableEmpty(h, ["No queue activity in this window"])]
 			: sorted.map((queue) =>
 					h.div(
 						[h.Key(queue.serviceName), h.Class(QUEUE_ROW)],

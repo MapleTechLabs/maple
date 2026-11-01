@@ -4,7 +4,7 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
@@ -12,6 +12,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { platformMeta, platformTile } from "../kit/platforms"
 import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
 import { AppRoute, hrefOf } from "../../../route"
@@ -289,7 +290,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 			...(added.length === 0
 				? [emptyState(h)]
 				: shown.length === 0
-					? [emptyMessage(h, {}, ["No sources match these filters."])]
+					? [filteredEmpty(h, { noun: "sources", description: "", className: "py-10 md:py-12" })]
 					: []),
 			...(strip === null ? [] : [strip]),
 		],

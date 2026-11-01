@@ -268,7 +268,7 @@ const body = (
 	if (rows.length === 0)
 		return integrationNotConnected(h, {
 			icon: icon(h, "AwsIcon", { size: 16 }),
-			title: "No metrics in this time range",
+			title: "No metrics in this window",
 			description: `CloudWatch sent nothing for this ${AWS_INFRA_KINDS[kind].noun} in the window. Widen the time range, or check that its region is streamed.`,
 			integration: "aws",
 			actionLabel: "Check the connection",

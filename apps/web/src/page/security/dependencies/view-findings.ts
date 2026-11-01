@@ -15,8 +15,8 @@ import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { textLink } from "../../../ui/text-link"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { listToolbar } from "../../kit/list-toolbar"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { relativeTime } from "../../kit/relative-time"
 import { securitySeverityBadge } from "../kit/parts"
 import {
@@ -395,12 +395,13 @@ export const findingsSection = (
 				: h.div(
 						[h.Class("p-4")],
 						[
-							nothingInWindow(h, {
-								title: "No findings match",
+							filteredEmpty(h, {
+								noun: "findings",
+								className: "rounded-md border border-dashed md:py-14",
 								description:
 									status === "all"
-										? "No findings for these filters."
-										: `No ${STATUS_FILTER_LABEL[status].toLowerCase()} findings for these filters.`,
+										? ""
+										: `Showing ${STATUS_FILTER_LABEL[status].toLowerCase()} findings only.`,
 							}),
 						],
 					)

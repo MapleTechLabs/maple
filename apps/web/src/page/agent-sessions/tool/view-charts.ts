@@ -18,7 +18,7 @@ import { Message } from "./message"
 type H = HtmlBuilder<Message>
 
 const PLOT_HEIGHT = 160
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 type CellSpec = Readonly<{
 	id: string

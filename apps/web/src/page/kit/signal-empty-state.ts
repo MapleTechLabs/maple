@@ -139,7 +139,7 @@ export const filteredEmpty = <M>(
 					? []
 					: [
 							emptyDescription(h, [
-								options.description ?? "Everything in this time range was excluded by the current filters.",
+								options.description ?? "Everything in this window was excluded by the current filters.",
 							]),
 						]),
 			]),
@@ -225,10 +225,10 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 			[
 				emptyHeader(h, [
 					iconMedia(h, "ClockIcon"),
-					emptyTitle(h, ["No ", subject, " in this time range"]),
+					emptyTitle(h, ["No ", subject, " in this window"]),
 					emptyDescription(h, [
 						presence.lastSeenMs === null
-							? `Maple is receiving ${copy.noun}, just none in the selected window.`
+							? `Maple is receiving ${copy.noun}, just none in this window.`
 							: `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeenMs, options.nowMs)}. Widen the range to see them.`,
 					]),
 				]),

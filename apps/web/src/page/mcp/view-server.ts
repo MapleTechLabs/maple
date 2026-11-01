@@ -335,8 +335,8 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 						? [
 								emptyMessage(h, { className: "py-8 font-mono" }, [
 									options.isFiltered
-										? "No tools match the filters."
-										: "No tool calls in the selected window.",
+										? "No tools match these filters"
+										: "No tool calls in this window",
 								]),
 							]
 						: data.tools.map((row, index) => toolRow(h, row, index, maxRate, options)),

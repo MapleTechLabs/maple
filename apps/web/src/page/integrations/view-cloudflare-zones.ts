@@ -95,7 +95,7 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 								"rounded-md border border-border-subtle px-3 py-4 text-xs text-muted-foreground",
 							),
 						],
-						[account.zones.length === 0 ? "No zones found yet." : "No zones match the filter."],
+						[account.zones.length === 0 ? "No zones found yet" : "No zones match these filters"],
 					)
 				: h.div(
 						[

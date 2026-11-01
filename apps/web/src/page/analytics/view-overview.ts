@@ -244,7 +244,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 								favicon(h, model, row.secondary ?? "")
 						: undefined,
 					emptyMessage: (h: H) => [
-						"No page views in the selected window.",
+						"No page views in this window",
 						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "webAnalytics")]),
 					],
 				},
@@ -337,7 +337,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					nounPlural: "events",
 					viewsLabel: "Events",
 					emptyMessage: (h: H) => [
-						'No custom events in the selected window. Send one with track("name", props) from the browser SDK.',
+						'No custom events in this window. Send one with track("name", props) from the browser SDK.',
 						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "productEventsApi")]),
 					],
 				},

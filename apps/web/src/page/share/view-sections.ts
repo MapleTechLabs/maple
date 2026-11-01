@@ -91,7 +91,7 @@ export const sharedSection = (h: H, { section, activeTabId, isCollapsed, grid }:
 				? []
 				: [
 						grid === null
-							? emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty."])
+							? emptyMessage(h, { className: "px-1 py-6 text-left" }, ["This group is empty"])
 							: h.div([h.Class("pt-2")], [grid]),
 					]),
 		],

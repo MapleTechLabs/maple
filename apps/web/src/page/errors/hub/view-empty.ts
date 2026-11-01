@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon, type IconName } from "../../../ui/icon"
-import { docsLink, presenceLoading, signalEmptyState } from "../../kit/signal-empty-state"
+import { docsLink, filteredEmpty, presenceLoading, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { SEVERITY_LABEL } from "../kit/severity"
 import { hasErrorFilters, severityOf, viewOf } from "./derive"
@@ -38,7 +38,7 @@ const ERRORS_PURPOSE = "Group failed spans and exceptions into issues you can tr
 const SEVERITY_FILTER_LABEL = { all: "All severities", ...SEVERITY_LABEL, unset: "Unset" } as const
 
 const iconMedia = (h: H, name: IconName): Html =>
-	emptyMedia(h, { variant: "icon" }, [icon(h, name, { size: 18 })])
+	emptyMedia(h, { variant: "icon" }, [icon(h, name)])
 
 const actions = (h: H, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex flex-wrap items-center justify-center gap-2")], children)
@@ -102,6 +102,13 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 			className: "py-12",
 		})
 	}
+	if (isNarrowedBySidebar && !isFiltered)
+		return filteredEmpty(h, {
+			noun: view === "all" ? "errors" : `${VIEW_LABEL[view].toLowerCase()} errors`,
+			description: "Everything in this view was excluded by the sidebar filters.",
+			onClear: Message.ClickedClearFilters(),
+			className: "py-12",
+		})
 	const copy = EMPTY_COPY[view]
 	const isUnknown = !isNarrowed && presence.status === "unknown"
 	const iconName: IconName = isNarrowed ? "MagnifierIcon" : isUnknown ? "HistoryIcon" : copy.icon
@@ -117,18 +124,12 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 			emptyHeader(h, [
 				iconMedia(h, iconName),
 				emptyTitle(h, [
-					isFiltered
-						? `No ${SEVERITY_FILTER_LABEL[severity].toLowerCase()} errors here`
-						: isNarrowed
-							? "Nothing matches these filters"
-							: title,
+					isFiltered ? `No ${SEVERITY_FILTER_LABEL[severity].toLowerCase()} errors here` : title,
 				]),
 				emptyDescription(h, [
 					isFiltered
 						? `Nothing in ${VIEW_LABEL[view]} matches that severity. Other severities may have plenty.`
-						: isNarrowed
-							? `No ${VIEW_LABEL[view].toLowerCase()} errors match the sidebar filters. Clear them to see everything.`
-							: description,
+						: description,
 				]),
 			]),
 			...(view === "all" && !isNarrowed ? [docsLink(h, "errors")] : []),

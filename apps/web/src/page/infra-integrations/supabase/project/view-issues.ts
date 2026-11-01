@@ -70,7 +70,7 @@ export const issuesPanel = (
 								response.issues.map((issue) => issueRow(h, issue, options.timeZone)),
 							)
 						: options.isLogsEnabled
-							? panelEmpty(h, ["No warnings or errors in this time range."])
+							? panelEmpty(h, ["No warnings or errors in this window"])
 							: panelEmpty(h, [
 									"Turn on Logs for this project to see its warnings and errors here. ",
 									panelLink(h, MANAGE_HREF, "Manage projects"),

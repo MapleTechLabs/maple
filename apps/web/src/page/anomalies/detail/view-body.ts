@@ -176,7 +176,7 @@ export const signalChart = (
 					dashed: true,
 					className: "flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
 				},
-				["No signal data in window"],
+				["No signal data in this window"],
 			)
 		const stroke = resolveColor(colors, SEVERITY_STROKE[incident.severity])
 		// Both threshold rules draw in `--destructive`.

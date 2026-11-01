@@ -2,13 +2,14 @@ import type { SecurityAuditFinding, SecurityAuditTarget } from "@maple/domain/ht
 import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
 import { searchInput } from "../../../ui/search-input"
 import * as SelectView from "../../../ui/select-view"
 import * as Select from "../../../ui/select"
 import { switchControl } from "../../../ui/switch"
-import { nothingInWindow } from "../../kit/nothing-in-window"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { relativeTime } from "../../kit/relative-time"
 import { countByBucket, sectionsOf, type SeverityBucket } from "../kit/findings"
 import { findingGroups, severityTabs } from "../kit/findings-view"
@@ -81,7 +82,7 @@ const toolbar = (
 			id: "security-findings-search",
 			size: "sm",
 			className: "w-64 max-w-sm",
-			placeholder: "Search title, file or fingerprint",
+			placeholder: "Search title, file or fingerprint…",
 			value: model.searchDraft,
 			onInput: (value) => Message.ChangedSearchDraft({ value }),
 			onClear: Message.ChangedSearchDraft({ value: "" }),
@@ -223,16 +224,23 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 		state._tag === "Loading"
 			? placeholderRows(h, 6)
 			: targets.length === 0
-				? nothingInWindow(h, {
-						title: "No findings yet",
-						description: "Findings appear here after the first audit run of a target finishes.",
-					})
+				? empty(
+						h,
+						[
+							emptyHeader(h, [
+								emptyTitle(h, ["No findings yet"]),
+								emptyDescription(h, ["Findings appear here after the first audit run of a target finishes."]),
+							]),
+						],
+						"rounded-md border border-dashed md:py-14",
+					)
 				: rows.length === 0
 					? h.div(
 							[h.Class("p-4")],
 							[
-								nothingInWindow(h, {
-									title: "No findings match",
+								filteredEmpty(h, {
+									noun: "findings",
+									className: "rounded-md border border-dashed md:py-14",
 									description:
 										all.length === 0
 											? "No audit has reported a finding yet."

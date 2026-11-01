@@ -188,7 +188,7 @@ describe("settings page", () => {
 			{ update: pageUpdate, view },
 			given(searched),
 			indicatorMeasured(),
-			expectView(text("No tools match “zzz”.")).toExist(),
+			expectView(text("No tools match these filters")).toExist(),
 			click(role("button", { name: "Audit log" })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({ url: "/settings?tab=audit-log", isReplace: false }),

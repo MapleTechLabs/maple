@@ -1,9 +1,9 @@
 import type { ErrorSignal } from "../../../lib/models/error-signal"
 import { Option } from "effect"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
 import { toLoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
+import { listFooter } from "../../../ui/list-footer"
 import { skeletonList } from "../../../ui/skeleton"
 import { MountRowSelect } from "./command"
 import { listFailureOf, type ListStatus, type PagingState, pagingOf } from "./derive"
@@ -54,22 +54,16 @@ const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => {
 			}),
 		]
 	}
-	return [
-		h.div(
-			[h.Class("flex items-center justify-center gap-3 border-t border-border-subtle p-4")],
-			[
-				...(paging === "failed"
-					? [h.span([h.Class("text-xs text-muted-foreground")], ["Couldn't load more errors."])]
-					: []),
-				loadMoreButton(h, paging === "failed" ? "Retry" : "Load more"),
-			],
-		),
-	]
+	const footer = listFooter(h, {
+		hasMore: paging === "more",
+		isFailed: paging === "failed",
+		onLoadMore: Message.ClickedLoadMore(),
+		className: "border-t border-border-subtle p-4",
+		children:
+			paging === "failed" ? [h.span([], ["Couldn't load more errors."])] : [],
+	})
+	return footer === null ? [] : [footer]
 }
-
-/** `LoadMoreButton`: an outline sm Button. */
-const loadMoreButton = (h: H, label: string): Html =>
-	button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedLoadMore())] }, [label])
 
 export type ListInputs = Readonly<{
 	status: ListStatus

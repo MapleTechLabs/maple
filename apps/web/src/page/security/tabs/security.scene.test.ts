@@ -531,7 +531,7 @@ describe("security tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(atStatus({ status: "accepted_risk" })),
-			expectView(text("No findings match")).toExist(),
+			expectView(text("No findings match these filters")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toBeAbsent(),
 		)
 		scene(

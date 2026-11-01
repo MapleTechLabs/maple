@@ -180,7 +180,7 @@ export const widgetShell = <M>(
 /** `WidgetEmptyState`: the query ran and returned nothing. */
 export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
-		h.span([h.Class("font-medium")], ["No data in the selected time range"]),
+		h.span([h.Class("font-medium")], ["No data in this window"]),
 		h.span(
 			[h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3")],
 			["Widen the time range or check the query's filters."],

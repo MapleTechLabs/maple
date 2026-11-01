@@ -1019,7 +1019,7 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 			],
 		),
 		rows.length === 0
-			? emptyMessage(h, {}, ["No checks yet."])
+			? emptyMessage(h, {}, ["No checks yet"])
 			: h.ul(
 					[h.Class("divide-y")],
 					rows.map((row, index) =>

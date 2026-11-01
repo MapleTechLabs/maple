@@ -28,6 +28,8 @@ const SAMPLES_PAGE = 25
 
 const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const paging = pagingOf(model)
+	const last = model.pages.at(-1)?.data
+	const failure = paging === "failed" && last !== undefined && AsyncData.isFailure(last) ? last.error : undefined
 	return h.div(
 		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
 		[
@@ -48,18 +50,14 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 					]
 				: paging === "loading"
 					? [h.span([h.Class("text-foreground-subtle")], ["Loading…"])]
-					: paging === "failed"
+					: failure !== undefined
 						? [
-								h.button(
-									[
-										h.Class(
-											"text-severity-error hover:text-foreground active:text-foreground",
-										),
-										h.Type("button"),
-										h.OnClick(Message.ClickedLoadMore()),
-									],
-									["Couldn't load more. Retry"],
-								),
+								errorState(h, {
+									failure,
+									title: "Couldn't load more",
+									variant: "quiet",
+									onRetry: Message.ClickedLoadMore(),
+								}),
 							]
 						: []),
 		],
@@ -89,7 +87,7 @@ export const samplesPane = (
 						),
 					]
 				: rows.length === 0
-					? [emptyMessage(h, {}, ["No samples in the selected window."])]
+					? [emptyMessage(h, {}, ["No samples in this window"])]
 					: rows.map((row, index) =>
 							sampleRow(h, model, inputs, row, {
 								index,

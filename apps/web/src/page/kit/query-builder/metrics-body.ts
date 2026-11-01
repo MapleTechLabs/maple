@@ -61,8 +61,8 @@ const picker = (
 				listed.length > 0
 					? ""
 					: term === ""
-						? "No metrics found."
-						: `No metric name contains "${term}".`,
+						? "No metrics found"
+						: `No metric name contains "${term}"`,
 			highlightsSelected: true,
 			// Measured: the positioner resolves the input (30 px), not the input group.
 			anchorsInput: true,

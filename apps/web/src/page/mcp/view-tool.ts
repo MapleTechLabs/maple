@@ -4,6 +4,7 @@ import { formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-anal
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../ui/empty"
+import { filteredEmpty } from "../kit/signal-empty-state"
 import { icon } from "../../ui/icon"
 import { meter } from "../../ui/meter"
 import { miniBars } from "../../ui/mini-bars"
@@ -205,7 +206,7 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 					data.errorGroups.length === 0
 						? [
 								emptyMessage(h, { className: "py-8 font-mono" }, [
-									"No failed calls in this window.",
+									"No failed calls in this window",
 								]),
 							]
 						: data.errorGroups.map((group) => errorRow(h, group, data.errors, options)),
@@ -329,7 +330,7 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 				toolTableBody(
 					h,
 					list.length === 0
-						? [emptyMessage(h, { className: "py-8 font-mono" }, ["No calls match the filters."])]
+						? [filteredEmpty(h, { noun: "calls", description: "", className: "py-10 md:py-12" })]
 						: list.map((call) => callRow(h, call, max, options)),
 				),
 			]),

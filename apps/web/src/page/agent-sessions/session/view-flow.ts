@@ -288,7 +288,7 @@ export const flow = (h: H, model: Model, data: SessionData): Html => {
 	return h.div(
 		[h.Class("relative flex grow flex-col")],
 		lanes.length === 0
-			? [emptyMessage(h, {}, ["No spans match this filter."])]
+			? [emptyMessage(h, {}, ["No spans match this filter"])]
 			: [
 					h.div(
 						[h.Class("relative min-h-48 grow")],

@@ -150,7 +150,7 @@ describe("railway list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
-			expectView(text("No Railway metrics in this time range")).toExist(),
+			expectView(text("No Railway metrics in this window")).toExist(),
 		)
 	})
 

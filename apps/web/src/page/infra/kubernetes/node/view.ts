@@ -103,7 +103,7 @@ const podsOnNode = (h: H, model: Model, inputs: PageViewInputs): Html =>
 		onData: (page) =>
 			page.data.length === 0
 				? emptyMessage(h, { dashed: true, className: "py-12" }, [
-						"No pods reporting on this node in the selected window.",
+						"No pods reporting on this node in this window",
 					])
 				: podTable(h, page.data, {
 						sortBy: "saturation",

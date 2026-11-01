@@ -20,6 +20,7 @@ import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { truncatedText } from "../../../ui/truncated-text"
 import { columnHead, dataTable } from "../../infra/kit/data-table"
 import { relativeTime } from "../../kit/relative-time"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -303,16 +304,16 @@ export const devicesTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, in
 
 export const keysEmpty = (h: H, model: Model): Html => {
 	const needle = model.search.trim()
+	if (needle.length > 0)
+		return filteredEmpty(h, { noun: "keys", description: `Nothing matches "${needle}".`, className: "py-8" })
 	return empty(
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "KeyIcon", { size: 16 })]),
-				emptyTitle(h, [needle.length > 0 ? "No keys match" : "No keys here"]),
+				emptyMedia(h, { variant: "icon" }, [icon(h, "KeyIcon")]),
+				emptyTitle(h, ["No keys here"]),
 				emptyDescription(h, [
-					needle.length > 0
-						? `Nothing matches "${needle}".`
-						: `There are no ${STATUS_LABELS[model.statusFilter].toLowerCase()} keys of this type.`,
+					`There are no ${STATUS_LABELS[model.statusFilter].toLowerCase()} keys of this type.`,
 				]),
 			]),
 		],

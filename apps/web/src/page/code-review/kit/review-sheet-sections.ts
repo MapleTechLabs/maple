@@ -184,7 +184,7 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 			: []),
 		section(h, `Issues (${report.findings.length})`, [
 			report.findings.length === 0
-				? emptyMessage(h, {}, ["No issues filed on this head."])
+				? emptyMessage(h, {}, ["No issues filed on this head"])
 				: h.ul(
 						[h.Class("flex flex-col gap-3")],
 						report.findings.map((finding) =>

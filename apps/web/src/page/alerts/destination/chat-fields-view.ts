@@ -152,7 +152,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 			viewInputs: {
 				items: [...byLabel.keys()],
 				placeholder: isLoading ? "Loading channels…" : "Search channels…",
-				emptyText: isLoading ? "Loading channels…" : channels.length === 0 ? "No channels loaded yet." : "No matching channels.",
+				emptyText: isLoading ? "Loading channels…" : channels.length === 0 ? "No channels loaded yet" : "No matching channels",
 				startAddon: icon(h, "MagnifierIcon"),
 				className: "w-full",
 				renderItem: (label) => {

@@ -190,7 +190,7 @@ const accessField = (h: H, model: Model): Html => {
 							value: model.scopeFilter,
 							onInput: (value) => Message.ChangedScopeFilter({ value }),
 							onClear: Message.ClickedClearScopeFilter(),
-							placeholder: "Filter resource families",
+							placeholder: "Filter resource families…",
 						}),
 						...scopeRows(h, model),
 						fieldDescription(

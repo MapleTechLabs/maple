@@ -183,7 +183,7 @@ const toolbar = (
 				id: "investigations-search",
 				size: "sm",
 				className: "w-auto min-w-56 max-w-sm flex-1",
-				placeholder: "Search subjects and findings",
+				placeholder: "Search subjects and findings…",
 				value: model.searchDraft,
 				onInput: (value) => Message.ChangedSearchDraft({ value }),
 				onClear: Message.ChangedSearchDraft({ value: "" }),

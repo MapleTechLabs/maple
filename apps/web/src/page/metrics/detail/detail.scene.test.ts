@@ -192,7 +192,7 @@ describe("metric detail", () => {
 			expectView(text(`avg(${NAME})`)).toExist(),
 			expectView(text("Top values · avg per value")).toExist(),
 			expectView(role("button", { name: /^Filter to service\.name = payment-svc/ })).toExist(),
-			expectView(text("No datapoints match this query in the selected range.")).toExist(),
+			expectView(text("No datapoints match this query in this window")).toExist(),
 			expectView(text("http.route")).toExist(),
 			expectView(role("button", { name: "Copy Link" })).toExist(),
 		)
@@ -203,7 +203,7 @@ describe("metric detail", () => {
 			{ update: pageUpdate, view },
 			given(withCatalog(windowed(), []).model),
 			themeResolved(),
-			expectView(text("No data for this metric in the selected range")).toExist(),
+			expectView(text("No data for this metric in this window")).toExist(),
 		)
 	})
 })

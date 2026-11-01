@@ -258,7 +258,7 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 	}
 	if (data.points.length === 0) {
 		return emptyMessage(h, { dashed: true, className: "py-12" }, [
-			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in the selected window.`,
+			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in this window`,
 		])
 	}
 	const isWaiting = AsyncData.isRefreshing(slot)
