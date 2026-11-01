@@ -8,7 +8,7 @@ import { parsePackageLock } from "./parsers/packageLock.ts"
 import { parsePnpmLock } from "./parsers/pnpm.ts"
 import type { Parser } from "./parsers/types.ts"
 import { parseYarnLock } from "./parsers/yarn.ts"
-import { lockfileKindOf } from "./paths.ts"
+import { BUN_LOCKB_UNSUPPORTED, lockfileKindOf } from "./paths.ts"
 import type { LockfileInput, LockfileKind, ParsedLockfile } from "./types.ts"
 
 const PARSERS = {
@@ -33,11 +33,7 @@ export const parseLockfile = Effect.fn("lockfiles.parseLockfile")(function* (
 		})
 	}
 	if (kind === "bun-lockb") {
-		return yield* new LockfileUnsupportedError({
-			path: input.path,
-			message:
-				"bun.lockb is binary: run `bun install --save-text-lockfile` and commit the generated bun.lock",
-		})
+		return yield* new LockfileUnsupportedError({ path: input.path, message: BUN_LOCKB_UNSUPPORTED })
 	}
 	const output = yield* PARSERS[kind](input)
 	return {

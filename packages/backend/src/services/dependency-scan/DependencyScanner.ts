@@ -11,7 +11,7 @@ import {
 	type VcsRepositoryRef,
 } from "@maple/domain/http"
 import { type PackageAdvisory, PackageEcosystem, packageKey } from "@maple/domain/package-advisories"
-import { parseLockfile } from "@maple/lockfiles"
+import { parseLockfile, unsupportedReason } from "@maple/lockfiles"
 import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import type {
 	VcsProviderClient,
@@ -40,7 +40,7 @@ import { RESCAN_AFTER_MS } from "./production"
 
 const PARSE_CACHE_BUCKET = "lockfile-packages"
 /** Part of the parse cache key: bump it when a parser fix should reach lockfiles already cached. */
-const PARSER_VERSION = 1
+const PARSER_VERSION = 2
 const PARSE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 /** Larger lockfiles are recorded as too large rather than read into the Worker's memory. */
 export const MAX_LOCKFILE_BYTES = 8 * 1024 * 1024
@@ -56,10 +56,18 @@ const LockedPackageRow = Schema.Struct({
 })
 type LockedPackageRow = typeof LockedPackageRow.Type
 
-const CachedLockfile = Schema.Struct({
-	packages: Schema.Array(LockedPackageRow),
-	warnings: Schema.Array(Schema.String),
-})
+/** A blob's parse, or why it has none: a broken lockfile fails the same way until it changes. */
+const CachedLockfile = Schema.Union([
+	Schema.TaggedStruct("Parsed", {
+		packages: Schema.Array(LockedPackageRow),
+		warnings: Schema.Array(Schema.String),
+	}),
+	Schema.TaggedStruct("Unreadable", {
+		status: Schema.Literals(["failed", "unsupported"]),
+		message: Schema.String,
+	}),
+])
+type CachedLockfile = typeof CachedLockfile.Type
 
 export class DependencyScanError extends Schema.TaggedError<DependencyScanError>()(
 	"@maple/dependency-scan/DependencyScanError",
@@ -157,6 +165,12 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 				selected: SelectedLockfile,
 				tree: ReadonlyArray<VcsTreeFile>,
 			) => {
+				const unsupported = unsupportedReason(selected.kind)
+				if (unsupported !== undefined)
+					return Effect.succeed<ReadLockfile>({
+						lockfile: lockfileRow(selected, "unsupported", 0, unsupported),
+						packages: [],
+					})
 				if (selected.file.size > MAX_LOCKFILE_BYTES)
 					return Effect.succeed<ReadLockfile>({
 						lockfile: lockfileRow(
@@ -178,12 +192,31 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 								.pipe(Effect.map((text) => [manifest.relativePath, text] as const)),
 						{ concurrency: MANIFEST_CONCURRENCY },
 					)
-					const parsed = yield* parseLockfile({
+					return yield* parseLockfile({
 						path: selected.file.path,
 						content,
 						manifests: new Map(manifestTexts),
-					})
-					return { packages: parsed.packages, warnings: parsed.warnings }
+					}).pipe(
+						Effect.map((parsed): CachedLockfile => ({
+							_tag: "Parsed",
+							packages: parsed.packages,
+							warnings: parsed.warnings,
+						})),
+						Effect.catchTags({
+							"@maple/lockfiles/LockfileParseError": (error) =>
+								Effect.succeed<CachedLockfile>({
+									_tag: "Unreadable",
+									status: "failed",
+									message: error.message,
+								}),
+							"@maple/lockfiles/LockfileUnsupportedError": (error) =>
+								Effect.succeed<CachedLockfile>({
+									_tag: "Unreadable",
+									status: "unsupported",
+									message: error.message,
+								}),
+						}),
+					)
 				})
 				return edgeCache
 					.getOrCompute(
@@ -191,6 +224,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							bucket: PARSE_CACHE_BUCKET,
 							key: [
 								`v${PARSER_VERSION}`,
+								// The same bytes can be valid for one format and broken for another.
+								selected.kind,
 								selected.file.sha,
 								...manifests.map((manifest) => manifest.file.sha),
 							].join(":"),
@@ -200,27 +235,25 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						read,
 					)
 					.pipe(
-						Effect.map(({ value }): ReadLockfile => ({
-							lockfile: lockfileRow(
-								selected,
-								"parsed",
-								value.packages.length,
-								value.warnings.length === 0 ? null : value.warnings.join("; "),
-							),
-							packages: value.packages,
-						})),
-						Effect.catchTags({
-							"@maple/lockfiles/LockfileParseError": (error) =>
-								Effect.succeed<ReadLockfile>({
-									lockfile: lockfileRow(selected, "failed", 0, error.message),
-									packages: [],
-								}),
-							"@maple/lockfiles/LockfileUnsupportedError": (error) =>
-								Effect.succeed<ReadLockfile>({
-									lockfile: lockfileRow(selected, "unsupported", 0, error.message),
-									packages: [],
-								}),
-						}),
+						Effect.map(({ value }): ReadLockfile =>
+							value._tag === "Unreadable"
+								? {
+										lockfile: lockfileRow(selected, value.status, 0, value.message),
+										packages: [],
+									}
+								: {
+										lockfile: lockfileRow(
+											selected,
+											"parsed",
+											value.packages.length,
+											value.warnings.length === 0 ? null : value.warnings.join("; "),
+										),
+										packages: value.packages,
+									},
+						),
+						Effect.tap((read) =>
+							Effect.annotateCurrentSpan("maple.depscan.lockfile.status", read.lockfile.status),
+						),
 						Effect.withSpan("DependencyScanner.readLockfile", {
 							attributes: {
 								"maple.depscan.lockfile.path": selected.file.path,

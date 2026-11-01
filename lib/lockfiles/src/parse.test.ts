@@ -185,6 +185,26 @@ describe("npm lockfile details", () => {
 		expect(parsed.warnings).toEqual(["skipped 1 non-registry packages (git, tarball or local)"])
 	})
 
+	it("yarn v1 rewritten by npm: quoted field names", async () => {
+		const lock = [
+			"# yarn lockfile v1",
+			"",
+			'"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.8.3":',
+			'  "integrity" "sha512-a9gx=="',
+			'  "resolved" "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.8.3.tgz"',
+			'  "version" "7.8.3"',
+			"  dependencies:",
+			'    "@babel/highlight" "^7.8.3"',
+		].join("\n")
+		expect(summary(await parse("yarn.lock", lock))).toEqual(["@babel/code-frame@7.8.3:unknown"])
+	})
+
+	it("yarn berry: an entry left twice by a merge is read, not rejected", async () => {
+		const entry = ['"ms@npm:^2.1.3":', "  version: 2.1.3", '  resolution: "ms@npm:2.1.3"']
+		const lock = ["__metadata:", "  version: 8", ...entry, ...entry].join("\n")
+		expect(summary(await parse("yarn.lock", lock))).toEqual(["ms@2.1.3:unknown"])
+	})
+
 	it("yarn berry: patch entries resolve to the underlying npm version, workspaces are skipped", async () => {
 		const lock = [
 			"__metadata:",

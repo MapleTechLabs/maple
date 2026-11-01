@@ -258,13 +258,60 @@ describe("DependencyScanner", () => {
 					byPackage("time").map((finding) => finding.relation),
 					["direct"],
 				)
-				// The go.sum beside go.mod and the vendored lockfile are never read.
+				// The go.sum beside go.mod, the vendored lockfile and the binary bun.lockb are never read.
 				assert.isFalse(
-					state.blobReads.some((blob) => blob.includes("go.sum") || blob.includes("node_modules")),
+					state.blobReads.some(
+						(blob) =>
+							blob.includes("go.sum") ||
+							blob.includes("node_modules") ||
+							blob.includes("bun.lockb"),
+					),
 				)
 			}).pipe(Effect.provide(scannerFor(state)))
 		},
 	)
+
+	it.effect("records a broken lockfile as failed and does not parse the same blob again", () => {
+		const state = world({ "package-lock.json": "{ not json" })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const first = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			state.head = sha("b")
+			const second = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.deepStrictEqual(
+				[first, second].map((outcome) =>
+					outcome._tag === "Scanned"
+						? outcome.scan.lockfiles.map((lockfile) => [lockfile.path, lockfile.status])
+						: outcome._tag,
+				),
+				[[["package-lock.json", "failed"]], [["package-lock.json", "failed"]]],
+			)
+			assert.strictEqual(state.blobReads.length, 1)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("parses one blob under each lockfile format it is named as", () => {
+		const content = packageLock("4.17.15")
+		const state = world({ "bun.lock": content, "package-lock.json": content })
+		state.files = new Map([...state.files].map(([path, blob]) => [path, { ...blob, sha: "blob:shared" }]))
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.deepStrictEqual(
+				outcome._tag === "Scanned"
+					? outcome.scan.lockfiles.map((lockfile) => [
+							lockfile.path,
+							lockfile.status,
+							lockfile.packageCount,
+						])
+					: outcome._tag,
+				[
+					["bun.lock", "failed", 0],
+					["package-lock.json", "parsed", 2],
+				],
+			)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
 
 	it.effect("skips a push that changed no lockfile, and fixes the advisories an upgrade removes", () => {
 		const state = world(MONOREPO)

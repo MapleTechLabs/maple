@@ -65,8 +65,9 @@ const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "ti
 const WORKFLOW_ANNOTATIONS_BUDGET = Duration.seconds(10)
 /**
  * How long a CI job's log may hold the consumer, which runs a batch's messages one after another:
- * the permission check, about 14s waiting for GitHub to publish the log, then the download and ingest. Past it, the batches
- * already sent stay and the rest of the log is dropped.
+ * the permission check, about 14s waiting for GitHub to publish the log, up to 7s riding out a busy
+ * log store, then the download and ingest. Past it, the batches already sent stay and the rest of
+ * the log is dropped.
  */
 const WORKFLOW_LOG_BUDGET = Duration.seconds(30)
 
