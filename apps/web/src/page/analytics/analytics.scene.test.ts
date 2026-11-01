@@ -120,6 +120,9 @@ describe("web analytics", () => {
 			resolveTheme,
 			expectView(text("Couldn't load AI crawlers")).toExist(),
 		)
+		expect(names(pageUpdate(failed, Message.ClickedRetryAiCrawlers()).commands)).toEqual([
+			"FetchWebAnalyticsAiCrawlers",
+		])
 	})
 
 	test("a breakdown row toggles its filter through the URL", () => {

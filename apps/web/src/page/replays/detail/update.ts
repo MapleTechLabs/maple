@@ -393,6 +393,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const ranged = syncRange(entry.model, context, "Refresh")
 			return { model: ranged.model, commands: [...(entry.commands ?? []), ...(ranged.commands ?? [])] }
 		},
+		ClickedRetryDetail: () => requestEntry(model, context, "Refresh"),
 		PickedRailTab: ({ tab }) => ({ model: { ...model, railTab: tab } }),
 		PickedEventFilter: ({ filter }) => ({
 			model: { ...model, eventFilter: filter, openEventIndex: null },

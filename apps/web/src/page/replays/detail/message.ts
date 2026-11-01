@@ -52,6 +52,8 @@ export const Message = defineMessageUnion({
 	/** A feed Mount handed its range to the live engine. */
 	FedTrailingEvents: {},
 	ClickedRetryPlayer: {},
+	/** The page failure card's Try again: re-reads the session row, manifest and transcript. */
+	ClickedRetryDetail: {},
 	PickedRailTab: { tab: RailTab },
 	PickedEventFilter: { filter: EventFilter },
 	ClickedEvent: { index: Schema.Number, timestamp: Schema.String },

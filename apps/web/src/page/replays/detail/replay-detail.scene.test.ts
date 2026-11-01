@@ -134,6 +134,15 @@ describe("replay detail", () => {
 		)
 	})
 
+	test("Try again on a failed session asks for the session again", () => {
+		const start = entered().model
+		const failed = pageUpdate(
+			start,
+			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
+		).model
+		expect(names(pageUpdate(failed, Message.ClickedRetryDetail()).commands)).toContain(FetchDetail.name)
+	})
+
 	test("a loaded session subscribes to 0–0, then the planned opening range, and its traces", () => {
 		const start = entered().model
 		const detailed = pageUpdate(start, Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }))

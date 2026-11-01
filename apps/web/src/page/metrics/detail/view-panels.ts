@@ -42,7 +42,8 @@ const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownCombob
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load metric data" }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load metric data", onRetry: Message.ClickedReload() }),
 		onData: (rows) =>
 			rows.length === 0
 				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
