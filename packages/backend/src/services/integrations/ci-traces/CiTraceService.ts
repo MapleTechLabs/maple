@@ -8,7 +8,7 @@ import type { WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
 import { type OrgId, UserId } from "@maple/domain/primitives"
 import { VcsInstallations } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Clock, Duration, Effect, Layer, Schedule, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -17,11 +17,15 @@ import {
 	type WorkflowEventSinkApi,
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { isSourcePaused, stampedSourceId } from "@maple/backend/services/org/integration-sources"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import {
-	isSourcePaused,
-	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
-import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+	type IngestSendError,
+	isIngestSendError,
+	isRefusal,
+	makeIngestSender,
+} from "@maple/backend/services/ingest/ingest-sender"
+import { SharedIngestRefusals } from "./ingest-refusals"
 import { jobLogRecords, type OtlpLogsPayload, workflowJobLogsToOtlp } from "./logs"
 import { type OtlpTracesPayload, workflowJobToOtlp, workflowRunToOtlp } from "./otlp"
 
@@ -31,22 +35,49 @@ const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-ci-traces")
 /** Log records per ingest request: about 1 MB of JSON, well under the gateway's body limit. */
 const LOG_BATCH_SIZE = 1000
 const UNLINKED = { stamped: undefined, paused: false } as const
+/** How long an org whose key ingest refused sits out: every webhook in between would be refused too. */
+const REFUSAL_HOLD = Duration.minutes(10)
 
 const make = Effect.gen(function* () {
 	const ingestKeys = yield* OrgIngestKeysService
 	const database = yield* Database
 	const ingest = yield* makeIngestSender
+	const refusals = (yield* SharedIngestRefusals) ?? (yield* makeExpiringStore<string>())
+
+	// A refused key (billing, revoked) is the org's state, not a lost write: the span ends Ok and
+	// the org is held, so later webhooks neither post nor download a job log for it.
+	const heldRefusal = (orgId: OrgId) => Effect.map(refusals.get(orgId), Option.getOrUndefined)
+	const holdRefused = (orgId: OrgId, error: IngestSendError) =>
+		Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
+			yield* refusals.set(orgId, error.message, now + Duration.toMillis(REFUSAL_HOLD))
+			yield* Effect.annotateCurrentSpan({
+				"maple.cicd.outcome": "ingest_refused",
+				"maple.cicd.failure": error.message,
+			})
+			yield* Effect.logInfo("[CI traces] ingest refused the org; holding its CI telemetry").pipe(
+				Effect.annotateLogs({ orgId, holdMs: Duration.toMillis(REFUSAL_HOLD), error: error.message }),
+			)
+		})
+	const skipHeld = (orgId: OrgId, refusal: string) =>
+		Effect.annotateCurrentSpan({
+			orgId,
+			"maple.cicd.outcome": "ingest_refused",
+			"maple.cicd.failure": refusal,
+		})
 
 	// A refused key (billing, revoked) cannot succeed on retry; everything else gets two more tries.
 	const post = (ingestKey: string, payload: OtlpTracesPayload | OtlpLogsPayload) => {
 		const signal = "resourceLogs" in payload ? "logs" : "traces"
-		return ingest.send({ signal, ingestKey, payload, label: `CI ${signal}`, timeout: INGEST_TIMEOUT }).pipe(
-			Effect.retry({
-				schedule: Schedule.exponential(Duration.millis(250)),
-				times: 2,
-				while: (error) => !isRefusal(error),
-			}),
-		)
+		return ingest
+			.send({ signal, ingestKey, payload, label: `CI ${signal}`, timeout: INGEST_TIMEOUT })
+			.pipe(
+				Effect.retry({
+					schedule: Schedule.exponential(Duration.millis(250)),
+					times: 2,
+					while: (error) => !isRefusal(error),
+				}),
+			)
 	}
 
 	// The installation's source: its `src_` id and whether it is paused. Never fails: without it the
@@ -113,6 +144,8 @@ const make = Effect.gen(function* () {
 		toPayload: (sourceId: string | undefined) => OtlpTracesPayload,
 	) =>
 		Effect.gen(function* () {
+			const held = yield* heldRefusal(orgId)
+			if (held !== undefined) return yield* skipHeld(orgId, held)
 			const source = yield* installationSource(orgId, job)
 			if (source.paused) {
 				return yield* Effect.annotateCurrentSpan("maple.cicd.outcome", "source_paused")
@@ -122,6 +155,9 @@ const make = Effect.gen(function* () {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cicd.span_count": spanCount })
 			yield* postAs(orgId, payload)
 		}).pipe(
+			Effect.catchIf(isIngestSendError, (error) =>
+				isRefusal(error) ? holdRefused(orgId, error) : Effect.fail(error),
+			),
 			Effect.tapCause((cause) =>
 				Effect.annotateCurrentSpan({
 					"maple.cicd.outcome": "ingest_failed",
@@ -143,6 +179,8 @@ const make = Effect.gen(function* () {
 		lines: Stream.Stream<string, E>,
 	) =>
 		Effect.gen(function* () {
+			const held = yield* heldRefusal(orgId)
+			if (held !== undefined) return yield* skipHeld(orgId, held)
 			const source = yield* installationSource(orgId, job)
 			if (source.paused) {
 				return yield* Effect.annotateCurrentSpan("maple.cicd.outcome", "source_paused")
@@ -159,6 +197,9 @@ const make = Effect.gen(function* () {
 			)
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cicd.log_record_count": sent })
 		}).pipe(
+			Effect.catchIf(isIngestSendError, (error) =>
+				isRefusal(error) ? holdRefused(orgId, error) : Effect.fail(error),
+			),
 			Effect.tapCause((cause) =>
 				Effect.annotateCurrentSpan({
 					"maple.cicd.outcome": "log_failed",

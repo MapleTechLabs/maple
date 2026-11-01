@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -287,6 +287,43 @@ describe("PlanetScaleMetricsService", () => {
 			assert.isNull(state?.watermark_at ?? null)
 			assert.isNotNull(state?.last_error ?? null)
 			assert.lengthOf(api.ingested, 1)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("records a plan-limit refusal on the branch without failing its poll span", () => {
+		const testDb = createTestDb(trackedDbs)
+		const api = fakePlanetScale({ ingestStatus: 402 })
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return Effect.gen(function* () {
+			yield* connectAndLoadInventory(["pr-*"])
+			yield* (yield* PlanetScaleMetricsService)
+				.pollAll()
+				.pipe(Effect.provideService(Tracer.Tracer, tracer))
+
+			const state = yield* Effect.promise(() =>
+				queryFirstRow<{ watermark_at: Date | null; last_error: string | null }>(
+					testDb,
+					`SELECT watermark_at, last_error FROM planetscale_poll_state WHERE org_id = 'org_1' AND dataset = 'metrics'`,
+				),
+			)
+			assert.isNull(state?.watermark_at ?? null)
+			assert.include(state?.last_error ?? "", "402")
+			assert.lengthOf(api.ingested, 1)
+			const polls = spans.filter((span) => span.name === "PlanetScaleMetricsService.pollBranch")
+			assert.deepStrictEqual(
+				polls.map((span) => [
+					span.status._tag === "Ended" && Exit.isSuccess(span.status.exit),
+					span.attributes.get("maple.ingest.outcome"),
+				]),
+				[[true, "refused"]],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
