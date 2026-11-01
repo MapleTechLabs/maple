@@ -96,8 +96,10 @@ const exit = async (child: ReturnType<typeof spawn>) => {
 		clearTimeout(timer)
 	}
 }
+// CI boots six native probes on one runner at once, so a cold chDB start can take well over 20s.
 const healthy = async () => {
-	for (let i = 0; i < 200; i++) {
+	const deadline = Date.now() + 60_000
+	while (Date.now() < deadline) {
 		const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1000) }).catch(() => null)
 		if (response?.ok) return
 		await Bun.sleep(100)
