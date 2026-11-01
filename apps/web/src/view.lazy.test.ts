@@ -81,6 +81,7 @@ const SAMPLE_PATHS = [
 	"/security/runs",
 	"/security/exposure",
 	"/security/runtimes",
+	"/security/dependencies",
 	"/security/runs/run_1",
 	"/security/findings/00000000-0000-4000-8000-000000000005/fp_1",
 	"/agent-sessions",

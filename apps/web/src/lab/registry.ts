@@ -220,6 +220,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/mcp",
+		title: "MCP hub",
+		description:
+			"The MCP hub over maple-ai's spec spans from Nov 1, 2026: the server list, a server's overview, the run_sql tool page, the service page's MCP tab, and the empty, loading, error and quiet states (?view=list|server|tool|service|empty|loading|error|quiet).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/logs",
 		title: "Logs stream",
 		description:

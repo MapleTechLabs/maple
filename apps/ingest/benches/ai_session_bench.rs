@@ -207,6 +207,7 @@ fn bench_classify(c: &mut Criterion) {
                     span_attrs: black_box(span_attrs),
                     resource_attrs: black_box(&resource),
                     events: &[],
+                    span_kind: 0,
                 }))
             });
         });

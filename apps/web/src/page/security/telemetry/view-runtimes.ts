@@ -4,6 +4,7 @@ import {
 	isUrgentSeverity,
 	type RuntimeAdvisory,
 } from "@maple/domain/runtime-advisories"
+import { RUNTIME_PRODUCTS } from "@maple/domain/runtime-posture"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
@@ -131,20 +132,29 @@ const severityCounts = (counts: Record<AdvisorySeverity, number>): string =>
 		.map((severity) => `${counts[severity]} ${severity}`)
 		.join(" · ")
 
+const notScannedReason = ({ posture, row }: RuntimeEntry): string => {
+	switch (posture.status) {
+		case "no_version":
+			return "This service reports no runtime version to check"
+		case "emulated": {
+			const label = RUNTIME_PRODUCTS[posture.product].label
+			return `This service reports the Node.js version ${label} emulates, not its own; send ${label}'s version as process.runtime.version`
+		}
+		default:
+			// Every tracked runtime has an advisory source, so what is left is untracked.
+			return row.runtimeName.trim() === ""
+				? "This service reports no runtime: set process.runtime.name and process.runtime.version"
+				: "Maple does not track versions of this runtime"
+	}
+}
+
 const vulnerabilitiesCell = (h: H, entry: RuntimeEntry): Html => {
 	const vulnerabilities = entry.vulnerabilities
 	switch (vulnerabilities.status) {
 		case "not_covered":
 			return h.span(
-				[
-					h.Class("text-xs text-muted-foreground"),
-					h.Title(
-						entry.posture.status === "no_version"
-							? "This service reports no runtime version to check"
-							: "No advisory source covers this runtime",
-					),
-				],
-				["—"],
+				[h.Class("text-xs text-muted-foreground"), h.Title(notScannedReason(entry))],
+				["Not scanned"],
 			)
 		case "not_checked":
 			return h.span(
@@ -333,7 +343,7 @@ const footnote = (h: H): Html =>
 				},
 				["OSV.dev"],
 			),
-			".",
+			" and, for Bun and Deno, their GitHub security advisories.",
 		],
 	)
 
@@ -352,7 +362,7 @@ const advisoryRow = (h: H, advisory: RuntimeAdvisory): Html =>
 				h,
 				{
 					className: "shrink-0 font-mono text-xs",
-					href: `https://osv.dev/vulnerability/${encodeURIComponent(advisory.osvId)}`,
+					href: advisory.url,
 					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
 				},
 				[advisory.id],

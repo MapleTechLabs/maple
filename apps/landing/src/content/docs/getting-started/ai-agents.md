@@ -83,7 +83,7 @@ You get better answers when you name the **service**, the **time window** and th
 1. The agent finds the error with `find_errors` or `list_error_issues`.
 2. `error_detail` gives sample occurrences, stack traces and related logs.
 3. `inspect_trace` shows the full request: which service called which, and where it failed.
-4. With the GitHub integration, `read_source_file` opens the code at the commit that was running.
+4. The agent reads the code at the commit that was running, in your local checkout.
 5. The agent proposes a fix in your repository.
 
 From the **Errors** page you can skip step 1: right-click an issue and choose **Copy agent prompt** to hand your agent the issue with its context.

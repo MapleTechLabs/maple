@@ -19,7 +19,8 @@ export type GuideLang =
     | "shell"
     | "python-logging"
     | "loguru-output"
-    | "otel-debug";
+    | "otel-debug"
+    | "powershell";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -232,6 +233,18 @@ const otelDebug = (code: string) =>
         })
         .join("\n");
 
+// PowerShell: cmdlets as functions, quoted strings as labels, variables as
+// names. Backtick escapes stay inside their string.
+const powershell = (code: string) =>
+    tokenize(code, [
+        [/#.*/y, (m) => span("comment", m[0])],
+        [/'[^'\n]*'|"(?:[^"`\n]|`.)*"/y, (m) => span("labels", m[0])],
+        [/\$(?:env:)?\w+/y, (m) => span("name", m[0])],
+        [/\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/y, (m) => span("fn", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/[-\w]+/y, (m) => escape(m[0])],
+    ]);
+
 export const highlight = (code: string, lang: GuideLang) =>
     ({
         exposition,
@@ -252,4 +265,5 @@ export const highlight = (code: string, lang: GuideLang) =>
         "python-logging": pythonLogging,
         "loguru-output": loguruOutput,
         "otel-debug": otelDebug,
+        powershell,
     })[lang](code);
