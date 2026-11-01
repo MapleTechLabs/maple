@@ -14,6 +14,7 @@ import { analyticsSkeleton } from "../kit/skeletons"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { presetSpanLabel } from "../../kit/time-controls"
 import { issuesCard, SEVERITY_SERIES, volumeCard } from "./view-charts"
 import { authorsCard, categoriesCard, outcomesCard } from "./view-lists"
 import { headlineStrip, secondaryStats } from "./view-stats"
@@ -49,7 +50,9 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 			const theme = model.themeColors
 			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return analyticsSkeleton(h)
 			const windowLabel =
-				model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
+				model.search.startTime !== undefined
+				? "period"
+				: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
 			return h.div(
 				[h.Class("flex flex-col gap-6")],
 				[

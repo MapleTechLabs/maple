@@ -4,7 +4,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { middleTruncate } from "../../../ui/middle-truncate"
-import { severityIcon } from "../../errors/kit/severity"
+import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
 import { locationOf } from "./format"
 import {
 	BUCKET_LABEL,
@@ -15,7 +15,7 @@ import {
 	type SeverityBucket,
 	SCORED_BUCKETS,
 } from "./findings"
-import { SECURITY_SEVERITY_FILL, securitySeverityBadge } from "./parts"
+import { securitySeverityBadge } from "./parts"
 
 // The findings list the run page and the Findings tab share, laid out like Linear's issue list:
 // severity tabs on top, collapsible groups, one dense line per finding.
@@ -33,7 +33,7 @@ export const bucketDot = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket, classNam
 						? "border-2 border-dashed border-muted-foreground"
 						: bucket === "rejected"
 							? "bg-foreground-faint"
-							: SECURITY_SEVERITY_FILL[bucket],
+							: SEVERITY_FILL[bucket],
 				className,
 			),
 		),

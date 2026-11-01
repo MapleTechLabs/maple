@@ -10,10 +10,11 @@ import { McpServersSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { PresetValue } from "../../kit/time-controls"
 
 // `/mcp-servers`, `/mcp-servers/:service` and `/mcp-servers/:service/tools/:tool`: one page, three views.
 
-export const DEFAULT_MCP_PRESET = "1d"
+export const DEFAULT_MCP_PRESET: PresetValue = "24h"
 
 export const McpView = Schema.TaggedUnion({
 	Servers: {},

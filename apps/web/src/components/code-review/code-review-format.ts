@@ -78,7 +78,7 @@ export const outcomeOf = (review: Pick<CodeReviewListItem, "status" | "verdict">
 		case "queued":
 			return { label: "Queued", tone: "text-muted-foreground", kind: "queued" }
 		case "running":
-			return { label: "Reviewing", tone: TONE_TEXT.info, kind: "running" }
+			return { label: "Reviewing", tone: TONE_TEXT.live, kind: "running" }
 		case "failed":
 			return { label: "Failed", tone: TONE_TEXT.crit, kind: "failed" }
 		case "skipped":

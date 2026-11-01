@@ -254,7 +254,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-api",
 		title: "Service API tab",
 		description:
-			"The service page's API tab over 12 hours of the ingest service: KPI strip, responses by status, the non-2xx breakdown, the endpoint table and its drawer (?endpoint=POST%20/v1/traces).",
+			"The service page's API tab over 12 hours of the ingest service: KPI strip, responses by status, the non-2xx breakdown, the endpoint table and its drawer (?endpoint=POST%20/v1/traces); ?failed=1 fails the first endpoints read.",
 		kind: "lab",
 		session: "none",
 	},

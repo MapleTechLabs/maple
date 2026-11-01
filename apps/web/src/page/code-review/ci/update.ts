@@ -22,12 +22,13 @@ import type { Retained } from "../kit/retained"
 import { remember } from "../kit/page-steps"
 import { Message, type Model } from "./model"
 import { followRuns, request, runsPageStep } from "./requests"
+import type { PresetValue } from "../../kit/time-controls"
 
 export type Search = typeof CodeReviewCiSearch.Type
 type Return = PageReturn<Model, Message>
 
 /** `CODE_REVIEW_CI_DEFAULT_PRESET`: a week, since CI runs many times a day. */
-export const DEFAULT_PRESET = "7d"
+export const DEFAULT_PRESET: PresetValue = "1w"
 const FRAME_ID = "code-review-ci"
 const isRunResult = Schema.is(CiRunResult)
 

@@ -14,7 +14,7 @@ type InvestigationStatus = V2Investigation["status"]
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
 export const STATUS = {
-	investigating: { label: "In progress", tone: "bg-primary-a2 text-primary" },
+	investigating: { label: "In progress", tone: TONE_SOFT.live },
 	diagnosed: { label: "Diagnosed", tone: TONE_SOFT.ok },
 	inconclusive: { label: "Inconclusive", tone: TONE_SOFT.warn },
 	resolved: { label: "Resolved", tone: TONE_SOFT.done },

@@ -22,6 +22,7 @@ import { codeReviewLayout } from "../kit/layout"
 import { sectionHeading } from "../../kit/section-heading"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { presetSpanLabel } from "../../kit/time-controls"
 import { runsList } from "./view-runs"
 import { ciSkeleton } from "../kit/skeletons"
 import { chartsRow, headlineStrip, RESULT_SERIES } from "./view-stats"
@@ -103,7 +104,9 @@ const runsActions = (h: H, model: Model): Html =>
 
 const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, timeZone: string): Html => {
 	const windowLabel =
-		model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
+		model.search.startTime !== undefined
+				? "period"
+				: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
 	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
