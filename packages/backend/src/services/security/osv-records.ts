@@ -147,11 +147,12 @@ const displayVersion = (ref: PackageRef, version: string): string =>
  */
 export const mergeAdvisory = (records: ReadonlyArray<OsvRecord>, ref: PackageRef): PackageAdvisory => {
 	const ids = [...new Set(records.map((record) => record.id))].sort()
-	const id = ids.find((candidate) => candidate.startsWith("GHSA-")) ?? ids[0] ?? ""
+	const names = new Set(records.flatMap((record) => [record.id, ...record.aliases]))
+	// The GHSA id even when OSV only names it as an alias, so it holds once OSV returns that record too.
+	const id = [...names].sort().find((name) => name.startsWith("GHSA-")) ?? ids[0] ?? ""
 	const ordered = [...records].sort((a, b) =>
 		a.id === id ? -1 : b.id === id ? 1 : a.id.localeCompare(b.id),
 	)
-	const names = new Set(ordered.flatMap((record) => [record.id, ...record.aliases]))
 	const compare = (a: string, b: string) => compareVersions(ref.ecosystem, a, b)
 	const fixes = ordered.flatMap((record) => {
 		const fix = recordFix(record, ref)

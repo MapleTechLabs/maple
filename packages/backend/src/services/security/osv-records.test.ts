@@ -97,6 +97,15 @@ describe("advisoriesOf", () => {
 		expect(advisory).toMatchObject({ id: "GHSA-aaaa-bbbb-cccc", severity: "high", fixedIn: "v1.5.0" })
 	})
 
+	it("takes the GHSA id even when OSV names it only as an alias", () => {
+		const [advisory] = advisoriesOf(
+			[record({ id: "GO-2024-3333", aliases: ["CVE-2024-45338", "GHSA-w32m-9786-jp63"] })],
+			GO_REF,
+		)
+		expect(advisory?.id).toBe("GHSA-w32m-9786-jp63")
+		expect(advisory?.aliases).toEqual(["CVE-2024-45338", "GO-2024-3333"])
+	})
+
 	it("leaves out withdrawn records and ranges of other packages", () => {
 		expect(advisoriesOf([record({ withdrawn: true })], GO_REF)).toEqual([])
 		const [advisory] = advisoriesOf(
