@@ -15,7 +15,7 @@
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatEvent, ChatTurnEndEvent } from "@maple/domain/chat-session"
 import { Cause, Clock, Effect, Fiber, Ref, Schedule, Semaphore, Stream } from "effect"
-import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
+import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
 import {
 	renderChatMessage,
 	splitBlocks,
@@ -88,6 +88,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 			if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
 
 			const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
+			const phase: ChatWritePhase = running ? "streaming" : "final"
 			// Messages a flush posts extend `posted` as it goes; the count is fixed up front.
 			yield* Effect.forEach(
 				Array.from({ length: Math.max(groups.length, posted.length) }, (_, index) => index),
@@ -101,7 +102,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
 						const rendered = JSON.stringify(group)
 						if (index >= posted.length) {
-							posted.push(yield* transport.post(target, group))
+							posted.push(yield* transport.post(target, group, phase))
 							sent.push(rendered)
 							// At least once: a run lost between the post and this report posts it again later.
 							if (options.onPosted !== undefined) yield* options.onPosted([...posted])
@@ -109,9 +110,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						}
 						// Only what changed. A turn cut into three messages would otherwise spend three edits
 						// per tick, almost all of them rewriting a message with what it already says — and a
-						// platform's edit budget is per channel, not per message.
-						if (sent[index] === rendered) return
-						yield* transport.edit(posted[index], group)
+						// platform's edit budget is per channel, not per message. A live message is the
+						// exception at the end: it shows as still being written until its final write.
+						if (sent[index] === rendered && (running || outbound.liveMessages !== true)) return
+						yield* transport.edit(posted[index], group, phase)
 						sent[index] = rendered
 					}),
 				{ discard: true },

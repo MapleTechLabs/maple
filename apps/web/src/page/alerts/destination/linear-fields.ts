@@ -59,6 +59,8 @@ export const Message = defineMessageUnion({
 	ClickedRetry: {},
 	ClickedConnect: {},
 	CompletedConnect: { attempt: Schema.Number, outcome: Schema.Literals(["Closed", "Blocked", "Failed"]) },
+	/** The connect popup finished (`connectReturns`), even one whose close was seen early. */
+	ReturnedConnect: {},
 	GotTeamSelectMessage: { message: Select.Message },
 })
 export type Message = typeof Message.Type
@@ -222,6 +224,11 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 				? readStatus({ ...settled, connectNote: null }, "Refresh")
 				: { model: { ...settled, connectNote: outcome }, commands: [] }
 		},
+		ReturnedConnect: () =>
+			readStatus(
+				{ ...model, isConnecting: false, isRecheckingStatus: false, connectNote: null },
+				"Refresh",
+			),
 		GotTeamSelectMessage: ({ message: inner }) => {
 			const step = Select.update(model.teamSelect, inner)
 			const lifted: Return = {
