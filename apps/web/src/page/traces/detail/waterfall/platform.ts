@@ -6,6 +6,7 @@ import type { IconName } from "../../../../ui/icon"
 // label, icon, edge, location and outcome; the accents come from the shared @maple/ui module.
 
 export interface RowPlatform {
+	readonly id: string
 	readonly label: string
 	readonly icon: IconName
 	readonly accentClassName: string

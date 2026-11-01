@@ -351,13 +351,25 @@ const TREE_SPAN_ATTR_KEYS = [
 	"cloudflare.colo",
 	"faas.invoked_region",
 	"cloudflare.outcome",
+	// The waterfall's technology icon: what the span called, beyond `db.system`.
+	"messaging.system",
+	"rpc.system",
+	"gen_ai.provider.name",
+	"gen_ai.system",
 ] as const
 
 /**
- * Resource attribute keys the trace-detail header reads (deployment env + commit).
- * Everything else in `ResourceAttributes` is loaded lazily by `spanDetailQuery`.
+ * Resource attribute keys the trace detail reads: the header's env and commit, and the
+ * runtime and SDK behind each service's mark in the waterfall. Everything else in
+ * `ResourceAttributes` is loaded lazily by `spanDetailQuery`.
  */
-const TREE_RESOURCE_ATTR_KEYS = ["deployment.environment", "vcs.ref.head.revision"] as const
+const TREE_RESOURCE_ATTR_KEYS = [
+	"deployment.environment",
+	"vcs.ref.head.revision",
+	"process.runtime.name",
+	"telemetry.sdk.language",
+	"telemetry.sdk.name",
+] as const
 
 /**
  * Hard cap on spans returned for one trace. A waterfall with more than a few
