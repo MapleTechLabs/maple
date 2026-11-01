@@ -163,7 +163,7 @@ const errorRow = <M>(
 }
 
 const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptions<M>): Html => {
-	const isUnnamed = data.errorGroups.every((group) => group.message === null)
+	const isUnnamed = data.errorGroups.length > 0 && data.errorGroups.every((group) => group.message === null)
 	return h.section(
 		[h.AriaLabel("Failures"), h.Class("@container/panel min-w-0 px-6 pt-5 pb-2")],
 		[
@@ -202,7 +202,13 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 				]),
 				toolTableBody(
 					h,
-					data.errorGroups.map((group) => errorRow(h, group, data.errors, options)),
+					data.errorGroups.length === 0
+						? [
+								emptyMessage(h, { className: "py-8 font-mono" }, [
+									"No failed calls in this window.",
+								]),
+							]
+						: data.errorGroups.map((group) => errorRow(h, group, data.errors, options)),
 				),
 			]),
 			...(isUnnamed

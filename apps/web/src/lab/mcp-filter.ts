@@ -72,7 +72,17 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 			const errors = sum(mine, (pair) => pair.errors)
 			const isKept =
 				calls > 0 && row.tool.toLowerCase().includes(needle) && (!filters.isFailingOnly || errors > 0)
-			return isKept ? [{ ...row, calls, errors, topError: errors > 0 ? row.topError : null }] : []
+			return isKept
+				? [
+						{
+							...row,
+							calls,
+							errors,
+							topError: errors > 0 ? row.topError : null,
+							spark: row.spark.map((value) => Math.round((value * calls) / row.calls)),
+						},
+					]
+				: []
 		})
 		.toSorted((a, b) => b.calls - a.calls)
 	const clientSeries = MCP_OVERVIEW.clientSeries.filter((point) => names.has(point.seriesKey))
