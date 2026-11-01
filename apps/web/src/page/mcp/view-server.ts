@@ -120,7 +120,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 							)
 						: subline(
 								h,
-								`${data.tools.length} tools`,
+								`${data.tools.length} ${pluralize(data.tools.length, "tool")}`,
 								`· ${data.clients.length} ${pluralize(data.clients.length, "client")}`,
 							),
 				isSelected: options.metric === "calls",
@@ -336,7 +336,7 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 			toolTableFooter(
 				h,
 				data.tools.length === options.toolCount
-					? `Showing all ${data.tools.length} tools`
+					? `Showing all ${data.tools.length} ${pluralize(data.tools.length, "tool")}`
 					: `${data.tools.length} of ${options.toolCount} tools`,
 				`· ${formatToolCount(data.totals.calls)} calls · ${formatErrorRate(errorRate(data.totals))} failed`,
 			),

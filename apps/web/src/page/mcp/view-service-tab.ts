@@ -1,5 +1,5 @@
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { formatErrorRate } from "@maple/ui/lib/format"
+import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
 import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
@@ -37,7 +37,11 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 	return panel(h, { className: "min-w-0" }, [
 		panelHeader(h, {
 			title: "Top tools",
-			action: viewAll(h, `All ${data.tools.length} tools`, options.onOpenServer),
+			action: viewAll(
+				h,
+				`All ${data.tools.length} ${pluralize(data.tools.length, "tool")}`,
+				options.onOpenServer,
+			),
 		}),
 		panelBody(h, [
 			h.ul(
@@ -178,7 +182,7 @@ export const serviceMcpTab = <M>(
 							h.span(
 								[h.Class("text-foreground-subtle")],
 								[
-									`· MCP ${data.protocolVersion} over ${data.transport} · ${data.tools.length} tools called`,
+									`· MCP ${data.protocolVersion} over ${data.transport} · ${data.tools.length} ${pluralize(data.tools.length, "tool")} called`,
 								],
 							),
 						],
@@ -192,7 +196,7 @@ export const serviceMcpTab = <M>(
 					value: formatToolCount(totals.calls),
 					spark: data.series.map((point) => point.calls),
 					sparkColor: "var(--primary)",
-					subline: `${data.tools.length} tools`,
+					subline: `${data.tools.length} ${pluralize(data.tools.length, "tool")}`,
 				}),
 				statRailItem(h, {
 					eyebrow: "Failed calls",
