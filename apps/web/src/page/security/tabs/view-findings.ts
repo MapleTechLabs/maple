@@ -242,16 +242,19 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 					? h.div(
 							[h.Class("p-4")],
 							[
-								filteredEmpty(h, {
-									noun: "findings",
-									className: "rounded-md border border-dashed md:py-14",
-									description: "Nothing in this status matches the filters.",
-									onClear:
-										// Clearing keeps the status, so the status alone is not a filter.
-										Object.keys(model.findingsSearch).some((key) => key !== "status")
-											? Message.ClickedClearFilters()
-											: undefined,
-								}),
+								// Clearing keeps the status, so the status alone is not a filter.
+								Object.keys(model.findingsSearch).some((key) => key !== "status")
+									? filteredEmpty(h, {
+											noun: "findings",
+											className: "rounded-md border border-dashed md:py-14",
+											description: "Nothing in this status matches the filters.",
+											onClear: Message.ClickedClearFilters(),
+										})
+									: empty(
+											h,
+											[emptyHeader(h, [emptyTitle(h, ["No findings in this status"])])],
+											"rounded-md border border-dashed md:py-14",
+										),
 							],
 						)
 					: findingsList(h, model, rows, targets, clock)
