@@ -204,7 +204,7 @@ export const serviceMcpTab = <M>(
 					tone: errorRateLevel(errorRate(totals)),
 					spark: data.series.map((point) => point.errors),
 					sparkColor: "var(--color-severity-error)",
-					subline: `${totals.errors} tool errors`,
+					subline: `${totals.errors} ${pluralize(totals.errors, "tool error")}`,
 				}),
 				statRailItem(h, {
 					eyebrow: "P95 duration",

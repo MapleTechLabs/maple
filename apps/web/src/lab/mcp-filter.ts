@@ -52,6 +52,9 @@ const toolSeriesOf = (
 	}))
 }
 
+/** A client's kind, from the overview's client rows. */
+const kindOf = (client: string) => MCP_OVERVIEW.clients.find((row) => row.name === client)?.kind
+
 const hasFilter = (filters: McpFilters): boolean =>
 	filters.client !== undefined ||
 	filters.kind !== undefined ||
@@ -105,11 +108,13 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 
 /** `run_sql` under the client and failing filters: its calls, failures, series and call lists. */
 export const filteredTool = (filters: McpFilters): McpToolDetail => {
-	if (filters.client === undefined && !filters.isFailingOnly) return MCP_RUN_SQL
+	if (filters.client === undefined && filters.kind === undefined && !filters.isFailingOnly)
+		return MCP_RUN_SQL
 	const pairs = MCP_CLIENT_TOOLS.filter(
 		(pair) =>
 			pair.tool === MCP_RUN_SQL.tool &&
 			(filters.client === undefined || pair.client === filters.client) &&
+			(filters.kind === undefined || kindOf(pair.client) === filters.kind) &&
 			(!filters.isFailingOnly || pair.errors > 0),
 	)
 	const names = new Set(pairs.map((pair) => pair.client))

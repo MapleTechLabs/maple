@@ -51,6 +51,12 @@ describe("mcp lab", () => {
 		expect(searched.totals.calls).toBe(115)
 	})
 
+	test("kind and failing only narrow the chart's failures with the totals", () => {
+		const overview = filteredOverview({ ...filtersOf(opened()), kind: "agent", isFailingOnly: true })
+		expect(overview.totals.errors).toBe(1)
+		expect(overview.series.reduce((total, point) => total + point.errors, 0)).toBe(overview.totals.errors)
+	})
+
 	test("a new percentile switches the chart to duration; re-pressing the pressed one keeps it", () => {
 		expect(update(opened(), pressPercentile("p95", 2)).model.metric).toBe("duration")
 		expect(update(opened(), pressPercentile("p90", 1)).model.metric).toBe("calls")

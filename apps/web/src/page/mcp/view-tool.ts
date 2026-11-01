@@ -1,4 +1,4 @@
-import { formatErrorRate } from "@maple/ui/lib/format"
+import { formatErrorRate, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { Schema } from "effect"
@@ -170,7 +170,7 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 			sectionTitle(
 				h,
 				"Failures",
-				`${data.errors} failed calls · ${data.errorGroups.length} ${data.errorGroups.length === 1 ? "kind" : "kinds"}`,
+				`${data.errors} ${pluralize(data.errors, "failed call")} · ${data.errorGroups.length} ${pluralize(data.errorGroups.length, "kind")}`,
 				h.span(
 					[h.Class("font-mono text-2xs text-muted-foreground")],
 					["grouped by ", attr(h, "error.type")],
