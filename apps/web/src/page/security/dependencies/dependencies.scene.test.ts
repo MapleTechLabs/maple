@@ -212,6 +212,43 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("does not call a repository clean when its only scan failed", () => {
+		const repositories = repositoriesOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					{
+						repositories: repositories.repositories.map((repository) =>
+							repository.latestScan === null
+								? repository
+								: {
+										...repository,
+										latestScan: { ...repository.latestScan, status: "failed" as const },
+									},
+						),
+					},
+					noFindings,
+				),
+			),
+			expectView(text("No known vulnerable packages")).toBeAbsent(),
+		)
+	})
+
+	test("says Unknown, not Not running, when more commits ran than were read", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(repositoriesOf(NOW), {
+					...findingsOf(NOW),
+					production: { ...findingsOf(NOW).production, complete: false },
+				}),
+			),
+			expectView(text("Not running")).toBeAbsent(),
+			expectView(text("Unknown")).toExist(),
+		)
+	})
+
 	test("caps a triage reason as the API does, untrimmed", () => {
 		expect(reasonErrorOf(" ".repeat(10) + "x".repeat(495))).not.toBeNull()
 		expect(reasonErrorOf("x".repeat(500))).toBeNull()
@@ -225,7 +262,7 @@ describe("security dependencies tab", () => {
 				loaded(repositoriesOf(NOW), {
 					...findingsOf(NOW),
 					findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
-					production: { available: true, runningServices: 0, linkedServices: 0 },
+					production: { available: true, runningServices: 0, linkedServices: 0, complete: true },
 				}),
 			),
 			expectView(text(/vcs\.ref\.head\.revision/)).toExist(),

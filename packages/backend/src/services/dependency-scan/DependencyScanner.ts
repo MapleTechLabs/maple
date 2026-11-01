@@ -308,8 +308,9 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						}
 					}
 
-					// A tree too large to list fails the same way on every push; record it once.
-					if (tree.truncated) {
+					// A tree too large to list fails the same way on every push; record it once. A production
+					// scan of a commit records its own failure, which is retried after a while.
+					if (tree.truncated && defaultBranchHead) {
 						const [last] = yield* store
 							.listScans({ orgId, repositoryId: repository.id, limit: 1 })
 							.pipe(Effect.mapError(scanError("Could not read the last scan")))

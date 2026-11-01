@@ -4086,12 +4086,12 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- builder:releases:runningCommitsQuery:default  [cfa733c1]
+-- builder:releases:runningCommitsQuery:default  [aa2f361b]
 SELECT
           service_windows.bServiceName AS serviceName,
           service_windows.bEnvironment AS environment,
           service_windows.bCommitSha AS commitSha,
-          sum(service_windows.bSpanCount) AS spanCount
+          sum(service_windows.bEstimatedSpanCount) AS spanCount
         FROM (
 SELECT
           toStartOfHour(service_overview_spans.Timestamp) AS bBucket,

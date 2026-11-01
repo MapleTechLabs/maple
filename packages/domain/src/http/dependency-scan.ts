@@ -85,6 +85,8 @@ export const DependencyProductionCoverage = Schema.Struct({
 	runningServices: Schema.Int,
 	/** Of those, the ones whose commit belongs to a connected repository. */
 	linkedServices: Schema.Int,
+	/** False when more commits ran than were read: a finding then is not known to be absent. */
+	complete: Schema.Boolean,
 })
 export type DependencyProductionCoverage = typeof DependencyProductionCoverage.Type
 

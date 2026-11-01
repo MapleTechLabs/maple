@@ -270,7 +270,12 @@ describe("DependencyScanService production", () => {
 
 				const { findings, production } = yield* service.listFindings(tenant, {})
 				// Services, not rows: api-server runs two commits and counts once.
-				assert.deepStrictEqual(production, { available: true, runningServices: 4, linkedServices: 2 })
+				assert.deepStrictEqual(production, {
+					available: true,
+					runningServices: 4,
+					linkedServices: 2,
+					complete: true,
+				})
 				assert.deepStrictEqual(
 					findings[0]?.production?.map((s) => [
 						s.serviceName,
@@ -373,7 +378,12 @@ describe("DependencyScanService production", () => {
 			const api = yield* seed
 			yield* recordScan(api.id, "a", true)
 			const { findings, production } = yield* service.listFindings(tenant, {})
-			assert.deepStrictEqual(production, { available: false, runningServices: 0, linkedServices: 0 })
+			assert.deepStrictEqual(production, {
+				available: false,
+				runningServices: 0,
+				linkedServices: 0,
+				complete: false,
+			})
 			assert.deepStrictEqual(
 				findings.map((finding) => [finding.packageName, finding.production]),
 				[["lodash", []]],

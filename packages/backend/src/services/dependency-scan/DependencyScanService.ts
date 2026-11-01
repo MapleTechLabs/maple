@@ -44,6 +44,8 @@ import {
 
 /** Findings returned per read; the table sorts worst first, so the cut drops the least severe. */
 export const FINDINGS_LIMIT = 500
+/** Findings read before ranking, so a deployed older finding is not cut before its traffic counts. */
+const FINDINGS_CANDIDATES = 2000
 /** Production is what services served over the last day. */
 const RUNNING_WINDOW_MS = 24 * 60 * 60 * 1000
 /** Unscanned running commits queued per read, busiest first; the next read queues more. */
@@ -126,6 +128,8 @@ interface Production {
 	readonly running: ReadonlyArray<RunningService>
 	/** Distinct services reporting a commit. */
 	readonly runningServices: number
+	/** False when the read hit its row cap, so commits past it are unknown. */
+	readonly complete: boolean
 	/** Latest scan per running commit, any status: what the repository list shows. */
 	readonly latest: ReadonlyMap<string, DependencyScanRow>
 	/** The matches of each running commit's latest completed scan. */
@@ -135,6 +139,7 @@ interface Production {
 
 const NO_PRODUCTION: Production = {
 	available: false,
+	complete: false,
 	running: [],
 	runningServices: 0,
 	latest: new Map(),
@@ -365,6 +370,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					available: true,
 					running,
 					runningServices: distinctServices(rows),
+					complete: rows.length < CH.RUNNING_COMMITS_CAP,
 					latest: latestScanPerCommit(scans),
 					matches,
 					completed,
@@ -473,7 +479,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 				const rows = yield* store
 					.listFindings({
 						orgId,
-						limit: FINDINGS_LIMIT,
+						limit: FINDINGS_CANDIDATES,
 						status: query.status,
 						repositoryId: query.repositoryId,
 						repositoryIds: [...names.keys()],
@@ -492,6 +498,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 						return { row, order, services, score: riskScore(row, spans) }
 					})
 					.sort((a, b) => b.score - a.score || a.order - b.order)
+					.slice(0, FINDINGS_LIMIT)
 				yield* Effect.annotateCurrentSpan({
 					"result.rowCount": ranked.length,
 					"maple.depscan.findings_in_production": ranked.filter(
@@ -504,6 +511,7 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 					),
 					production: {
 						available: production.available,
+						complete: production.complete,
 						runningServices: production.runningServices,
 						linkedServices: distinctServices(production.running),
 					},

@@ -181,7 +181,12 @@ const productionCell = (
 	if (busiest === undefined && scan !== undefined)
 		return muted(h, scan === "pending" ? "Scanning" : "Scan failed")
 	if (busiest === undefined)
-		return muted(h, production.available && production.linkedServices > 0 ? "Not running" : "Unknown")
+		return muted(
+			h,
+			production.available && production.complete && production.linkedServices > 0
+				? "Not running"
+				: "Unknown",
+		)
 	const others = new Set(finding.production.map((service) => service.serviceName)).size - 1
 	return h.span(
 		[h.Class("flex min-w-0 max-w-48 flex-col")],
@@ -371,7 +376,10 @@ export const findingsSection = (
 	const content =
 		rows.length > 0
 			? findingsTable(h, rows, model.selectedId, clock, production, productionScanStates(repositories))
-			: status === "open" && repositoryId === null
+			: // Clean only when a scan has read something; a failed first scan is not a clean bill.
+				status === "open" &&
+				  repositoryId === null &&
+				  repositories.some((repository) => repository.latestScan?.status === "completed")
 				? cleanState(h, repositories)
 				: h.div(
 						[h.Class("p-4")],

@@ -268,7 +268,7 @@ const CLI = { repositoryId: REPOSITORY_IDS.cli, repositoryFullName: "acme/cli" }
 
 /** Worst first, as the server sorts them: one per severity, a dismissed and a fixed finding. */
 export const findingsOf = (nowMs: number): DependencyFindingsResponse => ({
-	production: { available: true, runningServices: 4, linkedServices: 3 },
+	production: { available: true, runningServices: 4, linkedServices: 3, complete: true },
 	findings: [
 		finding(
 			nowMs,
@@ -415,5 +415,5 @@ export const findingsOf = (nowMs: number): DependencyFindingsResponse => ({
 
 export const noFindings: DependencyFindingsResponse = {
 	findings: [],
-	production: { available: true, runningServices: 3, linkedServices: 3 },
+	production: { available: true, runningServices: 3, linkedServices: 3, complete: true },
 }

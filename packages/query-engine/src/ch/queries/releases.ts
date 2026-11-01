@@ -155,7 +155,8 @@ export function runningCommitsQuery() {
 			serviceName: $.bServiceName,
 			environment: $.bEnvironment,
 			commitSha: $.bCommitSha,
-			spanCount: CH.sum($.bSpanCount),
+			// Sample-weighted, so a sampled service ranks by the traffic it served.
+			spanCount: CH.sum($.bEstimatedSpanCount),
 		}))
 		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS)])
 		.groupBy("serviceName", "environment", "commitSha")
