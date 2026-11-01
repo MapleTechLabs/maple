@@ -91,7 +91,7 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 					State.Failed({
 						message: isInvalidToken
 							? "This unsubscribe link is invalid. Use the link from the email itself."
-							: "Something went wrong. Please try again.",
+							: "Couldn't unsubscribe this address. Try again.",
 					}),
 			}),
 		}),

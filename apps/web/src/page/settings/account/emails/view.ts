@@ -183,7 +183,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
 			title: "Remove email address?",
 			description: `${model.removing?.email ?? ""} can no longer be used to sign in or receive notifications from Maple.`,
-			confirmLabel: "Remove",
+			confirmLabel: "Remove email",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

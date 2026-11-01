@@ -292,7 +292,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 							{
 								_tag: "Item",
 								value: "delete",
-								label: "Disconnect",
+								label: "Delete scrape target",
 								icon: "TrashIcon",
 								variant: "destructive",
 								isDisabled: isManaged,

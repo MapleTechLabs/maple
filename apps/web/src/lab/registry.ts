@@ -275,6 +275,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/settings-dialogs",
+		title: "Settings dialogs",
+		description:
+			"The integration disconnect, dashboard delete, key create and alert destination dialogs, open, and the settings danger zones and save bars (General, Profile, a source's Settings) over fixtures. Pick one with ?item=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/aws",
 		title: "AWS infrastructure",
 		description:

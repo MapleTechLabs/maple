@@ -26,6 +26,7 @@ import {
 	WriteRemoved,
 } from "./gcp"
 import { initConfigure } from "./gcp-configure"
+import { disconnectSpec } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ConfigureTarget } from "./gcp-schema"
@@ -246,7 +247,7 @@ export const completedDisconnect = (
 			model: settled,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Couldn't disconnect",
+				title: disconnectSpec("gcp").error,
 				description: failure?.message ?? "",
 			}),
 		}

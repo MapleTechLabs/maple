@@ -196,9 +196,8 @@ const connectionPanel = (
 					? button(
 							h,
 							{
-								variant: "ghost",
+								variant: "outline",
 								size: "sm",
-								className: "text-destructive-foreground",
 								isDisabled: isBusy,
 								attributes: [h.OnClick(Message.ClickedDisconnect())],
 							},

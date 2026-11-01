@@ -248,7 +248,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 								isDisabled: isManaged,
 								attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
 							},
-							[icon(h, "TrashIcon"), "Delete"],
+							[icon(h, "TrashIcon"), "Delete scrape target"],
 						),
 					],
 				),

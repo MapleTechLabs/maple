@@ -249,7 +249,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			title: "Remove two-factor authentication?",
 			description:
 				"Your account will be protected by your password alone, and your backup codes stop working.",
-			confirmLabel: "Remove",
+			confirmLabel: "Remove two-factor",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

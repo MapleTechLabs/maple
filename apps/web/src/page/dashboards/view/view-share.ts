@@ -95,7 +95,7 @@ export const shareLinkRow = (
 		model: model.sharing.replaceDialog,
 		toParentMessage: (message) => wrap(ShareMessage.GotReplaceDialogMessage({ message })),
 		title: "Replace this link?",
-		description: `${replaceWarning} This can't be undone.`,
+		description: `${replaceWarning} This cannot be undone.`,
 		confirmLabel: "Replace link",
 		isNested: true,
 		onConfirm: wrap(ShareMessage.ConfirmedReplace()),

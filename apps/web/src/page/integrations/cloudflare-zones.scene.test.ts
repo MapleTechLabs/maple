@@ -109,7 +109,7 @@ describe("cloudflare zone selection", () => {
 			...opened,
 			expectView(role("checkbox", { name: "staging.acme.com" })).toHaveAttr("aria-checked", "false"),
 			click(role("checkbox", { name: "acme.com" })),
-			click(role("button", { name: "Save" })),
+			click(role("button", { name: "Save zones" })),
 			Command.expectHas(
 				SaveCloudflareZones({
 					accounts: [

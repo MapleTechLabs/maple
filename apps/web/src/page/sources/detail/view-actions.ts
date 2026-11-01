@@ -117,7 +117,7 @@ const tokenDeleteDialog = (h: H, model: Model, source: V2Source): Html =>
 			name(h, source),
 			" are rejected within a minute. This cannot be undone.",
 		],
-		confirmLabel: "Delete",
+		confirmLabel: "Delete source",
 		onConfirm: Message.ConfirmedDelete(),
 		isPending: model.busy === "delete",
 	})
