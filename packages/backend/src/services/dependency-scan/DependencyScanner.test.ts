@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { GitCommitSha, VcsInstallation, VcsRepo } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Deferred, Effect, Fiber, Layer, Option, Schema } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import type { VcsTreeFile } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
@@ -94,6 +94,8 @@ interface World {
 	osvDown: boolean
 	/** Where the branch head moves while the tree is read, as a concurrent push would. */
 	headAfterTree: GitCommitSha | null | undefined
+	/** When set, blob reads never finish; completed once one starts. */
+	stallBlobs: Deferred.Deferred<void> | undefined
 	/** Blob shas read from the provider, in order. */
 	readonly blobReads: Array<string>
 }
@@ -109,6 +111,7 @@ const world = (files: Record<string, string>): World => ({
 	truncated: false,
 	osvDown: false,
 	headAfterTree: undefined,
+	stallBlobs: undefined,
 	blobReads: [],
 })
 
@@ -128,10 +131,12 @@ const source = (state: World) => ({
 			return listing
 		}),
 	fetchBlobText: (_installation: unknown, _repo: unknown, blobSha: string) =>
-		Effect.sync(() => {
-			state.blobReads.push(blobSha)
-			return [...state.files.values()].find((blob) => blob.sha === blobSha)?.content ?? ""
-		}),
+		state.stallBlobs === undefined
+			? Effect.sync(() => {
+					state.blobReads.push(blobSha)
+					return [...state.files.values()].find((blob) => blob.sha === blobSha)?.content ?? ""
+				})
+			: Deferred.succeed(state.stallBlobs, undefined).pipe(Effect.andThen(Effect.never)),
 })
 
 const json = (request: HttpClientRequest.HttpClientRequest, body: unknown, status = 200) =>
@@ -410,6 +415,25 @@ describe("DependencyScanner", () => {
 			// The typed failure's message, followed by what caused it.
 			assert.match(latest?.error ?? "", /^Could not read advisories: .+/)
 			assert.deepStrictEqual((yield* findingsOf).map(keyOf).sort(), before)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("settles a scan interrupted mid-read as failed instead of leaving it running", () => {
+		const state = world({ "package-lock.json": packageLock("4.17.15") })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const store = yield* DependencyScanStore
+			const reading = yield* Deferred.make<void>()
+			state.stallBlobs = reading
+			const fiber = yield* scanner
+				.scan(installation, repository, { trigger: "schedule" })
+				.pipe(Effect.forkChild)
+			yield* Deferred.await(reading)
+			yield* Fiber.interrupt(fiber)
+
+			const [latest] = yield* store.listScans({ orgId: repository.orgId, limit: 1 })
+			assert.strictEqual(latest?.status, "failed")
+			assert.strictEqual(latest?.error, "The scan was interrupted before it finished")
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
