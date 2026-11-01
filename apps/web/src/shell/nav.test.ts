@@ -37,7 +37,7 @@ describe("isNavItemActive", () => {
 	test("pages without a row of their own highlight their parent row", () => {
 		const off = { releases: false, securityAudit: false, statusPages: false }
 		expect(activeTitles("/anomalies", off)).toEqual(["Alerts"])
-		expect(activeTitles("/security/findings", off)).toEqual(["Code Review"])
+		expect(activeTitles("/security/code/findings", off)).toEqual(["Code Review"])
 		expect(activeTitles("/releases", off)).toEqual(["Services"])
 		expect(activeTitles("/status-pages/stp_abc", off)).toEqual(["Services"])
 	})
@@ -45,6 +45,7 @@ describe("isNavItemActive", () => {
 	test("a flagged page with its own row highlights only that row", () => {
 		const on = { releases: true, securityAudit: true, statusPages: true }
 		expect(activeTitles("/security", on)).toEqual(["Security"])
+		expect(activeTitles("/security/code/runs/run_1", on)).toEqual(["Security"])
 		expect(activeTitles("/releases", on)).toEqual(["Releases"])
 		expect(activeTitles("/status-pages/stp_abc", on)).toEqual(["Status pages"])
 	})

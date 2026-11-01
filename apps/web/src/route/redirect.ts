@@ -41,7 +41,7 @@ const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** Redirects of retired paths (connectors, developer, infra, errors/issues, alerts status pages) and moved integrations. */
+/** Redirects of retired paths (connectors, developer, infra, errors/issues, alerts status pages, security) and moved integrations. */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
@@ -88,6 +88,13 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			RecommendationsIndex: () => redirect(AppRoute.Settings({ search: { tab: "ingestion" } }), true),
 			InfraKubernetes: ({ search }) => redirect(AppRoute.InfraKubernetesPods({ search }), true),
 			ErrorIssues: (issues) => redirect(AppRoute.Errors({ search: errorsSearchOf(issues) }), true),
+			/** The code audit moved under `/security/code`; `/security` opens it until the hub has an overview. */
+			Security: () => redirect(AppRoute.SecurityCode(), true),
+			SecurityLegacyFindings: ({ search }) => redirect(AppRoute.SecurityCodeFindings({ search }), true),
+			SecurityLegacyRuns: ({ search }) => redirect(AppRoute.SecurityCodeRuns({ search }), true),
+			SecurityLegacyRun: ({ runId }) => redirect(AppRoute.SecurityRun({ runId }), true),
+			SecurityLegacyFinding: ({ targetId, fingerprint }) =>
+				redirect(AppRoute.SecurityFinding({ targetId, fingerprint }), true),
 		},
 		() => Option.none(),
 	)

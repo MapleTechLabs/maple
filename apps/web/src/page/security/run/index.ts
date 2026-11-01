@@ -31,7 +31,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 	),
 }))
 
-/** `/security/runs/$runId`: one instance per run. */
+/** `/security/code/runs/$runId`: one instance per run. */
 export const page = definePage(
 	"SecurityRun",
 	{ Model, Message },

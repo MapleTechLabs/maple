@@ -37,9 +37,10 @@ export const navShell = <M, Id extends string>(
 	sections: ReadonlyArray<NavShellSection<Id>>,
 	active: string,
 	onSelectTab: (tab: Id) => M,
+	ariaLabel?: string,
 ): Html =>
 	h.nav(
-		[h.Class("flex flex-col gap-5")],
+		[h.Class("flex flex-col gap-5"), ...(ariaLabel === undefined ? [] : [h.AriaLabel(ariaLabel)])],
 		sections.map((section) =>
 			h.div(
 				[h.Key(section.id), h.Class("flex flex-col gap-1")],

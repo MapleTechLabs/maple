@@ -14,7 +14,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { textLink } from "../../../ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { NARROW_TWO_COLUMNS } from "../kit/layout"
+import { BESIDE_RAIL_TWO_COLUMNS } from "../kit/layout"
 import { placeholder } from "../kit/parts"
 import { TIMELINE_BUCKET_SECONDS } from "./command"
 import {
@@ -140,7 +140,7 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	const exposedCount = exposedRows(exposure).length
 	const catchAllCount = catchAllServices(exposure).length
 	const plus = isExposedCapped(exposure) ? "+" : ""
-	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
+	return statRail(h, { columns: 4, className: BESIDE_RAIL_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Probe requests",
 			value: `${count(totals.probeRequests)}${floor}`,
@@ -372,7 +372,7 @@ const exposureEmpty = (h: H): Html =>
 
 export const telemetryLoading = (h: H): ReadonlyArray<Html> => [
 	h.div(
-		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("grid grid-cols-2 gap-px xl:grid-cols-4")],
+		[h.AriaBusy(true), h.AriaLabel("Loading"), h.Class("grid grid-cols-2 gap-px 2xl:grid-cols-4")],
 		Array.from({ length: 4 }, () => placeholder(h, "h-24")),
 	),
 	placeholder(h, "h-64 w-full"),

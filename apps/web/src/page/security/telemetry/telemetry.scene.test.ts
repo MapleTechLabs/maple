@@ -73,6 +73,26 @@ describe("security telemetry tabs", () => {
 		)
 	})
 
+	test("the rail links every source to its page and marks the open one", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes()),
+			expectView(role("navigation", { name: "Security sources" })).toExist(),
+			expectView(role("link", { name: "Code security audit" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityCode()),
+			),
+			expectView(role("link", { name: "Dependencies" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: {} })),
+			),
+			expectView(role("link", { name: "Exposure" })).toHaveAttr("href", hrefOf(exposureRoute)),
+			expectView(role("link", { name: "Runtimes" })).toHaveAttr("aria-current", "page"),
+			expectView(role("link", { name: "Exposure" })).not.toHaveAttr("aria-current", "page"),
+			expectView(role("heading", { name: "Runtimes", level: 1 })).toExist(),
+		)
+	})
+
 	test("no scanner traffic shows the calm empty state", () => {
 		scene(
 			{ update: pageUpdate, view },

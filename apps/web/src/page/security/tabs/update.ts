@@ -42,14 +42,14 @@ type Return = PageReturn<Model, Message>
 
 export type SecurityTabsRoute = Extract<
 	AppRoute,
-	{ readonly _tag: "Security" | "SecurityFindings" | "SecurityRuns" }
+	{ readonly _tag: "SecurityCode" | "SecurityCodeFindings" | "SecurityCodeRuns" }
 >
 
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
 const tabOfRoute = (route: SecurityTabsRoute): Tab =>
-	route._tag === "Security" ? "overview" : route._tag === "SecurityFindings" ? "findings" : "runs"
+	route._tag === "SecurityCode" ? "overview" : route._tag === "SecurityCodeFindings" ? "findings" : "runs"
 
 // SELECTS
 
@@ -201,8 +201,8 @@ const uniqueTargets = (runs: ReadonlyArray<SecurityAuditRun>): ReadonlyArray<Sec
 // ENTRY
 
 const searchesOf = (route: SecurityTabsRoute, model?: Model) => ({
-	findingsSearch: route._tag === "SecurityFindings" ? route.search : (model?.findingsSearch ?? {}),
-	runsSearch: route._tag === "SecurityRuns" ? route.search : (model?.runsSearch ?? {}),
+	findingsSearch: route._tag === "SecurityCodeFindings" ? route.search : (model?.findingsSearch ?? {}),
+	runsSearch: route._tag === "SecurityCodeRuns" ? route.search : (model?.runsSearch ?? {}),
 })
 
 export const init = (route: SecurityTabsRoute, context: PageContext): Return => {
@@ -249,7 +249,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 /** Same instance: the tab or its search changed. The data is shared, so nothing is read again. */
 export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: PageContext): Return => {
 	const searches = searchesOf(route, model)
-	const isFindings = route._tag === "SecurityFindings"
+	const isFindings = route._tag === "SecurityCodeFindings"
 	return {
 		model: withSelectValues({
 			...model,
@@ -280,7 +280,7 @@ const navigate = (model: Model, url: string, isReplace = false): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace }),
 })
 
-const findingsUrl = (search: SecurityFindingsSearch) => hrefOf(AppRoute.SecurityFindings({ search }))
+const findingsUrl = (search: SecurityFindingsSearch) => hrefOf(AppRoute.SecurityCodeFindings({ search }))
 
 /** The URL's filters with the search box as typed: a filter change does not wait out the debounce. */
 const searchWithDraft = (model: Model): SecurityFindingsSearch => {
@@ -317,7 +317,7 @@ const selectStep = (
 
 const runsTargetChanged = (model: Model, value: string): Return => {
 	const search: SecurityRunsSearch = value === "all" ? {} : { target: value }
-	return navigate(model, hrefOf(AppRoute.SecurityRuns({ search })))
+	return navigate(model, hrefOf(AppRoute.SecurityCodeRuns({ search })))
 }
 
 // ADD TARGET

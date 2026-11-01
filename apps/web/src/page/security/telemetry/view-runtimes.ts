@@ -18,7 +18,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { textLink } from "../../../ui/text-link"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { NARROW_TWO_COLUMNS } from "../kit/layout"
+import { BESIDE_RAIL_TWO_COLUMNS } from "../kit/layout"
 import {
 	type CriticalUpgrade,
 	criticalUpgrades,
@@ -278,7 +278,7 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 const totalsRail = (h: H, entries: ReadonlyArray<RuntimeEntry>): Html => {
 	const totals = runtimeTotals(entries)
 	const services = (value: number) => (value === 1 ? "service" : "services")
-	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
+	return statRail(h, { columns: 4, className: BESIDE_RAIL_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Services",
 			value: String(totals.services),

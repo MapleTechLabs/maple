@@ -9,6 +9,6 @@ import { runtimesBody } from "./view-runtimes"
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	model.tab === "exposure"
-		? securityLayout(h, { active: "exposure" }, exposureBody(h, model, inputs.context.timeZone))
-		: securityLayout(h, { active: "runtimes" }, runtimesBody(h, model, inputs.context.timeZone)),
+		? securityLayout(h, { source: "exposure" }, exposureBody(h, model, inputs.context.timeZone))
+		: securityLayout(h, { source: "runtimes" }, runtimesBody(h, model, inputs.context.timeZone)),
 )
