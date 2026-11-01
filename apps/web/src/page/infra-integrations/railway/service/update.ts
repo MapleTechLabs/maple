@@ -14,6 +14,7 @@ import {
 	CompleteReloadSpin,
 	FetchServices,
 	FetchTimeseries,
+	FetchTraced,
 	ResolveWindow,
 	type TimeseriesInput,
 } from "./command"
@@ -49,16 +50,20 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	const seriesKey = requestKey(context.orgId, "getRailwayServiceTimeseries", { data: input })
 	const services = Keyed.request(model.services, servicesKey, mode)
 	const timeseries = Keyed.request(model.timeseries, seriesKey, mode)
+	const tracedKey = requestKey(context.orgId, "getServiceOverview", { data: window })
+	const traced = Keyed.request(model.traced, tracedKey, mode)
 	return {
 		model: {
 			...model,
 			window,
 			services: Option.getOrElse(services, () => model.services),
 			timeseries: Option.getOrElse(timeseries, () => model.timeseries),
+			traced: Option.getOrElse(traced, () => model.traced),
 		},
 		commands: [
 			...(Option.isSome(services) ? [FetchServices({ key: servicesKey, window })] : []),
 			...(Option.isSome(timeseries) ? [FetchTimeseries({ key: seriesKey, input })] : []),
+			...(Option.isSome(traced) ? [FetchTraced({ key: tracedKey, window })] : []),
 		],
 	}
 }
@@ -80,6 +85,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		window: null,
 		nowMs: 0,
 		services: Keyed.idle(),
+		traced: Keyed.idle(),
 		timeseries: Keyed.idle(),
 		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
@@ -122,6 +128,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchServices: ({ key, result }) => ({
 			model: { ...model, services: Keyed.accept(model.services, key, result) },
+		}),
+		CompletedFetchTraced: ({ key, result }) => ({
+			model: { ...model, traced: Keyed.accept(model.traced, key, result) },
 		}),
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },

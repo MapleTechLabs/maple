@@ -1,4 +1,9 @@
 import { createClerkClient } from "@clerk/backend"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
+import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
+import { queueOrgPageRemovals } from "@maple/backend/services/status-pages/outbox"
 import {
 	ChooseOrganizationRegionResponse,
 	CreateOrganizationResponse,
@@ -18,6 +23,7 @@ import {
 	organizationRegionMetadata,
 	organizationRegionOpen,
 } from "@maple/domain/organization-regions"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	Actors,
@@ -25,6 +31,7 @@ import {
 	AlertDeliveryEvents,
 	AlertDestinations,
 	AlertIncidents,
+	AlertLinearIssues,
 	AlertRuleStates,
 	AlertRules,
 	ApiKeys,
@@ -39,6 +46,7 @@ import {
 	Dashboards,
 	DashboardShares,
 	DashboardVersions,
+	DeviceCredentials,
 	DigestSubscriptions,
 	ErrorIncidents,
 	ErrorIssueEvents,
@@ -54,7 +62,11 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 	OrgIngestKeys,
+	OrgBillingLinks,
 	OrgOpenRouterKeys,
+	OrgIngestRules,
+	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
 	PlanetscaleConnections,
 	PlanetscaleIssueReceipts,
 	RailwayConnections,
@@ -62,6 +74,14 @@ import {
 	ScrapeTargets,
 	Sources,
 	SupabaseConnections,
+	StatusPageComponents,
+	StatusPageIncidentComponents,
+	StatusPageIncidentUpdates,
+	StatusPageIncidents,
+	StatusPages,
+	UptimeMonitorDaily,
+	UptimeMonitorStates,
+	UptimeMonitors,
 	SupabaseProjectInsights,
 	SupabaseProjects,
 	VcsCommits,
@@ -72,6 +92,17 @@ import {
 	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	SecurityAuditFindings,
+	SecurityAuditRunFindings,
+	DependencyFindings,
+	DependencyScanMatches,
+	DependencyScans,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
+	SecurityAuditUnits,
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
@@ -115,6 +146,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	AlertIncidents,
 	AlertRuleStates,
 	AlertRules,
+	// Before its destination: a thread row references it.
+	AlertLinearIssues,
 	AlertDestinations,
 	ApiKeys,
 	CancellationReviews,
@@ -122,6 +155,18 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	Sources,
 	OrgClickHouseSettings,
 	ScrapeTargets,
+	// Status pages first: their components point at monitors. The edge copy of a page outlives
+	// these rows until the publisher's sweep removes pages it no longer finds.
+	StatusPageIncidentComponents,
+	StatusPageIncidentUpdates,
+	StatusPageIncidents,
+	StatusPageComponents,
+	StatusPages,
+	// A surviving monitor keeps Maple probing the org's endpoints, and its heartbeat token
+	// keeps accepting pings. The state rows also go with the monitor by foreign key.
+	UptimeMonitorDaily,
+	UptimeMonitorStates,
+	UptimeMonitors,
 	OAuthConnections,
 	OAuthAuthStates,
 	// The binding that makes a chat workspace's members act as the org. Deleting
@@ -136,7 +181,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	GcpConnectors,
 	// Also removed with its connector, by the foreign key.
 	GcpResources,
-	// Holds the external id: a surviving row would keep Maple assuming the customer's role.
+	// A surviving row would keep Maple signing tokens for, and assuming, the customer's role.
 	AwsConnections,
 	ErrorIssueEvents,
 	ErrorIssueStates,
@@ -159,6 +204,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// hourly, so a deleted org's MCP client kept working for up to 30 days.
 	McpOAuthRefreshTokens,
 	MobileDevices,
+	// Device-held widget keys: their tokens re-read the row, so deleting it ends them.
+	DeviceCredentials,
 	// A share link is a public bearer credential: `resolveByToken` matches the
 	// token hash and `revoked_at is null` and nothing else, then queries the
 	// warehouse as the org. It only went dead on deletion by accident of a
@@ -179,11 +226,30 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	SupabaseConnections,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	OrgOpenRouterKeys,
+	// A deleted member org stops being billed to anyone. A billing org with members is refused.
+	OrgBillingLinks,
+	// Drop rules and the hash salt: a recreated org must not silently lose data to old rules.
+	OrgIngestRules,
+	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	LiveActivities,
 	// Nothing secret, but the channel belongs to the org; a recreated org starts fresh.
 	OrgSupportChannels,
+	// Security audit evidence about the org's source code: exploit traces must not outlive the org.
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	SecurityAuditRunFindings,
+	SecurityAuditFindings,
+	SecurityAuditUnits,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
+	// Which of the org's dependencies are vulnerable, per repository and commit.
+	DependencyScans,
+	DependencyScanMatches,
+	DependencyFindings,
 ]
 
 /**
@@ -216,6 +282,7 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"AnomalyIncidents",
 	"CloudflareAnalyticsState",
 	"CloudflareHyperdriveConfigs",
+	"CloudflareZoneSettings",
 	"ErrorFingerprintCandidates",
 	"ErrorIssuePullRequests",
 	"ErrorIssueVerifications",
@@ -233,6 +300,8 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"PlanetscaleEvents",
 	"PlanetscalePollState",
 	"ScrapeTargetChecks",
+	// Edge cleanups queued by the delete itself; the publisher removes each row once done.
+	"StatusPageCleanups",
 	"VcsRepositoryBranches",
 ] as const
 
@@ -286,7 +355,7 @@ export interface OrganizationServiceApi {
 }
 
 export class OrganizationService extends Context.Service<OrganizationService, OrganizationServiceApi>()(
-	"@maple/api/services/OrganizationService",
+	"@maple/backend/services/OrganizationService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -295,6 +364,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 
 			const autumn = yield* AutumnClient
 			const regions = yield* OrganizationRegionService
+			const httpClient = yield* HttpClient.HttpClient
 
 			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
 				roles: ReadonlyArray<RoleName>,
@@ -311,6 +381,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (
 				orgId: OrgId,
 			) {
+				// Public pages live on at the edge until the publisher drains these.
+				yield* dbExecute((db) => queueOrgPageRemovals(db, orgId))
 				yield* Effect.forEach(
 					ORG_SCOPED_TABLES,
 					(table) =>
@@ -441,7 +513,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				const customer = yield* autumn
-					.getOrCreateCustomer(orgId, { expand: [] })
+					.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: [] })
 					.pipe(Effect.mapError((error) => toProviderError(error)))
 				if (customer.statusCode !== 200) {
 					return yield* new OrganizationProviderError({
@@ -489,6 +561,55 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				yield* requireAdmin(roles, "delete the organization")
+				// Under the link lock, like every link write and monitor create or delete: the member
+				// check, the monitor count and the link's removal see one state. Once the link is gone,
+				// monitors made before the purge bill to the org itself.
+				const { link, monitorCount } = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
+							)
+							// Its members would be left billed to a customer nobody can reach.
+							const members = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ orgId: $.orgId }))
+									.where(($) => [$.billingOrgId.eq(orgId)])
+									.limit(1),
+							)
+							if (members.length > 0) {
+								return yield* new OrganizationForbiddenError({
+									message:
+										"Other organizations are billed through this one. Unlink them in billing settings before deleting it.",
+								})
+							}
+							// A member's monitors count against its billing org; purging them must give the count back.
+							const [current] = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ billingOrgId: $.billingOrgId }))
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							)
+							if (current === undefined) return { link: current, monitorCount: 0 }
+							const [counted] = yield* db.run(
+								PG.from(UptimeMonitors)
+									.select(() => ({ count: PG.count() }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							yield* db.run(PG.deleteFrom(OrgBillingLinks).where(($) => [$.orgId.eq(orgId)]))
+							return { link: current, monitorCount: Number(counted?.count ?? 0) }
+						}),
+					),
+				)
+				// Before the purge: a failed purge retried finds no link and could not give the count back.
+				if (link !== undefined && monitorCount > 0) {
+					yield* trackFeatureUsage({
+						customerId: ownBillingCustomer(link.billingOrgId),
+						featureId: UPTIME_MONITORS_FEATURE_ID,
+						value: -monitorCount,
+						idempotencyKey: `org_delete:${orgId}:uptime_monitors`,
+					}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+				}
 				yield* purgeOrgScopedRows(orgId)
 				yield* deleteClerkOrganization(orgId)
 				return new DeleteOrganizationResponse({ deleted: true })
@@ -504,6 +625,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer)),
+		Layer.provide(
+			Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer, FetchHttpClient.layer),
+		),
 	)
 }

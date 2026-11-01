@@ -43,3 +43,18 @@ export function parseJsonObject(raw: string): Record<string, unknown> | undefine
 export function isStringRecord(value: unknown): value is Record<string, string> {
 	return isJsonObject(value) && Object.values(value).every((entry) => typeof entry === "string")
 }
+
+/** A `\\` pair, or the escape `JSON.stringify` writes for a lone surrogate. */
+const LONE_SURROGATE_ESCAPE = /\\(?:\\|u[dD][89a-fA-F][0-9a-fA-F]{2})/g
+
+/**
+ * `JSON.stringify`, with every lone surrogate written as U+FFFD. JavaScript
+ * strings may hold half an emoji; strict JSON parsers (ingest's among them)
+ * reject the escape for one, and with it the whole NDJSON batch it rides in.
+ * Paired surrogates are written as raw characters, so any `\uD8xx` escape left
+ * in the output is a lone one.
+ */
+export function stringifyWellFormed(value: unknown): string {
+	const json = JSON.stringify(value) ?? "null"
+	return json.replace(LONE_SURROGATE_ESCAPE, (escape) => (escape === "\\\\" ? escape : "\\ufffd"))
+}

@@ -3,6 +3,7 @@ import {
 	DEER_NECK,
 	DEER_YAW,
 	drawBird,
+	drawBlimp,
 	drawDeerHead,
 	drawDuck,
 } from "../../../components/service-map/three/maple-scenery"
@@ -15,7 +16,7 @@ import {
 	sketchOf,
 } from "../../../components/service-map/three/maple-scenery-sketch"
 import * as THREE from "three"
-import { group, inkSolid, mesh, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
+import { group, inkBox, inkSolid, mesh, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
 
 /** Seconds of motion so far; frozen while paused. */
 export function clock(scope: Scope, running: Running): { value: number } {
@@ -26,7 +27,38 @@ export function clock(scope: Scope, running: Running): { value: number } {
 	return elapsed
 }
 
-/** Mallards paddle a steady loop round the lake. */
+/** Seconds a clicked duck spends hopping. */
+export const HOP = 0.45
+
+/** Seconds a startled duck takes to fly off, and later to glide back in. */
+export const FLIGHT = 2.6
+
+/** Clicks in quick succession that scare a duck off the lake. */
+const STARTLE = 5
+
+/** Seconds a duck stays away before it comes back. */
+const AWAY = 25
+
+/** What a click on a duck did: the scene keeps drawing for `seconds` and quacks `alarm` or not.
+ * `null` when the duck is off the lake, so the click is a plain miss. */
+export type DuckClick = { readonly seconds: number; readonly alarm: boolean } | null
+
+interface Duck {
+	readonly phase: number
+	readonly lane: number
+	readonly speed: number
+	/** When the current hop lands, in seconds on `performance.now()`'s clock. */
+	landsAt: number
+	/** Quick clicks so far, and when the last one came. */
+	strikes: number
+	struckAt: number
+	/** When the duck took off; `null` while it is on the water. */
+	tookOffAt: number | null
+}
+
+/** Mallards paddle a steady loop round the lake. A click makes one hop and quack; a few quick
+ * clicks and the duck flies off, gliding back in a while later. Each duck's hit box carries
+ * `userData.quack`, which the scene's click handler calls. */
 export function ducks(
 	scope: Scope,
 	{
@@ -37,21 +69,93 @@ export function ducks(
 	}: { water: Waterway; floor: number; palette: InkPalette; running: Running },
 ): ReadonlyArray<THREE.Group> {
 	const elapsed = clock(scope, running)
-	const flock = [0.12, 0.16, 0.6].map((phase, i) => ({
+	const flock = [0.12, 0.16, 0.6].map((phase, i): Duck => ({
 		phase,
 		lane: (hash(i, 8.1) - 0.5) * 0.7,
 		speed: 0.13,
+		landsAt: 0,
+		strikes: 0,
+		struckAt: 0,
+		tookOffAt: null,
 	}))
+	const now = () => performance.now() / 1000
 	const draw = (sketch: Sketch) => {
 		const stock = prototypes()
 		drawDuck(sketch, stock, palette)
 		stock.dispose()
 	}
-	const groups = flock.map(() => group({}, [sketchDrawing(draw, palette.ink)]))
+	const click = (duck: Duck): DuckClick => {
+		const t = now()
+		if (duck.tookOffAt !== null) return null
+		duck.strikes = t - duck.struckAt < 1.5 ? duck.strikes + 1 : 1
+		duck.struckAt = t
+		if (duck.strikes < STARTLE) {
+			duck.landsAt = t + HOP
+			return { seconds: HOP, alarm: false }
+		}
+		duck.strikes = 0
+		duck.landsAt = 0
+		duck.tookOffAt = t
+		return { seconds: FLIGHT, alarm: true }
+	}
+	// The duck is tiny on screen, so a roomier invisible box takes its clicks.
+	const target = (duck: Duck) => {
+		const box = mesh(
+			new THREE.BoxGeometry(0.4, 0.3, 0.3),
+			new THREE.MeshBasicMaterial({ visible: false }),
+			{
+				position: [0, 0.1, 0],
+			},
+		)
+		box.userData.quack = (): DuckClick => click(duck)
+		return box
+	}
+	// Wings hinge at the shoulders, folded out of sight until the duck takes off.
+	const wing = (side: number) => {
+		const hinge = group({ position: [-0.01, 0.09, side * 0.055] }, [
+			inkBox({
+				size: [0.11, 0.014, 0.17],
+				position: [0, 0, side * 0.085],
+				color: palette.soil,
+				ink: palette.ink,
+			}),
+		])
+		hinge.visible = false
+		return hinge
+	}
+	const wings = flock.map(() => [wing(-1), wing(1)] as const)
+	const groups = flock.map((duck, i) =>
+		group({}, [group({}, [sketchDrawing(draw, palette.ink), wings[i]]), target(duck)]),
+	)
+	/** Poses the body for a flight `u` of the way out (0 on the water, 1 gone), forward along +x,
+	 * its wings beating on real time `t`. */
+	const fly = (
+		body: THREE.Object3D,
+		pair: readonly [THREE.Object3D, THREE.Object3D],
+		u: number,
+		sign: number,
+		t: number,
+	) => {
+		const lift = u * u
+		const beat = Math.sin(t * Math.PI * 2 * 5)
+		body.position.set(sign * lift * 9, Math.pow(u, 1.4) * 5.5 + beat * 0.015, 0)
+		body.rotation.set(0, 0, sign * Math.min(1, u * 5) * 0.35)
+		body.scale.setScalar(Math.max(0.001, 1 - Math.max(0, (u - 0.7) / 0.3)))
+		// A positive turn about x lifts the -z wing, a negative one the +z wing.
+		const [left, right] = pair
+		const stroke = 0.15 + beat * 0.85
+		left.visible = true
+		right.visible = true
+		left.rotation.x = stroke
+		right.rotation.x = -stroke
+	}
 	scope.frames.push(() => {
+		const t = now()
 		flock.forEach((duck, i) => {
 			const node = groups[i]
-			if (!node) return
+			const body = node?.children[0]
+			const pair = wings[i]
+			if (!node || !body || !pair) return
 			const s = (duck.phase * water.length + elapsed.value * duck.speed) % water.length
 			const point = water.at(s)
 			// The tangent is the outward normal turned a quarter: (-nz, nx).
@@ -61,9 +165,66 @@ export function ducks(
 				point.z - point.nz * duck.lane * point.w,
 			)
 			node.rotation.y = Math.atan2(-point.nx, -point.nz)
+			// Hops and flights run on real time, so a paused map still answers the click.
+			const gone = duck.tookOffAt === null ? null : t - duck.tookOffAt
+			// Out on +x, away a while, then back in from behind along the mirrored path.
+			const back = gone === null ? 0 : gone - FLIGHT - AWAY
+			if (gone !== null && back < FLIGHT) {
+				if (gone < FLIGHT) fly(body, pair, gone / FLIGHT, 1, t)
+				else if (back < 0) fly(body, pair, 1, 1, t)
+				else fly(body, pair, 1 - back / FLIGHT, -1, t)
+				return
+			}
+			if (gone !== null) {
+				duck.tookOffAt = null
+				body.scale.setScalar(1)
+				body.rotation.set(0, 0, 0)
+				body.position.set(0, 0, 0)
+				pair.forEach((hinge) => {
+					hinge.visible = false
+				})
+			}
+			const left = Math.max(0, duck.landsAt - t)
+			const u = 1 - left / HOP
+			body.position.y = left > 0 ? Math.sin(Math.PI * u) * 0.12 : 0
+			body.rotation.z = left > 0 ? Math.sin(Math.PI * 2 * u) * 0.25 : 0
 		})
 	})
 	return groups
+}
+
+/** Chance that a pass brings the blimp: most visits to the map never see it. */
+const BLIMP_CHANCE = 0.3
+
+/** Now and then a Maple blimp drifts across the sky over the far edge of the map. Each pass
+ * rolls its own chance; between passes the sky stays empty for a while. */
+export function blimp(
+	scope: Scope,
+	{ bounds, palette, running }: { bounds: Bounds; palette: InkPalette; running: Running },
+): THREE.Group {
+	const elapsed = clock(scope, running)
+	const draw = (sketch: Sketch) => {
+		const stock = prototypes()
+		drawBlimp(sketch, stock, palette)
+		stock.dispose()
+	}
+	const craft = group({ scale: 2.2 }, [sketchDrawing(draw, palette.ink)])
+	craft.visible = false
+	const { minX, maxX, minZ } = bounds
+	const span = maxX - minX + 24
+	const crossing = span / 0.4
+	const cycle = crossing + 45
+	// A fresh roll per mount, so a reload can bring it.
+	const seed = Math.random() * 1000
+	scope.frames.push(() => {
+		const pass = Math.floor(elapsed.value / cycle)
+		const u = (elapsed.value - pass * cycle) / crossing
+		craft.visible = u < 1 && hash(pass, seed) < BLIMP_CHANCE
+		if (!craft.visible) return
+		craft.position.set(minX - 12 + u * span, 3.4 + Math.sin(elapsed.value * 0.5) * 0.12, minZ - 2.5)
+		craft.rotation.set(0, 0, Math.sin(elapsed.value * 0.35) * 0.04)
+	})
+	return craft
 }
 
 /** Birds glide slow arcs high behind the map, where they can never cover a machine:

@@ -1,0 +1,11 @@
+{
+	"name": "fx-root",
+	"version": "1.0.0",
+	"private": true,
+	"workspaces": [
+		"packages/*"
+	],
+	"devDependencies": {
+		"minimist": "1.2.5"
+	}
+}

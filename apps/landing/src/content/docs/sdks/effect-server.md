@@ -7,15 +7,7 @@ navLabel: "Server"
 sdk: "effect"
 ---
 
-The server entry point of `@maple-dev/effect-sdk` runs on Node.js, Bun, and Deno. It uses Effect's `Otlp.layerJson` exporter with a background fiber that batches and ships telemetry to Maple's ingest endpoint, and reads its configuration from environment variables when it is not passed in code.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Node.js</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Bun</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Deno</span>
-</div>
-
-> Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
+The server entry point of `@maple-dev/effect-sdk` runs on Node.js, Bun, and Deno. [Install the SDK](/docs/sdks/effect#install) first. It uses Effect's `Otlp.layerJson` exporter with a background fiber that batches and ships telemetry to Maple's ingest endpoint, and reads its configuration from environment variables when it is not passed in code.
 
 ## Quick start
 
@@ -80,7 +72,7 @@ The server layer reads these variables when the matching config option is not se
 
 **Repository URL:** `MAPLE_REPOSITORY_URL`, then `GITHUB_SERVER_URL` + `GITHUB_REPOSITORY` (GitHub Actions), then `VERCEL_GIT_REPO_OWNER` + `VERCEL_GIT_REPO_SLUG`.
 
-The SDK also detects the **runtime** (Node.js, Bun, Deno) and **cloud provider** (Railway, Vercel, Cloudflare, Render) and adds them as `maple.runtime` and `maple.provider` resource attributes.
+The SDK also detects the **runtime** (Node.js, Bun, Deno) and **cloud provider** (Railway, Vercel, Cloudflare, Render) and adds them as `maple.runtime` and `maple.provider` resource attributes, along with `process.runtime.name` and `process.runtime.version` (for example `22.11.0` on Node.js). Cloudflare Workers and edge runtimes report no `process.runtime.version`.
 
 ## Deployment platform notes
 

@@ -14,15 +14,11 @@ import { HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
 import type { ChatAlertPosterApi } from "./ChatAlertPoster"
-import { buildAlertChatUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
+import { buildAlertRuleUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchDestination, DispatchResult } from "./delivery/context"
-import {
-	hydrateDestinationRow,
-	type DestinationSecretConfig,
-	type EnrichedDestinationSecretConfig,
-	type StoredDestinationConfig,
-} from "./AlertDestinationHydration"
+import type { LinearDeliveryPort } from "./delivery/Transport"
+import { hydrateDestinationRow, type StoredDestinationConfig } from "./AlertDestinationHydration"
 
 /** The destination columns delivery reads; any stored row shape satisfies it. */
 type DeliverableDestination = DispatchDestination & StoredDestinationConfig
@@ -68,6 +64,7 @@ export const makeAlertDestinationDelivery = (options: {
 	readonly httpClient: HttpClient.HttpClient
 	readonly email: EmailServiceApi
 	readonly postChatAlert: ChatAlertPosterApi["post"]
+	readonly linear: LinearDeliveryPort
 }) => {
 	const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
 		row: DeliverableDestination,
@@ -96,21 +93,16 @@ export const makeAlertDestinationDelivery = (options: {
 		return { row, publicConfig, secretConfig } as const
 	})
 
-	const enrichSecretForDispatch = (
-		_row: DeliverableDestination,
-		secretConfig: DestinationSecretConfig,
-	): Effect.Effect<EnrichedDestinationSecretConfig, AlertDeliveryError> =>
-		// Hazel-OAuth webhooks embed their delivery token in the URL path, so
-		// there's nothing to enrich at dispatch time.
-		Effect.succeed(secretConfig)
+	/** The incident's own page when there is one, else the service (or the alerts list). */
+	const composeLinkUrl = (serviceLinkName: string | null, incidentId: string | null = null) =>
+		incidentId !== null
+			? `${options.appBaseUrl}/alerts/incidents/${encodeURIComponent(incidentId)}`
+			: serviceLinkName
+				? `${options.appBaseUrl}/services/${encodeURIComponent(serviceLinkName)}`
+				: `${options.appBaseUrl}/alerts`
 
-	const composeLinkUrl = (serviceLinkName: string | null) =>
-		serviceLinkName
-			? `${options.appBaseUrl}/services/${encodeURIComponent(serviceLinkName)}`
-			: `${options.appBaseUrl}/alerts`
-
-	const composeChatUrl = (context: AlertDispatchContext): string =>
-		buildAlertChatUrl(options.appBaseUrl, context)
+	const composeRuleUrl = (context: Pick<AlertDispatchContext, "ruleId" | "eventType">): string =>
+		buildAlertRuleUrl(options.appBaseUrl, context)
 
 	const sendEmail = (to: string, subject: string, html: string) =>
 		options.email
@@ -130,8 +122,8 @@ export const makeAlertDestinationDelivery = (options: {
 			payloadJson,
 			options.runtime.deliveryTimeoutMs(),
 			context.linkUrl,
-			composeChatUrl(context),
-			{ sendEmail, postChatAlert: options.postChatAlert },
+			composeRuleUrl(context),
+			{ sendEmail, postChatAlert: options.postChatAlert, linear: options.linear },
 		).pipe(Effect.provideService(HttpClient.HttpClient, options.httpClient))
 
 	const buildPayloadValue = (context: AlertDeliveryPayloadContext, tenantId: string) =>
@@ -178,6 +170,7 @@ export const makeAlertDestinationDelivery = (options: {
 				observed: {
 					value: context.value,
 					sampleCount: context.sampleCount,
+					...(context.detail == null ? undefined : { detail: context.detail }),
 				},
 				template: context.template ?? null,
 				// Snapshotted at queue time, not re-derived at delivery: a retry an
@@ -190,7 +183,7 @@ export const makeAlertDestinationDelivery = (options: {
 							}
 						: null,
 				linkUrl: context.linkUrl,
-				chatUrl: buildAlertChatUrl(options.appBaseUrl, context),
+				chatUrl: composeRuleUrl(context),
 				sentAt: new Date(context.sentAtMs).toISOString(),
 			} satisfies {
 				readonly event: Result.Result.Success<ReturnType<typeof projectAlertLifecycleEvent>>
@@ -228,11 +221,10 @@ export const makeAlertDestinationDelivery = (options: {
 		context: Omit<AlertDispatchContext, "destination" | "publicConfig" | "secretConfig">,
 	) {
 		const hydrated = yield* hydrateDestination(destinationRow)
-		const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
 		const fullContext: AlertDispatchContext = {
 			destination: hydrated.row,
 			publicConfig: hydrated.publicConfig,
-			secretConfig: enrichedSecret,
+			secretConfig: hydrated.secretConfig,
 			...context,
 		}
 		const payload = yield* buildPayload(fullContext, destinationRow.orgId)
@@ -241,7 +233,6 @@ export const makeAlertDestinationDelivery = (options: {
 
 	return {
 		hydrateDestination,
-		enrichSecretForDispatch,
 		composeLinkUrl,
 		dispatchDelivery,
 		buildPayload,

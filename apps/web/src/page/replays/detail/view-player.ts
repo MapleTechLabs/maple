@@ -3,7 +3,7 @@ import { hostFromUrl } from "@maple/ui/lib/replay"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { filterChip } from "../../../ui/filter-chip"
 import { icon } from "../../../ui/icon"
@@ -12,10 +12,11 @@ import { panel } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { spinner } from "../../../ui/spinner"
 import { docsLink } from "../../kit/signal-empty-state"
+import { stableSlice } from "../../kit/stable-slice"
 import {
+	COMPLETE_ATTRIBUTE,
 	CONTROL_ATTRIBUTE,
 	HOLD_ATTRIBUTE,
-	COMPLETE_ATTRIBUTE,
 	IDLE_ATTRIBUTE,
 	SPEED_ATTRIBUTE,
 	TOTAL_ATTRIBUTE,
@@ -23,8 +24,16 @@ import {
 import { MARKER_STYLES } from "../kit/replay-meta"
 import { replayFormat } from "../kit/replay-window"
 import { FeedEvents, MountEngine } from "./command"
-import { type PlayerStatus, timelineOf } from "./derive"
-import { hasMoreChunks, isBuffering, loadedFromMs, loadedUntilMs, seedEvents, seedShiftMs, trailingRanges } from "./loader"
+import { type PlayerStatus, timelineFrom, timelineOf } from "./derive"
+import {
+	hasMoreChunks,
+	isBuffering,
+	loadedFromMs,
+	loadedUntilMs,
+	seedEvents,
+	seedShiftMs,
+	trailingRanges,
+} from "./loader"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -37,137 +46,228 @@ type H = HtmlBuilder<Message>
 
 const SPEED_OPTIONS = [0.5, 1, 2, 4, 8].map((s) => ({ value: String(s), label: `${s}×` }))
 
-export type DisplayState = Readonly<{
-	currentMs: number
-	totalMs: number
-	markers: ReadonlyArray<{ readonly ms: number; readonly kind: keyof typeof MARKER_STYLES }>
-	idleBands: ReadonlyArray<{ readonly start: number; readonly end: number }>
-	/** The downloaded, playable span, like a video's buffered range. */
-	buffered: { readonly start: number; readonly end: number } | null
-}>
+/** The playhead on the trimmed (display) timeline: the only part a playback tick moves. */
+export type Playhead = Readonly<{ currentMs: number; totalMs: number }>
 
-/** The playhead, markers and idle bands on the trimmed (display) timeline. */
-export const displayState = (model: Model): DisplayState => {
+export const playheadOf = (model: Model): Playhead => {
 	const timeline = timelineOf(model)
-	return {
-		currentMs: timeline.toDisplay(model.player.currentMs),
-		totalMs: timeline.activeTotalMs,
-		markers: model.meta.actionMarkers.map((marker) => ({ ms: timeline.toDisplay(marker.ms), kind: marker.kind })),
-		idleBands: model.meta.inactiveIntervals.map((interval) => ({
-			start: timeline.toDisplay(interval.start),
-			end: timeline.toDisplay(interval.end),
-		})),
-		buffered:
-			model.loader.seedCount === 0
-				? null
-				: {
-						start: timeline.toDisplay(loadedFromMs(model)),
-						end: timeline.toDisplay(Math.min(loadedUntilMs(model), model.player.totalMs)),
-					},
-	}
+	return { currentMs: timeline.toDisplay(model.player.currentMs), totalMs: timeline.activeTotalMs }
 }
 
-/** The downloaded span, under the progress fill. */
-export const bufferedLayer = (h: H, display: DisplayState): ReadonlyArray<Html> => {
-	const { buffered, totalMs } = display
-	if (buffered === null || totalMs <= 0) return []
-	const leftPct = Math.max(0, Math.min(100, (buffered.start / totalMs) * 100))
-	const widthPct = Math.max(0, Math.min(100 - leftPct, ((buffered.end - buffered.start) / totalMs) * 100))
-	return [
-		h.span(
-			[
-				h.Key("buffered"),
-				h.Class("absolute inset-y-0 rounded-full bg-foreground/20"),
-				h.Style({ left: `${leftPct}%`, width: `${widthPct}%` }),
-				h.Title("Downloaded"),
-			],
-			[],
-		),
-	]
-}
+type Marker = Model["meta"]["actionMarkers"][number]
+type Interval = Model["meta"]["inactiveIntervals"][number]
 
 const IDLE_HATCH = "repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)"
 
-export const idleBandsLayer = (h: H, display: DisplayState): ReadonlyArray<Html> =>
-	display.totalMs <= 0
-		? []
-		: display.idleBands.map((band, i) => {
-				const leftPct = Math.max(0, Math.min(100, (band.start / display.totalMs) * 100))
-				const widthPct = Math.max(0, Math.min(100 - leftPct, ((band.end - band.start) / display.totalMs) * 100))
-				return h.span(
-					[
-						h.Key(`idle-${band.start}-${i}`),
-						h.Class("absolute inset-y-0 bg-foreground/25"),
-						h.Style({
-							left: `${leftPct}%`,
-							width: `${widthPct}%`,
-							"min-width": "3px",
-							"background-image": IDLE_HATCH,
-						}),
-						h.Title("Idle"),
-					],
-					[],
-				)
-			})
+const idleBandsView = (
+	h: H,
+	intervals: ReadonlyArray<Interval>,
+	totalMs: number,
+	isSkippingIdle: boolean,
+): Html => {
+	const timeline = timelineFrom({ inactiveIntervals: intervals, totalMs, isSkippingIdle })
+	const total = timeline.activeTotalMs
+	return h.div(
+		[h.Class("absolute inset-0")],
+		total <= 0
+			? []
+			: intervals.map((interval, i) => {
+					const start = timeline.toDisplay(interval.start)
+					const leftPct = Math.max(0, Math.min(100, (start / total) * 100))
+					const widthPct = Math.max(
+						0,
+						Math.min(100 - leftPct, ((timeline.toDisplay(interval.end) - start) / total) * 100),
+					)
+					return h.span(
+						[
+							h.Key(`idle-${start}-${i}`),
+							h.Class("absolute inset-y-0 bg-foreground/25"),
+							h.Style({
+								left: `${leftPct}%`,
+								width: `${widthPct}%`,
+								"min-width": "3px",
+								"background-image": IDLE_HATCH,
+							}),
+							h.Title("Idle"),
+						],
+						[],
+					)
+				}),
+	)
+}
 
-export const markersLayer = (h: H, display: DisplayState): ReadonlyArray<Html> =>
-	display.totalMs <= 0
-		? []
-		: display.markers.map((marker, i) =>
-				h.span(
-					[
-						h.Key(`${marker.kind}-${marker.ms}-${i}`),
-						h.Class(
-							cn(
-								"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
-								MARKER_STYLES[marker.kind],
+const markersView = (
+	h: H,
+	markers: ReadonlyArray<Marker>,
+	intervals: ReadonlyArray<Interval>,
+	totalMs: number,
+	isSkippingIdle: boolean,
+): Html => {
+	const timeline = timelineFrom({ inactiveIntervals: intervals, totalMs, isSkippingIdle })
+	const total = timeline.activeTotalMs
+	return h.div(
+		[h.Class("absolute inset-0")],
+		total <= 0
+			? []
+			: markers.map((marker, i) => {
+					const ms = timeline.toDisplay(marker.ms)
+					return h.span(
+						[
+							h.Key(`${marker.kind}-${ms}-${i}`),
+							h.Class(
+								cn(
+									"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
+									MARKER_STYLES[marker.kind],
+								),
 							),
-						),
-						h.Style({ left: `${Math.min(100, Math.max(0, (marker.ms / display.totalMs) * 100))}%` }),
-						h.Title(marker.kind),
-					],
-					[],
-				),
-			)
+							h.Style({ left: `${Math.min(100, Math.max(0, (ms / total) * 100))}%` }),
+							h.Title(marker.kind),
+						],
+						[],
+					)
+				}),
+	)
+}
+
+const bufferedView = (
+	h: H,
+	fromMs: number,
+	untilMs: number,
+	intervals: ReadonlyArray<Interval>,
+	totalMs: number,
+	isSkippingIdle: boolean,
+): Html => {
+	const timeline = timelineFrom({ inactiveIntervals: intervals, totalMs, isSkippingIdle })
+	const total = timeline.activeTotalMs
+	if (total <= 0 || untilMs <= fromMs) return h.div([h.Class("absolute inset-0")], [])
+	const start = timeline.toDisplay(fromMs)
+	const leftPct = Math.max(0, Math.min(100, (start / total) * 100))
+	const widthPct = Math.max(
+		0,
+		Math.min(100 - leftPct, ((timeline.toDisplay(untilMs) - start) / total) * 100),
+	)
+	return h.div(
+		[h.Class("absolute inset-0")],
+		[
+			h.span(
+				[
+					h.Class("absolute inset-y-0 rounded-full bg-foreground/20"),
+					h.Style({ left: `${leftPct}%`, width: `${widthPct}%` }),
+					h.Title("Downloaded"),
+				],
+				[],
+			),
+		],
+	)
+}
+
+// The tracks change with the recording, not the playhead: one cache entry per surface they sit on.
+const trackSlots = createKeyedLazy()
+
+export type TrackSurface = "docked" | "fullscreen" | "timeline"
+
+export const idleBandsTrack = (h: H, model: Model, surface: TrackSurface): Html =>
+	trackSlots(`idle-${surface}`, idleBandsView, [
+		h,
+		model.meta.inactiveIntervals,
+		model.player.totalMs,
+		model.player.isSkippingIdle,
+	])
+
+/** The downloaded, playable span under the progress fill, like a video's buffered range. */
+export const bufferedTrack = (h: H, model: Model, surface: TrackSurface): Html =>
+	trackSlots(`buffered-${surface}`, bufferedView, [
+		h,
+		model.loader.seedCount === 0 ? 0 : loadedFromMs(model),
+		model.loader.seedCount === 0 ? 0 : Math.min(loadedUntilMs(model), model.player.totalMs),
+		model.meta.inactiveIntervals,
+		model.player.totalMs,
+		model.player.isSkippingIdle,
+	])
+
+export const markersTrack = (h: H, model: Model, surface: TrackSurface): Html =>
+	trackSlots(`markers-${surface}`, markersView, [
+		h,
+		model.meta.actionMarkers,
+		model.meta.inactiveIntervals,
+		model.player.totalMs,
+		model.player.isSkippingIdle,
+	])
 
 /** `PlayerMessage`: the surface's centred note when there is nothing to play. */
 const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner = false): Html =>
-	h.div([h.Class("flex aspect-video w-full items-center justify-center p-8")], [
-		h.div([h.Class("flex max-w-sm flex-col items-center gap-3 text-center")], [
-			h.div([h.Class("grid size-11 place-items-center rounded-full bg-muted text-muted-foreground")], [
-				hasSpinner ? spinner(h, "size-5") : icon(h, "EyeIcon", { className: "size-5" }),
-			]),
-			h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], children),
-		]),
-	])
+	h.div(
+		[h.Class("flex aspect-video w-full items-center justify-center p-8")],
+		[
+			h.div(
+				[h.Class("flex max-w-sm flex-col items-center gap-3 text-center")],
+				[
+					h.div(
+						[
+							h.Class(
+								"grid size-11 place-items-center rounded-full bg-muted text-muted-foreground",
+							),
+						],
+						[hasSpinner ? spinner(h, "size-5") : icon(h, "EyeIcon", { className: "size-5" })],
+					),
+					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], children),
+				],
+			),
+		],
+	)
 
 /** `PlayerError`: the failure in the app's error contract, retry when it can help. */
 const playerError = (h: H, failure: LoadFailure): Html => {
 	const canRetry = failure.recovery === "retry" || failure.recovery === "refresh"
-	return h.div([h.Class("flex aspect-video w-full items-center justify-center p-8")], [
-		h.div(
-			[h.Class("flex max-w-sm flex-col items-center gap-3 text-center"), h.Role("alert"), h.AriaLive("polite")],
-			[
-				h.div([h.Class(cn("grid size-11 place-items-center rounded-full", TONE_SOFT.crit))], [
-					icon(h, "EyeIcon", { className: "size-5" }),
-				]),
-				h.div([h.Class("space-y-1")], [
-					h.p([h.Class("text-sm font-medium text-muted-foreground")], [failure.title]),
-					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], [failure.message]),
-				]),
-				...(canRetry
-					? [
-							button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetryPlayer())] }, [
-								"Try again",
-							]),
-						]
-					: []),
-			],
-		),
-	])
+	return h.div(
+		[h.Class("flex aspect-video w-full items-center justify-center p-8")],
+		[
+			h.div(
+				[
+					h.Class("flex max-w-sm flex-col items-center gap-3 text-center"),
+					h.Role("alert"),
+					h.AriaLive("polite"),
+				],
+				[
+					h.div(
+						[h.Class(cn("grid size-11 place-items-center rounded-full", TONE_SOFT.crit))],
+						[icon(h, "EyeIcon", { className: "size-5" })],
+					),
+					h.div(
+						[h.Class("space-y-1")],
+						[
+							h.p([h.Class("text-sm font-medium text-muted-foreground")], [failure.title]),
+							h.p(
+								[h.Class("text-sm leading-relaxed text-muted-foreground")],
+								[failure.message],
+							),
+						],
+					),
+					...(canRetry
+						? [
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										attributes: [h.OnClick(Message.ClickedRetryPlayer())],
+									},
+									["Try again"],
+								),
+							]
+						: []),
+				],
+			),
+		],
+	)
 }
 
-const statusOverlay = (h: H, status: PlayerStatus, failure: LoadFailure | null, sessionActive: boolean): Html | null => {
+const statusOverlay = (
+	h: H,
+	status: PlayerStatus,
+	failure: LoadFailure | null,
+	sessionActive: boolean,
+): Html | null => {
 	if (status === "ready") return null
 	const body =
 		status === "loading"
@@ -179,7 +279,7 @@ const statusOverlay = (h: H, status: PlayerStatus, failure: LoadFailure | null, 
 							h,
 							[
 								sessionActive
-									? "Recording in progress — frames appear as chunks finish uploading."
+									? "Recording in progress. Frames appear as chunks finish uploading."
 									: "This recording is too short to play back.",
 							],
 							sessionActive,
@@ -188,33 +288,60 @@ const statusOverlay = (h: H, status: PlayerStatus, failure: LoadFailure | null, 
 							"This session wasn’t recorded. Replay is off or unsampled for this app. Its traces and events are still below.",
 							h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "sessionReplay")]),
 						])
-	return h.div([h.Class("absolute inset-0 bg-muted/30")], [body])
+	return h.div([h.Class("absolute inset-0 bg-surface-sunken")], [body])
 }
 
+/** What the stage reads: everything but the playhead, so a tick reuses it. */
+const stageOf = stableSlice((model: Model) => ({
+	control: model.player.control,
+	speed: model.player.speed,
+	isSkippingIdle: model.player.isSkippingIdle,
+	isPlaying: model.player.isPlaying,
+	isFinished: model.player.isFinished,
+	isFullscreen: model.player.isFullscreen,
+	totalMs: model.player.totalMs,
+	inactiveIntervals: model.meta.inactiveIntervals,
+	seedVersion: model.loader.seedVersion,
+	seed: model.loader.seed,
+	seekTargetMs: model.loader.seekTargetMs,
+	originMs: model.loader.originMs,
+	seedCount: model.loader.seedCount,
+	loaded: model.loader.loaded,
+	complete: hasMoreChunks(model) ? "" : String(trailingRanges(model.loader).length),
+}))
+type Stage = ReturnType<typeof stageOf>
+
+type SurfaceState = Readonly<{ status: PlayerStatus; failure: LoadFailure | null; sessionActive: boolean }>
+
 /** The engine's element, keyed by its seed so a new seed mounts a new engine; the Model drives it. */
-const engineMount = (h: H, model: Model, session: ReplayDetail, status: PlayerStatus): Html => {
-	const { player, loader } = model
+const engineMount = (
+	h: H,
+	stage: Stage,
+	session: ReplayDetail,
+	status: PlayerStatus,
+	isHolding: boolean,
+): Html => {
 	const attributes = [
 		h.Class("absolute inset-0"),
-		h.DataAttribute(CONTROL_ATTRIBUTE, player.control),
-		h.DataAttribute(SPEED_ATTRIBUTE, String(player.speed)),
-		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(player.isSkippingIdle ? model.meta.inactiveIntervals : [])),
-		h.DataAttribute(HOLD_ATTRIBUTE, String(player.isPlaying && isBuffering(model))),
-		h.DataAttribute(TOTAL_ATTRIBUTE, String(player.totalMs)),
-		h.DataAttribute(COMPLETE_ATTRIBUTE, hasMoreChunks(model) ? "" : String(trailingRanges(loader).length)),
+		h.DataAttribute(CONTROL_ATTRIBUTE, stage.control),
+		h.DataAttribute(SPEED_ATTRIBUTE, String(stage.speed)),
+		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(stage.isSkippingIdle ? stage.inactiveIntervals : [])),
+		h.DataAttribute(HOLD_ATTRIBUTE, String(isHolding)),
+		h.DataAttribute(TOTAL_ATTRIBUTE, String(stage.totalMs)),
+		h.DataAttribute(COMPLETE_ATTRIBUTE, stage.complete),
 	]
 	return status === "ready"
 		? h.div(
 				[
-					h.Key(`engine-${loader.seedVersion}`),
+					h.Key(`engine-${stage.seedVersion}`),
 					...attributes,
 					h.OnMount(
 						MountEngine({
-							seedVersion: loader.seedVersion,
-							events: seedEvents(loader),
+							seedVersion: stage.seedVersion,
+							events: seedEvents(stage),
 							format: replayFormat(session.resourceAttributes),
-							startAtMs: loader.seekTargetMs,
-							shiftMs: seedShiftMs(loader),
+							startAtMs: stage.seekTargetMs,
+							shiftMs: seedShiftMs(stage),
 						}),
 					),
 				],
@@ -223,9 +350,8 @@ const engineMount = (h: H, model: Model, session: ReplayDetail, status: PlayerSt
 		: h.div([h.Key("engine-idle"), ...attributes], [])
 }
 
-const playOverlay = (h: H, model: Model): Html => {
-	const { player } = model
-	return h.div(
+const playOverlay = (h: H, stage: Stage): Html =>
+	h.div(
 		[
 			h.AriaHidden(true),
 			h.OnClick(Message.ClickedPlay()),
@@ -237,93 +363,131 @@ const playOverlay = (h: H, model: Model): Html => {
 					h.Class(
 						cn(
 							"grid size-16 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200",
-							player.isPlaying ? "opacity-0 group-hover:opacity-70" : "opacity-100",
+							stage.isPlaying ? "opacity-0 group-hover:opacity-70" : "opacity-100",
 						),
 					),
 				],
 				[
-					player.isFinished
+					stage.isFinished
 						? icon(h, "ArrowPathIcon", { className: "size-7" })
-						: player.isPlaying
+						: stage.isPlaying
 							? icon(h, "MediaPauseIcon", { className: "size-7" })
 							: icon(h, "MediaPlayIcon", { className: "size-7 translate-x-0.5" }),
 				],
 			),
 		],
 	)
+
+const urlBar = (h: H, urlInitial: string): Html =>
+	h.div(
+		[h.Class("flex items-center gap-3 border-b border-border bg-surface-sunken px-3.5 py-2.5")],
+		[
+			h.div(
+				[h.Class("flex items-center gap-1.5"), h.AriaHidden(true)],
+				[
+					h.span([h.Class("size-3 rounded-full bg-[#ff5f57]")], []),
+					h.span([h.Class("size-3 rounded-full bg-[#febc2e]")], []),
+					h.span([h.Class("size-3 rounded-full bg-[#28c840]")], []),
+				],
+			),
+			h.div(
+				[
+					h.Class(
+						"flex min-w-0 flex-1 items-center gap-2 rounded-md bg-background/80 px-2.5 py-1 text-xs text-muted-foreground ring-1 ring-inset ring-border",
+					),
+				],
+				[
+					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0" }),
+					h.span(
+						[h.Class("truncate font-mono")],
+						[urlInitial ? hostFromUrl(urlInitial) : "about:blank"],
+					),
+				],
+			),
+		],
+	)
+
+const stageView = (
+	h: H,
+	stage: Stage,
+	session: ReplayDetail,
+	status: PlayerStatus,
+	failure: LoadFailure | null,
+	sessionActive: boolean,
+	isHolding: boolean,
+): Html => {
+	const overlay = statusOverlay(h, status, failure, sessionActive)
+	return h.div(
+		[
+			h.Class(
+				cn(
+					"relative w-full overflow-hidden bg-neutral-900",
+					stage.isFullscreen ? "min-h-0 flex-1" : "aspect-video",
+				),
+			),
+		],
+		[
+			engineMount(h, stage, session, status, isHolding),
+			...(status === "ready" ? [playOverlay(h, stage)] : []),
+			...(overlay === null ? [] : [overlay]),
+			...trailingRanges(stage).map((range) =>
+				h.span(
+					[
+						h.Key(`feed-${range.key}`),
+						h.Hidden(true),
+						h.OnMount(FeedEvents({ events: range.events })),
+					],
+					[],
+				),
+			),
+		],
+	)
 }
 
+const urlBarSlot = createLazy()
+const stageSlot = createLazy()
+
 /** `ReplaySurface detachedTransport docked`: browser chrome over the recording. */
-export const replaySurface = (
-	h: H,
-	model: Model,
-	session: ReplayDetail,
-	state: Readonly<{ status: PlayerStatus; failure: LoadFailure | null; sessionActive: boolean }>,
-): Html => {
+export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: SurfaceState): Html => {
 	const { isFullscreen } = model.player
-	const overlay = statusOverlay(h, state.status, state.failure, state.sessionActive)
+	const isHolding = model.player.isPlaying && isBuffering(model)
 	return panel(
 		h,
 		{
 			className: cn(
-				"block shadow-sm",
+				"block shadow-raised",
 				"rounded-b-none shadow-none",
 				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-black",
 			),
 			attributes: [h.DataAttribute("replay-figure", "")],
 		},
 		[
-			h.div([h.Class("flex items-center gap-3 border-b border-border bg-muted/40 px-3.5 py-2.5")], [
-				h.div([h.Class("flex items-center gap-1.5"), h.AriaHidden(true)], [
-					h.span([h.Class("size-3 rounded-full bg-[#ff5f57]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#febc2e]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#28c840]")], []),
-				]),
-				h.div(
-					[
-						h.Class(
-							"flex min-w-0 flex-1 items-center gap-2 rounded-md bg-background/80 px-2.5 py-1 text-xs text-muted-foreground ring-1 ring-inset ring-border",
-						),
-					],
-					[
-						icon(h, "GlobeIcon", { className: "size-3.5 shrink-0 opacity-70" }),
-						h.span([h.Class("truncate font-mono")], [session.urlInitial ? hostFromUrl(session.urlInitial) : "about:blank"]),
-					],
-				),
+			urlBarSlot(urlBar, [h, session.urlInitial]),
+			stageSlot(stageView, [
+				h,
+				stageOf(model),
+				session,
+				state.status,
+				state.failure,
+				state.sessionActive,
+				isHolding,
 			]),
-			h.div(
-				[
-					h.Class(
-						cn(
-							"relative w-full overflow-hidden bg-neutral-900",
-							isFullscreen ? "min-h-0 flex-1" : "aspect-video",
-						),
-					),
-				],
-				[
-					engineMount(h, model, session, state.status),
-					...(state.status === "ready" ? [playOverlay(h, model)] : []),
-					...(overlay === null ? [] : [overlay]),
-					...trailingRanges(model.loader).map((range) =>
-						h.span([h.Key(`feed-${range.key}`), h.Hidden(true), h.OnMount(FeedEvents({ events: range.events }))], []),
-					),
-				],
-			),
 			...(isFullscreen && state.status !== "unrecorded" ? [replayControls(h, model, false)] : []),
 		],
 	)
 }
 
 /** `Scrubber`: a pointer press seeks to where it lands. */
-const scrubber = (h: H, display: DisplayState): Html => {
-	const pct = display.totalMs > 0 ? Math.min(100, (display.currentMs / display.totalMs) * 100) : 0
+const scrubber = (h: H, model: Model, surface: TrackSurface): Html => {
+	const playhead = playheadOf(model)
+	const pct = playhead.totalMs > 0 ? Math.min(100, (playhead.currentMs / playhead.totalMs) * 100) : 0
 	return h.div(
 		[
 			h.Role("slider"),
 			h.AriaLabel("Seek"),
 			h.AriaValuemin(0),
-			h.AriaValuemax(Math.round(display.totalMs)),
-			h.AriaValuenow(Math.round(display.currentMs)),
+			h.AriaValuemax(Math.round(playhead.totalMs)),
+			h.AriaValuenow(Math.round(playhead.currentMs)),
 			h.Tabindex(0),
 			h.DataAttribute("replay-scrub", "transport"),
 			h.OnPointerDown((_type, _button, _screenX, _screenY, _time, clientX) =>
@@ -333,18 +497,25 @@ const scrubber = (h: H, display: DisplayState): Html => {
 		],
 		[
 			h.div(
-				[h.Class("absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted")],
 				[
-					...bufferedLayer(h, display),
-					...idleBandsLayer(h, display),
-					h.div([h.Class("relative h-full rounded-full bg-primary"), h.Style({ width: `${pct}%` })], []),
+					h.Class(
+						"absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted",
+					),
+				],
+				[
+					bufferedTrack(h, model, surface),
+					idleBandsTrack(h, model, surface),
+					h.div(
+						[h.Class("relative h-full rounded-full bg-primary"), h.Style({ width: `${pct}%` })],
+						[],
+					),
 				],
 			),
-			...markersLayer(h, display),
+			markersTrack(h, model, surface),
 			h.div(
 				[
 					h.Class(
-						"absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100",
+						"absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-raised transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100",
 					),
 					h.Style({ left: `${pct}%` }),
 				],
@@ -354,10 +525,61 @@ const scrubber = (h: H, display: DisplayState): Html => {
 	)
 }
 
+const playButton = (h: H, isPlaying: boolean, isFinished: boolean): Html =>
+	iconButton(
+		h,
+		{
+			label: isFinished ? "Replay" : isPlaying ? "Pause" : "Play",
+			variant: "default",
+			size: "icon",
+			className: "rounded-full before:rounded-full",
+			attributes: [h.AriaKeyshortcuts("Space"), h.OnClick(Message.ClickedPlay())],
+		},
+		[
+			isFinished
+				? icon(h, "ArrowPathIcon")
+				: isPlaying
+					? icon(h, "MediaPauseIcon")
+					: icon(h, "MediaPlayIcon", { className: "translate-x-px" }),
+		],
+	)
+
+const settings = (h: H, speed: number, isSkippingIdle: boolean, isFullscreen: boolean): Html =>
+	h.div(
+		[h.Class("flex items-center gap-2 sm:contents")],
+		[
+			segmentedSelect(h, {
+				size: "sm",
+				ariaLabel: "Playback speed",
+				className: "shrink-0",
+				options: SPEED_OPTIONS,
+				value: String(speed),
+				onChange: (value) => Message.PickedSpeed({ speed: Number(value) }),
+			}),
+			filterChip(h, { size: "xs", isPressed: isSkippingIdle, onClick: Message.ToggledSkipIdle() }, [
+				"Skip idle",
+			]),
+			iconButton(
+				h,
+				{
+					label: isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
+					size: "icon",
+					className:
+						"text-muted-foreground hover:text-foreground active:text-foreground max-sm:ml-auto",
+					attributes: [h.OnClick(Message.ClickedFullscreen())],
+				},
+				[icon(h, isFullscreen ? "MinimizeIcon" : "MaximizeIcon")],
+			),
+		],
+	)
+
+const controlSlots = createKeyedLazy()
+
 /** `ReplayControls`: play, scrubber, clock, speed, skip idle, fullscreen. */
 export const replayControls = (h: H, model: Model, isDetached: boolean): Html => {
 	const { player } = model
-	const display = displayState(model)
+	const surface = isDetached ? "docked" : "fullscreen"
+	const playhead = playheadOf(model)
 	return h.div(
 		[
 			h.Class(
@@ -368,51 +590,30 @@ export const replayControls = (h: H, model: Model, isDetached: boolean): Html =>
 			),
 		],
 		[
-			h.div([h.Class("flex items-center gap-3 sm:contents")], [
-				iconButton(
-					h,
-					{
-						label: player.isFinished ? "Replay" : player.isPlaying ? "Pause" : "Play",
-						variant: "default",
-						size: "icon",
-						className: "rounded-full before:rounded-full",
-						attributes: [h.AriaKeyshortcuts("Space"), h.OnClick(Message.ClickedPlay())],
-					},
-					[
-						player.isFinished
-							? icon(h, "ArrowPathIcon")
-							: player.isPlaying
-								? icon(h, "MediaPauseIcon")
-								: icon(h, "MediaPlayIcon", { className: "translate-x-px" }),
-					],
-				),
-				scrubber(h, display),
-				h.div([h.Class("flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground")], [
-					h.span([h.Class("text-foreground")], [formatClock(display.currentMs)]),
-					h.span([h.Class("opacity-50")], ["/"]),
-					h.span([], [formatClock(display.totalMs)]),
-				]),
-			]),
-			h.div([h.Class("flex items-center gap-2 sm:contents")], [
-				segmentedSelect(h, {
-					size: "sm",
-					ariaLabel: "Playback speed",
-					className: "shrink-0",
-					options: SPEED_OPTIONS,
-					value: String(player.speed),
-					onChange: (value) => Message.PickedSpeed({ speed: Number(value) }),
-				}),
-				filterChip(h, { size: "xs", isPressed: player.isSkippingIdle, onClick: Message.ToggledSkipIdle() }, ["Skip idle"]),
-				iconButton(
-					h,
-					{
-						label: player.isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
-						size: "icon",
-						className: "text-muted-foreground hover:text-foreground max-sm:ml-auto",
-						attributes: [h.OnClick(Message.ClickedFullscreen())],
-					},
-					[icon(h, player.isFullscreen ? "MinimizeIcon" : "MaximizeIcon")],
-				),
+			h.div(
+				[h.Class("flex items-center gap-3 sm:contents")],
+				[
+					controlSlots(`play-${surface}`, playButton, [h, player.isPlaying, player.isFinished]),
+					scrubber(h, model, surface),
+					h.div(
+						[
+							h.Class(
+								"flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground",
+							),
+						],
+						[
+							h.span([h.Class("text-foreground")], [formatClock(playhead.currentMs)]),
+							h.span([h.Class("opacity-50")], ["/"]),
+							h.span([], [formatClock(playhead.totalMs)]),
+						],
+					),
+				],
+			),
+			controlSlots(`settings-${surface}`, settings, [
+				h,
+				player.speed,
+				player.isSkippingIdle,
+				player.isFullscreen,
 			]),
 		],
 	)
@@ -423,4 +624,3 @@ export const replayTransport = (h: H, model: Model, status: PlayerStatus): Html 
 	model.player.isFullscreen || status === "unrecorded"
 		? null
 		: panel(h, { className: "rounded-t-none border-t-0" }, [replayControls(h, model, true)])
-

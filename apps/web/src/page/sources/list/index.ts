@@ -13,6 +13,6 @@ export const page = definePage(
 		init,
 		update,
 		view,
-		breadcrumbs: () => [{ label: "Sources" }],
+		breadcrumbs: () => [{ label: "Sources", isPageHeading: true }],
 	},
 )

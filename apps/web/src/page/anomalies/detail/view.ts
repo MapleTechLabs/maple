@@ -143,7 +143,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					])
 				: state._tag === "Failed"
 					? dashboardPage(h, {}, [
-							errorState(h, { failure: state.failure, title: "Failed to load anomaly", onRetry: Message.ClickedRetry() }),
+							errorState(h, { failure: state.failure, title: "Couldn't load anomaly", onRetry: Message.ClickedRetry() }),
 						])
 					: dashboardPage(h, {}, [
 							h.div(

@@ -263,4 +263,4 @@ export const executeWithSpan = Effect.fn(
 	return result
 })
 
-export class Database extends Context.Service<Database, DatabaseApi>()("@maple/api/services/Database") {}
+export class Database extends Context.Service<Database, DatabaseApi>()("@maple/backend/services/Database") {}

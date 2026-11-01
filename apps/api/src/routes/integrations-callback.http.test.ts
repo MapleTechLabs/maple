@@ -60,6 +60,9 @@ describe("provider callbacks", () => {
 		// Straight to the page that finishes it, not one the dashboard redirects away from.
 		const location = new URL(response.headers.get("location") ?? "")
 		expect(location.origin + location.pathname).toBe("https://app.example.com/sources/new")
+		// The location carries the provider's code: never cached, never sent on as a Referer.
+		expect(response.headers.get("cache-control")).toBe("no-store")
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer")
 		expect(location.searchParams.get("integration")).toBe("cloudflare")
 		const handed = Option.getOrThrow(decodeOAuthReturnHash(location.hash))
 		expect(handed.flow).toBe("cloudflare")
@@ -91,8 +94,8 @@ describe("provider callbacks", () => {
 
 	it.each([
 		["an install awaiting org approval", "?code=c&setup_action=request", "Installation requested"],
-		["a return without an installation", "?code=c&state=s", "Missing installation_id"],
-		["an install started on GitHub without a state", "?code=c&installation_id=1", "Missing state"],
+		["a return without authorization or an installation", "?state=s", "Missing installation_id"],
+		["an install started on GitHub without a state", "?code=c&installation_id=1", "Connect GitHub"],
 	])("refuses %s on the API page and hands nothing on", async (_name, query, message) => {
 		const { handler, dispose, runtime } = makeHarness()
 		const response = await handler(get(`${GITHUB_CALLBACK_PATH}${query}`))
@@ -103,12 +106,26 @@ describe("provider callbacks", () => {
 		await dispose()
 	})
 
+	it("hands existing-installation authorization to the dashboard without an installation id", async () => {
+		const { handler, dispose, runtime } = makeHarness()
+		const response = await handler(get(`${GITHUB_CALLBACK_PATH}?code=existing-code&state=existing-state`))
+		expect(response.status).toBe(302)
+		const location = new URL(response.headers.get("location") ?? "")
+		const handed = Option.getOrThrow(decodeOAuthReturnHash(location.hash))
+		expect(handed.flow).toBe("github")
+		expect(new URLSearchParams(handed.query).get("code")).toBe("existing-code")
+		await runtime.dispose()
+		await dispose()
+	})
+
 	it("hands a chat link return to the dashboard under its connector", async () => {
 		const { handler, dispose, runtime } = makeHarness()
 		const response = await handler(get("/oauth/chat/slack/identity/callback?code=c&state=s"))
 		expect(response.status).toBe(302)
 		const location = new URL(response.headers.get("location") ?? "")
 		expect(location.searchParams.get("integration")).toBe("chat-slack")
+		expect(response.headers.get("cache-control")).toBe("no-store")
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer")
 		const handed = Option.getOrThrow(decodeOAuthReturnHash(location.hash))
 		expect(handed.flow).toBe("chat_identity")
 		expect(handed.connector).toBe("slack")

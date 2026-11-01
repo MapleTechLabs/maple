@@ -14,41 +14,63 @@ import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../components/
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../charts/theme-colors"
-import type * as GcpList from "../../page/infra-integrations/gcp/list/model"
-import { gcpListPage, THEME_TOKENS } from "../../page/infra-integrations/gcp/list/view"
+import * as GcpList from "../../page/infra-integrations/gcp/list/model"
+import { viewHref } from "../../page/infra-integrations/gcp/list/update"
+import { gcpListPageParts, THEME_TOKENS, titleRow } from "../../page/infra-integrations/gcp/list/view"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { segmentedSelect } from "../../ui/segmented-select"
 import { Message, type Model } from "./model"
 
 const SPARKS = gcpSparks(SPARKLINE_READS, { startTime: START, endTime: END, bucketSeconds: BUCKET_SECONDS })
 
-/** The page as the lab mounts it: `DashboardPage gap="lg"` around `GcpListPage`, no time controls. */
-const listView = Submodel.defineView<Model, GcpList.Message>((model, h) =>
-	h.div(
+const TIME_SEARCH = { startTime: START, endTime: END }
+
+/** The page as the route mounts it: the shared title row and view tabs over the fixtures. */
+const listView = Submodel.defineView<Model, GcpList.Message>((model, h) => {
+	const page = gcpListPageParts(h, {
+		fleet: FLEET,
+		sparks: SPARKS,
+		windowSeconds: gcpWindowSeconds(START, END),
+		cloudSqlInstances: CLOUD_SQL_INSTANCES,
+		projectHealth: PROJECT_HEALTH,
+		collecting: false,
+		notice: [],
+		resources: () => h.empty,
+		state: { ...model.state, view: gcpRequestedView(model.state.view, undefined) },
+		timeSearch: TIME_SEARCH,
+		theme: model.themeColors,
+		isChartReady: model.chartRuntime._tag !== "Loading",
+		isWaiting: false,
+		projectMenu: model.projectMenu,
+		locale: INITIAL_LOCALE,
+		// The lab holds its state in the model, so a plain click switches in place.
+		viewTab: (view) => ({
+			href: viewHref({}, view),
+			onClick: GcpList.Message.ClickedView({ view }),
+		}),
+	})
+	// The header shows the fixture's 12h span as a preset, as the route's default does.
+	const time = {
+		search: { timePreset: "12h" },
+		window: TIME_SEARCH,
+		timePicker: model.timePicker,
+		isReloading: model.isReloading,
+	}
+	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
-			dashboardPage(h, { gap: "lg" }, [
-				gcpListPage(h, {
-					fleet: FLEET,
-					sparks: SPARKS,
-					windowSeconds: gcpWindowSeconds(START, END),
-					cloudSqlInstances: CLOUD_SQL_INSTANCES,
-					projectHealth: PROJECT_HEALTH,
-					collecting: false,
-					notice: [],
-					resources: () => h.empty,
-					state: { ...model.state, view: gcpRequestedView(model.state.view, undefined) },
-					timeSearch: { startTime: START, endTime: END },
-					theme: model.themeColors,
-					isChartReady: model.chartRuntime._tag !== "Loading",
-					isWaiting: false,
-					projectMenu: model.projectMenu,
-					locale: INITIAL_LOCALE,
-				}),
-			]),
+			dashboardPage(
+				h,
+				{
+					scrollClassName: "gap-6",
+					...titleRow(h, page.header, time, page.isFailed),
+					tabs: page.tabs,
+				},
+				page.body,
+			),
 		],
-	),
-)
+	)
+})
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.submodel({
@@ -63,7 +85,7 @@ export const overlay = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[
 			h.Class(
-				"fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-popover px-3 py-2 shadow-lg",
+				"fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-popover px-3 py-2 shadow-popup",
 			),
 		],
 		[

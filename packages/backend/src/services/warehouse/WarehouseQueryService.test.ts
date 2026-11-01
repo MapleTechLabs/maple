@@ -279,11 +279,41 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("preserves exact runtime-config dependency failures", () => {
+	it.effect("reports a failed settings read as a retryable warehouse outage", () => {
+		const source = new OrgClickHouseSettingsPersistenceError({ message: "database unavailable" })
+		const configLive = makeConfig({}, false)
+		const envLive = Env.layer.pipe(Layer.provide(configLive))
+		const tokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
+		const orgSettingsLive = Layer.succeed(OrgClickHouseSettingsService, {
+			resolveRuntimeConfig: () => Effect.fail(source),
+			invalidateRuntimeConfig: () => Effect.succeed(false),
+		} as OrgClickHouseSettingsServiceApi)
+		const layer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
+			Layer.provide(FetchHttpClient.layer),
+			Layer.provide(Layer.mergeAll(envLive, tokenLive, orgSettingsLive)),
+		)
+		const tenant = makeTenant()
+
+		return Effect.gen(function* () {
+			const raw = getError(
+				yield* WarehouseQueryService.use((service) =>
+					service.rawSqlQuery(tenant, "SELECT 1 WHERE OrgId = 'org_test'"),
+				).pipe(Effect.exit),
+			)
+			const compiled = getError(
+				yield* WarehouseQueryService.use((service) =>
+					service.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'")),
+				).pipe(Effect.exit),
+			)
+			assert.instanceOf(raw, WarehouseUpstreamError)
+			assert.strictEqual(raw.cause, source)
+			assert.instanceOf(compiled, WarehouseUpstreamError)
+			assert.strictEqual(compiled.cause, source)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("preserves actionable runtime-config failures", () => {
 		const cases = [
-			{
-				source: new OrgClickHouseSettingsPersistenceError({ message: "database unavailable" }),
-			},
 			{
 				source: new OrgClickHouseSettingsEncryptionError({ message: "decrypt failed" }),
 			},

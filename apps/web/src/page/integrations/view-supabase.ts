@@ -6,7 +6,7 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button } from "../../ui/button"
+import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
 import { switchControl } from "../../ui/switch"
@@ -14,12 +14,8 @@ import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { healthPill, isReadPending, lifecycleOf, projectHealth } from "../infra-integrations/supabase/health"
 import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
-import {
-	SUPABASE_BRAND,
-	SUPABASE_CONNECT_HINT,
-	SUPABASE_NOT_CONFIGURED,
-	supabaseOnRamp,
-} from "../infra-integrations/supabase/connect"
+import { SUPABASE_BRAND, SUPABASE_NOT_CONFIGURED } from "../infra-integrations/supabase/connect"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -37,21 +33,10 @@ type H = HtmlBuilder<Message>
 type Project = SupabaseIntegrationStatus["projects"][number]
 type Drain = Project["logDrains"][number]
 
-const connectButton = (h: H, model: Model, label: string): Html =>
-	button(
-		h,
-		{
-			isDisabled: model.connect.isStarting || model.disconnect.isPending,
-			isLoading: model.connect.isStarting,
-			attributes: [h.OnClick(Message.ClickedConnect())],
-		},
-		[icon(h, "SupabaseIcon"), label],
-	)
-
 type Metrics = Model["supabaseCard"]["metrics"]
 
 /** The project's metrics row, or `null` while the rows load, failed, or hold none for it. */
-const metricsRowOf = (metrics: Metrics, ref: string): SupabaseProjectRow | null =>
+export const metricsRowOf = (metrics: Metrics, ref: string): SupabaseProjectRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(metrics.data), (rows) =>
 			Option.fromNullishOr(rows.find((row) => row.projectRef === ref)),
@@ -136,41 +121,80 @@ const noteLine = (h: H, text: string, tone: "muted" | "error"): Html =>
 		[text],
 	)
 
-const projectRow = (h: H, model: Model, project: Project): Html => {
-	const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
-	const isPaused = lifecycleOf(project.status)._tag === "Paused"
+/** A project's lock and the values its switches show: a flip in flight shows its intended value. */
+const switchState = (model: Model, project: Project) => {
 	const pending = model.supabaseCard.pending.find((entry) => entry.ref === project.ref)
-	const isLocked = isPaused || pending !== undefined
-	// A flip in flight shows the intended value until the server confirms or refuses it.
+	const isLocked = lifecycleOf(project.status)._tag === "Paused" || pending !== undefined
 	const metricsEnabled = pending?.kind === "metrics" ? pending.enabled : project.metricsEnabled
 	const drainEnabled = pending?.kind === "drain" ? pending.enabled : project.logDrainEnabled
 	// Turning a drain on stops polling server-side; show that while the write is in flight.
 	const logsEnabled =
 		pending?.kind === "logs" ? pending.enabled : drainEnabled ? false : project.logsEnabled
+	return { isLocked, metricsEnabled, drainEnabled, logsEnabled }
+}
+
+/** The project's Metrics, Logs and Drain switches, shared by the card and the flow's Choose data. */
+export const supabaseProjectSwitches = (h: H, model: Model, project: Project): ReadonlyArray<Html> => {
+	const { isLocked, metricsEnabled, drainEnabled, logsEnabled } = switchState(model, project)
 	const manual = manualMapleDrain(project)
-	const notes = [
-		...(project.logDrains.length > 0
-			? [
-					noteLine(
-						h,
-						`Drains: ${project.logDrains.map((drain) => drainLabel(project, drain)).join(", ")}`,
-						"muted",
-					),
-				]
-			: []),
-		...(project.logDrainEnabled && project.logDrainError !== null
-			? [noteLine(h, `Drain: ${project.logDrainError}`, "error")]
-			: []),
-		...(project.logsEnabled && project.logsError !== null
-			? [noteLine(h, `Logs: ${project.logsError}`, "error")]
-			: []),
+	return [
+		projectSwitch(h, {
+			id: `supabase-metrics-${project.ref}`,
+			isChecked: metricsEnabled,
+			isDisabled: isLocked,
+			label: `Collect metrics for ${project.name}`,
+			onToggle: Message.ToggledSupabaseMetrics({ ref: project.ref, enabled: !metricsEnabled }),
+		}),
+		projectSwitch(h, {
+			id: `supabase-logs-${project.ref}`,
+			isChecked: logsEnabled,
+			// A drain already delivers the project's logs; polling too would store them twice.
+			// Polling already on can always be turned off.
+			isDisabled: isLocked || (!logsEnabled && (drainEnabled || manual !== undefined)),
+			label: `Collect logs for ${project.name}`,
+			onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !logsEnabled }),
+		}),
+		projectSwitch(h, {
+			id: `supabase-drain-${project.ref}`,
+			isChecked: drainEnabled,
+			isDisabled: isLocked || (manual !== undefined && !drainEnabled),
+			label:
+				manual === undefined
+					? `Send ${project.name}'s logs through a Supabase log drain`
+					: `${project.name} already sends logs to Maple through the drain ${manual.name}`,
+			onToggle: Message.ToggledSupabaseLogDrain({ ref: project.ref, enabled: !drainEnabled }),
+		}),
 	]
+}
+
+/** The drains Supabase lists and the last drain or logs error, under the project's name. */
+export const supabaseProjectNotes = (h: H, project: Project): ReadonlyArray<Html> => [
+	...(project.logDrains.length > 0
+		? [
+				noteLine(
+					h,
+					`Drains: ${project.logDrains.map((drain) => drainLabel(project, drain)).join(", ")}`,
+					"muted",
+				),
+			]
+		: []),
+	...(project.logDrainEnabled && project.logDrainError !== null
+		? [noteLine(h, `Drain: ${project.logDrainError}`, "error")]
+		: []),
+	...(project.logsEnabled && project.logsError !== null
+		? [noteLine(h, `Logs: ${project.logsError}`, "error")]
+		: []),
+]
+
+const projectRow = (h: H, model: Model, project: Project): Html => {
+	const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
+	const isPaused = lifecycleOf(project.status)._tag === "Paused"
 	return h.div(
 		[
 			h.Key(project.ref),
 			h.Class(
 				cn(
-					"flex items-center gap-4 border-b border-border/40 px-4 py-2.5 text-sm last:border-0",
+					"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
 					isPaused && "opacity-60",
 				),
 			),
@@ -184,7 +208,7 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
 						[project.region === "" ? project.ref : `${project.ref} · ${project.region}`],
 					),
-					...notes,
+					...supabaseProjectNotes(h, project),
 				],
 			),
 			h.span(
@@ -200,32 +224,7 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 				[h.Class("w-48 shrink-0 truncate font-mono text-2xs text-muted-foreground")],
 				[lastDataLabel(project, model.supabaseCard.metrics, row, model.nowMs)],
 			),
-			projectSwitch(h, {
-				id: `supabase-metrics-${project.ref}`,
-				isChecked: metricsEnabled,
-				isDisabled: isLocked,
-				label: `Collect metrics for ${project.name}`,
-				onToggle: Message.ToggledSupabaseMetrics({ ref: project.ref, enabled: !metricsEnabled }),
-			}),
-			projectSwitch(h, {
-				id: `supabase-logs-${project.ref}`,
-				isChecked: logsEnabled,
-				// A drain already delivers the project's logs; polling too would store them twice.
-				// Polling already on can always be turned off.
-				isDisabled: isLocked || (!logsEnabled && (drainEnabled || manual !== undefined)),
-				label: `Collect logs for ${project.name}`,
-				onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !logsEnabled }),
-			}),
-			projectSwitch(h, {
-				id: `supabase-drain-${project.ref}`,
-				isChecked: drainEnabled,
-				isDisabled: isLocked || (manual !== undefined && !drainEnabled),
-				label:
-					manual === undefined
-						? `Send ${project.name}'s logs through a Supabase log drain`
-						: `${project.name} already sends logs to Maple through the drain ${manual.name}`,
-				onToggle: Message.ToggledSupabaseLogDrain({ ref: project.ref, enabled: !drainEnabled }),
-			}),
+			...supabaseProjectSwitches(h, model, project),
 		],
 	)
 }
@@ -247,6 +246,9 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): H
 			: status.projects.map((project) => projectRow(h, model, project)),
 	)
 
+export const SUPABASE_LOGS_NOTE =
+	"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain."
+
 const footer = (h: H): Html =>
 	h.div(
 		[
@@ -255,16 +257,11 @@ const footer = (h: H): Html =>
 			),
 		],
 		[
-			h.p(
-				[],
-				[
-					"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain.",
-				],
-			),
+			h.p([], [SUPABASE_LOGS_NOTE]),
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.InfraSupabase({ search: {} }))),
-					h.Class("shrink-0 transition-colors hover:text-foreground"),
+					h.Class("shrink-0 hover:text-foreground active:text-foreground"),
 				],
 				["View in Infrastructure"],
 			),
@@ -337,10 +334,7 @@ const actions = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
 	])
 
 const byStatus = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZone: string): Html => {
-	if (!status.connected)
-		return status.configured
-			? supabaseOnRamp(h, SUPABASE_CONNECT_HINT, connectButton(h, model, "Connect Supabase"))
-			: supabaseOnRamp(h, SUPABASE_NOT_CONFIGURED, null)
+	if (!status.connected) return supabaseReconnect(h, status.configured)
 	return connectedIntegrationCard(h, model, {
 		integration: "supabase",
 		brand: SUPABASE_BRAND,
@@ -358,6 +352,22 @@ const byStatus = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZon
 export const supabaseCard = (h: H, model: Model, timeZone: string): Html =>
 	integrationStatusCard(h, model.statuses.supabase, {
 		name: "supabase",
-		failureTitle: "Failed to load the Supabase integration",
+		failureTitle: "Couldn't load the Supabase integration",
 		render: (status) => byStatus(h, model, status, timeZone),
+	})
+
+/** A source page whose organization was disconnected: the way back is the connect flow. */
+const supabaseReconnect = (h: H, isConfigured: boolean): Html =>
+	integrationNotice(h, {
+		message: isConfigured ? "Supabase is not connected." : SUPABASE_NOT_CONFIGURED,
+		action: isConfigured
+			? linkButton(
+					h,
+					{
+						size: "sm",
+						href: hrefOf(AppRoute.SourcesNew({ search: { integration: "supabase" } })),
+					},
+					["Reconnect"],
+				)
+			: undefined,
 	})

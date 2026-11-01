@@ -70,4 +70,9 @@ export const inputGroupButton = <Message>(
 
 /** `<InputGroupInput>`: an unstyled Input. */
 export const inputGroupInput = <Message>(h: HtmlBuilder<Message>, options: InputOptions<Message>): Html =>
-	input(h, { ...options, isUnstyled: true })
+	input(h, {
+		...options,
+		isUnstyled: true,
+		// A value wider than the middle segment ends in an ellipsis instead of a clipped glyph.
+		controlClassName: cn("text-ellipsis", options.controlClassName),
+	})

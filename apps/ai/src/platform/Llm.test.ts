@@ -24,6 +24,10 @@ import {
 	loadLlmSettings,
 	resolveDecisionModel,
 	resolveReviewModel,
+	resolveSecurityAuditModel,
+	securityAuditModelId,
+	securityAuditModelIds,
+	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
 	type LlmCallTags,
 	type LlmSettings,
@@ -209,6 +213,53 @@ describe("reasoning effort", () => {
 			expect(captured.body).not.toHaveProperty("reasoning")
 		}),
 	)
+})
+
+describe("resolveSecurityAuditModel", () => {
+	it("resolves discovery and validation to different models, each overridable", () => {
+		const defaults = [
+			resolveSecurityAuditModel(openRouterEnv, "discovery").name,
+			resolveSecurityAuditModel(openRouterEnv, "validation").name,
+		]
+		const overridden = resolveSecurityAuditModel(
+			{ ...openRouterEnv, MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: "openai/gpt-6-luna" },
+			"validation",
+		).name
+		expect([defaults[0] !== defaults[1], overridden]).toEqual([true, "openai/gpt-6-luna"])
+	})
+
+	it("runs on the org's pick over the deployment's override", () => {
+		const env = { ...openRouterEnv, MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: "openai/gpt-6-luna" }
+		expect(
+			resolveSecurityAuditModel(env, "discovery", undefined, "anthropic/claude-haiku-5.5").name,
+		).toBe("anthropic/claude-haiku-5.5")
+	})
+
+	it("ignores a pick the region does not serve, or that cannot verify", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		expect([
+			securityAuditModelId(eu, "discovery", "deepseek/deepseek-v4.1-flash-1017:nitro"),
+			securityAuditModelId(openRouterEnv, "validation", "openai/gpt-6.1-sol"),
+			securityAuditModelId(openRouterEnv, "discovery", "not/a-listed-model"),
+		]).toEqual([
+			DEFAULT_AUDIT_MODELS.eu.discovery,
+			DEFAULT_AUDIT_MODELS.us.validation,
+			DEFAULT_AUDIT_MODELS.us.discovery,
+		])
+	})
+})
+
+describe("securityAuditModelIds", () => {
+	it("never verifies on the hunting model, even when the region's fallback lands both picks on one", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		// DeepSeek has no EU provider, so the hunter falls back to Haiku, which this org verifies with.
+		expect(
+			securityAuditModelIds(eu, {
+				discovery: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validation: "anthropic/claude-haiku-5.5",
+			}),
+		).toEqual({ discovery: DEFAULT_AUDIT_MODELS.eu.validation, validation: "anthropic/claude-haiku-5.5" })
+	})
 })
 
 describe("resolveReviewModel", () => {
@@ -417,7 +468,7 @@ const sseBody = (
  * The one tool the streaming fixtures declare. A `tool-call` part is decoded against the toolkit
  * the call declared, so a stream that returns one is only readable with the tool in hand.
  */
-const listServices = Tool.make("list_services", { parameters: Schema.Struct({}) })
+const listServices = Tool.make("list_services")
 
 /**
  * How one streaming fixture is shaped: the wire, plus whether the call declares a tool. Only a
@@ -735,6 +786,55 @@ describe("layerDecisionModel — Clef on Workers AI", () => {
 
 			assert.match(captured.url, /\/ai\/run\/@cf\/cloudflare\/clef-flash$/)
 			assert.strictEqual(captured.body.model, "clef-flash")
+		}),
+	)
+
+	it.live("sends score levels as descriptions and keys the answer's probabilities by label", () =>
+		Effect.gen(function* () {
+			const severity = Decision.make({
+				input: Schema.Struct({ message: Schema.String }),
+				decisions: {
+					severity: Decision.rate({
+						instructions: "How urgent is this incident",
+						criteria: [
+							{ label: "low", description: "Cosmetic, no user impact" },
+							{ label: "medium", description: "Degraded for some users" },
+							{ label: "high", description: "Outage or data loss" },
+						],
+					}),
+				},
+			})
+			let questions: unknown
+			const fakeFetch: typeof globalThis.fetch = async (_input, init) => {
+				const body = JSON.parse(await new Response(init?.body ?? "{}").text()) as Record<
+					string,
+					unknown
+				>
+				questions = body.questions
+				const answer = { type: "score", score: 2, probabilities: { "0": 0.1, "1": 0.2, "2": 0.7 } }
+				const output = { answers: { severity: answer }, usage: { input_tokens: 1, output_tokens: 1 } }
+				return new Response(JSON.stringify({ result: output }), { status: 200 })
+			}
+
+			const response = yield* DecisionModel.decide(severity, { input: { message: "db down" } }).pipe(
+				Effect.provide(layerDecisionModel(workersAiEnv)),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+
+			assert.deepStrictEqual(questions, {
+				severity: {
+					type: "score",
+					instructions: "How urgent is this incident",
+					criteria: ["Cosmetic, no user impact", "Degraded for some users", "Outage or data loss"],
+				},
+			})
+			assert.strictEqual(response.answers.severity.rating, 2)
+			assert.strictEqual(response.answers.severity.label, "high")
+			assert.deepStrictEqual(response.answers.severity.probabilities, {
+				low: 0.1,
+				medium: 0.2,
+				high: 0.7,
+			})
 		}),
 	)
 })

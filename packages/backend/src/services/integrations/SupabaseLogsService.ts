@@ -128,7 +128,7 @@ export interface SupabaseLogsServiceApi {
 }
 
 export class SupabaseLogsService extends Context.Service<SupabaseLogsService, SupabaseLogsServiceApi>()(
-	"@maple/api/services/SupabaseLogsService",
+	"@maple/backend/services/SupabaseLogsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

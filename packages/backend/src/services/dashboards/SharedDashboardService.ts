@@ -201,7 +201,7 @@ export interface SharedDashboardServiceApi {
 export class SharedDashboardService extends Context.Service<
 	SharedDashboardService,
 	SharedDashboardServiceApi
->()("@maple/api/services/SharedDashboardService", {
+>()("@maple/backend/services/SharedDashboardService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "SharedDashboardService", toPersistenceError)

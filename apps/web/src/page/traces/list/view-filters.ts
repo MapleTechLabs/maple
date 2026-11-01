@@ -1,4 +1,5 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterSection, singleCheckboxFilter } from "../../../ui/filters/filter-section"
@@ -126,6 +127,7 @@ const loadedRail = (
 export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespace: string | null): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 5),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.firstPage.data))),
 		onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
 	})

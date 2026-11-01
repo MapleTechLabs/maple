@@ -46,7 +46,7 @@ const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 							size: "icon-2xs",
 							label: `Remove ${tag}`,
 							hasTooltip: false,
-							className: "-mr-0.5 text-muted-foreground hover:text-foreground",
+							className: "-mr-0.5 text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
 						},
 						[icon(h, "XmarkIcon")],
@@ -66,10 +66,17 @@ const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 				),
 				h.OnBlur(Message.BlurredTagInput()),
 				...(form.tags.length === 0 ? [h.Placeholder("prod, payments, team-checkout…")] : []),
-				h.Class("min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-muted-foreground/70"),
+				h.Class(
+					"min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-foreground-subtle",
+				),
 			]),
 			...(available.length > 0
-				? [h.datalist([h.Id(TAG_LIST_ID)], available.map((tag) => h.option([h.Value(tag)], [])))]
+				? [
+						h.datalist(
+							[h.Id(TAG_LIST_ID)],
+							available.map((tag) => h.option([h.Value(tag)], [])),
+						),
+					]
 				: []),
 		],
 	)
@@ -91,8 +98,8 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 								h,
 								{
 									variant: "ghost",
-									size: "sm",
-									className: "h-6 px-1.5 text-2xs",
+									size: "xs",
+									className: "px-1.5 text-2xs",
 									attributes: [h.OnClick(Message.ClickedSuggestName())],
 								},
 								["Suggest: ", suggestion ?? ""],
@@ -115,14 +122,14 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 
 const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 	if (!model.isNotesOpen)
-		return h.button(
-			[
-				h.Type("button"),
-				h.OnClick(Message.ClickedAddNotes()),
-				h.Class(
-					"flex w-full items-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-1.5 text-left text-xs text-muted-foreground hover:border-border hover:text-foreground",
-				),
-			],
+		return button(
+			h,
+			{
+				variant: "dashed",
+				size: "xs",
+				className: "w-full justify-start",
+				attributes: [h.OnClick(Message.ClickedAddNotes())],
+			},
 			[icon(h, "PlusIcon", { size: 12 }), "Add notes"],
 		)
 	const state = fieldStateOf(form.notes, model.mountedForm?.notes)
@@ -177,4 +184,5 @@ const viewOf = stableSlice((model: Model) =>
 )
 
 /** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
-export const detailsSection = (h: H, model: Model, form: RuleForm): Html => slot(details, [h, viewOf(model), form])
+export const detailsSection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(details, [h, viewOf(model), form])

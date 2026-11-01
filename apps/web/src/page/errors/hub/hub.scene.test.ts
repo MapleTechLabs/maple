@@ -1,14 +1,26 @@
 import { OrgId } from "@maple/domain"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	expect as expectView,
+	given,
+	hover,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { toLoadFailure } from "../../../data/load-failure"
+import { failureSentence } from "../../../ui/error-state"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchInvestigations, FetchPage, MountFilterRail, MountRowSelect } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { signalsOf } from "./derive"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -68,7 +80,10 @@ const issue = (overrides: Partial<Record<string, unknown>> = {}) =>
 /** Entered and windowed: every query in flight. */
 const windowed = (search = {}): Model => {
 	const entered = init({ search }, context).model
-	const resolved = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+	const resolved = pageUpdate(
+		entered,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
 	return pageUpdate(resolved, Message.MountedFilterRail()).model
 }
 
@@ -163,15 +178,18 @@ describe("errors hub", () => {
 			given(failed.model),
 			measured,
 			railMounted,
-			expectView(text("Failed to load errors")).toExist(),
-			expectView(text(RANKING_FAILURE.message)).toExist(),
-			expectView(text(toLoadFailure("The errors list could not be loaded.").message)).not.toExist(),
+			expectView(text("Couldn't load errors")).toExist(),
+			expectView(text(failureSentence(RANKING_FAILURE))).toExist(),
+			expectView(text(toLoadFailure("The errors list couldn't be loaded.").message)).not.toExist(),
 		)
 		const retried = pageUpdate(failed.model, Message.ClickedRetry())
 		expect(names(retried.commands)).toEqual(["FetchErrorsRanking"])
 		const ranked = pageUpdate(
 			retried.model,
-			Message.CompletedFetchRanking({ key: retried.model.ranking.key ?? "", result: Result.succeed(["1"]) }),
+			Message.CompletedFetchRanking({
+				key: retried.model.ranking.key ?? "",
+				result: Result.succeed(["1"]),
+			}),
 		)
 		expect(names(ranked.commands)).toEqual([FetchPage.name])
 	})
@@ -180,14 +198,20 @@ describe("errors hub", () => {
 		const model = windowed({ sort: "volume" })
 		const ranked = pageUpdate(
 			model,
-			Message.CompletedFetchRanking({ key: model.ranking.key ?? "", result: Result.succeed(["1", "2"]) }),
+			Message.CompletedFetchRanking({
+				key: model.ranking.key ?? "",
+				result: Result.succeed(["1", "2"]),
+			}),
 		).model
 		const filtered = routeChanged(ranked, { search: { sort: "volume", service: "payment-svc" } }, context)
 		expect(names(filtered.commands)).toContain("FetchErrorsRanking")
 		expect(names(filtered.commands)).not.toContain(FetchPage.name)
 		const reranked = pageUpdate(
 			filtered.model,
-			Message.CompletedFetchRanking({ key: filtered.model.ranking.key ?? "", result: Result.succeed(["3"]) }),
+			Message.CompletedFetchRanking({
+				key: filtered.model.ranking.key ?? "",
+				result: Result.succeed(["3"]),
+			}),
 		)
 		expect(names(reranked.commands)).toEqual([FetchPage.name])
 		expect(reranked.model.listKey).toContain('"fingerprint_hash":"3"')
@@ -197,12 +221,18 @@ describe("errors hub", () => {
 		const model = windowed({ sort: "volume" })
 		const ranked = pageUpdate(
 			model,
-			Message.CompletedFetchRanking({ key: model.ranking.key ?? "", result: Result.succeed(["1", "2"]) }),
+			Message.CompletedFetchRanking({
+				key: model.ranking.key ?? "",
+				result: Result.succeed(["1", "2"]),
+			}),
 		).model
 		const listed = withPage(ranked, [issue()])
 		expect(listed.pages).toHaveLength(1)
 		const later = { startTime: "2026-09-30 12:05:00", endTime: "2026-10-01 12:05:00" }
-		const reloaded = pageUpdate(listed, Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Refresh" }))
+		const reloaded = pageUpdate(
+			listed,
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Refresh" }),
+		)
 		expect(names(reloaded.commands)).toContain("FetchErrorsRanking")
 		expect(reloaded.model.listKey).toBe(listed.listKey)
 		expect(reloaded.model.pages).toEqual(listed.pages)
@@ -221,6 +251,35 @@ describe("errors hub", () => {
 			),
 			expectView(text("1 issue")).toExist(),
 		)
+	})
+
+	test("hovering moves the focus mark between rows and keeps the joined signals", () => {
+		const model = withPage(windowed(), [
+			issue(),
+			issue({
+				id: "iss_YoxMYDoXSr3tsBZyBLmNMw",
+				exception_type: "SlowQuery",
+				error_label: "SlowQuery",
+			}),
+		])
+		const timeout = role("link", { name: /ConnectionTimeout/ })
+		const slow = role("link", { name: /SlowQuery/ })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			measured,
+			railMounted,
+			Mount.resolve(MountRowSelect, Message.ClickedRowSelect({ id: "", isShift: false })),
+			hover(slow),
+			expectView(slow).toHaveAttr("data-focused", "true"),
+			expectView(timeout).not.toHaveAttr("data-focused"),
+			hover(timeout),
+			expectView(timeout).toHaveAttr("data-focused", "true"),
+			expectView(slow).not.toHaveAttr("data-focused"),
+		)
+		const signals = signalsOf(model)
+		const hovered = pageUpdate(model, Message.HoveredRow({ id: signals[1]?.id ?? "" })).model
+		expect(signalsOf(hovered)).toBe(signals)
 	})
 
 	test("ticking a service and removing its chip write the URL search", () => {

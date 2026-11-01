@@ -41,8 +41,8 @@ export function getSpanKindLabel(spanKind: string | null | undefined): string {
 
 /** Span status (`Ok`/`Error`/`Unset`, Title case per Maple convention) → badge classes. */
 export const SPAN_STATUS_BADGE_CLASSES: Record<string, string> = {
-	Ok: "bg-severity-info/15 text-severity-info border-severity-info/30",
-	Error: "bg-severity-error/15 text-severity-error border-severity-error/30",
+	Ok: "bg-severity-info-a2 text-severity-info border-severity-info-a3",
+	Error: "bg-severity-error-a2 text-severity-error border-severity-error-a3",
 	Unset: "bg-muted text-muted-foreground border-border",
 } satisfies Record<string, string>
 

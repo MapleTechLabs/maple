@@ -323,7 +323,7 @@ export const update = (model: Model, message: Message): Return =>
 				onSuccess: () => ({ ...refetch(settled), outMessage: toast("success", `${name} turned ${isOn ? "on" : "off"}`) }),
 				onFailure: (error) => ({
 					model: settled,
-					outMessage: toast("error", `Failed to update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`, error.message),
+					outMessage: toast("error", `Couldn't update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`, error.message),
 				}),
 			})
 		},
@@ -354,7 +354,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isSaving: false, draft: Draft.abort(model.draft) },
-					outMessage: toast("error", "Failed to save email preferences", error.message),
+					outMessage: toast("error", "Couldn't save email preferences", error.message),
 				}),
 			}),
 		ClickedPreview: ({ digest }) =>
@@ -367,7 +367,7 @@ export const update = (model: Model, message: Message): Return =>
 						: { model: { ...model, previewing: null }, commands: [OpenPreview({ html })] },
 				onFailure: (error) => ({
 					model: { ...model, previewing: null },
-					outMessage: toast("error", "Failed to generate the preview", error.message),
+					outMessage: toast("error", "Couldn't generate the preview", error.message),
 				}),
 			}),
 	})

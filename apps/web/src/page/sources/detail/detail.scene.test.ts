@@ -8,7 +8,17 @@ import {
 	V2SourceUsage,
 } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
-import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	expect as expectView,
+	expectAll,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -166,7 +176,7 @@ describe("source detail", () => {
 		)
 		expect(failed.model.busy).toBeNull()
 		expect(failed.outMessage?._tag === "RequestedToast" && failed.outMessage.title).toBe(
-			"Failed to pause source",
+			"Couldn't pause source",
 		)
 	})
 
@@ -573,7 +583,7 @@ describe("integration sources", () => {
 			given(withUsage),
 			resolveTheme,
 			expectView(text("300 KB")).toExist(),
-			expectView(text("2.0K metric points")).toExist(),
+			expectView(text("2K metric points")).toExist(),
 		)
 	})
 
@@ -590,7 +600,8 @@ const awsConnection = (id: AwsConnectionId): V2AwsConnection =>
 		object: "aws_connection",
 		account_id: "123456789012",
 		role_arn: "arn:aws:iam::123456789012:role/MapleIntegration-018f2b3c4d5e4f708192a3b4",
-		external_id: "9f1c4e2a7b3d4c6e8a0b1c2d3e4f5a6b",
+		oidc_issuer: "https://api.maple.dev/oidc/aws",
+		oidc_subject: "aws-connection:018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
 		modules: [],
 		granted_modules: null,
 		template_version: null,
@@ -599,6 +610,7 @@ const awsConnection = (id: AwsConnectionId): V2AwsConnection =>
 		last_checked_at: "2026-10-01T11:59:00.000Z",
 		last_check_error: "Maple cannot assume the role yet.",
 		metric_stream: null,
+		metric_stream_changed_at: null,
 		metrics_last_received_at: null,
 		metrics_last_error: null,
 		created_at: "2026-10-01T11:00:00.000Z",
@@ -725,6 +737,49 @@ describe("integration focus", () => {
 		const clicked = pageUpdate(withStatus, Message.ClickedDelete())
 		expect(clicked.model.deleteDialog.isOpen).toBe(false)
 		expect(clicked.model.connection?.awsCard.disconnectDialog.isOpen).toBe(true)
+	})
+
+	test("an AWS source's Delete shows the disconnect dialog from the Overview tab too", () => {
+		const connection = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const model = loaded(
+			source({
+				platform: "aws",
+				kind: "integration",
+				key_prefix: null,
+				integration_id: encodePublicId(PublicIdPrefixes.awsConnection, connection),
+			}),
+		)
+		const withStatus = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedLoadAws({
+					key: model.connection?.statuses.aws.key ?? "",
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [awsConnection(connection)],
+					}),
+				}),
+			}),
+		).model
+		const name = "Disconnect AWS account 123456789012"
+		const mountDialog = Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(withStatus, Message.ClickedDelete()).model),
+			resolveTheme,
+			mountDialog,
+			expectView(role("alertdialog", { name })).toExist(),
+		)
+		// The Connection tab mounts it once, not once per card and header.
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate({ ...withStatus, tab: "connection" }, Message.ClickedDelete()).model),
+			resolveTheme,
+			mountDialog,
+			expectAll(all.role("alertdialog", { name })).toHaveCount(1),
+		)
 	})
 
 	test("disconnecting its own AWS connection leaves for the AWS page, where the cleanup waits", () => {

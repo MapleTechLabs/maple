@@ -2,7 +2,8 @@ import { DateTime, Effect, Schema } from "effect"
 import { CiRunsOutput } from "@maple/domain/mcp-outputs"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import type { McpToolRegistrar } from "./types"
+import { isMissingCiTables } from "@maple/backend/services/warehouse/missing-table"
+import { McpUnavailableError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
@@ -29,8 +30,17 @@ const formatRunDuration = (ms: number) => {
 const quantile = (sorted: ReadonlyArray<number>, q: number) =>
 	sorted.length === 0 ? 0 : (sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0)
 
-const summarize = (runs: ReadonlyArray<CH.CiRunsOutput>): Output["pipelines"] => {
-	const groups = new Map<string, Array<CH.CiRunsOutput>>()
+interface SummarizedRun {
+	readonly repository: string
+	readonly pipeline: string
+	readonly result: string
+	readonly revision: string
+	readonly durationMs: number
+	readonly startedAt: DateTime.Utc
+}
+
+const summarize = (runs: ReadonlyArray<SummarizedRun>): Output["pipelines"] => {
+	const groups = new Map<string, Array<SummarizedRun>>()
 	for (const run of runs) {
 		const key = `${run.repository}\u0000${run.pipeline}`
 		groups.set(key, [...(groups.get(key) ?? []), run])
@@ -89,6 +99,8 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 		}),
 		output: CiRunsOutput,
 		hints: { readOnly: true },
+		// Maple's own agents only: the org's CI history is not for third-party MCP clients.
+		audience: "agent",
 		phrases: ["Checking CI runs", "Reading workflow runs"],
 		handler: Effect.fn("McpTool.ciRuns")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
@@ -146,7 +158,19 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						failedJobsCap: failedIds.length * FAILED_JOBS_PER_RUN,
 					}
 				}),
-			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
+			).pipe(
+				// A self-hosted ClickHouse gets the CI tables only once an admin applies the schema.
+				Effect.catchIf(isMissingCiTables, () =>
+					Effect.fail(
+						new McpUnavailableError({
+							message:
+								"This org's warehouse has no CI tables yet. On a self-hosted ClickHouse, apply the schema from its ClickHouse settings page.",
+							capability: "ci_runs",
+						}),
+					),
+				),
+				Effect.catchTags(warehouseToMcpHandlers(TOOL)),
+			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", runs.length)
 
 			return {
@@ -164,7 +188,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 					branch: run.branch,
 					revision: run.revision,
 					runId: run.runId,
-					attempt: run.attempt,
+					attempt: Math.max(run.attempt, 1),
 					trigger: run.trigger,
 					result: run.result,
 					durationMs: run.durationMs,
@@ -316,7 +340,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 										run.pipeline,
 										run.branch,
 										run.revision,
-										run.attempt !== "" && run.attempt !== "1"
+										run.attempt > 1
 											? `${run.result} (attempt ${run.attempt})`
 											: run.result,
 										formatRunDuration(run.durationMs),

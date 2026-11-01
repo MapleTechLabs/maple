@@ -1,20 +1,12 @@
 import type { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "../../ui/button"
 import { confirmDialog } from "../../ui/confirm-dialog"
 import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
 import { skeleton } from "../../ui/skeleton"
-import {
-	integrationEmpty,
-	integrationEmptyCard,
-	integrationEmptyFeatures,
-	integrationEmptyFooter,
-	integrationEmptyHint,
-	integrationEmptyMedia,
-} from "../infra-integrations/kit/integration-empty"
-import { CLOUDFLARE_ACCENT } from "./catalog"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
@@ -23,47 +15,16 @@ import { cloudflareConnected } from "./view-cloudflare-connected"
 
 type H = HtmlBuilder<Message>
 
-const BRAND = {
-	icon: "CloudflareBrandIcon",
-	backerIcon: "CloudflareMonoIcon",
-	accent: CLOUDFLARE_ACCENT,
-} as const
-
-const notConnected = (h: H, model: Model): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, [
-			{
-				label: "Zone analytics",
-				title: "Requests & cache per zone",
-				description: "Traffic, cache hit rate, and errors for every zone under Infrastructure.",
-			},
-			{
-				label: "Workers",
-				title: "Scripts on the service map",
-				description:
-					"Every Worker appears as a node with request volume and errors wired into traces.",
-			},
-			{
-				label: "DNS & security",
-				title: "Firewall events with context",
-				description: "DNS records, hosts, and WAF activity land alongside your traces and logs.",
-			},
-		]),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, BRAND),
-			integrationEmptyHint(h, ["Your zones and Workers will appear here after connecting."]),
-			button(
-				h,
-				{
-					isDisabled: model.connect.isStarting,
-					isLoading: model.connect.isStarting,
-					attributes: [h.OnClick(Message.ClickedConnect())],
-				},
-				[icon(h, "CloudflareBrandIcon"), "Connect Cloudflare"],
-			),
-			integrationEmptyFooter(h, ["Read-only OAuth · takes about a minute · disconnect anytime"]),
-		]),
-	])
+/** A source page whose grant was removed: the way back is the connect flow. */
+const cloudflareReconnect = (h: H): Html =>
+	integrationNotice(h, {
+		message: "Cloudflare is not connected.",
+		action: linkButton(
+			h,
+			{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "cloudflare" } })) },
+			["Reconnect"],
+		),
+	})
 
 export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.cloudflare.data, {
@@ -72,13 +33,13 @@ export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Cloudflare integration",
+				title: "Couldn't load the Cloudflare integration",
 				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
 			}),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load the Cloudflare integration",
+				title: "Couldn't load the Cloudflare integration",
 				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
 			}),
 		onRefreshing: (status) => byStatus(h, model, status, timeZone),
@@ -86,7 +47,7 @@ export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 	})
 
 const byStatus = (h: H, model: Model, status: CloudflareIntegrationStatus, timeZone: string): Html =>
-	status.connected ? cloudflareConnected(h, model, status, timeZone) : notConnected(h, model)
+	status.connected ? cloudflareConnected(h, model, status, timeZone) : cloudflareReconnect(h)
 
 const accountCountOf = (model: Model): number =>
 	AsyncData.match(model.statuses.cloudflare.data, {
@@ -103,7 +64,7 @@ export const isMultiAccount = (model: Model): boolean => accountCountOf(model) >
 
 const isBusy = (model: Model): boolean => model.connect.isStarting || model.disconnect.isPending
 
-/** Reconnect, or Edit accounts while the grant covers several. */
+/** Reconnect: the consent screen again, where accounts are added or removed. */
 export const cloudflareReconnectButton = (h: H, model: Model): Html =>
 	button(
 		h,
@@ -114,7 +75,7 @@ export const cloudflareReconnectButton = (h: H, model: Model): Html =>
 			isLoading: model.connect.isStarting,
 			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
-		[isMultiAccount(model) ? "Edit accounts" : "Reconnect"],
+		["Reconnect"],
 	)
 
 /** `CloudflareHeaderActions`: reconnect (or edit accounts) and disconnect, while connected. */

@@ -101,7 +101,7 @@ export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStri
 				[h.Key(strip.id), h.Class(cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t"))],
 				[
 					h.div(
-						[h.Class("flex w-[140px] shrink-0 flex-col gap-0.5")],
+						[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
 						[
 							h.span([h.Class("text-xs font-medium text-foreground")], [strip.label]),
 							h.span([h.Class("font-mono text-3xs text-muted-foreground")], [strip.source]),

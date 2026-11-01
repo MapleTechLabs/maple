@@ -57,7 +57,7 @@ export const supabaseTableLoading = (h: H): Html =>
 	)
 
 const MUTED = "font-mono text-2xs text-muted-foreground"
-const NUMBER = "font-mono text-xs tabular-nums text-foreground/80"
+const NUMBER = "font-mono text-xs tabular-nums text-foreground-soft"
 
 /** A utilisation bar and its percent; a project without metrics shows an empty track. */
 const usageCell = (h: H, label: string, fraction: number | null): Html =>
@@ -75,7 +75,7 @@ const usageCell = (h: H, label: string, fraction: number | null): Html =>
 					h.Class(
 						cn(
 							"font-mono text-2xs tabular-nums",
-							fraction === null ? "text-muted-foreground" : "text-foreground/80",
+							fraction === null ? "text-muted-foreground" : "text-foreground-soft",
 						),
 					),
 				],

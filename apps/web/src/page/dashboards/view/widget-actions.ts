@@ -11,7 +11,7 @@ type Widget = DashboardDocument["widgets"][number]
 export const isAlertable = (widget: Widget): boolean =>
 	isQueryDataSource(widget.dataSource) || dataSourceRawSql(widget.dataSource) !== null
 
-// `toBase64Url` (as in lib/base64url.ts) and `encodeAlertChartToSearchParam`.
+// `toBase64Url` (unpadded UTF-8 base64url) and `encodeAlertChartToSearchParam`.
 const toBase64Url = (input: string): string =>
 	btoa(unescape(encodeURIComponent(input)))
 		.replace(/\+/g, "-")

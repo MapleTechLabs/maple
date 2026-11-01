@@ -2,7 +2,7 @@ import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
 	GithubIntegrationStatus,
-	HazelIntegrationStatus,
+	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	SupabaseIntegrationStatus,
 } from "@maple/domain/http"
@@ -43,7 +43,7 @@ export const Statuses = Schema.Struct({
 	gcp: keyed(V2GcpIntegration),
 	aws: keyed(V2AwsIntegration),
 	supabase: keyed(SupabaseIntegrationStatus),
-	hazel: keyed(HazelIntegrationStatus),
+	linear: keyed(LinearIntegrationStatus),
 	github: keyed(GithubIntegrationStatus),
 	chat: keyed(V2ChatConnectorList),
 	scrapeTargets: keyed(Schema.Array(V2ScrapeTarget)),

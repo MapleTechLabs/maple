@@ -1,9 +1,9 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { eyebrow } from "../../../../ui/eyebrow"
 import { type AttentionItem, MAX_ATTENTION_ITEMS, needsAttention } from "./attention"
 import type { HealthStrip } from "./derive"
 import { Message } from "./message"
@@ -18,13 +18,10 @@ const itemRow = (h: H, item: AttentionItem, timeZone: string): Html =>
 	h.li(
 		[
 			h.Key(item.key),
-			h.Class("flex flex-col gap-1 border-t border-border/40 px-4 py-3 first:border-t-0"),
+			h.Class("flex flex-col gap-1 border-t border-border-subtle px-4 py-3 first:border-t-0"),
 		],
 		[
-			h.span(
-				[h.Class(cn("text-3xs font-medium uppercase tracking-wide", TONE_TEXT[item.tone]))],
-				[item.label],
-			),
+			eyebrow(h, { className: TONE_TEXT[item.tone] }, [item.label]),
 			h.span([h.Class("line-clamp-2 text-xs text-foreground [overflow-wrap:anywhere]")], [item.title]),
 			h.span(
 				[h.Class("line-clamp-1 text-2xs text-muted-foreground"), h.Title(item.detail)],
@@ -62,7 +59,7 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 					panelError(
 						h,
 						insightsFailure,
-						"Failed to load advisors",
+						"Couldn't load advisors",
 						Message.ClickedRetry({ section: "insights" }),
 					),
 				]),
@@ -72,7 +69,7 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 					panelError(
 						h,
 						issuesFailure,
-						"Failed to load log issues",
+						"Couldn't load log issues",
 						Message.ClickedRetry({ section: "issues" }),
 					),
 				]),
@@ -92,7 +89,9 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 						? [
 								h.ul(
 									[h.AriaLabel("Needs attention")],
-									items.slice(0, MAX_ATTENTION_ITEMS).map((item) => itemRow(h, item, timeZone)),
+									items
+										.slice(0, MAX_ATTENTION_ITEMS)
+										.map((item) => itemRow(h, item, timeZone)),
 								),
 							]
 						: failures.length > 0

@@ -7,7 +7,6 @@ import { describe, expect, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; nothing here touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
-import * as ChatSheet from "./page/chat/sheet"
 import type { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
@@ -25,6 +24,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 /** One URL per page. A page added to the registry without one fails the coverage test below. */
 const SAMPLE_PATHS = [
+	"/settings/ingestion/rules/new",
 	"/services",
 	"/",
 	"/metrics",
@@ -40,6 +40,11 @@ const SAMPLE_PATHS = [
 	"/alerts/incidents/inc_1",
 	"/alerts/00000000-0000-4000-8000-000000000002",
 	"/alerts/create",
+	"/alerts/uptime/new",
+	"/alerts/uptime/upm_abc",
+	"/status-pages",
+	"/status-pages/new",
+	"/status-pages/stp_abc",
 	"/service-map",
 	"/infra/hosts",
 	"/infra/hosts/web-1",
@@ -61,6 +66,8 @@ const SAMPLE_PATHS = [
 	"/infra/planetscale/orders",
 	"/infra/gcp",
 	"/infra/gcp/cloudSql/acme",
+	"/infra/aws",
+	"/infra/aws/ecs/payments-api?cluster=%22prod%22",
 	"/infra/cloudflare",
 	"/infra/cloudflare/workers/api",
 	"/infra/cloudflare/example.com",
@@ -69,6 +76,14 @@ const SAMPLE_PATHS = [
 	"/dashboards/templates",
 	"/dashboards/00000000-0000-4000-8000-000000000003/widgets/w1",
 	"/code-review",
+	"/security",
+	"/security/findings",
+	"/security/runs",
+	"/security/exposure",
+	"/security/runtimes",
+	"/security/dependencies",
+	"/security/runs/run_1",
+	"/security/findings/00000000-0000-4000-8000-000000000005/fp_1",
 	"/agent-sessions",
 	"/agent-sessions/tools",
 	"/agent-sessions/tools/run_sql",
@@ -91,7 +106,6 @@ const SAMPLE_PATHS = [
 	"/replays/session_1",
 	"/share/token_1",
 	"/analytics",
-	"/chat",
 ]
 
 const entered = (path: string): Model =>
@@ -104,7 +118,6 @@ const entered = (path: string): Model =>
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		toastRootActions: {},
-		chatSheet: ChatSheet.init(),
 		page: null,
 		pageInstances: 0,
 		parkedPages: [],

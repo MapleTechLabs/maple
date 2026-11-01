@@ -33,6 +33,13 @@ describe("attributeKeysQuery", () => {
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
 
+	it("restricts to the requested keys when given", () => {
+		const q = attributeKeysQuery({ scope: "span", keys: ["messaging.destination.name", "user.id"] })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toMatch(/AttributeKey IN \('messaging\.destination\.name', 'user\.id'\)/)
+		expect(sql).toContain("OrgId = 'org_1'")
+	})
+
 	it("interpolates the scope literal for resource", () => {
 		const q = attributeKeysQuery({ scope: "resource" })
 		const { sql } = compileUnsafe(q, baseParams)

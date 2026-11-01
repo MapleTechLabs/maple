@@ -35,7 +35,7 @@ import {
 import type { InkPalette } from "../../../components/service-map/three/palette"
 import type { District, SpatialLayout } from "../../../components/service-map/three/spatial-layout"
 import type * as THREE from "three"
-import { birds, campfire, deerHead, ducks } from "./critters"
+import { birds, blimp, campfire, deerHead, ducks } from "./critters"
 import { type Child, group, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
 import { fallingLeaves, fireflies, isNight, leafLitter, ripples } from "./life"
 
@@ -98,6 +98,7 @@ export function mapleForest(
 		ripples(scope, { creek: world.creek, floor, palette, running }),
 		ducks(scope, { water, floor, palette, running }),
 		birds(scope, { bounds, palette, running }),
+		blimp(scope, { bounds, palette, running }),
 		campfire(scope, { at: marks.campfire, palette, night, running }),
 		deerHead(scope, { at: marks.deer, palette, running }),
 		night ? fireflies(scope, { anchors: glades, floor, palette, running }) : null,

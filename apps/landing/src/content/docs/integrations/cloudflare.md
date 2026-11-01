@@ -14,11 +14,11 @@ The Cloudflare integration connects one or more Cloudflare accounts to Maple thr
 
 ## Connect
 
-1. Open **Integrations → Cloudflare** in Maple.
-2. Click **Connect Cloudflare**. A Cloudflare consent screen opens in a popup.
-3. Choose the accounts to share and approve. One authorization can cover several accounts.
+1. In Maple, open **Sources**, click **Connect source** and pick **Cloudflare**.
+2. Click **Connect Cloudflare**. Cloudflare opens in a new window.
+3. Sign in, choose the accounts Maple may read and approve. One authorization can cover several accounts.
 
-The popup closes and the card lists your **Connected accounts**. Maple starts collecting right away.
+The step reads **Cloudflare authorized**, and Maple starts collecting right away. The source page lists your **Connected accounts**.
 
 ### Permissions requested
 
@@ -66,15 +66,16 @@ Click a zone for its detail page:
 
 When a Worker also sends traces, Maple matches the script to the traced service by service name or `faas.name`. The service's panel on the [service map](/docs/explore/service-map) then gets a **Cloudflare edge** section with edge-reported (unsampled) **Requests**, **Error Rate**, and CPU p99. Scripts without a matching traced service, and zones, do not create nodes of their own.
 
-### Integrations → Cloudflare
+### The Cloudflare source
 
-The integration card shows each connected account, a **Zones** board with a status per zone (**Live**, **Issues**, **No data**, **Paused**, or **Disabled**) and 24-hour request counts, and a **Workers** card.
+The source page shows each connected account, a **Zones** board with a status per zone (**Live**, **Issues**, **No data**, **Paused**, or **Disabled**) and 24-hour request counts, and a **Workers** card.
 
 ## Verify
 
-Cloudflare publishes analytics in 5-minute batches and needs about 10 minutes before a batch is complete. The first numbers usually land within 15 minutes of connecting.
+Cloudflare publishes analytics in 5-minute batches and needs about 10 minutes before a batch is complete.
 
-While you wait, **Infrastructure → Cloudflare** shows progress: **Finding your zones and Workers**, **Collecting your first Cloudflare data**, how many zones are reporting, and the backfill percentage. When data flows, it reads **Receiving Cloudflare data** and the zones table fills in.
+1. Open **Infrastructure → Cloudflare**. It shows **Finding your zones and Workers**, then **Collecting your first Cloudflare data**, with how many zones are reporting and the backfill percentage.
+2. Within about 15 minutes of connecting, it reads **Receiving Cloudflare data** and the zones table fills in.
 
 ## Troubleshooting
 
@@ -88,7 +89,7 @@ While you wait, **Infrastructure → Cloudflare** shows progress: **Finding your
 
 ## Disconnect
 
-On **Integrations → Cloudflare**, click **Disconnect** (or **Disconnect all** with several accounts). To change which accounts are connected, click **Reconnect** or **Edit accounts** and pick them again on Cloudflare's consent screen.
+On the Cloudflare source in **Sources**, click **Disconnect** (or **Disconnect all** with several accounts). To change which accounts are connected, click **Reconnect** and pick them again on Cloudflare's consent screen.
 
 ## Next steps
 

@@ -14,6 +14,7 @@ import {
 	buildRuleCreateParamsV2,
 	chatDestinationForm,
 	defaultDestinationForm,
+	destinationToFormState,
 	defaultRuleForm,
 	ruleFormIsGrouped,
 	deriveRuleQueryIssues,
@@ -44,6 +45,20 @@ describe("rule notes", () => {
 	it("sends null when the note is blank or whitespace-only", () => {
 		expect(buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A", notes: "" }).notes).toBeNull()
 		expect(buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A", notes: "   " }).notes).toBeNull()
+	})
+})
+
+describe("check interval", () => {
+	it("sends the picked interval, and null for the window's own", () => {
+		const form = { ...defaultRuleForm(), name: "A", windowMinutes: "30" }
+		expect(
+			buildRuleCreateParamsV2({ ...form, evaluationIntervalMinutes: "10" }).evaluation_interval_minutes,
+		).toBe(10)
+		expect(buildRuleCreateParamsV2(form).evaluation_interval_minutes).toBeNull()
+		// Not one of the intervals a rule can pick.
+		expect(
+			buildRuleCreateParamsV2({ ...form, evaluationIntervalMinutes: "7" }).evaluation_interval_minutes,
+		).toBeNull()
 	})
 })
 
@@ -335,6 +350,42 @@ describe("v2 response mappers", () => {
 			end: "2026-07-15T09:40:00.000Z",
 			severity: "warning",
 		})
+		expect(response.queryTiming).toBeUndefined()
+	})
+
+	it("carries a raw SQL preview's query timing", () => {
+		const response = v2PreviewToResponse({
+			object: "alert_rule.preview",
+			bucket_seconds: 300,
+			window_minutes: 5,
+			threshold: 10,
+			threshold_upper: null,
+			thresholds: [
+				{ severity: "warning", value: 10, upper: null, recovery_value: null, destination_ids: [] },
+			],
+			comparator: "gt",
+			truncated_to_start: null,
+			series: [],
+			would_fire: [],
+			series_failure: "query_too_slow",
+			query_timing: {
+				elapsed_ms: 7_800,
+				failure: null,
+				probe_limit_ms: 25_000,
+				interval_minutes: 1,
+				limit_ms: 5_000,
+				fits_interval_minutes: [5, 10, 15, 30, 60],
+			},
+		})
+		expect(response.seriesFailure).toBe("query_too_slow")
+		expect(response.queryTiming && { ...response.queryTiming }).toEqual({
+			elapsedMs: 7_800,
+			failure: null,
+			probeLimitMs: 25_000,
+			intervalMinutes: 1,
+			limitMs: 5_000,
+			fitsIntervalMinutes: [5, 10, 15, 30, 60],
+		})
 	})
 
 	it("maps a v2 check onto the camelCase domain document", () => {
@@ -420,6 +471,50 @@ describe("alert on no data", () => {
 		expect(ruleFormIsGrouped(grouped)).toBe(true)
 		expect(buildRuleCreateParamsV2(grouped).alert_on_no_data).toBe(false)
 		expect(ruleFormIsGrouped({ ...grouped, signalType: "raw_query" })).toBe(false)
+	})
+})
+
+describe("linear destination params", () => {
+	const TEAM = "9cfb482a-81e3-4154-b5b9-2c805e70a02d"
+
+	it("sends the picked team; the server reads its key and name from Linear", () => {
+		const params = buildDestinationCreateParamsV2({
+			...defaultDestinationForm("linear"),
+			name: " Platform tickets ",
+			linearTeamId: TEAM,
+			linearTeamName: "Platform",
+		})
+		expect(params).toEqual({ type: "linear", name: "Platform tickets", enabled: true, team_id: TEAM })
+	})
+
+	it("keeps the stored team on update until another is picked", () => {
+		const params = buildDestinationUpdateParamsV2({
+			...defaultDestinationForm("linear"),
+			name: "Renamed",
+		})
+		expect(params).toEqual({ type: "linear", enabled: true, name: "Renamed" })
+	})
+
+	it("an edit preselects the stored team and names it from the summary", () => {
+		const destination = Schema.decodeUnknownSync(AlertDestinationDocument)({
+			id: "0199a001-0000-7000-8000-0000000000aa",
+			name: "Platform tickets",
+			type: "linear",
+			enabled: true,
+			summary: "Linear · Platform",
+			channelLabel: "PLT",
+			memberUserIds: null,
+			linearTeamId: TEAM,
+			lastTestedAt: null,
+			lastTestError: null,
+			disabledAt: null,
+			disabledReason: null,
+			createdAt: "2026-10-06T00:00:00.000Z",
+			updatedAt: "2026-10-06T00:00:00.000Z",
+		})
+		const form = destinationToFormState(destination)
+		expect([form.linearTeamId, form.linearTeamName]).toEqual([TEAM, "Platform"])
+		expect(suggestedDestinationName(form)).toBe("Linear Platform")
 	})
 })
 

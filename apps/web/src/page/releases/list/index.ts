@@ -15,6 +15,6 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
-		breadcrumbs: () => [{ label: "Releases" }],
+		breadcrumbs: () => [{ label: "Releases", isPageHeading: true }],
 	},
 )

@@ -36,6 +36,8 @@ const maple = MapleFoldkit.make({
 		"@maple/web/errors/WarehouseUnreachableError",
 	],
 	routeName,
+	// Starts no child span, but it is the boot's longest step before the first data read.
+	keepCommands: ["LoadClerk"],
 	// The perf bench builds with VITE_MAPLE_REPLAY=off and VITE_MAPLE_CAPTURE=off.
 	replay: {
 		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",

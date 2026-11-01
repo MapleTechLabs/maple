@@ -10,11 +10,12 @@ import { rendersShell } from "./page/chrome"
 import * as Preload from "./page/preload"
 import { pageSubscriptions } from "./page/registry"
 import * as TimeRangePicker from "./page/kit/time-range-picker"
-import { pageContextOf } from "./update"
+import { onboardingInputsOf, pageContextOf } from "./update"
+import * as Onboarding from "./page/onboarding"
+import { connectSubscriptions } from "./page/onboarding/quick-start-connect"
+import * as SourcesFlow from "./page/sources/new/embed"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
-import * as ChatSheet from "./page/chat/sheet"
-import { hrefOf } from "./route"
 import { pollTicks } from "./data/poll"
 import { collectionLoadFailed } from "./page/alerts/shared/collection-load"
 
@@ -34,7 +35,8 @@ const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
 
-const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> = window
+const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> =
+	window
 
 /** `useTimezonePreference`: this tab's pick, or another tab's `storage` write of the key. */
 export const timeZonePreferenceChanges: Stream.Stream<Message> = Stream.merge(
@@ -58,7 +60,9 @@ const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
 
 /** The org whose `dashboards` the shell reads: once the sidebar or palette wants them. */
 const shellDashboardsOrgId = (model: Model): string | null =>
-	model.session._tag === "SignedIn" && rendersShell(model.route) && (model.shell.hasRequestedSidebarData || model.shell.palette !== null)
+	model.session._tag === "SignedIn" &&
+	rendersShell(model.route) &&
+	(model.shell.hasRequestedSidebarData || model.shell.palette !== null)
 		? Option.getOrNull(model.shell.maybeOrgId)
 		: null
 
@@ -193,7 +197,9 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				orgId === null
 					? Stream.empty
 					: collectionLoadFailed(`dashboards:${orgId}`, () =>
-							Message.GotShellMessage({ message: Shell.Message.FailedLoadDashboards({ orgId }) }),
+							Message.GotShellMessage({
+								message: Shell.Message.FailedLoadDashboards({ orgId }),
+							}),
 						),
 		},
 	),
@@ -279,17 +285,23 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	),
 }))
 
-/** The global chat sheet's open event, `C`, and its conversation's live tail. */
-const chatSheet = Subscription.lift(ChatSheet.subscriptions)<Model, Message>({
+/** Onboarding's connect drawer: its flow's OAuth popup and polls, only while it is open. */
+const onboardingConnectFlow = Subscription.lift(SourcesFlow.subscriptions)<Model, Message>({
 	read: (model) =>
-		Option.some({
-			sheet: model.chatSheet,
-			isSignedIn: model.session._tag === "SignedIn" && rendersShell(model.route),
-			isTypeAnywhere:
-				model.route._tag === "Chat" && (model.route.search.shared === undefined || model.route.search.shared === ""),
-			pathname: hrefOf(model.route).split("?")[0] ?? "/",
-		}),
-	toParentMessage: (message) => Message.GotChatSheetMessage({ message }),
+		Option.flatMap(Option.fromNullishOr(model.onboarding), (onboarding) =>
+			Option.flatMap(onboardingInputsOf(model), (inputs) =>
+				Onboarding.connectFlowOf(onboarding, inputs),
+			),
+		),
+	toParentMessage: (message) =>
+		Message.GotOnboardingMessage({ message: Onboarding.fromConnectFlow(message) }),
 })
 
-export const subscriptions = Subscription.aggregate(root, pages, chatSheet)
+/** Onboarding's connect step: what is arriving, re-read while it shows. */
+const onboardingConnectPoll = Subscription.lift(connectSubscriptions)<Model, Message>({
+	read: (model) => Option.flatMap(Option.fromNullishOr(model.onboarding), Onboarding.connectPollOf),
+	toParentMessage: (message) =>
+		Message.GotOnboardingMessage({ message: Onboarding.fromConnectPoll(message) }),
+})
+
+export const subscriptions = Subscription.aggregate(root, pages, onboardingConnectFlow, onboardingConnectPoll)

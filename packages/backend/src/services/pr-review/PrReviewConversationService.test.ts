@@ -6,7 +6,12 @@
  * `ChatSessions` seam; each records what it was asked to do.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { GitCommitSha, type PullRequestCommentJob, type PullRequestHead } from "@maple/domain/http"
+import {
+	GitCommitSha,
+	type PullRequestCiApprovedJob,
+	type PullRequestCommentJob,
+	type PullRequestHead,
+} from "@maple/domain/http"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -43,9 +48,10 @@ interface Recorded {
 		files: ReadonlyArray<{ path: string; content: string }>
 	}>
 	readonly reactions: Array<string>
+	readonly headLookups: Array<string>
 }
 
-const record = (): Recorded => ({ begun: [], posted: [], commits: [], reactions: [] })
+const record = (): Recorded => ({ begun: [], posted: [], commits: [], reactions: [], headLookups: [] })
 
 const head = (overrides: Partial<PullRequestHead> = {}): PullRequestHead => ({
 	number: 612,
@@ -81,12 +87,32 @@ const layerFor = (
 		fetchCommits: unused,
 		fetchBranches: unused,
 		fetchCommit: unused,
-		fetchPullRequests: unused,
+		fetchPullRequests: (_installation, _repo, opts) =>
+			Effect.sync(() => {
+				recorded.headLookups.push(opts.head ?? "")
+				const pr = options.pr ?? head()
+				return [
+					{
+						number: pr.number,
+						title: pr.title,
+						url: pr.url,
+						authorLogin: pr.authorLogin,
+						state: "open" as const,
+						headRef: pr.headRef,
+						baseRef: pr.baseRef,
+						isDraft: pr.draft,
+						updatedAtMs: 0,
+						mergedAtMs: null,
+						mergeCommitSha: null,
+					},
+				]
+			}),
 		fetchPullRequest: unused,
 		fetchPullRequestFiles: unused,
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed([]),
 		resolveReviewThread: unused,
+		hideEarlierComments: unused,
 		fetchChangesSince: unused,
 		fetchPullRequestHead: () => Effect.succeed(options.pr ?? head()),
 		postPullRequestReply: (_installation, _repo, input) =>
@@ -220,6 +246,84 @@ describe("editablePath and applyEdits", () => {
 	})
 })
 
+const ciApproval = (overrides: Partial<PullRequestCiApprovedJob> = {}): PullRequestCiApprovedJob => ({
+	kind: "pull-request-ci-approved",
+	provider: "github",
+	externalInstallationId: "42",
+	externalRepoId: "7",
+	repoFullName: "octo/repo",
+	runId: "9001",
+	headSha: HEAD,
+	headBranch: "feat/orders",
+	headRepoFullName: "outsider/repo",
+	approverLogin: "maintainer",
+	authorLogin: "outsider",
+	pullRequestNumbers: [],
+	...overrides,
+})
+
+describe("PrReviewConversationService CI approvals", () => {
+	const fork = head({ authorLogin: "outsider", headRepoFullName: "outsider/repo" })
+
+	it.effect(
+		"reviews a fork's pull request on a public repository once a maintainer approves its CI",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				yield* conversations.onCiApproved(orgId, ciApproval())
+				assert.deepStrictEqual(recorded.headLookups, ["outsider:feat/orders"])
+				assert.lengthOf(recorded.begun, 1)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: fork })))
+		},
+	)
+
+	it.effect("does not review when the approver lacks write access", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		return Effect.gen(function* () {
+			yield* seedRepo(false)
+			const conversations = yield* PrReviewConversationService
+			yield* conversations.onCiApproved(orgId, ciApproval())
+			assert.lengthOf(recorded.headLookups, 0)
+			assert.lengthOf(recorded.begun, 0)
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: fork, permission: "triage" })))
+	})
+
+	// One field off at a time, so each identity comparison is pinned on its own.
+	for (const [field, pr] of [
+		["head branch", { ...fork, headRef: "feat/other" }],
+		["head repository", { ...fork, headRepoFullName: "someone/repo" }],
+		["author", { ...fork, authorLogin: "someone" }],
+	] as const) {
+		it.effect(`does not review a pull request whose ${field} differs from the approved run's`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				yield* conversations.onCiApproved(orgId, ciApproval({ pullRequestNumbers: [612] }))
+				assert.lengthOf(recorded.begun, 0)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { pr })))
+		})
+	}
+
+	it.effect("does not review a head pushed after the approved run", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		const moved = { ...fork, headSha: sha("2222222222222222222222222222222222222222") }
+		return Effect.gen(function* () {
+			yield* seedRepo(false)
+			const conversations = yield* PrReviewConversationService
+			yield* conversations.onCiApproved(orgId, ciApproval({ pullRequestNumbers: [612] }))
+			assert.lengthOf(recorded.headLookups, 0)
+			assert.lengthOf(recorded.begun, 0)
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: moved })))
+	})
+})
+
 describe("PrReviewConversationService", () => {
 	it.effect("answers a member's question on the thread it came from", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -275,8 +379,26 @@ describe("PrReviewConversationService", () => {
 				"not_collaborator",
 			)
 			assert.lengthOf(recorded.begun, 0)
-		}).pipe(Effect.provide(layerFor(testDb, recorded)))
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { permission: "read" })))
 	})
+
+	it.effect(
+		"answers a public repository's commenter who can push, whatever association the webhook reports",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				const outcome = yield* conversations.onPullRequestComment(
+					orgId,
+					comment({ authorAssociation: "CONTRIBUTOR" }),
+				)
+				assert.equal(outcome.outcome, "started")
+				assert.lengthOf(recorded.begun, 1)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { permission: "write" })))
+		},
+	)
 
 	it.effect("answers a private repository's commenter whatever association the webhook reports", () => {
 		const testDb = createTestDb(trackedDbs)

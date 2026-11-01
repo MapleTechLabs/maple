@@ -40,16 +40,13 @@ export type Capability = typeof Capability.Type
 export const ConfigureModel = Schema.Struct({
 	target: ConfigureTarget,
 	dialog: Dialog.Model,
-	/** The new-connection title, fixed when the wizard opened. */
-	newTitle: Schema.String,
 	/** Not saved: the script is asked for with it. Reopening starts over. */
 	filter: LogFilterDraft,
 	isFilterOpen: Schema.Boolean,
 	filterMode: Select.Model,
 	/** The connector this wizard created, until the status read lists it. */
 	created: Schema.NullOr(V2GcpConnector),
-	/** `NewConnection`: its step, the scope fields and what to collect. */
-	step: Schema.Literals(["scope", "data"]),
+	/** The connect flow's new connection: the scope fields and what to collect. */
 	scopeType: GcpScopeType,
 	scopeGroup: ToggleGroup.Model,
 	scopeId: Field.Model,

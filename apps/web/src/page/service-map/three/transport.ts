@@ -1,5 +1,5 @@
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { beltInk, fade, type InkPalette } from "../../../components/service-map/three/appearance"
+import { beltInk, dim, fade, type InkPalette } from "../../../components/service-map/three/appearance"
 import { beltGeometry, type FactoryLink } from "../../../components/service-map/three/factory-routing"
 import * as THREE from "three"
 import {
@@ -226,7 +226,9 @@ function parcels(
 	}: { link: FactoryLink; running: Running; size: number; palette: InkPalette },
 ): THREE.Group {
 	const count = cargoCount(link.curve.getLength(), link.edge.callsPerSecond)
-	const period = Math.max(3, link.curve.getLength() / 1.4) + link.edge.avgLatencyMs / 400
+	// Busy belts run faster as well as fuller; latency still slows the trip.
+	const busy = THREE.MathUtils.clamp(Math.log10(link.edge.callsPerSecond + 1) / 3, 0, 1)
+	const period = Math.max(2, link.curve.getLength() / (1.1 + busy * 1.1)) + link.edge.avgLatencyMs / 400
 	const motion = factoryMotion(scope, link, running, count, period, size / 2, true)
 	// Each slot on the shared timetable carries one kind of cargo.
 	const all = [...motion.phases]
@@ -240,10 +242,10 @@ function parcels(
 	const log = logGeometry(size, size / 2, logs)
 	const [bark, grain] = logTextures(scope, palette)
 	const { onBeforeCompile, customProgramCacheKey } = motion.material
-	// Staves, an amber sap surface, and the base; all ride the shared motion shader.
+	// Staves, a sap surface (toned down so it never reads as a health signal), and the base; all ride the shared motion shader.
 	const bucketPaint = [
 		{ map: bucketTexture(scope, palette) },
-		{ color: new THREE.Color(palette.glow) },
+		{ color: new THREE.Color(fade(palette.glow, palette.kraft, 0.45)) },
 		{ color: new THREE.Color(palette.stone) },
 	].map((paint) =>
 		Object.assign(new THREE.MeshBasicMaterial({ ...paint, vertexColors: true }), {
@@ -412,7 +414,7 @@ export function factoryTransport(
 	lines.setAttribute("position", new THREE.Float32BufferAttribute(points, 3))
 	lines.setAttribute("color", new THREE.Float32BufferAttribute(weights.length * 3, 3))
 	const ink = beltInk(link.edge.errorRate, palette)
-	const recede = (color: string) => (dimmed ? fade(color, palette.paper, 0.8) : color)
+	const recede = (color: string) => (dimmed ? dim(color, palette.paper, 0.82) : color)
 	// A selected service's boardwalks light up in warm timber with amber rails;
 	// error tints still win over the amber.
 	const deckColor = recede(active ? palette.kraft : palette.belt)

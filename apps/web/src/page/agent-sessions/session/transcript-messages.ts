@@ -33,7 +33,7 @@ const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: 
 			h.AriaExpanded(isShown),
 			h.Class(
 				cn(
-					"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground",
+					"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 					!isShown && ON_HOVER,
 				),
 			),
@@ -48,7 +48,7 @@ const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: 
 
 const history = (h: H, model: Model, user: Extract<TranscriptRow, { kind: "user" }>): Html =>
 	h.div(
-		[h.Class("flex flex-col gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2.5")],
+		[h.Class("flex flex-col gap-3 rounded-md border border-border-subtle bg-surface-faint p-3")],
 		[
 			h.p(
 				[h.Class("text-2xs text-muted-foreground")],
@@ -95,7 +95,7 @@ export const userBlock = (
 				h.div(
 					[
 						h.Class(
-							"mr-8 ml-auto w-fit max-w-[85%] rounded-lg rounded-tr-sm bg-muted/50 px-3.5 py-2.5",
+							"mr-8 ml-auto w-fit max-w-[85%] rounded-lg rounded-tr-sm bg-surface-sunken px-3.5 py-2.5",
 						),
 					],
 					[messageBodyView(h, model, { text: user.text, rowKey: user.key })],
@@ -106,7 +106,14 @@ export const userBlock = (
 	])
 
 const chevron = (h: H, isOpen: boolean, className: string): Html =>
-	icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 11, className })
+	icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12, className })
+
+const systemCoverage = (calls: number, turnCalls: number): string =>
+	calls >= turnCalls
+		? calls === 1
+			? "sent on 1 call"
+			: `sent on all ${calls} calls`
+		: `sent on ${calls} of ${turnCalls} calls`
 
 /** System instructions collapse to one line: emitters re-send them on every call. */
 export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, { kind: "system" }>): Html => {
@@ -116,7 +123,7 @@ export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, {
 			[
 				h.AriaExpanded(isOpen),
 				h.Class(
-					"flex w-full cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground hover:text-foreground",
+					"flex w-full cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground hover:text-foreground active:text-foreground",
 				),
 				h.Type("button"),
 				h.OnClick(Message.ToggledRow({ key: system.key })),
@@ -128,29 +135,22 @@ export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, {
 					? []
 					: [
 							h.span(
-								[h.Class("min-w-0 grow truncate text-muted-foreground/70 text-xs")],
+								[h.Class("min-w-0 grow truncate text-foreground-subtle text-xs")],
 								[firstLine(system.text)],
 							),
 						]),
 				h.span([h.Class("grow")], []),
-				...(system.callCount > 1
-					? [
-							h.span(
-								[h.Class(cn(META, "shrink-0"))],
-								[
-									system.callCount >= system.turnCallCount
-										? `sent on all ${system.callCount} calls`
-										: `sent on ${system.callCount} of ${system.turnCallCount} calls`,
-								],
-							),
-						]
-					: []),
+				// Every prompt row says its call coverage, so two variants in a turn read side by side.
+				h.span(
+					[h.Class(cn(META, "shrink-0"))],
+					[systemCoverage(system.callCount, system.turnCallCount)],
+				),
 			],
 		),
 		...(isOpen
 			? [
 					h.div(
-						[h.Class("mt-1 flex items-start gap-1.5 rounded-lg bg-muted/30 px-3.5 py-2.5")],
+						[h.Class("mt-1 flex items-start gap-1.5 rounded-lg bg-surface-sunken px-3.5 py-2.5")],
 						[
 							h.div(
 								[h.Class("min-w-0 grow")],

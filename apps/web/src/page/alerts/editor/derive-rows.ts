@@ -1,3 +1,4 @@
+import type { AlertQueryTiming } from "@maple/domain/http"
 import type { AlertDestinationDocument, AlertIncidentDocument } from "@maple/domain/http"
 import type { AlertRuleRow } from "@maple/web-data/collections/alerts"
 import {
@@ -78,6 +79,19 @@ export const windowMsOf = (model: Pick<Model, "previewWindow">): { min: number; 
 
 const hasPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolean =>
 	model.previewWindow !== null && previewPayload(form, model.previewWindow)._tag === "Some"
+
+/** The timing of the draft's own preview: none while a new one loads, so nothing gates on an older query. */
+export const draftTimingOf = (model: Pick<Model, "preview" | "previewWindow">, form: RuleForm): AlertQueryTiming | null =>
+	hasPayload(model, form)
+		? AsyncData.match(model.preview.data, {
+				onIdle: () => null,
+				onLoading: () => null,
+				onRefreshing: () => null,
+				onSuccess: (preview) => preview.queryTiming ?? null,
+				onFailure: () => null,
+				onStale: () => null,
+			})
+		: null
 
 /** The draft's preview as `useAlertRulePreview` reads it. */
 export const draftPreviewOf = (model: Pick<Model, "preview" | "previewWindow">, form: RuleForm): PreviewState =>

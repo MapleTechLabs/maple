@@ -1,11 +1,11 @@
 import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
+import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
+import { statusDot } from "../../../../ui/status-dot"
 import { Message } from "./model"
 import type { H } from "./view-rows"
 
@@ -30,14 +30,7 @@ const projectItem = (
 		[
 			h.span(
 				[h.Class("mt-1.5 flex w-1.5 shrink-0")],
-				health === undefined
-					? []
-					: [
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_FILL[health.tone])),
-							]),
-						],
+				health === undefined ? [] : [statusDot(h, { tone: health.tone })],
 			),
 			h.span(
 				[h.Class("flex flex-col")],
@@ -103,30 +96,19 @@ export const projectMenu = (
 					[h.Class("contents")],
 					withTrigger(
 						h.button(
-							[
-								h.Type("button"),
-								h.Tabindex(0),
-								h.Class(
-									cn(
-										badgeVariants({
-											className:
-												"cursor-pointer gap-1 font-normal text-muted-foreground transition-colors hover:text-foreground",
-											mono: true,
-											size: "xs",
-											variant: "meta",
-										}),
-									),
-								),
-								...trigger,
-							],
-							[
-								value === undefined ? "projects" : "project",
-								h.span(
-									[h.Class("text-foreground")],
-									[value ?? `All ${options.projects.length}`],
-								),
-								icon(h, "ChevronDownIcon", { className: "size-3 opacity-60" }),
-							],
+							[h.Type("button"), h.Tabindex(0), h.Class(heroFieldChipClass(true)), ...trigger],
+							// "All 3 projects", or just the picked project's name.
+							heroFieldChipParts(
+								h,
+								value === undefined
+									? {
+											label: "projects",
+											value: `All ${options.projects.length}`,
+											isValueFirst: true,
+											isPicker: true,
+										}
+									: { label: "", value, isPicker: true },
+							),
 						),
 					),
 				),

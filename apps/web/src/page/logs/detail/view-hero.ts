@@ -1,14 +1,12 @@
-import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
-import { getSeverityColor, SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import { highlightCode } from "../../../lib/sugar-high"
-import { Option } from "effect"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { tryParseJson } from "../../../ui/attributes/attribute-row"
 import { button } from "../../../ui/button"
 import { copyButton } from "../../../ui/copy-button"
 import { badge } from "../../../ui/display"
+import { severityBadge } from "../../../ui/logs/severity-badge"
 import { icon } from "../../../ui/icon"
+import { logMessageOf, logMessageView } from "../../../ui/logs/log-message"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
 import { serviceDot } from "../../../ui/values"
 import { severityLabel } from "./derive"
@@ -16,8 +14,6 @@ import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 
 type H = HtmlBuilder<Message>
-
-const BODY_LINE_THRESHOLD = 280
 
 /** A faint wash of the severity colour; unknown levels keep the plain border. */
 const heroToneStyle = (severity: string): Readonly<Record<string, string>> | undefined => {
@@ -45,10 +41,10 @@ export const copyable = (
 			h.AriaLabel("Copy value"),
 			h.Class(
 				cn(
-					"-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors",
-					status === "idle" && "hover:bg-muted/50",
-					status === "copied" && "bg-severity-info/20",
-					status === "error" && "bg-severity-error/20",
+					"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+					status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
+					status === "copied" && "bg-severity-info-a3",
+					status === "error" && "bg-severity-error-a3",
 				),
 			),
 			h.OnClick(Message.ClickedCopy({ copyId, text: value })),
@@ -70,7 +66,7 @@ export const logTextButton = (
 			h.Type("button"),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground transition-colors hover:text-foreground",
+					"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
 					className,
 				),
 			),
@@ -79,66 +75,16 @@ export const logTextButton = (
 		children,
 	)
 
-const severityBadge = (h: H, log: LogRecord): Html => {
-	const label = severityLabel(log.severityText, log.severityNumber)
-	const color = getSeverityColor(label)
-	return h.span(
+const severityTrigger = (h: H, log: LogRecord): Html =>
+	h.span(
 		[
 			h.Class("cursor-help inline-flex"),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
 			h.Id("log-detail-severity-trigger"),
 		],
-		[
-			badge(
-				h,
-				{
-					variant: "secondary",
-					className: "font-mono text-3xs uppercase",
-					attributes: [
-						h.Style({
-							color,
-							"background-color": `color-mix(in oklch, ${color} 10%, transparent)`,
-						}),
-					],
-				},
-				[label],
-			),
-		],
+		[severityBadge(h, { severity: log.severityText, severityNumber: log.severityNumber })],
 	)
-}
-
-/** The message: a JSON body pretty-printed and highlighted, anything else as plain text. */
-const message = (
-	h: H,
-	parsed: Option.Option<unknown>,
-	displayBody: string,
-	formatted: string,
-	clamp: boolean,
-) =>
-	Option.isSome(parsed)
-		? h.pre(
-				[
-					h.Class(
-						cn(
-							"font-mono text-ui leading-relaxed whitespace-pre-wrap break-words",
-							clamp && "line-clamp-6",
-						),
-					),
-				],
-				[h.code([h.InnerHTML(highlightCode(formatted))], [])],
-			)
-		: h.p(
-				[
-					h.Class(
-						cn(
-							"font-mono text-sm leading-relaxed whitespace-pre-wrap break-words",
-							clamp && "line-clamp-4",
-						),
-					),
-				],
-				[displayBody],
-			)
 
 export const heroHeader = (
 	h: H,
@@ -147,10 +93,7 @@ export const heroHeader = (
 	/** `null`: `showClose={false}` on `/logs/$logId`. */
 	close: ReadonlyArray<ChildAttribute> | null,
 ): Html => {
-	const body = log.body ?? ""
-	const parsed = tryParseJson(body)
-	const formatted = Option.isSome(parsed) ? JSON.stringify(parsed.value, null, 2) : body
-	const isLong = formatted.length > BODY_LINE_THRESHOLD || formatted.includes("\n")
+	const message = logMessageOf(log.body ?? "")
 	const tone = heroToneStyle(severityLabel(log.severityText, log.severityNumber))
 	return h.div(
 		[h.Class("border-b px-4 py-3 shrink-0"), ...(tone === undefined ? [] : [h.Style(tone)])],
@@ -158,7 +101,7 @@ export const heroHeader = (
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					severityBadge(h, log),
+					severityTrigger(h, log),
 					badge(h, { variant: "outline", size: "xs", mono: true }, [
 						serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
 						copyable(h, model, "hero-service", log.serviceName, [log.serviceName]),
@@ -186,25 +129,7 @@ export const heroHeader = (
 					h.div(
 						[h.Class("flex items-start gap-1")],
 						[
-							h.div(
-								[
-									h.Class(
-										cn(
-											"min-w-0 flex-1 select-text",
-											model.isHeroExpanded && "max-h-[45vh] overflow-auto",
-										),
-									),
-								],
-								[
-									message(
-										h,
-										parsed,
-										stripAnsi(body),
-										formatted,
-										isLong && !model.isHeroExpanded,
-									),
-								],
-							),
+							logMessageView(h, message, model.isHeroExpanded),
 							copyButton(h, {
 								status: copyStatusOf(model, "hero-message"),
 								label: "message",
@@ -212,12 +137,12 @@ export const heroHeader = (
 								className: "-mt-0.5 shrink-0",
 								onClick: Message.ClickedCopy({
 									copyId: "hero-message",
-									text: Option.isSome(parsed) ? formatted : body,
+									text: message.copyValue,
 								}),
 							}),
 						],
 					),
-					...(isLong
+					...(message.isLong
 						? [
 								logTextButton(h, "mt-1.5", Message.ClickedShowFullMessage(), [
 									model.isHeroExpanded ? "Show less" : "Show full message",

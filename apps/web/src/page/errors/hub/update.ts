@@ -245,7 +245,9 @@ export const requestAll = (
 ): Return =>
 	applySteps({ ...model, window }, [
 		summaryStep(context, window, mode),
-		...(model.isFilterRailMounted ? [serviceCountsStep(context), environmentsStep(context, window, mode)] : []),
+		...(model.isFilterRailMounted
+			? [serviceCountsStep(context), environmentsStep(context, window, mode)]
+			: []),
 		investigationsStep(context),
 		rankingStep(context, window, mode),
 		listStep(context),
@@ -524,7 +526,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{
 					...model,
 					ranking: Keyed.accept(model.ranking, key, result),
-					rankedFilters: key === model.ranking.key ? rankingFiltersOf(model.search) : model.rankedFilters,
+					rankedFilters:
+						key === model.ranking.key ? rankingFiltersOf(model.search) : model.rankedFilters,
 				},
 				context,
 			),
@@ -552,7 +555,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }
 			const mounted = { ...model, isFilterRailMounted: true }
-			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
+			return mounted.window === null
+				? { model: mounted }
+				: requestAll(mounted, context, mounted.window, "Load")
 		},
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
@@ -605,7 +610,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			outMessage: copyToast(
 				label,
 				isOk,
-				label === "Agent prompt" ? "Agent prompt copied — paste it into your MCP agent" : undefined,
+				label === "Agent prompt" ? "Agent prompt copied. Paste it into your MCP agent" : undefined,
 			),
 		}),
 		CompletedOpenInNewTab: () => ({ model }),

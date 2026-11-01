@@ -1,5 +1,5 @@
 import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
-import { EMPTY_VALUE, formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
@@ -17,7 +17,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { serviceDot } from "../../../ui/values"
+import { emptyValue, serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
@@ -36,7 +36,7 @@ const baselineShift = (h: H, value: number, baseline: number | undefined, format
 		[
 			...(baseline === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-muted-foreground/70"), h.Title("The version this one replaced")], [format(baseline), " →"])]),
+				: [h.span([h.Class("text-3xs text-foreground-subtle"), h.Title("The version this one replaced")], [format(baseline), " →"])]),
 			h.span([h.Class(cn(tone === "error" && "text-severity-error", tone === "warn" && "text-severity-warn"))], [format(value)]),
 		],
 	)
@@ -44,7 +44,7 @@ const baselineShift = (h: H, value: number, baseline: number | undefined, format
 const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html | null => {
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0))
-		return h.span([h.Class("font-mono text-xs text-muted-foreground/50")], [EMPTY_VALUE])
+		return emptyValue(h, "font-mono text-xs")
 	return h.span(
 		[h.Class("inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums")],
 		[
@@ -71,7 +71,7 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 			[
 				h.span([h.Class("tabular-nums")], [String(names.length), " services"]),
 				...flagged.slice(0, 2).map((name) => serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1")),
-				...(flagged.length > 2 ? [h.span([h.Class("text-2xs text-muted-foreground/70")], [`+${flagged.length - 2}`])] : []),
+				...(flagged.length > 2 ? [h.span([h.Class("text-2xs text-foreground-subtle")], [`+${flagged.length - 2}`])] : []),
 			],
 		)
 	}
@@ -155,7 +155,7 @@ const pillId = (...parts: ReadonlyArray<string>): string =>
 	`releases-pill-${parts.join("-").replace(/[^A-Za-z0-9_-]/g, "_")}`
 
 const HEADERS: ReadonlyArray<readonly [string, string | undefined]> = [
-	["Release", "w-[46%] min-w-[260px]"],
+	["Release", "w-[46%] min-w-64"],
 	["Services", undefined],
 	["Deployed", "whitespace-nowrap"],
 	["Error rate", "whitespace-nowrap"],
@@ -187,13 +187,13 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 						tableRow(h, [
 							h.td(
 								[
-									h.Attribute("class", cn(tableCellStyles, cn(eyebrowVariants({}), "bg-muted/40 py-1"))),
+									h.Attribute("class", cn(tableCellStyles, cn(eyebrowVariants({}), "bg-surface-sunken py-1"))),
 									h.Attribute("colspan", "6"),
 									h.DataAttribute("slot", "eyebrow"),
 								],
 								[day],
 							),
-						], "hover:bg-transparent", [h.Key(`day:${group.commitSha}`)]),
+						], "hover:bg-transparent active:bg-transparent", [h.Key(`day:${group.commitSha}`)]),
 					]
 				: []),
 			tableRow(
@@ -212,7 +212,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 											label: isOpen ? "Hide services" : "Show services",
 											hasTooltip: false,
 											className: cn(
-												"mt-1 text-muted-foreground/60 transition-transform hover:text-foreground",
+												"mt-1 text-foreground-subtle transition-transform hover:text-foreground active:text-foreground",
 												isOpen && "rotate-90",
 												group.services.length <= 1 && "invisible",
 											),
@@ -279,13 +279,13 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 										h.a(
 											[
 												h.Href(href(group.commitSha, service.serviceName, service.environment)),
-												h.Class("inline-flex max-w-full items-center gap-2 text-xs hover:underline"),
+												h.Class("inline-flex max-w-full items-center gap-2 text-xs hover:underline active:underline"),
 											],
 											[
 												serviceDot(h, { serviceName: service.serviceName }),
 												h.span([h.Class("min-w-0 truncate"), h.Title(service.serviceName)], [service.serviceName]),
 												...(service.environment && !input.environments?.length
-													? [h.span([h.Class("min-w-0 truncate text-muted-foreground/70")], [service.environment])]
+													? [h.span([h.Class("min-w-0 truncate text-foreground-subtle")], [service.environment])]
 													: []),
 												...(service.health === "healthy"
 													? []
@@ -318,7 +318,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 								),
 								tableCell(h, [], "py-1.5"),
 							],
-							"bg-muted/20",
+							"bg-surface-faint",
 							[h.Key(`${group.commitSha}:${service.serviceName}:${service.environment}`)],
 						),
 					)

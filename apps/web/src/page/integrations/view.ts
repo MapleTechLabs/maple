@@ -17,14 +17,14 @@ import { chatCard } from "./view-chat-card"
 import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "./view-gcp"
 import { githubCard } from "./view-github"
-import { hazelCard } from "./view-hazel"
+import { linearCard } from "./view-linear"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
 import { awsCard } from "./view-aws"
 import { supabaseCard } from "./view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
-import { integrationCatalog, integrationsSummary } from "./view-hub"
+import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 
 // `IntegrationsPage`.
 
@@ -41,6 +41,8 @@ export const connectButton = (h: H, model: Model, integration: IntegrationId): H
 		{
 			size: "sm",
 			isLoading: model.connect.isStarting,
+			// Linear's start is admin-only on the server.
+			isDisabled: integration === "linear" && !model.isAdmin,
 			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
 		[entryGlyph(h, entry, undefined), "Connect ", entry.name],
@@ -58,8 +60,8 @@ export const cardView = (
 	const connector = chatConnectorOf(integration)
 	if (connector !== null) return [chatCard(h, model, connector, timeZone)]
 	switch (integration) {
-		case "hazel":
-			return [hazelCard(h, model)]
+		case "linear":
+			return [linearCard(h, model)]
 		case "github":
 			return githubCard(h, model, timeZone)
 		case "cloudflare":
@@ -77,8 +79,11 @@ export const cardView = (
 		case "prometheus":
 		case "warpstream":
 			return focusId === null
-				? [scrapeIntro(h, integration), ...scrapeTargetsSection(h, model, timeZone)]
-				: scrapeTargetsSection(h, model, timeZone, focusId)
+				? [
+						scrapeIntro(h, integration),
+						...scrapeTargetsSection(h, model, timeZone, null, integration),
+					]
+				: scrapeTargetsSection(h, model, timeZone, focusId, integration)
 		default:
 			return []
 	}
@@ -88,24 +93,23 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 	dashboardPage(
 		h,
 		{
+			filtersLabel: "Settings",
 			filters: settingsNav(h, model),
 			titleContent: integrationHeader(h, model, integration, {
 				connect: connectButton(h, model, integration),
 				actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
 				statusLine: integration === "gcp" ? gcpHeaderStatus(h, model) : undefined,
 			}),
-			scrollClassName: "gap-4",
+			width: "settings",
+			gap: "md",
 		},
 		cardView(h, model, integration, timeZone),
 	)
 
 /** The settings rail with "Integrations" the active link, gated like `/settings`. */
 const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
-	navShell(
-		h,
-		visibleSections(settingsNavVisibility(model, isClerkAuthEnabled)),
-		"integrations",
-		(tab) => Message.ClickedSettingsTab({ tab }),
+	navShell(h, visibleSections(settingsNavVisibility(model, isClerkAuthEnabled)), "integrations", (tab) =>
+		Message.ClickedSettingsTab({ tab }),
 	)
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
@@ -114,8 +118,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		? dashboardPage(
 				h,
 				{
+					titleContent: hubTitle(h),
+					filtersLabel: "Settings",
 					filters: settingsNav(h, model),
 					actions: integrationsSummary(h, model) ?? h.empty,
+					width: "settings",
 				},
 				[integrationCatalog(h, model, selectIntegration)],
 			)

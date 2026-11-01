@@ -10,8 +10,8 @@ import UIKit
 /// behaviour alone.
 ///
 /// This is `UINavigationBarAppearance` rather than a SwiftUI modifier because
-/// SwiftUI has no API for the large-title font. Colours stay unset: the bar is
-/// transparent over `Token.background`, and the app is dark-only.
+/// SwiftUI has no API for the large-title font. The bar is transparent over
+/// `Token.background` at rest and fills with it once content scrolls.
 enum NavigationAppearance {
 	/// Large-title face at the system's own size, so the collapse animation
 	/// still lands where UIKit expects it to.
@@ -39,8 +39,17 @@ enum NavigationAppearance {
 			]
 		}
 
-		UINavigationBar.appearance().standardAppearance = appearance
-		UINavigationBar.appearance().compactAppearance = appearance
+		// Transparent at the top edge; once content scrolls, the bar fills with
+		// the canvas so text never runs under the back button or the clock.
+		let scrolled = appearance.copy()
+		scrolled.configureWithOpaqueBackground()
+		scrolled.backgroundColor = UIColor(Token.background)
+		scrolled.shadowColor = .clear
+		scrolled.largeTitleTextAttributes = appearance.largeTitleTextAttributes
+		scrolled.titleTextAttributes = appearance.titleTextAttributes
+
+		UINavigationBar.appearance().standardAppearance = scrolled
+		UINavigationBar.appearance().compactAppearance = scrolled
 		UINavigationBar.appearance().scrollEdgeAppearance = appearance
 	}
 }

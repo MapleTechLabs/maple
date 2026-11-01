@@ -109,6 +109,7 @@ const layerFor = (
 		fetchPullRequestFiles: unused,
 		fetchReviewThreads: unused,
 		resolveReviewThread: unused,
+		hideEarlierComments: unused,
 		fetchChangesSince: unused,
 		fetchPullRequestHead: unused,
 		postPullRequestReply: (_installation, _repo, input) =>

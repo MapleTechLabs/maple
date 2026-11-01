@@ -1,6 +1,6 @@
-import { Effect, Option, Result, Schema, Stream } from "effect"
+import { Context, Effect, Option, Result, Schema, Stream } from "effect"
 import { constTrue } from "effect/Function"
-import { FetchHttpClient, HttpClient, HttpClientRequest, Url } from "effect/http"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest, Url } from "effect/http"
 import type { HttpClientError, HttpClientResponse } from "effect/http"
 
 export class UrlValidationError extends Schema.TaggedError<UrlValidationError>()(
@@ -214,6 +214,36 @@ const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"] as
 const withoutCredentialHeaders = (request: HttpClientRequest.HttpClientRequest) =>
 	CREDENTIAL_HEADERS.reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
 
+const withoutHeaders = (request: HttpClientRequest.HttpClientRequest, keep: ReadonlySet<string>) =>
+	Object.keys(request.headers)
+		.filter((name) => !keep.has(name.toLowerCase()))
+		.reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
+
+/** How `guard` hands a request on to a redirect's destination. */
+export interface GuardOptions {
+	/**
+	 * For requests whose headers all come from user config: a cross-origin hop drops every
+	 * header, 301/302/303 continue as a body-less GET, and 307/308 keep method and body only
+	 * within one origin. Without it, only credential headers are dropped cross-origin.
+	 */
+	readonly strictRedirects?: boolean
+	/** With `strictRedirects`: headers the caller sets itself (not user config), kept across origins. */
+	readonly ownHeaders?: ReadonlyArray<string>
+}
+
+const SEE_OTHER_STATUSES: ReadonlySet<number> = new Set([301, 302, 303])
+
+/** The request a strict redirect sends: HEAD stays HEAD, anything else replays as a plain GET. */
+const strictRedirectRequest = (
+	request: HttpClientRequest.HttpClientRequest,
+	status: number,
+	crossOrigin: boolean,
+) => {
+	if (!SEE_OTHER_STATUSES.has(status) && !crossOrigin) return request
+	const bodyless = HttpClientRequest.setBody(request, HttpBody.empty)
+	return request.method === "HEAD" ? bodyless : HttpClientRequest.setMethod(bodyless, "GET")
+}
+
 /** The full URL a request targets, query params and hash included. */
 const requestUrl = (request: HttpClientRequest.HttpClientRequest) =>
 	Effect.fromResult(Url.make(request.url, request.urlParams, Option.getOrUndefined(request.hash))).pipe(
@@ -236,6 +266,14 @@ export type ResolveHost = (hostname: string) => Effect.Effect<ReadonlyArray<stri
 /** A resolved address, judged by the same rules as a literal host. Unparseable answers are refused. */
 export const isPrivateAddress = (address: string): boolean =>
 	address.includes(":") ? isPrivateIPv6(address) : !IPV4_LITERAL_RE.test(address) || isPrivateIPv4(address)
+
+/**
+ * The TLS name a guarded hop verifies when it dials a pinned address, null when the URL host is
+ * the address itself. Fetch gets it as `tls.serverName`; other transports read it from here.
+ */
+export const DialServerName = Context.Reference<string | null>("@maple/safe-fetch/DialServerName", {
+	defaultValue: () => null,
+})
 
 /** The request a hop actually sends, and the TLS name to verify when it dials an address. */
 interface Dial {
@@ -275,7 +313,12 @@ const pinTo =
 const guardWith = <E, R, E2>(
 	client: HttpClient.HttpClient.With<E, R>,
 	dial: (request: HttpClientRequest.HttpClientRequest, url: URL) => Effect.Effect<Dial, E2>,
+	options: GuardOptions,
 ): HttpClient.HttpClient.With<E | E2 | UrlValidationError, R> => {
+	const strict = options.strictRedirects === true
+	const ownHeaders: ReadonlySet<string> = new Set(
+		(options.ownHeaders ?? []).map((name) => name.toLowerCase()),
+	)
 	const send = ({ request, serverName }: Dial) =>
 		Effect.serviceOption(FetchHttpClient.RequestInit).pipe(
 			Effect.flatMap((init) =>
@@ -286,6 +329,7 @@ const guardWith = <E, R, E2>(
 						...(serverName === null ? undefined : { tls: { serverName } }),
 					}),
 					Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+					Effect.provideService(DialServerName, serverName),
 				),
 			),
 		)
@@ -301,7 +345,9 @@ const guardWith = <E, R, E2>(
 			)
 			const outgoing =
 				previousOrigin !== null && validated.origin !== previousOrigin
-					? withoutCredentialHeaders(request)
+					? strict
+						? withoutHeaders(request, ownHeaders)
+						: withoutCredentialHeaders(request)
 					: request
 			const response = yield* send(yield* dial(outgoing, validated))
 			if (response.status < 300 || response.status >= 400) return response
@@ -318,7 +364,13 @@ const guardWith = <E, R, E2>(
 			if (!URL.canParse(location, validated.href)) {
 				return yield* new UrlValidationError({ message: "Redirect has an invalid Location header" })
 			}
-			const next = HttpClientRequest.setUrl(outgoing, new URL(location, validated))
+			const target = new URL(location, validated)
+			const next = HttpClientRequest.setUrl(
+				strict
+					? strictRedirectRequest(outgoing, response.status, target.origin !== validated.origin)
+					: outgoing,
+				target,
+			)
 			return yield* hop(next, redirects + 1, validated.origin)
 		})
 
@@ -350,8 +402,9 @@ const guardWith = <E, R, E2>(
  */
 export const guard = <E, R>(
 	client: HttpClient.HttpClient.With<E, R>,
+	options: GuardOptions = {},
 ): HttpClient.HttpClient.With<E | UrlValidationError, R> =>
-	guardWith(client, (request) => Effect.succeed({ request, serverName: null }))
+	guardWith(client, (request) => Effect.succeed({ request, serverName: null }), options)
 
 /**
  * `guard`, plus DNS pinning for processes inside a private network: each hop's
@@ -362,8 +415,9 @@ export const guard = <E, R>(
 export const guardPinned = <E, R>(
 	client: HttpClient.HttpClient.With<E, R>,
 	resolve: ResolveHost,
+	options: GuardOptions = {},
 ): HttpClient.HttpClient.With<E | UrlValidationError | HostResolutionError, R> =>
-	guardWith(client, pinTo(resolve))
+	guardWith(client, pinTo(resolve), options)
 
 /**
  * An `HttpClientError` message without the request URL. Effect's own messages

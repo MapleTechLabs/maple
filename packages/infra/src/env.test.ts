@@ -238,19 +238,16 @@ describe("the prd revision lockstep the skew alert depends on", () => {
 			"alerting",
 			"maple-ai",
 			"electric-sync",
-			"ingest",
 			"maple-api",
 			"maple-web",
 		])
 	})
 
 	it("only claims lockstep for the stage-gated services prd actually deploys", () => {
-		// `ingest` and `electric-sync` are the two members behind a stage
-		// predicate. Flip either away from prd and it stops tracking the other
-		// three, so it has to leave the list — and the rule's SQL — in the same
-		// change.
+		// `electric-sync` is the member behind a stage predicate. Flip it away from
+		// prd and it stops tracking the others, so it has to leave the list (and the
+		// rule's SQL) in the same change. Ingest stamps its own revision.
 		const { deploys } = resolveMapleProfile({ stage: { kind: "prd" }, region: "us" })
-		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("ingest")).toBe(deploys.ingest)
 		expect(PRD_LOCKSTEP_REVISION_SERVICES.includes("electric-sync")).toBe(deploys.electric)
 	})
 })

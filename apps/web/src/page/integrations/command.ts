@@ -138,16 +138,16 @@ export const LoadPlanetscaleDatabases = Command.define("LoadIntegrationsPlanetsc
 		),
 })
 
-export const LoadHazel = Command.define("LoadIntegrationsHazelStatus", {
+export const LoadLinear = Command.define("LoadIntegrationsLinearStatus", {
 	args: Args,
-	messages: [Message.CompletedLoadHazel],
+	messages: [Message.CompletedLoadLinear],
 	execute: ({ key }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
-			return yield* client.integrations.hazelStatus()
+			return yield* client.integrations.linearStatus()
 		}).pipe(
 			settle,
-			Effect.map((result) => Message.CompletedLoadHazel({ key, result })),
+			Effect.map((result) => Message.CompletedLoadLinear({ key, result })),
 		),
 })
 

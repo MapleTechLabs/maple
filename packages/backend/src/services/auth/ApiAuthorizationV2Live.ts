@@ -1,5 +1,5 @@
-import { HttpRouter, HttpServerRequest } from "effect/http"
-import { CurrentTenant, RoleName } from "@maple/domain/http"
+import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { ApiKeyLookupPersistenceError, CurrentTenant, RoleName } from "@maple/domain/http"
 import {
 	AuthorizationV2,
 	isScopeExemptRoute,
@@ -7,6 +7,8 @@ import {
 	scopeAllows,
 	V2InsufficientScope,
 	V2InvalidCredentials,
+	V2InvalidDpopProof,
+	V2NoActiveOrganization,
 	V2OrganizationAccessDenied,
 	V2RateLimited,
 } from "@maple/domain/http/v2"
@@ -16,6 +18,7 @@ import { ORG_SELECTION_HEADER } from "@maple/auth"
 import { makeResolveTenant } from "./AuthService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
+import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
@@ -27,6 +30,7 @@ import {
 	API_V2_RATE_LIMIT_REQUESTS,
 	ApiV2RateLimiter,
 	apiV2RateLimitKey,
+	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
 
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
@@ -39,6 +43,20 @@ const getBearerToken = (headers: Record<string, string | undefined>): string | u
 	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return undefined
 	return token
 }
+
+/** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
+const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
+	const [scheme, token] = (headers["authorization"] ?? "").split(" ")
+	return scheme?.toLowerCase() === "dpop" && token !== undefined && token.length > 0 ? token : undefined
+}
+
+/** RFC 9449 section 7.1: a DPoP-scheme 401 names the scheme and what went wrong. */
+const dpopChallenge = (error: "invalid_token" | "invalid_dpop_proof") =>
+	HttpEffect.appendPreResponseHandler((_request, response) =>
+		Effect.succeed(
+			HttpServerResponse.setHeader(response, "WWW-Authenticate", `DPoP algs="ES256", error="${error}"`),
+		),
+	)
 
 /** `HttpServerRequest` lowercases every incoming header, and the constant is
  * already lowercase — so this is a plain lookup, not a case-insensitive one. */
@@ -84,6 +102,8 @@ export const ApiAuthorizationV2Live = Layer.effect(
 		const membership = yield* Effect.serviceOption(OrgMembershipService)
 		// Optional for the same reason; absent, every organization is served here.
 		const regions = yield* Effect.serviceOption(OrganizationRegionService)
+		// Optional for route tests; absent, `Authorization: DPoP` is always a 401.
+		const devices = yield* Effect.serviceOption(DeviceCredentialsService)
 		const resolveTenant = makeResolveTenant(
 			env,
 			undefined,
@@ -95,6 +115,96 @@ export const ApiAuthorizationV2Live = Layer.effect(
 			bearer: (httpEffect, options) =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
+
+					const dpopToken = getDpopToken(request.headers)
+					if (dpopToken !== undefined) {
+						const resolved = yield* Option.match(devices, {
+							onNone: () =>
+								dpopChallenge("invalid_token").pipe(
+									Effect.andThen(
+										Effect.fail(
+											V2InvalidCredentials.make("Device tokens are not accepted here."),
+										),
+									),
+								),
+							onSome: (service) =>
+								service
+									.authenticate(dpopToken, {
+										proof: request.headers["dpop"],
+										method: request.method,
+										path: request.url,
+									})
+									.pipe(
+										Effect.catchTags({
+											"@maple/backend/auth/device/DpopProofRejected": (error) =>
+												dpopChallenge("invalid_dpop_proof").pipe(
+													Effect.andThen(
+														Effect.fail(V2InvalidDpopProof.make(error.message)),
+													),
+												),
+											"@maple/backend/auth/device/DeviceTokenRejected": (error) =>
+												dpopChallenge("invalid_token").pipe(
+													Effect.andThen(
+														Effect.fail(V2InvalidCredentials.make(error.message)),
+													),
+												),
+											"@maple/http/errors/DeviceCredentialPersistenceError": (error) =>
+												Effect.fail(
+													new ApiKeyLookupPersistenceError({
+														message: error.message,
+														cause: error,
+													}),
+												),
+										}),
+									),
+						})
+						yield* annotateAuthSpan("dpop", { orgId: resolved.orgId, userId: resolved.userId })
+						yield* Effect.annotateCurrentSpan("maple.device.credential_id", resolved.credentialId)
+						const rateLimitOutcome = yield* rateLimiter.check(
+							deviceRateLimitKey(resolved.credentialId),
+						)
+						yield* Effect.annotateCurrentSpan("maple.rate_limit.outcome", rateLimitOutcome)
+						if (rateLimitOutcome === "limited") {
+							return yield* Effect.fail(
+								V2RateLimited.make(undefined, {
+									retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
+								}),
+							)
+						}
+						// A device credential's scopes are its whole authority: no exemptions.
+						const { route } = yield* HttpRouter.RouteContext
+						const required = requiredScopeForRoute(request.method, route.path)
+						if (required === null || !scopeAllows(resolved.scopes, required)) {
+							return yield* Effect.fail(
+								V2InsufficientScope.make("This device credential cannot call this endpoint."),
+							)
+						}
+						const requestedOrg = getOrgSelectionHeader(request.headers)
+						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
+							return yield* Effect.fail(
+								V2OrganizationAccessDenied.make(
+									"A device credential cannot select a different organization.",
+								),
+							)
+						}
+						const tenant = new CurrentTenant.TenantSchema({
+							orgId: resolved.orgId,
+							userId: resolved.userId,
+							roles: resolved.roles,
+							authMode: "self_hosted",
+							scopes: resolved.scopes,
+						})
+						const label = "Device credential"
+						return yield* httpEffect.pipe(
+							Effect.provideService(CurrentTenant.Context, tenant),
+							Effect.provideService(CurrentAuditActor, { type: "user", label, source: "api" }),
+							withAuditedRead(audit, request, options, {
+								orgId: resolved.orgId,
+								actor: { type: "user", userId: resolved.userId, label },
+								source: "api",
+							}),
+						)
+					}
 
 					const token = getBearerToken(request.headers)
 					const apiKeyResolved = yield* apiKeys.resolveByBearer(token)
@@ -229,9 +339,17 @@ export const ApiAuthorizationV2Live = Layer.effect(
 					}
 
 					const tenant = yield* resolveTenant(request.headers).pipe(
-						Effect.catchTag("@maple/http/errors/OrganizationAccessDeniedError", (error) =>
-							Effect.fail(V2OrganizationAccessDenied.make(error.message)),
-						),
+						Effect.catchTags({
+							"@maple/http/errors/OrganizationAccessDeniedError": (error) =>
+								Effect.fail(V2OrganizationAccessDenied.make(error.message)),
+							// Every other 401 stays redacted; only this case gets a public tag.
+							"@maple/http/errors/UnauthorizedError": (error) =>
+								Effect.fail(
+									error.reason === "no_active_organization"
+										? V2NoActiveOrganization.make()
+										: error,
+								),
+						}),
 					)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					if (Option.isSome(regions)) {

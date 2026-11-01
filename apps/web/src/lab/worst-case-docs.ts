@@ -137,6 +137,7 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			minimumSampleCount: 0,
 			consecutiveBreachesRequired: 1,
 			breachesOutOf: null,
+			evaluationIntervalMinutes: null,
 			thresholds: [
 				{
 					severity: "critical",
@@ -155,6 +156,9 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			destinationIds: [],
 			noDataBehavior: "skip",
 			lastEvaluationError: worst ? `Query failed: ${"x".repeat(400)}` : null,
+			lastEvaluationErrorKind: null,
+			slowedIntervalMinutes: null,
+			slowedAt: null,
 			lastEvaluatedAt: new Date(NOW - 60_000).toISOString(),
 			lastScheduledAt: null,
 			createdAt: "2026-09-01T00:00:00.000Z",
@@ -178,7 +182,7 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			r.id,
 			{
 				status: worst && i === 0 ? "error" : "healthy",
-				attention: { noDestinations: true, recentDeliveryFailure: false },
+				attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
 				reason: worst && i === 0 ? r.lastEvaluationError : null,
 			},
 		]),

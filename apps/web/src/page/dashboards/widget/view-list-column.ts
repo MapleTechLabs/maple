@@ -30,7 +30,7 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 	h.div(
 		[
 			h.Class(
-				"absolute top-full left-0 z-50 mt-1 w-full max-h-48 overflow-auto rounded-md border bg-popover shadow-md",
+				"absolute top-full left-0 z-50 mt-1 w-full max-h-48 overflow-auto rounded-md border bg-popover shadow-popup",
 			),
 		],
 		fields
@@ -40,7 +40,7 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 				h.button(
 					[
 						h.Type("button"),
-						h.Class("w-full px-2 py-1 text-left text-xs hover:bg-accent truncate"),
+						h.Class("w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate"),
 						h.OnMouseDown(product(ProductEdit.PickedListField({ index, field }))),
 					],
 					[field],
@@ -66,7 +66,7 @@ export const listColumnRow = (
 					h.DataAttribute(GRIP_ATTRIBUTE, ""),
 					h.AriaLabel(`Reorder ${column.header || column.field || `column ${index + 1}`}`),
 					h.Class(
-						"shrink-0 cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing",
+						"shrink-0 cursor-grab touch-none text-foreground-faint hover:text-muted-foreground active:text-muted-foreground active:cursor-grabbing",
 					),
 					h.OnKeyDownPreventDefault((key) =>
 						key === "ArrowUp"
@@ -123,7 +123,7 @@ export const listColumnRow = (
 				{
 					size: "icon",
 					label: "Remove column",
-					className: "text-muted-foreground hover:text-destructive",
+					className: "text-muted-foreground hover:text-destructive active:text-destructive",
 					attributes: [h.OnClick(product(ProductEdit.RemovedListColumn({ index })))],
 				},
 				[icon(h, "XmarkIcon")],

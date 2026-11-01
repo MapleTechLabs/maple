@@ -39,9 +39,9 @@ const CreateEmail = Command.define("CreateClerkEmailAddress", {
 	args: { email: Schema.String },
 	messages: [Message.CompletedCreate],
 	execute: ({ email }) =>
-		withUserReverified("Failed to add email address", (user) => user.createEmailAddress({ email })).pipe(
+		withUserReverified("Couldn't add email address", (user) => user.createEmailAddress({ email })).pipe(
 			Effect.tap((address) =>
-				clerkTry("Failed to add email address", () => address.prepareVerification({ strategy: "email_code" })),
+				clerkTry("Couldn't add email address", () => address.prepareVerification({ strategy: "email_code" })),
 			),
 			Effect.map((address) => ({ addressId: address.id, email: address.emailAddress })),
 			Effect.mapError((error) => error.message),
@@ -64,7 +64,7 @@ const PrepareVerification = Command.define("PrepareClerkEmailVerification", {
 	args: { addressId: Schema.String, email: Schema.String },
 	messages: [Message.CompletedPrepare],
 	execute: ({ addressId, email }) =>
-		withAddress(addressId, "Failed to send a verification code", (address) =>
+		withAddress(addressId, "Couldn't send a verification code", (address) =>
 			address.prepareVerification({ strategy: "email_code" }),
 		).pipe(settled((result) => Message.CompletedPrepare({ addressId, email, result }))),
 })
@@ -74,7 +74,7 @@ const SetPrimary = Command.define("SetClerkPrimaryEmail", {
 	args: { addressId: Schema.String, email: Schema.String },
 	messages: [Message.CompletedSetPrimary],
 	execute: ({ addressId, email }) =>
-		withUser("Failed to change your primary email", (user) => user.update({ primaryEmailAddressId: addressId })).pipe(
+		withUser("Couldn't change your primary email", (user) => user.update({ primaryEmailAddressId: addressId })).pipe(
 			settled((result) => Message.CompletedSetPrimary({ email, result })),
 		),
 })
@@ -83,7 +83,7 @@ const RemoveEmail = Command.define("RemoveClerkEmailAddress", {
 	args: { addressId: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ addressId }) =>
-		withAddress(addressId, "Failed to remove email address", (address) => address.destroy(), withUserReverified).pipe(
+		withAddress(addressId, "Couldn't remove email address", (address) => address.destroy(), withUserReverified).pipe(
 			settled((result) => Message.CompletedRemove({ result })),
 		),
 })

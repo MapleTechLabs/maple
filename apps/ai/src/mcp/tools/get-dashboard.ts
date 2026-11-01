@@ -1,5 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -16,7 +17,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 		description:
 			"Full configuration of one dashboard: every widget with its id, visualization, dataSource, display, layout and any pinned timeRange. Widgets come back in the shape update_dashboard_widget and replace_dashboard_widgets take. Ids from list_dashboards.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID"),
 		}),
 		output: GetDashboardOutput,
 		hints: { readOnly: true },
@@ -33,6 +34,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 			if (!dashboard) return yield* dashboardNotFound(dashboard_id)
 
 			return {
+				publicId: encodePublicId(PublicIdPrefixes.dashboard, dashboard.id),
 				dashboard: {
 					id: dashboard.id,
 					name: dashboard.name,

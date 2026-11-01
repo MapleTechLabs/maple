@@ -18,6 +18,9 @@ const MAX_SNIPPET_CHARS = 2_000
 /** GitHub-backed reads: they reach outside Maple's own data. */
 const HINTS = { readOnly: true, openWorld: true } as const
 
+/** Maple's own agents only, the bot included: the org's source is not for third-party MCP clients. */
+const AGENT = "agent" as const
+
 const unsafePath = (path: string): boolean =>
 	path.startsWith("/") || path.split("/").some((segment) => segment === "..")
 
@@ -62,6 +65,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		parameters: Schema.Struct({}),
 		output: ListSourceRepositoriesOutput,
 		hints: HINTS,
+		audience: AGENT,
 		phrases: ["Listing repositories"],
 		handler: Effect.fn("McpTool.listSourceRepositories")(function* () {
 			const tenant = yield* CurrentMcpTenant
@@ -124,6 +128,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		}),
 		output: SearchSourceCodeOutput,
 		hints: HINTS,
+		audience: AGENT,
 		phrases: ["Searching the code", "Searching source code"],
 		handler: Effect.fn("McpTool.searchSourceCode")(function* ({ repository, query, path, limit }) {
 			const trimmed = query.trim()
@@ -250,6 +255,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		}),
 		output: ReadSourceFileOutput,
 		hints: HINTS,
+		audience: AGENT,
 		phrases: ["Reading a source file", "Reading the code"],
 		handler: Effect.fn("McpTool.readSourceFile")(function* ({
 			repository,

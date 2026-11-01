@@ -2,13 +2,13 @@ import type { ActorDocument } from "@maple/domain/http"
 import { internalAgentLabel } from "@maple/domain/system-agents"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { gradientFor } from "@maple/ui/lib/replay"
 import { AGENT_ACCENT } from "@maple/ui/lib/tone"
 import { shortId as truncateId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { avatarFallbackStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
+import { warmAvatarTone } from "../../../ui/avatar-tone"
 
 // Actor avatars and chips.
 // TODO(actor-directory): people should resolve through the Clerk member directory; here every
@@ -51,10 +51,8 @@ export const resolveActorIdentity = (actor: ActorDocument): ActorIdentity => {
 		internal: false,
 		name: shortId(raw),
 		detail: null,
-		initials: raw
-			.replace(/^user_/, "")
-			.slice(0, 2)
-			.toUpperCase(),
+		// No directory name yet: the raw id's leading characters ("00", "2A") are not initials.
+		initials: "",
 		seed: raw,
 	}
 }
@@ -85,13 +83,15 @@ export const identityAvatar = <M>(
 			],
 		)
 	}
-	const gradient = cn("bg-gradient-to-br text-white", gradientFor(identity.seed))
+	const gradient = warmAvatarTone(identity.seed)
+	const mark =
+		identity.initials === "" ? icon(h, "UserIcon", { className: "size-[60%]" }) : identity.initials
 	// The initials show until the photo loads; photos are not loaded here yet.
 	if (identity.imageUrl !== undefined && identity.imageUrl !== null && identity.imageUrl !== "")
 		return h.span(
 			[
 				h.AriaHidden(true),
-				h.Class(cn(avatarStyles, cn(base, "ring-1 ring-border/60"))),
+				h.Class(cn(avatarStyles, cn(base, "ring-1 ring-border-subtle"))),
 				h.DataAttribute("slot", "avatar"),
 			],
 			[
@@ -100,11 +100,11 @@ export const identityAvatar = <M>(
 						h.Class(cn(avatarFallbackStyles, gradient, SIZE_CLASS[size])),
 						h.DataAttribute("slot", "avatar-fallback"),
 					],
-					[identity.initials],
+					[mark],
 				),
 			],
 		)
-	return h.span([h.AriaHidden(true), h.Class(cn(base, gradient))], [identity.initials])
+	return h.span([h.AriaHidden(true), h.Class(cn(base, gradient))], [mark])
 }
 
 export const actorAvatar = <M>(

@@ -744,6 +744,16 @@ export class ErrorValidationError extends Schema.TaggedError<ErrorValidationErro
 	{ httpApiStatus: 400 },
 ) {}
 
+/** The notification policy names destinations this org does not have. */
+export class ErrorNotificationUnknownDestinationError extends Schema.TaggedError<ErrorNotificationUnknownDestinationError>()(
+	"@maple/http/errors/ErrorNotificationUnknownDestinationError",
+	{
+		message: Schema.String,
+		destinationIds: Schema.Array(AlertDestinationId),
+	},
+	{ httpApiStatus: 400 },
+) {}
+
 export class ErrorIssuePullRequestInvalidError extends Schema.TaggedError<ErrorIssuePullRequestInvalidError>()(
 	"@maple/http/errors/ErrorIssuePullRequestInvalidError",
 	{

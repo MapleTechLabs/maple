@@ -26,7 +26,7 @@ const dispatchDelivery = (
  * Characterization tests: they pin what each provider ACTUALLY sends today,
  * before the delivery layer is restructured onto a transport registry.
  *
- * `discord`, `pagerduty`, `webhook` and `hazel-oauth` had no direct dispatch
+ * `discord`, `pagerduty` and `webhook` had no direct dispatch
  * coverage at all, so a refactor had nothing to refactor against. These are deliberately literal
  * (exact URL, exact headers, exact parsed body) rather than
  * behaviour-describing: their job is to make any change to the wire show up as
@@ -40,11 +40,21 @@ const dispatchDelivery = (
 const failingChatPost = () =>
 	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
 
+/** These tests send to no Linear destination. */
+const unusedLinear: EffectTransportDeps["linear"] = {
+	request: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	findThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	saveThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+}
+
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const SENT_AT_MS = Date.parse("2026-06-02T00:00:00.000Z")
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat?mode=alert"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDestinationRow => ({
 	id: DESTINATION_ID,
@@ -97,6 +107,7 @@ const contextFor = (secretConfig: DispatchContext["secretConfig"]): DispatchCont
 /** Neither dep may be invoked by these four providers. */
 const noDeps: EffectTransportDeps = {
 	postChatAlert: failingChatPost,
+	linear: unusedLinear,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 }
@@ -151,10 +162,8 @@ describe("dispatchDelivery: pagerduty", () => {
 			assert.strictEqual(body.payload.summary, "Checkout error rate trigger")
 			assert.strictEqual(body.payload.source, "checkout")
 			assert.strictEqual(body.payload.severity, "critical")
-			assert.deepStrictEqual(body.links, [
-				{ href: LINK, text: "Open in Maple" },
-				{ href: CHAT, text: "Ask Maple AI" },
-			])
+			assert.deepStrictEqual(body.links, [{ href: LINK, text: "Open in Maple" }])
+			assert.strictEqual(body.payload.custom_details.chatUrl, CHAT)
 			// custom_details carries RAW numbers, not the formatted strings the chat
 			// providers render — a PagerDuty payload is machine-facing.
 			assert.strictEqual(body.payload.custom_details.value, 0.08)
@@ -282,7 +291,7 @@ describe("dispatchDelivery: discord", () => {
 			// provider reference, so its delivery rows had nothing to correlate
 			// against. Discord's plain webhook POST returns an empty body, so there
 			// is no message id to quote — it now reports the dedupe key, the same
-			// correlation handle pagerduty/webhook/hazel use.
+			// correlation handle pagerduty/webhook use.
 			assert.deepStrictEqual(result, {
 				providerMessage: "Delivered to Discord",
 				providerReference: "org_1:rule_1:checkout",
@@ -301,13 +310,39 @@ describe("dispatchDelivery: discord", () => {
 	)
 })
 
+describe("dispatchDelivery: google-chat", () => {
+	const context = contextFor({
+		type: "google-chat",
+		webhookUrl: "https://chat.googleapis.com/v1/spaces/AAA/messages?key=k&token=t",
+	})
+
+	it.effect("names a revoked webhook on 401 and 403", () =>
+		Effect.gen(function* () {
+			for (const status of [401, 403]) {
+				const { fetchFn } = recorder(() => new Response("", { status }))
+				const error = yield* Effect.flip(dispatch(context, fetchFn))
+				assert.strictEqual(error.destinationType, "google-chat")
+				assert.include(error.message, "it was revoked")
+			}
+		}),
+	)
+
+	it.effect("asks for a new webhook on 404", () =>
+		Effect.gen(function* () {
+			const { fetchFn } = recorder(() => new Response("", { status: 404 }))
+			const error = yield* Effect.flip(dispatch(context, fetchFn))
+			assert.include(error.message, "create a new one in the space")
+		}),
+	)
+})
+
 describe("dispatchDelivery: telegram", () => {
 	const botToken = "123456789:tok3n-in-the-path"
 	const context = contextFor({ type: "telegram", botToken, chatId: "-1001234567890" })
 	const sent = () =>
 		new Response(JSON.stringify({ ok: true, result: { message_id: 4242 } }), { status: 200 })
 
-	it.effect("posts an HTML message with both links as inline buttons", () =>
+	it.effect("posts an HTML message with an Open in Maple inline button", () =>
 		Effect.gen(function* () {
 			const { calls, fetchFn } = recorder(sent)
 			const result = yield* dispatch(context, fetchFn)
@@ -323,7 +358,7 @@ describe("dispatchDelivery: telegram", () => {
 			assert.include(body.text, "<b>Checkout error rate</b>")
 			assert.deepStrictEqual(
 				body.reply_markup.inline_keyboard[0].map((b: { url: string }) => b.url),
-				[LINK, CHAT],
+				[LINK],
 			)
 			// The token authenticates via the path; it must never also ride in the body.
 			assert.notInclude(call.body, botToken)
@@ -368,85 +403,6 @@ describe("dispatchDelivery: telegram", () => {
 			yield* dispatch(context, fetchFn, '{"totally":"ignored"}')
 
 			assert.notInclude(calls[0]!.body, "totally")
-		}),
-	)
-})
-
-describe("dispatchDelivery: hazel-oauth", () => {
-	const config = {
-		type: "hazel-oauth" as const,
-		hazelOrganizationId: "org_hz",
-		hazelOrganizationName: "Acme",
-		hazelChannelId: "chan_hz",
-		hazelChannelName: "incidents",
-		webhookId: "wh_1",
-		webhookUrl: "https://hazel.test/api/webhooks/wh_1/tok3n-in-the-path",
-		webhookToken: "tok3n-in-the-path",
-	}
-	const context = contextFor(config)
-
-	it.effect("appends /maple to the stored webhook url", () =>
-		Effect.gen(function* () {
-			const { calls, fetchFn } = recorder(ok)
-			const result = yield* dispatch(context, fetchFn)
-
-			assert.strictEqual(calls[0]!.url, `${config.webhookUrl}/maple`)
-			assert.strictEqual(calls[0]!.headers.get("x-maple-event-type"), "trigger")
-			assert.strictEqual(calls[0]!.headers.get("x-maple-delivery-key"), "org_1:dest_1:delivery")
-			assert.deepStrictEqual(result, {
-				providerMessage: "Delivered to Hazel #incidents",
-				providerReference: "org_1:rule_1:checkout",
-				responseCode: 200,
-			})
-		}),
-	)
-
-	it.effect("tolerates a trailing slash on the stored url", () =>
-		Effect.gen(function* () {
-			const { calls, fetchFn } = recorder(ok)
-			yield* dispatch(contextFor({ ...config, webhookUrl: `${config.webhookUrl}/` }), fetchFn)
-
-			assert.strictEqual(calls[0]!.url, `${config.webhookUrl}/maple`)
-		}),
-	)
-
-	/**
-	 * NORMALIZED. Hazel used to build its own near-copy of the wire payload, and
-	 * it had drifted: `thresholdUpper` was dropped entirely and `incidentStatus`
-	 * was recomputed from `eventType` rather than carried. It now ships the
-	 * canonical payload, exactly like the webhook destination, so there is only
-	 * one wire contract to keep correct.
-	 */
-	it.effect("ships the canonical wire payload rather than a hand-built copy", () =>
-		Effect.gen(function* () {
-			const { calls, fetchFn } = recorder(ok)
-			const payloadJson = '{"canonical":"payload","incidentStatus":"acknowledged"}'
-			yield* dispatch(
-				{ ...context, incidentStatus: "acknowledged", thresholdUpper: 0.5 },
-				fetchFn,
-				payloadJson,
-			)
-
-			assert.strictEqual(calls[0]!.body, payloadJson)
-		}),
-	)
-
-	it.effect("maps 401/403 to an actionable reconfigure message", () =>
-		Effect.gen(function* () {
-			for (const status of [401, 403]) {
-				const { fetchFn } = recorder(() => new Response("", { status }))
-				const error = yield* Effect.flip(dispatch(context, fetchFn))
-				assert.strictEqual(error.destinationType, "hazel-oauth")
-				assert.include(error.message, "reconfigure the channel")
-			}
-		}),
-	)
-
-	it.effect("maps 404 to a pick-a-different-channel message", () =>
-		Effect.gen(function* () {
-			const { fetchFn } = recorder(() => new Response("", { status: 404 }))
-			const error = yield* Effect.flip(dispatch(context, fetchFn))
-			assert.include(error.message, "no longer exists")
 		}),
 	)
 })

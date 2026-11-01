@@ -320,7 +320,7 @@ export function whatsWrong(text: string, args: unknown): WhatsWrongHint | undefi
 		if (!holds) return undefined
 		return {
 			subject: formatErrorPath(path),
-			text: `is a string that contains a JSON ${expected}. The schema expects the ${expected} itself — it was sent quoted.`,
+			text: `is a string that contains a JSON ${expected}. The schema expects the ${expected} itself. It was sent quoted.`,
 		}
 	}
 

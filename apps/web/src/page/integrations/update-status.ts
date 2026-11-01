@@ -10,7 +10,7 @@ import {
 	LoadCloudflare,
 	LoadGcp,
 	LoadGithub,
-	LoadHazel,
+	LoadLinear,
 	LoadPlanetscale,
 	LoadPlanetscaleDatabases,
 	LoadRailway,
@@ -33,7 +33,7 @@ const OPERATIONS = {
 	gcp: "gcpIntegration.status",
 	aws: "awsIntegration.status",
 	supabase: "integrations.supabaseStatus",
-	hazel: "integrations.hazelStatus",
+	linear: "integrations.linearStatus",
 	github: "integrations.githubStatus",
 	chat: "chatIntegration.connectors",
 	scrapeTargets: "scrapeTargets.list",
@@ -116,11 +116,11 @@ export const requestStatus = (
 				(all, supabase) => ({ ...all, supabase }),
 				(slotKey) => LoadSupabase({ key: slotKey, refresh }),
 			)
-		case "hazel":
+		case "linear":
 			return go(
-				s.hazel,
-				(all, hazel) => ({ ...all, hazel }),
-				(slotKey) => LoadHazel({ key: slotKey }),
+				s.linear,
+				(all, linear) => ({ ...all, linear }),
+				(slotKey) => LoadLinear({ key: slotKey }),
 			)
 		case "github":
 			return go(
@@ -165,7 +165,7 @@ export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"gcp",
 	"aws",
 	"supabase",
-	"hazel",
+	"linear",
 	"github",
 	"chat",
 	"scrapeTargets",

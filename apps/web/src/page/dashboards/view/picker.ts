@@ -9,6 +9,7 @@ import type { WidgetPresetDefinition } from "@maple/web-data/dashboards/widget-p
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
+import { cardButton } from "../../../ui/card-button"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { descriptionId, titleId } from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
@@ -29,32 +30,23 @@ type H = HtmlBuilder<Message>
 
 /** `PickerCard`: the thumbnail over its title and description. */
 const pickerCard = (h: H, title: string, description: string, onClick: Message, preview: Html): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(onClick),
-			h.Class(
-				"group ring-1 ring-border hover:ring-border-active bg-background p-4 text-left transition-all flex flex-col gap-3 rounded-md",
-			),
-		],
-		[
+	cardButton(h, { onClick, className: "flex flex-col gap-3 p-4" }, [
 			preview,
 			h.div(
 				[h.Class("flex flex-col gap-0.5")],
 				[
 					h.div([h.Class("text-xs font-medium")], [title]),
-					...(description === "" ? [] : [h.div([h.Class("text-2xs text-dim")], [description])]),
+					...(description === "" ? [] : [h.div([h.Class("text-2xs text-muted-foreground")], [description])]),
 				],
 			),
-		],
-	)
+		])
 
 /** `PickerSection`: a heading on the All tab, then a three-column grid of cards. */
 const pickerSection = (h: H, title: string, showHeading: boolean, cards: ReadonlyArray<Html>): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-3")],
 		[
-			...(showHeading ? [eyebrow(h, { as: "h3", className: "text-dim" }, [title])] : []),
+			...(showHeading ? [eyebrow(h, { as: "h3" }, [title])] : []),
 			h.div([h.Class("grid grid-cols-3 gap-3")], cards),
 		],
 	)

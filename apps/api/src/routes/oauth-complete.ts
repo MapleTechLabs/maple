@@ -8,7 +8,7 @@ import { Effect } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
@@ -19,7 +19,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 
 const LABELS = {
 	cloudflare: "Cloudflare",
-	hazel: "Hazel",
+	linear: "Linear",
 	github: "GitHub",
 	planetscale: "PlanetScale",
 	supabase: "Supabase",
@@ -75,7 +75,7 @@ const failure = (message: string) => new OAuthCompleteResponse({ status: "error"
  * `initiator`, so a callback query carried into another person's session completes nothing.
  */
 export const makeOAuthCompleter = Effect.gen(function* () {
-	const hazel = yield* HazelOAuthService
+	const linear = yield* LinearOAuthService
 	const github = yield* GithubConnectService
 	const cloudflare = yield* CloudflareOAuthService
 	const cloudflareAnalytics = yield* CloudflareAnalyticsService
@@ -157,8 +157,23 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 	const completeGithub = (params: URLSearchParams, initiator: OAuthFlowInitiator) => {
 		const installationId = params.get("installation_id")
 		const state = params.get("state")
-		// Present only with OAuth-on-install enabled; proves the user owns the install.
+		// From user authorization or OAuth-on-install; proves who the GitHub user is.
 		const code = params.get("code") ?? undefined
+		// Authorization alone (no installation yet): list what this user can connect.
+		if (!installationId && code && state && params.get("setup_action") !== "request") {
+			return github.discoverInstallations(code, state, initiator).pipe(
+				Effect.map(
+					(selection) =>
+						new OAuthCompleteResponse({
+							status: "success",
+							message:
+								"Choose the installed GitHub account to connect to this Maple organization.",
+							chat: null,
+							github: selection,
+						}),
+				),
+			)
+		}
 		if (installationId === null || installationId === "") {
 			return Effect.succeed(
 				failure(
@@ -236,9 +251,9 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 			switch (request.flow) {
 				case "cloudflare":
 					return withCode(params, (code, state) => completeCloudflare(code, state, initiator))
-				case "hazel":
+				case "linear":
 					return withCode(params, (code, state) =>
-						hazel.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),
+						linear.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),
 					)
 				case "planetscale":
 					return withCode(params, (code, state) => completePlanetScale(code, state, initiator))

@@ -2,6 +2,7 @@ import * as Markdown from "@foldkit/markdown"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { iconButton } from "../../ui/icon-button"
 
 // Lightweight markdown over Streamdown:
 // laid out with Streamdown's element classes. The parser loads on first use, never at startup.
@@ -66,22 +67,24 @@ const codeAction = <M>(
 	d: string,
 	onClick: M | undefined,
 ): Html =>
-	h.button(
-		[
-			h.AriaLabel(label),
-			h.Class(
-				"cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
-			),
-			h.DataAttribute("streamdown", slot),
-			h.Title(label),
-			h.Type("button"),
-			...(onClick === undefined ? [] : [h.OnClick(onClick)]),
-		],
+	iconButton(
+		h,
+		{
+			label,
+			size: "icon-xs",
+			hasTooltip: false,
+			className: "text-muted-foreground hover:text-foreground active:text-foreground",
+			attributes: [
+				h.DataAttribute("streamdown", slot),
+				h.Title(label),
+				...(onClick === undefined ? [] : [h.OnClick(onClick)]),
+			],
+		},
 		[glyph(h, d)],
 	)
 
 export const LINE_CLASS =
-	"block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-[13px] before:text-right before:text-muted-foreground/50 before:font-mono before:select-none"
+	"block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-ui before:text-right before:text-foreground-faint before:font-mono before:select-none"
 const TOKEN_CLASS =
 	"text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))] bg-[var(--sdm-tbg)] dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]"
 
@@ -97,7 +100,7 @@ const codeBlock = <M>(
 	return h.div(
 		[
 			h.Class(
-				"relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2",
+				"relative my-4 flex w-full flex-col gap-2 rounded-md border border-border bg-sidebar p-2",
 			),
 			h.DataAttribute("language", language),
 			h.DataAttribute("streamdown", "code-block"),
@@ -219,7 +222,7 @@ const viewsFor = <M>(
 	const views: Markdown.Views = {
 		...Markdown.defaultViews,
 		InlineCode: ({ value }) =>
-			h.code(streamdown("inline-code", "rounded bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
+			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
 		// Link text is re-rendered with images as plain labels, at any nesting depth
 		// (`[**![a](u)**](d)`), so a linked image never puts an anchor inside an anchor.
@@ -290,7 +293,7 @@ const viewsFor = <M>(
 			h.blockquote(
 				streamdown(
 					"blockquote",
-					"my-4 border-muted-foreground/30 border-l-4 pl-4 text-muted-foreground italic",
+					"my-4 border-foreground-faint border-l-4 pl-4 text-muted-foreground italic",
 				)(h),
 				blocks,
 			),
@@ -300,7 +303,7 @@ const viewsFor = <M>(
 				[h.DataAttribute("streamdown", "table-wrapper")],
 				[
 					h.table(streamdown("table", "w-full border-collapse border border-border")(h), [
-						h.thead(streamdown("table-header", "bg-muted/80")(h), [headerRow]),
+						h.thead(streamdown("table-header", "bg-surface-strong")(h), [headerRow]),
 						h.tbody(streamdown("table-body", "divide-y divide-border")(h), bodyRows),
 					]),
 				],

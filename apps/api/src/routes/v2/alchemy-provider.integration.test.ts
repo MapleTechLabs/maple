@@ -43,10 +43,12 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import { LinearIssueTracker } from "@maple/backend/services/alerts/LinearIssueTracker"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -118,7 +120,13 @@ const makeHarness = () => {
 		schedulerEvalTimeoutMs: () => 15_000,
 		schedulerSpreadMs: () => 0,
 	})
-	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
+	const linearOAuthLive = LinearOAuthService.layer.pipe(
+		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
+	)
+	const linearIssuesLive = Layer.effect(LinearIssueTracker, LinearIssueTracker.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(Layer.mergeAll(linearOAuthLive, testDb.layer)),
+	)
 	const emailLive = Layer.succeed(EmailService, {
 		isConfigured: false,
 		send: () => Effect.void,
@@ -138,7 +146,15 @@ const makeHarness = () => {
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
-			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
+			Layer.mergeAll(
+				envLive,
+				testDb.layer,
+				runtimeLive,
+				linearOAuthLive,
+				linearIssuesLive,
+				emailLive,
+				orgMembersLive,
+			),
 		),
 	)
 	const alertReadModelsLive = Layer.effect(AlertReadModelsService, AlertReadModelsService.make).pipe(
@@ -164,7 +180,8 @@ const makeHarness = () => {
 				queryEngineLive,
 				warehouseLive,
 				runtimeLive,
-				hazelOAuthLive,
+				linearOAuthLive,
+				linearIssuesLive,
 				emailLive,
 				orgMembersLive,
 				orgChSettingsLive,
@@ -172,6 +189,7 @@ const makeHarness = () => {
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 			),
 		),
 	)

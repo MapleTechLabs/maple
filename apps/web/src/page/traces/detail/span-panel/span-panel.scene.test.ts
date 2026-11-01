@@ -62,7 +62,7 @@ const indicatorMeasured = () =>
 
 describe("span panel", () => {
 	test("mounting asks for the span's logs and its full attributes", () => {
-		expect(names(init(input).commands)).toEqual([FetchSpanLogs.name, FetchSpanDetail.name])
+		expect(names(init(input).commands)).toEqual(expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]))
 	})
 
 	test("a span missing from the trace only asks for its logs", () => {

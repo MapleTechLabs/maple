@@ -1,21 +1,22 @@
 import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
-import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { gcpConnectionState } from "../../components/integrations/gcp-connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
-import { apiOrigins } from "../../lib/services/common/api-base-url"
 import { integrationOfSearch } from "./catalog"
 import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startConnect } from "./connect"
 import { Message } from "./message"
+import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { githubStatusOf } from "./update-github"
+import { isAwaitingFirstMetrics, isWatchExpired } from "./planetscale"
+import { planetscaleStatusOf } from "./update-planetscale"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
-import { pollTicks, whenPresent } from "../../data/poll"
+import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -90,13 +91,13 @@ const grace = ({ provider, attempt }: ConnectAttempt) => {
 }
 
 /** `useOAuthPopupFlow`'s `connect`: open in the click, start, then send the popup to the provider. */
-const popupFlow = ({ provider, attempt }: ConnectAttempt) =>
+const popupFlow = ({ provider, attempt, githubMode }: ConnectAttempt) =>
 	Stream.unwrap(
 		Effect.gen(function* () {
 			const spec = PROVIDERS[provider]
 			const popup = yield* openPopup(spec.windowName, spec.windowFeatures, spec.label)
 			const returnTo = yield* currentReturnPath
-			const started = yield* Effect.result(startConnect(provider, returnTo))
+			const started = yield* Effect.result(startConnect(provider, returnTo, githubMode))
 			if (started._tag === "Failure") {
 				yield* Effect.sync(() => popup?.close())
 				return one(
@@ -144,6 +145,8 @@ const after = (millis: number, message: () => Message) =>
 const CLOUDFLARE_INGEST_MS = 30_000
 
 const SUPABASE_CLOCK_MS = 60_000
+/** A metric stream delivers about every minute. */
+const AWS_WATCH_MS = 60_000
 
 const isSupabaseShown = (model: Model): boolean =>
 	integrationOfSearch(model.search.integration) === "supabase" &&
@@ -170,10 +173,27 @@ const isAwsPending = (model: Model): boolean => {
 	)
 }
 
-const isAwaitingFirstScrape = (model: Model): boolean => {
+/** A verified connection streams metrics: its deliveries and what they stored keep moving. */
+const isAwsStreaming = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "aws") return false
+	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
+	return (
+		status !== null &&
+		status.connections.some(
+			(connection) => connection.verified_at !== null && connection.metric_stream !== null,
+		)
+	)
+}
+
+/** Polls at 5 s for the first 2 minutes, then every minute, until the watch runs out. */
+const PLANETSCALE_FAST_POLLS = 24
+
+const isWatchingPlanetscale = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "planetscale") return false
-	const status = Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
-	return status !== null && derivePlanetScaleSetup(status, model.nowMs).awaitingFirstScrape
+	return (
+		isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs) &&
+		!isWatchExpired(model.planetscaleCard, model.nowMs)
+	)
 }
 
 const gcpRefreshInterval = (model: Model): number | null => {
@@ -217,14 +237,20 @@ const isCloudflareSettling = (model: Model): boolean => {
 	return phase !== null && phase.kind !== "live"
 }
 
-/** The popup (and its grace) is out, a branch change settles, or a repository is still syncing. */
+/** The popup is out, repository discovery is pending, or a repository is still syncing. */
 const isGithubPolling = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "github") return false
 	const status = githubStatusOf(model)
 	const syncing =
 		status?.connected === true &&
+		status.repositoryDiscovery?._tag !== "Failed" &&
 		status.repositories.some((repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling")
-	return model.connect.active !== null || model.githubCard.isForcePolling || syncing
+	return (
+		model.connect.active !== null ||
+		model.githubCard.isForcePolling ||
+		status?.repositoryDiscovery?._tag === "Pending" ||
+		syncing
+	)
 }
 
 /** The provider whose callback messages this page listens for (`useIntegrationMessage`). */
@@ -233,37 +259,14 @@ const listeningProvider = (model: Model): ConnectProvider | null => {
 	return Schema.is(ConnectProvider)(integration) ? integration : null
 }
 
-/** The callback page's `postMessage` payload; anything else on the channel is ignored. */
-const CallbackData = Schema.Struct({
-	type: Schema.String,
-	status: Schema.optional(Schema.String),
-	message: Schema.optional(Schema.String),
-})
-const decodeCallback = Schema.decodeUnknownOption(CallbackData)
-
-/** The callback page is the API's: served from its origin, or this one through the proxy. */
-export const isCallbackOrigin = (origin: string, ownOrigin: string): boolean =>
-	origin === ownOrigin || apiOrigins.includes(origin)
-
 const callbackMessages = (provider: ConnectProvider) =>
-	Stream.fromEventListener<MessageEvent>(window, "message").pipe(
-		Stream.filter((event) => isCallbackOrigin(event.origin, window.location.origin)),
-		Stream.flatMap((event) =>
-			Option.match(decodeCallback(event.data), {
-				onNone: () => Stream.empty,
-				onSome: (data) =>
-					data.type === `maple:integration:${provider}`
-						? Stream.make(
-								Message.ReceivedConnectMessage({
-									provider,
-									status: data.status ?? "",
-									message: data.message ?? null,
-								}),
-							)
-						: Stream.empty,
-			}),
-		),
-	)
+	Stream.map(openerReturns(provider), (callback) => Message.ReceivedConnectMessage(callback))
+
+/** Every provider's status lives on this page, so every relayed return re-reads one. */
+const relayMessages = Stream.map(relayedReturns, ({ provider, status, message, github }) => {
+	const relay = { provider, status, message: message ?? "" }
+	return Message.ReceivedConnectRelay(github === undefined ? relay : { ...relay, github })
+})
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
@@ -361,6 +364,14 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isPending ? every(10_000, () => Message.TickedAwsPending()) : Stream.empty,
 			},
 		),
+		awsWatch: entry(
+			{ isStreaming: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isStreaming: isAwsStreaming(model) }),
+				dependenciesToStream: ({ isStreaming }) =>
+					isStreaming ? every(AWS_WATCH_MS, () => Message.TickedAwsWatch()) : Stream.empty,
+			},
+		),
 		/** The connected Supabase card's clock, so its metrics window and "Last data" ages advance. */
 		supabaseClock: entry(
 			{ isShown: Schema.Boolean },
@@ -370,13 +381,17 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isShown ? every(SUPABASE_CLOCK_MS, () => Message.TickedSupabaseClock()) : Stream.empty,
 			},
 		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 5_000, enabled: awaitingFirstScrape })`. */
+		/** Watches for the first metrics; the card offers "Check again" once the watch runs out. */
 		planetscaleWatch: entry(
 			{ isWatching: Schema.Boolean },
 			{
-				modelToDependencies: ({ model }) => ({ isWatching: isAwaitingFirstScrape(model) }),
+				modelToDependencies: ({ model }) => ({ isWatching: isWatchingPlanetscale(model) }),
 				dependenciesToStream: ({ isWatching }) =>
-					isWatching ? every(5_000, () => Message.TickedPlanetscaleWatch()) : Stream.empty,
+					isWatching
+						? backoffPollTicks("5 seconds", PLANETSCALE_FAST_POLLS, "1 minute").pipe(
+								Stream.map(() => Message.TickedPlanetscaleWatch()),
+							)
+						: Stream.empty,
 			},
 		),
 		/** `useIntervalRefresh(refreshStatus, { intervalMs: settling ? 10_000 : 60_000 })` with the live clock. */
@@ -416,6 +431,13 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ provider: listeningProvider(model) }),
 				dependenciesToStream: ({ provider }) =>
 					provider === null ? Stream.empty : callbackMessages(provider),
+			},
+		),
+		connectRelay: entry(
+			{},
+			{
+				modelToDependencies: () => ({}),
+				dependenciesToStream: () => relayMessages,
 			},
 		),
 	}),

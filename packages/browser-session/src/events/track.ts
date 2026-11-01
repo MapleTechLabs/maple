@@ -1,10 +1,11 @@
 import { hasConsent } from "../identity/consent"
 import { getActiveSink, queuePending, type SessionEvent } from "./events-sink"
-import { coerceTrackProps, MAX_EVENT_NAME_LENGTH, type TrackProps } from "./props"
+import { capText, coerceTrackProps, MAX_EVENT_NAME_LENGTH, type TrackProps } from "./props"
 
 export type { TrackProps } from "./props"
 
 let warnedAboutName = false
+let warnedAboutReservedName = false
 
 /**
  * Record a custom product event against the current session.
@@ -25,10 +26,22 @@ export function track(name: string, props?: TrackProps): void {
 		}
 		return
 	}
+	const trimmedName = name.trim()
+	// `$`-prefixed names belong to SDK-emitted events (`$pageview`); a custom one
+	// would be counted as one in funnels, and `/v1/events` rejects them outright.
+	if (trimmedName.startsWith("$")) {
+		if (!warnedAboutReservedName) {
+			warnedAboutReservedName = true
+			console.warn(
+				`[maple] track() event names starting with "$" are reserved; "${trimmedName}" was ignored.`,
+			)
+		}
+		return
+	}
 
 	const ev: SessionEvent = {
 		type: "custom",
-		message: name.trim().slice(0, MAX_EVENT_NAME_LENGTH),
+		message: capText(trimmedName, MAX_EVENT_NAME_LENGTH),
 		attrs: coerceTrackProps(props),
 		timestamp: Date.now(),
 		// Captured now rather than at flush time so a queued event reports the

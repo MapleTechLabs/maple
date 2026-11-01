@@ -2,10 +2,10 @@
 title: "Retention"
 description: "How long hosted Maple keeps each kind of data: traces, logs, metrics, session replays, product events, error issues, alert history and the audit log."
 group: "Reference"
-order: 9
+order: 10
 ---
 
-Hosted Maple deletes data automatically once it passes its retention period. The periods are the same in both [regions](/docs/reference/regions). Age is measured from the data's own timestamp (for example a span's start time), not from when Maple received it.
+Hosted Maple deletes data automatically once it passes its retention period. The periods are the same in both [regions](/docs/reference/regions). Age is measured from the data's own timestamp (for example a span's start time), except session replay recordings, which age from when Maple received them.
 
 ## Telemetry
 
@@ -18,12 +18,13 @@ Hosted Maple deletes data automatically once it passes its retention period. The
 | Product events                                                                                    | 365 days |
 | Error occurrences (the individual events behind error issues)                                     | 90 days  |
 | Hourly rollups of traces and logs (service overview, service map edges, trace and log aggregates) | 365 days |
+| CI workflow runs and jobs (Code Review → CI)                                                      | 365 days |
 
 Individual spans, log lines and data points cannot be read once they pass these periods. Charts built on hourly rollups, such as service overviews and the service map, can reach further back, up to the rollup's 365 days. Some queries have shorter maximum time ranges. See [Limits](/docs/reference/limits#queries).
 
 ## Error issues
 
-[Error issues](/docs/errors/overview) are not deleted by age while they are open, however old the underlying errors are. These rules clean them up:
+[Error issues](/docs/errors/overview) are not deleted by age while they are open, no matter how old their errors are. These rules clean them up:
 
 | Issue state                                                                              | What happens                                                         |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |

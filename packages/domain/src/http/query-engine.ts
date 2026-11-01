@@ -1,6 +1,9 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
+import { ADVISORY_SEVERITIES } from "../runtime-advisories"
+import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
@@ -14,6 +17,7 @@ import {
 	StatusCode,
 	SupabaseProjectRef,
 	TraceId,
+	UptimeMonitorId,
 } from "../primitives"
 import {
 	AttributeFilter,
@@ -637,6 +641,94 @@ export class SupabaseLogIssuesResponse extends Schema.Class<SupabaseLogIssuesRes
 	issues: Schema.Array(SupabaseLogIssue),
 }) {}
 
+// AWS infrastructure page (/infra/aws): `aws.*` metrics from the CloudWatch metric stream.
+const AwsInfraKind = Schema.Literals(AWS_INFRA_KIND_IDS)
+
+export class AwsInfraPresenceRequest extends Schema.Class<AwsInfraPresenceRequest>("AwsInfraPresenceRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
+
+export class AwsInfraPresenceResponse extends Schema.Class<AwsInfraPresenceResponse>(
+	"AwsInfraPresenceResponse",
+)({
+	/** The kinds with a metric in the window, in tab order. */
+	kinds: Schema.Array(AwsInfraKind),
+}) {}
+
+export class AwsInfraMetricsRequest extends Schema.Class<AwsInfraMetricsRequest>("AwsInfraMetricsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	kind: AwsInfraKind,
+}) {}
+
+export class AwsInfraMetricsResponse extends Schema.Class<AwsInfraMetricsResponse>("AwsInfraMetricsResponse")(
+	{
+		/** One row per resource and metric: see `awsInfraMetricsSQL`. */
+		data: Schema.Array(
+			Schema.Struct({
+				keys: Schema.Array(Schema.String),
+				metric: Schema.String,
+				total: Schema.Number,
+				samples: Schema.Number,
+				peak: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+	},
+) {}
+
+export class AwsInfraSparklinesRequest extends Schema.Class<AwsInfraSparklinesRequest>(
+	"AwsInfraSparklinesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	kind: AwsInfraKind,
+}) {}
+
+export class AwsInfraSparklinesResponse extends Schema.Class<AwsInfraSparklinesResponse>(
+	"AwsInfraSparklinesResponse",
+)({
+	/** One row per resource, bucket and metric: see `awsInfraSparklinesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			keys: Schema.Array(Schema.String),
+			bucket: Schema.String,
+			metric: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
+}) {}
+
+export class AwsInfraTimeseriesRequest extends Schema.Class<AwsInfraTimeseriesRequest>(
+	"AwsInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	kind: AwsInfraKind,
+	/** The resource's keys, as `AwsInfraMetricsResponse` returns them. */
+	keys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(8)),
+}) {}
+
+export class AwsInfraTimeseriesResponse extends Schema.Class<AwsInfraTimeseriesResponse>(
+	"AwsInfraTimeseriesResponse",
+)({
+	/** One row per bucket and metric: see `awsInfraTimeseriesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			metric: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
+}) {}
+
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
 const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
@@ -1165,6 +1257,66 @@ export class ReleasesListResponse extends Schema.Class<ReleasesListResponse>("Re
 	truncated: Schema.Boolean,
 }) {}
 
+export class UptimePhaseTimingsRequest extends Schema.Class<UptimePhaseTimingsRequest>(
+	"UptimePhaseTimingsRequest",
+)({
+	monitorId: UptimeMonitorId,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+}) {}
+
+/** A bucket's mean phases (ms) over its checks that got a response; buckets with none are absent. */
+const UptimePhaseTimingsPoint = Schema.Struct({
+	bucket: Schema.String,
+	timedChecks: Schema.Number,
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+export type UptimePhaseTimingsPoint = Schema.Schema.Type<typeof UptimePhaseTimingsPoint>
+
+export class UptimePhaseTimingsResponse extends Schema.Class<UptimePhaseTimingsResponse>(
+	"UptimePhaseTimingsResponse",
+)({
+	points: Schema.Array(UptimePhaseTimingsPoint),
+}) {}
+
+export class UptimeChecksRequest extends Schema.Class<UptimeChecksRequest>("UptimeChecksRequest")({
+	monitorId: UptimeMonitorId,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Most checks returned, newest kept. */
+	limit: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(5000)),
+}) {}
+
+/** An HTTP check's phases in ms; a phase the check skipped is 0 (TLS on http://, no body read). */
+const UptimeCheckPhases = Schema.Struct({
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+
+const UptimeCheck = Schema.Struct({
+	at: Schema.String,
+	traceId: TraceId,
+	durationMs: Schema.Number,
+	ok: Schema.Boolean,
+	statusCode: Schema.NullOr(Schema.Number),
+	/** Null when the check recorded none: TCP and DNS checks, older checks, no response. */
+	phases: Schema.NullOr(UptimeCheckPhases),
+})
+export type UptimeCheck = Schema.Schema.Type<typeof UptimeCheck>
+
+export class UptimeChecksResponse extends Schema.Class<UptimeChecksResponse>("UptimeChecksResponse")({
+	/** Newest first. */
+	checks: Schema.Array(UptimeCheck),
+}) {}
+
 export class ReleaseDetailRequest extends Schema.Class<ReleaseDetailRequest>("ReleaseDetailRequest")({
 	serviceName: ServiceName,
 	commitSha: CommitSha,
@@ -1335,6 +1487,36 @@ export class ServiceWorkloadsResponse extends Schema.Class<ServiceWorkloadsRespo
 	data: Schema.Array(ServiceWorkloadRow),
 }) {}
 
+export class ServiceRuntimesRequest extends Schema.Class<ServiceRuntimesRequest>("ServiceRuntimesRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	services: Schema.Array(ServiceName),
+}) {}
+
+/**
+ * A platform resource a traced service runs as (`@maple/domain/service-runtimes`). The resource
+ * shares the service's name (a Worker's script name is the service name too).
+ */
+export const ServiceRuntimeRow = Schema.Struct({
+	serviceName: ServiceName,
+	kind: Schema.Literals(SERVICE_RUNTIME_KIND_IDS),
+	/** GCP project, AWS account or Cloudflare account; "" when the series carry none. */
+	account: Schema.String,
+	region: Schema.String,
+	/** ECS cluster. */
+	cluster: Schema.String,
+	railwayServiceId: Schema.String,
+	railwayEnvironmentId: Schema.String,
+	railwayEnvironmentName: Schema.String,
+})
+export type ServiceRuntimeRow = typeof ServiceRuntimeRow.Type
+
+export class ServiceRuntimesResponse extends Schema.Class<ServiceRuntimesResponse>("ServiceRuntimesResponse")(
+	{
+		data: Schema.Array(ServiceRuntimeRow),
+	},
+) {}
+
 export class ServiceMapBundleRequest extends Schema.Class<ServiceMapBundleRequest>("ServiceMapBundleRequest")(
 	{
 		startTime: TinybirdDateTime,
@@ -1349,9 +1531,13 @@ export class ServiceMapBundleResponse extends Schema.Class<ServiceMapBundleRespo
 )({
 	dependencies: Schema.Array(WireRow),
 	dbEdges: Schema.Array(WireRow),
+	/** The database edges ran past their budget; `dbEdges` is empty, not "no databases". */
+	dbEdgesTimedOut: Schema.optionalKey(Schema.Boolean),
 	overview: Schema.Array(WireRow),
 	platforms: Schema.Array(ServicePlatformRow),
 	workloads: Schema.Array(ServiceWorkloadRow),
+	/** Optional so a web deploy ahead of the API still decodes the bundle. */
+	runtimes: Schema.optionalKey(Schema.Array(ServiceRuntimeRow)),
 }) {}
 
 export class ServiceUsageRequest extends Schema.Class<ServiceUsageRequest>("ServiceUsageRequest")({
@@ -1446,6 +1632,144 @@ export class ServiceEndpointsResponse extends Schema.Class<ServiceEndpointsRespo
 			p50DurationMs: Schema.Number,
 			p95DurationMs: Schema.Number,
 			p99DurationMs: Schema.Number,
+			// Migration 0048, Server spans only. httpClassifiedSpanCount below spanCount
+			// means part of the window predates 0048: the status mix is unknown there.
+			httpClassifiedSpanCount: Schema.Number,
+			httpStatusCount: Schema.Number,
+			http4xxCount: Schema.Number,
+			http5xxCount: Schema.Number,
+			requestBodyBytes: Schema.Number,
+			requestBodyCount: Schema.Number,
+		}),
+	),
+}) {}
+
+/** Every HTTP endpoint of one service merged; the API tab's headline numbers. */
+export const ServiceApiTotals = Schema.Struct({
+	spanCount: Schema.Number,
+	estimatedSpanCount: Schema.Number,
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	requestBodyCount: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+
+/** One timeseries bucket; `spanName` is `''` for the series merged across endpoints. */
+export const ServiceApiBucket = Schema.Struct({
+	bucket: Schema.String,
+	spanName: Schema.String,
+	estimatedSpanCount: Schema.Number,
+	/** 0 when the bucket predates the status counters: its status mix is unknown. */
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+
+export class ServiceApiOverviewRequest extends Schema.Class<ServiceApiOverviewRequest>(
+	"ServiceApiOverviewRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	// Both or neither: the totals for the comparison window, same scope.
+	previousStartTime: Schema.optional(TinybirdDateTime),
+	previousEndTime: Schema.optional(TinybirdDateTime),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	bucketSeconds: BucketSeconds,
+}) {}
+
+export class ServiceApiOverviewResponse extends Schema.Class<ServiceApiOverviewResponse>(
+	"ServiceApiOverviewResponse",
+)({
+	totals: ServiceApiTotals,
+	previous: Schema.NullOr(ServiceApiTotals),
+	buckets: Schema.Array(ServiceApiBucket),
+}) {}
+
+export class ServiceEndpointsTimeseriesRequest extends Schema.Class<ServiceEndpointsTimeseriesRequest>(
+	"ServiceEndpointsTimeseriesRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	bucketSeconds: BucketSeconds,
+	spanNames: Schema.Array(SpanName).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
+}) {}
+
+export class ServiceEndpointsTimeseriesResponse extends Schema.Class<ServiceEndpointsTimeseriesResponse>(
+	"ServiceEndpointsTimeseriesResponse",
+)({
+	buckets: Schema.Array(ServiceApiBucket),
+}) {}
+
+export class ServiceEndpointStatusBreakdownRequest extends Schema.Class<ServiceEndpointStatusBreakdownRequest>(
+	"ServiceEndpointStatusBreakdownRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	spanName: Schema.optional(SpanName),
+}) {}
+
+export class ServiceEndpointStatusBreakdownResponse extends Schema.Class<ServiceEndpointStatusBreakdownResponse>(
+	"ServiceEndpointStatusBreakdownResponse",
+)({
+	rows: Schema.Array(
+		Schema.Struct({
+			spanName: Schema.String,
+			httpStatusCode: Schema.String,
+			// `error.type` as written, '' when the span carried none.
+			errorType: Schema.String,
+			spanCount: Schema.Number,
+			estimatedSpanCount: Schema.Number,
+		}),
+	),
+}) {}
+
+export class ServiceEndpointDetailRequest extends Schema.Class<ServiceEndpointDetailRequest>(
+	"ServiceEndpointDetailRequest",
+)({
+	serviceName: ServiceName,
+	spanName: SpanName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+}) {}
+
+export class ServiceEndpointDetailResponse extends Schema.Class<ServiceEndpointDetailResponse>(
+	"ServiceEndpointDetailResponse",
+)({
+	latencyQuantileLevels: Schema.Array(Schema.Number),
+	// Empty when the window holds no request; otherwise one value per level, in ms.
+	latencyQuantilesMs: Schema.Array(Schema.Number),
+	body: Schema.NullOr(
+		Schema.Struct({
+			p50Bytes: Schema.Number,
+			p95Bytes: Schema.Number,
+			maxBytes: Schema.Number,
+			count: Schema.Number,
+		}),
+	),
+	userAgents: Schema.Array(Schema.Struct({ value: Schema.String, count: Schema.NullOr(Schema.Number) })),
+	slowest: Schema.Array(
+		Schema.Struct({
+			traceId: Schema.String,
+			timestamp: Schema.String,
+			durationMs: Schema.Number,
+			httpStatusCode: Schema.String,
+			bodyBytes: Schema.NullOr(Schema.Number),
 		}),
 	),
 }) {}
@@ -1618,6 +1942,8 @@ export class HostDetailSummaryResponse extends Schema.Class<HostDetailSummaryRes
 			hostArch: Schema.String,
 			cloudProvider: Schema.String,
 			cloudRegion: Schema.String,
+			/** The `src_` id of the source the host last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuPct: Schema.Number,
@@ -1896,6 +2222,8 @@ export class ContainerDetailSummaryResponse extends Schema.Class<ContainerDetail
 			composeProject: Schema.String,
 			composeService: Schema.String,
 			runtime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuPct: Schema.Number,
@@ -2202,6 +2530,112 @@ export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiC
 	}),
 }) {}
 
+// Security Center telemetry: scanner probes from `scanner_requests`, runtime versions from
+// `service_runtimes_hourly` with the endoflife.date release cycles they are judged against.
+
+export class SecurityExposureRequest extends Schema.Class<SecurityExposureRequest>("SecurityExposureRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+		bucketSeconds: Schema.optional(BucketSeconds),
+	},
+) {}
+
+export class SecurityExposureResponse extends Schema.Class<SecurityExposureResponse>(
+	"SecurityExposureResponse",
+)({
+	data: Schema.Struct({
+		signatures: Schema.Array(
+			Schema.Struct({
+				/** A `PROBE_SIGNATURES` token from `@maple/domain/security-telemetry`, '' for a scanner on an ordinary path. */
+				signature: Schema.String,
+				service: Schema.String,
+				requests: Schema.Number,
+				answered: Schema.Number,
+				sources: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+		exposed: Schema.Array(
+			Schema.Struct({
+				service: Schema.String,
+				host: Schema.String,
+				path: Schema.String,
+				signature: Schema.String,
+				httpStatus: Schema.Number,
+				requests: Schema.Number,
+				lastSeen: Schema.String,
+				sampleTraceId: Schema.String,
+			}),
+		),
+		sources: Schema.Array(
+			Schema.Struct({
+				clientAddress: Schema.String,
+				requests: Schema.Number,
+				signatures: Schema.Number,
+				scanner: Schema.String,
+				userAgent: Schema.String,
+				lastSeen: Schema.String,
+			}),
+		),
+		timeline: Schema.Array(
+			Schema.Struct({ bucket: Schema.String, requests: Schema.Number, answered: Schema.Number }),
+		),
+	}),
+}) {}
+
+export class SecurityRuntimesRequest extends Schema.Class<SecurityRuntimesRequest>("SecurityRuntimesRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
+
+export const RuntimeReleaseRow = Schema.Struct({
+	cycle: Schema.String,
+	isEol: Schema.Boolean,
+	eolFrom: Schema.NullOr(Schema.String),
+	latest: Schema.NullOr(Schema.String),
+})
+
+/** A known vulnerability in a runtime version (`RuntimeAdvisory` in `@maple/domain/runtime-advisories`). */
+export const RuntimeAdvisoryRow = Schema.Struct({
+	id: Schema.String,
+	url: Schema.String,
+	summary: Schema.NullOr(Schema.String),
+	severity: Schema.Literals(ADVISORY_SEVERITIES),
+	fixedIn: Schema.NullOr(Schema.String),
+	published: Schema.NullOr(Schema.String),
+})
+
+export class SecurityRuntimesResponse extends Schema.Class<SecurityRuntimesResponse>(
+	"SecurityRuntimesResponse",
+)({
+	data: Schema.Struct({
+		runtimes: Schema.Array(
+			Schema.Struct({
+				service: Schema.String,
+				environment: Schema.String,
+				runtimeName: Schema.String,
+				runtimeVersion: Schema.String,
+				/** `process.executable.name`: tells Bun and Deno apart from Node.js under the stock OTel SDK. */
+				executableName: Schema.String,
+				sdkLanguage: Schema.String,
+				sdkName: Schema.String,
+				sdkVersion: Schema.String,
+				spans: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+		/** Release cycles per `RuntimeProduct` from `@maple/domain/runtime-posture`; a product whose read failed is absent. */
+		releases: Schema.Record(Schema.String, Schema.Array(RuntimeReleaseRow)),
+		/** Known vulnerabilities per `advisoryKey` (`nodejs@22.4.0`); a version whose read failed is absent. */
+		advisories: Schema.Record(Schema.String, Schema.Array(RuntimeAdvisoryRow)),
+		/** `advisoryKey`s not read this time because the request's read budget ran out. */
+		advisoriesSkipped: Schema.Array(Schema.String),
+	}),
+}) {}
+
 // Product events — funnels
 //
 // Step-based conversion funnels over `product_events` (browser page views and
@@ -2477,6 +2911,8 @@ export class PodDetailSummaryResponse extends Schema.Class<PodDetailSummaryRespo
 			podUid: Schema.String,
 			computeType: Schema.String,
 			podStartTime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			cpuUsage: Schema.Number,
@@ -2611,6 +3047,8 @@ export class NodeDetailSummaryResponse extends Schema.Class<NodeDetailSummaryRes
 			nodeUid: Schema.String,
 			kubeletVersion: Schema.String,
 			containerRuntime: Schema.String,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			...NodeCapacityFields,
@@ -2727,6 +3165,8 @@ export class WorkloadDetailSummaryResponse extends Schema.Class<WorkloadDetailSu
 			kind: WorkloadKindLiteral,
 			namespace: Schema.String,
 			podCount: Schema.Number,
+			/** The `src_` id of the source it last reported through; `""` if unstamped. */
+			sourceId: Schema.optionalKey(Schema.String),
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
 			avgCpuLimitPct: Schema.Number,
@@ -3099,6 +3539,34 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("awsInfraPresence", "/aws-infra-presence", {
+			payload: AwsInfraPresenceRequest,
+			success: AwsInfraPresenceResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraMetrics", "/aws-infra-metrics", {
+			payload: AwsInfraMetricsRequest,
+			success: AwsInfraMetricsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraSparklines", "/aws-infra-sparklines", {
+			payload: AwsInfraSparklinesRequest,
+			success: AwsInfraSparklinesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraTimeseries", "/aws-infra-timeseries", {
+			payload: AwsInfraTimeseriesRequest,
+			success: AwsInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("gcpInfraPresence", "/gcp-infra-presence", {
 			payload: GcpInfraPresenceRequest,
 			success: GcpInfraPresenceResponse,
@@ -3233,6 +3701,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("uptimePhaseTimings", "/uptime-phase-timings", {
+			payload: UptimePhaseTimingsRequest,
+			success: UptimePhaseTimingsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("uptimeChecks", "/uptime-checks", {
+			payload: UptimeChecksRequest,
+			success: UptimeChecksResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("releaseDetail", "/release-detail", {
 			payload: ReleaseDetailRequest,
 			success: ReleaseDetailResponse,
@@ -3269,6 +3751,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("serviceRuntimes", "/service-runtimes", {
+			payload: ServiceRuntimesRequest,
+			success: ServiceRuntimesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("serviceUsage", "/service-usage", {
 			payload: ServiceUsageRequest,
 			success: ServiceUsageResponse,
@@ -3286,6 +3775,34 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceEndpoints", "/service-endpoints", {
 			payload: ServiceEndpointsRequest,
 			success: ServiceEndpointsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceApiOverview", "/service-api-overview", {
+			payload: ServiceApiOverviewRequest,
+			success: ServiceApiOverviewResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointsTimeseries", "/service-endpoints-timeseries", {
+			payload: ServiceEndpointsTimeseriesRequest,
+			success: ServiceEndpointsTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointStatusBreakdown", "/service-endpoint-status-breakdown", {
+			payload: ServiceEndpointStatusBreakdownRequest,
+			success: ServiceEndpointStatusBreakdownResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointDetail", "/service-endpoint-detail", {
+			payload: ServiceEndpointDetailRequest,
+			success: ServiceEndpointDetailResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)
@@ -3538,6 +4055,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("webAnalyticsAiCrawlers", "/web-analytics-ai-crawlers", {
 			payload: WebAnalyticsAiCrawlersRequest,
 			success: WebAnalyticsAiCrawlersResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("securityExposure", "/security-exposure", {
+			payload: SecurityExposureRequest,
+			success: SecurityExposureResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("securityRuntimes", "/security-runtimes", {
+			payload: SecurityRuntimesRequest,
+			success: SecurityRuntimesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

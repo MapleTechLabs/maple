@@ -39,7 +39,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 	if (status === null && AsyncData.isFailure(data))
 		return errorState(h, {
 			failure: data.error,
-			title: `Failed to load the ${manifest.name} integration`,
+			title: `Couldn't load the ${manifest.name} integration`,
 			onRetry: Message.ClickedRetryStatus({ name: "chat" }),
 		})
 	const entry = catalogEntry(chatIntegrationId(connector))

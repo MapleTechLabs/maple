@@ -2,6 +2,7 @@
 // arrives (`last_used_at`) and what it refused; an integration's poller reports each tick's outcome
 // (`last_poll_*`, `disconnected_at`). A platform's policy says which of the two shows freshness.
 
+import { AWS_STREAM_STALE_MS } from "./aws"
 import type { SourcePlatform } from "./primitives"
 
 /** Worst first. */
@@ -34,6 +35,8 @@ interface HealthPolicy {
 	/** `data`: fresh while data arrives at the gateway. `poll`: fresh while the poller succeeds. */
 	readonly freshness: "data" | "poll"
 	readonly staleAfterMs: number
+	/** False when the poll only checks access and reads no data, so it never counts as data. */
+	readonly pollReadsData?: false
 }
 
 const MINUTE = 60_000
@@ -66,8 +69,8 @@ const POLICIES = {
 	// The inventory refreshes hourly; metrics arrive through the managed scrape.
 	planetscale: { freshness: "poll", staleAfterMs: 3 * 60 * MINUTE },
 	github: { freshness: "poll", staleAfterMs: 24 * 60 * MINUTE },
-	// The connection check runs hourly; three missed checks is no longer a blip.
-	aws: { freshness: "poll", staleAfterMs: 3 * 60 * MINUTE },
+	// The metric stream delivers about every minute; the hourly role check reads no data.
+	aws: { freshness: "data", staleAfterMs: AWS_STREAM_STALE_MS, pollReadsData: false },
 	// Project discovery runs hourly; metrics (scrape) and logs (drains) arrive later phases.
 	supabase: { freshness: "poll", staleAfterMs: 3 * 60 * MINUTE },
 } satisfies Record<SourcePlatform, HealthPolicy>
@@ -94,6 +97,8 @@ export interface SourceHealthInput {
 	readonly turnedOff?: string
 	/** Replaces the platform's window, for a source whose cadence is its own (a scrape interval). */
 	readonly staleAfterMs?: number
+	/** Why the integration's own record says it fails (a refused delivery), or undefined. */
+	readonly failing?: string
 }
 
 const latest = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b))
@@ -102,14 +107,13 @@ const formatWindow = (ms: number) =>
 	ms >= 60 * MINUTE ? `${Math.round(ms / (60 * MINUTE))} hours` : `${Math.round(ms / MINUTE)} minutes`
 
 export const sourceHealth = (source: SourceHealthInput, now: number): SourceHealthResult => {
-	const policy = POLICIES[source.platform]
-	const lastDataAt = latest(source.lastUsedAt, source.lastPollOkAt)
+	const policy: HealthPolicy = POLICIES[source.platform]
+	const lastDataAt =
+		policy.pollReadsData === false ? source.lastUsedAt : latest(source.lastUsedAt, source.lastPollOkAt)
 	const resources =
 		source.pollResources !== null && source.pollResources.total >= 2 ? source.pollResources : undefined
 	const result = (status: SourceHealthStatus, problem: string | null): SourceHealthResult =>
-		resources === undefined
-			? { status, lastDataAt, problem }
-			: { status, lastDataAt, problem, resources }
+		resources === undefined ? { status, lastDataAt, problem } : { status, lastDataAt, problem, resources }
 
 	if (source.status === "expired") return result("disconnected", "The token expired; senders get 401")
 	if (source.disconnectedAt !== null) {
@@ -121,6 +125,7 @@ export const sourceHealth = (source: SourceHealthInput, now: number): SourceHeal
 		return result("failing", source.lastRejection ?? "The gateway refused its requests")
 	}
 	if (source.lastPollError !== null) return result("failing", source.lastPollError)
+	if (source.failing !== undefined) return result("failing", source.failing)
 	if (resources !== undefined && resources.unhealthy > 0) {
 		return result("stale", `${resources.unhealthy} of ${resources.total} not up to date`)
 	}

@@ -67,7 +67,7 @@ export const diagnoseScrapeError = (
 			fixes: planetScale
 				? [
 						"Raise the scrape interval (e.g. to 60s or more) so Maple polls PlanetScale less often.",
-						"Each database branch is scraped as a separate target — many branches multiply request volume against PlanetScale's rate limit.",
+						"Each database branch is scraped as a separate target, so many branches multiply request volume against PlanetScale's rate limit.",
 						"Maple now backs off automatically after a 429, but a longer interval is the durable fix.",
 					]
 				: [
@@ -117,7 +117,7 @@ export const diagnoseScrapeError = (
 		return {
 			severity: "warn",
 			title: planetScale ? "PlanetScale-side error" : "Upstream error",
-			summary: `The target returned HTTP ${status} — this is usually transient.`,
+			summary: `The target returned HTTP ${status}. This is usually transient.`,
 			fixes: [
 				"This is typically a temporary upstream problem; Maple will keep retrying.",
 				planetScale

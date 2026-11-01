@@ -284,7 +284,7 @@ export function PlotTooltipBody<TDatum>({
 
 	return (
 		<div className="grid min-w-[9rem] max-w-[22rem] items-start gap-1.5">
-			<div className="border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight">
+			<div className="border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight">
 				{heading(datum)}
 			</div>
 			<div className="grid gap-1.5">

@@ -11,6 +11,7 @@ import {
 	CodeReviewListItem,
 	type CodeReviewListQuery,
 	CodeReviewListResponse,
+	type CodeReviewSortKey,
 	CodeReviewRepositoryCount,
 	CodeReviewTotals,
 	CodeReviewVerdicts,
@@ -78,6 +79,28 @@ const decodeCursor = (cursor: string) => {
 	const at = cursor.indexOf("_")
 	return { createdAt: Number(cursor.slice(0, at)), id: cursor.slice(at + 1) }
 }
+/** A sorted list's cursor: `<value>:` (`n` for none) ahead of the row's `encodeCursor`. */
+const encodeSortedCursor = (value: number | null, createdAtMs: number, id: string) =>
+	`${value === null ? "n" : String(value)}:${encodeCursor(createdAtMs, id)}`
+const decodeSortedCursor = (cursor: string) => {
+	const colon = cursor.indexOf(":")
+	const head = colon === -1 ? undefined : cursor.slice(0, colon)
+	return {
+		value: head === undefined || head === "n" ? null : Number(head),
+		...decodeCursor(cursor.slice(colon + 1)),
+	}
+}
+
+/** A list's `q`: a substring pattern (LIKE wildcards escaped), and the number when it reads as one. */
+const searchOf = (q: string | undefined) => {
+	const term = q?.trim() ?? ""
+	if (term === "") return undefined
+	const number = /^#?(\d{1,9})$/u.exec(term)?.[1]
+	return {
+		pattern: `%${term.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`,
+		number: number === undefined ? undefined : Number(number),
+	}
+}
 
 type Reviews = PG.ColumnAccessor<typeof PrReviews.columns>
 type Findings = PG.ColumnAccessor<typeof PrReviewFindings.columns>
@@ -93,6 +116,31 @@ const criticalCountOf = ($: Reviews) =>
 	PG.sql(
 		PG.int4,
 	)`coalesce((select count(*) from jsonb_array_elements(${$.reportJson}->'findings') as f where f->>'severity' = 'critical'), 0)::int`
+
+/** The value a non-default sort orders by, null for a review that has none (sorted last). */
+const sortValueOf = ($: Reviews, sortBy: Exclude<CodeReviewSortKey, "reviewed">) => {
+	switch (sortBy) {
+		case "issues":
+			return PG.sql(
+				PG.nullable(PG.int4),
+			)`(case when ${$.status} = 'completed' then ${findingsCountOf($)} end)`
+		case "quality":
+			return $.score
+		case "confidence":
+			return confidenceOf($)
+	}
+}
+/** `sortValueOf` for a row already read. */
+const rowSortValue = (row: CodeReviewListItem, sortBy: Exclude<CodeReviewSortKey, "reviewed">) => {
+	switch (sortBy) {
+		case "issues":
+			return row.status === "completed" ? row.findings : null
+		case "quality":
+			return row.score
+		case "confidence":
+			return row.confidence
+	}
+}
 
 const listColumns = ($: Reviews, repositoryFullName: PG.Expr<string>) => ({
 	id: $.id,
@@ -152,7 +200,7 @@ interface Window {
 export class PrReviewAnalyticsService extends Context.Service<
 	PrReviewAnalyticsService,
 	PrReviewAnalyticsServiceApi
->()("@maple/api/services/pr-review/PrReviewAnalyticsService", {
+>()("@maple/backend/services/pr-review/PrReviewAnalyticsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "PrReviewAnalyticsService", toPersistence)
@@ -431,9 +479,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 									pullRequests: pullRequestCountOf($),
 								}))
 								.where(($) => [...reviewWhere($), $.authorLogin.isNotNull()])
-								.groupBy("author")
-								.orderBy(["pullRequests", "desc"], ["author", "asc"])
-								.limit(TOP),
+								.groupBy("author"),
 						),
 					),
 					dbExecute((db) =>
@@ -505,17 +551,27 @@ export class PrReviewAnalyticsService extends Context.Service<
 						findings: found?.findings ?? 0,
 					})
 				}),
-				authors: authorReviews.flatMap((row) =>
-					row.author === null
-						? []
-						: [
-								new CodeReviewAuthorCount({
-									author: row.author,
-									pullRequests: row.pullRequests,
-									findings: findingsByAuthor.get(row.author) ?? 0,
-								}),
-							],
-				),
+				// Ranked here, not in SQL: a tie on pull requests (most authors have one or two) goes
+				// to the author with more issues, which lives in the other query.
+				authors: authorReviews
+					.flatMap((row) =>
+						row.author === null
+							? []
+							: [
+									new CodeReviewAuthorCount({
+										author: row.author,
+										pullRequests: row.pullRequests,
+										findings: findingsByAuthor.get(row.author) ?? 0,
+									}),
+								],
+					)
+					.toSorted(
+						(a, b) =>
+							b.pullRequests - a.pullRequests ||
+							b.findings - a.findings ||
+							a.author.localeCompare(b.author),
+					)
+					.slice(0, TOP),
 			})
 		})
 
@@ -524,9 +580,39 @@ export class PrReviewAnalyticsService extends Context.Service<
 			query: CodeReviewListQuery,
 		) {
 			const limit = query.limit ?? DEFAULT_PAGE
-			const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor)
+			const sortBy = query.sortBy ?? "reviewed"
+			const sortDir = query.sortDir ?? "desc"
+			const cursor = query.cursor === undefined ? undefined : decodeSortedCursor(query.cursor)
 			const window: Window = { start: query.startTime, end: query.endTime }
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
+			const search = searchOf(query.q)
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.code_review.limit": limit,
+				"maple.code_review.searched": search !== undefined,
+				"maple.code_review.sort": `${sortBy}:${sortDir}`,
+			})
+			// Newest first breaks every tie, so paging is stable whatever the sort.
+			const after = ($: Reviews) => {
+				if (cursor === undefined) return undefined
+				const recency = (dir: "asc" | "desc") =>
+					PG.or(
+						dir === "desc" ? $.createdAt.lt(cursor.createdAt) : $.createdAt.gt(cursor.createdAt),
+						PG.and(
+							$.createdAt.eq(cursor.createdAt),
+							dir === "desc"
+								? PG.undecoded($.id).lt(cursor.id)
+								: PG.undecoded($.id).gt(cursor.id),
+						),
+					)
+				if (sortBy === "reviewed") return recency(sortDir)
+				const value = sortValueOf($, sortBy)
+				if (cursor.value === null) return PG.and(value.isNull(), recency("desc"))
+				return PG.or(
+					sortDir === "desc" ? value.lt(cursor.value) : value.gt(cursor.value),
+					value.isNull(),
+					PG.and(value.eq(cursor.value), recency("desc")),
+				)
+			}
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					reviewsWithRepositories()
@@ -535,27 +621,44 @@ export class PrReviewAnalyticsService extends Context.Service<
 							...reviewFilter(orgId, window, query)($),
 							query.status === undefined ? undefined : $.status.eq(query.status),
 							query.verdict === undefined ? undefined : verdictOf($).eq(query.verdict),
-							cursor === undefined
+							search === undefined
 								? undefined
 								: PG.or(
-										$.createdAt.lt(cursor.createdAt),
-										PG.and(
-											$.createdAt.eq(cursor.createdAt),
-											PG.undecoded($.id).lt(cursor.id),
-										),
+										$.title.ilike(search.pattern),
+										$.repo.fullName.ilike(search.pattern),
+										$.authorLogin.ilike(search.pattern),
+										search.number === undefined ? undefined : $.number.eq(search.number),
 									),
+							after($),
 						])
-						.orderBy(["createdAt", "desc"], ["id", "desc"])
+						.orderBy(($) => {
+							if (sortBy === "reviewed")
+								return [
+									[$.createdAt, sortDir],
+									[$.id, sortDir],
+								]
+							const value = sortValueOf($, sortBy)
+							return [
+								[PG.sql(PG.int4)`(${value} is null)::int`, "asc"],
+								[value, sortDir],
+								[$.createdAt, "desc"],
+								[$.id, "desc"],
+							]
+						})
 						.limit(limit + 1),
 				),
 			)
 			const page = rows.slice(0, limit)
 			const reviews = yield* decodeRows(page, decodeListItem)
-			const last = page.at(-1)
+			const last = reviews.at(-1)
 			return new CodeReviewListResponse({
 				reviews,
 				nextCursor:
-					rows.length > limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
+					rows.length > limit && last !== undefined
+						? sortBy === "reviewed"
+							? encodeCursor(last.createdAt, last.id)
+							: encodeSortedCursor(rowSortValue(last, sortBy), last.createdAt, last.id)
+						: null,
 			})
 		})
 
@@ -659,7 +762,12 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const limit = query.limit ?? DEFAULT_PAGE
 			const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor)
 			const window: Window = { start: query.startTime, end: query.endTime }
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
+			const search = searchOf(query.q)
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.code_review.limit": limit,
+				"maple.code_review.searched": search !== undefined,
+			})
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					findingsWithRepositories()
@@ -669,6 +777,15 @@ export class PrReviewAnalyticsService extends Context.Service<
 							query.severity === undefined ? undefined : $.severity.eq(query.severity),
 							query.category === undefined ? undefined : $.category.eq(query.category),
 							query.status === undefined ? undefined : $.status.eq(query.status),
+							search === undefined
+								? undefined
+								: PG.or(
+										$.title.ilike(search.pattern),
+										$.path.ilike(search.pattern),
+										$.r.title.ilike(search.pattern),
+										$.repo.fullName.ilike(search.pattern),
+										search.number === undefined ? undefined : $.number.eq(search.number),
+									),
 							cursor === undefined
 								? undefined
 								: PG.or(

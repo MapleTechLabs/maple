@@ -22,7 +22,11 @@ export const ALERTING_SCHEDULE = {
 	// Under two periods, not one: the alert tick drains deliveries after it
 	// evaluates, so a one-minute bound would starve the drain on a slow minute.
 	// `supabase_logs` reads each opted-in project's last minute (Supabase allows 10 queries a minute).
-	"* * * * *": { lanes: ["alert", "error", "escalation", "supabase_logs"], deadline: "110 seconds" },
+	// `alert_long_query` runs the raw SQL rules allowed a longer query (see `alertSchedulerLaneOf`).
+	"* * * * *": {
+		lanes: ["alert", "alert_long_query", "error", "escalation", "supabase_logs"],
+		deadline: "110 seconds",
+	},
 	"*/5 * * * *": {
 		lanes: [
 			"anomaly",

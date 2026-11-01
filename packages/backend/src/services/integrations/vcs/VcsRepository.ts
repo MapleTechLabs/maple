@@ -25,6 +25,7 @@ import {
 	type VcsAccountType,
 	VcsRepositoryId,
 	type VcsRepoSyncStatus,
+	type VcsRepositoryDiscovery,
 } from "@maple/domain/http"
 import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -127,6 +128,7 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		status: row.status,
 		suspendedAt: row.suspendedAt,
 		ciTracesEnabled: row.ciTracesEnabled,
+		repositoryDiscovery: row.repositoryDiscovery,
 		installedByUserId: row.installedByUserId,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
@@ -208,6 +210,7 @@ interface UpsertInstallationInput {
 	readonly accountAvatarUrl: string | null
 	readonly repositorySelection: VcsRepoSelection
 	readonly installedByUserId: UserId
+	readonly repositoryDiscovery?: VcsRepositoryDiscovery
 }
 
 interface RepoSyncStatusUpdate {
@@ -230,1099 +233,1151 @@ type RepoQueryScope = "active" | "all"
 const repoFailing = (repo: { readonly syncStatus: string; readonly lastSyncError: string | null }) =>
 	repo.syncStatus === "error" || repo.lastSyncError !== null
 
-export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/services/vcs/VcsRepository", {
-	make: Effect.gen(function* () {
-		const database = yield* Database
-		const dbExecute = makeDbExecute(database, "VcsRepository", toPersistenceError)
-		const dbRead = (table: string) => makeDbExecute(database, "VcsRepository", toReadError(table))
+export class VcsRepository extends Context.Service<VcsRepository>()(
+	"@maple/backend/services/vcs/VcsRepository",
+	{
+		make: Effect.gen(function* () {
+			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "VcsRepository", toPersistenceError)
+			const dbRead = (table: string) => makeDbExecute(database, "VcsRepository", toReadError(table))
 
-		const selectInstallationRow = (provider: VcsProviderId, externalInstallationId: string) =>
-			dbRead("vcs_installations")((db) =>
-				db.run(
-					PG.from(VcsInstallations)
-						.select()
-						.where(($) => [
-							$.provider.eq(provider),
-							$.externalInstallationId.eq(externalInstallationId),
-						])
-						.limit(1),
-				),
-			)
-
-		// THE external → internal resolver for installations. Returns the whole row
-		// (including our internal `id`) so callers never need a resolve-then-refetch.
-		const resolveInstallation = Effect.fn("VcsRepository.resolveInstallation")(function* (
-			provider: VcsProviderId,
-			externalInstallationId: string,
-		) {
-			const rows = yield* selectInstallationRow(provider, externalInstallationId)
-			const row = Option.fromNullishOr(rows[0])
-			if (Option.isNone(row)) return Option.none<VcsInstallation>()
-			return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
-		})
-
-		const listInstallationsByOrg = Effect.fn("VcsRepository.listInstallationsByOrg")(function* (
-			orgId: OrgId,
-		) {
-			const rows = yield* dbRead("vcs_installations")((db) =>
-				db.run(
-					PG.from(VcsInstallations)
-						.select()
-						.where(($) => [$.orgId.eq(orgId)]),
-				),
-			)
-			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
-		})
-
-		// Every installation across every org — the cross-org listing the sync
-		// scheduler walks. Status is not filtered here; the caller applies
-		// `isInstallationProcessable` (the single place that rule lives).
-		const listAllInstallations = Effect.fn("VcsRepository.listAllInstallations")(function* () {
-			const rows = yield* dbRead("vcs_installations")((db) =>
-				db.run(PG.from(VcsInstallations).select()),
-			)
-			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
-		})
-
-		// Look up an installation by Maple's own id — org-scoped as a safety bound
-		// (UUIDs are globally unique, but the org filter prevents cross-tenant reads).
-		const getInstallationById = Effect.fn("VcsRepository.getInstallationById")(function* (
-			orgId: OrgId,
-			installationId: VcsInstallationId,
-		) {
-			const rows = yield* dbRead("vcs_installations")((db) =>
-				db.run(
-					PG.from(VcsInstallations)
-						.select()
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)])
-						.limit(1),
-				),
-			)
-			const row = Option.fromNullishOr(rows[0])
-			if (Option.isNone(row)) return Option.none<VcsInstallation>()
-			return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
-		})
-
-		const upsertInstallation = Effect.fn("VcsRepository.upsertInstallation")(function* (
-			input: UpsertInstallationInput,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			const id = newInstallationId()
-			// An installation sends CI traces as its own source, created with the row. A reinstall keeps
-			// the row and so its source.
-			const rows = yield* dbRead("vcs_installations")((db) =>
-				db.transaction(
-					upsertWithSource(
-						db,
-						input.orgId,
-						{ platform: "github", name: integrationSourceName.github(input) },
-						now,
-						db
-							.run(
-								PG.from(VcsInstallations)
-									.select("sourceId")
-									.where(($) => [
-										$.provider.eq(input.provider),
-										$.externalInstallationId.eq(input.externalInstallationId),
-									])
-									.limit(1)
-									// Held until the upsert, so a concurrent purge cannot delete the reused source.
-									.forUpdate(),
-							)
-							.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
-						(sourceId) =>
-							db
-								.run(
-									PG.insertInto(VcsInstallations)
-								// `status`/`suspended_at` are omitted: a new row takes the schema
-								// default ("active"), and on conflict they are left untouched so a
-								// reconcile can't un-suspend. Status is owned by markInstallationStatus.
-								.values({
-									id,
-									orgId: input.orgId,
-									sourceId,
-									provider: input.provider,
-									externalInstallationId: input.externalInstallationId,
-									accountLogin: input.accountLogin,
-									accountType: input.accountType,
-									externalAccountId: input.externalAccountId,
-									accountAvatarUrl: input.accountAvatarUrl,
-									repositorySelection: input.repositorySelection,
-									installedByUserId: input.installedByUserId,
-									createdAt: now,
-									updatedAt: now,
-								})
-								.onConflictDoUpdate({
-									target: ["provider", "externalInstallationId"],
-									// Ownership columns (org_id, installed_by_user_id, created_at) and
-									// status/suspended_at are immutable on conflict; only mutable
-									// provider metadata is refreshed.
-									set: (_, excluded) => ({
-										accountLogin: excluded.accountLogin,
-										accountType: excluded.accountType,
-										externalAccountId: excluded.externalAccountId,
-										accountAvatarUrl: excluded.accountAvatarUrl,
-										repositorySelection: excluded.repositorySelection,
-										updatedAt: excluded.updatedAt,
-									}),
-								})
-								.returning(),
-								)
-								.pipe(Effect.map(([row]) => row)),
-					).pipe(Effect.map((row) => [row])),
-				),
-			)
-
-			// `.returning()` gives back the upserted row in the same round-trip, avoiding
-			// a read-after-write race with a concurrent status change.
-			const row = Option.fromNullishOr(rows[0])
-			if (Option.isNone(row)) {
-				return yield* new VcsRepoPersistenceError({ message: "Installation upsert returned no row" })
-			}
-			return yield* decodeOne("vcs_installations", row.value, rowToInstallation)
-		})
-
-		/** Health reporting is best effort: a failed report never fails the write it follows. */
-		const reportBestEffort = (report: Effect.Effect<void, VcsRepoPersistenceError>) =>
-			report.pipe(
-				Effect.catchTag("@maple/http/errors/VcsRepoPersistenceError", (error) =>
-					Effect.logWarning("[VCS] GitHub source poll report failed").pipe(
-						Effect.annotateLogs({ error: error.message }),
-					),
-				),
-			)
-
-		const markInstallationStatus = Effect.fn("VcsRepository.markInstallationStatus")(function* (
-			installationId: VcsInstallationId,
-			status: VcsInstallStatus,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsInstallations)
-						.set({ status, suspendedAt: status === "suspended" ? now : null, updatedAt: now })
-						.where(($) => [$.id.eq(installationId)])
-						.returning("sourceId"),
-				),
-			)
-			// A reactivation reconnects the source at once with its repositories' health: an
-			// installation without repositories never settles a sync that would.
-			yield* Effect.forEach(
-				rows,
-				(row) =>
-					reportBestEffort(
-						dbExecute((db) =>
-							Effect.gen(function* () {
-								const outcome: PollOutcome =
-									status === "active"
-										? yield* installationOutcome(db, installationId)
-										: { _tag: "Disconnected", reason: `The GitHub installation is ${status}` }
-								yield* reportPoll(db, row.sourceId, outcome, now)
-							}),
-						),
-					),
-				{ discard: true },
-			)
-		})
-
-		/** An installation's repositories as one poll outcome: Ok, or the first failing one's error. */
-		const installationOutcome = Effect.fnUntraced(function* (
-			db: MapleDb,
-			installationId: VcsInstallationId,
-		) {
-			const repos = yield* db.run(
-				PG.from(VcsRepositories)
-					.select("fullName", "syncStatus", "lastSyncError")
-					.where(($) => [$.installationId.eq(installationId), $.status.eq("active")])
-					.orderBy(($) => [[$.fullName, "asc"]]),
-			)
-			const failing = repos.filter(repoFailing)
-			const resources =
-				repos.length >= 2 ? { resources: { total: repos.length, unhealthy: failing.length } } : {}
-			const first = failing[0]
-			const outcome: PollOutcome =
-				first === undefined
-					? { _tag: "Ok", ...resources }
-					: {
-							_tag: "Failed",
-							error: `${first.fullName}: ${first.lastSyncError ?? "the last sync failed"}`,
-							...resources,
-						}
-			return outcome
-		})
-
-		/**
-		 * After a repository's sync settles, reports its installation's repositories on the
-		 * installation's source: Ok, or the first failing repository's error.
-		 */
-		const reportInstallationSync = (repositoryId: VcsRepositoryId, now: number) =>
-			reportBestEffort(
-				dbExecute((db) =>
-					Effect.gen(function* () {
-						const [target] = yield* db.run(
-							PG.from(VcsRepositories)
-								.select("installationId", "syncStatus", "lastSyncError")
-								.where(($) => [$.id.eq(repositoryId)])
-								.limit(1),
-						)
-						if (target === undefined) return
-						const [installation] = yield* db.run(
-							PG.from(VcsInstallations)
-								.select("sourceId", "status")
-								.where(($) => [$.id.eq(target.installationId)])
-								.limit(1),
-						)
-						// A suspended or removed installation keeps its disconnect until it is reactivated.
-						if (installation === undefined || installation.status !== "active") return
-						const sourceId = installation.sourceId
-						if (sourceId === null) return
-						// A healthy installation reported in the last minute: another healthy repo changes nothing,
-						// and an installation sync settles every repo in a burst.
-						const [source] = yield* db.run(
-							PG.from(Sources)
-								.select("lastPollAt", "lastPollError")
-								.where(($) => [$.id.eq(sourceId)])
-								.limit(1),
-						)
-						if (
-							!repoFailing(target) &&
-							source !== undefined &&
-							source.lastPollError === null &&
-							source.lastPollAt !== null &&
-							now - source.lastPollAt < 60_000
-						) {
-							return
-						}
-						const outcome = yield* installationOutcome(db, target.installationId)
-						yield* reportPoll(db, sourceId, outcome, now)
-					}),
-				),
-			)
-
-		// Org-scoped, so an installation id from another tenant no-ops.
-		const setCiTracesEnabled = Effect.fn("VcsRepository.setCiTracesEnabled")(function* (
-			orgId: OrgId,
-			installationId: VcsInstallationId,
-			enabled: boolean,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsInstallations)
-						.set({ ciTracesEnabled: enabled, updatedAt: now })
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
-				),
-			)
-		})
-
-		const listRepositoriesByInstallation = Effect.fn("VcsRepository.listRepositoriesByInstallation")(
-			function* (installationId: VcsInstallationId, scope: RepoQueryScope) {
-				const rows = yield* dbRead("vcs_repositories")((db) =>
+			const selectInstallationRow = (provider: VcsProviderId, externalInstallationId: string) =>
+				dbRead("vcs_installations")((db) =>
 					db.run(
-						PG.from(VcsRepositories)
-							.select(repoColumns)
+						PG.from(VcsInstallations)
+							.select()
 							.where(($) => [
-								$.installationId.eq(installationId),
-								// "all" includes provider-removed repos; "active" filters them out.
-								scope === "active" ? $.status.eq("active") : undefined,
-							]),
+								$.provider.eq(provider),
+								$.externalInstallationId.eq(externalInstallationId),
+							])
+							.limit(1),
 					),
 				)
-				return yield* decodeAll("vcs_repositories", rows, rowToRepo)
-			},
-		)
 
-		// THE external → internal resolver for repositories. Returns the whole row
-		// (including internal `id` and `installationId`) so the sync path never needs
-		// a separate refetch. Org-scoped so a tenant can't read another's repo.
-		const resolveRepository = Effect.fn("VcsRepository.resolveRepository")(function* (
-			orgId: OrgId,
-			provider: VcsProviderId,
-			externalRepoId: string,
-		) {
-			const rows = yield* dbRead("vcs_repositories")((db) =>
-				db.run(
-					PG.from(VcsRepositories)
-						.select(repoColumns)
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.provider.eq(provider),
-							$.externalRepoId.eq(externalRepoId),
-						])
-						.limit(1),
-				),
-			)
-			const row = Option.fromNullishOr(rows[0])
-			if (Option.isNone(row)) return Option.none<VcsRepo>()
-			return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
-		})
-
-		// Look up a repo by Maple's own id — org-scoped as a safety bound
-		// (UUIDs are globally unique, but the org filter prevents cross-tenant reads).
-		const getRepositoryById = Effect.fn("VcsRepository.getRepositoryById")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-		) {
-			const rows = yield* dbRead("vcs_repositories")((db) =>
-				db.run(
-					PG.from(VcsRepositories)
-						.select(repoColumns)
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
-						.limit(1),
-				),
-			)
-			const row = Option.fromNullishOr(rows[0])
-			if (Option.isNone(row)) return Option.none<VcsRepo>()
-			return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
-		})
-
-		// Bulk sibling of getRepositoryById. The services table resolves a whole
-		// page of deploy rows at once; issuing one read per repository would turn
-		// a single request into N outbound calls, which is the dominant driver of
-		// Postgres latency on this worker.
-		const getRepositoriesByIds = Effect.fn("VcsRepository.getRepositoriesByIds")(function* (
-			orgId: OrgId,
-			repositoryIds: ReadonlyArray<VcsRepositoryId>,
-		) {
-			if (repositoryIds.length === 0) return Arr.empty<VcsRepo>()
-			const rows = yield* dbRead("vcs_repositories")((db) =>
-				db.run(
-					PG.from(VcsRepositories)
-						.select(repoColumns)
-						.where(($) => [$.orgId.eq(orgId), $.id.in_(...new Set(repositoryIds))]),
-				),
-			)
-			return yield* Effect.forEach(rows, (row) => decodeOne("vcs_repositories", row, rowToRepo))
-		})
-
-		// Persist the installation's repositories. Takes the resolved installation
-		// (not raw ids) so org/provider/internal-installation-id all come from one
-		// entity — the rows link to it by our internal `installationId`.
-		const upsertRepositories = Effect.fn("VcsRepository.upsertRepositories")(function* (
-			installation: VcsInstallation,
-			repos: ReadonlyArray<RepoUpsertInput>,
-		) {
-			if (repos.length === 0) return
-			const now = yield* Clock.currentTimeMillis
-			const values = repos.map((r) => ({
-				id: newRepositoryId(),
-				orgId: installation.orgId,
-				provider: installation.provider,
-				installationId: installation.id,
-				externalRepoId: r.externalRepoId,
-				owner: r.owner,
-				name: r.name,
-				fullName: r.fullName,
-				defaultBranch: r.defaultBranch,
-				// Seed the tracked branch to the default on first discovery. Left
-				// untouched on conflict below (the user owns it thereafter).
-				trackedBranch: r.defaultBranch,
-				htmlUrl: r.htmlUrl,
-				isPrivate: r.isPrivate,
-				isArchived: r.isArchived,
-				// Every repo handed to upsert is one the installation can currently
-				// see, so it is active. Set explicitly (not via column default) so the
-				// conflict clause below can reactivate a previously-removed repo.
-				status: "active" as const,
-				createdAt: now,
-				updatedAt: now,
-			}))
-			// Share-lock the owning installation for the duration of the write. A purge
-			// deletes the installation row FIRST, so it either waits for this lock and
-			// then sweeps these rows, or has already won — and a worker holding a stale
-			// snapshot writes nothing instead of resurrecting purged data.
-			yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						const parent = yield* db.run(
-							PG.from(VcsInstallations)
-								.select("id")
-								.where(($) => [$.orgId.eq(installation.orgId), $.id.eq(installation.id)])
-								.forShare(),
-						)
-						if (parent.length === 0) return
-						yield* Effect.forEach(
-							Arr.chunksOf(values, INSERT_CHUNK_SIZE),
-							(chunk) =>
-								db.run(
-									PG.insertInto(VcsRepositories)
-										.values(chunk)
-										.onConflictDoUpdate({
-											target: ["orgId", "provider", "externalRepoId"],
-											set: (_, excluded) => ({
-												// A repo can be reassigned to a different installation; refresh the link.
-												installationId: excluded.installationId,
-												owner: excluded.owner,
-												name: excluded.name,
-												fullName: excluded.fullName,
-												defaultBranch: excluded.defaultBranch,
-												htmlUrl: excluded.htmlUrl,
-												isPrivate: excluded.isPrivate,
-												isArchived: excluded.isArchived,
-												// Reactivate on re-add: a repo present in this upsert is visible
-												// again, so a prior "removed" soft-delete is cleared. (sync_status
-												// is deliberately left untouched; its backfill state still holds.)
-												status: excluded.status,
-												updatedAt: excluded.updatedAt,
-											}),
-										}),
-								),
-							{ discard: true },
-						)
-					}),
-				),
-			)
-		})
-
-		// Soft-delete: the provider revoked access to this repo. The row and its
-		// synced commits are kept (so history survives and a re-grant reactivates
-		// cleanly via upsertRepositories); `status` gates further event processing.
-		const markRepositoryRemoved = Effect.fn("VcsRepository.markRepositoryRemoved")(function* (
-			repositoryId: VcsRepositoryId,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsRepositories)
-						.set({ status: "removed", updatedAt: now })
-						.where(($) => [$.id.eq(repositoryId)]),
-				),
-			)
-		})
-
-		// Hard-delete a single repo and its commits by Maple's own repository id.
-		// User-initiated only: the dashboard "delete from Maple" action. Confirm the
-		// row exists for this org first (so a foreign/absent id is a no-op, not a
-		// blind delete). Idempotent.
-		const purgeRepository = Effect.fn("VcsRepository.purgeRepository")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-		) {
-			const repoRows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(VcsRepositories)
-						.select("id")
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
-						.limit(1),
-				),
-			)
-			if (repoRows[0]?.id === undefined) return false
-			// One atomic transaction, PARENT FIRST: deleting the repo row before its
-			// children pairs with the share-lock gates in the child upserts — an
-			// in-flight sync either commits before this delete acquires the row lock
-			// (its rows are swept below) or sees the row gone and writes nothing.
-			yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						yield* db.run(
-							PG.deleteFrom(VcsRepositories).where(($) => [
-								$.orgId.eq(orgId),
-								$.id.eq(repositoryId),
-							]),
-						)
-						yield* db.run(
-							PG.deleteFrom(VcsRepositoryBranches).where(($) => [
-								$.repositoryId.eq(repositoryId),
-							]),
-						)
-						yield* db.run(
-							PG.deleteFrom(VcsCommits).where(($) => [$.repositoryId.eq(repositoryId)]),
-						)
-					}),
-				),
-			)
-			return true
-		})
-
-		// Write a sync-status transition. `last_synced_at` is touched ONLY when the
-		// caller passes `syncedAt` (i.e. a sync actually completed) — so marking a repo
-		// "backfilling" at the start of / mid a run never stamps a misleading sync time;
-		// it stays whatever the last *successful* sync left.
-		const updateRepoSyncStatus = Effect.fn("VcsRepository.updateRepoSyncStatus")(function* (
-			repositoryId: VcsRepositoryId,
-			update: RepoSyncStatusUpdate,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsRepositories)
-						.set({
-							syncStatus: update.status,
-							lastSyncError: update.error ?? null,
-							...("syncedAt" in update ? { lastSyncedAt: update.syncedAt ?? null } : undefined),
-							updatedAt: now,
-						})
-						.where(($) => [$.id.eq(repositoryId)]),
-				),
-			)
-			// Only a settled sync speaks for the installation; a start or a backfill step does not.
-			if (update.status === "ready" || update.status === "error") {
-				yield* reportInstallationSync(repositoryId, now)
-			}
-		})
-
-		// Flag a single repo's sync as errored without touching its cursor /
-		// last-synced time (a failed fetch must not wipe prior progress).
-		const markRepoSyncError = Effect.fn("VcsRepository.markRepoSyncError")(function* (
-			repositoryId: VcsRepositoryId,
-			message: string,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsRepositories)
-						.set({ syncStatus: "error", lastSyncError: message, updatedAt: now })
-						.where(($) => [$.id.eq(repositoryId)]),
-				),
-			)
-			yield* reportInstallationSync(repositoryId, now)
-		})
-
-		// Persist commits for an already-resolved repository. Commits belong to the
-		// repo only (no commit↔branch link — a repo tracks one branch at a time).
-		// Idempotent: upsert on (repository_id, sha). The commit row denormalizes
-		// org/provider for the dashboard's (org_id, sha) lookup.
-		const upsertCommits = Effect.fn("VcsRepository.upsertCommits")(function* (
-			repository: VcsRepo,
-			commits: ReadonlyArray<CommitUpsertInput>,
-		) {
-			if (commits.length === 0) return 0
-			const now = yield* Clock.currentTimeMillis
-			// Decode every SHA through the branded type before writing — a bad SHA
-			// throws here and is mapped to VcsRepoDecodeError below.
-			const values = yield* Effect.try({
-				try: () =>
-					commits.map((c) => {
-						const sha = decodeGitSha(c.sha)
-						return {
-							id: newCommitRowId(),
-							orgId: repository.orgId,
-							provider: repository.provider,
-							repositoryId: repository.id,
-							sha,
-							message: c.message,
-							authorName: c.authorName,
-							authorEmail: c.authorEmail,
-							authorLogin: c.authorLogin,
-							authorAvatarUrl: c.authorAvatarUrl,
-							authoredAt: c.authoredAt,
-							committedAt: c.committedAt,
-							htmlUrl: c.htmlUrl,
-							createdAt: now,
-						}
-					}),
-				catch: (err) =>
-					new VcsRepoDecodeError({
-						message: err instanceof Error ? err.message : "commit decode failed",
-						table: "vcs_commits",
-						column: "sha",
-					}),
+			// THE external → internal resolver for installations. Returns the whole row
+			// (including our internal `id`) so callers never need a resolve-then-refetch.
+			const resolveInstallation = Effect.fn("VcsRepository.resolveInstallation")(function* (
+				provider: VcsProviderId,
+				externalInstallationId: string,
+			) {
+				const rows = yield* selectInstallationRow(provider, externalInstallationId)
+				const row = Option.fromNullishOr(rows[0])
+				if (Option.isNone(row)) return Option.none<VcsInstallation>()
+				return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
 			})
 
-			// Upsert the immutable commit rows, refreshing mutable metadata on conflict.
-			// Gated on the share-locked repo row (see upsertRepositories): a worker that
-			// waited on GitHub across a purge must not reinsert a deleted repo's private
-			// commits. Returns 0 when the repo is gone.
-			return yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						const parent = yield* db.run(lockRepositoryRow(repository.orgId, repository.id))
-						if (parent.length === 0) return 0
-						yield* Effect.forEach(
-							Arr.chunksOf(values, INSERT_CHUNK_SIZE),
-							(chunk) =>
-								db.run(
-									PG.insertInto(VcsCommits)
-										.values(chunk)
-										.onConflictDoUpdate({
-											target: ["repositoryId", "sha"],
-											set: (_, excluded) => ({
-												message: excluded.message,
-												authorName: excluded.authorName,
-												authorEmail: excluded.authorEmail,
-												authorLogin: excluded.authorLogin,
-												authorAvatarUrl: excluded.authorAvatarUrl,
-												authoredAt: excluded.authoredAt,
-												committedAt: excluded.committedAt,
-												htmlUrl: excluded.htmlUrl,
-											}),
-										}),
-								),
-							{ discard: true },
-						)
-						return values.length
-					}),
-				),
-			)
-		})
-
-		const findCommitBySha = Effect.fn("VcsRepository.findCommitBySha")(function* (
-			orgId: OrgId,
-			sha: GitCommitSha,
-		) {
-			// Joins the owning repo (existence only — no columns read) so a commit
-			// orphaned by a purge racing a stale write is unreadable, not leaked.
-			const rows = yield* dbRead("vcs_commits")((db) =>
-				db.run(
-					commitsWithLiveRepo()
-						.where(($) => [$.orgId.eq(orgId), $.sha.eq(sha)])
-						.limit(1),
-				),
-			)
-			const row = Option.fromNullishOr(rows[0])
-			if (Option.isNone(row)) return Option.none<VcsCommit>()
-			return Option.some(yield* decodeOne("vcs_commits", row.value, rowToCommit))
-		})
-
-		// Bulk sibling of findCommitBySha, for resolving a whole table of deploy
-		// rows in one read instead of one per SHA. Unknown SHAs are simply absent
-		// from the result — callers fall back to a provider probe for those.
-		const findCommitsByShas = Effect.fn("VcsRepository.findCommitsByShas")(function* (
-			orgId: OrgId,
-			shas: ReadonlyArray<GitCommitSha>,
-		) {
-			if (shas.length === 0) return Arr.empty<VcsCommit>()
-			const rows = yield* dbRead("vcs_commits")((db) =>
-				db.run(
-					// Same orphan shield as findCommitBySha.
-					commitsWithLiveRepo().where(($) => [$.orgId.eq(orgId), $.sha.in_(...new Set(shas))]),
-				),
-			)
-			return yield* Effect.forEach(rows, (row) => decodeOne("vcs_commits", row, rowToCommit))
-		})
-
-		// A repo's commits in (afterMs, untilMs], newest first. A repo stores only its
-		// tracked branch, so this is what shipped between two deploys of it.
-		const listCommitsInWindow = Effect.fn("VcsRepository.listCommitsInWindow")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-			window: { readonly afterMs: number; readonly untilMs: number; readonly limit: number },
-		) {
-			const rows = yield* dbRead("vcs_commits")((db) =>
-				db.run(
-					commitsWithLiveRepo()
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.repositoryId.eq(repositoryId),
-							$.committedAt.gt(window.afterMs),
-							$.committedAt.lte(window.untilMs),
-						])
-						.orderBy(["committedAt", "desc"])
-						.limit(window.limit),
-				),
-			)
-			return yield* Effect.forEach(rows, (row) => decodeOne("vcs_commits", row, rowToCommit))
-		})
-
-		// Bulk upsert a repo's branches from a provider listing — just the picker's
-		// list of names. `isDefault` is a display hint derived here (the provider is
-		// oblivious to it) by matching the repo's `defaultBranch`. Which branch is
-		// tracked lives on the repo (`tracked_branch`), not here.
-		const upsertBranches = Effect.fn("VcsRepository.upsertBranches")(function* (
-			repository: VcsRepo,
-			branches: ReadonlyArray<BranchUpsertInput>,
-		) {
-			if (branches.length === 0) return
-			const now = yield* Clock.currentTimeMillis
-			const values = yield* Effect.try({
-				try: () =>
-					branches.map((b) => {
-						const isDefault = b.name === repository.defaultBranch
-						return {
-							id: newBranchId(),
-							orgId: repository.orgId,
-							provider: repository.provider,
-							repositoryId: repository.id,
-							name: b.name,
-							isDefault,
-							headSha: b.headSha === null ? null : decodeGitSha(b.headSha),
-							createdAt: now,
-							updatedAt: now,
-						}
-					}),
-				catch: (err) =>
-					new VcsRepoDecodeError({
-						message: err instanceof Error ? err.message : "branch decode failed",
-						table: "vcs_repository_branches",
-						column: "head_sha",
-					}),
+			const listInstallationsByOrg = Effect.fn("VcsRepository.listInstallationsByOrg")(function* (
+				orgId: OrgId,
+			) {
+				const rows = yield* dbRead("vcs_installations")((db) =>
+					db.run(
+						PG.from(VcsInstallations)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+				)
+				return yield* decodeAll("vcs_installations", rows, rowToInstallation)
 			})
-			// Gated on the share-locked repo row (see upsertRepositories) so a stale
-			// worker cannot repopulate the picker of a purged repo.
-			yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						const parent = yield* db.run(lockRepositoryRow(repository.orgId, repository.id))
-						if (parent.length === 0) return
-						yield* Effect.forEach(
-							Arr.chunksOf(values, INSERT_CHUNK_SIZE),
-							(chunk) =>
-								db.run(
-									PG.insertInto(VcsRepositoryBranches)
-										.values(chunk)
-										.onConflictDoUpdate({
-											target: ["repositoryId", "name"],
-											set: (_, excluded) => ({
-												isDefault: excluded.isDefault,
-												headSha: excluded.headSha,
-												updatedAt: excluded.updatedAt,
-											}),
-										}),
-								),
-							{ discard: true },
-						)
-					}),
-				),
-			)
-		})
 
-		// Resolve a branch by name, creating it if absent (a push can surface a branch
-		// the picker hasn't listed yet, keeping it selectable). `isDefault` is the
-		// display hint derived from the repo's default branch; `head_sha` is left
-		// untouched on an existing row.
-		const getOrCreateBranch = Effect.fn("VcsRepository.getOrCreateBranch")(function* (
-			repository: VcsRepo,
-			name: string,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			const isDefault = name === repository.defaultBranch
-			const id = newBranchId()
-			const rows = yield* dbRead("vcs_repository_branches")((db) =>
-				db.run(
-					PG.insertInto(VcsRepositoryBranches)
-						.values({
-							id,
-							orgId: repository.orgId,
-							provider: repository.provider,
-							repositoryId: repository.id,
-							name,
-							isDefault,
-							headSha: null,
-							createdAt: now,
-							updatedAt: now,
-						})
-						.onConflictDoUpdate({
-							target: ["repositoryId", "name"],
-							set: (_, excluded) => ({
-								isDefault: excluded.isDefault,
-								updatedAt: excluded.updatedAt,
-							}),
-						})
-						.returning(),
-				),
-			)
-			const row = Option.fromNullishOr(rows[0])
-			if (Option.isNone(row)) {
-				return yield* new VcsRepoPersistenceError({ message: "Branch upsert returned no row" })
-			}
-			return yield* decodeOne("vcs_repository_branches", row.value, rowToBranch)
-		})
-
-		const listBranchesByRepository = Effect.fn("VcsRepository.listBranchesByRepository")(function* (
-			repositoryId: VcsRepositoryId,
-		) {
-			const rows = yield* dbRead("vcs_repository_branches")((db) =>
-				db.run(
-					PG.from(VcsRepositoryBranches)
-						.select()
-						.where(($) => [$.repositoryId.eq(repositoryId)]),
-				),
-			)
-			return yield* decodeAll("vcs_repository_branches", rows, rowToBranch)
-		})
-
-		// Retarget the repo's single tracked branch: point `tracked_branch` at the new
-		// branch AND wipe stored commits (they were the old branch's history). Leaves
-		// `sync_status`/`last_synced_at` untouched — the sync engine owns those
-		// transitions for the subsequent backfill. The update + commit-wipe run as one
-		// atomic batch so we never point at the new branch while still holding old commits.
-		const changeTrackedBranch = Effect.fn("VcsRepository.changeTrackedBranch")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-			branch: string,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						yield* db.run(
-							PG.update(VcsRepositories)
-								.set({ trackedBranch: branch, updatedAt: now })
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)]),
-						)
-						// Org-scope the commit wipe too: without it, an id belonging to
-						// another org would no-op the update but still delete that org's
-						// commits. Mirrors the org-scoped delete in purgeRepository.
-						yield* db.run(
-							PG.deleteFrom(VcsCommits).where(($) => [
-								$.orgId.eq(orgId),
-								$.repositoryId.eq(repositoryId),
-							]),
-						)
-					}),
-				),
-			)
-		})
-
-		// The pull request review opt-in. Org-scoped like every other write here so
-		// a repository id from another tenant no-ops.
-		const setPrReviewEnabled = Effect.fn("VcsRepository.setPrReviewEnabled")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-			enabled: boolean,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsRepositories)
-						.set({ prReviewEnabled: enabled, updatedAt: now })
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)]),
-				),
-			)
-		})
-
-		// A repository's review settings. A stored value that no longer decodes (a field renamed
-		// since) reads as the defaults rather than failing every review of the repository.
-		const getPrReviewConfig = Effect.fn("VcsRepository.getPrReviewConfig")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-		) {
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(VcsRepositories)
-						// Read raw, so a stale value reaches the lenient decode below instead of failing the row.
-						.select(($) => ({ config: PG.undecoded($.prReviewConfig) }))
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
-						.limit(1),
-				),
-			)
-			return Option.getOrElse(
-				decodePrReviewConfig(rows[0]?.config ?? {}),
-				() => new PrReviewRepositoryConfig({}),
-			)
-		})
-
-		const setPrReviewConfig = Effect.fn("VcsRepository.setPrReviewConfig")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-			config: PrReviewRepositoryConfig,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsRepositories)
-						.set({ prReviewConfig: config, updatedAt: now })
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
-						.returning("id"),
-				),
-			)
-			return rows.length > 0
-		})
-
-		const getPrReviewSettings = Effect.fn("VcsRepository.getPrReviewSettings")(function* (orgId: OrgId) {
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(PrReviewSettings)
-						.select(($) => ({ model: $.model, defaults: PG.undecoded($.defaults) }))
-						.where(($) => [$.orgId.eq(orgId)])
-						.limit(1),
-				),
-			)
-			// Each field decodes on its own: a model dropped from the catalog keeps the defaults.
-			const model = decodePrReviewModel(rows[0]?.model)
-			const defaults = decodePrReviewConfig(rows[0]?.defaults ?? {})
-			return new PrReviewOrgSettings({
-				...(Option.isSome(model) ? { model: model.value } : undefined),
-				...(Option.isSome(defaults) ? { defaults: defaults.value } : undefined),
+			// Every installation across every org — the cross-org listing the sync
+			// scheduler walks. Status is not filtered here; the caller applies
+			// `isInstallationProcessable` (the single place that rule lives).
+			const listAllInstallations = Effect.fn("VcsRepository.listAllInstallations")(function* () {
+				const rows = yield* dbRead("vcs_installations")((db) =>
+					db.run(PG.from(VcsInstallations).select()),
+				)
+				return yield* decodeAll("vcs_installations", rows, rowToInstallation)
 			})
-		})
 
-		// What a review of the repository runs with: its own settings over the organization's.
-		const getEffectivePrReviewConfig = Effect.fn("VcsRepository.getEffectivePrReviewConfig")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-		) {
-			const [settings, config] = yield* Effect.all(
-				[getPrReviewSettings(orgId), getPrReviewConfig(orgId, repositoryId)],
-				{ concurrency: 2 },
-			)
-			return mergePrReviewConfig(settings.defaults, config)
-		})
+			// Look up an installation by Maple's own id — org-scoped as a safety bound
+			// (UUIDs are globally unique, but the org filter prevents cross-tenant reads).
+			const getInstallationById = Effect.fn("VcsRepository.getInstallationById")(function* (
+				orgId: OrgId,
+				installationId: VcsInstallationId,
+			) {
+				const rows = yield* dbRead("vcs_installations")((db) =>
+					db.run(
+						PG.from(VcsInstallations)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)])
+							.limit(1),
+					),
+				)
+				const row = Option.fromNullishOr(rows[0])
+				if (Option.isNone(row)) return Option.none<VcsInstallation>()
+				return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
+			})
 
-		const setPrReviewSettings = Effect.fn("VcsRepository.setPrReviewSettings")(function* (
-			orgId: OrgId,
-			settings: PrReviewOrgSettings,
-			updatedBy: UserId,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			const values = {
-				model: settings.model ?? null,
-				defaults: settings.defaults ?? null,
-				updatedAt: now,
-				updatedBy,
-			}
-			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(PrReviewSettings)
-						.values({ orgId, ...values })
-						.onConflictDoUpdate({ target: ["orgId"], set: values }),
-				),
-			)
-		})
+			const upsertInstallation = Effect.fn("VcsRepository.upsertInstallation")(function* (
+				input: UpsertInstallationInput,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const id = newInstallationId()
+				// An installation sends CI traces as its own source, created with the row. A reinstall keeps
+				// the row and so its source.
+				const rows = yield* dbRead("vcs_installations")((db) =>
+					db.transaction(
+						upsertWithSource(
+							db,
+							input.orgId,
+							{ platform: "github", name: integrationSourceName.github(input) },
+							now,
+							db
+								.run(
+									PG.from(VcsInstallations)
+										.select("sourceId")
+										.where(($) => [
+											$.provider.eq(input.provider),
+											$.externalInstallationId.eq(input.externalInstallationId),
+										])
+										.limit(1)
+										// Held until the upsert, so a concurrent purge cannot delete the reused source.
+										.forUpdate(),
+								)
+								.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
+							(sourceId) =>
+								db
+									.run(
+										PG.insertInto(VcsInstallations)
+											// `status`/`suspended_at` are omitted: a new row takes the schema
+											// default ("active"), and on conflict they are left untouched so a
+											// reconcile can't un-suspend. Status is owned by markInstallationStatus.
+											.values({
+												id,
+												orgId: input.orgId,
+												sourceId,
+												provider: input.provider,
+												externalInstallationId: input.externalInstallationId,
+												accountLogin: input.accountLogin,
+												accountType: input.accountType,
+												externalAccountId: input.externalAccountId,
+												accountAvatarUrl: input.accountAvatarUrl,
+												repositorySelection: input.repositorySelection,
+												installedByUserId: input.installedByUserId,
+												repositoryDiscovery: input.repositoryDiscovery ?? null,
+												createdAt: now,
+												updatedAt: now,
+											})
+											.onConflictDoUpdate({
+												target: ["provider", "externalInstallationId"],
+												where: ($) => $.orgId.eq(input.orgId),
+												// Ownership columns (org_id, installed_by_user_id, created_at) and
+												// status/suspended_at are immutable on conflict; only mutable
+												// provider metadata is refreshed.
+												set: (_, excluded) => ({
+													accountLogin: excluded.accountLogin,
+													accountType: excluded.accountType,
+													externalAccountId: excluded.externalAccountId,
+													accountAvatarUrl: excluded.accountAvatarUrl,
+													repositorySelection: excluded.repositorySelection,
+													updatedAt: excluded.updatedAt,
+													repositoryDiscovery:
+														input.repositoryDiscovery === undefined
+															? undefined
+															: excluded.repositoryDiscovery,
+												}),
+											})
+											.returning(),
+									)
+									.pipe(Effect.map(([row]) => row)),
+						).pipe(Effect.map((row) => [row])),
+					),
+				)
 
-		// Drop the branch rows by id (their repo keeps its commits — a branch is just
-		// a name in the picker now).
-		const deleteBranchesByIds = (ids: ReadonlyArray<VcsBranchId>) =>
-			Effect.gen(function* () {
-				if (ids.length === 0) return
+				// `.returning()` gives back the upserted row in the same round-trip, avoiding
+				// a read-after-write race with a concurrent status change.
+				const row = Option.fromNullishOr(rows[0])
+				if (Option.isNone(row)) {
+					return yield* new VcsRepoPersistenceError({
+						message: "Installation upsert returned no row",
+					})
+				}
+				return yield* decodeOne("vcs_installations", row.value, rowToInstallation)
+			})
+
+			// The row lock serializes acknowledgements with reconnect's upsert. A prior job,
+			// duplicate delivery, or scheduled sync cannot settle a newer connect request.
+			const finishRepositoryDiscovery = Effect.fn("VcsRepository.finishRepositoryDiscovery")(function* (
+				installationId: VcsInstallationId,
+				discovery: Exclude<VcsRepositoryDiscovery, { readonly _tag: "Pending" }>,
+			) {
+				return yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const [row] = yield* db.run(
+								PG.from(VcsInstallations)
+									.select("repositoryDiscovery")
+									.where(($) => [$.id.eq(installationId)])
+									.forUpdate(),
+							)
+							if (
+								row?.repositoryDiscovery?._tag !== "Pending" ||
+								row.repositoryDiscovery.requestId !== discovery.requestId
+							)
+								return
+							yield* db.run(
+								PG.update(VcsInstallations)
+									.set({ repositoryDiscovery: discovery })
+									.where(($) => [$.id.eq(installationId)]),
+							)
+						}),
+					),
+				)
+			})
+
+			/** Health reporting is best effort: a failed report never fails the write it follows. */
+			const reportBestEffort = (report: Effect.Effect<void, VcsRepoPersistenceError>) =>
+				report.pipe(
+					Effect.catchTag("@maple/http/errors/VcsRepoPersistenceError", (error) =>
+						Effect.logWarning("[VCS] GitHub source poll report failed").pipe(
+							Effect.annotateLogs({ error: error.message }),
+						),
+					),
+				)
+
+			const markInstallationStatus = Effect.fn("VcsRepository.markInstallationStatus")(function* (
+				installationId: VcsInstallationId,
+				status: VcsInstallStatus,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsInstallations)
+							.set({ status, suspendedAt: status === "suspended" ? now : null, updatedAt: now })
+							.where(($) => [$.id.eq(installationId)])
+							.returning("sourceId"),
+					),
+				)
+				// A reactivation reconnects the source at once with its repositories' health: an
+				// installation without repositories never settles a sync that would.
 				yield* Effect.forEach(
-					Arr.chunksOf(ids, INARRAY_CHUNK_SIZE),
-					(chunk) =>
-						dbExecute((db) =>
-							db.run(PG.deleteFrom(VcsRepositoryBranches).where(($) => [$.id.in_(...chunk)])),
+					rows,
+					(row) =>
+						reportBestEffort(
+							dbExecute((db) =>
+								Effect.gen(function* () {
+									const outcome: PollOutcome =
+										status === "active"
+											? yield* installationOutcome(db, installationId)
+											: {
+													_tag: "Disconnected",
+													reason: `The GitHub installation is ${status}`,
+												}
+									yield* reportPoll(db, row.sourceId, outcome, now)
+								}),
+							),
 						),
 					{ discard: true },
 				)
 			})
 
-		// Reconcile branch deletions after a full re-list: hard-delete local branch
-		// rows absent from the provider's set, returning their names so the caller can
-		// detect whether the tracked branch vanished. When the listing was truncated
-		// at the page cap, skip deletion (absence isn't authoritative) and report none.
-		const reconcileBranchDeletions = Effect.fn("VcsRepository.reconcileBranchDeletions")(function* (
-			repositoryId: VcsRepositoryId,
-			remoteNames: ReadonlySet<string>,
-			options: { readonly truncated: boolean },
-		) {
-			if (options.truncated) return Arr.empty<string>()
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(VcsRepositoryBranches)
-						.select("id", "name")
-						.where(($) => [$.repositoryId.eq(repositoryId)]),
-				),
-			)
-			const stale = rows.filter((r) => !remoteNames.has(r.name))
-			yield* deleteBranchesByIds(stale.map((r) => r.id))
-			const staleNames: ReadonlyArray<string> = stale.map((r) => r.name)
-			return staleNames
-		})
+			/** An installation's repositories as one poll outcome: Ok, or the first failing one's error. */
+			const installationOutcome = Effect.fnUntraced(function* (
+				db: MapleDb,
+				installationId: VcsInstallationId,
+			) {
+				const repos = yield* db.run(
+					PG.from(VcsRepositories)
+						.select("fullName", "syncStatus", "lastSyncError")
+						.where(($) => [$.installationId.eq(installationId), $.status.eq("active")])
+						.orderBy(($) => [[$.fullName, "asc"]]),
+				)
+				const failing = repos.filter(repoFailing)
+				const resources =
+					repos.length >= 2 ? { resources: { total: repos.length, unhealthy: failing.length } } : {}
+				const first = failing[0]
+				const outcome: PollOutcome =
+					first === undefined
+						? { _tag: "Ok", ...resources }
+						: {
+								_tag: "Failed",
+								error: `${first.fullName}: ${first.lastSyncError ?? "the last sync failed"}`,
+								...resources,
+							}
+				return outcome
+			})
 
-		// Delete a single branch by name (a `delete` webhook), returning whether a row
-		// was actually removed so the caller can react if it was the tracked branch.
-		const deleteBranch = Effect.fn("VcsRepository.deleteBranch")(function* (
-			repositoryId: VcsRepositoryId,
-			name: string,
-		) {
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(VcsRepositoryBranches)
-						.select("id")
-						.where(($) => [$.repositoryId.eq(repositoryId), $.name.eq(name)])
-						.limit(1),
-				),
-			)
-			const id = rows[0]?.id
-			if (id === undefined) return false
-			yield* deleteBranchesByIds([id])
-			return true
-		})
+			/**
+			 * After a repository's sync settles, reports its installation's repositories on the
+			 * installation's source: Ok, or the first failing repository's error.
+			 */
+			const reportInstallationSync = (repositoryId: VcsRepositoryId, now: number) =>
+				reportBestEffort(
+					dbExecute((db) =>
+						Effect.gen(function* () {
+							const [target] = yield* db.run(
+								PG.from(VcsRepositories)
+									.select("installationId", "syncStatus", "lastSyncError")
+									.where(($) => [$.id.eq(repositoryId)])
+									.limit(1),
+							)
+							if (target === undefined) return
+							const [installation] = yield* db.run(
+								PG.from(VcsInstallations)
+									.select("sourceId", "status")
+									.where(($) => [$.id.eq(target.installationId)])
+									.limit(1),
+							)
+							// A suspended or removed installation keeps its disconnect until it is reactivated.
+							if (installation === undefined || installation.status !== "active") return
+							const sourceId = installation.sourceId
+							if (sourceId === null) return
+							// A healthy installation reported in the last minute: another healthy repo changes nothing,
+							// and an installation sync settles every repo in a burst.
+							const [source] = yield* db.run(
+								PG.from(Sources)
+									.select("lastPollAt", "lastPollError")
+									.where(($) => [$.id.eq(sourceId)])
+									.limit(1),
+							)
+							if (
+								!repoFailing(target) &&
+								source !== undefined &&
+								source.lastPollError === null &&
+								source.lastPollAt !== null &&
+								now - source.lastPollAt < 60_000
+							) {
+								return
+							}
+							const outcome = yield* installationOutcome(db, target.installationId)
+							yield* reportPoll(db, sourceId, outcome, now)
+						}),
+					),
+				)
 
-		// Remove an installation and everything beneath it (its repositories and
-		// their commits). The dashboard disconnect flow uses this: severing the
-		// integration must not strand the org's repos/commits in the VCS tables.
-		// Idempotent — re-running drops whatever still remains.
-		const purgeInstallation = Effect.fn("VcsRepository.purgeInstallation")(function* (
-			orgId: OrgId,
-			installationId: VcsInstallationId,
-		) {
-			// One atomic transaction, PARENTS FIRST: the installation, then its repos,
-			// then their branches + commits (chunked under the bind-variable cap). With
-			// the share-lock gates in the upserts, an in-flight sync either commits
-			// before a parent delete (its rows are swept below) or writes nothing. The
-			// repo-id read happens INSIDE the transaction, after the installation
-			// delete, so a repo created moments earlier is swept rather than escaping.
-			yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						const installations = yield* db.run(
-							PG.deleteFrom(VcsInstallations)
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)])
-								.returning("sourceId"),
-						)
-						yield* deleteSourcesOf(db, orgId, installations)
-						const repoRows = yield* db.run(
+			// Org-scoped, so an installation id from another tenant no-ops.
+			const setCiTracesEnabled = Effect.fn("VcsRepository.setCiTracesEnabled")(function* (
+				orgId: OrgId,
+				installationId: VcsInstallationId,
+				enabled: boolean,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsInstallations)
+							.set({ ciTracesEnabled: enabled, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
+					),
+				)
+			})
+
+			const listRepositoriesByInstallation = Effect.fn("VcsRepository.listRepositoriesByInstallation")(
+				function* (installationId: VcsInstallationId, scope: RepoQueryScope) {
+					const rows = yield* dbRead("vcs_repositories")((db) =>
+						db.run(
 							PG.from(VcsRepositories)
-								.select("id")
-								.where(($) => [$.orgId.eq(orgId), $.installationId.eq(installationId)]),
-						)
-						const repoIds = repoRows.map((r) => r.id)
-						yield* db.run(
-							PG.deleteFrom(VcsRepositories).where(($) => [
-								$.orgId.eq(orgId),
-								$.installationId.eq(installationId),
-							]),
-						)
-						const chunks = Arr.chunksOf(repoIds, INARRAY_CHUNK_SIZE)
-						yield* Effect.forEach(
-							chunks,
-							(chunk) =>
-								db.run(
-									PG.deleteFrom(VcsRepositoryBranches).where(($) => [
-										$.repositoryId.in_(...chunk),
-									]),
-								),
-							{ discard: true },
-						)
-						yield* Effect.forEach(
-							chunks,
-							(chunk) =>
-								db.run(
-									PG.deleteFrom(VcsCommits).where(($) => [$.repositoryId.in_(...chunk)]),
-								),
-							{ discard: true },
-						)
-					}),
-				),
+								.select(repoColumns)
+								.where(($) => [
+									$.installationId.eq(installationId),
+									// "all" includes provider-removed repos; "active" filters them out.
+									scope === "active" ? $.status.eq("active") : undefined,
+								]),
+						),
+					)
+					return yield* decodeAll("vcs_repositories", rows, rowToRepo)
+				},
 			)
-		})
 
-		return {
-			resolveInstallation,
-			getInstallationById,
-			listInstallationsByOrg,
-			listAllInstallations,
-			upsertInstallation,
-			markInstallationStatus,
-			setCiTracesEnabled,
-			listRepositoriesByInstallation,
-			resolveRepository,
-			getRepositoryById,
-			getRepositoriesByIds,
-			upsertRepositories,
-			markRepositoryRemoved,
-			purgeRepository,
-			updateRepoSyncStatus,
-			markRepoSyncError,
-			upsertCommits,
-			findCommitBySha,
-			findCommitsByShas,
-			listCommitsInWindow,
-			upsertBranches,
-			getOrCreateBranch,
-			listBranchesByRepository,
-			changeTrackedBranch,
-			setPrReviewEnabled,
-			getPrReviewConfig,
-			setPrReviewConfig,
-			getEffectivePrReviewConfig,
-			getPrReviewSettings,
-			setPrReviewSettings,
-			reconcileBranchDeletions,
-			deleteBranch,
-			purgeInstallation,
-		}
-	}),
-}) {
+			// THE external → internal resolver for repositories. Returns the whole row
+			// (including internal `id` and `installationId`) so the sync path never needs
+			// a separate refetch. Org-scoped so a tenant can't read another's repo.
+			const resolveRepository = Effect.fn("VcsRepository.resolveRepository")(function* (
+				orgId: OrgId,
+				provider: VcsProviderId,
+				externalRepoId: string,
+			) {
+				const rows = yield* dbRead("vcs_repositories")((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							.select(repoColumns)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.provider.eq(provider),
+								$.externalRepoId.eq(externalRepoId),
+							])
+							.limit(1),
+					),
+				)
+				const row = Option.fromNullishOr(rows[0])
+				if (Option.isNone(row)) return Option.none<VcsRepo>()
+				return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
+			})
+
+			// Look up a repo by Maple's own id — org-scoped as a safety bound
+			// (UUIDs are globally unique, but the org filter prevents cross-tenant reads).
+			const getRepositoryById = Effect.fn("VcsRepository.getRepositoryById")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+			) {
+				const rows = yield* dbRead("vcs_repositories")((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							.select(repoColumns)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
+							.limit(1),
+					),
+				)
+				const row = Option.fromNullishOr(rows[0])
+				if (Option.isNone(row)) return Option.none<VcsRepo>()
+				return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
+			})
+
+			// Bulk sibling of getRepositoryById. The services table resolves a whole
+			// page of deploy rows at once; issuing one read per repository would turn
+			// a single request into N outbound calls, which is the dominant driver of
+			// Postgres latency on this worker.
+			const getRepositoriesByIds = Effect.fn("VcsRepository.getRepositoriesByIds")(function* (
+				orgId: OrgId,
+				repositoryIds: ReadonlyArray<VcsRepositoryId>,
+			) {
+				if (repositoryIds.length === 0) return Arr.empty<VcsRepo>()
+				const rows = yield* dbRead("vcs_repositories")((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							.select(repoColumns)
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(...new Set(repositoryIds))]),
+					),
+				)
+				return yield* Effect.forEach(rows, (row) => decodeOne("vcs_repositories", row, rowToRepo))
+			})
+
+			// Persist the installation's repositories. Takes the resolved installation
+			// (not raw ids) so org/provider/internal-installation-id all come from one
+			// entity — the rows link to it by our internal `installationId`.
+			const upsertRepositories = Effect.fn("VcsRepository.upsertRepositories")(function* (
+				installation: VcsInstallation,
+				repos: ReadonlyArray<RepoUpsertInput>,
+			) {
+				if (repos.length === 0) return
+				const now = yield* Clock.currentTimeMillis
+				const values = repos.map((r) => ({
+					id: newRepositoryId(),
+					orgId: installation.orgId,
+					provider: installation.provider,
+					installationId: installation.id,
+					externalRepoId: r.externalRepoId,
+					owner: r.owner,
+					name: r.name,
+					fullName: r.fullName,
+					defaultBranch: r.defaultBranch,
+					// Seed the tracked branch to the default on first discovery. Left
+					// untouched on conflict below (the user owns it thereafter).
+					trackedBranch: r.defaultBranch,
+					htmlUrl: r.htmlUrl,
+					isPrivate: r.isPrivate,
+					isArchived: r.isArchived,
+					// Every repo handed to upsert is one the installation can currently
+					// see, so it is active. Set explicitly (not via column default) so the
+					// conflict clause below can reactivate a previously-removed repo.
+					status: "active" as const,
+					createdAt: now,
+					updatedAt: now,
+				}))
+				// Share-lock the owning installation for the duration of the write. A purge
+				// deletes the installation row FIRST, so it either waits for this lock and
+				// then sweeps these rows, or has already won — and a worker holding a stale
+				// snapshot writes nothing instead of resurrecting purged data.
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const parent = yield* db.run(
+								PG.from(VcsInstallations)
+									.select("id")
+									.where(($) => [$.orgId.eq(installation.orgId), $.id.eq(installation.id)])
+									.forShare(),
+							)
+							if (parent.length === 0) return
+							yield* Effect.forEach(
+								Arr.chunksOf(values, INSERT_CHUNK_SIZE),
+								(chunk) =>
+									db.run(
+										PG.insertInto(VcsRepositories)
+											.values(chunk)
+											.onConflictDoUpdate({
+												target: ["orgId", "provider", "externalRepoId"],
+												set: (_, excluded) => ({
+													// A repo can be reassigned to a different installation; refresh the link.
+													installationId: excluded.installationId,
+													owner: excluded.owner,
+													name: excluded.name,
+													fullName: excluded.fullName,
+													defaultBranch: excluded.defaultBranch,
+													htmlUrl: excluded.htmlUrl,
+													isPrivate: excluded.isPrivate,
+													isArchived: excluded.isArchived,
+													// Reactivate on re-add: a repo present in this upsert is visible
+													// again, so a prior "removed" soft-delete is cleared. (sync_status
+													// is deliberately left untouched; its backfill state still holds.)
+													status: excluded.status,
+													updatedAt: excluded.updatedAt,
+												}),
+											}),
+									),
+								{ discard: true },
+							)
+						}),
+					),
+				)
+			})
+
+			// Soft-delete: the provider revoked access to this repo. The row and its
+			// synced commits are kept (so history survives and a re-grant reactivates
+			// cleanly via upsertRepositories); `status` gates further event processing.
+			const markRepositoryRemoved = Effect.fn("VcsRepository.markRepositoryRemoved")(function* (
+				repositoryId: VcsRepositoryId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsRepositories)
+							.set({ status: "removed", updatedAt: now })
+							.where(($) => [$.id.eq(repositoryId)]),
+					),
+				)
+			})
+
+			// Hard-delete a single repo and its commits by Maple's own repository id.
+			// User-initiated only: the dashboard "delete from Maple" action. Confirm the
+			// row exists for this org first (so a foreign/absent id is a no-op, not a
+			// blind delete). Idempotent.
+			const purgeRepository = Effect.fn("VcsRepository.purgeRepository")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+			) {
+				const repoRows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							.select("id")
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
+							.limit(1),
+					),
+				)
+				if (repoRows[0]?.id === undefined) return false
+				// One atomic transaction, PARENT FIRST: deleting the repo row before its
+				// children pairs with the share-lock gates in the child upserts — an
+				// in-flight sync either commits before this delete acquires the row lock
+				// (its rows are swept below) or sees the row gone and writes nothing.
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.run(
+								PG.deleteFrom(VcsRepositories).where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(repositoryId),
+								]),
+							)
+							yield* db.run(
+								PG.deleteFrom(VcsRepositoryBranches).where(($) => [
+									$.repositoryId.eq(repositoryId),
+								]),
+							)
+							yield* db.run(
+								PG.deleteFrom(VcsCommits).where(($) => [$.repositoryId.eq(repositoryId)]),
+							)
+						}),
+					),
+				)
+				return true
+			})
+
+			// Write a sync-status transition. `last_synced_at` is touched ONLY when the
+			// caller passes `syncedAt` (i.e. a sync actually completed) — so marking a repo
+			// "backfilling" at the start of / mid a run never stamps a misleading sync time;
+			// it stays whatever the last *successful* sync left.
+			const updateRepoSyncStatus = Effect.fn("VcsRepository.updateRepoSyncStatus")(function* (
+				repositoryId: VcsRepositoryId,
+				update: RepoSyncStatusUpdate,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsRepositories)
+							.set({
+								syncStatus: update.status,
+								lastSyncError: update.error ?? null,
+								...("syncedAt" in update
+									? { lastSyncedAt: update.syncedAt ?? null }
+									: undefined),
+								updatedAt: now,
+							})
+							.where(($) => [$.id.eq(repositoryId)]),
+					),
+				)
+				// Only a settled sync speaks for the installation; a start or a backfill step does not.
+				if (update.status === "ready" || update.status === "error") {
+					yield* reportInstallationSync(repositoryId, now)
+				}
+			})
+
+			// Flag a single repo's sync as errored without touching its cursor /
+			// last-synced time (a failed fetch must not wipe prior progress).
+			const markRepoSyncError = Effect.fn("VcsRepository.markRepoSyncError")(function* (
+				repositoryId: VcsRepositoryId,
+				message: string,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsRepositories)
+							.set({ syncStatus: "error", lastSyncError: message, updatedAt: now })
+							.where(($) => [$.id.eq(repositoryId)]),
+					),
+				)
+				yield* reportInstallationSync(repositoryId, now)
+			})
+
+			// Persist commits for an already-resolved repository. Commits belong to the
+			// repo only (no commit↔branch link — a repo tracks one branch at a time).
+			// Idempotent: upsert on (repository_id, sha). The commit row denormalizes
+			// org/provider for the dashboard's (org_id, sha) lookup.
+			const upsertCommits = Effect.fn("VcsRepository.upsertCommits")(function* (
+				repository: VcsRepo,
+				commits: ReadonlyArray<CommitUpsertInput>,
+			) {
+				if (commits.length === 0) return 0
+				const now = yield* Clock.currentTimeMillis
+				// Decode every SHA through the branded type before writing — a bad SHA
+				// throws here and is mapped to VcsRepoDecodeError below.
+				const values = yield* Effect.try({
+					try: () =>
+						commits.map((c) => {
+							const sha = decodeGitSha(c.sha)
+							return {
+								id: newCommitRowId(),
+								orgId: repository.orgId,
+								provider: repository.provider,
+								repositoryId: repository.id,
+								sha,
+								message: c.message,
+								authorName: c.authorName,
+								authorEmail: c.authorEmail,
+								authorLogin: c.authorLogin,
+								authorAvatarUrl: c.authorAvatarUrl,
+								authoredAt: c.authoredAt,
+								committedAt: c.committedAt,
+								htmlUrl: c.htmlUrl,
+								createdAt: now,
+							}
+						}),
+					catch: (err) =>
+						new VcsRepoDecodeError({
+							message: err instanceof Error ? err.message : "commit decode failed",
+							table: "vcs_commits",
+							column: "sha",
+						}),
+				})
+
+				// Upsert the immutable commit rows, refreshing mutable metadata on conflict.
+				// Gated on the share-locked repo row (see upsertRepositories): a worker that
+				// waited on GitHub across a purge must not reinsert a deleted repo's private
+				// commits. Returns 0 when the repo is gone.
+				return yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const parent = yield* db.run(lockRepositoryRow(repository.orgId, repository.id))
+							if (parent.length === 0) return 0
+							yield* Effect.forEach(
+								Arr.chunksOf(values, INSERT_CHUNK_SIZE),
+								(chunk) =>
+									db.run(
+										PG.insertInto(VcsCommits)
+											.values(chunk)
+											.onConflictDoUpdate({
+												target: ["repositoryId", "sha"],
+												set: (_, excluded) => ({
+													message: excluded.message,
+													authorName: excluded.authorName,
+													authorEmail: excluded.authorEmail,
+													authorLogin: excluded.authorLogin,
+													authorAvatarUrl: excluded.authorAvatarUrl,
+													authoredAt: excluded.authoredAt,
+													committedAt: excluded.committedAt,
+													htmlUrl: excluded.htmlUrl,
+												}),
+											}),
+									),
+								{ discard: true },
+							)
+							return values.length
+						}),
+					),
+				)
+			})
+
+			const findCommitBySha = Effect.fn("VcsRepository.findCommitBySha")(function* (
+				orgId: OrgId,
+				sha: GitCommitSha,
+			) {
+				// Joins the owning repo (existence only — no columns read) so a commit
+				// orphaned by a purge racing a stale write is unreadable, not leaked.
+				const rows = yield* dbRead("vcs_commits")((db) =>
+					db.run(
+						commitsWithLiveRepo()
+							.where(($) => [$.orgId.eq(orgId), $.sha.eq(sha)])
+							.limit(1),
+					),
+				)
+				const row = Option.fromNullishOr(rows[0])
+				if (Option.isNone(row)) return Option.none<VcsCommit>()
+				return Option.some(yield* decodeOne("vcs_commits", row.value, rowToCommit))
+			})
+
+			// Bulk sibling of findCommitBySha, for resolving a whole table of deploy
+			// rows in one read instead of one per SHA. Unknown SHAs are simply absent
+			// from the result — callers fall back to a provider probe for those.
+			const findCommitsByShas = Effect.fn("VcsRepository.findCommitsByShas")(function* (
+				orgId: OrgId,
+				shas: ReadonlyArray<GitCommitSha>,
+			) {
+				if (shas.length === 0) return Arr.empty<VcsCommit>()
+				const rows = yield* dbRead("vcs_commits")((db) =>
+					db.run(
+						// Same orphan shield as findCommitBySha.
+						commitsWithLiveRepo().where(($) => [$.orgId.eq(orgId), $.sha.in_(...new Set(shas))]),
+					),
+				)
+				return yield* Effect.forEach(rows, (row) => decodeOne("vcs_commits", row, rowToCommit))
+			})
+
+			// A repo's commits in (afterMs, untilMs], newest first. A repo stores only its
+			// tracked branch, so this is what shipped between two deploys of it.
+			const listCommitsInWindow = Effect.fn("VcsRepository.listCommitsInWindow")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				window: { readonly afterMs: number; readonly untilMs: number; readonly limit: number },
+			) {
+				const rows = yield* dbRead("vcs_commits")((db) =>
+					db.run(
+						commitsWithLiveRepo()
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.repositoryId.eq(repositoryId),
+								$.committedAt.gt(window.afterMs),
+								$.committedAt.lte(window.untilMs),
+							])
+							.orderBy(["committedAt", "desc"])
+							.limit(window.limit),
+					),
+				)
+				return yield* Effect.forEach(rows, (row) => decodeOne("vcs_commits", row, rowToCommit))
+			})
+
+			// Bulk upsert a repo's branches from a provider listing — just the picker's
+			// list of names. `isDefault` is a display hint derived here (the provider is
+			// oblivious to it) by matching the repo's `defaultBranch`. Which branch is
+			// tracked lives on the repo (`tracked_branch`), not here.
+			const upsertBranches = Effect.fn("VcsRepository.upsertBranches")(function* (
+				repository: VcsRepo,
+				branches: ReadonlyArray<BranchUpsertInput>,
+			) {
+				if (branches.length === 0) return
+				const now = yield* Clock.currentTimeMillis
+				const values = yield* Effect.try({
+					try: () =>
+						branches.map((b) => {
+							const isDefault = b.name === repository.defaultBranch
+							return {
+								id: newBranchId(),
+								orgId: repository.orgId,
+								provider: repository.provider,
+								repositoryId: repository.id,
+								name: b.name,
+								isDefault,
+								headSha: b.headSha === null ? null : decodeGitSha(b.headSha),
+								createdAt: now,
+								updatedAt: now,
+							}
+						}),
+					catch: (err) =>
+						new VcsRepoDecodeError({
+							message: err instanceof Error ? err.message : "branch decode failed",
+							table: "vcs_repository_branches",
+							column: "head_sha",
+						}),
+				})
+				// Gated on the share-locked repo row (see upsertRepositories) so a stale
+				// worker cannot repopulate the picker of a purged repo.
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const parent = yield* db.run(lockRepositoryRow(repository.orgId, repository.id))
+							if (parent.length === 0) return
+							yield* Effect.forEach(
+								Arr.chunksOf(values, INSERT_CHUNK_SIZE),
+								(chunk) =>
+									db.run(
+										PG.insertInto(VcsRepositoryBranches)
+											.values(chunk)
+											.onConflictDoUpdate({
+												target: ["repositoryId", "name"],
+												set: (_, excluded) => ({
+													isDefault: excluded.isDefault,
+													headSha: excluded.headSha,
+													updatedAt: excluded.updatedAt,
+												}),
+											}),
+									),
+								{ discard: true },
+							)
+						}),
+					),
+				)
+			})
+
+			// Resolve a branch by name, creating it if absent (a push can surface a branch
+			// the picker hasn't listed yet, keeping it selectable). `isDefault` is the
+			// display hint derived from the repo's default branch; `head_sha` is left
+			// untouched on an existing row.
+			const getOrCreateBranch = Effect.fn("VcsRepository.getOrCreateBranch")(function* (
+				repository: VcsRepo,
+				name: string,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const isDefault = name === repository.defaultBranch
+				const id = newBranchId()
+				const rows = yield* dbRead("vcs_repository_branches")((db) =>
+					db.run(
+						PG.insertInto(VcsRepositoryBranches)
+							.values({
+								id,
+								orgId: repository.orgId,
+								provider: repository.provider,
+								repositoryId: repository.id,
+								name,
+								isDefault,
+								headSha: null,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.onConflictDoUpdate({
+								target: ["repositoryId", "name"],
+								set: (_, excluded) => ({
+									isDefault: excluded.isDefault,
+									updatedAt: excluded.updatedAt,
+								}),
+							})
+							.returning(),
+					),
+				)
+				const row = Option.fromNullishOr(rows[0])
+				if (Option.isNone(row)) {
+					return yield* new VcsRepoPersistenceError({ message: "Branch upsert returned no row" })
+				}
+				return yield* decodeOne("vcs_repository_branches", row.value, rowToBranch)
+			})
+
+			const listBranchesByRepository = Effect.fn("VcsRepository.listBranchesByRepository")(function* (
+				repositoryId: VcsRepositoryId,
+			) {
+				const rows = yield* dbRead("vcs_repository_branches")((db) =>
+					db.run(
+						PG.from(VcsRepositoryBranches)
+							.select()
+							.where(($) => [$.repositoryId.eq(repositoryId)]),
+					),
+				)
+				return yield* decodeAll("vcs_repository_branches", rows, rowToBranch)
+			})
+
+			// Retarget the repo's single tracked branch: point `tracked_branch` at the new
+			// branch AND wipe stored commits (they were the old branch's history). Leaves
+			// `sync_status`/`last_synced_at` untouched — the sync engine owns those
+			// transitions for the subsequent backfill. The update + commit-wipe run as one
+			// atomic batch so we never point at the new branch while still holding old commits.
+			const changeTrackedBranch = Effect.fn("VcsRepository.changeTrackedBranch")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				branch: string,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.run(
+								PG.update(VcsRepositories)
+									.set({ trackedBranch: branch, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)]),
+							)
+							// Org-scope the commit wipe too: without it, an id belonging to
+							// another org would no-op the update but still delete that org's
+							// commits. Mirrors the org-scoped delete in purgeRepository.
+							yield* db.run(
+								PG.deleteFrom(VcsCommits).where(($) => [
+									$.orgId.eq(orgId),
+									$.repositoryId.eq(repositoryId),
+								]),
+							)
+						}),
+					),
+				)
+			})
+
+			// The pull request review opt-in. Org-scoped like every other write here so
+			// a repository id from another tenant no-ops.
+			const setPrReviewEnabled = Effect.fn("VcsRepository.setPrReviewEnabled")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				enabled: boolean,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsRepositories)
+							.set({ prReviewEnabled: enabled, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)]),
+					),
+				)
+			})
+
+			// A repository's review settings. A stored value that no longer decodes (a field renamed
+			// since) reads as the defaults rather than failing every review of the repository.
+			const getPrReviewConfig = Effect.fn("VcsRepository.getPrReviewConfig")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+			) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							// Read raw, so a stale value reaches the lenient decode below instead of failing the row.
+							.select(($) => ({ config: PG.undecoded($.prReviewConfig) }))
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
+							.limit(1),
+					),
+				)
+				return Option.getOrElse(
+					decodePrReviewConfig(rows[0]?.config ?? {}),
+					() => new PrReviewRepositoryConfig({}),
+				)
+			})
+
+			const setPrReviewConfig = Effect.fn("VcsRepository.setPrReviewConfig")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				config: PrReviewRepositoryConfig,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsRepositories)
+							.set({ prReviewConfig: config, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
+							.returning("id"),
+					),
+				)
+				return rows.length > 0
+			})
+
+			const getPrReviewSettings = Effect.fn("VcsRepository.getPrReviewSettings")(function* (
+				orgId: OrgId,
+			) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PrReviewSettings)
+							.select(($) => ({ model: $.model, defaults: PG.undecoded($.defaults) }))
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				)
+				// Each field decodes on its own: a model dropped from the catalog keeps the defaults.
+				const model = decodePrReviewModel(rows[0]?.model)
+				const defaults = decodePrReviewConfig(rows[0]?.defaults ?? {})
+				return new PrReviewOrgSettings({
+					...(Option.isSome(model) ? { model: model.value } : undefined),
+					...(Option.isSome(defaults) ? { defaults: defaults.value } : undefined),
+				})
+			})
+
+			// What a review of the repository runs with: its own settings over the organization's.
+			const getEffectivePrReviewConfig = Effect.fn("VcsRepository.getEffectivePrReviewConfig")(
+				function* (orgId: OrgId, repositoryId: VcsRepositoryId) {
+					const [settings, config] = yield* Effect.all(
+						[getPrReviewSettings(orgId), getPrReviewConfig(orgId, repositoryId)],
+						{ concurrency: 2 },
+					)
+					return mergePrReviewConfig(settings.defaults, config)
+				},
+			)
+
+			const setPrReviewSettings = Effect.fn("VcsRepository.setPrReviewSettings")(function* (
+				orgId: OrgId,
+				settings: PrReviewOrgSettings,
+				updatedBy: UserId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const values = {
+					model: settings.model ?? null,
+					defaults: settings.defaults ?? null,
+					updatedAt: now,
+					updatedBy,
+				}
+				yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(PrReviewSettings)
+							.values({ orgId, ...values })
+							.onConflictDoUpdate({ target: ["orgId"], set: values }),
+					),
+				)
+			})
+
+			// Drop the branch rows by id (their repo keeps its commits — a branch is just
+			// a name in the picker now).
+			const deleteBranchesByIds = (ids: ReadonlyArray<VcsBranchId>) =>
+				Effect.gen(function* () {
+					if (ids.length === 0) return
+					yield* Effect.forEach(
+						Arr.chunksOf(ids, INARRAY_CHUNK_SIZE),
+						(chunk) =>
+							dbExecute((db) =>
+								db.run(
+									PG.deleteFrom(VcsRepositoryBranches).where(($) => [$.id.in_(...chunk)]),
+								),
+							),
+						{ discard: true },
+					)
+				})
+
+			// Reconcile branch deletions after a full re-list: hard-delete local branch
+			// rows absent from the provider's set, returning their names so the caller can
+			// detect whether the tracked branch vanished. When the listing was truncated
+			// at the page cap, skip deletion (absence isn't authoritative) and report none.
+			const reconcileBranchDeletions = Effect.fn("VcsRepository.reconcileBranchDeletions")(function* (
+				repositoryId: VcsRepositoryId,
+				remoteNames: ReadonlySet<string>,
+				options: { readonly truncated: boolean },
+			) {
+				if (options.truncated) return Arr.empty<string>()
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(VcsRepositoryBranches)
+							.select("id", "name")
+							.where(($) => [$.repositoryId.eq(repositoryId)]),
+					),
+				)
+				const stale = rows.filter((r) => !remoteNames.has(r.name))
+				yield* deleteBranchesByIds(stale.map((r) => r.id))
+				const staleNames: ReadonlyArray<string> = stale.map((r) => r.name)
+				return staleNames
+			})
+
+			// Delete a single branch by name (a `delete` webhook), returning whether a row
+			// was actually removed so the caller can react if it was the tracked branch.
+			const deleteBranch = Effect.fn("VcsRepository.deleteBranch")(function* (
+				repositoryId: VcsRepositoryId,
+				name: string,
+			) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(VcsRepositoryBranches)
+							.select("id")
+							.where(($) => [$.repositoryId.eq(repositoryId), $.name.eq(name)])
+							.limit(1),
+					),
+				)
+				const id = rows[0]?.id
+				if (id === undefined) return false
+				yield* deleteBranchesByIds([id])
+				return true
+			})
+
+			// Remove an installation and everything beneath it (its repositories and
+			// their commits). The dashboard disconnect flow uses this: severing the
+			// integration must not strand the org's repos/commits in the VCS tables.
+			// Idempotent — re-running drops whatever still remains.
+			const purgeInstallation = Effect.fn("VcsRepository.purgeInstallation")(function* (
+				orgId: OrgId,
+				installationId: VcsInstallationId,
+			) {
+				// One atomic transaction, PARENTS FIRST: the installation, then its repos,
+				// then their branches + commits (chunked under the bind-variable cap). With
+				// the share-lock gates in the upserts, an in-flight sync either commits
+				// before a parent delete (its rows are swept below) or writes nothing. The
+				// repo-id read happens INSIDE the transaction, after the installation
+				// delete, so a repo created moments earlier is swept rather than escaping.
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const installations = yield* db.run(
+								PG.deleteFrom(VcsInstallations)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)])
+									.returning("sourceId"),
+							)
+							yield* deleteSourcesOf(db, orgId, installations)
+							const repoRows = yield* db.run(
+								PG.from(VcsRepositories)
+									.select("id")
+									.where(($) => [$.orgId.eq(orgId), $.installationId.eq(installationId)]),
+							)
+							const repoIds = repoRows.map((r) => r.id)
+							yield* db.run(
+								PG.deleteFrom(VcsRepositories).where(($) => [
+									$.orgId.eq(orgId),
+									$.installationId.eq(installationId),
+								]),
+							)
+							const chunks = Arr.chunksOf(repoIds, INARRAY_CHUNK_SIZE)
+							yield* Effect.forEach(
+								chunks,
+								(chunk) =>
+									db.run(
+										PG.deleteFrom(VcsRepositoryBranches).where(($) => [
+											$.repositoryId.in_(...chunk),
+										]),
+									),
+								{ discard: true },
+							)
+							yield* Effect.forEach(
+								chunks,
+								(chunk) =>
+									db.run(
+										PG.deleteFrom(VcsCommits).where(($) => [
+											$.repositoryId.in_(...chunk),
+										]),
+									),
+								{ discard: true },
+							)
+						}),
+					),
+				)
+			})
+
+			return {
+				resolveInstallation,
+				getInstallationById,
+				listInstallationsByOrg,
+				listAllInstallations,
+				upsertInstallation,
+				finishRepositoryDiscovery,
+				markInstallationStatus,
+				setCiTracesEnabled,
+				listRepositoriesByInstallation,
+				resolveRepository,
+				getRepositoryById,
+				getRepositoriesByIds,
+				upsertRepositories,
+				markRepositoryRemoved,
+				purgeRepository,
+				updateRepoSyncStatus,
+				markRepoSyncError,
+				upsertCommits,
+				findCommitBySha,
+				findCommitsByShas,
+				listCommitsInWindow,
+				upsertBranches,
+				getOrCreateBranch,
+				listBranchesByRepository,
+				changeTrackedBranch,
+				setPrReviewEnabled,
+				getPrReviewConfig,
+				setPrReviewConfig,
+				getEffectivePrReviewConfig,
+				getPrReviewSettings,
+				setPrReviewSettings,
+				reconcileBranchDeletions,
+				deleteBranch,
+				purgeInstallation,
+			}
+		}),
+	},
+) {
 	static readonly layer = Layer.effect(this, this.make)
 }

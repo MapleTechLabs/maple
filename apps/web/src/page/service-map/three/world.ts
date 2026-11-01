@@ -1,4 +1,4 @@
-import type { InkPalette } from "../../../components/service-map/three/appearance"
+import { type InkPalette, sceneryPalette } from "../../../components/service-map/three/appearance"
 import {
 	decorateRoutes,
 	type FactoryLink,
@@ -61,7 +61,7 @@ export const sceneryOf = (scope: Scope, input: WorldInput): Child =>
 	scenery(scope, {
 		layout: input.layout.layout,
 		belts: input.layout.links,
-		palette: input.palette,
+		palette: sceneryPalette(input.palette),
 		running: input.flowing,
 	})
 

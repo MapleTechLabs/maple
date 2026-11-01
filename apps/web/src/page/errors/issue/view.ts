@@ -159,7 +159,7 @@ const otherTab = (
 			onFailure: (failure) =>
 				errorState(h, {
 					failure,
-					title: "Failed to load the activity timeline",
+					title: "Couldn't load the activity timeline",
 					variant: "inline",
 					onRetry: Message.ClickedRetryEvents(),
 				}),
@@ -230,7 +230,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						: dashboardPage(h, {}, [
 								errorState(h, {
 									failure,
-									title: "Failed to load issue",
+									title: "Couldn't load issue",
 									onRetry: Message.ClickedRetry(),
 								}),
 							]),

@@ -20,7 +20,7 @@ export interface InkPalette {
 	selected: string
 	/** Body paint per machine kind. */
 	tint: Record<MachineKind, string>
-	/** Autumn accent colours: maple red, gold, rust and amber. */
+	/** Autumn accent colours, kept off the health and selection hues so status reads first. */
 	gifts: readonly string[]
 	foliage: readonly string[]
 	/** Evergreens that stay green through the Maple autumn. */
@@ -76,8 +76,8 @@ const MAPLE = {
 			gateway: "#ddd2bd",
 			shed: "#c99466",
 		},
-		gifts: ["#c8442f", "#e86f00", "#e9a23b", "#a8532a", "#d97a2b"],
-		foliage: ["#c8442f", "#e86f00", "#e9a23b", "#b5532d", "#d97a2b"],
+		gifts: ["#b8432f", "#c46a2c", "#c99a4a", "#a8532a", "#b8702f"],
+		foliage: ["#b4543a", "#c4793f", "#a88a4c", "#8e5634", "#b06a3c"],
 		trunk: "#6e4a32",
 		evergreen: "#5b7f4f",
 		cloud: "#fbf5e8",
@@ -109,8 +109,8 @@ const MAPLE = {
 			gateway: "#666a60",
 			shed: "#76543b",
 		},
-		gifts: ["#b8432f", "#d9680a", "#c98f35", "#94502c", "#c06d2a"],
-		foliage: ["#a63d2c", "#c9620e", "#b98632", "#8a4a2a", "#b0662a"],
+		gifts: ["#a8402e", "#b25e1f", "#a88440", "#8f4d2b", "#a5652a"],
+		foliage: ["#8e3f2e", "#a05e2e", "#84723d", "#6c432c", "#94582c"],
 		trunk: "#4f3726",
 		evergreen: "#2f4a3a",
 		cloud: "#34403c",

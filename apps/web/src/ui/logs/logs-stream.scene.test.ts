@@ -166,6 +166,23 @@ describe("logs stream: keyboard selection", () => {
 			expect(within(rowOf(2), role("button", { name: "Expand log" }))).toExist(),
 		)
 	})
+
+	test("a row links to its trace; a row without one offers no trace link", () => {
+		const untraced = LOGS_TABLE_BENCH_ROWS.slice(0, 2).map((log, i) =>
+			toLogRowView(i === 1 ? { ...log, traceId: undefined } : log, [], logTimeFormat("UTC")),
+		)
+		scene(
+			program,
+			given(update(init(STREAM_ID, untraced), windowOf(0, 1)).model),
+			ackVirtualizer,
+			expect(within(rowOf(0), role("link", { name: "Open trace" }))).toHaveAttr(
+				"href",
+				`/traces/${untraced[0]?.traceId}`,
+			),
+			expect(within(rowOf(1), role("link", { name: "Open trace" }))).toBeAbsent(),
+			expect(within(rowOf(1), role("button", { name: "Open details" }))).toExist(),
+		)
+	})
 })
 
 describe("logs stream: attribute card", () => {

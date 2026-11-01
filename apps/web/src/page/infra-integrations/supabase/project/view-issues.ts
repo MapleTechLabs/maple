@@ -19,7 +19,7 @@ const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string): Html => {
 	return h.li(
 		[
 			h.Key(`${issue.source}:${issue.message}`),
-			h.Class("flex items-center gap-4 border-t border-border/40 px-4 py-2 text-xs first:border-t-0"),
+			h.Class("flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0"),
 		],
 		[
 			h.span(
@@ -61,7 +61,7 @@ export const issuesPanel = (
 		[
 			keyedBody(h, model.issues, {
 				rows: 4,
-				failureTitle: "Failed to load errors and warnings",
+				failureTitle: "Couldn't load errors and warnings",
 				onRetry: Message.ClickedRetry({ section: "issues" }),
 				render: (response) =>
 					response.issues.length > 0

@@ -77,7 +77,7 @@ export const completedInstall = (model: Model, context: PageContext, failure: Lo
 	failure === null
 		? requestStatus(model, context, "chat", "Supersede")
 		: outcome(withCard(model, { busy: null }), context, failure, {
-				error: `Failed to start the ${platformOf(model)} install`,
+				error: `Couldn't start the ${platformOf(model)} install`,
 			})
 
 export const clickedIdentity = (model: Model): Return => {
@@ -104,11 +104,11 @@ export const completedIdentity = (
 		? failure === null
 			? requestStatus(model, context, "chat", "Supersede")
 			: outcome(withCard(model, { identityBusy: false }), context, failure, {
-					error: "Failed to start the account link",
+					error: "Couldn't start the account link",
 				})
 		: outcome(withCard(model, { identityBusy: false }), context, failure, {
 				success: "Account unlinked",
-				error: "Failed to unlink the account",
+				error: "Couldn't unlink the account",
 			})
 
 const withDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -142,7 +142,7 @@ export const completedDisconnect = (
 		(next) =>
 			outcome(next, context, failure, {
 				success: "Workspace disconnected",
-				error: "Failed to disconnect the workspace",
+				error: "Couldn't disconnect the workspace",
 			}),
 	])
 }

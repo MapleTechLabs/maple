@@ -21,6 +21,7 @@ const incidents = (orgId: string): Stream.Stream<Message, never, OrgCollections>
 						status: incident.status,
 						groupKey: incident.groupKey,
 						severity: incident.severity,
+						signalType: incident.signalType,
 					})),
 				}),
 		),

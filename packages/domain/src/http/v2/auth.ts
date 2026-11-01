@@ -5,6 +5,8 @@ import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../cu
 import {
 	V2InsufficientScope,
 	V2InvalidCredentials,
+	V2InvalidDpopProof,
+	V2NoActiveOrganization,
 	V2OrganizationAccessDenied,
 	V2InvalidRequest,
 	V2RateLimited,
@@ -30,9 +32,11 @@ export class AuthorizationV2 extends HttpApiMiddleware.Service<
 >()("AuthorizationV2", {
 	error: [
 		V2InvalidCredentials.schema,
+		V2InvalidDpopProof.schema,
 		V2InsufficientScope.schema,
 		V2RateLimited.schema,
 		V2OrganizationAccessDenied.schema,
+		V2NoActiveOrganization.schema,
 		publicError(ApiKeyLookupPersistenceError),
 		publicError(UnauthorizedError),
 		publicError(AuthorizationUnavailableError),
@@ -42,7 +46,7 @@ export class AuthorizationV2 extends HttpApiMiddleware.Service<
 			HttpApiSecurity.annotateMerge(
 				OpenApi.annotations({
 					description:
-						"Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes — see the `Scope` schema.",
+						"Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes (see the `Scope` schema). A device-bound access token from `POST /v2/device_tokens` is sent as `Authorization: DPoP <token>` together with a `DPoP` proof header (RFC 9449) instead.",
 					format: "maple_ak_… API key or session JWT",
 				}),
 			),
@@ -91,6 +95,8 @@ const READ_ONLY_POST_PATHS = new Set([
 	"/v2/session_replays/search",
 	"/v2/session_replays/for_trace",
 	"/v2/alerts/rules/preview",
+	"/v2/status_pages/preview",
+	"/v2/services/health",
 	"/v2/traces/search",
 	"/v2/traces/timeseries",
 	"/v2/traces/breakdown",
@@ -173,3 +179,30 @@ export const scopeAllows = (
 	if (scopes.includes(`${required.family}:write`)) return true
 	return required.access === "read" && scopes.includes(`${required.family}:read`)
 }
+
+/** The telemetry a share link or a raw-SQL widget serves; a scoped key must read all of it. */
+export const TELEMETRY_READ_FAMILIES = ["traces", "logs", "metrics"] as const
+
+/**
+ * What an investigation's agent reads with its read-only toolset: telemetry, services, errors,
+ * replays, alerts, dashboards, ingest sources, setup audits, and source code via integrations.
+ */
+export const INVESTIGATION_READ_FAMILIES = [
+	...TELEMETRY_READ_FAMILIES,
+	"services",
+	"service_map",
+	"error_issues",
+	"session_replays",
+	"alerts",
+	"anomalies",
+	"dashboards",
+	"sources",
+	"instrumentation",
+	"integrations",
+] as const
+
+/** The families in `families` that `scopes` cannot read; empty when unscoped. */
+export const missingReadScopes = (
+	scopes: ReadonlyArray<string> | null | undefined,
+	families: ReadonlyArray<string>,
+): ReadonlyArray<string> => families.filter((family) => !scopeAllows(scopes, { family, access: "read" }))

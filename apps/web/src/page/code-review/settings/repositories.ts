@@ -5,6 +5,7 @@ import {
 	visibleRepositories,
 } from "../../../components/code-review/repository-filter"
 import { pluralize } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -86,7 +87,7 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 					h.a(
 						[
 							h.Class(
-								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline",
+								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline active:underline",
 							),
 							h.Href(repo.htmlUrl),
 							h.Attribute("rel", "noreferrer"),
@@ -149,6 +150,9 @@ const searchBox = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html =>
 		attributes: [h.AriaLabel("Search repositories")],
 	})
 
+/** About as many rows as the list's max height shows before it scrolls. */
+const FOLD_ROWS = 11
+
 export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html => {
 	const { repositories, state } = options
 	const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
@@ -165,10 +169,12 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 			className: "px-5 py-3 text-xs text-muted-foreground",
 			action: h.a(
 				[
-					h.Class("hover:text-foreground hover:underline"),
+					h.Class(
+						"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
+					),
 					h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
 				],
-				["Manage GitHub access"],
+				["Manage GitHub access", icon(h, "ArrowRightIcon", { size: 12, className: "shrink-0" })],
 			),
 			children: [
 				h.span(
@@ -230,7 +236,16 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 					],
 				)
 			: h.ul(
-					[h.Class("max-h-[min(36rem,65vh)] divide-y overflow-y-auto")],
+					[
+						h.Class(
+							cn(
+								"max-h-[min(36rem,65vh)] divide-y overflow-y-auto",
+								// A long list fades at the fold; the padding clears the last row once scrolled to it.
+								visible.length > FOLD_ROWS &&
+									"pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)]",
+							),
+						),
+					],
 					visible.map((repo) => repositoryRow(h, repo, options)),
 				),
 		...(visible.length > 0 && visible.length < repositories.length

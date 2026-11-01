@@ -32,7 +32,12 @@ export const createTinybirdProjectRevision = (
 
 // Rollups whose first deploy must not replay raw history through their views:
 // Tinybird ignores `BACKFILL skip` once the datasource exists, so it stays harmless.
-const SKIP_BACKFILL: ReadonlySet<string> = new Set([Datasources.sourceUsageHourly._name])
+const SKIP_BACKFILL: ReadonlySet<string> = new Set([
+	Datasources.sourceUsageHourly._name,
+	Datasources.serviceMapDbEdgesMinutely._name,
+	Datasources.scannerRequests._name,
+	Datasources.serviceRuntimesHourly._name,
+])
 
 const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>
 	SKIP_BACKFILL.has(datasource.name)

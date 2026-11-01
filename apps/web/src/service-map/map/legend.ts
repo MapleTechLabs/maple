@@ -72,7 +72,7 @@ const morePopover = <M>(
 						h.button(
 							[
 								...trigger,
-								h.Class("font-medium hover:text-foreground transition-colors cursor-pointer"),
+								h.Class("font-medium hover:text-foreground active:text-foreground cursor-pointer"),
 								h.Type("button"),
 							],
 							["+", String(services.length - 3), " more"],
@@ -93,16 +93,16 @@ export const serviceMapLegend = <M>(
 	h.div(
 		[
 			h.Class(
-				"flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
+				"flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-surface-sunken px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
 			),
 		],
 		[
 			h.span([h.Class("font-medium max-sm:hidden")], ["Drag nodes to arrange"]),
-			h.span([h.Class("text-foreground/30 max-sm:hidden")], ["|"]),
+			h.span([h.Class("text-foreground-faint max-sm:hidden")], ["·"]),
 			h.span([h.Class("font-medium max-sm:hidden")], ["Scroll to zoom"]),
 			...(colorMode === "service" && services.length > 0
 				? [
-						h.span([h.Class("text-foreground/30 max-sm:hidden")], ["|"]),
+						h.span([h.Class("text-foreground-faint max-sm:hidden")], ["·"]),
 						...services
 							.slice(0, 3)
 							.map((service) => swatch(h, serviceSwatchColor(service), service)),
@@ -111,7 +111,7 @@ export const serviceMapLegend = <M>(
 				: []),
 			...(colorMode === "platform"
 				? [
-						h.span([h.Class("text-foreground/30")], ["|"]),
+						h.span([h.Class("text-foreground-faint")], ["·"]),
 						...LEGEND_PLATFORMS.map(([platform, label]) =>
 							swatch(h, getPlatformColor(platform === "unknown" ? undefined : platform), label),
 						),

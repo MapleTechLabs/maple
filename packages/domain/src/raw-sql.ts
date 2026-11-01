@@ -1,6 +1,9 @@
 import { Schema } from "effect"
 import { maskLiteralsAndComments } from "@maple-dev/effect-orm/sql"
 
+/** Blanks literals and comments, keeping positions, so text searches only see SQL. */
+export { maskLiteralsAndComments }
+
 // The static half of raw-SQL validation: everything that can be decided from the
 // query text alone, without an org, a time window, or a granularity.
 //
@@ -51,7 +54,6 @@ const DENY_LIST = [
 	"GRANT",
 	"REVOKE",
 	"OPTIMIZE",
-	"SYSTEM",
 	"KILL",
 ] as const
 
@@ -145,6 +147,25 @@ const QUOTE_CLOSE = new Map([
 	["“", "”"],
 ])
 const SPACE_RE = /\s/
+const HEX2_RE = /^[0-9A-Fa-f]{2}$/
+// ClickHouse decodes these escapes in a quoted identifier; any other `\c` keeps its backslash.
+const IDENT_ESCAPES = new Map([
+	["\\", "\\"],
+	["'", "'"],
+	['"', '"'],
+	["`", "`"],
+	["/", "/"],
+	["=", "="],
+	["b", "\b"],
+	["f", "\f"],
+	["n", "\n"],
+	["r", "\r"],
+	["t", "\t"],
+	["0", "\0"],
+	["a", "\x07"],
+	["v", "\v"],
+	["e", "\x1b"],
+])
 
 /**
  * ClickHouse SQL as significant tokens: whitespace, `--`/`#`/`/* *\/` comments and
@@ -189,8 +210,16 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 			while (i < n) {
 				const d = sql.charAt(i)
 				if (d === "\\") {
-					body += sql.slice(i, i + 2)
-					i += 2
+					// Decoded as the server does, so `\x73ystem` and `sys\Ntem` both read as `system`.
+					const e = sql.charAt(i + 1)
+					const hex = sql.slice(i + 2, i + 4)
+					if ((e === "x" || e === "X") && HEX2_RE.test(hex)) {
+						body += String.fromCharCode(Number.parseInt(hex, 16))
+						i += 4
+					} else {
+						body += e === "N" ? "" : (IDENT_ESCAPES.get(e) ?? `\\${e}`)
+						i += 2
+					}
 				} else if (d === close) {
 					if (close !== "”" && sql.charAt(i + 1) === close) {
 						body += d
@@ -323,6 +352,74 @@ const disallowedTableFunction = (sql: string): string | null => {
 	return null
 }
 
+// Scalars that read dictionaries, other tables, server settings, accounts or the binary.
+// Prefixes cover families (`dictGetString`, `getSettingOrDefault`, `joinGetOrNull`).
+const SERVER_READER_PREFIXES = [
+	"dictget",
+	"dicthas",
+	"dictis",
+	"joinget",
+	"getsetting",
+	"getserversetting",
+	"getmergetreesetting",
+	"getmaxtablenamelength",
+	"addressto",
+]
+const SERVER_READER_NAMES = new Set([
+	"hascolumnintable",
+	"getmacro",
+	"getclienthttpheader",
+	"getserverport",
+	"getoskernelversion",
+	"showcertificate",
+	"catboostevaluate",
+	"naivebayesclassifier",
+	"demangle",
+	"logtrace",
+	"currentuser",
+	"user",
+	"session_user",
+	"currentroles",
+	"enabledroles",
+	"defaultroles",
+	"currentprofiles",
+	"enabledprofiles",
+	"defaultprofiles",
+])
+
+/** The first server-reading scalar called anywhere, or null; quoting and comments do not hide it. */
+const disallowedServerFunction = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const hit = tokens.find((t, i) => {
+		const next = tokens[i + 1]
+		return (
+			t.ident &&
+			next !== undefined &&
+			!next.ident &&
+			next.v === "(" &&
+			(SERVER_READER_NAMES.has(t.v) || SERVER_READER_PREFIXES.some((prefix) => t.v.startsWith(prefix)))
+		)
+	})
+	return hit?.v ?? null
+}
+
+// Databases whose tables describe the whole server rather than this org's data.
+const SYSTEM_DATABASES = new Set(["system", "information_schema"])
+
+/**
+ * The first system database used as a `db.` qualifier, or null. Runs on the token
+ * stream, so quoted, Unicode-quoted, escaped, cased and commented spellings all match,
+ * while a bare `system` column or alias (no qualifier dot) and string literals pass.
+ */
+const systemDatabaseReference = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const isDot = (t: SqlToken | undefined) => t !== undefined && !t.ident && t.v === "."
+	const hit = tokens.find(
+		(t, i) => t.ident && SYSTEM_DATABASES.has(t.v) && isDot(tokens[i + 1]) && !isDot(tokens[i - 1]),
+	)
+	return hit?.v ?? null
+}
+
 /**
  * ClickHouse syntax the masker does not lex: `#` / `#!` line comments, `$$` and
  * `$tag$` heredoc strings, and nested block comments (the masker ends a comment at
@@ -443,6 +540,9 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 }
 
 const IDENT = "[A-Za-z_][A-Za-z0-9_]*"
+// A clause word after a table is never its alias: `FROM traces JOIN logs l` must still bind `l`.
+const NOT_ALIAS =
+	"(?!(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|OUTER|SEMI|ANTI|ASOF|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)\\b)"
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /**
@@ -458,12 +558,12 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 	)
 	const a = escapeRe(alias)
 	const binding = new RegExp(
-		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?${NOT_ALIAS}(${IDENT}))?(?=[\\s,)]|$)`,
 		"gi",
 	)
 	// `FROM a x, b y` binds every comma-separated table; a subquery or table function item ends the run.
 	const commaItem = new RegExp(
-		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?${NOT_ALIAS}(${IDENT}))?(?=[\\s,)]|$)`,
 		"iy",
 	)
 	const bindings = [...masked.matchAll(binding)].flatMap((m) => {
@@ -476,13 +576,7 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 		return items
 	})
 	for (const [table, bound] of bindings) {
-		const names =
-			bound === undefined ||
-			/^(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)$/i.test(
-				bound,
-			)
-				? [table]
-				: [table, bound]
+		const names = bound === undefined ? [table] : [table, bound]
 		if (names.some((n) => new RegExp(`^${a}$`, "i").test(n)) && !ctes.has(table.toLowerCase())) {
 			return true
 		}
@@ -603,13 +697,15 @@ export const rawSqlIssue = (
 		return issue("MultipleStatements", "Multiple SQL statements are not allowed. Remove ';' separators.")
 	}
 
-	const denyMatch = masked.match(DENY_LIST_RE)
-	if (denyMatch?.[1].toUpperCase() === "SYSTEM") {
+	// SYSTEM statements fail the SELECT check below; within a SELECT the keyword only
+	// matters as a database name, which the token stream resolves however it is quoted.
+	if (systemDatabaseReference(sql) !== null) {
 		return issue(
 			"DisallowedStatement",
 			"System tables and SYSTEM statements are not available in raw SQL. For table and column names use describe_warehouse_tables (the warehouse table catalog).",
 		)
 	}
+	const denyMatch = masked.match(DENY_LIST_RE)
 	if (denyMatch) {
 		return issue(
 			"DisallowedStatement",
@@ -636,6 +732,13 @@ export const rawSqlIssue = (
 		return issue(
 			"DisallowedFunction",
 			`Table function '${tableFunction}' is not allowed in raw SQL. Queries may only read Maple's own tables.`,
+		)
+	}
+	const serverFunction = disallowedServerFunction(sql)
+	if (serverFunction !== null) {
+		return issue(
+			"DisallowedFunction",
+			`Function '${serverFunction}' is not allowed in raw SQL. It reads server configuration or data outside Maple's tables.`,
 		)
 	}
 	// The row cap nests the query, and a `SETTINGS` clause at any depth (a
@@ -693,3 +796,52 @@ export const rawAlertSampleCountWarning = (sql: string, minimumSampleCount: numb
 	minimumSampleCount > 1 && !rawAlertSqlSelectsSamples(sql)
 		? `Minimum sample count ${minimumSampleCount} counts returned rows (one per bucket) because the query has no \`samples\` column. Select an event count as \`samples\` (e.g. \`count() AS samples\`) to gate on volume.`
 		: null
+
+export type RawAlertPerformanceHintCode = "no_service_filter" | "body_wildcard_match"
+
+/** A change likely to make an alert query cheaper, pointing at the line it is about. */
+export interface RawAlertPerformanceHint {
+	readonly code: RawAlertPerformanceHintCode
+	readonly message: string
+	/** 1-based line of the SQL the hint is about. */
+	readonly line: number
+}
+
+const lineAt = (sql: string, index: number): number => sql.slice(0, index).split("\n").length
+
+/**
+ * Cheap, text-only guesses at what makes an alert query slow. Logs and traces are
+ * sorted by service after org and time, so a service filter skips most of the data,
+ * and a `Body` wildcard match has to read every log body in the window.
+ */
+export const rawAlertPerformanceHints = (sql: string): ReadonlyArray<RawAlertPerformanceHint> => {
+	const masked = maskLiteralsAndComments(sql)
+	const table = /\bFROM\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)?(logs|traces)\b/i.exec(masked)
+	const tableName = table?.[1]?.toLowerCase()
+	const serviceHint: ReadonlyArray<RawAlertPerformanceHint> =
+		table !== null && tableName !== undefined && !/\bServiceName\b/.test(masked)
+			? [
+					{
+						code: "no_service_filter",
+						message: `Filter ${tableName} on a service, e.g. \`AND ServiceName = 'checkout'\`. Rows are stored by service, so the query skips every other service's data.`,
+						line: lineAt(sql, table.index),
+					},
+				]
+			: []
+	// Masking keeps offsets, so the pattern's literal is read from the original text.
+	const bodyHints = Array.from(masked.matchAll(/\bBody\s+(?:NOT\s+)?I?LIKE\b/gi))
+		.filter((match) =>
+			sql
+				.slice(match.index + match[0].length)
+				.trimStart()
+				.startsWith("'%"),
+		)
+		.slice(0, 1)
+		.map((match): RawAlertPerformanceHint => ({
+			code: "body_wildcard_match",
+			message:
+				"A `Body` match starting with `%` reads every log body in the window. Match a structured attribute instead, e.g. `LogAttributes['event'] = 'webhook.failed'`, or filter on a service first.",
+			line: lineAt(sql, match.index),
+		}))
+	return [...serviceHint, ...bodyHints]
+}

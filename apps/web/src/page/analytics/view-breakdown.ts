@@ -49,7 +49,9 @@ const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return {}
 	const fill = "color-mix(in oklab, var(--primary) 14%, transparent)"
-	return { "background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)` }
+	return {
+		"background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)`,
+	}
 }
 
 const columnLabel = (noun: string): string => noun.charAt(0).toUpperCase() + noun.slice(1)
@@ -70,7 +72,8 @@ export const panelView = (state: PanelState, dimensions: ReadonlyArray<Breakdown
 	const rows: ReadonlyArray<ShareRow> = dimension.rows
 		.filter((row) =>
 			needle
-				? label(row.name).toLowerCase().includes(needle) || (row.secondary?.toLowerCase().includes(needle) ?? false)
+				? label(row.name).toLowerCase().includes(needle) ||
+					(row.secondary?.toLowerCase().includes(needle) ?? false)
 				: true,
 		)
 		.map((row) => ({ ...row, share: total > 0 ? (hasViews ? (row.views ?? 0) : row.count) / total : 0 }))
@@ -81,12 +84,24 @@ export const panelView = (state: PanelState, dimensions: ReadonlyArray<Breakdown
 type PanelView = NonNullable<ReturnType<typeof panelView>>
 
 /** `DimensionTabs`. */
-export const dimensionTabs = (h: H, cardId: string, dimensions: ReadonlyArray<BreakdownDimension>, activeTab: number): Html =>
+export const dimensionTabs = (
+	h: H,
+	cardId: string,
+	dimensions: ReadonlyArray<BreakdownDimension>,
+	activeTab: number,
+): Html =>
 	h.div(
 		[
 			h.Role("group"),
 			h.AriaLabel("Breakdown dimension"),
-			h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupConnectedStyles, "flex-wrap gap-1")),
+			h.Class(
+				cn(
+					toggleGroupStyles,
+					toggleGroupHorizontalStyles,
+					toggleGroupConnectedStyles,
+					"flex-wrap gap-1",
+				),
+			),
 			h.DataAttribute("orientation", "horizontal"),
 			h.DataAttribute("size", "sm"),
 			h.DataAttribute("slot", "toggle-group"),
@@ -100,11 +115,15 @@ export const dimensionTabs = (h: H, cardId: string, dimensions: ReadonlyArray<Br
 					onClick: Message.PickedPanelTab({ panel: cardId, index }),
 					className: cn(
 						toggleVariants({ size: "sm", variant: "default" }),
-						"h-auto min-w-0 rounded-sm px-2 py-0.5 text-2xs font-normal text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-2xs",
+						"h-auto min-w-0 rounded-sm px-2 py-0.5 text-2xs font-normal text-muted-foreground hover:bg-transparent active:bg-transparent hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-2xs",
 					),
 					slot: "toggle",
 					tabIndex: index === activeTab ? 0 : -1,
-					attributes: [h.AriaDisabled(false), h.DataAttribute("size", "sm"), h.DataAttribute("variant", "default")],
+					attributes: [
+						h.AriaDisabled(false),
+						h.DataAttribute("size", "sm"),
+						h.DataAttribute("variant", "default"),
+					],
 				},
 				[dimension.tab],
 			),
@@ -144,7 +163,13 @@ export const breakdownTable = (
 	model: Model,
 	cardId: string,
 	view: PanelView,
-	options: Readonly<{ maxHeight: string; surfaceClass: string; isRanked: boolean; selected: string | undefined; isWaiting: boolean }>,
+	options: Readonly<{
+		maxHeight: string
+		surfaceClass: string
+		isRanked: boolean
+		selected: string | undefined
+		isWaiting: boolean
+	}>,
 ): Html => {
 	const { dimension, hasViews, label } = view
 	const isRanked = options.isRanked
@@ -155,8 +180,14 @@ export const breakdownTable = (
 			? Message.ClickedExpandedRow({ key: dimension.filterKey, value: name })
 			: Message.ToggledFilter({ key: dimension.filterKey, value: name })
 	const head = [
-		...(isRanked ? [columnHead(h, { label: "#", width: "w-6", align: "right", hidden: "max-sm:hidden" })] : []),
-		columnHead(h, { label: columnLabel(dimension.noun), width: "w-0 flex-1 min-w-0", sort: sortHead(cardId, view, "name") }),
+		...(isRanked
+			? [columnHead(h, { label: "#", width: "w-6", align: "right", hidden: "max-sm:hidden" })]
+			: []),
+		columnHead(h, {
+			label: columnLabel(dimension.noun),
+			width: "w-0 flex-1 min-w-0",
+			sort: sortHead(cardId, view, "name"),
+		}),
 		...(hasViews
 			? [
 					columnHead(h, {
@@ -205,8 +236,8 @@ export const breakdownTable = (
 							h.Style(shareBarStyle(row.share)),
 							h.Class(
 								cn(
-									"group flex w-full items-center gap-3 border-b border-border/40 px-3 py-2 text-left transition-colors last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
-									"hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
+									"group flex w-full items-center gap-3 border-b border-border-subtle px-3 py-2 text-left transition-colors last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
+									"hover:bg-foreground/[0.06] active:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
 									rowSelectedClass(isSelected),
 								),
 							),
@@ -215,34 +246,54 @@ export const breakdownTable = (
 							...(isRanked
 								? [
 										h.span(
-											[h.Class("w-6 text-right font-mono text-2xs tabular-nums text-muted-foreground/60 max-sm:hidden")],
+											[
+												h.Class(
+													"w-6 text-right font-mono text-2xs tabular-nums text-foreground-subtle max-sm:hidden",
+												),
+											],
 											[String(index + 1)],
 										),
 									]
 								: []),
-							h.span([h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")], [
-								...(rowIcon !== undefined
-									? [rowIcon]
-									: hasIcons
-										? [h.span([h.Class("size-4 shrink-0"), h.AriaHidden(true)], [])]
-										: []),
-								h.span(
-									[
-										h.Class(
-											cn(
-												"min-w-0 truncate text-xs transition-colors",
-												isSelected ? "font-medium text-foreground" : "text-foreground/90 group-hover:text-foreground",
+							h.span(
+								[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
+								[
+									...(rowIcon !== undefined
+										? [rowIcon]
+										: hasIcons
+											? [h.span([h.Class("size-4 shrink-0"), h.AriaHidden(true)], [])]
+											: []),
+									h.span(
+										[
+											h.Class(
+												cn(
+													"min-w-0 truncate text-xs transition-colors",
+													isSelected
+														? "font-medium text-foreground"
+														: "text-foreground-soft group-hover:text-foreground",
+												),
 											),
-										),
-										h.Title(row.secondary ? `${row.secondary}${row.name}` : label(row.name)),
-									],
-									[label(row.name)],
-								),
-							]),
+											h.Title(
+												row.secondary
+													? `${row.secondary}${row.name}`
+													: label(row.name),
+											),
+										],
+										[label(row.name)],
+									),
+								],
+							),
 							...(hasViews
 								? [
 										h.span(
-											[h.Class(cn("text-right font-mono text-2xs tabular-nums", isRanked ? "w-16 sm:w-24" : "w-16"))],
+											[
+												h.Class(
+													cn(
+														"text-right font-mono text-2xs tabular-nums",
+														isRanked ? "w-16 sm:w-24" : "w-16",
+													),
+												),
+											],
 											[formatNumber(row.views ?? 0)],
 										),
 									]
@@ -267,7 +318,9 @@ export const breakdownTable = (
 												h.Class(
 													cn(
 														"w-16 text-right font-mono text-2xs tabular-nums text-muted-foreground",
-														isRanked ? "max-sm:hidden" : "hidden @min-[380px]/panel:inline-block",
+														isRanked
+															? "max-sm:hidden"
+															: "hidden @min-[380px]/panel:inline-block",
 													),
 												),
 											],
@@ -303,10 +356,13 @@ export const breakdownPanel = (
 	if (view === null) return null
 	const { dimension } = view
 	return panel(h, { className: "@container/panel" }, [
-		h.div([h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2")], [
-			dimensionTabs(h, card.id, card.dimensions, view.activeTab),
-			panelFilterInput(h, card.id, state.query, dimension.nounPlural, "min-w-24 max-w-40 flex-1"),
-		]),
+		h.div(
+			[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2")],
+			[
+				dimensionTabs(h, card.id, card.dimensions, view.activeTab),
+				panelFilterInput(h, card.id, state.query, dimension.nounPlural, "min-w-24 max-w-40 flex-1"),
+			],
+		),
 		...(dimension.rows.length === 0
 			? [
 					emptyMessage(
@@ -328,16 +384,18 @@ export const breakdownPanel = (
 							h.Type("button"),
 							h.OnClick(Message.ClickedExpandPanel({ panel: card.id })),
 							h.Class(
-								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none",
+								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
 							),
 						],
 						[
-							h.span([h.Class("flex items-center gap-1.5")], [icon(h, "MaximizeIcon", { size: 12 }), "Expand table"]),
-							h.span([h.Class("font-mono tabular-nums")], [
-								formatNumber(dimension.rows.length),
-								" ",
-								dimension.nounPlural,
-							]),
+							h.span(
+								[h.Class("flex items-center gap-1.5")],
+								[icon(h, "MaximizeIcon", { size: 12 }), "Expand table"],
+							),
+							h.span(
+								[h.Class("font-mono tabular-nums")],
+								[formatNumber(dimension.rows.length), " ", dimension.nounPlural],
+							),
 						],
 					),
 				]),

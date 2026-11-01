@@ -118,7 +118,7 @@ describe("web analytics", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			resolveTheme,
-			expectView(text("Failed to load AI crawlers")).toExist(),
+			expectView(text("Couldn't load AI crawlers")).toExist(),
 		)
 	})
 

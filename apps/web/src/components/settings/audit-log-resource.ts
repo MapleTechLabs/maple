@@ -84,6 +84,8 @@ function resourceLink(entry: AuditEntryResource): AuditResourceLink | null {
 			return { to: "/integrations", search: { integration: "gcp" } }
 		case "planetscale_integration":
 			return { to: "/integrations", search: { integration: "planetscale" } }
+		case "cloudflare_integration":
+			return { to: "/integrations", search: { integration: "cloudflare" } }
 		case "chat_integration":
 			return { to: "/integrations", search: {} }
 		case "api_key":

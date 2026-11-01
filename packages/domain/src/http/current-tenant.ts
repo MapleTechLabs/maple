@@ -8,6 +8,9 @@ export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
 	"@maple/http/errors/UnauthorizedError",
 	{
 		message: Schema.String,
+		// Server-side only: the redacted public body never reads it. v2 maps
+		// `no_active_organization` to its own public error so clients can branch on it.
+		reason: Schema.optionalKey(Schema.Literal("no_active_organization")),
 	},
 	{
 		status: 401,

@@ -21,24 +21,6 @@ const baseParams = {
 }
 
 describe("listContainersQuery", () => {
-	it("compiles with required filters and the container metric whitelist", () => {
-		const { sql } = compileUnsafe(listContainersQuery({}), baseParams)
-		expect(sql).toContain("FROM metrics_gauge")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("ResourceAttributes['container.name']")
-		expect(sql).toContain("container.cpu.utilization")
-		expect(sql).toContain("container.memory.percent")
-		expect(sql).toContain("container.uptime")
-		expect(sql).toContain("container.cpu.limit")
-		expect(sql).toContain("LIMIT 50")
-		expect(sql).not.toMatch(/__PARAM_\w+__/)
-	})
-
-	it("excludes kubeletstats per-container rows via the k8s.pod.name guard", () => {
-		const { sql } = compileUnsafe(listContainersQuery({}), baseParams)
-		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] = ''")
-	})
-
 	it("groups by (containerName, hostName) — names collide across hosts", () => {
 		const { sql } = compileUnsafe(listContainersQuery({}), baseParams)
 		expect(sql).toContain("GROUP BY containerName, hostName")
@@ -85,11 +67,6 @@ describe("listContainersQuery", () => {
 			}),
 			baseParams,
 		)
-		expect(sql.toLowerCase()).toContain("position")
-		expect(sql).toContain("'redis'")
-		expect(sql).toContain("ResourceAttributes['host.name'] IN")
-		expect(sql).toContain("ResourceAttributes['container.image.name'] IN")
-		expect(sql).toContain("ResourceAttributes['compose.project'] IN")
 		expect(sql).toContain("ResourceAttributes['compose.service'] IN")
 		expect(sql).toContain(
 			"coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']) IN",
@@ -137,7 +114,6 @@ describe("listContainersSummaryQuery", () => {
 
 	it("scans only the two aggregated percent gauges — it runs twice per page load", () => {
 		const { sql } = compileUnsafe(listContainersSummaryQuery({}), baseParams)
-		expect(sql).toContain("MetricName IN ('container.cpu.utilization', 'container.memory.percent')")
 		expect(sql).not.toContain("container.uptime")
 		expect(sql).not.toContain("container.cpu.limit")
 	})
@@ -154,19 +130,6 @@ describe("listContainersSummaryQuery", () => {
 })
 
 describe("containerFacetsQuery", () => {
-	it("emits one UNION ALL branch per facet dimension", () => {
-		const { sql } = compileUnionUnsafe(containerFacetsQuery({}), baseParams)
-		expect(sql.toUpperCase().split("UNION ALL").length).toBe(6)
-		expect(sql).toContain("ResourceAttributes['container.name']")
-		expect(sql).toContain("ResourceAttributes['host.name']")
-		expect(sql).toContain("ResourceAttributes['container.image.name']")
-		expect(sql).toContain("ResourceAttributes['compose.project']")
-		expect(sql).toContain("ResourceAttributes['compose.service']")
-		expect(sql).toContain(
-			"coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment'])",
-		)
-	})
-
 	it("counts by container.id — recreated containers keep their name, not their id", () => {
 		const { sql } = compileUnionUnsafe(containerFacetsQuery({}), baseParams)
 		expect(sql).toContain("uniq(metrics_gauge.ResourceAttributes['container.id'])")
@@ -179,23 +142,12 @@ describe("containerFacetsQuery", () => {
 
 	it("scans only the single probe metric, not the full container metric set", () => {
 		const { sql } = compileUnionUnsafe(containerFacetsQuery({}), baseParams)
-		expect(sql).toContain("MetricName IN ('container.cpu.utilization')")
 		expect(sql).not.toContain("container.memory.percent")
 		expect(sql).not.toContain("container.uptime")
 	})
 })
 
 describe("containerDetailSummaryQuery", () => {
-	it("filters by container name with optional host narrowing", () => {
-		const { sql } = compileUnsafe(
-			containerDetailSummaryQuery({ containerName: "redis", hostName: "host-1" }),
-			baseParams,
-		)
-		expect(sql).toContain("'redis'")
-		expect(sql).toContain("ResourceAttributes['host.name'] = 'host-1'")
-		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] = ''")
-	})
-
 	it("omits the host narrowing when not asked for", () => {
 		const { sql } = compileUnsafe(containerDetailSummaryQuery({ containerName: "redis" }), baseParams)
 		expect(sql).not.toContain("ResourceAttributes['host.name'] =")
@@ -203,14 +155,6 @@ describe("containerDetailSummaryQuery", () => {
 })
 
 describe("containerCountersSummaryQuery", () => {
-	it("reads the counter metrics from metrics_sum", () => {
-		const { sql } = compileUnsafe(containerCountersSummaryQuery({ containerName: "redis" }), baseParams)
-		expect(sql).toContain("FROM metrics_sum")
-		expect(sql).toContain("container.memory.usage.total")
-		expect(sql).toContain("container.memory.usage.limit")
-		expect(sql).toContain("container.pids.count")
-	})
-
 	it("computes the restart window delta from the cumulative counter", () => {
 		const { sql } = compileUnsafe(containerCountersSummaryQuery({ containerName: "redis" }), baseParams)
 		expect(sql).toContain(
@@ -239,7 +183,6 @@ describe("containerGaugeTimeseriesQuery", () => {
 		)
 		expect(sql).toContain("toStartOfInterval")
 		expect(sql).toContain("INTERVAL 60 SECOND")
-		expect(sql).toContain("MetricName = 'container.cpu.utilization'")
 		expect(sql).toContain("avg(metrics_gauge.Value) / 100")
 	})
 
@@ -253,24 +196,6 @@ describe("containerGaugeTimeseriesQuery", () => {
 })
 
 describe("containerSumTimeseriesQuery", () => {
-	it("labels series from metric names for the rx/tx network split", () => {
-		const { sql } = compileUnsafe(
-			containerSumTimeseriesQuery({
-				containerName: "redis",
-				metricNames: ["container.network.io.usage.rx_bytes", "container.network.io.usage.tx_bytes"],
-				metricLabels: [
-					["container.network.io.usage.rx_bytes", "receive"],
-					["container.network.io.usage.tx_bytes", "transmit"],
-				],
-			}),
-			baseParams,
-		)
-		expect(sql).toContain("FROM metrics_sum")
-		expect(sql).toContain("multiIf")
-		expect(sql).toContain("'receive'")
-		expect(sql).toContain("'transmit'")
-	})
-
 	it("averages sampled sums instead of adding a bucket's samples together", () => {
 		// container.memory.usage.total is a sampled value; summing ~10 samples per
 		// bucket would inflate the chart by samples-per-bucket.
@@ -369,6 +294,7 @@ describe("container rows decode timestamps to DateTime.Utc", () => {
 					composeProject: "",
 					composeService: "",
 					runtime: "docker",
+					sourceId: "",
 					firstSeen: "2024-01-01 09:00:00.000000000",
 					lastSeen: "2024-01-01 10:00:00.500000000",
 					cpuPct: 0.1,

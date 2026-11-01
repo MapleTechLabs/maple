@@ -277,6 +277,190 @@
 			"split": "holdout",
 			"enabled": true,
 			"curationNote": "Target-specific negative control after the real fix; not a claim the entire PR is bug-free. Commits live on PR #1259's head; after a squash merge fetch them with `git fetch origin pull/1259/head`."
+		},
+		{
+			"id": "pr2015-aria-label-hides-finding",
+			"number": 2015,
+			"range": "b67f5899e71509054dfcbb819c848625505360b6..3b0b5ab975a212403946699ea6c7fe3df2557cae",
+			"bug": "Each live-step card is an anchor with `aria-label` `${card.action}: ${card.title}`. An aria-label replaces the link's descendant text as its accessible name, so screen readers never hear `card.finding` (the service count, latency or error rate the card shows). Target: names the aria-label overriding the card's visible finding text.",
+			"fix": {
+				"sha": "39a59e21075b971c2963404011fe004a2158698a",
+				"subject": "style(web): onboarding review follow-ups"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/page/onboarding/quick-start-view.ts",
+					"lines": [1015, 1019]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "UI recall case, mined from another reviewer's finding that Maple's review scored 10/10 without. Commits live on PR #2015's head: `git fetch origin pull/2015/head`."
+		},
+		{
+			"id": "pr2015-lg-preview-clipped",
+			"number": 2015,
+			"range": "b67f5899e71509054dfcbb819c848625505360b6..3b0b5ab975a212403946699ea6c7fe3df2557cae",
+			"bug": "The create-org form column widens from `lg:w-[640px]` to `lg:w-[760px]` while the preview pane still shows from `lg`. At a 1024px viewport that leaves 264px for the preview, about 152px after padding, for a workspace preview whose sidebar alone is 208px, so the preview is clipped. Target: names the lg breakpoint (1024px) and the preview not fitting beside the 760px column.",
+			"fix": {
+				"sha": "39a59e21075b971c2963404011fe004a2158698a",
+				"subject": "style(web): onboarding review follow-ups"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/page/onboarding/create-org-view.ts",
+					"lines": [386, 386]
+				},
+				{
+					"path": "apps/web/src/page/onboarding/create-org-view.ts",
+					"lines": [434, 434]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "UI recall case, mined from another reviewer's finding that Maple's review scored 10/10 without. Commits live on PR #2015's head: `git fetch origin pull/2015/head`."
+		},
+		{
+			"id": "pr2015-long-org-name-overflows",
+			"number": 2015,
+			"range": "b67f5899e71509054dfcbb819c848625505360b6..3b0b5ab975a212403946699ea6c7fe3df2557cae",
+			"bug": "The live step's Back and `Go to ${orgName}` buttons sit in a non-wrapping `flex items-center gap-2` row, and the button text does not truncate. Org names run to 100 characters, so on a narrow screen the centred row is wider than the viewport and Back is pushed off the left edge. Target: names the long org name overflowing that row.",
+			"fix": {
+				"sha": "39a59e21075b971c2963404011fe004a2158698a",
+				"subject": "style(web): onboarding review follow-ups"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/page/onboarding/quick-start-view.ts",
+					"lines": [1157, 1169]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "UI recall case, mined from another reviewer's finding that Maple's review scored 10/10 without. Commits live on PR #2015's head: `git fetch origin pull/2015/head`."
+		},
+		{
+			"id": "pr2015-aria-label-hides-finding-fixed",
+			"number": 2015,
+			"range": "b67f5899e71509054dfcbb819c848625505360b6..39a59e21075b971c2963404011fe004a2158698a",
+			"bug": "Post-fix control for pr2015-aria-label-hides-finding: the card's aria-label is removed, so the link's name includes the finding again. A finding claiming the card's finding text is hidden from screen readers is a target (false positive) here.",
+			"fix": {
+				"sha": "39a59e21075b971c2963404011fe004a2158698a",
+				"subject": "style(web): onboarding review follow-ups"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/page/onboarding/quick-start-view.ts",
+					"lines": [1015, 1019]
+				}
+			],
+			"expected": "absent",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "UI recall case, mined from another reviewer's finding that Maple's review scored 10/10 without. Commits live on PR #2015's head: `git fetch origin pull/2015/head`."
+		},
+		{
+			"id": "pr1950-escape-discards-component-edit",
+			"number": 1950,
+			"range": "732224f48ee146cc3aae88facca45e01d0a7b5fe..6fbb627a8f2a8a6fc98caa4e0f09495c9ef05684",
+			"bug": "The component panel saves a text field only on blur (`CommittedComponent`). Close and clicking elsewhere blur first, but Escape arrives as a document keydown: `PressedEscape` calls `closePanel` directly, which unmounts the panel without `commitComponent`, so a typed name or group is discarded. Target: names Escape closing the panel without saving the typed edit.",
+			"fix": {
+				"sha": "5663a37416068dc0e7c481186338f8155875dff0",
+				"subject": "fix(status-pages): the preview lists incidents by the publisher's rule and waits for monitors, Escape saves a component edit, a draft's live screen says it is not public"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/page/status-pages/editor/update.ts",
+					"lines": [361, 361]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "UI recall case, mined from another reviewer's finding that Maple's review scored 10/10 without. The stack was rebased; fetch the pinned commits with `git fetch origin pull/1950/head`."
+		},
+		{
+			"id": "pr1950-draft-says-live",
+			"number": 1950,
+			"range": "732224f48ee146cc3aae88facca45e01d0a7b5fe..6fbb627a8f2a8a6fc98caa4e0f09495c9ef05684",
+			"bug": "The live screen always shows the `Published` eyebrow and `${page.name} is live`; only the subtitle branches on `page.draft`. A draft reached through `?view=live` (a bookmark, shared link or back-navigation) therefore says it is live while the header says Draft, not public. Target: names the heading or eyebrow being wrong for a draft page.",
+			"fix": {
+				"sha": "5663a37416068dc0e7c481186338f8155875dff0",
+				"subject": "fix(status-pages): the preview lists incidents by the publisher's rule and waits for monitors, Escape saves a component edit, a draft's live screen says it is not public"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/page/status-pages/editor/view-live.ts",
+					"lines": [74, 85]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "UI recall case, mined from another reviewer's finding that Maple's review scored 10/10 without. The stack was rebased; fetch the pinned commits with `git fetch origin pull/1950/head`."
+		},
+		{
+			"id": "pr1950-preview-listing-rule-diverges",
+			"number": 1950,
+			"range": "732224f48ee146cc3aae88facca45e01d0a7b5fe..6fbb627a8f2a8a6fc98caa4e0f09495c9ef05684",
+			"bug": "The editor preview's `isListedIncident` lists every published open incident, while the publisher's rule in `StatusPageSnapshotBuilder.ts` also hides a scheduled maintenance whose `scheduledEnd` has passed. An expired, unresolved scheduled maintenance shows in the preview but not on the public page. Target: names the preview's rule diverging from the snapshot builder's for scheduled maintenance.",
+			"fix": {
+				"sha": "5663a37416068dc0e7c481186338f8155875dff0",
+				"subject": "fix(status-pages): the preview lists incidents by the publisher's rule and waits for monitors, Escape saves a component edit, a draft's live screen says it is not public"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/page/status-pages/shared/preview.ts",
+					"lines": [48, 53]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "UI recall case, mined from another reviewer's finding that Maple's review scored 10/10 without. The stack was rebased; fetch the pinned commits with `git fetch origin pull/1950/head`."
+		},
+		{
+			"id": "pr1972-flag-redirect-still-loads-page",
+			"number": 1972,
+			"range": "5663a37416068dc0e7c481186338f8155875dff0..fefed34f2feec423a3f2b34ff8135f9e36aaa8f1",
+			"bug": "When an org outside the statusPages rollout opens /status-pages, `settle` schedules the flag redirect but `loadPage` still enters the route: the list page mounts and issues `FetchStatusPages` before navigation lands. Target: names the gated page still loading or fetching during its redirect.",
+			"fix": {
+				"sha": "742d3d1d8fc294eb25b964bded65e8e7c9480250",
+				"subject": "fix(web): a status page route outside the rollout mounts no page on its way home"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/update.ts",
+					"lines": [403, 406]
+				}
+			],
+			"expected": "present",
+			"split": "holdout",
+			"enabled": true,
+			"curationNote": "UI/service recall holdout, mined from another reviewer's finding that Maple's review missed. Not used to write the interface-code prompt section. Fetch with `git fetch origin pull/1972/head`."
+		},
+		{
+			"id": "pr1972-incident-audit-missing-origin",
+			"number": 1972,
+			"range": "5663a37416068dc0e7c481186338f8155875dff0..218122a36c8bf68cb3f76bc6f1a0faff533d45d9",
+			"bug": "The new MCP incident audit entries (`auditIncidentCreated`, `auditUpdatePosted`) omit `originMetadata(tenant.turnOrigin)`, which `recordMcpToolAudit` includes, so an incident created or updated through an unlinked connector approval has no external requester or workspace in its audit entry. Target: names the missing connector origin metadata on these audit entries.",
+			"fix": {
+				"sha": "1aba6677aa70f4ea81f956026dbb125e379d84d5",
+				"subject": "fix(status): status page audit entries carry the connector requester"
+			},
+			"locations": [
+				{
+					"path": "apps/ai/src/mcp/tools/status-pages.ts",
+					"lines": [148, 165]
+				}
+			],
+			"expected": "present",
+			"split": "holdout",
+			"enabled": true,
+			"curationNote": "UI/service recall holdout, mined from another reviewer's finding that Maple's review missed. Not used to write the interface-code prompt section. Fetch with `git fetch origin pull/1972/head`."
 		}
 	]
 }

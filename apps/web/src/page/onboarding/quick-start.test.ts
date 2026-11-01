@@ -1,10 +1,19 @@
 import { CatalogPlan, CatalogPlansResponse } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Result } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
-import { init, Message, type Model, update } from "./quick-start"
-import { DEFAULT_QUICK_START_STATE, resolveQuickStartStep } from "./quick-start-state"
+import { init, Message, type Model, update as updateWith } from "./quick-start"
+import {
+	DEFAULT_QUICK_START_STATE,
+	readQuickStartState,
+	resolveQuickStartStep,
+	STEP_IDS,
+} from "./quick-start-state"
+import { ConnectMessage } from "./quick-start-connect"
 import { LoadTeam, loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
+
+/** An org that holds a plan, as most of these steps run for. */
+const update = (model: Model, message: Message) => updateWith(model, message, true)
 
 const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE })
 
@@ -17,52 +26,260 @@ const stateOf = (model: Model) => {
 }
 
 describe("quick start", () => {
-	test("the role step continues only with a role, then lands on intents; every change is saved", () => {
-		const blocked = update(loaded(), Message.ClickedContinue({ step: "role" }))
-		expect(names(blocked)).toEqual([])
-		const picked = update(loaded(), Message.PickedRole({ role: "backend" }))
+	test("the plan comes first, and an org that already holds one starts on its stack", () => {
+		expect(resolveQuickStartStep(DEFAULT_QUICK_START_STATE, false)).toBe("plan")
+		expect(resolveQuickStartStep(DEFAULT_QUICK_START_STATE, true)).toBe("stack")
+	})
+
+	test("a save from the old role and intent steps resumes at the first step still to do", () => {
+		const old = { ...DEFAULT_QUICK_START_STATE, activeStep: "intent", completedSteps: { role: true } }
+		expect(resolveQuickStartStep(old, true)).toBe("stack")
+	})
+
+	test("stack picks are saved and set what the setup checklist shows", () => {
+		const picked = update(loaded(), Message.ToggledLanguage({ language: "python" }))
 		expect(names(picked)).toEqual(["SaveQuickStartState"])
-		const next = update(picked.model, Message.ClickedContinue({ step: "role" })).model
-		expect(resolveQuickStartStep(stateOf(next))).toBe("intent")
-		expect(stateOf(next).completedSteps).toEqual({ role: true })
+		const withPlatform = update(picked.model, Message.ToggledPlatform({ platform: "supabase" })).model
+		expect(stateOf(withPlatform).stack).toEqual({ languages: ["python"], platforms: ["supabase"] })
+		expect(stateOf(withPlatform).selectedFramework).toBe("python")
+		expect(stateOf(withPlatform).qualifyAnswers.intents).toContain("infrastructure")
+		const unpicked = update(withPlatform, Message.ToggledLanguage({ language: "python" })).model
+		expect(stateOf(unpicked).stack.languages).toEqual([])
 	})
 
-	test("Something else needs its free-text role before continuing", () => {
-		const other = update(loaded(), Message.PickedRole({ role: "other" })).model
-		expect(names(update(other, Message.ClickedContinue({ step: "role" })))).toEqual([])
-		const described = update(other, Message.ChangedRoleDetail({ value: "Security engineer" })).model
-		expect(resolveQuickStartStep(stateOf(update(described, Message.ClickedContinue({ step: "role" })).model))).toBe(
-			"intent",
+	test("the stack can be skipped, and the last step sends them on to where they were going", () => {
+		const start = {
+			...init("maple-onboarding-v6-org_1", false, false, "/traces").model,
+			state: DEFAULT_QUICK_START_STATE,
+		}
+		const skipped = update(start, Message.ClickedContinue({ step: "stack" })).model
+		expect(resolveQuickStartStep(stateOf(skipped), true)).toBe("connect")
+		const connected = update(skipped, Message.ClickedContinue({ step: "connect" })).model
+		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("team")
+		const teamed = update(connected, Message.ClickedContinue({ step: "team" })).model
+		expect(resolveQuickStartStep(stateOf(teamed), true)).toBe("live")
+		const done = update(teamed, Message.ClickedContinue({ step: "live" }))
+		expect(done.commands?.map((command) => [command.name, command.args]).at(-1)).toEqual([
+			"FinishQuickStart",
+			{ url: "/traces" },
+		])
+	})
+
+	test("Back returns to the previous step with its answers kept", () => {
+		const start = {
+			...init("maple-onboarding-v6-org_1", false, false, "/traces").model,
+			state: DEFAULT_QUICK_START_STATE,
+		}
+		const picked = update(start, Message.ToggledLanguage({ language: "ruby" })).model
+		const onConnect = update(picked, Message.ClickedContinue({ step: "stack" })).model
+		const back = update(onConnect, Message.ClickedBack({ to: "stack" })).model
+		expect(resolveQuickStartStep(stateOf(back), true)).toBe("stack")
+		expect(stateOf(back).stack.languages).toEqual(["ruby"])
+	})
+
+	test("someone who already finished is sent straight on when the page loads", () => {
+		const finished = {
+			...DEFAULT_QUICK_START_STATE,
+			completedSteps: { plan: true, stack: true, connect: true, team: true, live: true },
+		}
+		const loading = init("maple-onboarding-v6-org_1").model
+		expect(names(update(loading, Message.LoadedQuickStartState({ state: finished })))).toEqual([
+			"FinishQuickStart",
+		])
+		expect(
+			names(update(loading, Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }))),
+		).not.toContain("FinishQuickStart")
+	})
+
+	test("the step a fresh save opens on loads its own data: the plans without a plan, nothing with one", () => {
+		const loading = init("maple-onboarding-v6-org_1").model
+		const load = Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE })
+		expect(names(updateWith(loading, load, false))).toContain("LoadPlans")
+		expect(names(updateWith(loading, load, true))).not.toContain("LoadPlans")
+	})
+
+	test("a save that loads before the plan is known waits for it, then is sent on or opens its step", () => {
+		const finished = {
+			...DEFAULT_QUICK_START_STATE,
+			completedSteps: Object.fromEntries(STEP_IDS.map((id) => [id, true])),
+		}
+		const loading = init("maple-onboarding-v6-org_1").model
+		const early = updateWith(loading, Message.LoadedQuickStartState({ state: finished }), null)
+		expect(names(early)).toEqual([])
+		expect(names(updateWith(early.model, Message.SettledPlan(), true))).toEqual(["FinishQuickStart"])
+		const fresh = updateWith(
+			loading,
+			Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }),
+			null,
 		)
+		expect(names(fresh)).toEqual([])
+		expect(names(updateWith(fresh.model, Message.SettledPlan(), false))).toContain("LoadPlans")
+		const settled = updateWith(early.model, Message.SettledPlan(), true).model
+		expect(names(updateWith(settled, Message.SettledPlan(), true))).toEqual([])
 	})
 
-	test("intents toggle on and off, and Back returns to the role", () => {
-		const atIntent = { ...loaded(), state: { ...DEFAULT_QUICK_START_STATE, activeStep: "intent" } }
-		const twice = update(update(atIntent, Message.ToggledIntent({ intent: "logs" })).model, Message.ToggledIntent({ intent: "logs" }))
-		expect(stateOf(twice.model).qualifyAnswers.intents).toEqual([])
-		const back = update(atIntent, Message.ClickedBack({ to: "role" })).model
-		expect(resolveQuickStartStep(stateOf(back))).toBe("role")
+	test("a finished save with no plan behind it goes back to the plan step instead of bouncing off the gate", () => {
+		const finished = {
+			...DEFAULT_QUICK_START_STATE,
+			completedSteps: { plan: true, stack: true, team: true },
+		}
+		const loading = init("maple-onboarding-v6-org_1").model
+		const landed = updateWith(loading, Message.LoadedQuickStartState({ state: finished }), false)
+		expect(names(landed)).not.toContain("FinishQuickStart")
+		expect(resolveQuickStartStep(stateOf(landed.model), false)).toBe("plan")
+	})
+
+	test("finishing the last step without a plan goes back to the plan step instead of nowhere", () => {
+		const last = STEP_IDS[STEP_IDS.length - 1] ?? "team"
+		const atLast = {
+			...loaded(),
+			state: { ...DEFAULT_QUICK_START_STATE, activeStep: last, completedSteps: { stack: true } },
+		}
+		const done = updateWith(atLast, Message.ClickedContinue({ step: last }), false)
+		expect(names(done)).not.toContain("FinishQuickStart")
+		expect(resolveQuickStartStep(stateOf(done.model), false)).toBe("plan")
+	})
+
+	test("a save from the old wizard that reached its plan step stays finished", () => {
+		const legacy = {
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "plan",
+			completedSteps: { role: true, intent: true, team: true, plan: true },
+			qualifyAnswers: { role: null, intents: [] },
+		}
+		vi.stubGlobal("localStorage", { getItem: () => JSON.stringify(legacy) })
+		const state = Effect.runSync(readQuickStartState("maple-onboarding-v6-legacy"))
+		const loading = init("maple-onboarding-v6-legacy").model
+		expect(names(update(loading, Message.LoadedQuickStartState({ state })))).toEqual(["FinishQuickStart"])
+		vi.unstubAllGlobals()
+	})
+})
+
+describe("quick start live step", () => {
+	const presence = (present: ReadonlyArray<string>) =>
+		Message.GotConnectMessage({
+			message: ConnectMessage.LoadedPresence({
+				result: Result.succeed(
+					Object.fromEntries(
+						present.map((signal) => [signal, { status: "present", lastSeenMs: 1 }]),
+					),
+				),
+			}),
+		})
+
+	test("opened straight from a save, it reads what is arriving once the plan is known", () => {
+		const atLive = {
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "live",
+			completedSteps: { stack: true, connect: true, team: true },
+		}
+		const loading = init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model
+		const early = updateWith(loading, Message.LoadedQuickStartState({ state: atLive }), null)
+		const settled = updateWith(early.model, Message.SettledPlan(), true)
+		expect(names(settled)).toEqual(
+			expect.arrayContaining(["LoadOnboardingConnectPresence", "LoadOnboardingLiveFindings"]),
+		)
+		expect(settled.model.connect.isActive).toBe(true)
+	})
+
+	test("a signal arriving while it shows re-reads the findings; a poll with nothing new does not", () => {
+		const atLive = {
+			...init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
+			state: { ...DEFAULT_QUICK_START_STATE, activeStep: "live" },
+		}
+		const waiting = update(atLive, presence([]))
+		expect(names(waiting)).not.toContain("LoadOnboardingLiveFindings")
+		const arrived = update(waiting.model, presence(["traces"]))
+		expect(names(arrived)).toContain("LoadOnboardingLiveFindings")
+		expect(names(update(arrived.model, presence(["traces"])))).not.toContain("LoadOnboardingLiveFindings")
+	})
+})
+
+describe("quick start connect step", () => {
+	const atStack = (): Model => ({
+		...init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
+		state: {
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "stack",
+			stack: { languages: ["nodejs"], platforms: ["cloudflare", "docker"] },
+		},
+	})
+
+	test("opening it reads the ingest key, what is arriving, and whether each picked platform is connected", () => {
+		const opened = update(atStack(), Message.ClickedContinue({ step: "stack" }))
+		expect(names(opened)).toEqual(
+			expect.arrayContaining([
+				"FetchOnboardingConnectKeys",
+				"LoadOnboardingConnectPresence",
+				"LoadOnboardingConnectedProviders",
+			]),
+		)
+		const providers = (opened.commands ?? []).find(
+			(command) => command.name === "LoadOnboardingConnectedProviders",
+		)
+		// Docker has no integration status; its sources say whether it is connected.
+		expect(providers?.args).toEqual({ orgId: "org_1", platforms: ["cloudflare", "docker"] })
+		expect(opened.model.connect.isActive).toBe(true)
+	})
+
+	test("an org that already holds a plan opens it from a fresh save, whose saved step is still the plan", () => {
+		const fresh = {
+			...atStack(),
+			state: {
+				...DEFAULT_QUICK_START_STATE,
+				stack: atStack().state?.stack ?? DEFAULT_QUICK_START_STATE.stack,
+			},
+		}
+		const opened = update(fresh, Message.ClickedContinue({ step: "stack" }))
+		expect(names(opened)).toContain("FetchOnboardingConnectKeys")
+		expect(opened.model.connect.isActive).toBe(true)
+	})
+
+	test("it keeps polling while it shows and stops once they move on", () => {
+		const open = update(atStack(), Message.ClickedContinue({ step: "stack" })).model
+		const polled = update(open, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))
+		expect(names(polled)).toContain("LoadOnboardingConnectPresence")
+		const left = update(open, Message.ClickedContinue({ step: "connect" })).model
+		expect(left.connect.isActive).toBe(false)
+		expect(
+			names(update(left, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))),
+		).toEqual([])
 	})
 })
 
 describe("quick start team step", () => {
-	const admin = updateTeam(loadingTeam(), TeamMessage.LoadedTeam({ name: "Orbit", canManage: true, invitations: [] })).team
+	const admin = updateTeam(
+		loadingTeam(),
+		TeamMessage.LoadedTeam({ name: "Orbit", canManage: true, invitations: [] }),
+	).team
 
 	test("an admin invites a teammate once; an address already invited is refused", () => {
-		const typed = updateTeam(admin, TeamMessage.ChangedTeammateEmail({ value: " grace@orbit.test " })).team
+		const typed = updateTeam(
+			admin,
+			TeamMessage.ChangedTeammateEmail({ value: " grace@orbit.test " }),
+		).team
 		const sent = updateTeam(typed, TeamMessage.SubmittedInvite())
 		expect(sent.commands.map((command) => [command.name, command.args])).toEqual([
 			["RunOnboardingTeamOperation", { operation: "invite", value: "grace@orbit.test" }],
 		])
 		expect(updateTeam(sent.team, TeamMessage.SubmittedRename()).commands).toEqual([])
-		const done = updateTeam(sent.team, TeamMessage.SucceededTeamOperation({ operation: "invite", value: "grace@orbit.test" })).team
+		const done = updateTeam(
+			sent.team,
+			TeamMessage.SucceededTeamOperation({ operation: "invite", value: "grace@orbit.test" }),
+		).team
 		expect(done).toMatchObject({ invited: ["grace@orbit.test"], email: "", pending: null })
-		const again = updateTeam(updateTeam(done, TeamMessage.ChangedTeammateEmail({ value: "GRACE@orbit.test" })).team, TeamMessage.SubmittedInvite())
+		const again = updateTeam(
+			updateTeam(done, TeamMessage.ChangedTeammateEmail({ value: "GRACE@orbit.test" })).team,
+			TeamMessage.SubmittedInvite(),
+		)
 		expect(again.commands).toEqual([])
 	})
 
 	test("a member sees why the forms are off and cannot submit them", () => {
-		const member = updateTeam(loadingTeam(), TeamMessage.LoadedTeam({ name: "Orbit", canManage: false, invitations: [] })).team
+		const member = updateTeam(
+			loadingTeam(),
+			TeamMessage.LoadedTeam({ name: "Orbit", canManage: false, invitations: [] }),
+		).team
 		expect(member.unavailableReason).not.toBeNull()
 		const renamed = updateTeam(member, TeamMessage.ChangedWorkspaceName({ value: "Orbit Labs" })).team
 		expect(updateTeam(renamed, TeamMessage.SubmittedRename()).commands).toEqual([])
@@ -70,11 +287,21 @@ describe("quick start team step", () => {
 })
 
 const plans = new CatalogPlansResponse({
-	plans: [new CatalogPlan({ id: "startup", name: "Startup", items: [], customerEligibility: { trialAvailable: true } })],
+	plans: [
+		new CatalogPlan({
+			id: "startup",
+			name: "Startup",
+			items: [],
+			customerEligibility: { trialAvailable: true },
+		}),
+	],
 })
 
 describe("pricing cards", () => {
-	const ready = PricingCards.update(PricingCards.init(), PricingCards.Message.SucceededLoadPlans({ response: plans })).model
+	const ready = PricingCards.update(
+		PricingCards.init(),
+		PricingCards.Message.SucceededLoadPlans({ response: plans }),
+	).model
 
 	test("a plan's button attaches it once, then leaves for Stripe and re-reads the catalog", () => {
 		const clicked = PricingCards.update(ready, PricingCards.Message.ClickedPlan({ planId: "startup" }))
@@ -91,7 +318,9 @@ describe("pricing cards", () => {
 		// oxlint-disable-next-line test-slop/no-exact-name-list -- tracking must run before the checkout navigates away
 		expect(names(attached)).toEqual(["LoadPlans", "TrackCheckoutStarted", "OpenCheckout"])
 		expect(attached.model.loadingPlanId).toBe("startup")
-		expect(attached.outMessage).toEqual(PricingCards.OutMessage.ChangedPlan({ isLeavingForCheckout: true }))
+		expect(attached.outMessage).toEqual(
+			PricingCards.OutMessage.ChangedPlan({ isLeavingForCheckout: true }),
+		)
 	})
 
 	test("back from Stripe, the cards wait on the sync: polling the customer, then giving up", () => {
@@ -106,14 +335,24 @@ describe("pricing cards", () => {
 		const timedOut = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutTimeout())
 		expect(timedOut.model.checkoutReturn).toBe("TimedOut")
 		expect(timedOut.outMessage).toEqual(PricingCards.OutMessage.RequestedClearCheckoutMarker())
-		expect(PricingCards.update(timedOut.model, PricingCards.Message.ElapsedCheckoutPoll()).outMessage).toBeUndefined()
+		expect(
+			PricingCards.update(timedOut.model, PricingCards.Message.ElapsedCheckoutPoll()).outMessage,
+		).toBeUndefined()
 	})
 
 	test("a refused attach frees the button and reports the failure", () => {
-		const clicked = PricingCards.update(ready, PricingCards.Message.ClickedPlan({ planId: "startup" })).model
-		const failed = PricingCards.update(clicked, PricingCards.Message.FailedAttach({ message: "Card declined" }))
+		const clicked = PricingCards.update(
+			ready,
+			PricingCards.Message.ClickedPlan({ planId: "startup" }),
+		).model
+		const failed = PricingCards.update(
+			clicked,
+			PricingCards.Message.FailedAttach({ message: "Card declined" }),
+		)
 		expect(failed.model.loadingPlanId).toBeNull()
-		expect(failed.outMessage).toEqual(PricingCards.OutMessage.FailedChangePlan({ message: "Card declined" }))
+		expect(failed.outMessage).toEqual(
+			PricingCards.OutMessage.FailedChangePlan({ message: "Card declined" }),
+		)
 	})
 })
 
@@ -123,9 +362,16 @@ describe("quick start team load", () => {
 	})
 
 	test("an admin whose pending invitations fail to load still gets the team step, with no invitations", async () => {
-		const organization = { id: "org_1", name: "Acme", getInvitations: () => Promise.reject(new Error("Network down")) }
+		const organization = {
+			id: "org_1",
+			name: "Acme",
+			getInvitations: () => Promise.reject(new Error("Network down")),
+		}
 		vi.stubGlobal("window", {
-			Clerk: { organization, user: { organizationMemberships: [{ organization: { id: "org_1" }, role: "org:admin" }] } },
+			Clerk: {
+				organization,
+				user: { organizationMemberships: [{ organization: { id: "org_1" }, role: "org:admin" }] },
+			},
 		})
 		const loaded = await Effect.runPromise(LoadTeam().effect)
 		expect(loaded).toEqual(TeamMessage.LoadedTeam({ name: "Acme", canManage: true, invitations: [] }))

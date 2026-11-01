@@ -1,7 +1,7 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
 import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
-import { WarehouseConfigError, type WarehouseQueryRequest } from "@maple/domain/http"
+import { WarehouseConfigError, WarehouseUpstreamError, type WarehouseQueryRequest } from "@maple/domain/http"
 import {
 	BackendDialect,
 	makeWarehouseExecutor,
@@ -340,7 +340,7 @@ const createClient = (
 let sqlClientFactory: typeof createClient = createClient
 
 export class WarehouseQueryService extends Context.Service<WarehouseQueryService, WarehouseQueryServiceApi>()(
-	"@maple/api/lib/WarehouseQueryService",
+	"@maple/backend/lib/WarehouseQueryService",
 	{
 		make: Effect.gen(function* () {
 			// Captured once: every driver the executor builds runs on this client.
@@ -459,7 +459,19 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				// A per-org BYO ClickHouse row (`org_clickhouse_settings`) overrides the
 				// managed upstream for that org's reads AND raw SQL (the credentials are
 				// already tenant-isolated).
-				const override = yield* orgClickHouseSettings.resolveRuntimeConfig(tenant.orgId)
+				// A failed settings read is transient and not actionable on a data page,
+				// so queries report it as the retryable warehouse outage.
+				const override = yield* orgClickHouseSettings.resolveRuntimeConfig(tenant.orgId).pipe(
+					Effect.catchTag("@maple/http/errors/OrgClickHouseSettingsPersistenceError", (error) =>
+						Effect.fail(
+							new WarehouseUpstreamError({
+								message: `Could not load the org's data connection settings: ${error.message}`,
+								pipeName: label,
+								cause: error,
+							}),
+						),
+					),
+				)
 				if (Option.isSome(override)) {
 					yield* Effect.annotateCurrentSpan("clientSource", "org_override")
 					yield* Effect.annotateCurrentSpan("db.client", "clickhouse")

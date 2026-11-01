@@ -1,4 +1,10 @@
-import { GithubSetCiTracesRequest, GithubSetTrackedBranchRequest, VcsRepositoryId } from "@maple/domain/http"
+import {
+	GithubInstallationSelection,
+	GithubSelectInstallationRequest,
+	GithubSetCiTracesRequest,
+	GithubSetTrackedBranchRequest,
+	VcsRepositoryId,
+} from "@maple/domain/http"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
@@ -10,6 +16,8 @@ import { Message } from "./message"
 // `GithubIntegrationCard`: state and writes.
 
 export const GithubCardModel = Schema.Struct({
+	selection: Schema.NullOr(GithubInstallationSelection),
+	selectingInstallation: Schema.NullOr(Schema.String),
 	/** The Refresh button's 700 ms spinner (`refreshing`), versioned so a late timer is ignored. */
 	isRefreshing: Schema.Boolean,
 	refreshVersion: Schema.Number,
@@ -39,6 +47,8 @@ export type GithubCardModel = typeof GithubCardModel.Type
 export const branchPopoverId = (repoId: string) => `github-branch-${repoId}`
 
 export const initGithubCard = (): GithubCardModel => ({
+	selection: null,
+	selectingInstallation: null,
 	isRefreshing: false,
 	refreshVersion: 0,
 	ciTraces: null,
@@ -58,6 +68,29 @@ export const initGithubCard = (): GithubCardModel => ({
 })
 
 const failureOf = (error: unknown): LoadFailure => toLoadFailure(error)
+
+export const SelectGithubInstallation = Command.define("SelectGithubInstallation", {
+	args: { state: Schema.String, installationId: Schema.String },
+	messages: [Message.CompletedSelectGithubInstallation],
+	execute: ({ state, installationId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.integrations.githubSelectInstallation({
+				payload: new GithubSelectInstallationRequest({ state, installationId }),
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) =>
+					Message.CompletedSelectGithubInstallation({
+						state,
+						installationId,
+						failure: failureOf(error),
+					}),
+				onSuccess: () =>
+					Message.CompletedSelectGithubInstallation({ state, installationId, failure: null }),
+			}),
+		),
+})
 
 export const SpinGithubRefresh = Command.define("SpinGithubRefresh", {
 	args: { version: Schema.Number },

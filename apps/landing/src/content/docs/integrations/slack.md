@@ -14,7 +14,7 @@ The Slack integration adds the Maple bot to a Slack workspace and links that wor
 
 ## Install the bot
 
-1. Open **Integrations → Slack** in Maple.
+1. Open **Settings → Integrations → Slack** in Maple.
 2. Click **Add to Slack**. Maple redirects you to Slack.
 3. Choose the workspace and approve the install. Slack returns you to Maple, which shows **Connected** with the workspace name.
 
@@ -74,12 +74,12 @@ The two features are independent. You can link a workspace only for alerts and n
 
 ## Verify
 
-1. **Integrations → Slack** shows your workspace with **Connected**.
+1. **Settings → Integrations → Slack** shows your workspace with **Connected**.
 2. In a channel with the bot, mention it with a question such as `@Maple which services had errors in the last hour?`. A threaded reply appears.
 
 ## Disconnect
 
-On **Integrations → Slack**, click **Disconnect** next to the workspace and confirm. The workspace is unlinked from your organization immediately. To remove the bot from the workspace itself, uninstall the app in Slack. Uninstalling the app in Slack also unlinks the workspace in Maple.
+On **Settings → Integrations → Slack**, click **Disconnect** next to the workspace and confirm. The workspace is unlinked from your organization immediately. To remove the bot from the workspace itself, uninstall the app in Slack. Uninstalling the app in Slack also unlinks the workspace in Maple.
 
 ## Troubleshooting
 

@@ -169,11 +169,13 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					// Whoever can mint a key must be able to kill it: a member may
-					// revoke an MCP key they created themselves. Everything else
-					// stays admin-only.
+					// revoke an MCP key they created, or a device key one of their
+					// phones minted. Everything else stays admin-only.
 					const existing = yield* apiKeysService.get(tenant.orgId, params.id)
-					const isOwnMcpKey = existing.kind === "mcp" && existing.createdBy === tenant.userId
-					if (!isOwnMcpKey) {
+					const isOwnSelfServiceKey =
+						(existing.kind === "mcp" || existing.kind === "device") &&
+						existing.createdBy === tenant.userId
+					if (!isOwnSelfServiceKey) {
 						yield* requireAdmin(tenant.roles, adminOnly("revoke"))
 					}
 					if (!withinCallerScopes(tenant.scopes, existing.scopes)) {

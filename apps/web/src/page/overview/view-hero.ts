@@ -36,7 +36,7 @@ const allClear = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 											[h.Class("text-foreground font-medium tabular-nums")],
 											[String(counts.rulesEnabled)],
 										),
-										h.span([h.Class("text-muted-foreground/70")], [" / "]),
+										h.span([h.Class("text-foreground-subtle")], [" / "]),
 										h.span([h.Class("tabular-nums")], [String(counts.rulesTotal)]),
 										h.span([h.Class("ml-1")], ["rules watching"]),
 									],
@@ -55,7 +55,7 @@ const rulesSummary = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 		[h.Class("tabular-nums")],
 		[
 			h.span([h.Class("text-foreground font-medium")], [String(counts.rulesEnabled)]),
-			h.span([h.Class("text-muted-foreground/70")], ["/"]),
+			h.span([h.Class("text-foreground-subtle")], ["/"]),
 			h.span([], [String(counts.rulesTotal)]),
 			h.span([h.Class("ml-1")], ["rules"]),
 		],
@@ -102,7 +102,7 @@ const firing = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html => {
 											),
 										],
 									),
-									h.span([h.Class("text-muted-foreground/40")], ["·"]),
+									h.span([h.Class("text-foreground-faint")], ["·"]),
 									h.span([h.Class("text-muted-foreground text-sm")], [label]),
 								],
 							),
@@ -116,7 +116,7 @@ const firing = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html => {
 				PANEL,
 			),
 		],
-		"border-severity-error/30 bg-severity-error/[0.04]",
+		"border-severity-error-a3 bg-severity-error/[0.04]",
 	)
 }
 

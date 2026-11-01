@@ -18,12 +18,15 @@ on:
 
 # Only runs that deploy or tear down share the PR's group (same test as deploy-pr-preview's
 # `if`). A run that skips both gets its own group, so a push to an unlabelled PR can't
-# cancel its teardown mid-destroy and leak the stack (#1564).
+# cancel its teardown mid-destroy and leak the stack (#1564). `opened` never deploys: a PR
+# opened with a preview label also sends `labeled`, and two runs would cancel each other.
+# `labeled` deploys only for one of the three preview labels, so tagging a preview PR `bug` doesn't redeploy.
 concurrency:
     group: >-
         ${{ ((github.event.action == 'unlabeled'
                 && (github.event.label.name == 'preview' || github.event.label.name == 'preview:web'))
-            || (github.event.action != 'unlabeled'
+            || (github.event.action != 'unlabeled' && github.event.action != 'opened'
+                && (github.event.action != 'labeled' || contains(fromJSON('["preview","preview:web","preview:collector"]'), github.event.label.name))
                 && (contains(github.event.pull_request.labels.*.name, 'preview')
                     || contains(github.event.pull_request.labels.*.name, 'preview:web'))))
         && format('pr-preview-{0}', github.event.pull_request.number)
@@ -42,7 +45,8 @@ jobs:
     ingest-binary:
         if: >-
             ${{ github.event.pull_request.head.repo.full_name == github.repository
-            && github.event.action != 'closed'
+            && github.event.action != 'closed' && github.event.action != 'opened'
+            && (github.event.action != 'labeled' || contains(fromJSON('["preview","preview:web","preview:collector"]'), github.event.label.name))
             && (github.event.action != 'unlabeled' || github.event.label.name == 'preview:web')
             && contains(github.event.pull_request.labels.*.name, 'preview') }}
         uses: ./.github/workflows/build-ingest-binary.yml
@@ -58,11 +62,14 @@ jobs:
             && github.event.pull_request.head.repo.full_name == github.repository
             && ((github.event.action == 'unlabeled'
                     && (github.event.label.name == 'preview' || github.event.label.name == 'preview:web'))
-                || (github.event.action != 'unlabeled'
+                || (github.event.action != 'unlabeled' && github.event.action != 'opened'
+                    && (github.event.action != 'labeled' || contains(fromJSON('["preview","preview:web","preview:collector"]'), github.event.label.name))
                     && (contains(github.event.pull_request.labels.*.name, 'preview')
                         || contains(github.event.pull_request.labels.*.name, 'preview:web')))) }}
         runs-on: ubuntu-latest
         timeout-minutes: 45
+        outputs:
+            smoke: ${{ steps.smoke.outcome }}
         # `pr-preview` holds its own Infisical identity, limited to the preview environment, so
         # PR code can never request `prod`. Required reviewers would also gate teardowns on close;
         # cleanup-preview-orphans.yml reaps any left waiting.
@@ -121,7 +128,7 @@ jobs:
 
             # Pinned uv and CLI versions instead of piping the vendor install script to sh.
             - name: Install uv
-              uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+              uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
             # `tb` for branch up/down. Installed BEFORE secrets load so the installer never sees them.
             - name: Install Tinybird CLI
@@ -163,31 +170,6 @@ jobs:
                   API_URL: ${{ steps.deploy.outputs.api_url }}
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
               run: bun scripts/preview-seed-smoke.ts
-
-            # Browser e2e against the fresh preview (apps/web/e2e/README.md). Non-blocking while
-            # it beds in; `agent.*` tests register only once ANTHROPIC_API_KEY is in Infisical.
-            - name: End-to-end tests against the preview
-              id: e2e
-              if: ${{ env.TEARDOWN != 'true' && steps.smoke.outcome == 'success' }}
-              continue-on-error: true
-              working-directory: apps/web/e2e
-              env:
-                  MAPLE_E2E_APP_URL: ${{ steps.deploy.outputs.web_url }}
-                  MAPLE_E2E_API_URL: ${{ steps.deploy.outputs.api_url }}
-                  E2E_TELEMETRY_DISABLED: "1"
-              run: |
-                  bunx e2e-web install chromium --with-deps
-                  bunx e2e run --reporter list,junit
-
-            - name: Upload e2e results
-              if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: e2e-results
-                  path: apps/web/e2e/.e2e/
-                  if-no-files-found: warn
-                  include-hidden-files: true
-                  retention-days: 7
 
             - name: Destroy PR preview stack with Alchemy
               id: destroy
@@ -304,3 +286,82 @@ jobs:
                   else
                     gh pr comment "$PR_NUMBER" --body-file "$COMMENT_OUTPUT"
                   fi
+
+    # Browser e2e against the fresh preview (apps/web/e2e/README.md). Its own job so a slow
+    # run does not hold the deploy, it reruns without redeploying, and it never sees the
+    # deploy's AWS role or the rest of the preview's secrets.
+    e2e:
+        name: End-to-end tests against the preview
+        needs: deploy-pr-preview
+        # `!cancelled()`: the implicit success() fails on the skipped ingest-binary upstream.
+        if: ${{ !cancelled() && needs.deploy-pr-preview.result == 'success' && needs.deploy-pr-preview.outputs.smoke == 'success' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        # Checkout and the Infisical OIDC exchange; none of the workflow's write scopes.
+        permissions:
+            contents: read
+            id-token: write
+        # The Infisical identity is scoped to this environment.
+        environment: pr-preview
+        defaults:
+            run:
+                working-directory: apps/web/e2e
+        env:
+            # Not the deploy's URL outputs: GitHub drops an output that contains any masked
+            # value, and short Infisical values occur in these hostnames.
+            MAPLE_E2E_APP_URL: https://app-pr-${{ github.event.pull_request.number }}.maple.dev
+            MAPLE_E2E_API_URL: https://api-pr-${{ github.event.pull_request.number }}.maple.dev
+            E2E_TELEMETRY_DISABLED: "1"
+            # `preview:web` deploys no Electric sync; tests that read synced state skip.
+            MAPLE_E2E_NO_SYNC: ${{ !contains(github.event.pull_request.labels.*.name, 'preview') && '1' || '' }}
+        steps:
+            # The suite runs PR code beside the sign-in key; no later step needs the token.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - uses: ./.github/actions/setup
+              with:
+                  install-filters: "@maple/web"
+                  turbo-cache: "false"
+
+            # @e2e-dev/web pins the Playwright build, so its version keys the browser.
+            - name: Read the e2e engine version
+              id: engine
+              run: echo "version=$(bun -e 'console.log(require("@e2e-dev/web/package.json").version)')" >> "$GITHUB_OUTPUT"
+
+            - name: Cache Chromium
+              id: browser-cache
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: e2e-web-${{ runner.os }}-${{ steps.engine.outputs.version }}-chromium
+
+            # ubuntu-latest already carries Chromium's shared libraries (see ci.yml).
+            - name: Install Chromium
+              if: steps.browser-cache.outputs.cache-hit != 'true'
+              run: bunx e2e-web install chromium
+
+            # By name, so no other preview secret reaches this job (setup above runs PR code).
+            - name: Load the preview sign-in key from Infisical
+              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+              with:
+                  method: "oidc"
+                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  env-slug: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
+                  export-type: "env"
+                  secret-name: PREVIEW_SIGNIN_KEY
+
+            - name: Run the e2e suite
+              run: bunx e2e run --reporter list,junit
+
+            - name: Upload e2e results
+              if: ${{ !cancelled() }}
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: e2e-results
+                  path: apps/web/e2e/.e2e/
+                  if-no-files-found: warn
+                  include-hidden-files: true
+                  retention-days: 7

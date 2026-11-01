@@ -6,7 +6,10 @@ import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./ev
 import {
 	AI_SPAN_SPAN_ID,
 	AI_SPAN_TRACE_ID,
+	DEEP_TRACE_DEPTH,
+	DEEP_TRACE_ID,
 	LARGE_TRACE_SPAN_COUNT,
+	makeDeepTraceSpans,
 	makeAiSpanDetailRows,
 	makeAiTraceSpanRows,
 	makeAiTraceWindowRows,
@@ -24,7 +27,7 @@ import {
 	SPAN_DETAIL_SPAN_ID,
 	SPAN_DETAIL_TRACE_ID,
 } from "./fixtures"
-import { FIXTURES } from "./utils"
+import { FIXTURES, jsonDepth } from "./utils"
 
 /** An AI span the point lookup finds, whose trace read carries every span of
  *  the trace and not it — the AI index lagging the raw spans. */
@@ -88,6 +91,7 @@ const regressionFixtures: FixtureRule[] = [
 		match: (sql) => sql.includes(SMALL_TRACE_ID) && readsTraceSpans(sql),
 		rows: makeSmallTraceSpans(),
 	},
+	{ match: (sql) => sql.includes(DEEP_TRACE_ID) && readsTraceSpans(sql), rows: makeDeepTraceSpans() },
 	// Large trace (> budget) → bounded overview. Fallback for any other span tree.
 	{ match: (sql) => readsTraceSpans(sql), rows: makeLargeTraceSpans() },
 	// search_logs' total, read alongside the page.
@@ -142,6 +146,17 @@ describe("inspect_trace bounded-overview rendering", () => {
 		expect(output.truncated).toBe(true)
 		expect(output.totalSpanCount).toBe(LARGE_TRACE_SPAN_COUNT)
 		expect(output.omitted.length).toBeGreaterThan(0)
+	})
+
+	it("keeps a 60-level trace's structured output shallow, with every parent link", async () => {
+		const result = await runToolDirect(rt, "inspect_trace", { trace_id: DEEP_TRACE_ID, max_spans: 300 })
+		expect(jsonDepth(result.structuredContent)).toBeLessThanOrEqual(12)
+		const output = Schema.decodeUnknownSync(InspectTraceOutput)(result.structuredContent)
+		const spans = output.spans
+		expect(spans.map((s) => s.depth)).toEqual(Array.from({ length: DEEP_TRACE_DEPTH }, (_, i) => i))
+		expect(spans.slice(1).map((s) => s.parentSpanId)).toEqual(spans.slice(0, -1).map((s) => s.spanId))
+		// The text still draws the whole chain, deepest error included.
+		expect(markdown(result)).toContain(`level-${DEEP_TRACE_DEPTH - 1}`)
 	})
 })
 
