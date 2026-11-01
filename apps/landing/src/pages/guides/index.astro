@@ -13,6 +13,9 @@ const pageTitle = "Guides to APM, Observability & OpenTelemetry | Maple";
 const pageDescription =
     "Practical guides to application performance monitoring, observability, OpenTelemetry, latency, and choosing an open-source observability stack.";
 
+const startHrefs = ["/guides/what-is-apm", "/observability", "/opentelemetry", "/best-open-source-observability-tools"];
+const startHere = startHrefs.flatMap((href) => allGuides.filter((guide) => guide.href === href));
+
 const fieldNotes = (await getCollection("blog") as BlogPost[])
     .filter((post) => (!post.data.draft || import.meta.env.DEV) && post.data.category === "guides")
     .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
@@ -37,60 +40,127 @@ const itemListJsonLd = {
     <Nav />
     <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Guides" }]} />
 
-    <main class="mx-auto max-w-6xl px-6 pb-20 pt-16 md:pb-28 md:pt-20">
-        <h1 class="font-display text-4xl font-medium tracking-[-0.03em] text-fg md:text-5xl">Guides</h1>
-        <p class="mt-4 max-w-[60ch] text-[15px] leading-relaxed text-fg-muted">
-            Practical guides to APM, observability, OpenTelemetry, and running production software.
-        </p>
+    <main class="mx-auto max-w-6xl px-6 pb-20 pt-14 font-display md:pb-28 md:pt-20">
+        <header>
+            <h1 class="text-[34px] font-semibold leading-[1.1] tracking-[-0.03em] text-fg md:text-[40px]">Guides</h1>
+            <p class="mt-4 max-w-[58ch] text-[16px] leading-[1.6] text-pretty text-fg-muted">
+                Practical guides to APM, observability and OpenTelemetry: what the terms mean, which signals to watch, and how to debug production software.
+            </p>
+        </header>
 
-        <div class="mt-12 border-b border-border">
-            {guideCategories.map(({ icon: CategoryIcon, ...category }) => (
-                <section id={category.id} class="grid scroll-mt-24 gap-6 border-t border-border py-10 lg:grid-cols-[15rem_1fr] lg:gap-12" aria-labelledby={`${category.id}-title`}>
-                    <div>
-                        <h2 id={`${category.id}-title`} class="flex items-center gap-2.5 font-display text-xl font-medium tracking-[-0.015em] text-fg">
-                            <CategoryIcon className="size-5 text-primary" />
+        <section class="mt-10" aria-labelledby="start-here">
+            <h2 id="start-here" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
+            <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+                {startHere.map(({ icon: Icon, ...guide }) => (
+                    <a href={guide.href} class="cell group flex flex-col p-5 transition-colors">
+                        <span class="flex items-center justify-between">
+                            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary transition-colors group-hover:border-primary/40" aria-hidden="true">
+                                <Icon className="h-4 w-4" />
+                            </span>
+                            <svg
+                                class="h-3.5 w-3.5 -translate-x-1 text-fg-muted opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 motion-reduce:transition-none"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="square"
+                                aria-hidden="true"
+                            >
+                                <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                            </svg>
+                        </span>
+                        <span class="mt-4 block text-[14px] font-medium text-fg">{guide.title}</span>
+                        <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{guide.description}</p>
+                    </a>
+                ))}
+            </div>
+        </section>
+
+        <section class="mt-12" aria-labelledby="all-guides">
+            <h2 id="all-guides" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">All guides</h2>
+            <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                {guideCategories.map(({ icon: Icon, ...category }) => (
+                    <div id={category.id} class="cell scroll-mt-24 p-5">
+                        <h3 class="flex items-center gap-2 text-[14px] font-medium text-fg">
+                            <Icon className="h-3.5 w-3.5 shrink-0 text-primary/80" />
                             {category.title}
-                        </h2>
-                        <p class="mt-2 text-[13px] leading-relaxed text-fg-muted">{category.description}</p>
+                        </h3>
+                        <ul class="-mx-2 mt-3 space-y-px">
+                            {category.guides.map((guide) => (
+                                <li>
+                                    <a
+                                        href={guide.href}
+                                        class="group/link flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13.5px] text-fg/85 transition-colors hover:bg-bg-elevated hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                                    >
+                                        <span>{guide.title}</span>
+                                        <svg
+                                            class="h-3.5 w-3.5 shrink-0 text-fg-muted/60 transition-[color,transform] duration-200 group-hover/link:translate-x-0.5 group-hover/link:text-primary motion-reduce:transition-none"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="square"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                                        </svg>
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
-                    <ul class="grid gap-x-10 gap-y-7 sm:grid-cols-2">
-                        {category.guides.map(({ icon: GuideIcon, ...item }) => (
-                            <li>
-                                <a href={item.href} class="group flex gap-4">
-                                    <span class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-bg-deep text-primary transition-colors group-hover:border-primary/45 group-hover:text-primary">
-                                        <GuideIcon className="size-[18px]" />
-                                    </span>
-                                    <span class="min-w-0">
-                                    <span class="font-display text-[16px] font-medium leading-snug text-fg transition-colors group-hover:text-primary">{item.title}</span>
-                                    <span class="mt-1.5 block text-[13px] leading-relaxed text-fg-muted">{item.description}</span>
-                                    </span>
-                                </a>
-                            </li>
-                        ))}
-                    </ul>
-                </section>
-            ))}
-
-            {fieldNotes.length > 0 && (
-                <section class="grid gap-6 border-t border-border py-10 lg:grid-cols-[15rem_1fr] lg:gap-12" aria-labelledby="field-notes">
-                    <div>
-                        <h2 id="field-notes" class="font-display text-xl font-medium tracking-[-0.015em] text-fg">From the blog</h2>
+                ))}
+                {fieldNotes.length > 0 && (
+                    <div class="cell p-5">
+                        <h3 class="text-[14px] font-medium text-fg">From the blog</h3>
+                        <ul class="-mx-2 mt-3 space-y-px">
+                            {fieldNotes.map((post) => (
+                                <li>
+                                    <a
+                                        href={`/blog/${post.id}`}
+                                        class="group/link flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13.5px] text-fg/85 transition-colors hover:bg-bg-elevated hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                                    >
+                                        <span>{post.data.title}</span>
+                                        <svg
+                                            class="h-3.5 w-3.5 shrink-0 text-fg-muted/60 transition-[color,transform] duration-200 group-hover/link:translate-x-0.5 group-hover/link:text-primary motion-reduce:transition-none"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="square"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                                        </svg>
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
-                    <ul class="grid gap-x-10 gap-y-7 sm:grid-cols-2">
-                        {fieldNotes.map((item) => (
-                            <li>
-                                <a href={`/blog/${item.id}`} class="group block">
-                                    <span class="font-display text-[16px] font-medium leading-snug text-fg transition-colors group-hover:text-primary">{item.data.title}</span>
-                                    <span class="mt-1.5 block text-[13px] leading-relaxed text-fg-muted">{item.data.description}</span>
-                                </a>
-                            </li>
-                        ))}
-                    </ul>
-                </section>
-            )}
-        </div>
+                )}
+            </div>
+        </section>
     </main>
 
     <BottomCTA />
     <Footer />
 </Layout>
+
+<style>
+    /* Same hairline grid as the docs index: each cell draws its own 1px frame,
+       so a short last row reads as an empty cell. */
+    .hairline-grid {
+        gap: 1px;
+        overflow: hidden;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--background);
+    }
+    .hairline-grid > .cell {
+        background: var(--background);
+        box-shadow: 0 0 0 1px var(--border);
+    }
+    .hairline-grid > a.cell:hover {
+        background: var(--bg-elevated);
+    }
+</style>
