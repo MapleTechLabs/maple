@@ -180,6 +180,48 @@ describe("a store another process already serves", () => {
 		})
 	})
 
+	it("refuses to share a server on another port than the explicit one", async () => {
+		await withStore(async (dataDir) => {
+			await withForeignOwner(dataDir, async (owner) => {
+				const exit = await Effect.runPromiseExit(Effect.scoped(startLocal({ dataDir, port: 47124 })))
+				expect(Exit.isFailure(exit) && String(exit.cause)).toContain(
+					`already served by PID ${owner.pid} on port 47123, not port 47124`,
+				)
+				const shared = await Effect.runPromise(Effect.scoped(startLocal({ dataDir, port: 47123 })))
+				expect(shared.sharedWith).toBe(owner.pid)
+			})
+		})
+	})
+
+	it("takes over only on the owner's port, which the Workers export to", async () => {
+		await withStore(async (dataDir) => {
+			markStoreOpen(dataDir)
+			const logs: string[] = []
+			const capture = Logger.layer([
+				Logger.make(({ message }) => {
+					logs.push(String(Array.isArray(message) ? message.join(" ") : message))
+				}),
+			])
+			await withForeignOwner(dataDir, async (owner) => {
+				const scope = await Effect.runPromise(Scope.make())
+				await Effect.runPromise(
+					startLocal({ dataDir }).pipe(Scope.provide(scope), Effect.provide(capture)),
+				)
+				// Something else binds the owner's port as it exits.
+				const squatter = Bun.listen({ hostname: "127.0.0.1", port: 47123, socket: { data() {} } })
+				owner.kill()
+				await owner.exited
+				for (let i = 0; i < 50 && !logs.some((line) => line.includes("cannot take over")); i++)
+					await Bun.sleep(100)
+				squatter.stop(true)
+				await Effect.runPromise(Scope.close(scope, Exit.void))
+			})
+			expect(logs.find((line) => line.includes("cannot take over"))).toContain(
+				"port 47123 on 127.0.0.1 is already in use",
+			)
+		})
+	})
+
 	it("takes the store over once the owner exits, and keeps trying when that fails", async () => {
 		await withStore(async (dataDir) => {
 			// Dirty, so the takeover stops at the store check without loading chDB.

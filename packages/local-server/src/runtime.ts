@@ -342,6 +342,12 @@ const share = (
 		const owner = found.value
 		const ui = yield* remoteUiUrl
 		const port = Number(new URL(owner.url).port)
+		if (portChoice.strict && port !== portChoice.port)
+			return yield* new LocalStoreBusyError({
+				dataDir,
+				pid: owner.pid,
+				message: `the local store at ${dataDir} is already served by PID ${owner.pid} on port ${port}, not port ${portChoice.port} from the \`port\` option; use that port or stop that session`,
+			})
 		yield* Effect.logInfo(
 			`Maple Local for ${dataDir} is already running in PID ${owner.pid} (another alchemy dev of this stack); sharing it`,
 		)
@@ -353,7 +359,8 @@ const share = (
 				}),
 			)
 			yield* Effect.logInfo(`PID ${owner.pid} let go of Maple Local at ${dataDir}; taking it over`)
-			yield* ownOrShare(options, { port, strict: false }, parent)
+			// Strict: the Workers export to this port, so a free one elsewhere would strand them.
+			yield* ownOrShare(options, { port, strict: true }, parent)
 		}).pipe(
 			// Never give up while this session runs: a lost race with another sharer, a
 			// slow new owner or a store fixed by `maple restore` all resolve on a later try.

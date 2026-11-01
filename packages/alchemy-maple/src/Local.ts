@@ -11,8 +11,9 @@ export interface LocalProps {
 	/** Persistent store override. Defaults to an identity-specific directory inside `.alchemy`. */
 	readonly dataDir?: string | undefined
 	/**
-	 * Bind exactly this loopback port, failing when it is taken. Unset: 4318, or
-	 * any free port when 4318 is taken (another project or worktree).
+	 * Bind exactly this loopback port, failing when it is taken, or when another
+	 * session of this stack already serves the store on a different port. Unset:
+	 * 4318, or any free port when 4318 is taken (another project or worktree).
 	 */
 	readonly port?: number | undefined
 	/**
