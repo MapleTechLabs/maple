@@ -372,6 +372,12 @@ export const Message = defineMessageUnion({
 		status: Schema.String,
 		message: Schema.NullOr(Schema.String),
 	},
+	/** Another tab finished a return whose popup lost its opener (`RELAY_CHANNEL`). */
+	ReceivedConnectRelay: {
+		provider: ConnectProvider,
+		status: Schema.String,
+		message: Schema.String,
+	},
 	/** The provider return this page was opened with, finished (`null`: there was none). */
 	CompletedOAuthReturn: { outcome: Schema.NullOr(OAuthReturnOutcome) },
 })

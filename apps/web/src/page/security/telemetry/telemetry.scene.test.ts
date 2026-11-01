@@ -171,6 +171,7 @@ describe("security telemetry tabs", () => {
 		expect(runtimeEntries(runtimes.data).map((entry) => entry.row.service)).toEqual([
 			"payments",
 			"checkout-api",
+			"scraper",
 			"inventory",
 			"notifications",
 			"search",
@@ -199,7 +200,7 @@ describe("security telemetry tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withRuntimes()),
-			expectView(text("2 runtime versions to upgrade now")).toExist(),
+			expectView(text("3 runtime versions to upgrade now")).toExist(),
 			expectView(text("Node.js v22.4.0")).toExist(),
 			expectView(text("Upgrade to 22.22.0 or later")).toExist(),
 			expectView(role("link", { name: "CVE-2025-55130" })).toExist(),
@@ -215,6 +216,21 @@ describe("security telemetry tabs", () => {
 			expectView(text("Unavailable")).toExist(),
 			expectView(text("Not checked yet")).toExist(),
 			expectView(role("link", { name: "OSV.dev" })).toExist(),
+		)
+	})
+
+	test("Bun versions list their GitHub advisories, and runtimes with nothing to look up say Not scanned", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes()),
+			expectView(text("Bun 1.4.0")).toExist(),
+			expectView(text("Upgrade to 1.4.4 or later")).toExist(),
+			expectView(role("link", { name: "CVE-2026-111497" })).toHaveAttr(
+				"href",
+				"https://github.com/oven-sh/bun/security/advisories/GHSA-663w-cv8g-jj2p",
+			),
+			// Workers report no runtime version, and Bun posing as Node.js reports Node's.
+			expectView(text("Not scanned")).toExist(),
 		)
 	})
 
