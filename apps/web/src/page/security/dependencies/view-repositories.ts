@@ -49,13 +49,20 @@ const lockfileIssue = (h: H, lockfile: DependencyScanLockfile): Html =>
 		],
 	)
 
+/** What the scan's time stands for: a failed scan read nothing, so it is not "Scanned". */
+const SCAN_SUMMARY_LABEL = {
+	running: "Scan started",
+	completed: "Scanned",
+	failed: "Last attempt",
+} satisfies Record<DependencyScanSummary["status"], string>
+
 const dot = (h: H): Html => h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])
 
 const scanSummary = (h: H, scan: DependencyScanSummary, clock: Clock): Html =>
 	h.span(
 		[h.Class("flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground")],
 		[
-			scan.status === "running" ? "Scan started" : "Scanned",
+			SCAN_SUMMARY_LABEL[scan.status],
 			relativeTime(h, {
 				value: scan.finishedAt ?? scan.startedAt,
 				nowMs: clock.nowMs,
