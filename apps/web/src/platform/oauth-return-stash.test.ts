@@ -72,6 +72,7 @@ describe("an OAuth return captured at boot", () => {
 		const github = new GithubInstallationSelection({
 			state: "verified-choice",
 			needsApproval: [],
+			unavailable: 0,
 			installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
 			installations: [
 				{
@@ -115,6 +116,7 @@ describe("an OAuth return captured at boot", () => {
 		const github = new GithubInstallationSelection({
 			state: "empty-choice",
 			needsApproval: [],
+			unavailable: 0,
 			installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
 			installations: [],
 		})
@@ -134,6 +136,28 @@ describe("an OAuth return captured at boot", () => {
 		expect(redirected).toEqual([github.installUrl])
 		expect(handedOff).toEqual([])
 		expect(outcome?.isHandedOff).toBe(true)
+	})
+
+	test("installations it could not connect stay on the page instead of redirecting to install", () => {
+		const github = new GithubInstallationSelection({
+			state: "unavailable-choice",
+			needsApproval: [],
+			unavailable: 1,
+			installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
+			installations: [],
+		})
+		const storage = memoryStorage()
+		boot(storage, encodeOAuthReturnHash({ flow: "github", query: "code=c-1&state=s-1" }))
+		const outcome = Effect.runSync(
+			completeOAuthReturnWith({
+				storage,
+				now: BOOT_AT + 500,
+				complete: () => Effect.succeed({ status: "success", message: "ok", chat: null, github }),
+				handOff: () => Effect.succeed(false),
+				redirect: () => Effect.die("an account it could not connect is not redirected"),
+			}),
+		)
+		expect(outcome?.github).toEqual(github)
 	})
 
 	test("completes after a sign-in round trip, and only once", () => {

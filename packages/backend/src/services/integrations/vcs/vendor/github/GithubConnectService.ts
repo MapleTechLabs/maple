@@ -587,19 +587,19 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			})
 
 			// One installation the user can see: a connectable choice, an account whose org
-			// withheld the user's role (needs the app's permission request approved), or nothing.
-			// An upstream failure skips that installation instead of failing the whole list.
+			// withheld the user's role (needs the app's permission request approved), or one this
+			// user cannot connect here (another Maple org, not an admin, or GitHub failed to answer).
 			const classifyInstallation = (orgId: OrgId, userToken: string, id: string) =>
 				Effect.gen(function* () {
+					const existing = yield* asPersistence(repo.resolveInstallation(GITHUB_PROVIDER, id))
+					if (Option.isSome(existing) && existing.value.orgId !== orgId)
+						return { _tag: "Unavailable" as const }
 					const detail = yield* githubApp.getInstallation(id)
-					if (detail.account === null) return { _tag: "Skipped" as const }
+					if (detail.account === null) return { _tag: "Unavailable" as const }
 					const admin = yield* githubApp.checkAccountAdmin(userToken, detail.account)
 					if (admin === "unverifiable")
 						return { _tag: "NeedsApproval" as const, accountLogin: detail.account.login }
-					if (admin !== "admin") return { _tag: "Skipped" as const }
-					const existing = yield* asPersistence(repo.resolveInstallation(GITHUB_PROVIDER, id))
-					if (Option.isSome(existing) && existing.value.orgId !== orgId)
-						return { _tag: "Skipped" as const }
+					if (admin !== "admin") return { _tag: "Unavailable" as const }
 					return {
 						_tag: "Choice" as const,
 						choice: new GithubInstallationChoice({
@@ -612,7 +612,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					}
 				}).pipe(
 					Effect.catchTag("@maple/backend/vcs/GithubAppError", () =>
-						Effect.succeed({ _tag: "Failed" as const }),
+						Effect.succeed({ _tag: "Unavailable" as const }),
 					),
 				)
 
@@ -661,7 +661,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				const needsApproval = results
 					.flatMap((result) => (result._tag === "NeedsApproval" ? [result.accountLogin] : []))
 					.sort((a, b) => a.localeCompare(b))
-				const failed = results.filter((result) => result._tag === "Failed").length
+				const unavailable = results.filter((result) => result._tag === "Unavailable").length
 				const rowBase = {
 					orgId: stateRow.orgId,
 					userId: stateRow.initiatedByUserId,
@@ -681,16 +681,19 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 							? "installations_discovered"
 							: needsApproval.length > 0
 								? "installation_admin_unverifiable"
-								: "no_installation",
+								: unavailable > 0
+									? "installations_unavailable"
+									: "no_installation",
 					"vcs.connect.installations_seen": ids.size,
 					"vcs.connect.installations_connectable": installations.length,
 					"vcs.connect.installations_needing_approval": needsApproval.length,
-					"vcs.connect.installations_failed": failed,
+					"vcs.connect.installations_unavailable": unavailable,
 				})
 				return new GithubInstallationSelection({
 					state: selectionState,
 					installations,
 					needsApproval,
+					unavailable,
 					installUrl: installUrlOf(slug, installState),
 				})
 			})

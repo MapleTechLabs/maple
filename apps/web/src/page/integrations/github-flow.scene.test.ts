@@ -99,6 +99,7 @@ const disconnected = () =>
 const selection = Schema.decodeUnknownSync(GithubInstallationSelection)({
 	state: "selection-1",
 	needsApproval: [],
+	unavailable: 0,
 	installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
 	installations: [
 		{ id: "101", accountLogin: "personal", accountType: "user", repositorySelection: "all" },
@@ -192,6 +193,7 @@ describe("github connect flow", () => {
 					...selection,
 					installations: [],
 					needsApproval: ["acme"],
+					unavailable: 2,
 				}),
 			}),
 		)
@@ -200,6 +202,7 @@ describe("github connect flow", () => {
 			given(returned),
 			expectView(text("No GitHub account is ready to connect yet.")).toExist(),
 			expectView(text(/approve the app's pending permission request/)).toExist(),
+			expectView(text(/2 installations of the Maple app can't be connected here/)).toExist(),
 			expectView(role("button", { name: "Install on another GitHub account" })).toExist(),
 			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)

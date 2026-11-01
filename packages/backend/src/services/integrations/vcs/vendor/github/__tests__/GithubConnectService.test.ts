@@ -201,8 +201,13 @@ describe("connecting an existing GitHub installation", () => {
 	})
 
 	for (const role of [
-		{ name: "member", response: orgMembershipResponse("member"), needsApproval: [] },
-		{ name: "unverifiable", response: () => jsonResponse({}, { status: 403 }), needsApproval: ["octo"] },
+		{ name: "member", response: orgMembershipResponse("member"), needsApproval: [], unavailable: 1 },
+		{
+			name: "unverifiable",
+			response: () => jsonResponse({}, { status: 403 }),
+			needsApproval: ["octo"],
+			unavailable: 0,
+		},
 	]) {
 		it.effect(`offers nothing to connect when GitHub does not prove account admin (${role.name})`, () => {
 			const testDb = createTestDb(trackedDbs)
@@ -219,6 +224,7 @@ describe("connecting an existing GitHub installation", () => {
 				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 				assert.deepStrictEqual(selection.installations, [])
 				assert.deepStrictEqual(selection.needsApproval, role.needsApproval)
+				assert.strictEqual(selection.unavailable, role.unavailable)
 				assert.ok(
 					findError(
 						yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
@@ -249,35 +255,64 @@ describe("connecting an existing GitHub installation", () => {
 				selection.installations.map((installation) => installation.id),
 				["43"],
 			)
+			assert.strictEqual(selection.unavailable, 1)
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+	})
+
+	it.effect("an installation another Maple org owns is unavailable, never an approval to chase", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		const http = fakeGithubHttp((request) => {
+			const url = new URL(request.url)
+			if (url.pathname === "/login/oauth/access_token") return oauthTokenResponse()
+			if (url.pathname === "/user/installations") return userInstallationsResponse([42])()
+			if (url.pathname === "/app/installations/42") return installationResponse()
+			return jsonResponse({}, { status: 403 })
+		})
+		return Effect.gen(function* () {
+			const service = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			yield* repo.upsertInstallation({
+				orgId: asOrgId("other-org"),
+				provider: "github",
+				externalInstallationId: "42",
+				accountLogin: "octo",
+				accountType: "organization",
+				externalAccountId: "100",
+				accountAvatarUrl: null,
+				repositorySelection: "all",
+				installedByUserId: INITIATOR.userId,
+			})
+			const started = yield* startAuthorize(service)
+			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+			assert.deepStrictEqual(selection.installations, [])
+			assert.deepStrictEqual(selection.needsApproval, [])
+			assert.strictEqual(selection.unavailable, 1)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("with no installation, the install URL carries a state the install return redeems", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
+		let installed: ReadonlyArray<number> = []
 		const http = fakeGithubHttp((request) => {
 			const url = new URL(request.url)
 			if (url.pathname === "/login/oauth/access_token") return oauthTokenResponse()
-			if (url.pathname === "/user/installations") return userInstallationsResponse([])()
-			throw new Error(`unexpected ${url.pathname}`)
+			if (url.pathname === "/user/installations") return userInstallationsResponse(installed)()
+			if (url.pathname === "/app/installations/42") return installationResponse()
+			return orgMembershipResponse()()
 		})
 		return Effect.gen(function* () {
 			const service = yield* GithubConnectService
 			const started = yield* startAuthorize(service)
 			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 			assert.deepStrictEqual(selection.installations, [])
+			assert.strictEqual(selection.unavailable, 0)
 			const installUrl = new URL(selection.installUrl)
 			assert.strictEqual(installUrl.pathname, "/apps/maple-test-app/installations/new")
 			const installState = installUrl.searchParams.get("state") ?? ""
 			assert.notStrictEqual(installState, selection.state)
-			// The authorization state is spent; only the fresh install state continues the flow.
-			assert.ok(
-				findError(
-					yield* service
-						.discoverInstallations(TEST_CODE, started.state, INITIATOR)
-						.pipe(Effect.exit),
-				) instanceof IntegrationsValidationError,
-			)
+			// The install state belongs to the install return only; discovery refuses it.
 			assert.ok(
 				findError(
 					yield* service
@@ -285,6 +320,10 @@ describe("connecting an existing GitHub installation", () => {
 						.pipe(Effect.exit),
 				) instanceof IntegrationsValidationError,
 			)
+			installed = [42]
+			yield* service.completeConnect("42", installState, TEST_CODE, INITIATOR)
+			assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, true)
+			assert.strictEqual(sent.length, 1)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 

@@ -91,6 +91,7 @@ describe("github card", () => {
 				github: new GithubInstallationSelection({
 					state: "selection-2",
 					needsApproval: [],
+					unavailable: 0,
 					installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
 					installations: [
 						{
@@ -107,6 +108,7 @@ describe("github card", () => {
 			{ update: pageUpdate, view },
 			given(choices),
 			expectView(role("button", { name: "Connect acme-shop" })).toExist(),
+			expectView(text(/Choosing a different account replaces it/)).not.toExist(),
 		)
 	})
 	test("the CI traces switch flips optimistically, writes once, and reverts on failure", () => {

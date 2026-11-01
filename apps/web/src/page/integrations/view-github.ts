@@ -18,7 +18,7 @@ import { GITHUB_ACCENT } from "./catalog"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { ciTracesShown } from "./update-github"
+import { ciTracesShown, githubStatusOf } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
 import { repositoriesPanels, repoDialogs } from "./view-github-repos"
 
@@ -51,6 +51,9 @@ const needsApprovalNote = (h: H, login: string): Html =>
 export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html> => {
 	const selection = model.githubCard.selection
 	if (selection === null) return []
+	const current = githubStatusOf(model)?.accountLogin ?? null
+	const replacesCurrent =
+		current !== null && selection.installations.some((choice) => choice.accountLogin !== current)
 	return [
 		h.p(
 			[h.Class("text-sm text-muted-foreground")],
@@ -60,6 +63,16 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 					: "No GitHub account is ready to connect yet.",
 			],
 		),
+		...(replacesCurrent
+			? [
+					h.p(
+						[h.Class("text-sm text-muted-foreground")],
+						[
+							`This Maple organization is connected to ${current}. Choosing a different account replaces it and removes ${current}'s synced repositories and commit history from Maple.`,
+						],
+					),
+				]
+			: []),
 		h.div(
 			[h.Class("flex flex-col gap-2")],
 			selection.installations.map((choice) =>
@@ -106,6 +119,16 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 			),
 		),
 		...selection.needsApproval.map((login) => needsApprovalNote(h, login)),
+		...(selection.unavailable > 0
+			? [
+					h.p(
+						[h.Class("text-sm text-muted-foreground")],
+						[
+							`${countLabel(selection.unavailable, "installation", "installations")} of the Maple app can't be connected here: another Maple organization already has it, you aren't an admin of its GitHub account, or GitHub didn't answer. Ask an admin of that account, or connect again later.`,
+						],
+					),
+				]
+			: []),
 		button(
 			h,
 			{

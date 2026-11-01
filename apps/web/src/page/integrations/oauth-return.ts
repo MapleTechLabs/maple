@@ -95,11 +95,14 @@ export interface OAuthReturnDeps<R> {
 	readonly redirect: (url: string) => Effect.Effect<void>
 }
 
-/** GitHub authorization found nothing to connect or explain: go straight on to install. */
+/** GitHub authorization found no installation at all: go straight on to install. */
 const isNothingToChoose = (
 	github: GithubInstallationSelection | undefined,
 ): github is GithubInstallationSelection =>
-	github !== undefined && github.installations.length === 0 && github.needsApproval.length === 0
+	github !== undefined &&
+	github.installations.length === 0 &&
+	github.needsApproval.length === 0 &&
+	github.unavailable === 0
 
 /** The return stashed at boot (`oauth-return-boot.ts`), finished once; `null` when there is none. */
 export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>

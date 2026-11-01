@@ -55,7 +55,8 @@ export class GithubInstallationChoice extends Schema.Class<GithubInstallationCho
 /**
  * What GitHub user authorization found. `state` is a short-lived, single-use selection over
  * the verified `installations`; `needsApproval` lists accounts whose org withheld the user's
- * role; `installUrl` installs the app on another account.
+ * role; `unavailable` counts ones this user cannot connect here; `installUrl` installs the app
+ * on another account.
  */
 export class GithubInstallationSelection extends Schema.Class<GithubInstallationSelection>(
 	"GithubInstallationSelection",
@@ -63,6 +64,7 @@ export class GithubInstallationSelection extends Schema.Class<GithubInstallation
 	state: Schema.String,
 	installations: Schema.Array(GithubInstallationChoice),
 	needsApproval: Schema.Array(Schema.String),
+	unavailable: Schema.Number,
 	installUrl: Schema.String,
 }) {}
 
