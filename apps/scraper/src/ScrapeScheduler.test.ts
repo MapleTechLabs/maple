@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Layer, Redacted, Schema } from "effect"
+import { Duration, Effect, Exit, Layer, Redacted, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { InternalScrapeTarget, type ScrapeResultReport } from "@maple/domain/http"
 import { ApiClient, ApiRequestError, type ApiClientApi } from "./ApiClient"
@@ -13,6 +13,7 @@ import { OtlpIngest } from "./OtlpIngest"
 import { Scraper } from "./Scraper"
 import { TargetFetcher } from "./TargetFetcher"
 import { TargetRegistry } from "./TargetRegistry"
+import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 
 const decodeTarget = Schema.decodeUnknownSync(InternalScrapeTarget)
 
@@ -180,7 +181,7 @@ describe("ScrapeScheduler", () => {
 	})
 
 	describe("backoff", () => {
-		for (const reason of ["rate_limited", "auth_failed", "target_error"] as const) {
+		for (const reason of ["rate_limited", "auth_failed", "target_error", "target_rejected"] as const) {
 			it.effect(`escalates exponentially on ${reason}`, () =>
 				Effect.gen(function* () {
 					const harness = makeHarness([mkTarget(TARGET_A, 10)])
@@ -193,6 +194,30 @@ describe("ScrapeScheduler", () => {
 				}),
 			)
 		}
+
+		it.effect("closes only the first scrape of a dead target's streak as an error", () =>
+			Effect.gen(function* () {
+				const tracer = makeCapturingTracer()
+				const harness = makeHarness([mkTarget(TARGET_A, 10)])
+				harness.scrapeImpl = () => Effect.fail(failure("target_rejected"))
+				yield* startScheduler.pipe(
+					Effect.provide(harnessLayer(harness)),
+					Effect.provide(tracer.layer),
+				)
+				yield* TestClock.adjust(Duration.seconds(60))
+
+				const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
+				assert.deepStrictEqual(
+					spans.map((span) => Exit.isFailure(span.exit)),
+					[true, false, false],
+				)
+				// Every failure is still reported, so the target shows its error.
+				assert.lengthOf(
+					harness.reported.filter((report) => report.error !== null),
+					3,
+				)
+			}),
+		)
 
 		it.effect("holds the configured cadence on scrape_failed", () =>
 			Effect.gen(function* () {
