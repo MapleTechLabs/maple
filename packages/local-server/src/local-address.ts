@@ -1,6 +1,10 @@
 export const DEFAULT_LOCAL_HOST = "127.0.0.1"
 export const DEFAULT_LOCAL_PORT = 4318
 
+/** Public origin of the deployed local-mode dashboard SPA. Overridable
+ *  (`MAPLE_LOCAL_UI_URL`) for testing against another build of it. */
+export const DEFAULT_REMOTE_UI_URL = "https://local.maple.dev"
+
 /** Bun expects bare IPv6 listener addresses, while users commonly copy the
  * bracketed form used in URLs. Accept either form at the CLI boundary. */
 export const normalizeHost = (host: string): string => {

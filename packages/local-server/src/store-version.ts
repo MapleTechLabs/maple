@@ -10,7 +10,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { Effect, Schema, SchemaGetter } from "effect"
-import { CHDB_VERSION } from "../version"
+import { CHDB_VERSION } from "./version"
 import { Digest64, Fingerprint16, IsoOrUnknown } from "./identity-schema"
 import { durableRemove, durableRenameSync, durableWrite, durableWriteFileSync } from "./durable-files"
 

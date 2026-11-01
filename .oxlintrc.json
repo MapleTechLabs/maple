@@ -217,6 +217,62 @@
 				"typescript/no-non-null-assertion": "off"
 			}
 		},
+		// Burndown entries relocated with their implementation from apps/cli into
+		// @maple/local-server, one block per rule. Drop each file as it is converted.
+		{
+			"files": [
+				"packages/local-server/src/archives/export.ts",
+				"packages/local-server/src/archives/gc.ts",
+				"packages/local-server/src/archives/generation.ts",
+				"packages/local-server/src/archives/journal.ts",
+				"packages/local-server/src/archives/listing.ts",
+				"packages/local-server/src/archives/manifest.ts",
+				"packages/local-server/src/archives/paths.ts",
+				"packages/local-server/src/chdb.ts",
+				"packages/local-server/src/checkpoints.ts",
+				"packages/local-server/src/durable-files.ts",
+				"packages/local-server/src/eventing/control-store.ts",
+				"packages/local-server/src/local-address.ts",
+				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/otlp/encode.ts",
+				"packages/local-server/src/schema-physical.ts",
+				"packages/local-server/src/serve.ts",
+				"packages/local-server/src/store-claim.ts",
+				"packages/local-server/src/store-version.ts"
+			],
+			"rules": { "maple/no-try-catch": "off" }
+		},
+		{
+			"files": [
+				"packages/local-server/src/archives/export.ts",
+				"packages/local-server/src/archives/gc.ts",
+				"packages/local-server/src/archives/journal.ts",
+				"packages/local-server/src/archives/paths.ts",
+				"packages/local-server/src/archives/retention.ts",
+				"packages/local-server/src/checkpoints.ts",
+				"packages/local-server/src/insert-batcher.ts",
+				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/otlp/encode.ts",
+				"packages/local-server/src/schema-manifest.ts",
+				"packages/local-server/src/schema-physical.ts",
+				"packages/local-server/src/scoped-delete.ts"
+			],
+			"rules": { "typescript/no-non-null-assertion": "off" }
+		},
+		{
+			"files": [
+				"packages/local-server/src/archives/generation.ts",
+				"packages/local-server/src/archives/manifest.ts",
+				"packages/local-server/src/archives/paths.ts",
+				"packages/local-server/src/archives/retention.ts",
+				"packages/local-server/src/checkpoints.ts",
+				"packages/local-server/src/eventing/control-store.ts",
+				"packages/local-server/src/identity-schema.ts",
+				"packages/local-server/src/service-map-rollup.ts",
+				"packages/local-server/src/store-version.ts"
+			],
+			"rules": { "maple/no-date-parse": "off" }
+		},
 		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
 		// Tailwind class pins, source greps, exact command lists and SQL projection pins.
 		// Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
@@ -702,6 +758,24 @@
 							{
 								"group": ["**/vendor/*", "**/vendor/*/**"],
 								"message": "VCS provider implementations are private. Import through the provider-agnostic VCS services."
+							}
+						]
+					}
+				]
+			}
+		},
+		// @maple/local-server is bundled into @maple-dev/alchemy's sidecar; the CLI, its
+		// migrations and its historical schema snapshots must never be reachable from it.
+		{
+			"files": ["packages/local-server/src/**/*.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^@maple/cli($|/)|/apps/cli/",
+								"message": "@maple/local-server must not depend on the CLI; the CLI depends on it."
 							}
 						]
 					}

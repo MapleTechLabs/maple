@@ -140,7 +140,7 @@ grep -q "local store migrated" "$ROOT/migrate.out" || fail "native migration did
 # Pinned to the CURRENT head identity on purpose — this is the gate that proves
 # the native migration promotes all the way to head, not merely that it ran. It
 # must be bumped in lockstep with LOCAL_SCHEMA_VERSION and the matching
-# LOCAL_SCHEMA_V<n>.fingerprint in apps/cli/src/server/schema-identity.ts;
+# LOCAL_SCHEMA_V<n>.fingerprint in packages/local-server/src/schema-identity.ts;
 # leaving it on the previous version is what makes this step fail after a bump.
 jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 42 and .schema == "d03ed074b19ce990"' \
 	"$ROOT/maple-store-version.json" >/dev/null || fail "native migration wrote the wrong active identity"

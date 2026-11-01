@@ -1,8 +1,8 @@
 # Maple Local event consumer protocol
 
 Status: version 1 of the durable downstream-consumer boundary for the Maple Local event outbox.
-Routes live in `apps/cli/src/server/serve.ts`; state lives in
-`apps/cli/src/server/eventing/control-store.ts`.
+Routes live in `packages/local-server/src/serve.ts`; state lives in
+`packages/local-server/src/eventing/control-store.ts`.
 
 This protocol lets a local consumer deliver ready Maple CloudEvents without destructive reads or a
 second delivery database. It is transport-neutral. Maple does not pick a downstream transport, store
@@ -170,8 +170,8 @@ delivery history on purpose. Ordinary inspection and acknowledgement never aband
 Reconcile or replay source facts separately when needed.
 
 The eventing control schema is version 1 (`LOCAL_CONTROL_SCHEMA_VERSION` in
-`apps/cli/src/server/local-schema-version.ts`). Its DDL digest is recorded in
-`LOCAL_CONTROL_SCHEMA_HISTORY` (`apps/cli/src/server/local-schema-history.ts`). Snapshot validation rejects staged source-backed rows
+`packages/local-server/src/local-schema-version.ts`). Its DDL digest is recorded in
+`LOCAL_CONTROL_SCHEMA_HISTORY` (`packages/local-server/src/local-schema-history.ts`). Snapshot validation rejects staged source-backed rows
 with missing or malformed fingerprints.
 
 Consumer cursors and leases are in the same SQLite backup as projection and outbox state. Consumer

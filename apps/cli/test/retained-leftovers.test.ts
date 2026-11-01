@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { checkpointQuarantineRoot, restoreTransactionPath } from "../src/server/checkpoints"
-import { migrationJournalPath, migrationRootPath } from "../src/server/local-store-migrations"
+import { checkpointQuarantineRoot, restoreTransactionPath } from "@maple/local-server/checkpoints"
+import { migrationJournalPath, migrationRootPath } from "@maple/local-server/local-store-migration-journal"
 import { listRetainedLeftovers, pruneRetainedLeftovers } from "../src/server/retained-leftovers"
 
 const withParent = async (run: (dataDir: string) => Promise<void>): Promise<void> => {

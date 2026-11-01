@@ -23,8 +23,11 @@
 
 import { writeFileSync, existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
-import { createArchiveGeneration, type ArchiveGenerationFaults } from "../../src/server/archives/generation"
-import { resolveArchiveTuning } from "../../src/server/archives/config"
+import {
+	createArchiveGeneration,
+	type ArchiveGenerationFaults,
+} from "@maple/local-server/archives/generation"
+import { resolveArchiveTuning } from "@maple/local-server/archives/config"
 
 interface Args {
 	boundary: string

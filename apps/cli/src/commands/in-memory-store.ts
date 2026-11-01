@@ -2,9 +2,9 @@ import { Clock, Effect, Option } from "effect"
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statfsSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { SERVER_PID_NAME } from "../server/store-version"
-import { ServerStateFileError } from "./server-errors"
-import { isProcessAlive } from "./server-args"
+import { SERVER_PID_NAME } from "@maple/local-server/store-version"
+import { isProcessAlive } from "@maple/local-server/store-claim"
+import { ServerStateFileError } from "@maple/local-server/store-errors"
 
 /**
  * `maple start --in-memory`: a throwaway store for one run.

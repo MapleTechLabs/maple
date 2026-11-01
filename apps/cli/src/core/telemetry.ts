@@ -2,7 +2,7 @@ import { getAutoPlatformAttributes } from "@maple-dev/effect-sdk/server"
 import { Config, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpBody } from "effect/http"
 import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/observability"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 
 // Publishable ("pk") ingest token, baked into the distributed binary so CLI
 // telemetry works on a fresh install with zero config. The `maple_pk_` class is

@@ -3,15 +3,16 @@
 // the clone, bootstrap the target snapshot over it, verify, and never touch the source.
 import { resolve } from "node:path"
 import { Schema } from "effect"
-import { readRawTelemetryRetentionDays, type Chdb } from "../chdb"
-import { decodeJsonObjectRows } from "../chdb-rows"
+import { readRawTelemetryRetentionDays, type Chdb } from "@maple/local-server/chdb"
+import { decodeJsonObjectRows } from "@maple/local-server/chdb-rows"
 import type {
 	LocalStoreMigrationModule,
 	MigrationOperation,
 	StateDispositionEntry,
 } from "../local-store-migration-module"
-import { localSchemaIdentity, localSchemaSnapshot } from "../schema-identity"
-import { assertPhysicalSchema } from "../schema-physical"
+import { localSchemaIdentity } from "@maple/local-server/schema-identity"
+import { localSchemaSnapshot } from "../schema-snapshots"
+import { assertPhysicalSchema } from "@maple/local-server/schema-physical"
 import {
 	cloneStoreForStaging,
 	expectedManifest,

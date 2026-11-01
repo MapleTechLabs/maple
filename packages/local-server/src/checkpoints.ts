@@ -6,10 +6,11 @@ import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node
 import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Duration, Effect, Option, Schema } from "effect"
+import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { CHDB_VERSION, MAPLE_VERSION } from "../version"
-import { serverUrl } from "../lib/local-address"
-import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"
+import { CHDB_VERSION, MAPLE_VERSION } from "./version"
+import { serverUrl } from "./local-address"
+import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS, writeIngestConfig } from "./chdb"
 import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
 import {
@@ -31,6 +32,7 @@ import {
 import { CURRENT_LOCAL_SCHEMA, SCHEMA_FINGERPRINT } from "./schema-identity"
 import schemaSql from "./schema/local-schema.sql" with { type: "text" }
 import {
+	dataDirSidecarPath,
 	markStoreClosedDurable,
 	storeMarkerPath,
 	storeOpenMarkerPath,
@@ -2927,3 +2929,42 @@ export const assertCheckpointRootSafe = (dataDir: string): void => {
 	}
 	if (basename(root) !== "backups") throw new Error("invalid checkpoint root")
 }
+
+// Generated chDB config, beside the PID and log files (e.g. ~/.maple/chdb-config.xml).
+export const chdbConfigPath = (dataDir: string): string => dataDirSidecarPath(dataDir, "chdb-config.xml")
+
+/**
+ * Resolve the chDB config file, generating a backups-enabled default when the
+ * user did not supply one.
+ *
+ * `BACKUP DATABASE default TO Disk('default', …)` (how every checkpoint is
+ * taken) needs `<backups><allowed_disk>` in the config of the *running* chDB
+ * connection. chDB allows one connection per process, acquired once at start and
+ * held for the process lifetime, and `maple checkpoint` is a separate process
+ * talking over HTTP: it cannot inject config into a live connection. So a server
+ * started without a backups config can never checkpoint. A user-supplied
+ * `--chdb-config-file` is honoured untouched. An in-memory store is never
+ * checkpointed, so it gets only the MergeTree ingest defaults (`backups: false`).
+ */
+export const resolveChdbConfigFile = (
+	dataDir: string,
+	supplied: string | undefined,
+	{ backups }: { readonly backups: boolean } = { backups: true },
+) =>
+	Effect.gen(function* () {
+		if (supplied !== undefined) return supplied
+		const fs = yield* FileSystem
+		const path = chdbConfigPath(dataDir)
+		// Regenerated every start: idempotent, and it self-heals a truncated or
+		// hand-edited file. Failing to write is not fatal: the server still starts,
+		// checkpoints just stay unavailable, which is the old behaviour.
+		yield* fs.makeDirectory(dirname(path), { recursive: true }).pipe(Effect.ignore)
+		return yield* Effect.try({
+			try: () => {
+				if (backups) writeBackupConfig(path)
+				else writeIngestConfig(path)
+				return path
+			},
+			catch: (error) => error,
+		}).pipe(Effect.orElseSucceed(() => undefined))
+	})
