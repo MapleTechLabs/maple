@@ -474,6 +474,7 @@ jobs:
                   src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
                   src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
+                  src/services/warehouse/host-infra.clickhouse.e2e.test.ts
 
             # The fingerprint the error views compute, against the TS mirror every
             # fingerprint unit test exercises: fixed cases, a seeded differential fuzz

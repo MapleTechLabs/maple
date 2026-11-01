@@ -747,9 +747,10 @@ const cloudflareInfraZoneFacets = defineQuery({
 		}),
 })
 
-// Network reads a counter family, everything else a gauge family, so they are
-// separate defs rather than one def with a branch — the row shapes differ and
-// the handler maps them differently. Both keep the id "hostInfraTimeseries",
+// Network reads a counter rate, everything else gauge-style averages (filesystem
+// a used fraction per mount, same row shape), so they are separate defs rather
+// than one def with a branch — the row shapes differ and the handler maps them
+// differently. Both keep the id "hostInfraTimeseries",
 // which is what their spans already report; renaming would break continuity of
 // existing telemetry for no gain.
 
@@ -772,21 +773,22 @@ const hostInfraGaugeTimeseries = defineQuery({
 	cache: 15,
 	compile: (payload: HostInfraTimeseriesRequest, orgId: OrgId) => {
 		const spec = hostMetricSpec(payload.metric)
-		return CH.compile(
-			CH.hostGaugeTimeseriesQuery({
-				hostName: payload.hostName,
-				metricName: spec.metricName,
-				groupByAttributeKey: spec.groupByAttributeKey,
-				attributeIn: spec.attributeIn,
-				attributeNotIn: spec.attributeNotIn,
-			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-				bucketSeconds: payload.bucketSeconds ?? 60,
-			},
-		)
+		const params = {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			bucketSeconds: payload.bucketSeconds ?? 60,
+		}
+		return spec.family === "filesystem"
+			? CH.compile(CH.hostFilesystemTimeseriesQuery({ hostName: payload.hostName }), params)
+			: CH.compile(
+					CH.hostGaugeTimeseriesQuery({
+						hostName: payload.hostName,
+						metricName: spec.metricName,
+						groupByAttributeKey: spec.groupByAttributeKey,
+					}),
+					params,
+				)
 	},
 })
 

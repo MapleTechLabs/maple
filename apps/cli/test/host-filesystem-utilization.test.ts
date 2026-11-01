@@ -78,16 +78,7 @@ describeWithChdb("host filesystem utilization", () => {
 
 	test("the filesystem chart series reads stateless points", async () => {
 		const series = (hostName: string) =>
-			CH.compile(
-				CH.hostGaugeTimeseriesQuery({
-					hostName,
-					metricName: "system.filesystem.utilization",
-					groupByAttributeKey: "mountpoint",
-					attributeIn: { key: "state", values: CH.FILESYSTEM_USED_STATES },
-					attributeNotIn: { key: "type", values: CH.PSEUDO_FS_TYPES },
-				}),
-				{ ...params, bucketSeconds: 3600 },
-			)
+			CH.compile(CH.hostFilesystemTimeseriesQuery({ hostName }), { ...params, bucketSeconds: 3600 })
 		const receiver = decodeSeries(await run(series("receiver-host")))
 		expect(receiver.map((row) => [row.attributeValue, Number(row.avgValue)])).toEqual([["/", 0.42]])
 		const split = decodeSeries(await run(series("split-host")))

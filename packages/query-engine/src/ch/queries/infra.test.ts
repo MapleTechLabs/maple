@@ -6,6 +6,8 @@ import {
 	listHostsQuery,
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
+	hostFilesystemTimeseriesQuery,
+	hostFilesystemsQuery,
 	hostNetworkTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
@@ -22,7 +24,6 @@ import {
 	workloadGaugeTimeseriesQuery,
 	workloadFacetsQuery,
 	infraPresenceQuery,
-	FILESYSTEM_USED_STATES,
 } from "./infra"
 import { OrgId } from "@maple/domain"
 
@@ -41,34 +42,53 @@ describe("listHostsQuery", () => {
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
 
-	it("derives cpuPct from the idle share and skips pseudo filesystems", () => {
+	it("derives cpuPct from the idle share", () => {
 		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
 		expect(sql).toContain("Attributes['state'] = 'idle'")
 		expect(sql).not.toContain("Attributes['state'] != 'idle'")
 		expect(sql).toMatch(/greatest\(1 - ifNotFinite\(avgIf\(/)
-		expect(sql).toContain("NOT IN ('squashfs'")
+	})
+
+	// The receiver sends usage bytes by default; utilization is opt-in.
+	it("reads disk from usage bytes split by either state key, and from utilization", () => {
+		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
+		expect(sql).toContain("MetricName = 'system.filesystem.usage'")
+		expect(sql).toContain(
+			"coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free', 'reserved')",
+		)
+		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
+		expect(sql).toContain(
+			"coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')",
+		)
+		expect(sql.match(/NOT IN \('squashfs'/g)).toHaveLength(2)
+	})
+
+	it("scopes every branch to the org and the host search", () => {
+		const { sql } = compileUnsafe(listHostsQuery({ search: "web" }), baseParams)
+		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(3)
+		expect(sql.match(/positionCaseInsensitive\([^)]*'host\.name'\], 'web'\) > 0/g)).toHaveLength(3)
 	})
 })
 
-describe("hostGaugeTimeseriesQuery", () => {
-	it("keeps the attribute values named by attributeIn", () => {
-		const { sql } = compileUnsafe(
-			hostGaugeTimeseriesQuery({
-				hostName: "h",
-				metricName: "system.filesystem.utilization",
-				groupByAttributeKey: "mountpoint",
-				attributeIn: { key: "state", values: FILESYSTEM_USED_STATES },
-			}),
+describe("host filesystem queries", () => {
+	const compiledSql = {
+		hostFilesystemsQuery: compileUnsafe(hostFilesystemsQuery({ hostName: "h" }), baseParams).sql,
+		hostFilesystemTimeseriesQuery: compileUnsafe(
+			hostFilesystemTimeseriesQuery({ hostName: "h" }),
 			baseParams,
-		)
-		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
-		expect(sql).toContain("Attributes['state'] IN ('used', '')")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-disk grain
-		expect(sql).toContain("Attributes['mountpoint'] AS attributeValue")
-		expect(sql).toContain("GROUP BY bucket, attributeValue")
-	})
+		).sql,
+	}
 
-	it("leaves states unfiltered without attributeIn", () => {
+	for (const [name, sql] of Object.entries(compiledSql)) {
+		it(`${name} scopes both metric branches to the org and the host`, () => {
+			expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+			expect(sql.match(/ResourceAttributes\['host\.name'\] = 'h'/g)).toHaveLength(2)
+		})
+	}
+})
+
+describe("hostGaugeTimeseriesQuery", () => {
+	it("keeps every state of a breakdown metric", () => {
 		const { sql } = compileUnsafe(
 			hostGaugeTimeseriesQuery({
 				hostName: "h",
@@ -78,6 +98,20 @@ describe("hostGaugeTimeseriesQuery", () => {
 			baseParams,
 		)
 		expect(sql).not.toContain("Attributes['state'] =")
+	})
+})
+
+describe("hostNetworkTimeseriesQuery", () => {
+	const { sql } = compileUnsafe(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams)
+
+	it("reads one bucket before the range so the first bucket has a previous sample", () => {
+		expect(sql).toContain("metrics_sum.TimeUnix >= '2024-01-01 00:00:00' - INTERVAL 60 SECOND")
+		expect(sql).toContain("network_deltas.TimeUnix >= '2024-01-01 00:00:00'")
+	})
+
+	it("never sums the raw cumulative value", () => {
+		expect(sql).not.toContain("sum(metrics_sum.Value)")
+		expect(sql).toContain("MetricName = 'system.network.io'")
 	})
 })
 
@@ -562,6 +596,8 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 		hostGaugeTimeseriesQuery: () =>
 			compile(hostGaugeTimeseriesQuery({ hostName: "h", metricName: "m" }), baseParams),
 		hostNetworkTimeseriesQuery: () => compile(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams),
+		hostFilesystemTimeseriesQuery: () =>
+			compile(hostFilesystemTimeseriesQuery({ hostName: "h" }), baseParams),
 		listPodsQuery: () => compile(listPodsQuery(), baseParams),
 		podDetailSummaryQuery: () => compile(podDetailSummaryQuery({ podName: "p" }), baseParams),
 		podGaugeTimeseriesQuery: () =>

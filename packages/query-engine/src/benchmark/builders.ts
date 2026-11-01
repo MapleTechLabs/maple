@@ -2308,6 +2308,17 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.hostFilesystemsQuery({ hostName: "ip-10-0-1-42" }), window),
 	},
 	{
+		// apps/api route `hostInfraTimeseries` filesystem metric.
+		module: "infra",
+		name: "hostFilesystemTimeseriesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.hostFilesystemTimeseriesQuery({ hostName: "ip-10-0-1-42" }), {
+				...window,
+				bucketSeconds: 300,
+			}),
+	},
+	{
 		module: "infra",
 		name: "hostGaugeTimeseriesQuery",
 		label: "default",

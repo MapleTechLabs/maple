@@ -440,9 +440,8 @@ export function containerGaugeTimeseriesQuery(opts: ContainerGaugeTimeseriesOpts
 }
 
 // Container sum time-series — metrics_sum families. Cumulative counters
-// (network, block IO) surface bucketed sums — same crude caveat as
-// hostNetworkTimeseriesQuery: the UI renders relative shape, not exact
-// bytes/sec. Sampled non-monotonic sums (memory bytes) must set `average`
+// (network, block IO) surface bucketed sums: the UI renders relative shape,
+// not exact bytes/sec. Sampled non-monotonic sums (memory bytes) must set `average`
 // instead: summing samples would inflate the chart by samples-per-bucket.
 
 export interface ContainerSumTimeseriesOpts {
