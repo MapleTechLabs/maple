@@ -200,10 +200,7 @@ describe("ScrapeScheduler", () => {
 				const tracer = makeCapturingTracer()
 				const harness = makeHarness([mkTarget(TARGET_A, 10)])
 				harness.scrapeImpl = () => Effect.fail(failure("target_rejected"))
-				yield* startScheduler.pipe(
-					Effect.provide(harnessLayer(harness)),
-					Effect.provide(tracer.layer),
-				)
+				yield* startScheduler.pipe(Effect.provide(Layer.merge(harnessLayer(harness), tracer.layer)))
 				yield* TestClock.adjust(Duration.seconds(60))
 
 				const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
@@ -215,6 +212,30 @@ describe("ScrapeScheduler", () => {
 				assert.lengthOf(
 					harness.reported.filter((report) => report.error !== null),
 					3,
+				)
+			}),
+		)
+
+		it.effect("starts a target clean when its URL changes mid-streak", () =>
+			Effect.gen(function* () {
+				const tracer = makeCapturingTracer()
+				const harness = makeHarness([
+					mkTarget(TARGET_A, 10, { url: "https://old.example.com/metrics" }),
+				])
+				harness.scrapeImpl = () => Effect.fail(failure("target_rejected"))
+				yield* startScheduler.pipe(Effect.provide(Layer.merge(harnessLayer(harness), tracer.layer)))
+				yield* TestClock.adjust(Duration.seconds(30))
+				// Backing off until t=70; the next reconcile (t=60) picks up the new URL.
+				harness.targets = [mkTarget(TARGET_A, 10, { url: "https://new.example.com/metrics" })]
+				yield* TestClock.adjust(Duration.seconds(45))
+
+				const onNewHost = endedSpansNamed(tracer.ended, "scraper.scrape_target").filter(
+					(span) => span.attributes.get("maple.scraper.target_host") === "new.example.com",
+				)
+				// t=60 at the next tick, not t=70 after the old backoff; its first failure is an error.
+				assert.deepStrictEqual(
+					onNewHost.map((span) => Exit.isFailure(span.exit)),
+					[true, false],
 				)
 			}),
 		)

@@ -64,6 +64,8 @@ interface Backoff {
 	readonly notBefore: number
 	/** The failure that put it here; the same failure again is the same streak. */
 	readonly reason: ScrapeFailureReason
+	/** The URL it failed on; a changed URL is a new endpoint and starts clean. */
+	readonly url: string
 }
 
 /** Per-parent loop state. Target-side backoff is per sub-target; an ingest block is per parent. */
@@ -98,7 +100,13 @@ const nextBackoffs = (
 		const key = targetKey(scrape.target)
 		const consecutive = current.get(key)?.consecutive ?? 0
 		const delayMs = nextScrapeDelayMs({ baseMs, failure, consecutiveBackoffs: consecutive })
-		return [[key, { consecutive: consecutive + 1, notBefore: endedAt + delayMs, reason: failure.reason }]]
+		const backoff = {
+			consecutive: consecutive + 1,
+			notBefore: endedAt + delayMs,
+			reason: failure.reason,
+			url: scrape.target.url,
+		}
+		return [[key, backoff]]
 	})
 	return new Map([...kept.filter(([key]) => !scraped.has(key)), ...updated])
 }
@@ -149,9 +157,15 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					const baseMs = group[0].scrapeIntervalSeconds * 1000
 					const cycleStart = yield* Clock.currentTimeMillis
 					const before = yield* Ref.get(state)
+					// A backoff earned on another URL neither delays nor quiets the new one.
+					const current = new Map(
+						Array.from(before.backoffs).filter(([key, backoff]) =>
+							group.some((target) => targetKey(target) === key && target.url === backoff.url),
+						),
+					)
 
 					const notBefore = (target: InternalScrapeTarget) =>
-						before.backoffs.get(targetKey(target))?.notBefore ?? 0
+						current.get(targetKey(target))?.notBefore ?? 0
 					const [firstDue, ...restDue] = group.filter((target) => notBefore(target) <= cycleStart)
 					const outcome =
 						firstDue === undefined
@@ -159,17 +173,12 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 							: yield* scraper.scrapeCycle(
 									[firstDue, ...restDue],
 									semaphore,
-									new Map(
-										Array.from(before.backoffs, ([key, backoff]) => [
-											key,
-											backoff.reason,
-										]),
-									),
+									new Map(Array.from(current, ([key, backoff]) => [key, backoff.reason])),
 								)
 					yield* Effect.forEach(outcome.scrapes, record, { discard: true })
 					const endedAt = yield* Clock.currentTimeMillis
 
-					const backoffs = nextBackoffs(before.backoffs, group, outcome.scrapes, baseMs, endedAt)
+					const backoffs = nextBackoffs(current, group, outcome.scrapes, baseMs, endedAt)
 					const blocked =
 						outcome.deliveryFailure !== null && shouldBackOff(outcome.deliveryFailure)
 							? outcome.deliveryFailure
