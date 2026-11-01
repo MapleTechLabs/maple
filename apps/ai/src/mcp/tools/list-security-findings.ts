@@ -130,7 +130,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			const [codeRead, dependencyRead, exposure, runtimes] = yield* Effect.all(
 				[
 					wanted("code") ? readCode(tenant) : skip,
-					wanted("dependencies") || wanted("code") ? readDependencies(tenant) : skip,
+					wanted("dependencies") || wanted("code")
+						? readDependencies(tenant, { repository: params.repository })
+						: skip,
 					wanted("exposure") ? readExposure(tenant, window) : skip,
 					wanted("runtimes") ? readRuntimes(tenant, window) : skip,
 				],

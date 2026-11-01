@@ -197,6 +197,21 @@ describe("inspect_security_finding", () => {
 		])
 	})
 
+	it("reads a supported runtime version as fine, with no upgrade", async () => {
+		const { output, text } = await inspect("python@3.12.7")
+		expect(output.matches).toMatchObject([
+			{ area: "runtimes", posture: "supported", severity: "informational", fixedIn: null },
+		])
+		expect(text).not.toContain("Upgrade to")
+	})
+
+	it("reads a dependency finding by id", async () => {
+		const { output } = await inspect("a1000000000000000000000000000002")
+		expect(output.matches).toMatchObject([
+			{ area: "dependencies", packageName: "axios", services: [{ service: "checkout" }] },
+		])
+	})
+
 	it("reads a code finding's trace, exploit and fix", async () => {
 		const { output } = await inspect(SECURITY_WORLD.criticalFingerprint)
 		const [finding] = output.matches

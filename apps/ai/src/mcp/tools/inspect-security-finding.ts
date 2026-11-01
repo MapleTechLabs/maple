@@ -1,4 +1,5 @@
-import { Clock, DateTime, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Schema } from "effect"
+import { DependencyFindingId } from "@maple/domain/dependency-scan"
 import { InspectSecurityFindingOutput } from "@maple/domain/mcp-outputs"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -32,7 +33,7 @@ type Output = typeof InspectSecurityFindingOutput.Type
 type Match = Output["matches"][number]
 
 const isoOf = (ms: number) => new Date(ms).toISOString()
-const DEPENDENCY_ID = /^[0-9a-f]{32}$/u
+const decodeDependencyId = Schema.decodeUnknownOption(DependencyFindingId)
 const ADVISORY_ID = /^(CVE|GHSA|GO|RUSTSEC|PYSEC|OSV|BIT)-/iu
 
 export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
@@ -61,7 +62,8 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const query = id.trim()
 			const needle = query.toLowerCase()
-			const isDependencyId = DEPENDENCY_ID.test(query)
+			const dependencyId = decodeDependencyId(query)
+			const isDependencyId = Option.isSome(dependencyId)
 			const now = yield* Clock.currentTimeMillis
 			const window = {
 				startTime: formatWarehouseDateTime(now - RUNTIME_WINDOW_MS),
@@ -72,7 +74,9 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			const [code, dependencies, runtimes, exposure] = yield* Effect.all(
 				[
 					isDependencyId || isExposureId ? Effect.succeed(undefined) : readCode(tenant),
-					isExposureId ? Effect.succeed(undefined) : readDependencies(tenant),
+					isExposureId
+						? Effect.succeed(undefined)
+						: readDependencies(tenant, { findingId: Option.getOrUndefined(dependencyId) }),
 					isDependencyId || isExposureId ? Effect.succeed(undefined) : readRuntimes(tenant, window),
 					isExposureId ? readExposure(tenant, window) : Effect.succeed(undefined),
 				],
@@ -252,13 +256,21 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 											entry.advisories === undefined
 												? "Known vulnerabilities for this version could not be checked this time."
 												: null,
+										// Only end of life and behind are findings; a supported version reads as fine.
 										severity:
 											entry.advisories === undefined
 												? ("unknown" as const)
 												: entry.posture.status === "end_of_life"
 													? ("medium" as const)
-													: ("low" as const),
-										fixedIn: "latest" in entry.posture ? entry.posture.latest : null,
+													: entry.posture.status === "behind"
+														? ("low" as const)
+														: ("informational" as const),
+										fixedIn:
+											(entry.posture.status === "end_of_life" ||
+												entry.posture.status === "behind") &&
+											entry.posture.latest !== null
+												? entry.posture.latest
+												: null,
 									},
 								]
 							: advisories.map((advisory) => ({
@@ -603,10 +615,11 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 								["Posture", m.postureNote],
 								[
 									m.advisoryId === null ? "Upgrade to" : "Fixed in",
-									m.fixedIn ??
-										(m.advisoryId === null
-											? "a supported release"
-											: "no fix for this line"),
+									m.advisoryId !== null
+										? (m.fixedIn ?? "no fix for this line")
+										: m.posture === "end_of_life" || m.posture === "behind"
+											? (m.fixedIn ?? "a supported release")
+											: undefined,
 								],
 								["Advisory", m.url ?? undefined],
 								[

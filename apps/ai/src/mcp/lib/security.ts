@@ -3,9 +3,10 @@
  * agent can rank code audit findings, vulnerable dependencies, served scanner probes and runtimes on
  * vulnerable or end-of-life versions against each other.
  */
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Option } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
+import type { DependencyFindingId } from "@maple/domain/dependency-scan"
 import type { SecurityArea, SecurityFindingRow, SecuritySeverity } from "@maple/domain/mcp-outputs"
 import {
 	advisoryKey,
@@ -219,13 +220,17 @@ export type DependencyRead =
 	  }
 	| AreaGate
 
-export const readDependencies = (tenant: TenantContext) =>
+export interface DependencyReadOptions {
+	/** Spend the reader's cap on this repository (owner/name) only. */
+	readonly repository?: string | undefined
+	/** Read this one finding by id instead of the ranked list, past its cap. */
+	readonly findingId?: DependencyFindingId | undefined
+}
+
+export const readDependencies = (tenant: TenantContext, options: DependencyReadOptions = {}) =>
 	Effect.gen(function* () {
 		const reader = yield* DependencyScanReader
-		const [{ repositories }, findings] = yield* Effect.all(
-			[reader.listRepositories(tenant), reader.listFindings(tenant, {})],
-			{ concurrency: 2 },
-		)
+		const { repositories } = yield* reader.listRepositories(tenant)
 		if (repositories.repositories.length === 0) {
 			return {
 				_tag: "not_connected",
@@ -233,6 +238,24 @@ export const readDependencies = (tenant: TenantContext) =>
 					"No GitHub repository is connected, so no lockfile has been scanned (connect GitHub in Sources).",
 			} satisfies DependencyRead
 		}
+		const findingId = options.findingId
+		if (findingId !== undefined) {
+			const finding = yield* reader.getFinding(tenant, findingId)
+			return {
+				_tag: "read",
+				repositories: repositories.repositories,
+				findings: Option.toArray(finding),
+				productionKnown: true,
+				capped: false,
+			} satisfies DependencyRead
+		}
+		const wanted = options.repository?.toLowerCase()
+		const repository = repositories.repositories.find((repo) => repo.fullName.toLowerCase() === wanted)
+		// An unknown repository has no findings; reading the org's would spend the cap on others.
+		const findings =
+			wanted !== undefined && repository === undefined
+				? { findings: [], production: { available: true } }
+				: yield* reader.listFindings(tenant, { repositoryId: repository?.id })
 		return {
 			_tag: "read",
 			repositories: repositories.repositories,

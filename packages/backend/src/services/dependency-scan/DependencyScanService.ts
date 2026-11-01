@@ -256,6 +256,11 @@ export interface DependencyScanReaderApi {
 		DependencyScanPersistenceError
 	>
 	readonly listFindings: DependencyScanServiceApi["listFindings"]
+	/** One finding by id with the services running it, past the list's cap; None when its repository is gone. */
+	readonly getFinding: (
+		tenant: TenantContext,
+		id: DependencyFindingId,
+	) => Effect.Effect<Option.Option<DependencyFindingView>, DependencyScanPersistenceError>
 }
 
 /** The Dependencies tab's reads, without the VCS sync queue, so a Worker without it can read findings. */
@@ -499,7 +504,32 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 				}
 			})
 
-			return { connectedRepositories, listRepositories, listFindings } satisfies DependencyScanReaderApi
+			const getFinding: DependencyScanReaderApi["getFinding"] = Effect.fn(
+				"DependencyScanReader.getFinding",
+			)(function* (tenant, id) {
+				const row = yield* store
+					.getFinding({ orgId: tenant.orgId, id })
+					.pipe(Effect.mapError(persistence("Could not read the finding")))
+				if (Option.isNone(row)) return Option.none()
+				const connected = yield* connectedRepositories(tenant.orgId)
+				const owner = connected.find((entry) => entry.repository.id === row.value.repositoryId)
+				if (owner === undefined) return Option.none()
+				const production = yield* productionOrNone(tenant, connected)
+				const services =
+					productionByFinding(production.running, production.completed, production.matches).get(
+						findingKey(row.value),
+					) ?? []
+				return Option.some(
+					findingViewOf(row.value, owner.repository.fullName, services.map(toRunningService)),
+				)
+			})
+
+			return {
+				connectedRepositories,
+				listRepositories,
+				listFindings,
+				getFinding,
+			} satisfies DependencyScanReaderApi
 		}),
 	},
 ) {
