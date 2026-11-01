@@ -166,7 +166,6 @@ extension AlertDestinationType {
 		case .chat: "Chat"
 		case .pagerduty: "PagerDuty"
 		case .webhook: "Webhook"
-		case .hazelOauth: "Hazel"
 		case .discord: "Discord"
 		case .telegram: "Telegram"
 		case .googleChat: "Google Chat"

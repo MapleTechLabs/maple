@@ -238,6 +238,7 @@ export const repositoriesPanels = (
 		(repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling",
 	).length
 	const failed = active.filter((repo) => repo.syncStatus === "error").length
+	const discovery = status.repositoryDiscovery
 	const counts = h.div(
 		[h.Class("flex items-center gap-3 text-xs text-muted-foreground")],
 		[
@@ -264,6 +265,34 @@ export const repositoriesPanels = (
 				: []),
 		],
 	)
+	// A discovery in flight or failed sits above repositories already synced, never in their place.
+	const discoveryNotice: ReadonlyArray<Html> =
+		discovery?._tag === "Pending"
+			? [
+					h.div(
+						[h.Class("flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground")],
+						[spinner(h, undefined, 16), "Discovering repositories…"],
+					),
+				]
+			: discovery?._tag === "Failed"
+				? [
+						h.div(
+							[h.Class("flex flex-col items-start gap-3 px-4 py-6 text-sm")],
+							[
+								h.p([h.Class("text-severity-error")], [discovery.message]),
+								button(
+									h,
+									{
+										variant: "outline",
+										isDisabled: model.connect.isStarting,
+										attributes: [h.OnClick(Message.ClickedConnect())],
+									},
+									["Reconnect GitHub"],
+								),
+							],
+						),
+					]
+				: []
 	return [
 		panel(h, {}, [
 			panelHeader(h, {
@@ -278,18 +307,19 @@ export const repositoriesPanels = (
 				],
 				action: active.length > 0 ? counts : undefined,
 			}),
-			active.length === 0 && removed.length === 0
-				? h.div(
-						[h.Class("flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground")],
-						[
-							spinner(h, undefined, 16),
-							"Syncing repositories from GitHub… this can take a moment.",
-						],
-					)
-				: h.ul(
-						[h.Class("divide-y")],
-						active.map((repo) => repoRow(h, model, repo, timeZone)),
-					),
+			...discoveryNotice,
+			...(active.length > 0
+				? [h.ul([h.Class("divide-y")], active.map((repo) => repoRow(h, model, repo, timeZone)))]
+				: discoveryNotice.length === 0 && removed.length === 0
+					? [
+							h.p(
+								[h.Class("px-4 py-6 text-sm text-muted-foreground")],
+								[
+									"No repositories granted. Change repository access on GitHub to grant Maple at least one.",
+								],
+							),
+						]
+					: []),
 		]),
 		...(removed.length > 0
 			? [

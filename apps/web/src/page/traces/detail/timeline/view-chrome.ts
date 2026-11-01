@@ -51,7 +51,9 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 						h.button(
 							[
 								h.AriaLabel("Clear search"),
-								h.Class("-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground active:text-foreground"),
+								h.Class(
+									"-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground active:text-foreground",
+								),
 								h.Type("button"),
 								h.OnClick(Message.ClickedClearSearch()),
 							],
@@ -70,8 +72,11 @@ const countKeys = (
 	read: (span: SpanNodeData) => Readonly<Record<string, string>>,
 ) => {
 	const counts = new Map<string, number>()
+	// The trace query projects fixed keys as "" when a span lacks them; only real values count.
 	const visit = (span: SpanNodeData): void => {
-		Object.keys(read(span)).forEach((key) => counts.set(key, (counts.get(key) ?? 0) + 1))
+		Object.entries(read(span)).forEach(([key, value]) => {
+			if (value !== "") counts.set(key, (counts.get(key) ?? 0) + 1)
+		})
 		span.children.forEach(visit)
 	}
 	spans.forEach(visit)
@@ -81,7 +86,7 @@ const countKeys = (
 }
 
 /** `useTraceAttributeKeys`: the trace's commonest span and resource attribute keys, 20 of each. */
-const attributeKeys = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<AttributeKey> => [
+export const attributeKeys = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<AttributeKey> => [
 	...countKeys(rootSpans, (span) => span.spanAttributes).map(([key, count]) => ({
 		kind: "spanAttribute" as const,
 		key,

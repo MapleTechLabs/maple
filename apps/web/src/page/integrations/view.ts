@@ -17,7 +17,6 @@ import { chatCard } from "./view-chat-card"
 import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "./view-gcp"
 import { githubCard } from "./view-github"
-import { hazelCard } from "./view-hazel"
 import { linearCard } from "./view-linear"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
@@ -61,8 +60,6 @@ export const cardView = (
 	const connector = chatConnectorOf(integration)
 	if (connector !== null) return [chatCard(h, model, connector, timeZone)]
 	switch (integration) {
-		case "hazel":
-			return [hazelCard(h, model)]
 		case "linear":
 			return [linearCard(h, model)]
 		case "github":

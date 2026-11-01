@@ -43,6 +43,13 @@ export const GET: APIRoute = ({ site }) => {
 		`- Example: [${url("/docs/getting-started/introduction.md")}](${url("/docs/getting-started/introduction.md")})`,
 		"",
 
+		"## Use Maple with an AI agent",
+		"",
+		"Query and operate Maple through MCP, find instrumentation skills, and check the dashboard and API revisions deployed to your region without a browser.",
+		"",
+		`- [AI agent guide: connection, workflows, deployed revisions and skills](${url("/docs/getting-started/ai-agents.md")})`,
+		"",
+
 		"## Pricing",
 		"",
 		"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $5 per million (page views not counted).",
@@ -59,7 +66,8 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Changelog",
 		"",
-		`Maple product updates, one entry per shipped change. The index enumerates every entry. ${CONVENTION("changelog")}`,
+		`Maple product announcements, one entry per announced change. The index enumerates every entry. ${CONVENTION("changelog")}`,
+		`An entry does not show which commit a region is running. To check the deployed dashboard and API revisions, see the [AI agent guide](${url("/docs/getting-started/ai-agents.md#check-whether-a-maple-cloud-fix-is-deployed")}).`,
 		"",
 		...both("Changelog index", "/changelog"),
 		`- [RSS feed](${url("/changelog/rss.xml")})`,
@@ -114,6 +122,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Uptime monitoring with traces and HTTP checks](${url("/guides/uptime-monitoring")})`,
 		`- [Prometheus metrics, explained](${url("/guides/prometheus-metrics")})`,
 		`- [Log parsing: from raw lines to structured fields](${url("/guides/log-parsing")})`,
+		`- [Remote server monitoring with OpenTelemetry](${url("/guides/remote-server-monitoring")})`,
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
@@ -124,6 +133,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Loguru for Python](${url("/guides/loguru")})`,
 		`- [Python logging levels and how to set them](${url("/guides/python-logging-levels")})`,
 		`- [Incident response, step by step](${url("/guides/incident-response")})`,
+		`- [Windows server monitoring tools and what to watch](${url("/guides/windows-server-monitoring")})`,
 		"",
 
 		"## Maple API",

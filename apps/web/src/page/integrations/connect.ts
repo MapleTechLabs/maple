@@ -1,29 +1,37 @@
 import {
 	CloudflareStartConnectRequest,
 	GithubStartConnectRequest,
-	HazelStartConnectRequest,
 	IntegrationReturnPath,
 	LinearStartConnectRequest,
 	SupabaseConnectRequest,
 } from "@maple/domain/http"
-import { Effect, Result, Schema } from "effect"
+import { Context, Effect, Result, Schema, Stream } from "effect"
 import { toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 
 // `IntegrationConnectProvider` and `useOAuthPopupFlow`.
 
-export const ConnectProvider = Schema.Literals([
-	"cloudflare",
-	"hazel",
-	"linear",
-	"github",
-	"planetscale",
-	"supabase",
-])
+export const ConnectProvider = Schema.Literals(["cloudflare", "linear", "github", "planetscale", "supabase"])
 export type ConnectProvider = typeof ConnectProvider.Type
 
+const browserCallbackEvents = () => ({
+	ownOrigin: window.location.origin,
+	messages: Stream.fromEventListener<MessageEvent>(window, "message"),
+})
+
+/** The browser's callback channel; its event source and origin travel together. */
+export const IntegrationCallbackEvents = Context.Reference<ReturnType<typeof browserCallbackEvents>>(
+	"@maple/web/IntegrationCallbackEvents",
+	{ defaultValue: browserCallbackEvents },
+)
+
 /** One attempt: the popup is out while this is set; a new attempt restarts the flow. */
-export const ConnectAttempt = Schema.Struct({ provider: ConnectProvider, attempt: Schema.Number })
+export const ConnectAttempt = Schema.Struct({
+	provider: ConnectProvider,
+	attempt: Schema.Number,
+	/** GitHub only: open the App install page instead of user authorization. */
+	githubMode: Schema.optionalKey(Schema.Literal("install")),
+})
 export type ConnectAttempt = typeof ConnectAttempt.Type
 
 export const ConnectModel = Schema.Struct({
@@ -62,14 +70,6 @@ export const PROVIDERS = {
 		startErrorTitle: "Couldn't start Cloudflare connect flow",
 		closeGraceMs: 15_000,
 		polls: true,
-	},
-	hazel: {
-		label: "Hazel",
-		windowName: "maple-hazel-connect",
-		windowFeatures: "popup,width=520,height=640",
-		startErrorTitle: "Couldn't start Hazel connect flow",
-		closeGraceMs: 0,
-		polls: false,
 	},
 	linear: {
 		label: "Linear",
@@ -117,7 +117,11 @@ export const currentReturnPath = Effect.sync(() =>
 )
 
 /** The provider's start mutation, answering the authorize URL. */
-export const startConnect = (provider: ConnectProvider, returnTo: IntegrationReturnPath) =>
+export const startConnect = (
+	provider: ConnectProvider,
+	returnTo: IntegrationReturnPath,
+	githubMode?: "install",
+) =>
 	Effect.gen(function* () {
 		const internal = yield* MapleInternalApiClient
 		const v2 = yield* MapleApiV2Client
@@ -126,17 +130,15 @@ export const startConnect = (provider: ConnectProvider, returnTo: IntegrationRet
 				return yield* internal.integrations.cloudflareStart({
 					payload: new CloudflareStartConnectRequest({ returnTo }),
 				})
-			case "hazel":
-				return yield* internal.integrations.hazelStart({
-					payload: new HazelStartConnectRequest({ returnTo }),
-				})
 			case "linear":
 				return yield* internal.integrations.linearStart({
 					payload: new LinearStartConnectRequest({ returnTo }),
 				})
 			case "github":
 				return yield* internal.integrations.githubStart({
-					payload: new GithubStartConnectRequest({ returnTo }),
+					payload: new GithubStartConnectRequest(
+						githubMode === undefined ? { returnTo } : { returnTo, mode: githubMode },
+					),
 				})
 			case "planetscale": {
 				const response = yield* v2.planetscaleIntegration.connect({

@@ -151,7 +151,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `get_agent_tools_overview`     | read   | Calls, failures and latency per agent tool, compared with the previous window        |
 | `get_agent_tool_error`         | read   | One agent tool failure group with affected sessions and sample calls                 |
 
-### Setup and source code
+### Setup
 
 | Tool                                  | Access | What it does                                                                                           |
 | ------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
@@ -161,13 +161,6 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `list_sources`                        | read   | Everything that sends data to the organization, worst health first, and when each last sent data       |
 | `ingest_freshness`                    | read   | Newest received timestamp per signal, with its lag                                                     |
 | `ingest_usage`                        | read   | Spans, log records and metric data points ingested per service, with org totals                        |
-| `list_source_repositories`            | read   | Repositories connected through the [GitHub integration](/docs/integrations/github)                     |
-| `search_source_code`                  | read   | Search one connected repository through GitHub code search                                             |
-| `read_source_file`                    | read   | Read a line range from a file in a connected repository                                                |
-| `ci_runs`                             | read   | GitHub Actions runs from CI traces: failures per workflow, durations, and why a failed job failed      |
-| `compare_commits`                     | read   | The commits between two deployed versions of a service, from the synced repository                     |
-
-The source-code tools only return results for repositories the organization's GitHub App installation can access.
 
 ### Infrastructure
 

@@ -1628,5 +1628,44 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// Both objects are new and fill forward; nothing is backfilled.
+		id: "local-0041-to-0042-security-telemetry",
+		from: 41,
+		to: 42,
+		description:
+			"Create scanner_requests and service_runtimes_hourly with their views for the Security Center's Exposure and Runtimes tabs",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [],
+		plan: [
+			[
+				"create-security-telemetry",
+				"Create scanner_requests, service_runtimes_hourly and their views via the v42 bootstrap (all new, IF NOT EXISTS)",
+			],
+		],
+		verifies: "Verify the v42 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "scanner_requests",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"The projection accrues for spans ingested after the migration; older probe spans stay in raw traces but are invisible to the Exposure tab until they age out.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+			{
+				name: "service_runtimes_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"The rollup accrues for spans ingested after the migration; services that sent no spans since then are missing from the Runtimes tab.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

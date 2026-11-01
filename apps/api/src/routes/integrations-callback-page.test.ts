@@ -11,8 +11,8 @@ const render = (returnTo: string | null, targetOrigin = "https://web.maple.dev")
 		status: "success",
 		message: "Connected",
 		returnTo,
-		messageType: "maple:integration:hazel",
-		label: "Hazel",
+		messageType: "maple:integration:linear",
+		label: "Linear",
 		targetOrigin,
 	})
 

@@ -1,12 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import {
-	ChatConnectorId,
-	HazelChannelId,
-	HazelOrganizationId,
-	PostgresTransactionId,
-	UserId,
-} from "../../primitives"
+import { ChatConnectorId, PostgresTransactionId, UserId } from "../../primitives"
 import {
 	AlertDeliveryAuthError,
 	AlertDeliveryError,
@@ -86,7 +80,7 @@ export const V2AlertDestination = Schema.Struct({
 	}),
 	type: AlertDestinationType.annotate({
 		description:
-			"The delivery channel: `pagerduty`, `webhook`, `hazel-oauth`, `discord`, `telegram`, `google-chat`, `email`, `chat` (a channel in a chat workspace linked through a chat connector), or `linear` (a team in the connected Linear workspace). Immutable after creation.",
+			"The delivery channel: `pagerduty`, `webhook`, `discord`, `telegram`, `google-chat`, `email`, `chat` (a channel in a chat workspace linked through a chat connector), or `linear` (a team in the connected Linear workspace). Immutable after creation.",
 		examples: ["pagerduty"],
 	}),
 	enabled: Schema.Boolean.annotate({
@@ -137,7 +131,7 @@ export const V2AlertDestination = Schema.Struct({
 	identifier: "AlertDestination",
 	title: "Alert Destination",
 	description:
-		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Hazel OAuth, Discord, Telegram, Google Chat, workspace-member email, a channel in a linked chat workspace, or a Linear team). Channel secrets are write-only: responses carry a redacted `summary` instead.",
+		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Discord, Telegram, Google Chat, workspace-member email, a channel in a linked chat workspace, or a Linear team). Channel secrets are write-only: responses carry a redacted `summary` instead.",
 	examples: [wireExample(alertDestinationExample)],
 })
 export type V2AlertDestination = Schema.Schema.Type<typeof V2AlertDestination>
@@ -188,29 +182,6 @@ const V2WebhookDestinationCreateParams = Schema.Struct({
 	),
 	enabled: enabledField,
 }).annotate({ identifier: "AlertDestinationCreateWebhook", title: "Webhook destination" })
-
-const V2HazelOAuthDestinationCreateParams = Schema.Struct({
-	type: Schema.Literal("hazel-oauth"),
-	name: nameField,
-	hazel_organization_id: HazelOrganizationId.annotate({
-		description: "The connected Hazel organization ID.",
-	}),
-	hazel_organization_name: NonEmptyString.annotate({
-		description: "Display name of the connected Hazel organization.",
-	}),
-	hazel_organization_logo_url: Schema.optionalKey(
-		Schema.NullOr(NonEmptyString).annotate({
-			description: "Optional logo URL for the connected Hazel organization.",
-		}),
-	),
-	hazel_channel_id: HazelChannelId.annotate({
-		description: "The Hazel channel that receives notifications.",
-	}),
-	hazel_channel_name: NonEmptyString.annotate({
-		description: "Display name of the Hazel channel.",
-	}),
-	enabled: enabledField,
-}).annotate({ identifier: "AlertDestinationCreateHazelOauth", title: "Hazel (OAuth) destination" })
 
 const V2DiscordDestinationCreateParams = Schema.Struct({
 	type: Schema.Literal("discord"),
@@ -283,7 +254,6 @@ const V2LinearDestinationCreateParams = Schema.Struct({
 export const V2AlertDestinationCreateParams = Schema.Union([
 	V2PagerDutyDestinationCreateParams,
 	V2WebhookDestinationCreateParams,
-	V2HazelOAuthDestinationCreateParams,
 	V2DiscordDestinationCreateParams,
 	V2TelegramDestinationCreateParams,
 	V2GoogleChatDestinationCreateParams,
@@ -324,19 +294,6 @@ export const V2AlertDestinationUpdateParams = Schema.Union([
 		signing_secret: Schema.optionalKey(Schema.String),
 		enabled: Schema.optionalKey(Schema.Boolean),
 	}).annotate({ identifier: "AlertDestinationUpdateWebhook", title: "Webhook destination update" }),
-	Schema.Struct({
-		type: Schema.Literal("hazel-oauth"),
-		name: optionalNameField,
-		hazel_organization_id: Schema.optionalKey(HazelOrganizationId),
-		hazel_organization_name: Schema.optionalKey(Schema.String),
-		hazel_organization_logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
-		hazel_channel_id: Schema.optionalKey(HazelChannelId),
-		hazel_channel_name: Schema.optionalKey(Schema.String),
-		enabled: Schema.optionalKey(Schema.Boolean),
-	}).annotate({
-		identifier: "AlertDestinationUpdateHazelOauth",
-		title: "Hazel (OAuth) destination update",
-	}),
 	Schema.Struct({
 		type: Schema.Literal("discord"),
 		name: optionalNameField,
@@ -450,7 +407,8 @@ const alertDeliveryErrors = publicErrors(
 	AlertDeliveryTargetMissingError,
 	AlertDeliveryRejectedError,
 )
-const hazelWebhookProvisionErrors = publicErrors(
+/** Linear destinations read the linked integration on create and update. */
+const integrationLookupErrors = publicErrors(
 	IntegrationsNotConnectedError,
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
@@ -555,7 +513,7 @@ export class V2AlertDestinationsApiGroup extends HttpApiGroup.make("alertDestina
 				alertValidation,
 				alertPersistence,
 				destinationEncryption,
-				...hazelWebhookProvisionErrors,
+				...integrationLookupErrors,
 				...emailRecipientErrors,
 			],
 		}).annotateMerge(
@@ -607,7 +565,7 @@ export class V2AlertDestinationsApiGroup extends HttpApiGroup.make("alertDestina
 				alertNotFound,
 				destinationEncryption,
 				...destinationReadErrors,
-				...hazelWebhookProvisionErrors,
+				...integrationLookupErrors,
 				...emailRecipientErrors,
 			],
 		}).annotateMerge(
@@ -665,6 +623,6 @@ export class V2AlertDestinationsApiGroup extends HttpApiGroup.make("alertDestina
 		OpenApi.annotations({
 			title: "Alert Destinations",
 			description:
-				"Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+				"Notification channels for alert rules: PagerDuty, generic webhooks, Discord, Telegram, Google Chat, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
 		}),
 	) {}

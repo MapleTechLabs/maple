@@ -73,7 +73,15 @@ export class McpToolRegistration extends Context.Service<
 								Effect.succeed(toBoundaryErrorResult(error)),
 							),
 						)
-					}),
+					}).pipe(
+						// Runs on the `tools/call` server span: an `isError` result is a successful
+						// JSON-RPC call, so the MCP conventions mark it with `error.type` alone.
+						Effect.tap((result) =>
+							result.isError === true
+								? Effect.annotateCurrentSpan("error.type", "tool_error")
+								: Effect.void,
+						),
+					),
 			})
 		const register = Effect.gen(function* () {
 			const executor = yield* loader.load

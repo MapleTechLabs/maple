@@ -170,7 +170,7 @@ export const destinationTarget = (
 ): { primary: string; secondary: string } => {
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined).label
 	const primary =
-		destination.type === "chat" || destination.type === "hazel-oauth"
+		destination.type === "chat"
 			? (destination.channelLabel ?? destination.name)
 			: destination.type === "webhook"
 				? destination.summary.replace(/^POST /, "")

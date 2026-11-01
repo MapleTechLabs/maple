@@ -6,6 +6,7 @@ import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
 
 const INTERNAL_TOKEN = "eval-internal-token"
@@ -91,11 +92,12 @@ export const runToolDirect = async (
 	rt: EvalRuntime,
 	name: string,
 	params: unknown,
+	surface: McpToolSurface = "mcp",
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> => {
 	return rt.runtime.runPromise(
 		McpToolExecutor.pipe(
-			Effect.flatMap((executor) => executor.execute(rt.tenant, name, params, "mcp")),
+			Effect.flatMap((executor) => executor.execute(rt.tenant, name, params, surface)),
 			// Every tool run here is held to the depth bound clients enforce on results.
 			Effect.tap((result) => {
 				const depth = jsonDepth(result.structuredContent)

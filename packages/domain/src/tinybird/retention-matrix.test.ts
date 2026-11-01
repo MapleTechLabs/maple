@@ -26,6 +26,8 @@ const RETENTION_DAYS = {
 	metrics_gauge: 90,
 	metrics_histogram: 90,
 	metrics_sum: 90,
+	// Raw-tier projection of `traces`, like `ai_crawler_requests`.
+	scanner_requests: 30,
 	service_address_resolutions_hourly: 365,
 	// Hour-grain only, read for windows of days; a year would be a second annual table.
 	service_endpoint_details_hourly: 90,
@@ -46,6 +48,8 @@ const RETENTION_DAYS = {
 	service_overview_minutely: 90,
 	service_overview_spans: 30,
 	service_platforms_hourly: 365,
+	// Read for the last week; 90 days shows when a service last changed its runtime.
+	service_runtimes_hourly: 90,
 	service_usage: 365,
 	source_usage_hourly: 90,
 	session_events: 30,

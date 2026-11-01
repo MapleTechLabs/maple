@@ -545,6 +545,12 @@ const toDecodeErrorMessage = (
 		? formatDecodeFailure(definition.name, error, inputSchemaOf(definition), normalized)
 		: String(error)
 
+/** A registered tool this surface cannot see: a shared tool pointing at it is expected. */
+const isHiddenOn = (tool: string, surface: McpToolSurface): boolean => {
+	const target = mapleToolDefinitions.find((candidate) => candidate.name === tool)
+	return target !== undefined && !audienceAdmits(target.audience, surface)
+}
+
 /**
  * Whether a suggested call would decode on the surface it is shown on. A next call naming a
  * parameter that was renamed, or a tool the caller cannot see, is worse than none.
@@ -566,11 +572,12 @@ const finish = Effect.fnUntraced(function* (
 	surface: McpToolSurface,
 ) {
 	const invalid = nextCallsOf(run.doc).filter((call) => !isValidNextCall(call, surface))
-	if (invalid.length > 0) {
+	const undecodable = invalid.filter((call) => !isHiddenOn(call.tool, surface))
+	if (undecodable.length > 0) {
 		yield* Effect.logWarning("MCP tool suggested a call that does not decode").pipe(
 			Effect.annotateLogs({
 				"maple.mcp.tool": definition.name,
-				"maple.mcp.next_calls": invalid.map((call) => call.tool).join(","),
+				"maple.mcp.next_calls": undecodable.map((call) => call.tool).join(","),
 			}),
 		)
 	}

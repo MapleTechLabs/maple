@@ -105,7 +105,7 @@ export type StatusPageIncidentHistoryEntry = Schema.Schema.Type<typeof StatusPag
 
 // --- Theme ---
 
-export const StatusPageThemePreset = Schema.Literals(["default", "mono", "midnight", "paper"])
+export const StatusPageThemePreset = Schema.Literals(["default", "maple", "mono", "midnight", "paper"])
 export type StatusPageThemePreset = Schema.Schema.Type<typeof StatusPageThemePreset>
 export const StatusPageThemeAppearance = Schema.Literals(["auto", "light", "dark"])
 export type StatusPageThemeAppearance = Schema.Schema.Type<typeof StatusPageThemeAppearance>
@@ -145,6 +145,18 @@ export const DEFAULT_STATUS_PAGE_THEME: StatusPageTheme = {
 	font: "sans",
 }
 
+/** The font and corners each preset is designed around; picking a preset resets both to these. */
+export const STATUS_PAGE_PRESET_DEFAULTS = {
+	default: { font: "sans", radius: "md" },
+	maple: { font: "mono", radius: "md" },
+	mono: { font: "mono", radius: "none" },
+	midnight: { font: "sans", radius: "md" },
+	paper: { font: "serif", radius: "sm" },
+} as const satisfies Record<
+	StatusPageThemePreset,
+	{ readonly font: StatusPageThemeFont; readonly radius: StatusPageThemeRadius }
+>
+
 /** The colour overrides a forced appearance takes; Auto ignores them. */
 export const STATUS_PAGE_THEME_COLOR_FIELDS = ["background", "text", "card", "border"] as const
 
@@ -162,6 +174,9 @@ export interface StatusPageThemeTokens {
 	readonly major: string
 	readonly maint: string
 	readonly none: string
+	/** The theme's brand colour as a fill (marks, today in the calendar), and text on it. */
+	readonly primary: string
+	readonly primaryFg: string
 }
 
 /**
@@ -188,125 +203,182 @@ export interface ResolvedStatusPageTheme {
 	readonly fontStack: string
 }
 
+// Palettes from shadcn themes (named in the comment) and Maple's own dashboard tokens, with text, links and status
+// colours moved in lightness until they keep AA on the background and cards.
 const PRESET_TOKENS = {
+	// Vercel
 	default: {
 		light: {
-			bg: "#ffffff",
-			fg: "#0a0a0a",
-			muted: "#666666",
-			line: "#eaeaea",
-			card: "#fafafa",
-			link: "#0a0a0a",
-			ok: "#11813b",
-			degraded: "#aa5d05",
-			partial: "#c3490a",
+			bg: "#fcfcfc",
+			fg: "#000000",
+			muted: "#525252",
+			line: "#e4e4e4",
+			card: "#ffffff",
+			link: "#000000",
+			ok: "#008536",
+			degraded: "#b25c00",
+			partial: "#c84400",
 			major: "#dc2626",
 			maint: "#2563eb",
-			none: "#e5e5e5",
+			none: "#e6e6e6",
+			primary: "#000000",
+			primaryFg: "#ffffff",
 		},
 		dark: {
-			bg: "#0a0a0a",
-			fg: "#ededed",
-			muted: "#a1a1a1",
-			line: "#262626",
-			card: "#111111",
-			link: "#ededed",
+			bg: "#000000",
+			fg: "#ffffff",
+			muted: "#a4a4a4",
+			line: "#242424",
+			card: "#090909",
+			link: "#ffffff",
 			ok: "#22c55e",
 			degraded: "#f59e0b",
 			partial: "#f97316",
 			major: "#ef4444",
 			maint: "#3b82f6",
-			none: "#2a2a2a",
+			none: "#1d1d1d",
+			primary: "#ffffff",
+			primaryFg: "#000000",
 		},
 	},
+	// Maple, from the dashboard's own tokens
+	maple: {
+		light: {
+			bg: "#fdfbf9",
+			fg: "#191511",
+			muted: "#71675d",
+			line: "#e8e4df",
+			card: "#ffffff",
+			link: "#b15a00",
+			ok: "#008536",
+			degraded: "#ae5a00",
+			partial: "#c84400",
+			major: "#dc2626",
+			maint: "#2563eb",
+			none: "#e8e4df",
+			primary: "#d87500",
+			primaryFg: "#1b1814",
+		},
+		dark: {
+			bg: "#1a1714",
+			fg: "#e8e0d6",
+			muted: "#9b9084",
+			line: "#2a2520",
+			card: "#1e1b17",
+			link: "#e8872a",
+			ok: "#22c55e",
+			degraded: "#f59e0b",
+			partial: "#f97316",
+			major: "#f24948",
+			maint: "#3b82f6",
+			none: "#2a2520",
+			primary: "#e8872a",
+			primaryFg: "#1a1714",
+		},
+	},
+	// Mono
 	mono: {
 		light: {
 			bg: "#ffffff",
-			fg: "#111111",
-			muted: "#6b6b6b",
-			line: "#d4d4d4",
-			card: "#f4f4f4",
-			link: "#111111",
-			ok: "#3d7a56",
-			degraded: "#91651d",
-			partial: "#ac552a",
-			major: "#b33a3a",
-			maint: "#4b6a99",
-			none: "#e0e0e0",
+			fg: "#0a0a0a",
+			muted: "#717171",
+			line: "#e5e5e5",
+			card: "#ffffff",
+			link: "#737373",
+			ok: "#008536",
+			degraded: "#b25c00",
+			partial: "#cc4700",
+			major: "#dc2626",
+			maint: "#2563eb",
+			none: "#e7e7e7",
+			primary: "#737373",
+			primaryFg: "#fafafa",
 		},
 		dark: {
-			bg: "#000000",
-			fg: "#f2f2f2",
-			muted: "#9a9a9a",
-			line: "#303030",
-			card: "#0c0c0c",
-			link: "#f2f2f2",
-			ok: "#5fae7f",
-			degraded: "#d0a14e",
-			partial: "#d47e52",
-			major: "#d86464",
-			maint: "#7a98c6",
+			bg: "#0a0a0a",
+			fg: "#fafafa",
+			muted: "#a1a1a1",
+			line: "#383838",
+			card: "#191919",
+			link: "#858585",
+			ok: "#22c55e",
+			degraded: "#f59e0b",
+			partial: "#f97316",
+			major: "#ef4444",
+			maint: "#3b82f6",
 			none: "#262626",
+			primary: "#737373",
+			primaryFg: "#fafafa",
 		},
 	},
+	// Cosmic Night
 	midnight: {
 		light: {
-			bg: "#f5f7fb",
-			fg: "#0f172a",
-			muted: "#556079",
-			line: "#dbe1ec",
+			bg: "#f5f5ff",
+			fg: "#2a2a4a",
+			muted: "#6c6c8a",
+			line: "#e0e0f0",
 			card: "#ffffff",
-			link: "#4338ca",
-			ok: "#15803d",
-			degraded: "#b45309",
-			partial: "#c2410c",
-			major: "#b91c1c",
-			maint: "#1d4ed8",
-			none: "#dfe4ee",
+			link: "#6e56cf",
+			ok: "#007f31",
+			degraded: "#aa5700",
+			partial: "#c44200",
+			major: "#d82324",
+			maint: "#2563eb",
+			none: "#f0f0fa",
+			primary: "#6e56cf",
+			primaryFg: "#ffffff",
 		},
 		dark: {
-			bg: "#0b1020",
-			fg: "#e6e9f2",
-			muted: "#8e99b3",
-			line: "#1f2a44",
-			card: "#10172d",
-			link: "#a5b4fc",
-			ok: "#34d399",
-			degraded: "#fbbf24",
-			partial: "#fb923c",
-			major: "#f87171",
-			maint: "#60a5fa",
-			none: "#1c2540",
+			bg: "#0f0f1a",
+			fg: "#e2e2f5",
+			muted: "#a0a0c0",
+			line: "#303052",
+			card: "#1a1a2e",
+			link: "#a48fff",
+			ok: "#22c55e",
+			degraded: "#f59e0b",
+			partial: "#f97316",
+			major: "#f24948",
+			maint: "#3b82f6",
+			none: "#222244",
+			primary: "#a48fff",
+			primaryFg: "#0f0f1a",
 		},
 	},
+	// Vintage Paper
 	paper: {
 		light: {
-			bg: "#fbf8f1",
-			fg: "#2b2620",
-			muted: "#6c6356",
-			line: "#e6dcc8",
-			card: "#f4eee1",
-			link: "#9a3f12",
-			ok: "#3c7839",
-			degraded: "#936016",
-			partial: "#a95323",
-			major: "#b23a2c",
-			maint: "#3f6497",
-			none: "#e7dfcf",
+			bg: "#f5f1e6",
+			fg: "#4a3f35",
+			muted: "#7a6853",
+			line: "#dbd0ba",
+			card: "#fffcf5",
+			link: "#8b6540",
+			ok: "#007b2f",
+			degraded: "#a65400",
+			partial: "#bf3f00",
+			major: "#d32022",
+			maint: "#2360e6",
+			none: "#ece5d8",
+			primary: "#8b6540",
+			primaryFg: "#ffffff",
 		},
 		dark: {
-			bg: "#1b1814",
+			bg: "#2d2621",
 			fg: "#ece5d8",
-			muted: "#a59b8a",
-			line: "#36302a",
-			card: "#231f1a",
-			link: "#e7a274",
-			ok: "#7bb36f",
-			degraded: "#d9a548",
-			partial: "#dc8653",
-			major: "#de6b5b",
-			maint: "#7d9ccc",
-			none: "#2e2924",
+			muted: "#c5bcac",
+			line: "#4a4039",
+			card: "#3a322c",
+			link: "#c0a080",
+			ok: "#22c55e",
+			degraded: "#f59e0b",
+			partial: "#fc7720",
+			major: "#ff716a",
+			maint: "#5b9dff",
+			none: "#534b44",
+			primary: "#c0a080",
+			primaryFg: "#2d2621",
 		},
 	},
 } as const satisfies Record<
@@ -406,9 +478,20 @@ const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): Resol
 		majorTint: statusTint(tokens.major, tokens.card, tokens.fg),
 		maintTint: statusTint(tokens.maint, tokens.card, tokens.fg),
 	}
+	// A custom accent always fills; as link text it needs AA on the background.
+	const fill =
+		accent === null
+			? {}
+			: {
+					primary: accent,
+					primaryFg:
+						contrastRatio("#ffffff", accent) >= contrastRatio("#000000", accent)
+							? "#ffffff"
+							: "#000000",
+				}
 	return accent === null || contrastRatio(accent, tokens.bg) < STATUS_PAGE_MIN_CONTRAST
-		? { ...tokens, ...tints, secondary: tokens.muted }
-		: { ...tokens, ...tints, link: accent, secondary: accent }
+		? { ...tokens, ...tints, ...fill, secondary: tokens.muted }
+		: { ...tokens, ...tints, ...fill, link: accent, secondary: accent }
 }
 
 /**

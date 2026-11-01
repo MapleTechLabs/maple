@@ -1362,6 +1362,80 @@ export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
 
 export type AiCrawlerRequestsRow = InferRow<typeof aiCrawlerRequests>
 
+/**
+ * Scanner requests: Server spans whose path matches a probe signature or whose user agent names a
+ * scanning tool, for the Security Center's Exposure tab. One row per span, so read requests as
+ * `uniq(TraceId)`. `Signature` is the matched path token, `''` for a scanner on an ordinary path.
+ */
+export const scannerRequests = defineDatasource("scanner_requests", {
+	tenantColumn: "OrgId",
+	description:
+		"Server spans that probe for secrets, source control, debug endpoints and known exploits, or come from a named scanning tool, with the matched signature, path, status, client address and user agent pre-extracted. Security Center Exposure tab. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
+		TraceId: t.string(),
+		ServiceName: t.string().lowCardinality(),
+		Signature: t.string().lowCardinality(),
+		Scanner: t.string().lowCardinality(),
+		Host: t.string().lowCardinality(),
+		Path: t.string(),
+		HttpStatus: t.uint16(),
+		ClientAddress: t.string(),
+		UserAgent: t.string(),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "Timestamp", "TraceId"],
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+	}),
+})
+
+export type ScannerRequestsRow = InferRow<typeof scannerRequests>
+
+/**
+ * The runtime and telemetry SDK each service reports, per hour: the Security Center's Runtimes tab
+ * checks the versions against end-of-life and patch releases. Values are cut to 64 characters.
+ */
+export const serviceRuntimesHourly = defineDatasource("service_runtimes_hourly", {
+	tenantColumn: "OrgId",
+	description:
+		"Hourly span counts per service, environment, process runtime (name, version, executable) and telemetry SDK (language, name, version), from resource attributes. Security Center Runtimes tab. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
+		ServiceName: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+		RuntimeName: t.string().lowCardinality(),
+		RuntimeVersion: t.string().lowCardinality(),
+		ExecutableName: t.string().lowCardinality(),
+		SdkLanguage: t.string().lowCardinality(),
+		SdkName: t.string().lowCardinality(),
+		SdkVersion: t.string().lowCardinality(),
+		SpanCount: t.uint64(),
+	},
+	engine: engine.summingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"Hour",
+			"ServiceName",
+			"DeploymentEnv",
+			"RuntimeName",
+			"RuntimeVersion",
+			"ExecutableName",
+			"SdkLanguage",
+			"SdkName",
+			"SdkVersion",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type ServiceRuntimesHourlyRow = InferRow<typeof serviceRuntimesHourly>
+
 /** `service.name` of the CI traces the GitHub App's workflow webhooks become. */
 export const CI_SERVICE_NAME = "github-actions"
 

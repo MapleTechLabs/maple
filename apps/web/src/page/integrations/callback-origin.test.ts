@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { apiBaseUrl } from "../../lib/services/common/api-base-url"
-import { isCallbackOrigin } from "./subscription"
+import { isCallbackOrigin } from "./connect-returns"
 
 const OWN = "https://app.maple.dev"
 

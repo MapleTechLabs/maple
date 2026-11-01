@@ -50,6 +50,17 @@ describe("a provider return finished by the dashboard", () => {
 		expect(url.searchParams.get("chat_workspace")).toBe("Acme")
 	})
 
+	test("a finished chat install re-reads the connectors the page entry read before it", () => {
+		const loaded = opened("chat-hazel")
+		const result = finished(
+			loaded,
+			outcome({ connector: "hazel", chat: { kind: "workspace", name: "Acme", reason: null } }),
+		)
+		expect((result.commands ?? []).map(({ name }) => name)).toEqual(["LoadIntegrationsChatConnectors"])
+		expect(result.model.statuses.chat.key).not.toBe(loaded.statuses.chat.key)
+		expect(result.outMessage?._tag).toBe("RequestedNavigation")
+	})
+
 	test("a refused chat link reports its reason code, not a message", () => {
 		const result = finished(
 			opened("chat-slack"),
@@ -77,12 +88,32 @@ describe("a provider return finished by the dashboard", () => {
 
 	test("a refusal with no opener to tell is shown here", () => {
 		const result = finished(
-			opened("hazel"),
-			outcome({ provider: "hazel", status: "error", message: "OAuth state not recognized." }),
+			opened("linear"),
+			outcome({ provider: "linear", status: "error", message: "OAuth state not recognized." }),
 		)
 		expect(result.outMessage?._tag).toBe("RequestedToast")
 		if (result.outMessage?._tag !== "RequestedToast") return
 		expect(result.outMessage.type).toBe("error")
 		expect(result.outMessage.title).toBe("OAuth state not recognized.")
+	})
+})
+
+describe("a return relayed by a tab whose popup lost its opener", () => {
+	const relayed = (model: Model, provider: "github" | "linear", status: string) =>
+		update(model, Message.ReceivedConnectRelay({ provider, status, message: "" }), context)
+
+	test("a connected Linear re-reads its status and ends the attempt", () => {
+		const loaded = opened("linear")
+		const connecting = update(loaded, Message.ClickedConnect(), context).model
+		const result = relayed(connecting, "linear", "success")
+		expect(result.model.connect.active).toBeNull()
+		expect((result.commands ?? []).map(({ name }) => name)).toEqual(["LoadIntegrationsLinearStatus"])
+		expect(result.model.statuses.linear.key).not.toBe(loaded.statuses.linear.key)
+		expect(result.outMessage?._tag).toBe("RequestedToast")
+	})
+
+	test("the relaying tab tracked the connection, so this one does not", () => {
+		const names = (relayed(opened("github"), "github", "success").commands ?? []).map(({ name }) => name)
+		expect(names).not.toContain("TrackIntegrationConnected")
 	})
 })

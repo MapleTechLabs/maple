@@ -27,7 +27,6 @@ import { EdgeCacheService } from "@maple/cache"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -252,7 +251,6 @@ export const makeLayer = (
 		Layer.provide(configLive),
 	)
 	const runtimeLive = Layer.succeed(AlertRuntime, { ...defaultTestRuntime, ...runtimeOverrides })
-	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, databaseLive)))
 	const linearOAuthLive = LinearOAuthService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive)),
 	)
@@ -273,7 +271,6 @@ export const makeLayer = (
 				envLive,
 				databaseLive,
 				runtimeLive,
-				hazelOAuthLive,
 				linearOAuthLive,
 				linearIssuesLive,
 				emailLive,
@@ -303,7 +300,6 @@ export const makeLayer = (
 		Layer.provide(queryEngineLive),
 		Layer.provide(warehouseLive),
 		Layer.provide(runtimeLive),
-		Layer.provide(hazelOAuthLive),
 		Layer.provide(linearIssuesLive),
 		Layer.provide(emailLive),
 		Layer.provide(orgMembersLive),

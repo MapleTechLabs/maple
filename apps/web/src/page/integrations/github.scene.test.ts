@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
-import { GithubIntegrationStatus } from "@maple/domain/http"
+import { GithubIntegrationStatus, GithubInstallationSelection } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -26,6 +26,7 @@ const status = Schema.decodeUnknownSync(GithubIntegrationStatus)({
 	accountType: "organization",
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
+	repositoryDiscovery: null,
 	repositories: [
 		{
 			id: REPO,
@@ -56,6 +57,86 @@ const loaded = (): Model => {
 const repoId = status.repositories[0]?.id ?? Schema.decodeSync(Schema.String)(REPO)
 
 describe("github card", () => {
+	test("failed repository discovery offers authorization and shows its account choice on a connected card", () => {
+		const model = loaded()
+		const failed = pageUpdate(
+			model,
+			Message.CompletedLoadGithub({
+				key: model.statuses.github.key ?? "",
+				result: Result.succeed(
+					new GithubIntegrationStatus({
+						...status,
+						repositories: [],
+						repositoryDiscovery: {
+							_tag: "Failed",
+							requestId: "discovery-1",
+							message: "GitHub rate limit exhausted.",
+						},
+					}),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("GitHub rate limit exhausted.")).toExist(),
+			expectView(role("button", { name: "Reconnect GitHub" })).toExist(),
+		)
+		const choices = pageUpdate(
+			failed,
+			Message.ReceivedConnectMessage({
+				provider: "github",
+				status: "success",
+				message: "Choose an account",
+				github: new GithubInstallationSelection({
+					state: "selection-2",
+					needsApproval: [],
+					unavailable: 0,
+					installUrl: "https://github.test/apps/maple/installations/new?state=install-1",
+					installations: [
+						{
+							id: "202",
+							accountLogin: "acme-shop",
+							accountType: "organization",
+							repositorySelection: "selected",
+						},
+					],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(choices),
+			expectView(role("button", { name: "Connect acme-shop" })).toExist(),
+			expectView(text(/Choosing a different account replaces it/)).not.toExist(),
+		)
+	})
+	test("a failed rediscovery keeps the synced repositories listed under its error", () => {
+		const model = loaded()
+		const failed = pageUpdate(
+			model,
+			Message.CompletedLoadGithub({
+				key: model.statuses.github.key ?? "",
+				result: Result.succeed(
+					new GithubIntegrationStatus({
+						...status,
+						repositoryDiscovery: {
+							_tag: "Failed",
+							requestId: "discovery-2",
+							message: "GitHub rate limit exhausted.",
+						},
+					}),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("GitHub rate limit exhausted.")).toExist(),
+			expectView(text("acme-shop/shop")).toExist(),
+		)
+	})
+
 	test("the CI traces switch flips optimistically, writes once, and reverts on failure", () => {
 		const model = loaded()
 		scene({ update: pageUpdate, view }, given(model), expectView(role("switch")).toExist())
@@ -109,11 +190,17 @@ describe("github card", () => {
 		const base = init({ search: { integration: "github" } }, context).model
 		const model = pageUpdate(
 			base,
-			Message.CompletedLoadGithub({ key: base.statuses.github.key ?? "", result: Result.succeed(twoRepos) }),
+			Message.CompletedLoadGithub({
+				key: base.statuses.github.key ?? "",
+				result: Result.succeed(twoRepos),
+			}),
 		).model
 		const otherId = twoRepos.repositories[1]?.id ?? repoId
 		const confirm = (from: Model, id: typeof repoId) =>
-			pageUpdate(pageUpdate(from, Message.ClickedBranch({ repoId: id, branch: "release" })).model, Message.ConfirmedBranch())
+			pageUpdate(
+				pageUpdate(from, Message.ClickedBranch({ repoId: id, branch: "release" })).model,
+				Message.ConfirmedBranch(),
+			)
 		const savingFirst = confirm(model, repoId)
 		const savingBoth = confirm(savingFirst.model, otherId)
 		expect(names(savingBoth.commands)).toContain("SetGithubTrackedBranch")

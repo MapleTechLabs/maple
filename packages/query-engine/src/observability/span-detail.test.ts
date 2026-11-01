@@ -17,7 +17,7 @@ const detailRow = {
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 12,
-	startTime: "2026-03-20 08:00:00.000000000",
+	startTime: "2026-03-20 08:00:00.123456789",
 	statusCode: "Unset",
 	statusMessage: "",
 	spanAttributes: JSON.stringify({ "http.route": "/orders" }),
@@ -61,6 +61,22 @@ describe("spanDetail", () => {
 			assert.isTrue(result.found)
 			assert.isFalse(result.widened)
 			assert.lengthOf(sqls, 1)
+		}),
+	)
+
+	it.effect("returns the stored name, status and timing beside the attributes", () =>
+		Effect.gen(function* () {
+			const result = yield* run([])
+			assert.deepStrictEqual(result.span, {
+				spanName: "GET /orders",
+				rawSpanName: "GET",
+				serviceName: "api",
+				spanKind: "Server",
+				durationMs: 12,
+				startTime: "2026-03-20 08:00:00.123",
+				statusCode: "Unset",
+				statusMessage: "",
+			})
 		}),
 	)
 })

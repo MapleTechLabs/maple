@@ -97,6 +97,9 @@ import {
 	SecurityAuditOrgSettings,
 	SecurityAuditFindings,
 	SecurityAuditRunFindings,
+	DependencyFindings,
+	DependencyScanMatches,
+	DependencyScans,
 	SecurityAuditRuns,
 	SecurityAuditTargets,
 	SecurityAuditUnits,
@@ -243,6 +246,10 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	SecurityAuditUnits,
 	SecurityAuditRuns,
 	SecurityAuditTargets,
+	// Which of the org's dependencies are vulnerable, per repository and commit.
+	DependencyScans,
+	DependencyScanMatches,
+	DependencyFindings,
 ]
 
 /**

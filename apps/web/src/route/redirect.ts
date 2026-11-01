@@ -53,11 +53,16 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 						: AppRoute.Integrations({ search: {} }),
 					false,
 				),
-			/** Old links and OAuth returns to a data integration's page open its step under Sources. */
+			/**
+			 * Old links and OAuth returns to a data integration's page open its step under Sources.
+			 * Hazel's app still links to the id its connector replaced.
+			 */
 			Integrations: ({ search }) =>
 				search.integration !== undefined && DATA_INTEGRATION_IDS.has(search.integration)
 					? redirect(AppRoute.SourcesNew({ search: { integration: search.integration } }), true)
-					: Option.none(),
+					: search.integration === "hazel"
+						? redirect(AppRoute.Integrations({ search: { integration: "chat-hazel" } }), true)
+						: Option.none(),
 			Developer: ({ search }) =>
 				redirect(
 					AppRoute.Settings({

@@ -6,6 +6,8 @@ import {
 	CiBranchName,
 	CiPipelineName,
 	CiRunResult,
+	CodeReviewSortDir,
+	CodeReviewSortKey,
 	IssueKind,
 	PrReviewCategory,
 	PrReviewFindingStatus,
@@ -119,6 +121,8 @@ const CodeReviewListSearchFields = {
 	...CodeReviewSearchFields,
 	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
 	q: Schema.optional(Schema.String),
+	sortBy: Schema.optional(CodeReviewSortKey),
+	sortDir: Schema.optional(CodeReviewSortDir),
 	review: Schema.optional(PrReviewId),
 }
 
@@ -364,7 +368,7 @@ export const AlertsStatusPageSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
 })
 
-/** `/status-pages/$pageId`: `view` is `settings`, `json` or `live`; none is the page itself. */
+/** `/status-pages/$pageId`: `view` is `appearance`, `settings`, `json` or `live`; none is the page itself. */
 export const StatusPageSearch = Schema.Struct({
 	view: Schema.optional(Schema.String),
 })
@@ -947,5 +951,11 @@ export const SecurityFindingsSearch = Schema.Struct({
 export const SecurityRunsSearch = Schema.Struct({
 	target: Schema.optional(Schema.String),
 })
+/** One repository's breakdown on the Dependencies tab; absent shows them all. */
+export const SecurityDependenciesSearch = Schema.Struct({
+	repo: Schema.optional(Schema.String),
+})
+
 export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type
 export type SecurityRunsSearch = typeof SecurityRunsSearch.Type
+export type SecurityDependenciesSearch = typeof SecurityDependenciesSearch.Type

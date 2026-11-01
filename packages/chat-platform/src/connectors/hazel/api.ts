@@ -12,6 +12,12 @@ export const API_BASE = "https://api.hazel.sh/api/v1"
 
 export const API_HOST = "api.hazel.sh"
 
+/**
+ * The bot's own settings (`PATCH`, bot token). Outside `/api/v1`: Hazel serves its bot-token
+ * endpoints under `/bot-commands`.
+ */
+export const BOT_SETTINGS_URL = `https://${API_HOST}/bot-commands/settings`
+
 /** The bot gateway: a resumable WebSocket that delivers the bot's events in acknowledged batches. */
 export const GATEWAY_URL = "wss://bot-gateway.hazel.sh/bot-gateway/ws"
 

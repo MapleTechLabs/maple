@@ -1,0 +1,3183 @@
+{
+	"queries": [
+		{
+			"package": {
+				"ecosystem": "npm",
+				"name": "lodash"
+			},
+			"version": "4.17.15"
+		},
+		{
+			"package": {
+				"ecosystem": "npm",
+				"name": "minimist"
+			},
+			"version": "1.2.5"
+		},
+		{
+			"package": {
+				"ecosystem": "npm",
+				"name": "left-pad"
+			},
+			"version": "1.3.0"
+		},
+		{
+			"package": {
+				"ecosystem": "Go",
+				"name": "golang.org/x/net"
+			},
+			"version": "v0.7.0"
+		},
+		{
+			"package": {
+				"ecosystem": "crates.io",
+				"name": "time"
+			},
+			"version": "0.1.43"
+		},
+		{
+			"package": {
+				"ecosystem": "crates.io",
+				"name": "h2"
+			},
+			"version": "0.3.16"
+		}
+	],
+	"batch": {
+		"results": [
+			{
+				"vulns": [
+					{
+						"id": "GHSA-29mw-wpgm-hmr9",
+						"modified": "2025-09-29T21:12:31.102523Z"
+					},
+					{
+						"id": "GHSA-35jh-r3h4-6jhm",
+						"modified": "2026-10-17T02:55:38.085813Z"
+					},
+					{
+						"id": "GHSA-f23m-r3pf-42rh",
+						"modified": "2026-10-17T02:56:13.084362Z"
+					},
+					{
+						"id": "GHSA-p6mc-m468-83gw",
+						"modified": "2025-08-12T21:56:17.174859Z"
+					},
+					{
+						"id": "GHSA-r5fr-rjxr-66jc",
+						"modified": "2026-10-17T02:56:15.633068Z"
+					},
+					{
+						"id": "GHSA-xxjr-mmjv-4gpg",
+						"modified": "2026-10-17T02:55:54.229635Z"
+					}
+				]
+			},
+			{
+				"vulns": [
+					{
+						"id": "GHSA-xvch-5gv4-984h",
+						"modified": "2026-03-13T22:11:59.523514Z"
+					}
+				]
+			},
+			{},
+			{
+				"vulns": [
+					{
+						"id": "GHSA-2wrh-6pvc-2jm9",
+						"modified": "2026-09-10T03:50:08.520271Z"
+					},
+					{
+						"id": "GHSA-4374-p667-p6c8",
+						"modified": "2026-09-10T03:49:24.714188Z"
+					},
+					{
+						"id": "GHSA-4v7x-pqxf-cx7m",
+						"modified": "2026-09-10T03:50:11.106451Z"
+					},
+					{
+						"id": "GHSA-5cv4-jp36-h3mw",
+						"modified": "2026-09-10T03:50:45.494180Z"
+					},
+					{
+						"id": "GHSA-qppj-fm5r-hxr3",
+						"modified": "2026-09-10T03:50:04.757558Z"
+					},
+					{
+						"id": "GHSA-qxp5-gwg8-xv66",
+						"modified": "2026-09-10T03:50:23.280114Z"
+					},
+					{
+						"id": "GHSA-vvgc-356p-c3xw",
+						"modified": "2026-09-10T03:50:24.031676Z"
+					},
+					{
+						"id": "GO-2023-1988",
+						"modified": "2026-02-04T04:12:22.127281Z"
+					},
+					{
+						"id": "GO-2023-2102",
+						"modified": "2026-09-28T10:56:56.146690Z"
+					},
+					{
+						"id": "GO-2024-2687",
+						"modified": "2026-02-04T04:09:31.762399Z"
+					},
+					{
+						"id": "GO-2024-3333",
+						"modified": "2026-03-24T23:55:17.997380Z"
+					},
+					{
+						"id": "GO-2025-3503",
+						"modified": "2026-04-16T22:45:11.580296Z"
+					},
+					{
+						"id": "GO-2025-3595",
+						"modified": "2026-02-05T02:43:52.511643Z"
+					},
+					{
+						"id": "GO-2026-4440",
+						"modified": "2026-05-15T10:59:23.883331Z"
+					},
+					{
+						"id": "GO-2026-4441",
+						"modified": "2026-05-15T10:59:23.510056Z"
+					},
+					{
+						"id": "GO-2026-4918",
+						"modified": "2026-10-16T10:42:05.228443Z"
+					},
+					{
+						"id": "GO-2026-5025",
+						"modified": "2026-05-30T05:14:17.563517Z"
+					},
+					{
+						"id": "GO-2026-5026",
+						"modified": "2026-10-16T10:42:05.164302Z"
+					},
+					{
+						"id": "GO-2026-5027",
+						"modified": "2026-09-22T10:41:48.597564Z"
+					},
+					{
+						"id": "GO-2026-5028",
+						"modified": "2026-07-01T18:26:19.971496Z"
+					},
+					{
+						"id": "GO-2026-5029",
+						"modified": "2026-09-22T10:41:48.499970Z"
+					},
+					{
+						"id": "GO-2026-5030",
+						"modified": "2026-09-22T10:41:47.813482Z"
+					},
+					{
+						"id": "GO-2026-5942",
+						"modified": "2026-08-17T12:25:32.471119Z"
+					},
+					{
+						"id": "GO-2026-6603",
+						"modified": "2026-10-16T09:55:47.068117Z"
+					},
+					{
+						"id": "GO-2026-6610",
+						"modified": "2026-10-16T09:56:04.364467Z"
+					},
+					{
+						"id": "GO-2026-6611",
+						"modified": "2026-10-16T09:55:38.952277Z"
+					},
+					{
+						"id": "GO-2026-6612",
+						"modified": "2026-10-16T09:55:54.129082Z"
+					},
+					{
+						"id": "GO-2026-6617",
+						"modified": "2026-10-16T09:55:57.350751Z"
+					},
+					{
+						"id": "GO-2026-6860",
+						"modified": "2026-10-27T21:30:04.890809Z"
+					},
+					{
+						"id": "GO-2026-6866",
+						"modified": "2026-10-27T21:45:08.978077Z"
+					}
+				]
+			},
+			{
+				"vulns": [
+					{
+						"id": "GHSA-wcg3-cvx6-7396",
+						"modified": "2026-09-10T03:49:08.359875Z"
+					},
+					{
+						"id": "RUSTSEC-2020-0071",
+						"modified": "2026-02-04T02:31:56.682937Z"
+					}
+				]
+			},
+			{
+				"vulns": [
+					{
+						"id": "GHSA-8r5v-vm4m-4g25",
+						"modified": "2026-09-10T03:50:09.232197Z"
+					},
+					{
+						"id": "GHSA-f8vr-r385-rh5r",
+						"modified": "2023-11-08T04:12:03.011700Z"
+					},
+					{
+						"id": "GHSA-q6cp-qfwq-4gcv",
+						"modified": "2026-09-10T03:49:18.784343Z"
+					},
+					{
+						"id": "RUSTSEC-2023-0034",
+						"modified": "2023-11-08T04:12:03.011700Z"
+					},
+					{
+						"id": "RUSTSEC-2024-0003",
+						"modified": "2026-02-04T03:15:37.377206Z"
+					},
+					{
+						"id": "RUSTSEC-2024-0332",
+						"modified": "2024-04-11T16:41:43.668809Z"
+					},
+					{
+						"id": "RUSTSEC-2026-0258",
+						"modified": "2026-10-12T18:00:10.934581Z"
+					}
+				]
+			}
+		]
+	},
+	"vulns": [
+		{
+			"id": "GHSA-29mw-wpgm-hmr9",
+			"aliases": ["CVE-2020-28500"],
+			"summary": "Regular Expression Denial of Service (ReDoS) in lodash",
+			"published": "2022-01-06T20:30:46Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "lodash",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.17.21"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-es",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-es"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.17.21"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.trimend",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.trimend"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"last_affected": "4.5.1"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.trim",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.trim"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"last_affected": "4.5.1"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-rails",
+						"ecosystem": "RubyGems",
+						"purl": "pkg:gem/lodash-rails"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.17.21"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-35jh-r3h4-6jhm",
+			"aliases": ["CVE-2021-23337"],
+			"summary": "Command Injection in lodash",
+			"published": "2021-05-06T16:05:51Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+				}
+			],
+			"database_specific": {
+				"severity": "HIGH"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "lodash",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "4.17.21"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-es",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-es"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "4.17.21"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.template",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.template"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"last_affected": "4.5.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-template",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-template"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"last_affected": "1.0.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-rails",
+						"ecosystem": "RubyGems",
+						"purl": "pkg:gem/lodash-rails"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "4.17.21"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-f23m-r3pf-42rh",
+			"aliases": ["CVE-2026-2950"],
+			"summary": "lodash vulnerable to Prototype Pollution via array path bypass in `_.unset` and `_.omit`",
+			"published": "2026-04-01T23:50:27Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "lodash",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-es",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-es"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-amd",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-amd"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.unset",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.unset"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-p6mc-m468-83gw",
+			"aliases": ["CVE-2020-8203"],
+			"summary": "Prototype Pollution in lodash",
+			"published": "2020-07-15T19:15:48Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:H"
+				}
+			],
+			"database_specific": {
+				"severity": "HIGH"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "lodash",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "3.7.0"
+								},
+								{
+									"fixed": "4.17.19"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-es",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-es"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "3.7.0"
+								},
+								{
+									"fixed": "4.17.20"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.pick",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.pick"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"last_affected": "4.4.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.set",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.set"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "3.7.0"
+								},
+								{
+									"last_affected": "4.3.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.setwith",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.setwith"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"last_affected": "4.3.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.update",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.update"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"last_affected": "4.10.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.updatewith",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.updatewith"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"last_affected": "4.10.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-rails",
+						"ecosystem": "RubyGems",
+						"purl": "pkg:gem/lodash-rails"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "3.7.0"
+								},
+								{
+									"fixed": "4.17.19"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-r5fr-rjxr-66jc",
+			"aliases": ["CVE-2026-4800"],
+			"summary": "lodash vulnerable to Code Injection via `_.template` imports key names",
+			"published": "2026-04-01T23:51:12Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+				}
+			],
+			"database_specific": {
+				"severity": "HIGH"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "lodash",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-es",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-es"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-amd",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-amd"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.template",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.template"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.18.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-xxjr-mmjv-4gpg",
+			"aliases": ["CVE-2025-13465"],
+			"summary": "Lodash has Prototype Pollution Vulnerability in `_.unset` and `_.omit` functions",
+			"published": "2026-01-21T23:01:22Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"
+				},
+				{
+					"type": "CVSS_V4",
+					"score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "lodash",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.17.23"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash.unset",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash.unset"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"last_affected": "4.5.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-es",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-es"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.17.23"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "lodash-amd",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/lodash-amd"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "4.0.0"
+								},
+								{
+									"fixed": "4.17.23"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-xvch-5gv4-984h",
+			"aliases": ["CVE-2021-44906"],
+			"summary": "Prototype Pollution in minimist",
+			"published": "2022-03-18T00:01:09Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+				}
+			],
+			"database_specific": {
+				"severity": "CRITICAL"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "minimist",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/minimist"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.0.0"
+								},
+								{
+									"fixed": "1.2.6"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "minimist",
+						"ecosystem": "npm",
+						"purl": "pkg:npm/minimist"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.2.4"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-2wrh-6pvc-2jm9",
+			"aliases": ["CVE-2023-3978", "GO-2023-1988"],
+			"summary": "Improper rendering of text nodes in golang.org/x/net/html",
+			"published": "2023-08-02T21:30:20Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.13.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-4374-p667-p6c8",
+			"aliases": ["BIT-golang-2023-39325", "CVE-2023-39325", "GO-2023-2102"],
+			"summary": "HTTP/2 rapid reset can cause excessive work in net/http",
+			"published": "2023-10-11T20:35:43Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+				}
+			],
+			"database_specific": {
+				"severity": "HIGH"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.17.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-4v7x-pqxf-cx7m",
+			"aliases": ["BIT-golang-2023-45288", "CVE-2023-45288", "GO-2024-2687"],
+			"summary": "net/http, x/net/http2: close connections when receiving too many headers",
+			"published": "2024-04-04T21:30:32Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "net/http",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/net/http"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.21.9"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net/http2",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net/http2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.23.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "net/http",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/net/http"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.22.0-0"
+								},
+								{
+									"fixed": "1.22.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.23.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-5cv4-jp36-h3mw",
+			"aliases": ["CVE-2026-25680", "GO-2026-5028"],
+			"summary": "Go Net HTML parser is vulnerable to denial of service",
+			"published": "2026-05-26T13:30:17Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.55.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-qppj-fm5r-hxr3",
+			"aliases": [
+				"BIT-apisix-2023-44487",
+				"BIT-aspnet-core-2023-44487",
+				"BIT-contour-2023-44487",
+				"BIT-dotnet-2023-44487",
+				"BIT-dotnet-sdk-2023-44487",
+				"BIT-envoy-2023-44487",
+				"BIT-golang-2023-44487",
+				"BIT-jenkins-2023-44487",
+				"BIT-kong-2023-44487",
+				"BIT-nginx-2023-44487",
+				"BIT-nginx-gateway-2023-44487",
+				"BIT-node-2023-44487",
+				"BIT-node-min-2023-44487",
+				"BIT-solr-2023-44487",
+				"BIT-tomcat-2023-44487",
+				"BIT-varnish-2023-44487",
+				"CVE-2023-44487"
+			],
+			"summary": "HTTP/2 Stream Cancellation Attack",
+			"published": "2023-10-10T21:28:24Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L/E:H"
+				},
+				{
+					"type": "CVSS_V4",
+					"score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N/E:A"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "github.com/apple/swift-nio-http2",
+						"ecosystem": "SwiftURL",
+						"purl": "pkg:swift/github.com/apple/swift-nio-http2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.28.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.17.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat:tomcat-coyote",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat/tomcat-coyote"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "11.0.0-M1"
+								},
+								{
+									"fixed": "11.0.0-M12"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat:tomcat-coyote",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat/tomcat-coyote"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "10.0.0"
+								},
+								{
+									"fixed": "10.1.14"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat:tomcat-coyote",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat/tomcat-coyote"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "9.0.0"
+								},
+								{
+									"fixed": "9.0.81"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat:tomcat-coyote",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat/tomcat-coyote"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "8.5.0"
+								},
+								{
+									"fixed": "8.5.94"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat.embed:tomcat-embed-core",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "11.0.0-M1"
+								},
+								{
+									"fixed": "11.0.0-M12"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat.embed:tomcat-embed-core",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "10.0.0"
+								},
+								{
+									"fixed": "10.1.14"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat.embed:tomcat-embed-core",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "9.0.0"
+								},
+								{
+									"fixed": "9.0.81"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.apache.tomcat.embed:tomcat-embed-core",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "8.5.0"
+								},
+								{
+									"fixed": "8.5.94"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:http2-common",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/http2-common"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "9.3.0"
+								},
+								{
+									"fixed": "9.4.53"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:http2-common",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/http2-common"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "10.0.0"
+								},
+								{
+									"fixed": "10.0.17"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:http2-common",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/http2-common"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "11.0.0"
+								},
+								{
+									"fixed": "11.0.17"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:http2-server",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/http2-server"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "9.3.0"
+								},
+								{
+									"fixed": "9.4.53"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:http2-server",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/http2-server"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "10.0.0"
+								},
+								{
+									"fixed": "10.0.17"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:http2-server",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/http2-server"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "11.0.0"
+								},
+								{
+									"fixed": "11.0.17"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:jetty-http2-common",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/jetty-http2-common"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "12.0.0"
+								},
+								{
+									"fixed": "12.0.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "org.eclipse.jetty.http2:jetty-http2-server",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/org.eclipse.jetty.http2/jetty-http2-server"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "12.0.0"
+								},
+								{
+									"fixed": "12.0.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "com.typesafe.akka:akka-http-core",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/com.typesafe.akka/akka-http-core"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "10.5.3"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "com.typesafe.akka:akka-http-core_2.13",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/com.typesafe.akka/akka-http-core_2.13"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "10.5.3"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "com.typesafe.akka:akka-http-core_2.12",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/com.typesafe.akka/akka-http-core_2.12"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "10.5.3"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "com.typesafe.akka:akka-http-core_2.11",
+						"ecosystem": "Maven",
+						"purl": "pkg:maven/com.typesafe.akka/akka-http-core_2.11"
+					},
+					"ranges": [
+						{
+							"type": "ECOSYSTEM",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"last_affected": "10.1.15"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-qxp5-gwg8-xv66",
+			"aliases": ["CVE-2025-22870", "GO-2025-3503"],
+			"summary": "HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net",
+			"published": "2025-03-12T22:06:40Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:L"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.36.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-vvgc-356p-c3xw",
+			"aliases": ["CVE-2025-22872", "GO-2025-3595"],
+			"summary": "golang.org/x/net vulnerable to Cross-site Scripting",
+			"published": "2025-04-16T19:22:51Z",
+			"severity": [
+				{
+					"type": "CVSS_V4",
+					"score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.38.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2023-1988",
+			"aliases": ["CVE-2023-3978", "GHSA-2wrh-6pvc-2jm9"],
+			"summary": "Improper rendering of text nodes in golang.org/x/net/html",
+			"published": "2023-08-02T15:06:27Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.13.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2023-2102",
+			"aliases": ["BIT-golang-2023-39325", "CVE-2023-39325", "GHSA-4374-p667-p6c8"],
+			"summary": "HTTP/2 rapid reset can cause excessive work in net/http",
+			"published": "2023-10-11T16:49:53Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.20.10"
+								},
+								{
+									"introduced": "1.21.0-0"
+								},
+								{
+									"fixed": "1.21.3"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.17.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2024-2687",
+			"aliases": ["BIT-golang-2023-45288", "CVE-2023-45288", "GHSA-4v7x-pqxf-cx7m"],
+			"summary": "HTTP/2 CONTINUATION flood in net/http",
+			"published": "2024-04-03T21:12:01Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.21.9"
+								},
+								{
+									"introduced": "1.22.0-0"
+								},
+								{
+									"fixed": "1.22.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.23.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2024-3333",
+			"aliases": ["CVE-2024-45338", "GHSA-w32m-9786-jp63"],
+			"summary": "Non-linear parsing of case-insensitive content in golang.org/x/net/html",
+			"published": "2024-12-18T20:22:06Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.33.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2025-3503",
+			"aliases": ["CVE-2025-22870", "GHSA-qxp5-gwg8-xv66"],
+			"summary": "HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net",
+			"published": "2025-03-12T18:17:07Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.23.7"
+								},
+								{
+									"introduced": "1.24.0-0"
+								},
+								{
+									"fixed": "1.24.1"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.36.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2025-3595",
+			"aliases": ["CVE-2025-22872", "GHSA-vvgc-356p-c3xw"],
+			"summary": "Incorrect Neutralization of Input During Web Page Generation in x/net in golang.org/x/net",
+			"published": "2025-04-16T16:54:55Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.38.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-4440",
+			"aliases": ["CVE-2025-47911", "GHSA-w4gw-w5jq-g9jh"],
+			"summary": "Quadratic parsing complexity in golang.org/x/net/html",
+			"published": "2026-02-05T17:23:14Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.45.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-4441",
+			"aliases": ["CVE-2025-58190"],
+			"summary": "Infinite parsing loop in golang.org/x/net",
+			"published": "2026-02-05T17:23:17Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.45.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-4918",
+			"aliases": ["BIT-golang-2026-33814", "CVE-2026-33814"],
+			"summary": "Infinite loop in HTTP/2 transport when given bad SETTINGS_MAX_FRAME_SIZE in net/http/internal/http2 in golang.org/x/net",
+			"published": "2026-05-07T19:21:40Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.53.0"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.25.10"
+								},
+								{
+									"introduced": "1.26.0-0"
+								},
+								{
+									"fixed": "1.26.3"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-5025",
+			"aliases": ["CVE-2026-42506"],
+			"summary": "Invoking incorrect handling of namespaced elements in foreign content in golang.org/x/net/html",
+			"published": "2026-05-22T02:46:43Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.55.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-5026",
+			"aliases": ["CVE-2026-39821"],
+			"summary": "Invoking failure to reject ASCII-only Punycode-encoded labels in golang.org/x/net/idna",
+			"published": "2026-05-22T02:46:43Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.25.13"
+								},
+								{
+									"introduced": "1.26.0-0"
+								},
+								{
+									"fixed": "1.26.6"
+								},
+								{
+									"introduced": "1.27.0-0"
+								},
+								{
+									"fixed": "1.27.0-rc.3"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.55.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-5027",
+			"aliases": ["CVE-2026-42502"],
+			"summary": "Invoking incorrect handling of HTML elements in foreign content in golang.org/x/net/html",
+			"published": "2026-05-22T02:46:43Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.55.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-5028",
+			"aliases": ["CVE-2026-25680", "GHSA-5cv4-jp36-h3mw"],
+			"summary": "Invoking denial of service when parsing arbitrary HTML in golang.org/x/net/html",
+			"published": "2026-05-22T02:46:43Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.55.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-5029",
+			"aliases": ["CVE-2026-25681"],
+			"summary": "Invoking incorrect handling of character references in DOCTYPE nodes in golang.org/x/net/html",
+			"published": "2026-05-22T02:46:43Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.55.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-5030",
+			"aliases": ["CVE-2026-27136"],
+			"summary": "Invoking duplicate attributes can cause XSS in golang.org/x/net/html",
+			"published": "2026-05-22T02:46:43Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.55.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-5942",
+			"aliases": ["BIT-golang-2026-46600", "CVE-2026-46600"],
+			"summary": "Parsing an invalid SVCB or HTTPS RR can panic in golang.org/x/net/dns/dnsmessage",
+			"published": "2026-07-14T17:29:16Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.26.0-0"
+								},
+								{
+									"fixed": "1.26.6"
+								},
+								{
+									"introduced": "1.27.0-0"
+								},
+								{
+									"fixed": "1.27.0-rc.3"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.56.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-6603",
+			"aliases": ["BIT-golang-2026-78659", "CVE-2026-78659"],
+			"summary": "HTTP/2 server memory exhaustion due to Trailer headers in net/http",
+			"published": "2026-10-08T22:31:09Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.26.9"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.27.0-0"
+								},
+								{
+									"fixed": "1.27.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.60.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-6610",
+			"aliases": ["BIT-golang-2026-78660", "CVE-2026-78660"],
+			"summary": "HTTP/2 transport accepts malformed framing-related headers in net/http",
+			"published": "2026-10-08T22:31:09Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.26.9"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.27.0-0"
+								},
+								{
+									"fixed": "1.27.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.60.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-6611",
+			"aliases": ["BIT-golang-2026-78669", "CVE-2026-78669"],
+			"summary": "Excessive CPU consumption from repeated initial window changes in net/http",
+			"published": "2026-10-08T22:31:09Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.26.9"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.27.0-0"
+								},
+								{
+									"fixed": "1.27.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.60.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-6612",
+			"aliases": ["BIT-golang-2026-78663", "CVE-2026-78663"],
+			"summary": "Double flow control refund on HTTP/2 server streams in net/http",
+			"published": "2026-10-08T22:31:09Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.26.9"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.27.0-0"
+								},
+								{
+									"fixed": "1.27.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.60.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-6617",
+			"aliases": ["BIT-golang-2026-97032", "CVE-2026-97032"],
+			"summary": "HTTP/2 server crash due to HPACK encoder race in net/http",
+			"published": "2026-10-08T22:31:09Z",
+			"affected": [
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "1.26.9"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "stdlib",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/stdlib"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "1.27.0-0"
+								},
+								{
+									"fixed": "1.27.2"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.60.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-6860",
+			"aliases": ["CVE-2026-78661"],
+			"summary": "Avoid quadratic complexity when coalescing text nodes in html in golang.org/x/net",
+			"published": "2026-10-27T21:16:18Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.62.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GO-2026-6866",
+			"aliases": ["CVE-2026-97045"],
+			"summary": "Check all ancestor namespace transitions when rendering raw text in html in golang.org/x/net",
+			"published": "2026-10-27T21:16:18Z",
+			"affected": [
+				{
+					"package": {
+						"name": "golang.org/x/net",
+						"ecosystem": "Go",
+						"purl": "pkg:golang/golang.org/x/net"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.62.0"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-wcg3-cvx6-7396",
+			"aliases": ["CVE-2020-26235", "RUSTSEC-2020-0071"],
+			"summary": "Segmentation fault in time",
+			"published": "2021-08-25T20:56:46Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "time",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/time"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.1.0"
+								},
+								{
+									"fixed": "0.2.23"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "time",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/time"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.2.7"
+								},
+								{
+									"fixed": "0.2.23"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "RUSTSEC-2020-0071",
+			"aliases": ["CVE-2020-26235", "GHSA-wcg3-cvx6-7396"],
+			"summary": "Potential segfault in the time crate",
+			"published": "2020-11-18T12:00:00Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+				}
+			],
+			"affected": [
+				{
+					"package": {
+						"name": "time",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/time"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.0.0-0"
+								},
+								{
+									"fixed": "0.2.0"
+								},
+								{
+									"introduced": "0.2.1-0"
+								},
+								{
+									"fixed": "0.2.1"
+								},
+								{
+									"introduced": "0.2.2-0"
+								},
+								{
+									"fixed": "0.2.2"
+								},
+								{
+									"introduced": "0.2.3-0"
+								},
+								{
+									"fixed": "0.2.3"
+								},
+								{
+									"introduced": "0.2.4-0"
+								},
+								{
+									"fixed": "0.2.4"
+								},
+								{
+									"introduced": "0.2.5-0"
+								},
+								{
+									"fixed": "0.2.5"
+								},
+								{
+									"introduced": "0.2.6-0"
+								},
+								{
+									"fixed": "0.2.6"
+								},
+								{
+									"introduced": "0.2.7-0"
+								},
+								{
+									"fixed": "0.2.23"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-8r5v-vm4m-4g25",
+			"aliases": ["RUSTSEC-2024-0003"],
+			"summary": "Resource exhaustion vulnerability in h2 may lead to Denial of Service (DoS)",
+			"published": "2024-01-19T15:24:56Z",
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.3.24"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.4.0"
+								},
+								{
+									"fixed": "0.4.2"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-f8vr-r385-rh5r",
+			"aliases": ["CVE-2023-26964", "RUSTSEC-2023-0034"],
+			"summary": "h2 vulnerable to denial of service",
+			"published": "2023-04-11T15:30:30Z",
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.3.17"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "GHSA-q6cp-qfwq-4gcv",
+			"aliases": ["RUSTSEC-2024-0332"],
+			"summary": "h2 servers vulnerable to degradation of service with CONTINUATION Flood",
+			"published": "2024-04-05T15:05:32Z",
+			"severity": [
+				{
+					"type": "CVSS_V3",
+					"score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+				}
+			],
+			"database_specific": {
+				"severity": "MODERATE"
+			},
+			"affected": [
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0"
+								},
+								{
+									"fixed": "0.3.26"
+								}
+							]
+						}
+					]
+				},
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.4.0"
+								},
+								{
+									"fixed": "0.4.4"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "RUSTSEC-2023-0034",
+			"aliases": ["CVE-2023-26964", "GHSA-f8vr-r385-rh5r"],
+			"summary": "Resource exhaustion vulnerability in h2 may lead to Denial of Service (DoS)",
+			"published": "2023-04-14T12:00:00Z",
+			"affected": [
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.0.0-0"
+								},
+								{
+									"fixed": "0.3.17"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "RUSTSEC-2024-0003",
+			"aliases": ["GHSA-8r5v-vm4m-4g25"],
+			"summary": "Resource exhaustion vulnerability in h2 may lead to Denial of Service (DoS)",
+			"published": "2024-01-17T12:00:00Z",
+			"affected": [
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.0.0-0"
+								},
+								{
+									"fixed": "0.3.24"
+								},
+								{
+									"introduced": "0.4.0-0"
+								},
+								{
+									"fixed": "0.4.2"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "RUSTSEC-2024-0332",
+			"aliases": ["GHSA-q6cp-qfwq-4gcv"],
+			"summary": "Degradation of service in h2 servers with CONTINUATION Flood",
+			"published": "2024-04-03T12:00:00Z",
+			"affected": [
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.0.0-0"
+								},
+								{
+									"fixed": "0.3.26"
+								},
+								{
+									"introduced": "0.4.0-0"
+								},
+								{
+									"fixed": "0.4.4"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "RUSTSEC-2026-0258",
+			"aliases": ["GHSA-q83h-524g-xf6h"],
+			"summary": "h2 unbounded empty DATA frames",
+			"published": "2026-08-17T12:00:00Z",
+			"affected": [
+				{
+					"package": {
+						"name": "h2",
+						"ecosystem": "crates.io",
+						"purl": "pkg:cargo/h2"
+					},
+					"ranges": [
+						{
+							"type": "SEMVER",
+							"events": [
+								{
+									"introduced": "0.0.0-0"
+								},
+								{
+									"fixed": "0.4.16"
+								}
+							]
+						}
+					]
+				}
+			]
+		}
+	]
+}

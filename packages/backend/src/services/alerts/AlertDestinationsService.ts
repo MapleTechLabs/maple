@@ -34,7 +34,6 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { validateExternalUrl } from "@maple/safe-fetch"
-import { HazelOAuthService, type HazelOAuthServiceApi } from "@maple/backend/services/auth/HazelOAuthService"
 import {
 	LinearOAuthService,
 	type LinearOAuthServiceApi,
@@ -111,7 +110,6 @@ const emailSecretConfig = (members: ReadonlyArray<OrgMember>): DestinationSecret
 })
 
 type AlertDestinationDependencyError =
-	| Effect.Error<ReturnType<HazelOAuthServiceApi["createChannelWebhook"]>>
 	| Effect.Error<ReturnType<OrgMembersServiceApi["resolveMembers"]>>
 	| Effect.Error<ReturnType<LinearOAuthServiceApi["getTeam"]>>
 
@@ -193,15 +191,6 @@ const buildPublicConfig = (
 		Match.discriminatorsExhaustive("type")({
 			pagerduty: () => ({ summary: "PagerDuty Events API v2", channelLabel: null }),
 			webhook: (r) => ({ summary: summarizeWebhookUrl(r.url), channelLabel: null }),
-			"hazel-oauth": (r) => ({
-				summary: `${r.hazelOrganizationName} · #${r.hazelChannelName}`,
-				channelLabel: `#${r.hazelChannelName}`,
-				hazelOrganizationId: r.hazelOrganizationId,
-				hazelOrganizationName: r.hazelOrganizationName,
-				hazelOrganizationLogoUrl: r.hazelOrganizationLogoUrl ?? null,
-				hazelChannelId: r.hazelChannelId,
-				hazelChannelName: r.hazelChannelName,
-			}),
 			discord: (r) => ({ summary: summarizeWebhookUrl(r.webhookUrl), channelLabel: null }),
 			// The chat id, not the token: this config is Electric-synced to the
 			// browser, so nothing secret may appear here. It rides in
@@ -213,10 +202,7 @@ const buildPublicConfig = (
 	)
 
 const buildSecretConfig = (
-	request: Exclude<
-		AlertDestinationCreateRequest,
-		{ readonly type: "hazel-oauth" | "email" | "chat" | "linear" }
-	>,
+	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" | "chat" | "linear" }>,
 ): DestinationSecretConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
@@ -375,7 +361,6 @@ export class AlertDestinationsService extends Context.Service<
 		const env = yield* Env
 		const runtime = yield* AlertRuntime
 		const httpClient = yield* HttpClient.HttpClient
-		const hazelOAuth = yield* HazelOAuthService
 		const linearOAuth = yield* LinearOAuthService
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
@@ -585,26 +570,7 @@ export class AlertDestinationsService extends Context.Service<
 				secretConfig = linearSecretConfig(team)
 			} else {
 				publicConfig = buildPublicConfig(request)
-				secretConfig =
-					request.type === "hazel-oauth"
-						? yield* hazelOAuth
-								.createChannelWebhook(orgId, {
-									channelId: request.hazelChannelId.trim(),
-									name: request.name.trim(),
-								})
-								.pipe(
-									Effect.map((webhook) => ({
-										type: "hazel-oauth" as const,
-										hazelOrganizationId: request.hazelOrganizationId.trim(),
-										hazelOrganizationName: request.hazelOrganizationName.trim(),
-										hazelChannelId: request.hazelChannelId.trim(),
-										hazelChannelName: request.hazelChannelName.trim(),
-										webhookId: webhook.id,
-										webhookUrl: webhook.webhookUrl,
-										webhookToken: webhook.token,
-									})),
-								)
-						: buildSecretConfig(request)
+				secretConfig = buildSecretConfig(request)
 			}
 			if (secretConfig.type === "pagerduty") yield* validatePagerDutyKey(secretConfig.integrationKey)
 			if (secretConfig.type === "telegram") {
@@ -711,61 +677,6 @@ export class AlertDestinationsService extends Context.Service<
 											: null
 										: normalizeOptionalString(r.signingSecret),
 							} satisfies DestinationSecretConfig,
-						}),
-					"hazel-oauth": (r) =>
-						Effect.gen(function* () {
-							const previousSecret =
-								hydrated.secretConfig.type === "hazel-oauth" ? hydrated.secretConfig : null
-							const nextOrganizationId =
-								normalizeOptionalString(r.hazelOrganizationId) ??
-								previousSecret?.hazelOrganizationId ??
-								""
-							const nextOrganizationName =
-								normalizeOptionalString(r.hazelOrganizationName) ??
-								previousSecret?.hazelOrganizationName ??
-								""
-							const nextOrganizationLogoUrl =
-								r.hazelOrganizationLogoUrl === undefined
-									? (hydrated.publicConfig.hazelOrganizationLogoUrl ?? null)
-									: r.hazelOrganizationLogoUrl
-							const nextChannelId =
-								normalizeOptionalString(r.hazelChannelId) ??
-								previousSecret?.hazelChannelId ??
-								""
-							const nextChannelName =
-								normalizeOptionalString(r.hazelChannelName) ??
-								previousSecret?.hazelChannelName ??
-								""
-							const nextName = normalizeOptionalString(r.name) ?? existing.name
-							const channelChanged =
-								previousSecret == null || previousSecret.hazelChannelId !== nextChannelId
-							const provisioned = channelChanged
-								? yield* hazelOAuth.createChannelWebhook(orgId, {
-										channelId: nextChannelId,
-										name: nextName,
-									})
-								: null
-							return {
-								nextPublicConfig: {
-									summary: `${nextOrganizationName} · #${nextChannelName}`,
-									channelLabel: `#${nextChannelName}`,
-									hazelOrganizationId: nextOrganizationId,
-									hazelOrganizationName: nextOrganizationName,
-									hazelOrganizationLogoUrl: nextOrganizationLogoUrl,
-									hazelChannelId: nextChannelId,
-									hazelChannelName: nextChannelName,
-								} satisfies DestinationPublicConfig,
-								nextSecretConfig: {
-									type: "hazel-oauth" as const,
-									hazelOrganizationId: nextOrganizationId,
-									hazelOrganizationName: nextOrganizationName,
-									hazelChannelId: nextChannelId,
-									hazelChannelName: nextChannelName,
-									webhookId: provisioned?.id ?? previousSecret!.webhookId,
-									webhookUrl: provisioned?.webhookUrl ?? previousSecret!.webhookUrl,
-									webhookToken: provisioned?.token ?? previousSecret!.webhookToken,
-								} satisfies DestinationSecretConfig,
-							}
 						}),
 					discord: (r) =>
 						Effect.succeed({
@@ -1133,7 +1044,6 @@ export class AlertDestinationsService extends Context.Service<
 		Layer.provide(
 			Layer.mergeAll(
 				EmailService.layer,
-				HazelOAuthService.layer,
 				LinearOAuthService.layer,
 				LinearIssueTracker.layer,
 				OrgMembersService.layer,

@@ -132,7 +132,6 @@ const PLATFORM_OF_FLOW = {
 	planetscale: "planetscale",
 	supabase: "supabase",
 	github: null,
-	hazel: null,
 	linear: null,
 	chat_install: null,
 	chat_identity: null,
