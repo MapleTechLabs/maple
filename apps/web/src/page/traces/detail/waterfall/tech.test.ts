@@ -18,10 +18,12 @@ describe("spanTech", () => {
 		).toMatchObject({ icon: "AnthropicIcon" })
 		expect(spanTech({ "gen_ai.system": "gcp.vertex_ai" })).toMatchObject({
 			icon: "GoogleIcon",
-			label: "LLM call · Google",
+			label: "LLM call · Vertex AI",
 		})
+		expect(spanTech({ "gen_ai.provider.name": "openai" })).toMatchObject({ label: "LLM call · OpenAI" })
 		expect(spanTech({ "gen_ai.provider.name": "some-new-lab" })).toMatchObject({
 			icon: "ChatBubbleSparkleIcon",
+			label: "LLM call · Some New Lab",
 		})
 	})
 

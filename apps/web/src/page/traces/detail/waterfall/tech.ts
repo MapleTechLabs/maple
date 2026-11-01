@@ -31,31 +31,39 @@ const titleCase = (system: string): string =>
 		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
 		.join(" ")
 
-// `gen_ai.provider.name` values (and the older `gen_ai.system`) to `modelVendorIcon` slugs.
-const GEN_AI_VENDORS = new Map<string, string>([
-	["aws.bedrock", "amazon"],
-	["azure.ai.inference", "microsoft"],
-	["azure.ai.openai", "microsoft"],
-	["az.ai.inference", "microsoft"],
-	["az.ai.openai", "microsoft"],
-	["gcp.gemini", "google"],
-	["gcp.gen_ai", "google"],
-	["gcp.vertex_ai", "google"],
-	["gemini", "google"],
-	["vertex_ai", "google"],
-	["ibm.watsonx.ai", "ibm-granite"],
-	["mistral_ai", "mistralai"],
-	["x_ai", "x-ai"],
-	["xai", "x-ai"],
+// `gen_ai.provider.name` values (and the older `gen_ai.system`): the `modelVendorIcon` slug and
+// the name a reader knows. Anything else keeps its own value as the slug.
+const GEN_AI_PROVIDERS = new Map<string, Readonly<{ vendor: string; label: string }>>([
+	["anthropic", { vendor: "anthropic", label: "Anthropic" }],
+	["openai", { vendor: "openai", label: "OpenAI" }],
+	["openrouter", { vendor: "openrouter", label: "OpenRouter" }],
+	["cohere", { vendor: "cohere", label: "Cohere" }],
+	["deepseek", { vendor: "deepseek", label: "DeepSeek" }],
+	["perplexity", { vendor: "perplexity", label: "Perplexity" }],
+	["groq", { vendor: "groq", label: "Groq" }],
+	["mistral_ai", { vendor: "mistralai", label: "Mistral" }],
+	["x_ai", { vendor: "x-ai", label: "xAI" }],
+	["xai", { vendor: "x-ai", label: "xAI" }],
+	["aws.bedrock", { vendor: "amazon", label: "AWS Bedrock" }],
+	["azure.ai.inference", { vendor: "microsoft", label: "Azure AI" }],
+	["az.ai.inference", { vendor: "microsoft", label: "Azure AI" }],
+	["azure.ai.openai", { vendor: "microsoft", label: "Azure OpenAI" }],
+	["az.ai.openai", { vendor: "microsoft", label: "Azure OpenAI" }],
+	["gcp.gemini", { vendor: "google", label: "Gemini" }],
+	["gemini", { vendor: "google", label: "Gemini" }],
+	["gcp.gen_ai", { vendor: "google", label: "Google Gen AI" }],
+	["gcp.vertex_ai", { vendor: "google", label: "Vertex AI" }],
+	["vertex_ai", { vendor: "google", label: "Vertex AI" }],
+	["ibm.watsonx.ai", { vendor: "ibm-granite", label: "watsonx" }],
 ])
 
 const genAi = (attrs: Record<string, string>): Mark | null => {
 	const provider = systemOf(attrs, "gen_ai.provider.name", "gen_ai.system")
 	if (provider === null) return null
-	const vendor = GEN_AI_VENDORS.get(provider) ?? provider
+	const known = GEN_AI_PROVIDERS.get(provider)
 	return {
-		icon: modelVendorIcon({ vendorSlug: vendor, family: null }),
-		label: `LLM call · ${titleCase(vendor)}`,
+		icon: modelVendorIcon({ vendorSlug: known?.vendor ?? provider, family: null }),
+		label: `LLM call · ${known?.label ?? titleCase(provider)}`,
 		className: MUTED,
 	}
 }
