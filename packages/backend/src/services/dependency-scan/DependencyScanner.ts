@@ -290,6 +290,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 						if (
 							Option.isSome(latest) &&
 							latest.value.defaultBranchHead &&
+							// An incomplete scan never reconciled, so its findings are not current.
+							latest.value.error === null &&
 							!tree.truncated &&
 							// Skipped lockfiles are on the last scan too, so they count toward "unchanged".
 							sameLockfiles(latest.value.lockfiles, [...selected, ...skipped])
@@ -342,15 +344,21 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 									.resolveRef(installation, repo, ref)
 									.pipe(Effect.mapError(scanError(`Could not resolve ${ref}`)))
 							: Option.none()
-						const movedTo = Option.filter(headNow, (sha) => sha !== commitSha)
+						// Only the same SHA proves the head unchanged: a deleted branch is no head either.
+						const incomplete = !defaultBranchHead
+							? undefined
+							: Option.match(headNow, {
+									onNone: () => `${ref} was deleted during the scan`,
+									onSome: (sha) =>
+										sha === commitSha
+											? undefined
+											: `${ref} moved on to ${sha.slice(0, 7)} during the scan`,
+								})
 						return yield* store
 							.completeScan({
 								orgId,
 								scanId: started.id,
-								incomplete: Option.match(movedTo, {
-									onNone: () => undefined,
-									onSome: (sha) => `${ref} moved on to ${sha.slice(0, 7)} during the scan`,
-								}),
+								incomplete,
 								// A lockfile past the cap is recorded, so its findings are kept rather than read as deleted.
 								lockfiles: [
 									...reads.map((read) => read.lockfile),

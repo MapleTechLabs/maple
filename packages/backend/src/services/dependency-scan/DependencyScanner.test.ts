@@ -87,12 +87,13 @@ const CARGO_LOCK = [
 ].join("\n")
 
 interface World {
-	head: GitCommitSha
+	/** Null once the branch is deleted. */
+	head: GitCommitSha | null
 	files: Map<string, { readonly sha: string; readonly content: string; readonly size?: number }>
 	truncated: boolean
 	osvDown: boolean
 	/** Where the branch head moves while the tree is read, as a concurrent push would. */
-	headAfterTree: GitCommitSha | undefined
+	headAfterTree: GitCommitSha | null | undefined
 	/** Blob shas read from the provider, in order. */
 	readonly blobReads: Array<string>
 }
@@ -112,7 +113,7 @@ const world = (files: Record<string, string>): World => ({
 })
 
 const source = (state: World) => ({
-	resolveRef: () => Effect.sync(() => Option.some(state.head)),
+	resolveRef: () => Effect.sync(() => Option.fromNullOr(state.head)),
 	fetchTreeFiles: () =>
 		Effect.sync(() => {
 			const listing = {
@@ -341,6 +342,41 @@ describe("DependencyScanner", () => {
 				"main moved on to ccccccc during the scan",
 			)
 			assert.isTrue((yield* findingsOf).every((finding) => finding.status === "open"))
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("does not reconcile when the branch was deleted while the scan read it", () => {
+		const state = world({ "package-lock.json": packageLock("4.17.15") })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			state.head = sha("b")
+			state.files.set("package-lock.json", { sha: "lock-up", content: packageLock("4.18.0") })
+			state.headAfterTree = null
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(
+				outcome._tag === "Scanned" ? outcome.scan.error : null,
+				"main was deleted during the scan",
+			)
+			assert.isTrue((yield* findingsOf).every((finding) => finding.status === "open"))
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("rescans a push whose lockfiles match a scan that never reconciled", () => {
+		const state = world({ "package-lock.json": packageLock("4.17.15") })
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			state.head = sha("b")
+			state.files.set("package-lock.json", { sha: "lock-up", content: packageLock("4.18.0") })
+			state.headAfterTree = sha("c")
+			yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			// The push of c keeps b's lockfile, so only b's scan has read it, and that one never reconciled.
+			state.headAfterTree = undefined
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "push" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			const lodash = (yield* findingsOf).filter((finding) => finding.packageName === "lodash")
+			assert.isTrue(lodash.length > 0 && lodash.every((finding) => finding.status === "fixed"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
