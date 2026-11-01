@@ -114,10 +114,10 @@ export const serverError = <M>(
 		],
 	)
 
-/** The server exists but answered nothing in the window. */
+/** The server answered nothing in the window; `lastCall` when the page knows when it last did. */
 export const quietWindow = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ service: string; window: string; lastCall: string; onWiden: M; widenLabel: string }>,
+	options: Readonly<{ service: string; window: string; lastCall?: string; onWiden: M; widenLabel: string }>,
 ): Html =>
 	h.div(
 		[h.Class("border-t border-border px-6 py-14")],
@@ -127,7 +127,9 @@ export const quietWindow = <M>(
 					emptyMedia(h, { variant: "icon" }, [icon(h, "ClockIcon")]),
 					emptyTitle(h, [`No tool calls in the ${options.window}`]),
 					emptyDescription(h, [
-						`${options.service} last answered a tool call ${options.lastCall}.`,
+						options.lastCall === undefined
+							? `No MCP server span from ${options.service} in this window.`
+							: `${options.service} last answered a tool call ${options.lastCall}.`,
 					]),
 				]),
 				emptyContent(h, [

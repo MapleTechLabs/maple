@@ -125,6 +125,7 @@ const exploreItem: NavItem = {
 		{ title: "Metrics", href: "/metrics", icon: "ChartLineIcon" },
 		{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
 		{ title: "Agent Sessions", href: "/agent-sessions", icon: "SquareSparkleIcon" },
+		{ title: "MCP Servers", href: "/mcp-servers", icon: "PlugIcon" },
 	],
 }
 

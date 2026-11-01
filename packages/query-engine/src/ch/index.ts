@@ -659,6 +659,28 @@ export {
 	type TopOperationsOutput,
 } from "./queries/top-operations"
 
+// Queries - MCP hub (MCP server spans per the OpenTelemetry MCP conventions)
+export {
+	mcpCallListQuery,
+	mcpCallSeriesQuery,
+	mcpCallSplitSeriesQuery,
+	mcpCallTotalsQuery,
+	mcpClientName,
+	mcpClientsQuery,
+	mcpErrorGroupsQuery,
+	mcpErrorTrendQuery,
+	mcpInitializersQuery,
+	mcpMethodsQuery,
+	mcpServerClientsQuery,
+	mcpServerSparkQuery,
+	mcpServerStatsQuery,
+	mcpServicesQuery,
+	mcpSpanSummaryQuery,
+	mcpToolStatsQuery,
+	type McpCallFilter,
+	type McpCallOrder,
+} from "./queries/mcp"
+
 // Queries — Infrastructure (host-centric aggregations over hostmetrics)
 export {
 	listHostsQuery,
