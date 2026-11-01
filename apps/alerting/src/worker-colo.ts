@@ -48,18 +48,25 @@ export const lookupColo = Effect.fn("alerting.lookup_colo")(
 export const isolateColoCache = <R>(lookup: Effect.Effect<string, ColoLookupError, R>) =>
 	Effect.sync(() => {
 		let known: string | undefined
-		return Effect.suspend(() =>
-			known === undefined
-				? lookup.pipe(
-						Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
-						// A failed lookup stays "unknown" for the isolate rather than costing every fire a timeout.
-						Effect.orElseSucceed(() => "unknown"),
-						Effect.tap((colo) =>
-							Effect.sync(() => {
-								known = colo
-							}),
-						),
-					)
-				: Effect.succeed(known),
-		)
+		// A failed lookup reads "unknown" for the isolate rather than costing every fire a timeout,
+		// but never hides a colo a concurrent lookup learned, before or after it.
+		let failed = false
+		return Effect.suspend(() => {
+			if (known !== undefined) return Effect.succeed(known)
+			if (failed) return Effect.succeed("unknown")
+			return lookup.pipe(
+				Effect.tap((colo) =>
+					Effect.sync(() => {
+						known = colo
+					}),
+				),
+				Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
+				Effect.catch(() =>
+					Effect.sync(() => {
+						failed = true
+						return known ?? "unknown"
+					}),
+				),
+			)
+		})
 	})

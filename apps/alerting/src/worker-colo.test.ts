@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { ColoLookupError, isolateColoCache, lookupColo, TRACE_URL } from "./worker-colo"
 
@@ -73,6 +73,55 @@ describe("isolateColoCache", () => {
 			expect(yield* colo).toBe("unknown")
 			expect(yield* colo).toBe("unknown")
 			expect(calls).toBe(1)
+		}),
+	)
+
+	it.effect("a lookup that fails after another learned the colo does not erase it", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const release = yield* Deferred.make<void>()
+			// The first lookup is slow and times out; the second answers while it is still in flight.
+			const colo = yield* isolateColoCache(
+				Effect.suspend(() => {
+					calls++
+					return calls === 1
+						? Deferred.await(release).pipe(
+								Effect.andThen(
+									Effect.fail(new ColoLookupError({ message: "Trace request timed out" })),
+								),
+							)
+						: Effect.succeed("IAD")
+				}),
+			)
+			const slow = yield* Effect.forkChild(colo)
+			yield* Effect.yieldNow
+			expect(yield* colo).toBe("IAD")
+			yield* Deferred.succeed(release, undefined)
+			expect(yield* Fiber.join(slow)).toBe("IAD")
+			expect(yield* colo).toBe("IAD")
+			expect(calls).toBe(2)
+		}),
+	)
+
+	it.effect("a lookup that succeeds after another failed replaces the unknown", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const release = yield* Deferred.make<void>()
+			const colo = yield* isolateColoCache(
+				Effect.suspend(() => {
+					calls++
+					return calls === 1
+						? Deferred.await(release).pipe(Effect.as("IAD"))
+						: Effect.fail(new ColoLookupError({ message: "Trace request timed out" }))
+				}),
+			)
+			const slow = yield* Effect.forkChild(colo)
+			yield* Effect.yieldNow
+			expect(yield* colo).toBe("unknown")
+			yield* Deferred.succeed(release, undefined)
+			expect(yield* Fiber.join(slow)).toBe("IAD")
+			expect(yield* colo).toBe("IAD")
+			expect(calls).toBe(2)
 		}),
 	)
 })
