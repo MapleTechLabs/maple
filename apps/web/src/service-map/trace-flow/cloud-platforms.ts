@@ -52,7 +52,7 @@ const DB_SYSTEM_LABELS = new Map(
 	}),
 )
 
-function humanizeDbSystem(system: string): string {
+export function humanizeDbSystem(system: string): string {
 	const known = DB_SYSTEM_LABELS.get(system.toLowerCase())
 	if (known) return known
 	const tail = system.split(".").pop() ?? system

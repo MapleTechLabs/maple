@@ -33,6 +33,7 @@ describe("spanTech", () => {
 		})
 		expect(spanTech({ "db.system": "dynamodb", "rpc.system": "aws-api" })).toMatchObject({
 			icon: "DatabaseIcon",
+			label: "DynamoDB",
 		})
 	})
 
@@ -41,6 +42,7 @@ describe("spanTech", () => {
 			icon: "PaperPlaneIcon",
 			label: "Cloud Tasks",
 		})
+		expect(spanTech({ "db.system.name": "Other_SQL" })).toMatchObject({ label: "Other Sql" })
 	})
 
 	test("system values match whatever their case or padding", () => {

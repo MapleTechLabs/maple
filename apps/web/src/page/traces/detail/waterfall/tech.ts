@@ -1,6 +1,6 @@
 import { dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
 import { getDbStyle } from "@maple/ui/components/service-map/service-map-db-style"
-import { pickAttr } from "../../../../service-map/trace-flow/cloud-platforms"
+import { humanizeDbSystem, pickAttr } from "../../../../service-map/trace-flow/cloud-platforms"
 import { DB_ICON } from "../../../../service-map/map/node-card"
 import { resolveRuntimeGlyph } from "../../../../service-map/map/runtime"
 import type { IconName } from "../../../../ui/icon"
@@ -74,7 +74,7 @@ const database = (attrs: Record<string, string>): Mark | null => {
 	const style = getDbStyle(system)
 	return {
 		icon: DB_ICON[style.icon],
-		label: style.label,
+		label: humanizeDbSystem(system),
 		className: style.branded ? "" : dbSystemAccentClass(system),
 	}
 }
