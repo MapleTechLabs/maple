@@ -25,6 +25,7 @@ import * as TelemetryPage from "../../page/security/telemetry/model"
 import * as TelemetryUpdate from "../../page/security/telemetry/update"
 import type { Resources } from "../../platform/resources"
 import { AppRoute } from "../../route"
+import type { SecurityDependenciesSearch } from "../../route/search"
 import * as Field from "../../ui/field"
 import * as Select from "../../ui/select"
 import * as ToggleGroup from "../../ui/toggle-group"
@@ -51,6 +52,7 @@ import {
 	neverScannedOf,
 	noFindings,
 	noRepositories,
+	PAYMENTS_ID,
 	repositoriesOf,
 } from "../security-dependencies-fixture"
 import { emptyExposureOf, exposureOf, runtimesOf } from "../security-telemetry-fixture"
@@ -84,6 +86,7 @@ export const SCENARIOS = [
 	"runtimes",
 	"dependencies",
 	"dependencies-finding",
+	"dependencies-repository",
 	"dependencies-clean",
 	"dependencies-never-scanned",
 	"dependencies-no-github",
@@ -354,8 +357,9 @@ const dependencies = (
 	nowMs: number,
 	answers: DependencyAnswers | null,
 	then: ReadonlyArray<(model: DependenciesPage.Model) => DependenciesPage.Message> = [],
+	search: SecurityDependenciesSearch = {},
 ): DependenciesStep => {
-	const entered = DependenciesUpdate.init(AppRoute.SecurityDependencies(), context)
+	const entered = DependenciesUpdate.init(AppRoute.SecurityDependencies({ search }), context)
 	return fold<DependenciesPage.Model, DependenciesPage.Message>(
 		{ model: entered.model, commands: entered.commands ?? [] },
 		(model, message) => DependenciesUpdate.update(model, message, context),
@@ -531,6 +535,8 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 					() => D.ClickedFinding({ findingId: FINDING_IDS.axios }),
 				]),
 			}
+		case "dependencies-repository":
+			return { _tag: "Dependencies", step: populatedDependencies(nowMs, [], { repo: PAYMENTS_ID }) }
 		case "dependencies-clean":
 			return {
 				_tag: "Dependencies",
@@ -567,5 +573,11 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 const populatedDependencies = (
 	nowMs: number,
 	then: ReadonlyArray<(model: DependenciesPage.Model) => DependenciesPage.Message> = [],
+	search: SecurityDependenciesSearch = {},
 ): DependenciesStep =>
-	dependencies(nowMs, { repositories: repositoriesOf(nowMs), findings: dependencyFindingsOf(nowMs) }, then)
+	dependencies(
+		nowMs,
+		{ repositories: repositoriesOf(nowMs), findings: dependencyFindingsOf(nowMs) },
+		then,
+		search,
+	)

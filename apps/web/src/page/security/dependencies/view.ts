@@ -3,8 +3,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { securityLayout } from "../kit/layout"
-import { pageStateOf, scannedCount } from "./derive"
+import { focusedRepositoryOf, pageStateOf, scannedCount } from "./derive"
 import { Message, type Model } from "./model"
+import { repositoryBreakdown } from "./view-breakdown"
 import { findingsSection } from "./view-findings"
 import { repositoriesPanel } from "./view-repositories"
 import { findingSheet } from "./view-sheet"
@@ -30,20 +31,39 @@ const body = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 			]
 		case "NotConnected":
 			return [notConnected(h)]
-		case "Ready":
+		case "Ready": {
+			const focused = focusedRepositoryOf(model)
 			return scannedCount(state.repositories) === 0
 				? [
 						firstScan(h, model, state.repositories),
-						repositoriesPanel(h, model, state.repositories, clock),
+						repositoriesPanel(
+							h,
+							model,
+							state.repositories,
+							state.findings,
+							focused?.id ?? null,
+							clock,
+						),
 					]
 				: [
-						severityRail(h, state.findings, state.repositories),
-						repositoriesPanel(h, model, state.repositories, clock),
+						severityRail(h, state.findings, state.repositories, focused),
+						repositoriesPanel(
+							h,
+							model,
+							state.repositories,
+							state.findings,
+							focused?.id ?? null,
+							clock,
+						),
+						...(focused === null
+							? []
+							: [repositoryBreakdown(h, focused, state.findings, state.production)]),
 						h.div(
 							[h.Class("flex flex-col gap-2")],
 							[findingsSection(h, model, state, clock), footnote(h)],
 						),
 					]
+		}
 	}
 }
 

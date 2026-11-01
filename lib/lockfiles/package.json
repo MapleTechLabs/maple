@@ -4,7 +4,8 @@
 	"type": "module",
 	"sideEffects": false,
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./versions": "./src/versions.ts"
 	},
 	"scripts": {
 		"typecheck": "tsrs --noEmit",

@@ -13,6 +13,7 @@ import {
 	scene,
 	text,
 	type,
+	within,
 	withViewInputs,
 	Mount,
 } from "foldkit/scene"
@@ -25,6 +26,7 @@ import {
 	noFindings,
 	noRepositories,
 	PAYMENTS_ID,
+	REPOSITORY_IDS,
 	repositoriesOf,
 	rescannedOf,
 } from "../../../lab/security-dependencies-fixture"
@@ -36,7 +38,7 @@ import { type PageContext, PageOutMessage } from "../../contract"
 import { UpdateFinding } from "./command"
 import { reasonErrorOf } from "./derive"
 import { Message, type Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = {
@@ -45,7 +47,7 @@ const context: PageContext = {
 	timeZone: "UTC",
 }
 const NOW = Date.UTC(2026, 10, 1, 9, 0)
-const route = AppRoute.SecurityDependencies()
+const route = AppRoute.SecurityDependencies({ search: {} })
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -429,18 +431,206 @@ describe("security dependencies tab", () => {
 		)
 	})
 
-	test("the repository filter keeps one repository's findings", () => {
-		const filtered = apply(loaded(), [
-			() =>
-				Message.GotRepositorySelectMessage({
-					message: Select.Message.SelectedItem({ index: 1, value: PAYMENTS_ID }),
-				}),
-		])
+	test("the repository filter links to that repository's breakdown", () => {
+		const step = pageUpdate(
+			loaded(),
+			Message.GotRepositorySelectMessage({
+				message: Select.Message.SelectedItem({ index: 1, value: PAYMENTS_ID }),
+			}),
+		)
+		expect(step.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } })),
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("each repository row counts its open findings and the upgrades that clear them", () => {
+		const repositories = role("table", { name: "Repositories" })
 		scene(
 			{ update: pageUpdate, view },
-			given(filtered),
-			expectView(text("axios")).toExist(),
+			given(loaded()),
+			expectView(within(repositories, role("link", { name: "acme/payments-api" }))).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } })),
+			),
+			// Two axios advisories are one bump.
+			expectView(within(repositories, text("3 upgrades clear 4"))).toExist(),
+			expectView(within(repositories, text("1 upgrade clears 1"))).toExist(),
+			expectView(within(repositories, text("No fix yet"))).toExist(),
+		)
+	})
+
+	test("a focused repository shows its upgrade plan, its rail and only its findings", () => {
+		const routed = routeChanged(
+			loaded(),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		const plan = role("table", { name: "Upgrade plan for acme/payments-api" })
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(text("3 upgrades clear 4 of 4 open advisories.")).toExist(),
+			// The bump goes to the higher of the two fixed versions and clears both.
+			expectView(within(plan, text("1.12.0"))).toExist(),
+			expectView(within(plan, text("1.8.2"))).toBeAbsent(),
+			expectView(within(plan, text("2 advisories"))).toExist(),
+			expectView(text("Upgrades")).toExist(),
+			expectView(text("clear 4 of 4 advisories")).toExist(),
 			expectView(text("tokio")).toBeAbsent(),
+			expectView(role("link", { name: "All repositories" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: {} })),
+			),
+		)
+	})
+
+	test("the plan bumps to the highest fix any lockfile needs for one advisory", () => {
+		const findings = findingsOf(NOW)
+		// The critical axios advisory again, in a lockfile whose line is fixed later.
+		const copies = findings.findings.flatMap((finding) =>
+			finding.id === FINDING_IDS.axios
+				? [
+						{
+							...finding,
+							id: FINDING_IDS.jwt,
+							lockfilePath: "apps/admin/pnpm-lock.yaml",
+							fixedIn: "1.13.0",
+						},
+					]
+				: [],
+		)
+		const routed = routeChanged(
+			loaded(repositoriesOf(NOW), { ...findings, findings: [...copies, ...findings.findings] }),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		const plan = role("table", { name: "Upgrade plan for acme/payments-api" })
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(within(plan, text("1.13.0"))).toExist(),
+			expectView(within(plan, text("2 advisories"))).toExist(),
+		)
+	})
+
+	test("the plan counts an advisory once however many lockfiles carry it", () => {
+		const findings = findingsOf(NOW)
+		// The critical axios advisory again, locked in a second lockfile.
+		const copies = findings.findings.flatMap((finding) =>
+			finding.id === FINDING_IDS.axios
+				? [{ ...finding, id: FINDING_IDS.jwt, lockfilePath: "apps/admin/pnpm-lock.yaml" }]
+				: [],
+		)
+		const routed = routeChanged(
+			loaded(repositoriesOf(NOW), { ...findings, findings: [...copies, ...findings.findings] }),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		const plan = role("table", { name: "Upgrade plan for acme/payments-api" })
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(within(plan, text("2 advisories"))).toExist(),
+			expectView(within(plan, text("+1 lockfile"))).toExist(),
+		)
+	})
+
+	test("the plan says Unknown, not Not running, when production could not be read", () => {
+		const findings = findingsOf(NOW)
+		const routed = routeChanged(
+			loaded(repositoriesOf(NOW), {
+				...findings,
+				production: { ...findings.production, available: false },
+			}),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		const plan = role("table", { name: "Upgrade plan for acme/payments-api" })
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(within(plan, text("Unknown"))).toExist(),
+			expectView(within(plan, text("Not running"))).toBeAbsent(),
+		)
+	})
+
+	test("a repository with nothing to bump to says no fix exists yet", () => {
+		const routed = routeChanged(
+			loaded(),
+			AppRoute.SecurityDependencies({ search: { repo: REPOSITORY_IDS.web } }),
+			context,
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(text("None of 1 open advisory has a fixed version yet.")).toExist(),
+		)
+	})
+
+	test("before any scan, the focused repository's row still reads as the current one", () => {
+		const routed = routeChanged(
+			loaded(neverScannedOf(NOW), noFindings),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(role("link", { name: "acme/payments-api" })).toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("re-picking the focused repository does not navigate again", () => {
+		const focused = routeChanged(
+			loaded(),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		const step = pageUpdate(
+			focused,
+			Message.GotRepositorySelectMessage({
+				message: Select.Message.SelectedItem({ index: 1, value: PAYMENTS_ID }),
+			}),
+		)
+		expect(step.outMessage).toBeUndefined()
+	})
+
+	test("a repo in the URL that is not connected shows every repository and leaves the URL", () => {
+		const entered = init(AppRoute.SecurityDependencies({ search: { repo: "gone" } }), context).model
+		const answered = pageUpdate(
+			entered,
+			Message.CompletedFetchRepositories({
+				key: entered.repositories.key ?? "",
+				result: Result.succeed(repositoriesOf(NOW)),
+			}),
+		)
+		expect(answered.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.SecurityDependencies({ search: {} })),
+				isReplace: true,
+			}),
+		)
+		const navigated = routeChanged(
+			loaded(),
+			AppRoute.SecurityDependencies({ search: { repo: "gone" } }),
+			context,
+		)
+		expect(navigated.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.SecurityDependencies({ search: {} })),
+				isReplace: true,
+			}),
+		)
+		const routed = navigated.model
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(text("Upgrade plan")).toBeAbsent(),
+			expectView(text("tokio")).toExist(),
+			expectView(text("axios")).toExist(),
 		)
 	})
 

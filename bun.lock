@@ -332,6 +332,7 @@
         "@maple/grid-engine": "workspace:*",
         "@maple/infra": "workspace:*",
         "@maple/ingest-rules": "workspace:*",
+        "@maple/lockfiles": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/status-page": "workspace:*",

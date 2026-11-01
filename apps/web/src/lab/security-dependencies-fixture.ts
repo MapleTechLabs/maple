@@ -226,6 +226,7 @@ export const rescannedOf = (nowMs: number): DependencyScanRepositoriesResponse =
 
 export const FINDING_IDS = {
 	axios: findingId("0a1b2c3d4e5f60718293a4b5c6d7e8f9"),
+	axiosDos: findingId("70819203a4b5c6d7e8f90a1b2c3d4e5f"),
 	xnet: findingId("1b2c3d4e5f60718293a4b5c6d7e8f90a"),
 	vite: findingId("2c3d4e5f60718293a4b5c6d7e8f90a1b"),
 	tokio: findingId("3d4e5f60718293a4b5c6d7e8f90a1b2c"),
@@ -285,7 +286,10 @@ const PAYMENTS = { repositoryId: REPOSITORY_IDS.payments, repositoryFullName: "a
 const WEB = { repositoryId: REPOSITORY_IDS.web, repositoryFullName: "acme/web" } as const
 const CLI = { repositoryId: REPOSITORY_IDS.cli, repositoryFullName: "acme/cli" } as const
 
-/** Worst first, as the server sorts them: one per severity, a dismissed and a fixed finding. */
+/**
+ * Worst first, as the server sorts them: one per severity, a dismissed and a fixed finding, and a
+ * second axios advisory whose higher fix is the version the upgrade plan bumps to.
+ */
 export const findingsOf = (nowMs: number): DependencyFindingsResponse => ({
 	production: { available: true, runningServices: 4, linkedServices: 3, complete: true },
 	findings: [
@@ -307,6 +311,25 @@ export const findingsOf = (nowMs: number): DependencyFindingsResponse => ({
 				relation: "direct",
 			},
 			9 * DAY,
+			RUNNING.payments,
+		),
+		finding(
+			nowMs,
+			{
+				...PAYMENTS,
+				id: FINDING_IDS.axiosDos,
+				lockfilePath: "pnpm-lock.yaml",
+				ecosystem: "npm",
+				packageName: "axios",
+				advisoryId: "GHSA-4hjh-wcwx-xvwj",
+				aliases: ["CVE-2025-58754"],
+				severity: "high",
+				summary: "axios decodes data: URLs without a size limit, so one response can exhaust memory.",
+				versions: ["1.7.4"],
+				fixedIn: "1.12.0",
+				relation: "direct",
+			},
+			6 * DAY,
 			RUNNING.payments,
 		),
 		finding(

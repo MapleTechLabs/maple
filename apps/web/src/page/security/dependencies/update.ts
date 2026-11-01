@@ -1,10 +1,10 @@
 import type { DependencyFindingStatus, DependencyFindingTriageStatus } from "@maple/domain/dependency-scan"
-import { Result } from "effect"
-import { Command } from "foldkit"
+import { Option, Result } from "effect"
+import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
-import type { AppRoute } from "../../../route"
+import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
@@ -64,6 +64,12 @@ const readAll = (model: Model, context: PageContext, mode: Keyed.ReadMode): Retu
 		(next) => readFindings(next, context, mode),
 	])
 
+/** The repository select follows the URL; "all" when it names none. */
+const withRoute = (model: Model, route: SecurityDependenciesRoute): Model => ({
+	...model,
+	repositorySelect: { ...model.repositorySelect, value: route.search.repo ?? "all" },
+})
+
 export const initialModel = (): Model => ({
 	nowMs: 0,
 	isAdmin: !isClerkAuthEnabled,
@@ -80,8 +86,8 @@ export const initialModel = (): Model => ({
 	savingStatus: null,
 })
 
-export const init = (_route: SecurityDependenciesRoute, context: PageContext): Return => {
-	const loaded = readAll(initialModel(), context, "Load")
+export const init = (route: SecurityDependenciesRoute, context: PageContext): Return => {
+	const loaded = readAll(withRoute(initialModel(), route), context, "Load")
 	return {
 		...loaded,
 		commands: [
@@ -92,18 +98,58 @@ export const init = (_route: SecurityDependenciesRoute, context: PageContext): R
 	}
 }
 
+/** Same instance: only the focused repository changed, so nothing is read again. */
+export const routeChanged = (model: Model, route: SecurityDependenciesRoute, _context: PageContext): Return =>
+	dropUnknownRepository({ model: withRoute(model, route) })
+
 const selectStep = (
 	model: Model,
 	select: Select.Model,
 	message: Select.Message,
 	write: (select: Select.Model) => Partial<Model>,
 	wrap: (message: Select.Message) => Message,
+	onChange?: (model: Model, value: string) => Return,
 ): Return => {
 	const next = Select.update(select, message)
-	return {
-		model: { ...model, ...write(next.model) },
-		commands: Command.mapMessages(next.commands ?? [], wrap),
-	}
+	const updated = { ...model, ...write(next.model) }
+	const commands = Command.mapMessages(next.commands ?? [], wrap)
+	if (next.outMessage === undefined || onChange === undefined) return { model: updated, commands }
+	const step = onChange(updated, next.outMessage.value)
+	return { ...step, commands: [...commands, ...(step.commands ?? [])] }
+}
+
+const dependenciesUrl = (repositoryId: string) =>
+	hrefOf(AppRoute.SecurityDependencies({ search: repositoryId === "all" ? {} : { repo: repositoryId } }))
+
+/** A repository picked in the toolbar is the same link as its table row; the current one stays put. */
+const repositoryChanged =
+	(previous: string) =>
+	(model: Model, value: string): Return =>
+		value === previous
+			? { model }
+			: {
+					model,
+					outMessage: PageOutMessage.RequestedNavigation({
+						url: dependenciesUrl(value),
+						isReplace: false,
+					}),
+				}
+
+/** A `?repo=` no connected repository answers to is dropped from the URL once they are read. */
+const dropUnknownRepository = (step: Return): Return => {
+	const { repositorySelect } = step.model
+	const repositories = Option.getOrNull(AsyncData.getData(step.model.repositories.data))
+	if (repositorySelect.value === "all" || repositories === null || step.outMessage !== undefined)
+		return step
+	return repositories.repositories.some((repository) => repository.id === repositorySelect.value)
+		? step
+		: {
+				...step,
+				outMessage: PageOutMessage.RequestedNavigation({
+					url: dependenciesUrl("all"),
+					isReplace: true,
+				}),
+			}
 }
 
 const sheetStep = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
@@ -147,9 +193,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
 		CompletedFetchRepositories: ({ key, result }) =>
-			afterRepositories(
-				{ ...model, repositories: Keyed.accept(model.repositories, key, result) },
-				context,
+			dropUnknownRepository(
+				afterRepositories(
+					{ ...model, repositories: Keyed.accept(model.repositories, key, result) },
+					context,
+				),
 			),
 		CompletedFetchFindings: ({ key, result }) => ({
 			model: { ...model, findings: Keyed.accept(model.findings, key, result) },
@@ -206,6 +254,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				inner,
 				(repositorySelect) => ({ repositorySelect }),
 				(next) => Message.GotRepositorySelectMessage({ message: next }),
+				repositoryChanged(model.repositorySelect.value),
 			),
 		ClickedFinding: ({ findingId }) =>
 			sheetStep(
