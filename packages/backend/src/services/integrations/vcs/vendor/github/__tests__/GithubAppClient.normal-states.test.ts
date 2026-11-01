@@ -101,6 +101,18 @@ describe("GithubAppClient responses that are normal states", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("fails a commit lookup on a 409 that is not an empty repository", () => {
+		const layer = clientLayer(
+			[tokenResponse(), new Response('{"message":"Git Repository is unavailable."}', { status: 409 })],
+			[],
+		)
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const error = yield* Effect.flip(client.getCommit("42", "octo", "shop", "main"))
+			assert.deepStrictEqual([error.status, error.scope], [409, "repository"])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("lists a commit whose tree is git's empty tree as no files", () => {
 		const layer = clientLayer(
 			[

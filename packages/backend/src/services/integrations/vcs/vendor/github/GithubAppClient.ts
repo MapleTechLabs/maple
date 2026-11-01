@@ -1162,10 +1162,18 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
-				// 404 (not in this repo), 409 (the repository is empty) and 422 ("No commit found for
-				// SHA") are answers, not failures: none, so the span stays Ok.
-				if (response.status === 404 || response.status === 409 || response.status === 422)
-					return Option.none<GithubApiCommit>()
+				// 404 (not in this repo), 422 ("No commit found for SHA") and the empty-repository 409
+				// are answers, not failures: none, so the span stays Ok. Any other 409 still fails.
+				if (response.status === 404 || response.status === 422) return Option.none<GithubApiCommit>()
+				if (response.status === 409) {
+					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
+					if (body.includes("Git Repository is empty")) return Option.none<GithubApiCommit>()
+					return yield* new GithubAppError({
+						message: `Get commit failed: 409 ${body.slice(0, 300)}`,
+						status: 409,
+						scope: "repository",
+					})
+				}
 				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
