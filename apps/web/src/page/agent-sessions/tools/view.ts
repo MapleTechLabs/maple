@@ -186,7 +186,10 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 							metric,
 							percentile,
 							allSessions: totals.allSessions,
-							windowLabel: presetSpanLabel(model.search.timePreset ?? DEFAULT_TOOL_PRESET),
+							windowLabel:
+								model.search.startTime !== undefined
+									? "period"
+									: presetSpanLabel(model.search.timePreset ?? DEFAULT_TOOL_PRESET),
 							onSelectMetric: (next) => Message.ClickedMetric({ metric: next }),
 							percentileToggle: model.percentileToggle,
 							toPercentileMessage: (message) => Message.GotPercentileMessage({ message }),

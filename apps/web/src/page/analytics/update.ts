@@ -238,6 +238,10 @@ const lift = <A>(
 const refreshOnly = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
 	model.window === null ? { model } : requestSlots(model, context, model.window, "Refresh", slots)
 
+/** A failure card's Try again: `Load` asks again only for the slots among `slots` that failed. */
+const retryFailed = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
+	model.window === null ? { model } : requestSlots(model, context, model.window, "Load", slots)
+
 /** `onClearFilters`: the window and the tab stay; the filters go. */
 const clearedFilters = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -289,8 +293,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetrySummary: () => refreshOnly(model, context, ["summary"]),
 		ClickedRetryBreakdowns: () => refreshOnly(model, context, ["breakdowns"]),
 		ClickedRetrySummaryAndBreakdowns: () => refreshOnly(model, context, ["summary", "breakdowns"]),
-		ClickedRetryAiReferrals: () => refreshOnly(model, context, ["aiReferrals", "previousAiReferrals"]),
-		ClickedRetryAiCrawlers: () => refreshOnly(model, context, ["aiCrawlers"]),
+		ClickedRetryAiReferrals: () => retryFailed(model, context, ["aiReferrals", "previousAiReferrals"]),
+		ClickedRetryAiCrawlers: () => retryFailed(model, context, ["aiCrawlers"]),
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)
 			return navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value)))
