@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { InspectSecurityFindingOutput, ListSecurityFindingsOutput } from "@maple/domain/mcp-outputs"
 import { RoleName } from "@maple/domain/primitives"
 import type { McpToolResult } from "../types"
-import { installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
+import { type FixtureRule, installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import {
 	integrationFixtureRules,
@@ -18,11 +18,13 @@ import {
 } from "../../__evals__/security-world"
 
 const realFetch = globalThis.fetch
+// Held, so a case can make one query fail: the fake warehouse reads this array on every call.
+const rules: Array<FixtureRule> = [...securityFixtureRules(), ...integrationFixtureRules()]
 let member: EvalRuntime
 let admin: EvalRuntime
 beforeAll(async () => {
 	globalThis.fetch = securityCatalogFetch
-	installFakeWarehouse([...securityFixtureRules(), ...integrationFixtureRules()], undefined, "empty")
+	installFakeWarehouse(rules, undefined, "empty")
 	member = makeEvalRuntime()
 	await seedIntegrationWorld(member)
 	await seedCommitWorld(member)
@@ -210,6 +212,50 @@ describe("inspect_security_finding", () => {
 		expect(output.matches).toMatchObject([
 			{ area: "dependencies", packageName: "axios", services: [{ service: "checkout" }] },
 		])
+	})
+
+	it("says production is unknown when its telemetry cannot be read", async () => {
+		// A fresh runtime: the running-commits read is cached per runtime, and this one must fail.
+		const isolated = makeEvalRuntime()
+		await seedIntegrationWorld(isolated)
+		await seedCommitWorld(isolated)
+		await seedSecurityWorld(isolated)
+		rules.unshift({
+			match: (sql) =>
+				sql.includes(" AS commitSha") && sql.includes(" AS spanCount") && !sql.includes("lastSeen"),
+			failure: { message: "warehouse unavailable", type: "UNKNOWN" },
+		})
+		try {
+			const tenant = { ...isolated.tenant, roles: admin.tenant.roles }
+			const result: McpToolResult = await runToolDirect(
+				{ ...isolated, tenant },
+				"inspect_security_finding",
+				{
+					id: SECURITY_WORLD.criticalCve,
+				},
+			)
+			const output = Schema.decodeUnknownSync(InspectSecurityFindingOutput)(result.structuredContent)
+			expect(output.coverage[0]).toContain(
+				"unknown for which production services run it (could not be read)",
+			)
+			expect(output.coverage[0]).not.toContain("no production service is known to run it")
+			// The lookup by id reads production on its own path.
+			const byId: McpToolResult = await runToolDirect(
+				{ ...isolated, tenant },
+				"inspect_security_finding",
+				{
+					id: "a1000000000000000000000000000001",
+				},
+			)
+			expect(
+				Schema.decodeUnknownSync(InspectSecurityFindingOutput)(byId.structuredContent).notSearched,
+			).toEqual([
+				"production: telemetry could not be read, so which services run these packages is unknown",
+			])
+		} finally {
+			rules.shift()
+			await isolated.dispose()
+		}
 	})
 
 	it("reads a code finding's trace, exploit and fix", async () => {
