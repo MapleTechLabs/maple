@@ -715,7 +715,9 @@ fn absorb_key<'a>(ev: &mut SpanEvidence<'a>, attr: &'a KeyValue, b0: u8) {
                     ev.mastra_scorer = true;
                 }
             } else if key == "mcp.method.name" {
+                // A veto, not evidence: an MCP span is AI work only on other grounds.
                 ev.mcp_method_name = true;
+                return;
             } else if key.starts_with("message.") {
                 ev.message = true;
             } else if key == "model_request_parameters" {
