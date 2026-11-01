@@ -36,6 +36,21 @@ describe("mcp lab", () => {
 		])
 	})
 
+	test("a tool search and failing only narrow the chart with the totals", () => {
+		const base = filtersOf(opened())
+		const searched = filteredOverview({ ...base, search: "run_sql" })
+		const failing = filteredOverview({ ...base, isFailingOnly: true })
+		for (const overview of [searched, failing]) {
+			expect(overview.series.reduce((total, point) => total + point.calls, 0)).toBe(
+				overview.totals.calls,
+			)
+			expect(overview.series.reduce((total, point) => total + point.errors, 0)).toBe(
+				overview.totals.errors,
+			)
+		}
+		expect(searched.totals.calls).toBe(115)
+	})
+
 	test("a new percentile switches the chart to duration; re-pressing the pressed one keeps it", () => {
 		expect(update(opened(), pressPercentile("p95", 2)).model.metric).toBe("duration")
 		expect(update(opened(), pressPercentile("p90", 1)).model.metric).toBe("calls")

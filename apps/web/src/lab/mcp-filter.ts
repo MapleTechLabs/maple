@@ -1,5 +1,5 @@
 import type { ToolSeriesPoint } from "../page/agent-sessions/tools-kit/model"
-import type { McpCallRow, McpClientRow, McpServerOverview, McpToolDetail } from "../page/mcp/data"
+import type { McpCallRow, McpClientRow, McpServerOverview, McpToolDetail, McpToolRow } from "../page/mcp/data"
 import type { McpFilters } from "../page/mcp/view-kit"
 import { MCP_CLIENT_TOOLS, MCP_OVERVIEW, MCP_RUN_SQL } from "./mcp-fixture"
 
@@ -28,6 +28,30 @@ const seriesOf = (
 		}
 	})
 
+/**
+ * The merged series rebuilt from the kept tools, for a search or "failing only": each tool's spark
+ * scaled to its narrowed calls (only `run_sql` fails, so its series carries the errors).
+ */
+const toolSeriesOf = (
+	tools: ReadonlyArray<McpToolRow>,
+	filters: McpFilters,
+): ReadonlyArray<ToolSeriesPoint> => {
+	const full = new Map(MCP_OVERVIEW.tools.map((row) => [row.tool, row]))
+	const runSql = tools.some((row) => row.tool === MCP_RUN_SQL.tool) ? filteredTool(filters).series : []
+	return MCP_OVERVIEW.series.map((point, index) => ({
+		...point,
+		calls: Math.round(
+			sum(tools, (row) => {
+				const all = full.get(row.tool)
+				return all === undefined || all.calls === 0
+					? 0
+					: ((all.spark[index] ?? 0) * row.calls) / all.calls
+			}),
+		),
+		errors: runSql[index]?.errors ?? 0,
+	}))
+}
+
 const hasFilter = (filters: McpFilters): boolean =>
 	filters.client !== undefined ||
 	filters.kind !== undefined ||
@@ -55,7 +79,10 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 	const errors = sum(tools, (row) => row.errors)
 	return {
 		...MCP_OVERVIEW,
-		series: seriesOf(MCP_OVERVIEW.series, clientSeries),
+		series:
+			filters.isFailingOnly || needle !== ""
+				? toolSeriesOf(tools, filters)
+				: seriesOf(MCP_OVERVIEW.series, clientSeries),
 		clientSeries,
 		totals: { ...MCP_OVERVIEW.totals, calls: sum(tools, (row) => row.calls), errors },
 		tools,

@@ -256,7 +256,11 @@ const pageView = (model: Model, h: H): Html => {
 							scope: scopeText("all tools", filters),
 							window: WINDOW,
 							toolCount: MCP_OVERVIEW.tools.length,
-							isDurationServerWide: filters.client !== undefined || filters.kind !== undefined,
+							isDurationServerWide:
+								filters.client !== undefined ||
+								filters.kind !== undefined ||
+								filters.isFailingOnly ||
+								filters.search.trim() !== "",
 							metric: model.metric,
 							percentile: pressed(model.percentileToggle, decodePercentile, "p90"),
 							onSelectMetric: (metric: McpMetric) => Message.ClickedMetric({ metric }),

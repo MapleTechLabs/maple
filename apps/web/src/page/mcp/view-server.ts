@@ -148,7 +148,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 						value: formatDurationNs(totals[options.percentile]),
 						spark: data.series.map((point) => point[options.percentile]).slice(-SPARK_BUCKETS),
 						subline: options.isDurationServerWide
-							? subline(h, "all clients", `· p50 ${formatDurationNs(totals.p50)}`)
+							? subline(h, "all calls", `· p50 ${formatDurationNs(totals.p50)}`)
 							: subline(
 									h,
 									`p50 ${formatDurationNs(totals.p50)}`,
