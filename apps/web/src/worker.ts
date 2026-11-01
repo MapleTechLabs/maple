@@ -59,6 +59,10 @@ const props = Effect.gen(function* () {
 					? yield* plainFrom(["VITE_INGEST_URL"], "https://ingest.maple.dev")
 					: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
+			// A `preview:web` stage has no Electric, so its shape proxy can only 503 (as electric-sync's env).
+			...(stage.kind === "pr" && domains.electric === undefined
+				? { VITE_ELECTRIC_SYNC_DISABLED: "1" }
+				: undefined),
 			// The status Worker's origin for public page links; empty hides them (prd has no domain yet).
 			VITE_STATUS_PAGE_BASE_URL: urls.status,
 			// Orgs living in another region are redirected to that region's app.
