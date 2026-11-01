@@ -147,17 +147,18 @@ const toolbar = (
 const muted = (h: H, text: string, className?: string): Html =>
 	h.span([h.Class(cn("text-xs text-muted-foreground", className))], [text])
 
-type ProductionScanState = "pending" | "failed"
+type ProductionScanState = "running" | "unscanned" | "failed"
 
-/** Repositories whose running commits are not all scanned: one still pending, or one whose scan failed. */
+/** Repositories whose running commits are not all scanned: one scanning, one with no scan yet, or one failed. */
 const productionScanStates = (
 	repositories: ReadonlyArray<DependencyScanRepository>,
 ): ReadonlyMap<string, ProductionScanState> =>
 	new Map(
 		repositories.flatMap((repository): ReadonlyArray<readonly [string, ProductionScanState]> => {
 			const statuses = repository.runningCommits.map((commit) => commit.scanStatus)
-			if (statuses.some((status) => status === null || status === "running"))
-				return [[repository.id, "pending"]]
+			if (statuses.includes("running")) return [[repository.id, "running"]]
+			// No scan row: queued from this read, or past the per-read cap, so nothing claims it is running.
+			if (statuses.includes(null)) return [[repository.id, "unscanned"]]
 			return statuses.includes("failed") ? [[repository.id, "failed"]] : []
 		}),
 	)
@@ -177,7 +178,10 @@ const productionCell = (
 	// A running commit not scanned yet may carry the finding: no answer until its scan lands.
 	const scan = scans.get(finding.repositoryId)
 	if (busiest === undefined && scan !== undefined)
-		return muted(h, scan === "pending" ? "Scanning" : "Scan failed")
+		return muted(
+			h,
+			scan === "running" ? "Scanning" : scan === "unscanned" ? "Not scanned yet" : "Scan failed",
+		)
 	if (busiest === undefined)
 		return muted(
 			h,
@@ -341,9 +345,10 @@ const findingsTable = (
 const packagesChecked = (repositories: ReadonlyArray<DependencyScanRepository>): number =>
 	repositories.reduce((sum, repository) => sum + (repository.latestScan?.packageCount ?? 0), 0)
 
-/** A repository is only clean when its latest scan completed and read every lockfile it found. */
+/** A repository is only clean when its latest scan completed whole and read every lockfile it found. */
 const readEverything = (repository: DependencyScanRepository): boolean =>
 	repository.latestScan?.status === "completed" &&
+	repository.latestScan.error === null &&
 	repository.latestScan.lockfiles.every((lockfile) => lockfile.status === "parsed")
 
 /** Scanned and nothing open: a calm line, not an alarm. */

@@ -152,7 +152,7 @@ describe("security dependencies tab", () => {
 		)
 	})
 
-	test("says a finding is being scanned, not absent, while a running commit's scan is pending", () => {
+	test("says a running commit is not scanned yet, not absent and not scanning, before any scan of it", () => {
 		const repositories = repositoriesOf(NOW)
 		scene(
 			{ update: pageUpdate, view },
@@ -166,6 +166,37 @@ describe("security dependencies tab", () => {
 										runningCommits: repository.runningCommits.map((commit) => ({
 											...commit,
 											scanStatus: null,
+										})),
+									}
+								: repository,
+						),
+					},
+					{
+						...findingsOf(NOW),
+						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
+					},
+				),
+			),
+			expectView(text("Not scanned yet")).toExist(),
+			expectView(text("Scanning")).toBeAbsent(),
+			expectView(text("api-gateway +1")).toBeAbsent(),
+		)
+	})
+
+	test("says a finding is being scanned, not absent, while a running commit's scan runs", () => {
+		const repositories = repositoriesOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					{
+						repositories: repositories.repositories.map((repository) =>
+							repository.id === PAYMENTS_ID
+								? {
+										...repository,
+										runningCommits: repository.runningCommits.map((commit) => ({
+											...commit,
+											scanStatus: "running" as const,
 										})),
 									}
 								: repository,
@@ -253,6 +284,37 @@ describe("security dependencies tab", () => {
 											lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
 												...lockfile,
 												status: "too_large" as const,
+											})),
+										},
+									},
+						),
+					},
+					noFindings,
+				),
+			),
+			expectView(text("No known vulnerable packages")).toBeAbsent(),
+		)
+	})
+
+	test("does not call a repository clean when its scan left advisories unread", () => {
+		const repositories = repositoriesOf(NOW)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					{
+						repositories: repositories.repositories.map((repository) =>
+							repository.latestScan === null
+								? repository
+								: {
+										...repository,
+										latestScan: {
+											...repository.latestScan,
+											status: "completed" as const,
+											error: "612 known vulnerabilities past the 500 a scan reads were left out",
+											lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
+												...lockfile,
+												status: "parsed" as const,
 											})),
 										},
 									},
