@@ -763,7 +763,7 @@ describe("integration focus", () => {
 				}),
 			}),
 		).model
-		const name = "Disconnect AWS account 123456789012"
+		const name = "Disconnect AWS account 123456789012?"
 		const mountDialog = Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
 		scene(
 			{ update: pageUpdate, view },

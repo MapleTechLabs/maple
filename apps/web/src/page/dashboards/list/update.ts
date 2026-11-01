@@ -54,6 +54,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		rowMenu: Menu.init(rowMenuIdOf("none")),
 		pendingDelete: null,
 		deleteDialog: Dialog.init("dashboard-delete-dialog", "alert-dialog"),
+		isDeleting: false,
 		pendingTags: null,
 		tagEditor: TagEditor.init("dashboard-tags-dialog"),
 		tagFilter: Combobox.init(TAG_FILTER_ID, "multiple", { selected: tagsOf(route.search) }),
@@ -372,29 +373,38 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					navigateWithToast(model, dashboardHref(created.id), `Duplicated as "${created.name}"`),
 			}),
 		GotDeleteDialogMessage: ({ message: inner }) =>
-			dialogStep(model, model.deleteDialog, inner, (deleteDialog) => ({ deleteDialog }), wrapDelete),
+			model.isDeleting
+				? { model }
+				: dialogStep(model, model.deleteDialog, inner, (deleteDialog) => ({ deleteDialog }), wrapDelete),
 		ClickedConfirmDelete: () => {
 			const pending = model.pendingDelete
-			const closed = closeDialog(model.deleteDialog, wrapDelete)
-			const next = { ...model, deleteDialog: closed.dialog, pendingDelete: null }
-			return pending === null || isReadOnly(model)
-				? { model: next, commands: closed.commands }
-				: {
-						model: next,
-						commands: [
-							...closed.commands,
-							DeleteDashboard({ orgId: context.orgId, id: pending.id }),
-						],
-					}
+			if (pending === null || model.isDeleting) return { model }
+			if (isReadOnly(model)) {
+				const closed = closeDialog(model.deleteDialog, wrapDelete)
+				return {
+					model: { ...model, deleteDialog: closed.dialog, pendingDelete: null },
+					commands: closed.commands,
+				}
+			}
+			return {
+				model: { ...model, isDeleting: true },
+				commands: [DeleteDashboard({ orgId: context.orgId, id: pending.id })],
+			}
 		},
-		CompletedDeleteDashboard: ({ result }) =>
-			Result.match(result, {
-				onFailure: (error) => failedWrite(model, error, context.orgId),
+		CompletedDeleteDashboard: ({ result }) => {
+			const closed = closeDialog(model.deleteDialog, wrapDelete)
+			const settled = { ...model, deleteDialog: closed.dialog, pendingDelete: null, isDeleting: false }
+			return Result.match(result, {
+				onFailure: (error) => {
+					const failed = failedWrite(settled, error, context.orgId)
+					return { ...failed, commands: [...closed.commands, ...(failed.commands ?? [])] }
+				},
 				onSuccess: (sync) =>
 					sync === "Behind"
-						? { model, outMessage: behindToast() }
-						: { model: { ...model, persistenceError: null } },
-			}),
+						? { model: settled, commands: closed.commands, outMessage: behindToast() }
+						: { model: { ...settled, persistenceError: null }, commands: closed.commands },
+			})
+		},
 		GotTagEditorMessage: ({ message: inner }) => {
 			const next = TagEditor.update(model.tagEditor, inner)
 			const commands = Command.mapMessages(next.commands ?? [], wrapTags)

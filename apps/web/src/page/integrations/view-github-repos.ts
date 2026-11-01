@@ -380,21 +380,22 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			slotId: "github-repo-delete",
 			model: model.githubCard.deleteDialog,
 			toParentMessage: (message) => Message.GotRepoDeleteDialogMessage({ message }),
-			title: "Delete repository from Maple",
+			title: "Delete repository from Maple?",
 			description: [
 				"This permanently removes",
 				" ",
 				strong(toDelete?.fullName ?? ""),
 				" and all of its synced commits from Maple. This cannot be undone. If you re-enable access in GitHub later, the repository will be re-synced from scratch.",
 			],
-			confirmLabel: "Delete",
+			confirmLabel: "Delete repository",
+			isPending: model.githubCard.deletingRepo !== null,
 			onConfirm: Message.ConfirmedRepoDelete(),
 		}),
 		confirmDialog(h, {
 			slotId: "github-branch-change",
 			model: model.githubCard.branchDialog,
 			toParentMessage: (message) => Message.GotBranchDialogMessage({ message }),
-			title: "Change tracked branch",
+			title: "Change tracked branch?",
 			description: [
 				"This switches ",
 				strong(pendingRepo?.fullName ?? ""),
@@ -408,6 +409,9 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			confirmLabel: "Track branch",
 			tone: "default",
 			hasIcon: false,
+			isPending:
+				pending !== null &&
+				model.githubCard.savingBranches.some((entry) => entry.repoId === pending.repoId),
 			onConfirm: Message.ConfirmedBranch(),
 		}),
 	]

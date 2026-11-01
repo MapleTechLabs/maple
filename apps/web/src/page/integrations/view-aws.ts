@@ -7,7 +7,6 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
 import { badge } from "../../ui/display"
 import { errorState } from "../../ui/error-state"
 import { icon } from "../../ui/icon"
@@ -23,6 +22,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
+import { disconnectConfirm } from "./view-disconnect"
 import { externalLink } from "./view-gcp-configure-parts"
 
 // `AwsIntegrationCard`.
@@ -71,7 +71,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 								isSelectionSaved(connection, selection),
 							isLoading: card.isSavingMetrics,
 						},
-						["Save"],
+						["Save changes"],
 					),
 					button(
 						h,
@@ -648,14 +648,12 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 export const awsDisconnectDialog = (h: H, model: Model): Html => {
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
 	const connection = status?.connections.find((entry) => entry.id === model.awsCard.disconnectId)
-	return confirmDialog(h, {
+	return disconnectConfirm(h, {
+		provider: "aws",
 		slotId: "aws-disconnect",
 		model: model.awsCard.disconnectDialog,
 		toParentMessage: (message) => Message.GotAwsDisconnectDialogMessage({ message }),
-		title: `Disconnect AWS account ${connection?.account_id ?? ""}`,
-		description:
-			"Maple stops assuming the role and removes this source. Data already collected stays. Afterwards, delete the stack in AWS with the script Maple shows.",
-		confirmLabel: "Disconnect",
+		subject: `AWS account ${connection?.account_id ?? ""}`,
 		isPending: model.awsCard.isDisconnecting,
 		onConfirm: Message.ConfirmedAwsDisconnect(),
 	})

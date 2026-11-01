@@ -9,7 +9,7 @@ import { skeleton } from "../../ui/skeleton"
 import { type IntegrationBrand, integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { Message, type StatusName } from "./message"
 import type { Model } from "./model"
-import { disconnectDialog } from "./view-disconnect"
+import { disconnectDialog, type SharedDisconnect } from "./view-disconnect"
 
 // The shell of a connected integration's card (Railway, Supabase) and its status-load states.
 
@@ -17,7 +17,7 @@ type H = HtmlBuilder<Message>
 
 export type ConnectedIntegrationCardOptions = Readonly<{
 	/** Also names the integration's disconnect dialog. */
-	integration: StatusName
+	integration: SharedDisconnect
 	brand: IntegrationBrand
 	title: string
 	badge: Html

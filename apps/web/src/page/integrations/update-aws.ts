@@ -32,6 +32,7 @@ import {
 } from "./aws"
 import { integrationOfSearch } from "./catalog"
 import { ReadClock } from "./command"
+import { disconnectSpec } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
@@ -262,7 +263,7 @@ export const completedDisconnect = (
 	error: string | null,
 ): Return => {
 	const settled = withCard(model, { isDisconnecting: false })
-	if (removed === null) return toast(settled, "error", "Couldn't disconnect AWS", error ?? "")
+	if (removed === null) return toast(settled, "error", disconnectSpec("aws").error, error ?? "")
 	const card = settled.awsCard
 	const stacks = [removed, ...card.removed.filter((stack) => stack.connectionId !== removed.connectionId)]
 	return chain(
@@ -282,7 +283,7 @@ export const completedDisconnect = (
 				commands: [WriteAwsRemoved({ orgId: context.orgId, removed: stacks })],
 			}),
 			(next) =>
-				toast(next, "success", "AWS disconnected", "Delete the stack in AWS to remove the role."),
+				toast(next, "success", disconnectSpec("aws").success, "Delete the stack in AWS to remove the role."),
 			(next) => requestStatus(next, context, "aws", "Supersede"),
 		],
 	)

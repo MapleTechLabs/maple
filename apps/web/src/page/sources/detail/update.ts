@@ -559,6 +559,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: withSettings(model, (form) => ({ ...form, description: value })),
 		}),
 		SubmittedSettings: () => save(model),
+		ClickedDiscardSettings: () =>
+			model.settings === null || model.settings.isSaving
+				? { model }
+				: Option.match(sourceOf(model), {
+						onNone: () => ({ model }),
+						onSome: (source) => ({ model: { ...model, settings: settingsOf(source) } }),
+					}),
 		CompletedSave: ({ result }) =>
 			settled(
 				withSettings(model, (form) => ({ ...form, isSaving: false })),

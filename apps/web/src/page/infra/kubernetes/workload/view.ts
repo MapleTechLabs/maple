@@ -7,6 +7,7 @@ import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { segmentedSelect } from "../../../../ui/segmented-select"
+import { switchControl } from "../../../../ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import * as Frame from "../../kit/frame"
@@ -142,16 +143,17 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						onChange: (value) => Message.ClickedMetric({ metric: value }),
 						ariaLabel: "Metric",
 					}),
-					h.label(
+					h.div(
 						[h.Class("inline-flex items-center gap-2 text-2xs text-muted-foreground")],
 						[
-							h.input([
-								h.Type("checkbox"),
-								h.Checked(model.groupByPod),
-								h.Class("size-3 accent-primary"),
-								h.OnClick(Message.ToggledGroupByPod({ isChecked: !model.groupByPod })),
-							]),
-							"Per-pod breakdown",
+							...switchControl(h, {
+								id: "workload-group-by-pod",
+								inputId: "workload-group-by-pod-input",
+								isChecked: model.groupByPod,
+								labelledBy: "workload-group-by-pod-label",
+								onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
+							}),
+							h.span([h.Id("workload-group-by-pod-label")], ["Per-pod breakdown"]),
 						],
 					),
 				],

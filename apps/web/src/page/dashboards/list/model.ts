@@ -66,6 +66,8 @@ export const Model = Schema.Struct({
 	rowMenu: Menu.Model,
 	pendingDelete: Schema.NullOr(ListDashboard),
 	deleteDialog: Dialog.Model,
+	/** The delete is in flight: the dialog stays open, its confirm pending, until it answers. */
+	isDeleting: Schema.Boolean,
 	pendingTags: Schema.NullOr(ListDashboard),
 	tagEditor: TagEditor.Model,
 	/** `TagFilterMenu`: the multi-select tag combobox; its selection is the URL's `tags`. */
