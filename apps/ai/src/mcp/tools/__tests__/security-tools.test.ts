@@ -138,6 +138,11 @@ describe("list_security_findings", () => {
 		expect(text).toContain("is past the last of the")
 	})
 
+	it("drills into an area over the window the overview read", async () => {
+		const { output, text } = await list(admin, {})
+		expect(text).toContain(`area="exposure" start_time="${output.window.startTime}"`)
+	})
+
 	it("says when a target's latest audit stopped early", async () => {
 		const { output } = await list(admin, { area: "code" })
 		expect(output.areas[0]?.summary).toContain(
@@ -255,6 +260,27 @@ describe("inspect_security_finding", () => {
 		} finally {
 			rules.shift()
 			await isolated.dispose()
+		}
+	})
+
+	it("does not answer clean when no repository is connected", async () => {
+		const empty = makeEvalRuntime()
+		try {
+			const tenant = { ...empty.tenant, roles: admin.tenant.roles }
+			const result: McpToolResult = await runToolDirect(
+				{ ...empty, tenant },
+				"inspect_security_finding",
+				{
+					id: "CVE-1999-0001",
+				},
+			)
+			const output = Schema.decodeUnknownSync(InspectSecurityFindingOutput)(result.structuredContent)
+			expect(output.coverage[0]).toBe(
+				"Verdict: not found in what Maple could read; unknown for dependencies (no repository is connected).",
+			)
+			expect(markdown(result)).not.toContain("no match means none of your scanned lockfiles")
+		} finally {
+			await empty.dispose()
 		}
 	})
 

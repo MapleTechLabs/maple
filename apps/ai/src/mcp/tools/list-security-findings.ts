@@ -238,7 +238,12 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 						.map((area) =>
 							doc.next(
 								TOOL,
-								{ ...filterArgs(output.filters), area: area.area },
+								{
+									...filterArgs(output.filters),
+									area: area.area,
+									start_time: output.window.startTime,
+									end_time: output.window.endTime,
+								},
 								`every ${area.area} finding`,
 							),
 						),

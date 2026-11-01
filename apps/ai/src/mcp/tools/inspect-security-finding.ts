@@ -11,6 +11,7 @@ import {
 	codeSeverityOf,
 	dependencyFixOf,
 	displayAdvisory,
+	EXPOSED_LIMIT,
 	exposedSeverity,
 	exposureIdOf,
 	fixedByRun,
@@ -84,7 +85,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			const matches: Array<Match> = []
 
 			if (code !== undefined && code._tag !== "read") {
-				if (code._tag !== "not_connected") notSearched.push(`code: ${code.message}`)
+				notSearched.push(`code: ${code.message}`)
 			} else if (code !== undefined) {
 				const repositoryServices = repositoryServicesOf(dependencies)
 				const hits = code.targets
@@ -173,8 +174,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			}
 
 			if (dependencies !== undefined && dependencies._tag !== "read") {
-				if (dependencies._tag !== "not_connected")
-					notSearched.push(`dependencies: ${dependencies.message}`)
+				notSearched.push(`dependencies: ${dependencies.message}`)
 			} else if (dependencies !== undefined) {
 				if (!dependencies.productionKnown)
 					notSearched.push(
@@ -301,6 +301,14 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			if (exposure !== undefined && exposure._tag !== "read")
 				notSearched.push(`exposure: ${exposure.message}`)
 			else if (exposure !== undefined) {
+				// The read keeps the most recent answered probes only: a miss past that is not "not exposed".
+				if (
+					exposure.exposed.length >= EXPOSED_LIMIT &&
+					!exposure.exposed.some((row) => exposureIdOf(row).toLowerCase() === needle)
+				)
+					notSearched.push(
+						`exposure: only the ${EXPOSED_LIMIT} most recent answered probes were read; narrow start_time/end_time to reach older ones`,
+					)
 				const catchAll = new Set(catchAllServices(exposure.signatures).map((entry) => entry.service))
 				matches.push(
 					...exposure.exposed
@@ -369,9 +377,12 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 					...(runtimes !== undefined && runtimes._tag !== "read" ? ["runtimes"] : []),
 					...(!productionKnown ? ["which production services run it"] : []),
 				]
+				// Nothing connected is not a clean result either: no lockfile was ever read.
+				const notConnected = dependencies?._tag === "not_connected"
 				const unknown = [
 					unscanned.length === 0 ? "" : `; unknown for ${unscanned.join(", ")} (never scanned)`,
 					unread.length === 0 ? "" : `; unknown for ${unread.join(" and ")} (could not be read)`,
+					notConnected ? "; unknown for dependencies (no repository is connected)" : "",
 				].join("")
 				const closed =
 					closedDeps.length === 0
@@ -384,7 +395,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 							? `Verdict: affected in code (${openDeps.map((m) => m.repository).join(", ")})${productionKnown ? ", but no production service is known to run it" : ""}${closed}${unknown}.`
 							: closedDeps.length > 0
 								? `Verdict: not affected now${closed}${unknown}.`
-								: unread.length === 0
+								: unread.length === 0 && !notConnected
 									? `Verdict: not found in anything Maple checked${unknown}.`
 									: `Verdict: not found in what Maple could read${unknown}.`,
 				)
