@@ -13,6 +13,7 @@ import type { APIRoute } from "astro"
 import { competitors } from "../lib/competitors"
 import { features } from "../lib/features"
 import { useCases } from "../lib/use-cases"
+import { allGuides } from "../lib/guides"
 import { absolute, plainText } from "../lib/page-markdown"
 import { API_ORIGIN, API_PATHS, GITHUB_URL, SITE_PATHS } from "../lib/agent-resources"
 
@@ -43,13 +44,6 @@ export const GET: APIRoute = ({ site }) => {
 		`- Example: [${url("/docs/getting-started/introduction.md")}](${url("/docs/getting-started/introduction.md")})`,
 		"",
 
-		"## Use Maple with an AI agent",
-		"",
-		"Query and operate Maple through MCP, find instrumentation skills, and check the dashboard and API revisions deployed to your region without a browser.",
-		"",
-		`- [AI agent guide: connection, workflows, deployed revisions and skills](${url("/docs/getting-started/ai-agents.md")})`,
-		"",
-
 		"## Pricing",
 		"",
 		"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $5 per million (page views not counted).",
@@ -66,8 +60,7 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Changelog",
 		"",
-		`Maple product announcements, one entry per announced change. The index enumerates every entry. ${CONVENTION("changelog")}`,
-		`An entry does not show which commit a region is running. To check the deployed dashboard and API revisions, see the [AI agent guide](${url("/docs/getting-started/ai-agents.md#check-whether-a-maple-cloud-fix-is-deployed")}).`,
+		`Maple product updates, one entry per shipped change. The index enumerates every entry. ${CONVENTION("changelog")}`,
 		"",
 		...both("Changelog index", "/changelog"),
 		`- [RSS feed](${url("/changelog/rss.xml")})`,
@@ -85,13 +78,6 @@ export const GET: APIRoute = ({ site }) => {
 		`One page per capability: tracing, session replay, logs, metrics, service catalog, error tracking, MCP, Kubernetes. ${CONVENTION("feature")}`,
 		"",
 		...features.map((feature) => `- [${feature.navLabel()}](${url(`/features/${feature.slug}.md`)})`),
-		"",
-
-		"## Integrations",
-		"",
-		`Every language, agent framework, cloud, database and alert destination Maple works with, each linked to its setup guide.`,
-		"",
-		...both("Integrations", "/integrations"),
 		"",
 
 		"## Use cases",
@@ -117,23 +103,7 @@ export const GET: APIRoute = ({ site }) => {
 		"Evergreen explanations of application performance monitoring, observability, OpenTelemetry, and the tools used to operate production software.",
 		"",
 		`- [Guides index](${url("/guides")})`,
-		`- [What is APM, and why is it important?](${url("/guides/what-is-apm")})`,
-		`- [What is Apdex, and how do you use the score?](${url("/guides/what-is-apdex")})`,
-		`- [Uptime monitoring with traces and HTTP checks](${url("/guides/uptime-monitoring")})`,
-		`- [Prometheus metrics, explained](${url("/guides/prometheus-metrics")})`,
-		`- [Log parsing: from raw lines to structured fields](${url("/guides/log-parsing")})`,
-		`- [Remote server monitoring with OpenTelemetry](${url("/guides/remote-server-monitoring")})`,
-		`- [What is observability?](${url("/observability")})`,
-		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
-		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
-		`- [Pino logger for Node.js: setup, levels and trace IDs](${url("/guides/pino-logger")})`,
-		`- [New Relic pricing, explained](${url("/guides/new-relic-pricing")})`,
-		`- [Sentry pricing in 2026: free plan, plans and monthly costs](${url("/guides/sentry-pricing")})`,
-		`- [Dynatrace pricing, explained](${url("/guides/dynatrace-pricing")})`,
-		`- [Loguru for Python](${url("/guides/loguru")})`,
-		`- [Python logging levels and how to set them](${url("/guides/python-logging-levels")})`,
-		`- [Incident response, step by step](${url("/guides/incident-response")})`,
-		`- [Windows server monitoring tools and what to watch](${url("/guides/windows-server-monitoring")})`,
+		...allGuides.map((guide) => `- [${guide.title}](${url(guide.href)})`),
 		"",
 
 		"## Maple API",
