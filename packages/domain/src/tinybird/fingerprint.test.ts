@@ -57,9 +57,9 @@ describe("error fingerprint normalization", () => {
 			statusMessage: "",
 		})
 
-		// Header line is skipped; only File lines with :NUMBER are kept.
-		expect(result.topFrame).toContain("/app/main.py")
-		expect(result.topFrame).not.toContain("Traceback")
+		// Header line is skipped; Python prints the raise site last, so it is read first.
+		expect(result.topFrame).toBe('  File "/app/db.py", , in query')
+		expect(result.fpFrames).toContain("/app/main.py")
 		// Line numbers are stripped; identifiers remain.
 		expect(result.topFrame).not.toMatch(/line 42/)
 	})
@@ -228,7 +228,7 @@ describe("error fingerprint normalization", () => {
 				statusMessage: "",
 			})
 
-			expect(result.topFrame).toContain("/$bunfs/root/maple")
+			expect(result.topFrame).toBe("    at <anonymous> (maple)")
 			expect(result.fpFrames).not.toContain("position")
 			expect(result.fpFrames).not.toContain("start_time")
 		})
@@ -326,12 +326,33 @@ describe("error fingerprint normalization", () => {
 			const b = computeFingerprintInputs({
 				exceptionType: "HttpServerError",
 				exceptionStacktrace: "",
-				statusMessage: "RouteNotFound (GET /.env)",
+				statusMessage: "RequestParseError (POST /api/query): body too large",
 			})
 
 			expect(a.msgSignature).not.toBe(b.msgSignature)
-			expect(a.msgSignature).toContain("/robots.txt")
-			expect(b.msgSignature).toContain("/.env")
+			expect(b.msgSignature).toContain("/api/query")
+		})
+
+		it("folds every unmatched path into one route-not-found issue per method", () => {
+			// Scanners probe hundreds of paths; each used to mint its own issue.
+			const signature = (statusMessage: string) =>
+				computeFingerprintInputs({
+					exceptionType: "HttpServerError",
+					exceptionStacktrace: "",
+					statusMessage,
+				}).msgSignature
+			for (const [a, b] of [
+				[
+					"RouteNotFound (GET /.env)",
+					"RouteNotFound (GET /wp-content/plugins/x/connector.php?lang=en)",
+				],
+				["Cannot GET /.git/index", "Cannot GET /admin/phpmyadmin/"],
+				["Route GET:/.env not found", "Route GET:/backup.sql not found"],
+				['No route found for "GET https://x.dev/.env"', 'No route found for "GET /a (b)"'],
+			]) {
+				expect(signature(a)).toBe(signature(b))
+			}
+			expect(signature("RouteNotFound (GET /.env)")).not.toBe(signature("RouteNotFound (POST /.env)"))
 		})
 
 		it("splits a malformed-ExceptionType bucket (JSON-prefix leak) by message", () => {
@@ -511,7 +532,7 @@ describe("error fingerprint normalization", () => {
 				sig(
 					'{"type":"https://e/rate-limit","title":"Rate limited","detail":"retry in 5s","status":429}',
 				),
-			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="https://e/rate-limit"')
+			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="/rate-limit"')
 		})
 
 		it("is insensitive to key order", () => {
@@ -850,7 +871,7 @@ describe("fingerprint v3", () => {
 					exceptionStacktrace: at("4.0.3"),
 					statusMessage: "",
 				}).topFrame,
-			).toContain("effect@#/")
+			).toBe("    at fail (node_modules/effect/dist/Effect.js)")
 		})
 
 		it("drops location-less span frames, so an Effect span rename keeps the issue", () => {
@@ -889,6 +910,66 @@ describe("fingerprint v3", () => {
 			const at = (index: number) => stack(`    at Promise.all (index ${index})`)
 
 			expect(key("Error", at(3), "")).toBe(key("Error", at(17), ""))
+		})
+
+		it("reads a Python traceback from the raise site, not the shared framework layers", () => {
+			const traceback = (raiseSite: string) =>
+				[
+					"Traceback (most recent call last):",
+					'  File "/app/.venv/lib/python3.12/site-packages/opentelemetry/instrumentation/asgi/__init__.py", line 631, in __call__',
+					'  File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 165, in __call__',
+					'  File "/app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 74, in app',
+					raiseSite,
+					"ValueError: invalid input",
+				].join("\n")
+
+			expect(
+				key("ValueError", traceback('  File "/app/orders.py", line 12, in create'), "invalid input"),
+			).not.toBe(
+				key("ValueError", traceback('  File "/app/users.py", line 40, in update'), "invalid input"),
+			)
+		})
+
+		it("keeps a dependency frame across install roots, hoisting and version bumps", () => {
+			const at = (frame: string) => key("Error", stack(frame), "")
+
+			expect(at("    at decode (/app/node_modules/effect/dist/Schema.js:1:2)")).toBe(
+				at("    at decode (file:///var/task/apps/api/node_modules/effect/dist/Schema.js:9:3)"),
+			)
+			expect(
+				at("\tfrom /usr/local/bundle/ruby/3.3.0/gems/rack-3.1.7/lib/rack/lint.rb:5:in 'call'"),
+			).toBe(at("\tfrom /app/vendor/bundle/ruby/3.4.0/gems/rack-3.2.1/lib/rack/lint.rb:8:in 'call'"))
+			expect(at("\t/root/go/pkg/mod/github.com/jackc/pgx/v5@v5.5.0/conn.go:12 +0x1d")).toBe(
+				at("\t/home/runner/go/pkg/mod/github.com/jackc/pgx/v5@v5.7.1/conn.go:40 +0x2a"),
+			)
+			expect(at('  File "/usr/local/lib/python3.11/asyncio/runners.py", line 4, in run')).toBe(
+				at('  File "/usr/local/lib/python3.12/asyncio/runners.py", line 9, in run'),
+			)
+			expect(at("    at decode (/app/node_modules/effect/dist/Schema.js:1:2)")).not.toBe(
+				at("    at decode (/app/node_modules/effect/dist/Effect.js:1:2)"),
+			)
+		})
+
+		it("ignores the numbers a JVM assigns to generated classes in creation order", () => {
+			const at = (n: number) =>
+				key(
+					"java.lang.IllegalStateException",
+					stack(
+						`\tat com.acme.Orders$$Lambda$${n}/0x0000000800c0b440.apply(Unknown Source)`,
+						`\tat jdk.internal.reflect.GeneratedMethodAccessor${n}.invoke(Unknown Source)`,
+						`\tat jdk.proxy${n % 7}/jdk.proxy${n % 7}.$Proxy${n}.save(Unknown Source)`,
+					),
+					"",
+				)
+
+			expect(at(123)).toBe(at(4512))
+		})
+
+		it("counts an anonymous or indented `@path:line:col` frame", () => {
+			const a = stack("   @/app/src/orders.js:4:2", "   @/app/src/http.js:9:1")
+			const b = stack("   @/app/src/users.js:4:2", "   @/app/src/http.js:9:1")
+
+			expect(key("TypeError", a, "")).not.toBe(key("TypeError", b, ""))
 		})
 	})
 
@@ -960,6 +1041,18 @@ describe("fingerprint v3", () => {
 			expect(signature("HTTP 503 from gateway")).toBe("HTTP 5xx from gateway")
 		})
 
+		it("keeps the status of an HttpClient response error and of `statusCode: N`", () => {
+			const response = (status: number) =>
+				signature(`StatusCode error (${status} GET https://api.acme.dev/users)`)
+
+			expect(response(404)).toBe("StatusCode error (404 GET /users)")
+			expect(response(429)).not.toBe(response(404))
+			expect(response(530)).toBe("StatusCode error (5xx GET /users)")
+			expect(response(502)).toBe(response(530))
+			expect(signature("statusCode: 401")).not.toBe(signature("statusCode: 503"))
+			expect(signature("status=404")).toBe("status=404")
+		})
+
 		it("replaces filesystem-rooted paths with PATH", () => {
 			expect(signature("ENOENT: no such file or directory, open '/tmp/maple-a81f/wal.log'")).toBe(
 				"ENOENT: no such file or directory, open 'PATH'",
@@ -1001,6 +1094,17 @@ describe("fingerprint v3", () => {
 				signature(json("9b2f1c3e-0d4a-4f6b-8c7e-1a2b3c4d5e6f")),
 			)
 			expect(signature(json("550e8400-e29b-41d4-a716-446655440000"))).toBe('error="not_found"|id="#"')
+		})
+
+		it("strips URL origins and emails from a JSON value", () => {
+			const json = (url: string, user: string) => JSON.stringify({ error: "fetch_failed", url, user })
+
+			expect(signature(json("https://a.acme.dev/favicon.ico", "ann@acme.dev"))).toBe(
+				'error="fetch_failed"|url="/favicon.ico"|user="EMAIL"',
+			)
+			expect(signature(json("https://b.other.io/favicon.ico", "bo@other.io"))).toBe(
+				signature(json("https://a.acme.dev/favicon.ico", "ann@acme.dev")),
+			)
 		})
 	})
 })

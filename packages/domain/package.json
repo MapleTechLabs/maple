@@ -91,6 +91,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",
+		"fast-check": "^4.10.2",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}
