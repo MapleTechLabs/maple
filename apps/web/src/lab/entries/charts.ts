@@ -397,7 +397,7 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 const emptyMetricsGrid = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.DataAttribute("metrics-grid", ""), h.Class("grid grid-cols-1 md:grid-cols-2 gap-3")],
-		["Latency", "Throughput", "Apdex", "Error Rate"].map((title) =>
+		["Latency", "Throughput", "Apdex", "Error rate"].map((title) =>
 			h.div(
 				[h.Class("h-[240px] md:h-[280px]")],
 				[

@@ -185,5 +185,5 @@ export const breadcrumbsOf = (model: Model) => {
 		onFailure: () => "Error",
 		onData: (page) => (page.data.length === 0 ? "Not found" : breadcrumbSessionId(model.sessionId)),
 	})
-	return [{ label: "Agent Sessions", href: buildBackToSessionsHref(model.searchStr) }, { label: last }]
+	return [{ label: "Agent sessions", href: buildBackToSessionsHref(model.searchStr) }, { label: last }]
 }

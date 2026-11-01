@@ -163,7 +163,7 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 										icon(h, "PlusIcon", {
 											attributes: [h.DataAttribute("icon", "inline-start")],
 										}),
-										h.span([h.Class("hidden @min-[560px]/page:inline")], ["Add Widget"]),
+										h.span([h.Class("hidden @min-[560px]/page:inline")], ["Add widget"]),
 									],
 								),
 							]

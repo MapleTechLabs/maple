@@ -178,7 +178,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: DB_CHART_TOKENS }))],
 		[
-			dashboardPage(h, { title: "Service Map", actions: headerActions(h, model) }, [
+			dashboardPage(h, { title: "Service map", actions: headerActions(h, model) }, [
 				Option.match(AsyncData.getError(model.facets.data), {
 					onSome: (failure) =>
 						errorState(h, {
