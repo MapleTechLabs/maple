@@ -115,7 +115,7 @@ export const serverError = <M>(
 	)
 
 /** `executor`, `executor and Claude`, `executor, Claude and 2 more`. */
-const connectedText = (names: ReadonlyArray<string>): string =>
+export const connectedText = (names: ReadonlyArray<string>): string =>
 	names.length <= 2 ? names.join(" and ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
 
 /** The server answered nothing in the window; `lastCall` when the page knows when it last did. */
