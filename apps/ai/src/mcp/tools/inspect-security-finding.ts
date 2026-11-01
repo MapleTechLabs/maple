@@ -176,6 +176,10 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 				if (dependencies._tag !== "not_connected")
 					notSearched.push(`dependencies: ${dependencies.message}`)
 			} else if (dependencies !== undefined) {
+				if (!dependencies.productionKnown)
+					notSearched.push(
+						"production: telemetry could not be read, so which services run these packages is unknown",
+					)
 				const hits = dependencies.findings.filter(
 					(finding) =>
 						finding.id === needle ||
@@ -354,6 +358,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 								.filter((repo) => repo.latestScan === null)
 								.map((repo) => repo.fullName)
 						: []
+				const productionKnown = dependencies?._tag !== "read" || dependencies.productionKnown
 				// A failed read is not a clean result: say which side Maple could not check.
 				const unread = [
 					...(dependencies !== undefined &&
@@ -362,6 +367,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 						? ["dependencies"]
 						: []),
 					...(runtimes !== undefined && runtimes._tag !== "read" ? ["runtimes"] : []),
+					...(!productionKnown ? ["which production services run it"] : []),
 				]
 				const unknown = [
 					unscanned.length === 0 ? "" : `; unknown for ${unscanned.join(", ")} (never scanned)`,
@@ -375,7 +381,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 					affected.length > 0
 						? `Verdict: affected: ${affected.join(", ")}${closed}${unknown}.`
 						: openDeps.length > 0
-							? `Verdict: affected in code (${openDeps.map((m) => m.repository).join(", ")}), but no production service is known to run it${closed}${unknown}.`
+							? `Verdict: affected in code (${openDeps.map((m) => m.repository).join(", ")})${productionKnown ? ", but no production service is known to run it" : ""}${closed}${unknown}.`
 							: closedDeps.length > 0
 								? `Verdict: not affected now${closed}${unknown}.`
 								: unread.length === 0

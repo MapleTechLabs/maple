@@ -256,11 +256,17 @@ export interface DependencyScanReaderApi {
 		DependencyScanPersistenceError
 	>
 	readonly listFindings: DependencyScanServiceApi["listFindings"]
-	/** One finding by id with the services running it, past the list's cap; None when its repository is gone. */
+	/**
+	 * One finding by id with the services running it, past the list's cap; None when its repository is
+	 * gone. `productionKnown` is false when telemetry could not be read, so no services means unknown.
+	 */
 	readonly getFinding: (
 		tenant: TenantContext,
 		id: DependencyFindingId,
-	) => Effect.Effect<Option.Option<DependencyFindingView>, DependencyScanPersistenceError>
+	) => Effect.Effect<
+		Option.Option<{ readonly finding: DependencyFindingView; readonly productionKnown: boolean }>,
+		DependencyScanPersistenceError
+	>
 }
 
 /** The Dependencies tab's reads, without the VCS sync queue, so a Worker without it can read findings. */
@@ -519,9 +525,14 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 					productionByFinding(production.running, production.completed, production.matches).get(
 						findingKey(row.value),
 					) ?? []
-				return Option.some(
-					findingViewOf(row.value, owner.repository.fullName, services.map(toRunningService)),
-				)
+				return Option.some({
+					finding: findingViewOf(
+						row.value,
+						owner.repository.fullName,
+						services.map(toRunningService),
+					),
+					productionKnown: production.available,
+				})
 			})
 
 			return {

@@ -240,12 +240,15 @@ export const readDependencies = (tenant: TenantContext, options: DependencyReadO
 		}
 		const findingId = options.findingId
 		if (findingId !== undefined) {
-			const finding = yield* reader.getFinding(tenant, findingId)
+			const found = yield* reader.getFinding(tenant, findingId)
 			return {
 				_tag: "read",
 				repositories: repositories.repositories,
-				findings: Option.toArray(finding),
-				productionKnown: true,
+				findings: Option.toArray(Option.map(found, (hit) => hit.finding)),
+				productionKnown: Option.match(found, {
+					onNone: () => true,
+					onSome: (hit) => hit.productionKnown,
+				}),
 				capped: false,
 			} satisfies DependencyRead
 		}
