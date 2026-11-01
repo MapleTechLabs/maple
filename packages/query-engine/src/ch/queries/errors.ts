@@ -360,7 +360,7 @@ const TREE_SPAN_ATTR_KEYS = [
 
 /**
  * Resource attribute keys the trace detail reads: the header's env and commit, and the
- * runtime and SDK behind each service's mark in the waterfall. Everything else in
+ * runtime, SDK and platform behind each service's mark in the waterfall. Everything else in
  * `ResourceAttributes` is loaded lazily by `spanDetailQuery`.
  */
 const TREE_RESOURCE_ATTR_KEYS = [
@@ -369,6 +369,7 @@ const TREE_RESOURCE_ATTR_KEYS = [
 	"process.runtime.name",
 	"telemetry.sdk.language",
 	"telemetry.sdk.name",
+	"cloud.platform",
 ] as const
 
 /**

@@ -129,6 +129,11 @@ describe("waterfall", () => {
 			spanAttributes: { "db.system.name": "postgresql" },
 			resourceAttributes: api,
 		}
+		const worker = {
+			...node("w", 1),
+			serviceName: "edge",
+			resourceAttributes: { "cloud.platform": "cloudflare.workers", "process.runtime.name": "workerd" },
+		}
 		const llm = {
 			...node("l", 1),
 			serviceName: "agent",
@@ -137,13 +142,14 @@ describe("waterfall", () => {
 		}
 		const trace: TraceData = {
 			...small,
-			rootSpans: [{ ...node("r", 0, [query, llm]), resourceAttributes: api }],
+			rootSpans: [{ ...node("r", 0, [query, llm, worker]), resourceAttributes: api }],
 		}
 		scene(
 			{ update, view },
-			given(update(entered(trace), windowOver(3)).model),
-			Mount.resolve(VirtualizeWaterfall, windowOver(3)),
+			given(update(entered(trace), windowOver(4)).model),
+			Mount.resolve(VirtualizeWaterfall, windowOver(4)),
 			expectView(role("img", { name: "PostgreSQL" })).toExist(),
+			expectView(role("img", { name: "Cloudflare Worker" })).toExist(),
 			expectView(role("img", { name: "LLM call · Anthropic" })).toExist(),
 			expectView(role("img", { name: "Python" })).toExist(),
 			// The query stays in the root's service, so only the root carries its runtime.

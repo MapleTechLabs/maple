@@ -1,4 +1,5 @@
 import { cacheResultStyles, getCacheInfo } from "@maple/ui/lib/cache"
+import { CLOUDFLARE_ACCENT_CLASS } from "@maple/ui/lib/cloud-platforms/accents"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getHttpInfo, HTTP_METHOD_COLORS, httpStatusTone } from "@maple/ui/lib/http"
@@ -237,9 +238,12 @@ type HttpInfo = NonNullable<ReturnType<typeof getHttpInfo>>
 
 /** The Cloudflare Worker mark, else the service's runtime or Effect. */
 const serviceMark = (span: SpanNodeData): Mark | null => {
-	const platform = rowPlatform({ ...span.spanAttributes })
-	if (platform?.id === "cloudflare")
-		return { icon: platform.icon, label: platform.label, className: platform.accentClassName }
+	// Workers report `cloud.platform` on the resource; Worker spans may carry it themselves.
+	const isWorker =
+		rowPlatform({ ...span.spanAttributes })?.id === "cloudflare" ||
+		span.resourceAttributes["cloud.platform"] === "cloudflare.workers"
+	if (isWorker)
+		return { icon: "CloudflareIcon", label: "Cloudflare Worker", className: CLOUDFLARE_ACCENT_CLASS }
 	return serviceRuntime({ ...span.resourceAttributes })
 }
 
