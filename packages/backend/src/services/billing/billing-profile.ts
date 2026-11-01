@@ -123,7 +123,8 @@ export const unlinkedProfile = (): BillingProfile => new BillingProfile({ linked
 
 /**
  * Read the Stripe customer + its tax IDs (concurrently) into a `BillingProfile`.
- * Both are pure reads, so a Stripe 4xx here is our bug and collapses to 502.
+ * A customer Stripe no longer has (deleted, or Autumn linked another account's) reads as
+ * unlinked; any other Stripe 4xx here is our bug and collapses to 502.
  */
 export const readBillingProfile = (
 	stripe: Pick<StripeClientApi, "getCustomer" | "listTaxIds">,
@@ -134,6 +135,10 @@ export const readBillingProfile = (
 			[stripe.getCustomer(stripeCustomerId), stripe.listTaxIds(stripeCustomerId)],
 			{ concurrency: 2 },
 		)
+		if (isResourceMissing(customerResult)) {
+			yield* Effect.annotateCurrentSpan("maple.billing.stripe_customer_missing", true)
+			return unlinkedProfile()
+		}
 		const customer = yield* ensureOk(customerResult).pipe(
 			Effect.flatMap((body) => decodeUpstream(StripeCustomer, body)),
 		)
@@ -167,10 +172,12 @@ const decodeStripeCode = (value: unknown): Option.Option<string> =>
 		Option.map((body) => body.code),
 	)
 
+/** Stripe's answer for an object it does not have: 404 `resource_missing`. */
+const isResourceMissing = (result: AutumnResult): boolean =>
+	result.statusCode === 404 && rejectionCode(result) === "resource_missing"
+
 /**
  * Deleting a tax ID Stripe no longer has is a success, not an error: the row
- * was already removed (double click, second tab). Stripe answers 404
- * `resource_missing`; anything else passes through for classification.
+ * was already removed (double click, second tab). Anything else passes through for classification.
  */
-export const isAlreadyRemoved = (result: AutumnResult): boolean =>
-	result.statusCode === 404 && rejectionCode(result) === "resource_missing"
+export const isAlreadyRemoved = isResourceMissing

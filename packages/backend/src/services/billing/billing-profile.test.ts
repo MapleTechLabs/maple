@@ -188,18 +188,34 @@ describe("readBillingProfile", () => {
 		}),
 	)
 
-	it.effect("collapses a Stripe rejection on the read into a 502", () =>
+	const missing: AutumnResult = {
+		statusCode: 404,
+		response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+	}
+
+	it.effect("reads a customer Stripe no longer has as unlinked", () =>
+		Effect.gen(function* () {
+			const profile = yield* readBillingProfile(
+				{ getCustomer: () => Effect.succeed(missing), listTaxIds: () => Effect.succeed(missing) },
+				CUS,
+			)
+			assert.isFalse(profile.linked)
+			assert.deepStrictEqual(profile.taxIds, [])
+		}),
+	)
+
+	it.effect("collapses any other Stripe rejection on the read into a 502", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
 				readBillingProfile(
 					{
 						getCustomer: () =>
 							Effect.succeed({
-								statusCode: 404,
+								statusCode: 400,
 								response: {
-									message: "No such customer",
-									code: "resource_missing",
-									statusCode: 404,
+									message: "Invalid request",
+									code: "parameter_invalid",
+									statusCode: 400,
 								},
 							}),
 						listTaxIds: () => Effect.succeed(ok({ data: [] })),
