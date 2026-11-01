@@ -97,7 +97,7 @@ LIMIT 20
    - The trace runs for many minutes: the root span is still open.
    - The parent belongs to a service that exports to another Maple organization or another backend.
 
-5. If the source code is available, locally or through search_source_code and read_source_file, find where each affected service sets up OpenTelemetry. Check that it flushes at the end of each request, invocation or command, and shuts the SDK down on SIGTERM.
+5. If the source code is available locally, find where each affected service sets up OpenTelemetry. Check that it flushes at the end of each request, invocation or command, and shuts the SDK down on SIGTERM.
 
 6. Report per service: the cause, the trace IDs that show it, and the code or configuration change that fixes it. Don't change any code until I confirm.
 ```

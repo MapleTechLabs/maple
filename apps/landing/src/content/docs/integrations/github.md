@@ -1,6 +1,6 @@
 ---
 title: "GitHub"
-description: "Install the Maple GitHub App to sync repositories and commit history, resolve commit SHAs in your telemetry, trace your GitHub Actions runs, and give the MCP server read access to your source code."
+description: "Install the Maple GitHub App to sync repositories and commit history, resolve commit SHAs in your telemetry, trace your GitHub Actions runs, and give Maple's agents read access to your source code."
 group: "Integrations"
 order: 4
 ---
@@ -11,7 +11,7 @@ Once connected, the integration does three things:
 
 - **Commit context in telemetry.** When your services report the `vcs.ref.head.revision` resource attribute, Maple resolves the SHA against synced commits. The trace view and service pages show a commit hover card with the author, message, and a link to GitHub.
 - **CI traces.** Every finished GitHub Actions run becomes a trace under the `github-actions` service: the run is the root span, each job a child span, and each step a span inside its job. No workflow changes are needed. Each job's log comes along as logs on those spans.
-- **Source code tools for the MCP server.** The [MCP server](/docs/reference/mcp) gains three read-only tools that reach your repositories through the app installation: `list_source_repositories`, `search_source_code` (GitHub code search on the default branch), and `read_source_file` (a line range at a branch, tag, or commit SHA). An assistant can go from an exception in a trace to the code that raised it.
+- **Source code for Maple's agents.** Investigations and pull request review read your repositories through the app installation, so they can go from an exception in a trace to the code that raised it. These reads are not offered to third-party assistants on the [MCP server](/docs/reference/mcp).
 
 ## Prerequisites
 
@@ -85,10 +85,9 @@ Logs arrive a few seconds after their job's spans, since GitHub publishes a log 
 - **Traces show a SHA without a hover card.** The SHA must be a full 40-character commit on a synced tracked branch within the synced history.
 - **No CI traces appear.** Traces are written when a run or job finishes, so a run in progress has none yet. Check that **CI traces and logs** is on for the GitHub source in **Sources**. If finished runs are still missing, open the [GitHub App settings](https://github.com/settings/installations) and accept any pending permission request from the Maple app.
 - **CI traces appear but no CI logs.** A job whose steps never ran has no log to send, and a log GitHub takes too long to serve is skipped.
-- **`search_source_code` finds nothing.** GitHub code search indexes only the default branch and matches whole tokens. Search for exact identifiers or exception text.
 
 ## Next steps
 
 - [OpenTelemetry conventions](/docs/concepts/otel-conventions): the `vcs.*` resource attributes Maple reads.
-- [MCP server](/docs/reference/mcp): connect an assistant and use the source code tools.
+- [MCP server](/docs/reference/mcp): connect an assistant to your telemetry.
 - [Traces](/docs/explore/traces): where commit context appears.

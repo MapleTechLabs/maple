@@ -171,7 +171,7 @@ export interface IntegrationInventory {
 
 export const INTEGRATION_FEEDS = {
 	github: [
-		"source code for investigations (list_source_repositories, search_source_code, read_source_file)",
+		"source code for Maple's investigations and pull request review",
 		"commit metadata for deploys (service_deployments)",
 		"GitHub Actions runs as traces under service.name=github-actions, with job logs as logs on their step spans",
 	],
