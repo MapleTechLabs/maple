@@ -116,6 +116,21 @@ const exact = (value: number): Html | string => formatNumber(value)
 const stamp = (h: H, iso: string, inputs: StatInputs): Html =>
 	relativeTime(h, { value: iso, nowMs: inputs.nowMs, timeZone: inputs.timeZone, tooltip: "title" })
 
+/** Below this the window's tail has dropped to under half its usual rate. */
+const FADE_THRESHOLD = 0.5
+
+/** What the window's tail says about the trend; nothing when there is too little to say. */
+const trendLine = (inputs: StatInputs): string | undefined =>
+	inputs.windowCount === 0
+		? "Quiet in this window"
+		: inputs.surge === null
+			? undefined
+			: inputs.surge >= SURGE_THRESHOLD
+				? `${inputs.surge.toFixed(1)}x the usual rate`
+				: inputs.surge < FADE_THRESHOLD
+					? `Fading, ${inputs.surge.toFixed(1)}x the usual rate`
+					: "Steady in this window"
+
 /** `IssueStats`: the window's events and trend, lifetime events, first seen, last seen and any regression. */
 export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs): Html => {
 	const isSurging = inputs.surge !== null && inputs.surge >= SURGE_THRESHOLD
@@ -127,12 +142,7 @@ export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs):
 			tone: isSurging ? tone : "neutral",
 			spark: inputs.spark,
 			sparkColor: issue.severity === null ? undefined : `var(${SEVERITY_TOKEN[issue.severity]})`,
-			subline:
-				inputs.windowCount === 0
-					? "Quiet in this window"
-					: isSurging && inputs.surge !== null
-						? `${inputs.surge.toFixed(1)}x the usual rate`
-						: "Steady in this window",
+			subline: trendLine(inputs),
 		}),
 		statRailItem(h, {
 			eyebrow: "All time",
