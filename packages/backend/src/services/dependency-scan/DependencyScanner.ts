@@ -224,6 +224,8 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 							bucket: PARSE_CACHE_BUCKET,
 							key: [
 								`v${PARSER_VERSION}`,
+								// The same bytes can be valid for one format and broken for another.
+								selected.kind,
 								selected.file.sha,
 								...manifests.map((manifest) => manifest.file.sha),
 							].join(":"),

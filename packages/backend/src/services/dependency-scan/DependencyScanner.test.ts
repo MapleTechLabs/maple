@@ -290,6 +290,29 @@ describe("DependencyScanner", () => {
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
+	it.effect("parses one blob under each lockfile format it is named as", () => {
+		const content = packageLock("4.17.15")
+		const state = world({ "bun.lock": content, "package-lock.json": content })
+		state.files = new Map([...state.files].map(([path, blob]) => [path, { ...blob, sha: "blob:shared" }]))
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.deepStrictEqual(
+				outcome._tag === "Scanned"
+					? outcome.scan.lockfiles.map((lockfile) => [
+							lockfile.path,
+							lockfile.status,
+							lockfile.packageCount,
+						])
+					: outcome._tag,
+				[
+					["bun.lock", "failed", 0],
+					["package-lock.json", "parsed", 2],
+				],
+			)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
 	it.effect("skips a push that changed no lockfile, and fixes the advisories an upgrade removes", () => {
 		const state = world(MONOREPO)
 		return Effect.gen(function* () {

@@ -177,7 +177,7 @@ describe("GithubAppClient responses that are normal states", () => {
 			yield* advance(2)
 			const lines = yield* Fiber.join(fiber)
 			assert.deepStrictEqual(lines, ["line one", "line two"])
-			assert.strictEqual(requests.filter((url) => url.startsWith("https://logs.example")).length, 2)
+			assert.strictEqual(requests.filter((url) => new URL(url).host === "logs.example").length, 2)
 		}).pipe(Effect.provide(layer))
 	})
 
