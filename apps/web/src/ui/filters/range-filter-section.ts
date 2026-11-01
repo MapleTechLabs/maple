@@ -229,9 +229,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 												h.Role("button"),
 												h.Tabindex(0),
 												h.AriaLabel(`Clear ${config.title.toLowerCase()} filter`),
-												h.Class(
-													"rounded-xs hover:text-muted-foreground active:text-muted-foreground",
-												),
+												h.Class("rounded-xs hover:text-muted-foreground active:text-muted-foreground"),
 												h.OnClick(config.onApply(undefined, undefined), {
 													propagation: "Stop",
 												}),

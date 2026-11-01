@@ -53,8 +53,7 @@ export const thresholds = (h: H, state: EditorState): Html =>
 										variant: "outline",
 										size: "icon",
 										label: "Remove threshold",
-										className:
-											"text-muted-foreground hover:text-foreground active:text-foreground",
+										className: "text-muted-foreground hover:text-foreground active:text-foreground",
 										attributes: [h.OnClick(Message.ClickedRemoveThreshold({ index }))],
 									},
 									[icon(h, "XmarkIcon")],

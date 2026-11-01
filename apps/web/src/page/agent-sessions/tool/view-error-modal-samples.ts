@@ -136,8 +136,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current === 0,
-									className:
-										"text-muted-foreground hover:text-foreground active:text-foreground",
+									className: "text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
 								},
 								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
@@ -157,8 +156,7 @@ export const samplesPane = (
 									variant: "outline",
 									size: "icon-xs",
 									isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-									className:
-										"text-muted-foreground hover:text-foreground active:text-foreground",
+									className: "text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
 								},
 								[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
@@ -255,10 +253,7 @@ const sampleRow = (
 											"hidden shrink-0 rounded-sm border border-border px-1.5 text-2xs leading-3.5 text-foreground-subtle md:block",
 										),
 									],
-									[
-										"variant ",
-										h.span([h.Class("text-foreground-soft")], [options.variant]),
-									],
+									["variant ", h.span([h.Class("text-foreground-soft")], [options.variant])],
 								),
 							]),
 					h.span([h.Class("grow")], []),

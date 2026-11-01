@@ -531,9 +531,7 @@ const checkBars = (
 				h.Href(traceHref(sample.traceId)),
 				h.Attribute("tabindex", "-1"),
 				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class(
-					"group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken",
-				),
+				h.Class("group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken"),
 				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
 			],
 			[
@@ -597,7 +595,10 @@ const cardRow = (h: H, key: string, color: string, label: string, value: string)
 			h.span(
 				[h.Class("flex items-center gap-1.5 text-muted-foreground")],
 				[
-					h.span([h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })], []),
+					h.span(
+						[h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })],
+						[],
+					),
 					label,
 				],
 			),

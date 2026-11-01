@@ -97,10 +97,7 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 											h.Attribute("target", "_blank"),
 											h.Attribute("rel", "noreferrer"),
 											h.Class(
-												cn(
-													"shrink-0 font-medium hover:underline active:underline",
-													TONE_TEXT.crit,
-												),
+												cn("shrink-0 font-medium hover:underline active:underline", TONE_TEXT.crit),
 											),
 										],
 										[job.job],

@@ -46,8 +46,7 @@ const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 							size: "icon-2xs",
 							label: `Remove ${tag}`,
 							hasTooltip: false,
-							className:
-								"-mr-0.5 text-muted-foreground hover:text-foreground active:text-foreground",
+							className: "-mr-0.5 text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
 						},
 						[icon(h, "XmarkIcon")],

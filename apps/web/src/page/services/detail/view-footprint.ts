@@ -286,8 +286,9 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
 								attributes: [h.OnClick(onViewAll)],
 							},
-							[`+${hiddenCount} more`],
-						),
+							[
+							`+${hiddenCount} more`,
+						]),
 					]
 				: []),
 			viewAllButton(h, onViewAll),

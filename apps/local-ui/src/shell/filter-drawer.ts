@@ -29,11 +29,7 @@ export const filterRailOf = (model: Model, page: Html): Option.Option<LiftedRail
 		: Option.none()
 
 /** `{drawerOpen ? <div className="h-full min-h-0">{sidebar}</div> : null}` after the sr-only title. */
-export const filterDrawer = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	maybeRail: Option.Option<LiftedRail>,
-): Html =>
+export const filterDrawer = (h: HtmlBuilder<Message>, model: Model, maybeRail: Option.Option<LiftedRail>): Html =>
 	h.submodel({
 		slotId: `${model.filterDrawer.id}-dialog`,
 		model: model.filterDrawer,
@@ -45,9 +41,7 @@ export const filterDrawer = (
 			toView: ({ portal }) => portal,
 			toContent: () => [
 				DialogView.dialogTitle(h, "sheet", model.filterDrawer.id, "Filters", "sr-only"),
-				...Option.toArray(
-					Option.map(maybeRail, (rail) => h.div([h.Class("h-full min-h-0")], rail.children)),
-				),
+				...Option.toArray(Option.map(maybeRail, (rail) => h.div([h.Class("h-full min-h-0")], rail.children))),
 			],
 		},
 		toParentMessage: (message: Dialog.Message) => Message.GotFilterDrawerMessage({ message }),

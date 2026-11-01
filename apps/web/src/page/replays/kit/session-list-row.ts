@@ -59,9 +59,7 @@ const sessionTags = <M>(
 			: h.button(
 					[
 						h.Type("button"),
-						h.Class(
-							cn(className, "hover:ring-1 active:ring-1 hover:ring-border active:ring-border"),
-						),
+						h.Class(cn(className, "hover:ring-1 active:ring-1 hover:ring-border active:ring-border")),
 						h.OnClick(onFilter(tag), { propagation: "Stop" }),
 					],
 					[SESSION_TAG_LABELS[tag]],

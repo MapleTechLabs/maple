@@ -22,11 +22,7 @@ export const footer = (h: H, model: Model): Html =>
 		],
 		[
 			h.div(
-				[
-					h.Class(
-						"hidden shrink-0 items-center gap-3 text-foreground-faint @min-[560px]/timeline:flex",
-					),
-				],
+				[h.Class("hidden shrink-0 items-center gap-3 text-foreground-faint @min-[560px]/timeline:flex")],
 				[
 					hint(h, "Drag", "zoom"),
 					hint(h, "W A S D", "navigate"),

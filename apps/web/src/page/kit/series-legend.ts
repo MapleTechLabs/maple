@@ -72,14 +72,7 @@ export const seriesLegend = <M>(
 					[
 						...(item.color === undefined
 							? []
-							: [
-									swatch(
-										h,
-										item.swatch ?? options.swatch ?? "square",
-										item.color,
-										STYLES.swatch,
-									),
-								]),
+							: [swatch(h, item.swatch ?? options.swatch ?? "square", item.color, STYLES.swatch)]),
 						...(item.label === undefined
 							? []
 							: [

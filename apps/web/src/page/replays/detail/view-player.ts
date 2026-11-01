@@ -509,8 +509,7 @@ const settings = (h: H, speed: number, isSkippingIdle: boolean, isFullscreen: bo
 				{
 					label: isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
 					size: "icon",
-					className:
-						"text-muted-foreground hover:text-foreground active:text-foreground max-sm:ml-auto",
+					className: "text-muted-foreground hover:text-foreground active:text-foreground max-sm:ml-auto",
 					attributes: [h.OnClick(Message.ClickedFullscreen())],
 				},
 				[icon(h, isFullscreen ? "MinimizeIcon" : "MaximizeIcon")],

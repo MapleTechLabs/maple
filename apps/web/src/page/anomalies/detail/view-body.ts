@@ -174,8 +174,7 @@ export const signalChart = (
 				h,
 				{
 					dashed: true,
-					className:
-						"flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
+					className: "flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
 				},
 				["No signal data in window"],
 			)

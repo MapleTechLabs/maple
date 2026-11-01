@@ -50,8 +50,7 @@ export const filterSidebarHeader = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className:
-									"px-0 text-muted-foreground hover:text-foreground active:text-foreground",
+								className: "px-0 text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClear)],
 							},
 							["Clear all"],
@@ -72,10 +71,7 @@ export const filterSidebarGroupLabel = <M>(
 ): Html =>
 	h.div(
 		[h.Class("flex items-center gap-1 py-2")],
-		[
-			eyebrow(h, { as: "h4", variant: "label", className: "text-muted-foreground" }, [title]),
-			...trailing,
-		],
+		[eyebrow(h, { as: "h4", variant: "label", className: "text-muted-foreground" }, [title]), ...trailing],
 	)
 
 /** A rule between groups of sections inside the body. */

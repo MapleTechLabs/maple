@@ -9,7 +9,8 @@ import type { SpanCategory } from "./span-category"
 const separator = <M>(h: HtmlBuilder<M>): Html => h.span([h.Class("text-foreground-faint")], ["·"])
 
 // Hints are instructions, not legend entries: lighter weight and tone so they read as their own group.
-const hint = <M>(h: HtmlBuilder<M>, text: string): Html => h.span([h.Class("text-foreground-subtle")], [text])
+const hint = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	h.span([h.Class("text-foreground-subtle")], [text])
 
 export const flowLegend = <M>(
 	h: HtmlBuilder<M>,

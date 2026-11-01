@@ -222,9 +222,7 @@ const viewsFor = <M>(
 	const views: Markdown.Views = {
 		...Markdown.defaultViews,
 		InlineCode: ({ value }) =>
-			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [
-				value,
-			]),
+			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
 		// Link text is re-rendered with images as plain labels, at any nesting depth
 		// (`[**![a](u)**](d)`), so a linked image never puts an anchor inside an anchor.

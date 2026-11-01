@@ -204,7 +204,11 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 				? []
 				: [
 						h.span(
-							[h.Class("w-3 shrink-0 text-right text-2xs tabular-nums text-foreground-subtle")],
+							[
+								h.Class(
+									"w-3 shrink-0 text-right text-2xs tabular-nums text-foreground-subtle",
+								),
+							],
 							[item.shortcut],
 						),
 					]),

@@ -119,10 +119,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html => {
 	const kind = KIND_TAG[issue.kind]
 	return h.div(
-		[
-			h.Key(issue.id),
-			h.Class("hover:bg-surface-sunken active:bg-surface-sunken flex items-start gap-3 px-4 py-3"),
-		],
+		[h.Key(issue.id), h.Class("hover:bg-surface-sunken active:bg-surface-sunken flex items-start gap-3 px-4 py-3")],
 		[
 			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [
 				kind.label,

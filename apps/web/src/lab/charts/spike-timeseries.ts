@@ -15,11 +15,7 @@ import { scaleTime } from "d3-scale"
 import { Option } from "effect"
 import { ChartTooltip } from "../../charts/chart-spec"
 import type { BuiltChart } from "../../charts/definitions/built-chart"
-import {
-	AREA_FILL_END,
-	roundCapDasharray,
-	verticalGradient,
-} from "../../charts/definitions/fixed-metric-axes"
+import { AREA_FILL_END, roundCapDasharray, verticalGradient } from "../../charts/definitions/fixed-metric-axes"
 import {
 	cursorTooltip,
 	MUTED_COLOR_AMOUNT,

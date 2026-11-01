@@ -35,10 +35,7 @@ type FacetItem = ReplaysFacets["services"][number]
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 /** `withSelected`: a selected value missing from its own list stays checkable (count 0). */
-const withSelected = (
-	options: ReadonlyArray<FacetItem>,
-	selected: string | undefined,
-): ReadonlyArray<FilterOption> =>
+const withSelected = (options: ReadonlyArray<FacetItem>, selected: string | undefined): ReadonlyArray<FilterOption> =>
 	selected !== undefined && selected !== "" && !options.some((option) => option.name === selected)
 		? [{ name: selected, count: 0 }, ...options]
 		: options
@@ -59,8 +56,7 @@ const tagOptions = (facets: ReplaysFacets, selected: ReadonlyArray<string>): Rea
 		count: facets.tags.find((item) => item.name === tag)?.count ?? 0,
 	})).filter((option) => option.count > 0)
 	return selected.reduce<ReadonlyArray<FilterOption>>(
-		(options, tag) =>
-			options.some((option) => option.name === tag) ? options : [{ name: tag, count: 0 }, ...options],
+		(options, tag) => (options.some((option) => option.name === tag) ? options : [{ name: tag, count: 0 }, ...options]),
 		counted,
 	)
 }
@@ -95,12 +91,7 @@ const rangeSection = (
 	h: HtmlBuilder<Message>,
 	model: Model,
 	range: Range,
-	config: Readonly<{
-		title: string
-		hint?: string
-		presets: ReadonlyArray<RangePreset>
-		facets?: ReplaysFacets
-	}>,
+	config: Readonly<{ title: string; hint?: string; presets: ReadonlyArray<RangePreset>; facets?: ReplaysFacets }>,
 ) => {
 	const isDuration = range === "duration"
 	const prefix = isDuration ? "replays-duration" : "replays-active"
@@ -116,10 +107,7 @@ const rangeSection = (
 			config.facets === undefined
 				? undefined
 				: toLogBuckets(
-						config.facets.durationBuckets.map((item) => ({
-							floor: Number(item.name) / 1000,
-							count: item.count,
-						})),
+						config.facets.durationBuckets.map((item) => ({ floor: Number(item.name) / 1000, count: item.count })),
 						2,
 					),
 		histogramHover: model.histogramHover[range],
@@ -175,79 +163,68 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 		groups: withSelected(facets.groups, search.group),
 		pages: withSelected(facets.pages, search.page),
 	}
-	const hasFacets =
-		Object.values(lists).some((list) => list.length > 0) || tags.length > 0 || facets.errorCount > 0
+	const hasFacets = Object.values(lists).some((list) => list.length > 0) || tags.length > 0 || facets.errorCount > 0
 	if (!hasFacets && !hasFilters) return filterSidebarEmpty(h)
 	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.facets.data) }, [
 		filterSidebarHeader(h, hasFilters ? { onClear: Message.ClickedClearSidebarFilters() } : {}),
-		...filterSidebarBody(
-			h,
-			"replays-filters",
-			[
-				filterSection(h, {
-					title: "Session type",
-					options: tags,
-					selected: tagsSelected,
-					getOptionLabel: tagLabel,
-					getOptionDescription: (name) => {
-						const tag = asSessionTag(name)
-						return tag === undefined ? undefined : SESSION_TAG_DESCRIPTIONS[tag]
-					},
-					renderOptionIcon: (name) => {
-						const tag = asSessionTag(name)
-						return tag === undefined
-							? undefined
-							: statusDot(h, { tone: "custom", size: "lg", className: SESSION_TAG_DOTS[tag] })
-					},
-					sections: model.filterSections,
-					toSectionsMessage: toSections,
-					onToggle: (name) => Message.ToggledTag({ tag: name }),
-				}),
-				rangeSection(h, model, "duration", {
-					title: "Session length",
-					presets: sessionLengthPresets(facets.durationP50, facets.durationP95),
-					facets,
-				}),
-				rangeSection(h, model, "active", {
-					title: "Active time",
-					hint: "Excludes idle gaps",
-					presets: ACTIVE_TIME_PRESETS,
-				}),
-				singleSection(h, model, "Page visited", "page", lists.pages),
-				singleSection(h, model, "Service", "service", lists.services),
-				singleSection(h, model, "Browser", "browser", lists.browsers, {
-					getOptionIcon: browserIconFor,
-				}),
-				singleSection(h, model, "Device", "deviceType", lists.devices, {
-					isSearchable: false,
-					getOptionIcon: deviceIconFor,
-				}),
-				singleSection(h, model, "Country", "country", lists.countries),
-				lists.groups.length > 0 ? singleSection(h, model, "Group", "group", lists.groups) : null,
-				filterSidebarDivider(h),
-				filterSidebarGroupLabel(h, "Identity"),
-				textFilter(h, {
-					id: "replays-user-search",
-					key: `user:${search.user ?? ""}`,
-					placeholder: "Name or email…",
-					clearLabel: "Clear name or email filter",
-					value: model.userText,
-					onInput: (value) => Message.ChangedUserText({ value }),
-					onSubmit: Message.SubmittedUser(),
-					onClear: Message.ClickedClearUser(),
-				}),
-				textFilter(h, {
-					id: "replays-user-filter",
-					key: `userId:${search.userId ?? ""}`,
-					placeholder: "User ID…",
-					clearLabel: "Clear user ID filter",
-					value: model.userIdText,
-					onInput: (value) => Message.ChangedUserIdText({ value }),
-					onSubmit: Message.SubmittedUserId(),
-					onClear: Message.ClickedClearUserId(),
-				}),
-			].filter((node): node is Html => node !== null),
-		),
+		...filterSidebarBody(h, "replays-filters", [
+			filterSection(h, {
+				title: "Session type",
+				options: tags,
+				selected: tagsSelected,
+				getOptionLabel: tagLabel,
+				getOptionDescription: (name) => {
+					const tag = asSessionTag(name)
+					return tag === undefined ? undefined : SESSION_TAG_DESCRIPTIONS[tag]
+				},
+				renderOptionIcon: (name) => {
+					const tag = asSessionTag(name)
+					return tag === undefined
+						? undefined
+						: statusDot(h, { tone: "custom", size: "lg", className: SESSION_TAG_DOTS[tag] })
+				},
+				sections: model.filterSections,
+				toSectionsMessage: toSections,
+				onToggle: (name) => Message.ToggledTag({ tag: name }),
+			}),
+			rangeSection(h, model, "duration", {
+				title: "Session length",
+				presets: sessionLengthPresets(facets.durationP50, facets.durationP95),
+				facets,
+			}),
+			rangeSection(h, model, "active", { title: "Active time", hint: "Excludes idle gaps", presets: ACTIVE_TIME_PRESETS }),
+			singleSection(h, model, "Page visited", "page", lists.pages),
+			singleSection(h, model, "Service", "service", lists.services),
+			singleSection(h, model, "Browser", "browser", lists.browsers, { getOptionIcon: browserIconFor }),
+			singleSection(h, model, "Device", "deviceType", lists.devices, {
+				isSearchable: false,
+				getOptionIcon: deviceIconFor,
+			}),
+			singleSection(h, model, "Country", "country", lists.countries),
+			lists.groups.length > 0 ? singleSection(h, model, "Group", "group", lists.groups) : null,
+			filterSidebarDivider(h),
+			filterSidebarGroupLabel(h, "Identity"),
+			textFilter(h, {
+				id: "replays-user-search",
+				key: `user:${search.user ?? ""}`,
+				placeholder: "Name or email…",
+				clearLabel: "Clear name or email filter",
+				value: model.userText,
+				onInput: (value) => Message.ChangedUserText({ value }),
+				onSubmit: Message.SubmittedUser(),
+				onClear: Message.ClickedClearUser(),
+			}),
+			textFilter(h, {
+				id: "replays-user-filter",
+				key: `userId:${search.userId ?? ""}`,
+				placeholder: "User ID…",
+				clearLabel: "Clear user ID filter",
+				value: model.userIdText,
+				onInput: (value) => Message.ChangedUserIdText({ value }),
+				onSubmit: Message.SubmittedUserId(),
+				onClear: Message.ClickedClearUserId(),
+			}),
+		].filter((node): node is Html => node !== null)),
 	])
 }
 

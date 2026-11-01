@@ -68,47 +68,21 @@ const followOverview = (model: Model, context: PageContext): Return =>
 					: chain(
 							(() => {
 								// `getServiceOverviewResultAtom` is `globalNamespace: "top"`.
-								const namespaces =
-									context.pinnedNamespace === null ? undefined : [context.pinnedNamespace]
-								const input = {
-									startTime: window.startTime,
-									endTime: window.endTime,
-									namespaces,
-								}
+								const namespaces = context.pinnedNamespace === null ? undefined : [context.pinnedNamespace]
+								const input = { startTime: window.startTime, endTime: window.endTime, namespaces }
 								const key = requestKey(context.orgId, "getServiceOverview", input)
-								return slotStep(
-									model,
-									model.traces,
-									(traces) => ({ traces }),
-									key,
-									FetchSignalTraces({ key, ...input }),
-								)
+								return slotStep(model, model.traces, (traces) => ({ traces }), key, FetchSignalTraces({ key, ...input }))
 							})(),
 							(next) => {
-								const key = requestKey(context.orgId, "getCustomChartTimeSeries", {
-									service,
-									window,
-								})
-								return slotStep(
-									next,
-									next.logs,
-									(logs) => ({ logs }),
-									key,
-									FetchSignalLogs({ key, service, window }),
-								)
+								const key = requestKey(context.orgId, "getCustomChartTimeSeries", { service, window })
+								return slotStep(next, next.logs, (logs) => ({ logs }), key, FetchSignalLogs({ key, service, window }))
 							},
 						)
 			const issueId = investigation.subject.type === "incident" ? investigation.subject.issue_id : null
 			if (issueId === null || tabOf(model) === "chat" || tabOf(model) === "transcript") return signals
 			return chain(signals, (next) => {
 				const key = requestKey(context.orgId, "errors.listIssueEscalations", { issueId })
-				return slotStep(
-					next,
-					next.escalation,
-					(escalation) => ({ escalation }),
-					key,
-					FetchEscalation({ key, issueId, investigationId: investigation.id }),
-				)
+				return slotStep(next, next.escalation, (escalation) => ({ escalation }), key, FetchEscalation({ key, issueId, investigationId: investigation.id }))
 			})
 		},
 	})
@@ -120,9 +94,7 @@ const hasOpenAction = (model: Model, timeZone: string): boolean => {
 		index !== null &&
 		tabOf(model) === "overview" &&
 		Option.exists(investigationOf(model), (investigation) =>
-			graphOf(investigation, timeZone).nodes.some(
-				(node) => node.type === "action" && node.data.index === index,
-			),
+			graphOf(investigation, timeZone).nodes.some((node) => node.type === "action" && node.data.index === index),
 		)
 	)
 }
@@ -133,9 +105,7 @@ const sheetFor = (model: Model, timeZone: string): Return => {
 	const step = isOpen ? Dialog.open(model.actionSheet) : Dialog.close(model.actionSheet)
 	return {
 		model: { ...model, actionSheet: step.model },
-		commands: Command.mapMessages(step.commands ?? [], (message) =>
-			Message.GotActionSheetMessage({ message }),
-		),
+		commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotActionSheetMessage({ message })),
 	}
 }
 
@@ -163,11 +133,8 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 }
 
 export const routeChanged = (model: Model, route: InvestigationRoute, context: PageContext): Return =>
-	chain(
-		chain(followOverview({ ...model, search: route.search }, context), (next) =>
-			sheetFor(next, context.timeZone),
-		),
-		(next) => followConversation(next, context),
+	chain(chain(followOverview({ ...model, search: route.search }, context), (next) => sheetFor(next, context.timeZone)), (next) =>
+		followConversation(next, context),
 	)
 
 /** A pin change re-keys the signals card's overview read. */
@@ -175,17 +142,13 @@ export const contextChanged = (model: Model, context: PageContext): Return => fo
 
 const navigateSearch = (model: Model, search: Model["search"], isReplace: boolean): Return => ({
 	model,
-	outMessage: PageOutMessage.RequestedNavigation({
-		url: hrefOf(AppRoute.Investigation({ id: model.id, search })),
-		isReplace,
-	}),
+	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Investigation({ id: model.id, search })), isReplace }),
 })
 
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-const isResolved = (model: Model) =>
-	Option.exists(investigationOf(model), (investigation) => investigation.status === "resolved")
+const isResolved = (model: Model) => Option.exists(investigationOf(model), (investigation) => investigation.status === "resolved")
 
 const startWrite = (model: Model, kind: "resolve" | "restart"): Return =>
 	model.busy !== null
@@ -194,9 +157,7 @@ const startWrite = (model: Model, kind: "resolve" | "restart"): Return =>
 				onNone: () => ({ model }),
 				onSome: (id) => ({
 					model: { ...model, busy: kind },
-					commands: [
-						kind === "resolve" ? ResolveInvestigation({ id }) : RestartInvestigation({ id }),
-					],
+					commands: [kind === "resolve" ? ResolveInvestigation({ id }) : RestartInvestigation({ id })],
 				}),
 			})
 
@@ -206,9 +167,7 @@ const replace = (model: Model, timeZone: string): Model =>
 
 /** The header's primary button, by status (`InvestigationActions`). */
 const primaryKind = (investigation: V2Investigation): "resolve" | "restart" =>
-	investigation.status === "failed" ||
-	investigation.status === "inconclusive" ||
-	investigation.status === "resolved"
+	investigation.status === "failed" || investigation.status === "inconclusive" || investigation.status === "resolved"
 		? "restart"
 		: "resolve"
 
@@ -220,60 +179,34 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (orgId !== context.orgId || id !== model.id || attempt !== model.syncAttempt) return { model }
 			const next = { ...model, sync }
 			return chain(
-				chain(
-					chain(followOverview(next, context), (opened) => sheetFor(opened, context.timeZone)),
-					(placed) => ({ model: replace(placed, context.timeZone) }),
-				),
+				chain(chain(followOverview(next, context), (opened) => sheetFor(opened, context.timeZone)), (placed) => ({ model: replace(placed, context.timeZone) })),
 				(placed) => followConversation(placed, context),
 			)
 		},
-		CompletedFetchLogs: ({ key, result }) => ({
-			model: { ...model, logs: Keyed.accept(model.logs, key, result) },
-		}),
-		CompletedFetchTraces: ({ key, result }) => ({
-			model: { ...model, traces: Keyed.accept(model.traces, key, result) },
-		}),
-		CompletedFetchEscalation: ({ key, result }) => ({
-			model: { ...model, escalation: Keyed.accept(model.escalation, key, result) },
-		}),
+		CompletedFetchLogs: ({ key, result }) => ({ model: { ...model, logs: Keyed.accept(model.logs, key, result) } }),
+		CompletedFetchTraces: ({ key, result }) => ({ model: { ...model, traces: Keyed.accept(model.traces, key, result) } }),
+		CompletedFetchEscalation: ({ key, result }) => ({ model: { ...model, escalation: Keyed.accept(model.escalation, key, result) } }),
 		ClickedPrimary: () =>
 			Option.match(investigationOf(model), {
 				onNone: () => ({ model }),
 				onSome: (investigation) => startWrite(model, primaryKind(investigation)),
 			}),
 		// `retryOrgCollections` mints a fresh scoped collection; the bumped attempt resubscribes onto one.
-		ClickedRetrySync: () => ({
-			model: { ...model, sync: { _tag: "Loading" }, syncAttempt: model.syncAttempt + 1 },
-		}),
+		ClickedRetrySync: () => ({ model: { ...model, sync: { _tag: "Loading" }, syncAttempt: model.syncAttempt + 1 } }),
 		CompletedResolve: ({ result }) =>
 			Result.match(result, {
-				onSuccess: () => ({
-					model: { ...model, busy: null },
-					outMessage: toast("success", "Investigation resolved"),
-				}),
-				onFailure: (failure) => ({
-					model: { ...model, busy: null },
-					outMessage: toast("error", "Couldn't resolve investigation", failure.message),
-				}),
+				onSuccess: () => ({ model: { ...model, busy: null }, outMessage: toast("success", "Investigation resolved") }),
+				onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: toast("error", "Couldn't resolve investigation", failure.message) }),
 			}),
 		CompletedRestart: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
 					model: { ...model, busy: null },
-					outMessage: toast(
-						"success",
-						isResolved(model) ? "Investigation reopened" : "Investigation restarted",
-					),
+					outMessage: toast("success", isResolved(model) ? "Investigation reopened" : "Investigation restarted"),
 				}),
 				onFailure: (failure) => ({
 					model: { ...model, busy: null },
-					outMessage: toast(
-						"error",
-						isResolved(model)
-							? "Couldn't reopen investigation"
-							: "Couldn't restart investigation",
-						failure.message,
-					),
+					outMessage: toast("error", isResolved(model) ? "Couldn't reopen investigation" : "Couldn't restart investigation", failure.message),
 				}),
 			}),
 		ClickedFollowUp: () => navigateSearch(model, { tab: "chat" }, false),
@@ -281,18 +214,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const tab = tabOf(model)
 			return navigateSearch(model, { tab: tab === "overview" ? undefined : tab, action: index }, true)
 		},
-		ClickedNodeLink: ({ href }) => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({ url: href, isReplace: false }),
-		}),
+		ClickedNodeLink: ({ href }) => ({ model, outMessage: PageOutMessage.RequestedNavigation({ url: href, isReplace: false }) }),
 		ClickedPlaceGraph: () => ({ model: replace(model, context.timeZone) }),
 		GotActionsMenuMessage: ({ message: inner }) => {
 			const next = Menu.update(model.actionsMenu, inner)
 			const updated: Return = {
 				model: { ...model, actionsMenu: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (menu) =>
-					Message.GotActionsMenuMessage({ message: menu }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (menu) => Message.GotActionsMenuMessage({ message: menu })),
 			}
 			if (next.outMessage?._tag !== "SelectedItem") return updated
 			const kind = next.outMessage.value === "resolve" ? "resolve" : "restart"
@@ -302,48 +230,31 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Dialog.update(model.actionSheet, inner)
 			const updated: Return = {
 				model: { ...model, actionSheet: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (sheet) =>
-					Message.GotActionSheetMessage({ message: sheet }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (sheet) => Message.GotActionSheetMessage({ message: sheet })),
 			}
 			if (step.outMessage?._tag !== "Closed") return updated
 			const tab = tabOf(model)
-			return {
-				...updated,
-				outMessage: navigateSearch(model, { tab: tab === "overview" ? undefined : tab }, true)
-					.outMessage,
-			}
+			return { ...updated, outMessage: navigateSearch(model, { tab: tab === "overview" ? undefined : tab }, true).outMessage }
 		},
 		GotTraceTooltipMessage: ({ message: inner }) => {
 			// A focus opens the tip only once `:focus-visible` confirms it was the keyboard's.
 			const isFocus = inner._tag === "FocusedTrigger"
-			const step = isFocus
-				? { model: model.traceTooltip, commands: [] }
-				: Tooltip.update(model.traceTooltip, inner)
+			const step = isFocus ? { model: model.traceTooltip, commands: [] } : Tooltip.update(model.traceTooltip, inner)
 			// The chip is a link: the root's intent preload warms its trace route (`page/preload.ts`).
 			return {
 				model: { ...model, traceTooltip: step.model },
 				commands: [
-					...Command.mapMessages(step.commands ?? [], (tooltip) =>
-						Message.GotTraceTooltipMessage({ message: tooltip }),
-					),
-					...(inner._tag === "FocusedTrigger"
-						? [CheckTipFocus({ triggerId: inner.triggerId })]
-						: []),
+					...Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
+					...(inner._tag === "FocusedTrigger" ? [CheckTipFocus({ triggerId: inner.triggerId })] : []),
 				],
 			}
 		},
 		CheckedTipFocus: ({ triggerId, isFocusVisible }) => {
 			if (!isFocusVisible) return { model }
-			const step = Tooltip.update(
-				model.traceTooltip,
-				Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true }),
-			)
+			const step = Tooltip.update(model.traceTooltip, Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true }))
 			return {
 				model: { ...model, traceTooltip: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (tooltip) =>
-					Message.GotTraceTooltipMessage({ message: tooltip }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
 			}
 		},
 		CompletedLoadKnownServices: ({ services }) => ({ model: { ...model, knownServices: services } }),
@@ -356,11 +267,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const isZoom = inner._tag === "ClickedZoomIn" || inner._tag === "ClickedZoomOut"
 			const canvas = isZoom ? { ...updated, movedByUser: true } : updated
 			const next = { ...model, canvas }
-			return {
-				model:
-					inner._tag === "ResizedPane" && !canvas.movedByUser
-						? placeGraph(next, context.timeZone)
-						: next,
-			}
+			return { model: inner._tag === "ResizedPane" && !canvas.movedByUser ? placeGraph(next, context.timeZone) : next }
 		},
 	})

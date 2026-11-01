@@ -305,10 +305,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 		},
 	]
 	return h.li(
-		[
-			h.Key(rule.id),
-			h.Class(cn(ROW_GRID, "relative px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken")),
-		],
+		[h.Key(rule.id), h.Class(cn(ROW_GRID, "relative px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken"))],
 		[
 			statusDot(h, { tone: BUCKET_TONE.get(row.bucket) ?? "neutral", size: "lg" }),
 			h.div(

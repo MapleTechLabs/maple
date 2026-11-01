@@ -63,9 +63,7 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 						cn(
 							badgeVariants({
 								variant: "outline",
-								className: cn(
-									"font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
-								),
+								className: cn("font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80"),
 							}),
 						),
 					),
@@ -103,9 +101,7 @@ const editor = (h: H, sql: string): Html =>
 						[h.Class("font-mono")],
 						[
 							...tokenizeSql(sql).map((token) =>
-								h.span(token.className === undefined ? [] : [h.Class(token.className)], [
-									token.text,
-								]),
+								h.span(token.className === undefined ? [] : [h.Class(token.className)], [token.text]),
 							),
 							"\n",
 						],
@@ -172,8 +168,7 @@ const meterNote = (form: RuleForm, timing: AlertQueryTiming, interval: number, l
 			? `Too slow for any interval this window allows. ${canWiden ? "Widen the window or narrow the query." : "Narrow the query."}`
 			: `Too close to the ${formatQuerySeconds(limitMs)} limit to run reliably. ${canWiden ? "Widen the window for a longer interval, or narrow the query." : "Narrow the query."}`
 	}
-	if (intervalWindowIssue(form) !== null)
-		return "The picked interval is longer than the window. Pick a shorter one."
+	if (intervalWindowIssue(form) !== null) return "The picked interval is longer than the window. Pick a shorter one."
 	return `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`
 }
 
@@ -182,8 +177,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 	const interval = formIntervalMinutes(form)
 	const limitMs = alertQueryLimits(interval).timeSeconds * 1000
 	const elapsed = timing.elapsedMs
-	const tone: Tone =
-		elapsed === null || elapsed > limitMs ? "crit" : elapsed > limitMs * 0.8 ? "warn" : "ok"
+	const tone: Tone = elapsed === null || elapsed > limitMs ? "crit" : elapsed > limitMs * 0.8 ? "warn" : "ok"
 	const fill = elapsed === null ? 1 : Math.min(elapsed / timing.probeLimitMs, 1)
 	const shortest = shortestFittingInterval(form, timing)
 	return h.div(
@@ -203,37 +197,21 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 								]
 							: [
 									formatQuerySeconds(elapsed),
-									h.span(
-										[h.Class("text-muted-foreground")],
-										[` of ${formatQuerySeconds(limitMs)}`],
-									),
+									h.span([h.Class("text-muted-foreground")], [` of ${formatQuerySeconds(limitMs)}`]),
 								],
 					),
 				],
 			),
 			h.div(
 				[h.Class("relative h-1.5 overflow-hidden rounded-full bg-muted")],
-				[
-					h.div(
-						[
-							h.Class(cn("h-full rounded-full", TONE_FILL[tone])),
-							h.Style({ width: `${fill * 100}%` }),
-						],
-						[],
-					),
-				],
+				[h.div([h.Class(cn("h-full rounded-full", TONE_FILL[tone])), h.Style({ width: `${fill * 100}%` })], [])],
 			),
 			h.div(
 				[h.Class("relative h-3 text-3xs tabular-nums text-muted-foreground"), h.AriaHidden(true)],
 				METER_TICKS.map((tickMs) =>
 					h.span(
 						[
-							h.Class(
-								cn(
-									"absolute -translate-x-full whitespace-nowrap",
-									tickMs === limitMs && "font-medium text-foreground",
-								),
-							),
+							h.Class(cn("absolute -translate-x-full whitespace-nowrap", tickMs === limitMs && "font-medium text-foreground")),
 							h.Style({ left: `${(tickMs / timing.probeLimitMs) * 100}%` }),
 						],
 						[formatQuerySeconds(tickMs)],
@@ -243,10 +221,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						[meterNote(form, timing, interval, limitMs)],
-					),
+					h.p([h.Class("text-xs text-muted-foreground")], [meterNote(form, timing, interval, limitMs)]),
 					...(shortest === null
 						? []
 						: [
@@ -255,11 +230,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 									{
 										variant: "outline",
 										size: "xs",
-										attributes: [
-											h.OnClick(
-												Message.ClickedUseInterval({ minutes: String(shortest) }),
-											),
-										],
+										attributes: [h.OnClick(Message.ClickedUseInterval({ minutes: String(shortest) }))],
 									},
 									[`Check every ${shortest} min`],
 								),
@@ -291,12 +262,7 @@ const isNearLimit = (form: RuleForm, timing: AlertQueryTiming): boolean =>
 	timing.elapsedMs > alertQueryLimits(formIntervalMinutes(form)).timeSeconds * 1000 * 0.5
 
 /** `RawQueryEditor`: the SQL panel, the query time, the reducer, and the sample-count warning. */
-export const rawQueryEditor = (
-	h: H,
-	model: SqlView,
-	form: RuleForm,
-	timing: AlertQueryTiming | null,
-): Html => {
+export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	const sampleWarning = rawAlertSampleCountWarning(form.rawQuerySql, Number(form.minimumSampleCount) || 0)
 	return h.div(
 		[h.Class("space-y-2")],
@@ -310,12 +276,7 @@ export const rawQueryEditor = (
 							header(h, model, form.rawQuerySql),
 							...(model.isSqlCollapsed
 								? []
-								: [
-										h.div(
-											[h.Class("p-3 space-y-3")],
-											[editor(h, form.rawQuerySql), macros(h)],
-										),
-									]),
+								: [h.div([h.Class("p-3 space-y-3")], [editor(h, form.rawQuerySql), macros(h)])]),
 						],
 					),
 					h.div(
@@ -356,9 +317,7 @@ export const rawQueryEditor = (
 						],
 					),
 			}),
-			...(sampleWarning === null
-				? []
-				: [h.p([h.Class("text-xs text-severity-warn")], [sampleWarning])]),
+			...(sampleWarning === null ? [] : [h.p([h.Class("text-xs text-severity-warn")], [sampleWarning])]),
 			...(timing === null ? [] : [queryTimeMeter(h, form, timing)]),
 			...(timing !== null && isNearLimit(form, timing) ? performanceHints(h, form.rawQuerySql) : []),
 		],

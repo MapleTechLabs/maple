@@ -131,8 +131,7 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 						{
 							variant: "link",
 							size: "xs",
-							className:
-								"mt-3 text-muted-foreground hover:text-foreground active:text-foreground",
+							className: "mt-3 text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(options.onToggleRaw)],
 						},
 						[

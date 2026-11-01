@@ -127,7 +127,11 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 						[
 							h.p([h.Class("mb-1 font-medium text-severity-error")], ["Error"]),
 							h.pre(
-								[h.Class("max-h-40 overflow-auto whitespace-pre-wrap text-severity-error")],
+								[
+									h.Class(
+										"max-h-40 overflow-auto whitespace-pre-wrap text-severity-error",
+									),
+								],
 								[part.errorText],
 							),
 						],

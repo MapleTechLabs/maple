@@ -12,40 +12,13 @@ import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../sh
 // `AlertsEmptyState`: zero rules.
 
 const TILE_TONE = new Map<AlertTemplateId, { glyph: string; hoverBorder: string }>([
-	[
-		"high_error_rate",
-		{
-			glyph: "bg-chart-error/10 text-chart-error",
-			hoverBorder: "hover:border-chart-error/50 active:border-chart-error/50",
-		},
-	],
-	[
-		"slow_p95",
-		{
-			glyph: "bg-chart-p95/10 text-chart-p95",
-			hoverBorder: "hover:border-chart-p95/50 active:border-chart-p95/50",
-		},
-	],
-	[
-		"slow_p99",
-		{
-			glyph: "bg-chart-p99/10 text-chart-p99",
-			hoverBorder: "hover:border-chart-p99/50 active:border-chart-p99/50",
-		},
-	],
-	[
-		"low_apdex",
-		{
-			glyph: "bg-chart-apdex/10 text-chart-apdex",
-			hoverBorder: "hover:border-chart-apdex/50 active:border-chart-apdex/50",
-		},
-	],
+	["high_error_rate", { glyph: "bg-chart-error/10 text-chart-error", hoverBorder: "hover:border-chart-error/50 active:border-chart-error/50" }],
+	["slow_p95", { glyph: "bg-chart-p95/10 text-chart-p95", hoverBorder: "hover:border-chart-p95/50 active:border-chart-p95/50" }],
+	["slow_p99", { glyph: "bg-chart-p99/10 text-chart-p99", hoverBorder: "hover:border-chart-p99/50 active:border-chart-p99/50" }],
+	["low_apdex", { glyph: "bg-chart-apdex/10 text-chart-apdex", hoverBorder: "hover:border-chart-apdex/50 active:border-chart-apdex/50" }],
 	[
 		"throughput_drop",
-		{
-			glyph: "bg-chart-throughput/10 text-chart-throughput",
-			hoverBorder: "hover:border-chart-throughput/50 active:border-chart-throughput/50",
-		},
+		{ glyph: "bg-chart-throughput/10 text-chart-throughput", hoverBorder: "hover:border-chart-throughput/50 active:border-chart-throughput/50" },
 	],
 ])
 
@@ -69,9 +42,7 @@ export const alertsEmptyState = <M>(h: HtmlBuilder<M>, options: EmptyStateOption
 		[
 			quietMonitor(h),
 			emptyHeader(h, [
-				emptyTitle(h, [
-					needsDestination ? "Two steps to your first alert" : "No rules are watching yet",
-				]),
+				emptyTitle(h, [needsDestination ? "Two steps to your first alert" : "No rules are watching yet"]),
 				emptyDescription(h, [description]),
 			]),
 			...(options.isAdmin ? [adminSteps(h, options, needsDestination)] : [docsLink(h, "alertRules")]),
@@ -90,11 +61,10 @@ const adminSteps = <M>(h: HtmlBuilder<M>, options: EmptyStateOptions<M>, needsDe
 				ALERT_TEMPLATES.map((template) => templateTile(h, template, options.serviceName)),
 			),
 			emptyActions(h, [
-				linkButton(
-					h,
-					{ variant: "ghost", size: "sm", href: createHref({ serviceName: options.serviceName }) },
-					[icon(h, "PlusIcon"), "Start from scratch"],
-				),
+				linkButton(h, { variant: "ghost", size: "sm", href: createHref({ serviceName: options.serviceName }) }, [
+					icon(h, "PlusIcon"),
+					"Start from scratch",
+				]),
 				docsLink(h, "alertRules"),
 			]),
 		],
@@ -152,11 +122,7 @@ const stepBadge = <M>(h: HtmlBuilder<M>, n: number): Html =>
 		[String(n)],
 	)
 
-const templateTile = <M>(
-	h: HtmlBuilder<M>,
-	template: AlertTemplate,
-	serviceName: string | undefined,
-): Html => {
+const templateTile = <M>(h: HtmlBuilder<M>, template: AlertTemplate, serviceName: string | undefined): Html => {
 	const tone = TILE_TONE.get(template.id)
 	return h.a(
 		[
@@ -169,14 +135,7 @@ const templateTile = <M>(
 				[h.Class("flex items-center gap-2")],
 				[
 					h.span(
-						[
-							h.Class(
-								cn(
-									"flex size-6 shrink-0 items-center justify-center rounded-md",
-									tone?.glyph,
-								),
-							),
-						],
+						[h.Class(cn("flex size-6 shrink-0 items-center justify-center rounded-md", tone?.glyph))],
 						[icon(h, template.icon, { size: 14 })],
 					),
 					h.span([h.Class("font-medium text-sm")], [template.title]),
@@ -219,7 +178,8 @@ const quietMonitor = <M>(h: HtmlBuilder<M>): Html =>
 					]),
 					h.polyline(
 						svgAttrs(h, {
-							points: "10,60 30,58 48,61 66,57 86,60 104,58 124,61 142,59 160,57 178,60 196,58 214,61 232,58 250,60 268,58 290,59",
+							points:
+								"10,60 30,58 48,61 66,57 86,60 104,58 124,61 142,59 160,57 178,60 196,58 214,61 232,58 250,60 268,58 290,59",
 							fill: "none",
 							class: "stroke-muted-foreground",
 							"stroke-width": "1.75",
@@ -228,9 +188,7 @@ const quietMonitor = <M>(h: HtmlBuilder<M>): Html =>
 							opacity: "0.7",
 						}),
 					),
-					h.circle(
-						svgAttrs(h, { cx: "290", cy: "59", r: "4", class: "fill-primary", opacity: "0.5" }),
-					),
+					h.circle(svgAttrs(h, { cx: "290", cy: "59", r: "4", class: "fill-primary", opacity: "0.5" })),
 					h.circle(svgAttrs(h, { cx: "290", cy: "59", r: "2.5", class: "fill-primary" })),
 				],
 			),

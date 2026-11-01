@@ -118,10 +118,7 @@ describe("linear destination fields", () => {
 		).model
 		const stale = update(
 			closed,
-			Message.CompletedFetchStatus({
-				key: closed.status.key ?? "",
-				result: Result.succeed(NOT_CONNECTED),
-			}),
+			Message.CompletedFetchStatus({ key: closed.status.key ?? "", result: Result.succeed(NOT_CONNECTED) }),
 			form,
 		).model
 		expect(names(update(stale, Message.ReturnedConnect(), form))).toEqual(["FetchAlertLinearStatus"])

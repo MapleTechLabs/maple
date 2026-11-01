@@ -158,35 +158,35 @@ export const newBadge = (h: H): Html => badge(h, { variant: "info", size: "sm" }
 
 const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"], onSelect: Select): Html =>
 	cardButton(h, { onClick: onSelect(entry.id), className: "flex items-center gap-4 p-4" }, [
-		entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
-		h.span(
-			[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-			[
-				h.span(
-					[h.Class("flex min-w-0 items-center gap-2")],
-					[
-						h.span([h.Class("truncate text-sm font-semibold")], [entry.name]),
-						...(entry.isNew === true ? [newBadge(h)] : []),
-					],
-				),
-				h.span(
-					[h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")],
-					[entry.description],
-				),
-			],
-		),
-		h.span(
-			[
-				h.Class(
-					cn(
-						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors group-hover:border-ring/60",
-						cta === "Connect" ? "text-primary" : "text-foreground",
+			entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
+			h.span(
+				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+				[
+					h.span(
+						[h.Class("flex min-w-0 items-center gap-2")],
+						[
+							h.span([h.Class("truncate text-sm font-semibold")], [entry.name]),
+							...(entry.isNew === true ? [newBadge(h)] : []),
+						],
 					),
-				),
-			],
-			[cta, " →"],
-		),
-	])
+					h.span(
+						[h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")],
+						[entry.description],
+					),
+				],
+			),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors group-hover:border-ring/60",
+							cta === "Connect" ? "text-primary" : "text-foreground",
+						),
+					),
+				],
+				[cta, " →"],
+			),
+		])
 
 const skeletonRow = (h: H): Html =>
 	h.div(
@@ -305,16 +305,12 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 												]),
 									],
 								),
-								panel(
-									h,
-									{ className: "divide-y divide-border-subtle border-border-subtle" },
-									[
-										...connected.map(({ entry, overview }) =>
-											connectedRow(h, entry, overview, onSelect),
-										),
-										...loading.map(() => skeletonRow(h)),
-									],
-								),
+								panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
+									...connected.map(({ entry, overview }) =>
+										connectedRow(h, entry, overview, onSelect),
+									),
+									...loading.map(() => skeletonRow(h)),
+								]),
 							],
 						),
 					]

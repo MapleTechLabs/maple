@@ -279,8 +279,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						slotId: menuId,
 						model: card.menus[menuId] ?? Menu.init(menuId),
 						label: `Actions for ${target.name}`,
-						className:
-							"text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
+						className: "text-muted-foreground hover:text-foreground active:text-foreground shrink-0",
 						entries: [
 							{
 								_tag: "Item",

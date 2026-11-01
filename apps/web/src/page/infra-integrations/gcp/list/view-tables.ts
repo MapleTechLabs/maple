@@ -95,7 +95,10 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	if (row.requests === 0)
 		return GCP_SERVICE_RULES.inScope(row, "idle")
 			? h.div(
-					[h.Class(cn("hidden w-44 md:block", SUB)), h.Title("No requests, instance time billed")],
+					[
+						h.Class(cn("hidden w-44 md:block", SUB)),
+						h.Title("No requests, instance time billed"),
+					],
 					["idle, still billed"],
 				)
 			: h.div([h.Class(cn("hidden w-44 md:block", SUB))], ["no traffic"])

@@ -111,12 +111,7 @@ const externalText = <M>(h: HtmlBuilder<M>, href: string | null, className: stri
 					h.Href(href),
 					h.Target("_blank"),
 					h.Rel("noreferrer noopener"),
-					h.Class(
-						cn(
-							"hover:text-foreground active:text-foreground hover:underline active:underline",
-							className,
-						),
-					),
+					h.Class(cn("hover:text-foreground active:text-foreground hover:underline active:underline", className)),
 				],
 				[text],
 			)
@@ -181,10 +176,7 @@ const commitCard = <M>(
 			h.div(
 				[h.Class("flex flex-col gap-1.5 p-3.5")],
 				[
-					h.p(
-						[h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))],
-						[title],
-					),
+					h.p([h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))], [title]),
 					...(body === ""
 						? []
 						: [h.p([h.Class("line-clamp-4 whitespace-pre-line text-muted-foreground")], [body])]),
@@ -294,8 +286,7 @@ const describeError = (
 					}
 				: { title: "Couldn't load commit", detail: "Try again in a moment." }
 
-const ACTION_CLASS =
-	"mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline active:underline"
+const ACTION_CLASS = "mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline active:underline"
 
 /** `CommitMessage` (not compact). */
 const commitMessage = <M>(h: HtmlBuilder<M>, tag: string): Html => {

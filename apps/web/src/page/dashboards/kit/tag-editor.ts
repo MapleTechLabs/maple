@@ -171,8 +171,7 @@ const draftChips = (h: H, model: Model): Html =>
 									size: "icon-xs",
 									label: `Remove tag ${tag}`,
 									hasTooltip: false,
-									className:
-										"size-4 text-muted-foreground hover:text-foreground active:text-foreground",
+									className: "size-4 text-muted-foreground hover:text-foreground active:text-foreground",
 									attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
 								},
 								[icon(h, "XmarkIcon")],

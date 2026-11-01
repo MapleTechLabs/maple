@@ -32,10 +32,12 @@ export const measure = <M>(
 ): ReadonlyArray<Html | string> =>
 	unitClassName === null
 		? [text]
-		: text.split(UNIT_AFTER_DIGIT).flatMap((part, index): ReadonlyArray<Html | string> => {
-				if (part === "") return []
-				return index % 2 === 1 ? [h.span([h.Class(unitClassName)], [part])] : [part]
-			})
+		: text
+				.split(UNIT_AFTER_DIGIT)
+				.flatMap((part, index): ReadonlyArray<Html | string> => {
+					if (part === "") return []
+					return index % 2 === 1 ? [h.span([h.Class(unitClassName)], [part])] : [part]
+				})
 
 // A unit under a neutral latency drops one grey step; under a warn or error tone it keeps the tone.
 const LATENCY_UNIT = {

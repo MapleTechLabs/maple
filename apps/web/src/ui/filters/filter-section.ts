@@ -141,9 +141,7 @@ export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string): Html
 	h.span(
 		[
 			h.AriaLabel(`About ${title}`),
-			h.Class(
-				"inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground active:text-muted-foreground",
-			),
+			h.Class("inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground active:text-muted-foreground"),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
 			h.Tabindex(0),

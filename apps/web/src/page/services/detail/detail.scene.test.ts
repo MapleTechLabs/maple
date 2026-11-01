@@ -85,18 +85,16 @@ describe("service detail", () => {
 		expect(names(init(route(), context).commands)).toContain("ResolveServiceDetailClock")
 		const start = init(route(), context).model
 		const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" }))
-		expect(names(resolved.commands)).toEqual(
-			expect.arrayContaining([
-				FetchOverview.name,
-				FetchOperations.name,
-				FetchIssues.name,
-				FetchUsage.name,
-				FetchWorkloads.name,
-				FetchRuntimes.name,
-				FetchDependencies.name,
-				FetchUptimeMonitors.name,
-			]),
-		)
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([
+			FetchOverview.name,
+			FetchOperations.name,
+			FetchIssues.name,
+			FetchUsage.name,
+			FetchWorkloads.name,
+			FetchRuntimes.name,
+			FetchDependencies.name,
+			FetchUptimeMonitors.name,
+		]))
 		expect(resolved.model.window).toEqual({
 			startTime: "2026-10-01 00:00:00",
 			endTime: "2026-10-01 12:00:00",
@@ -453,17 +451,11 @@ describe("where the service runs", () => {
 		const model = entered()
 		const answered = pageUpdate(
 			model,
-			Message.CompletedFetchRuntimes({
-				key: model.runtimes.key ?? "",
-				result: Result.succeed(runtimes),
-			}),
+			Message.CompletedFetchRuntimes({ key: model.runtimes.key ?? "", result: Result.succeed(runtimes) }),
 		).model
 		return pageUpdate(
 			answered,
-			Message.CompletedFetchWorkloads({
-				key: answered.workloads.key ?? "",
-				result: Result.succeed([]),
-			}),
+			Message.CompletedFetchWorkloads({ key: answered.workloads.key ?? "", result: Result.succeed([]) }),
 		).model
 	}
 	const RUN_HREF = "/infra/gcp/cloudRun/payment-svc?project=acme-prod&region=europe-west1"
@@ -488,10 +480,7 @@ describe("where the service runs", () => {
 			{ update: pageUpdate, view },
 			given(withRuntimes([CLOUD_RUN])),
 			...settled,
-			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr(
-				"href",
-				RUN_HREF,
-			),
+			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr("href", RUN_HREF),
 		)
 	})
 

@@ -98,7 +98,11 @@ const statementRow = (
 			),
 			h.div([h.Class(cn("w-16 text-foreground-soft", NUMBER))], [formatNumber(row.calls)]),
 			h.div(
-				[h.Class(cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)))],
+				[
+					h.Class(
+						cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)),
+					),
+				],
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
@@ -195,9 +199,7 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 										[
 											h.Type("button"),
 											h.OnClick(Message.ClickedShowAllQueries()),
-											h.Class(
-												"shrink-0 text-primary hover:text-primary/80 active:text-primary/80",
-											),
+											h.Class("shrink-0 text-primary hover:text-primary/80 active:text-primary/80"),
 										],
 										[inputs.showAll ? "Show fewer" : `Show all ${rows.length}`],
 									),

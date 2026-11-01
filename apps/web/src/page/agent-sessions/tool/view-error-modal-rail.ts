@@ -74,9 +74,7 @@ const variantsSection = (
 						h.Class(
 							cn(
 								"-mx-2 flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left font-mono text-xs transition-colors",
-								isSelected
-									? "bg-primary-a2"
-									: "hover:bg-surface-sunken active:bg-surface-sunken",
+								isSelected ? "bg-primary-a2" : "hover:bg-surface-sunken active:bg-surface-sunken",
 							),
 						),
 						h.Title(unwrapToolErrorText(row.message).text),

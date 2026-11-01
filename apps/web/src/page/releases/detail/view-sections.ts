@@ -330,9 +330,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 												h.Href(pr?.url ?? commit.htmlUrl),
 												h.Target("_blank"),
 												h.Rel("noreferrer"),
-												h.Class(
-													"truncate text-foreground hover:underline active:underline",
-												),
+												h.Class("truncate text-foreground hover:underline active:underline"),
 												h.Title(subject),
 											],
 											[subject],

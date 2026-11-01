@@ -29,11 +29,7 @@ const UpdatePassword = Command.define("UpdateClerkPassword", {
 				...(currentPassword !== undefined && { currentPassword }),
 				signOutOfOtherSessions,
 			}),
-		).pipe(
-			settled((result) =>
-				Message.CompletedSubmit({ hadPassword: currentPassword !== undefined, result }),
-			),
-		),
+		).pipe(settled((result) => Message.CompletedSubmit({ hadPassword: currentPassword !== undefined, result }))),
 })
 
 export const init = (): Return => ({
@@ -50,8 +46,7 @@ export const init = (): Return => ({
 })
 
 export const hasPasswordOf = (model: Model): boolean => model.user?.passwordEnabled ?? false
-export const isTooShort = (model: Model): boolean =>
-	model.next.length > 0 && model.next.length < MIN_PASSWORD_LENGTH
+export const isTooShort = (model: Model): boolean => model.next.length > 0 && model.next.length < MIN_PASSWORD_LENGTH
 export const isMismatch = (model: Model): boolean => model.confirm.length > 0 && model.confirm !== model.next
 
 export const canSubmit = (model: Model): boolean =>
@@ -90,11 +85,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isSaving: false },
-					outMessage: PageOutMessage.RequestedToast({
-						type: "error",
-						title: error,
-						description: "",
-					}),
+					outMessage: PageOutMessage.RequestedToast({ type: "error", title: error, description: "" }),
 				}),
 			}),
 	})

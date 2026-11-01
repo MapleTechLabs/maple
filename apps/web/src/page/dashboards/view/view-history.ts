@@ -204,8 +204,7 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 						{
 							label: "Close history panel",
 							size: "icon-xs",
-							className:
-								"ml-auto text-muted-foreground hover:text-foreground active:text-foreground",
+							className: "ml-auto text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(Message.ClickedCloseHistory())],
 						},
 						[icon(h, "XmarkIcon")],

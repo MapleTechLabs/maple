@@ -67,7 +67,9 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 		h.span(
 			[h.Class("contents")],
 			[
-				...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])] : []),
+				...(index > 0
+					? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])]
+					: []),
 				typeof item === "string" ? h.span([h.Class("text-muted-foreground")], [item]) : item,
 			],
 		),

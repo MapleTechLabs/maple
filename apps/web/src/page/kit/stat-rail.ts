@@ -144,9 +144,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					shell,
 					"w-full text-left",
 					rowSelectedClass(isSelected),
-					isDisabled
-						? "cursor-default"
-						: "cursor-pointer hover:bg-surface-faint active:bg-surface-faint",
+					isDisabled ? "cursor-default" : "cursor-pointer hover:bg-surface-faint active:bg-surface-faint",
 					"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),

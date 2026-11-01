@@ -700,10 +700,7 @@ const reconnectLink = (h: H): Html =>
 		[
 			"This AWS account is no longer connected. ",
 			h.a(
-				[
-					h.Href(AWS_FLOW_HREF),
-					h.Class("text-foreground underline-offset-4 hover:underline active:underline"),
-				],
+				[h.Href(AWS_FLOW_HREF), h.Class("text-foreground underline-offset-4 hover:underline active:underline")],
 				["Reconnect"],
 			),
 		],

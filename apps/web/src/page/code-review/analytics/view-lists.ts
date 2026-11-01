@@ -19,7 +19,10 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 		[
 			h.span([h.Class("text-xs text-muted-foreground")], [title]),
 			rows.length === 0
-				? h.span([h.Class("py-1 text-sm text-foreground-subtle")], ["No repositories in this window"])
+				? h.span(
+						[h.Class("py-1 text-sm text-foreground-subtle")],
+						["No repositories in this window"],
+					)
 				: h.ul(
 						[h.Class("flex flex-col")],
 						rows.map((row) =>

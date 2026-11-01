@@ -6,14 +6,7 @@ import { AppRoute, hrefOf } from "../../../../route"
 import { skeleton } from "../../../../ui/skeleton"
 import { truncatedText } from "../../../../ui/truncated-text"
 import { emptyValue } from "../../../../ui/values"
-import {
-	columnHead,
-	dataTable,
-	dataTableEmpty,
-	headSort,
-	ROW_LINK_CLASS,
-	skeletonRows,
-} from "../../kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skeletonRows } from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
 import { relativeTime } from "../../../kit/relative-time"
@@ -33,13 +26,7 @@ const columns = (h: H, sort: SortState | null, kind: WorkloadKind | undefined): 
 		columnHead(h, { label: kind === "job" ? "Completions" : "Ready", width: "w-28" }),
 		columnHead(h, { label: "Pods", sort: head("podCount"), align: "right", width: "w-[60px]" }),
 		columnHead(h, { label: "Restarts", sort: head("restarts"), align: "right", width: "w-36" }),
-		columnHead(h, {
-			label: "CPU peak",
-			sort: head("peakCpuLimitPct"),
-			align: "right",
-			width: "w-36",
-			hidden: "hidden md:flex",
-		}),
+		columnHead(h, { label: "CPU peak", sort: head("peakCpuLimitPct"), align: "right", width: "w-36", hidden: "hidden md:flex" }),
 		columnHead(h, {
 			label: "Memory peak",
 			sort: head("peakMemoryLimitPct"),
@@ -57,10 +44,7 @@ export const workloadTableLoading = (h: H): Html =>
 		{ ariaLabel: "Workloads" },
 		columns(h, null, undefined),
 		skeletonRows(h, 4, () => [
-			h.div(
-				[h.Class("w-0 min-w-64 flex-1")],
-				[skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")],
-			),
+			h.div([h.Class("w-0 min-w-64 flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")]),
 			skeleton(h, "h-3 w-28"),
 			skeleton(h, "h-3 w-[60px]"),
 			skeleton(h, "h-3 w-36"),
@@ -130,14 +114,9 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 							truncatedText(h, {
 								text: wl.workloadName,
 								mono: true,
-								className:
-									"text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+								className: "text-xs font-medium text-foreground transition-colors group-hover:text-primary",
 							}),
-							hostStatusBadge(h, {
-								quiet: true,
-								lastSeen: wl.lastSeen,
-								referenceMs: inputs.referenceTime,
-							}),
+							hostStatusBadge(h, { quiet: true, lastSeen: wl.lastSeen, referenceMs: inputs.referenceTime }),
 						],
 					),
 					metaLine(h, [wl.namespace && `ns ${wl.namespace}`, `kind ${inputs.kind}`]),
@@ -187,11 +166,7 @@ const workloadRow = (h: H, wl: WorkloadRow, inputs: WorkloadTableInputs): Html =
 		],
 	)
 
-export const workloadTable = (
-	h: H,
-	workloads: ReadonlyArray<WorkloadRow>,
-	inputs: WorkloadTableInputs,
-): Html =>
+export const workloadTable = (h: H, workloads: ReadonlyArray<WorkloadRow>, inputs: WorkloadTableInputs): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Workloads", isWaiting: inputs.isWaiting },

@@ -60,7 +60,9 @@ export const heroFieldChipParts = <M>(
 	const label = options.label === "" ? [] : [h.span([h.Class("shrink-0")], [options.label])]
 	return [
 		...(options.isValueFirst === true ? [value, ...label] : [...label, value]),
-		...(options.isPicker === true ? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0" })] : []),
+		...(options.isPicker === true
+			? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0" })]
+			: []),
 	]
 }
 

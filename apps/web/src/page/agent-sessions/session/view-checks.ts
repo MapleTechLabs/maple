@@ -268,12 +268,7 @@ const disclosure = (
 			h.button(
 				[
 					h.AriaExpanded(isExpanded),
-					h.Class(
-						cn(
-							ROW_GRID,
-							"w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-						),
-					),
+					h.Class(cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken")),
 					h.Type("button"),
 					h.OnClick(Message.ToggledChecks({ which: options.which, isOpen: !isExpanded })),
 				],

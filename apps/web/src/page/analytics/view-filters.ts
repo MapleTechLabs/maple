@@ -1,10 +1,5 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import {
-	activeFilterChips,
-	FILTER_SECTION_LABEL,
-	hasActiveFilters,
-	trafficIncludes,
-} from "../../components/analytics/filters"
+import { activeFilterChips, FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "../../components/analytics/filters"
 import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -82,18 +77,12 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 					singleCheckboxFilter(h, {
 						title: "Humans",
 						isChecked: trafficIncludes(filters.traffic, "humans"),
-						onToggle: Message.ToggledTraffic({
-							which: "humans",
-							isOn: !trafficIncludes(filters.traffic, "humans"),
-						}),
+						onToggle: Message.ToggledTraffic({ which: "humans", isOn: !trafficIncludes(filters.traffic, "humans") }),
 					}),
 					singleCheckboxFilter(h, {
 						title: "Bots",
 						isChecked: trafficIncludes(filters.traffic, "bots"),
-						onToggle: Message.ToggledTraffic({
-							which: "bots",
-							isOn: !trafficIncludes(filters.traffic, "bots"),
-						}),
+						onToggle: Message.ToggledTraffic({ which: "bots", isOn: !trafficIncludes(filters.traffic, "bots") }),
 					}),
 				]),
 				filterSidebarDivider(h),
@@ -112,29 +101,21 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 					getOptionLabel: referrerLabel,
 					renderOptionIcon: (name) =>
 						name === WEB_ANALYTICS_UNSET
-							? icon(h, "ArrowThroughLineRightIcon", {
-									className: "size-3.5 shrink-0 text-foreground",
-								})
+							? icon(h, "ArrowThroughLineRightIcon", { className: "size-3.5 shrink-0 text-foreground" })
 							: hostIcon(name),
 				}),
 				section(h, model, "utmSource", breakdowns.utmSources, {
 					getOptionLabel: utmLabel,
 					renderOptionIcon: (name) => (isHostLike(name) ? hostIcon(name) : undefined),
 				}),
-				section(h, model, "utmMedium", breakdowns.utmMediums, {
-					isSearchable: false,
-					getOptionLabel: utmLabel,
-				}),
+				section(h, model, "utmMedium", breakdowns.utmMediums, { isSearchable: false, getOptionLabel: utmLabel }),
 				section(h, model, "utmCampaign", breakdowns.utmCampaigns, { getOptionLabel: utmLabel }),
 				filterSidebarDivider(h),
 				checkboxGroup(h, FILTER_SECTION_LABEL.visitorType, [
 					singleCheckboxFilter(h, {
 						title: "New",
 						isChecked: filters.visitorType === "new",
-						onToggle: Message.ChangedFilter({
-							key: "visitorType",
-							value: filters.visitorType === "new" ? undefined : "new",
-						}),
+						onToggle: Message.ChangedFilter({ key: "visitorType", value: filters.visitorType === "new" ? undefined : "new" }),
 					}),
 					singleCheckboxFilter(h, {
 						title: "Returning",
@@ -148,14 +129,8 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 				section(h, model, "country", breakdowns.countries, { getOptionLabel: countryLabel }),
 				section(h, model, "language", breakdowns.languages, { getOptionLabel: languageLabel }),
 				filterSidebarDivider(h),
-				section(h, model, "deviceType", breakdowns.deviceTypes, {
-					isSearchable: false,
-					getOptionIcon: deviceIconFor,
-				}),
-				section(h, model, "browserName", breakdowns.browsers, {
-					isSearchable: false,
-					getOptionIcon: browserIconFor,
-				}),
+				section(h, model, "deviceType", breakdowns.deviceTypes, { isSearchable: false, getOptionIcon: deviceIconFor }),
+				section(h, model, "browserName", breakdowns.browsers, { isSearchable: false, getOptionIcon: browserIconFor }),
 				section(h, model, "osName", breakdowns.operatingSystems, { isSearchable: false }),
 			].filter((node): node is Html => node !== null),
 		),

@@ -57,8 +57,7 @@ const header = (h: H, rawSql: RawSqlState): Html => {
 					h.Class(
 						badgeVariants({
 							variant: "outline",
-							className:
-								"font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
+							className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
 						}),
 					),
 					h.DataAttribute("slot", "badge"),

@@ -103,8 +103,7 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 					sparkWindow: fixture.sparkWindow,
 					picker: hub.picker !== null && hub.picker.issueId === signal.id ? hub.picker : null,
 					rowMenu:
-						hub.rowMenuTarget === signal.id &&
-						isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
+						hub.rowMenuTarget === signal.id && isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
 							? hub.rowMenu
 							: null,
 				}),

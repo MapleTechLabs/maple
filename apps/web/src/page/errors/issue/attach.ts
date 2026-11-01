@@ -265,34 +265,16 @@ const REPOSITORY_IDS = {
 }
 
 /** The repository `Select`, shown when the org has more than one. */
-const repositoryField = (
-	h: H,
-	model: Model,
-	repositories: ReadonlyArray<string>,
-	value: string | null,
-): Html => {
-	const state = {
-		isInvalid: false,
-		isDirty: false,
-		isFilled: value !== null,
-		isFocused: false,
-		isTouched: false,
-	}
+const repositoryField = (h: H, model: Model, repositories: ReadonlyArray<string>, value: string | null): Html => {
+	const state = { isInvalid: false, isDirty: false, isFilled: value !== null, isFocused: false, isTouched: false }
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		fieldLabel(
-			h,
-			{ ids: REPOSITORY_IDS, className: "text-xs text-muted-foreground", state },
-			"Repository",
-		),
+		fieldLabel(h, { ids: REPOSITORY_IDS, className: "text-xs text-muted-foreground", state }, "Repository"),
 		h.submodel({
 			slotId: model.repositorySelect.id,
 			model: { ...model.repositorySelect, value: value ?? "" },
 			view: SelectView.view,
 			viewInputs: {
-				entries: repositories.map((name) => ({
-					_tag: "Item" as const,
-					item: { value: name, label: name },
-				})),
+				entries: repositories.map((name) => ({ _tag: "Item" as const, item: { value: name, label: name } })),
 				labelledBy: REPOSITORY_IDS.label,
 				size: "sm",
 				className: "w-full text-xs",
@@ -322,10 +304,7 @@ export const attachDialog = (h: H, model: Model): Html => {
 		isReturningFocus: false,
 		panelClassName: "space-y-3",
 		fields: isConnected
-			? [
-					...(names.length > 1 ? [repositoryField(h, model, names, repository)] : []),
-					pickerField(h, model),
-				]
+			? [...(names.length > 1 ? [repositoryField(h, model, names, repository)] : []), pickerField(h, model)]
 			: [pasteField(h, model)],
 	})
 }

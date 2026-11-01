@@ -183,10 +183,7 @@ const workflowRow = (
 				"hidden px-4 sm:table-cell",
 			),
 		],
-		cn(
-			"cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken",
-			isActive && "bg-surface-strong",
-		),
+		cn("cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken", isActive && "bg-surface-strong"),
 		[h.Key(`${row.owner}/${row.repository}/${row.pipeline}`), h.OnClick(select)],
 	)
 }

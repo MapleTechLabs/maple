@@ -158,8 +158,7 @@ const argumentsBlock = (
 					{
 						variant: "ghost",
 						size: "xs",
-						className:
-							"font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
+						className: "font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
 						attributes: [h.OnClick(Message.ClickedCopyArguments({ text: row.arguments }))],
 					},
 					[copyLabel],
@@ -183,7 +182,11 @@ const argumentsBlock = (
 						lines.map((line) => payloadLineView(h, line)),
 					),
 			h.div(
-				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle")],
+				[
+					h.Class(
+						"flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
+					),
+				],
 				[
 					h.span([], note === undefined ? [] : [note]),
 					h.span([h.Class("grow")], []),

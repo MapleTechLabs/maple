@@ -1,14 +1,6 @@
-import {
-	breachStatsFromPreview,
-	type BreachStats,
-	formatBreachDuration,
-} from "@maple/web-data/alerts/breach-stats"
+import { breachStatsFromPreview, type BreachStats, formatBreachDuration } from "@maple/web-data/alerts/breach-stats"
 import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import {
-	countSkippedWindows,
-	draftThresholds,
-	focusPreviewOnClosestGroups,
-} from "@maple/web-data/alerts/preview-insights"
+import { countSkippedWindows, draftThresholds, focusPreviewOnClosestGroups } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
 import { Struct } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
@@ -58,10 +50,7 @@ const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
 							" ",
 							"· longest",
 							" ",
-							h.span(
-								[h.Class("font-mono font-semibold tabular-nums")],
-								[formatBreachDuration(stats.longestRunMs)],
-							),
+							h.span([h.Class("font-mono font-semibold tabular-nums")], [formatBreachDuration(stats.longestRunMs)]),
 						]),
 			],
 		),
@@ -79,50 +68,35 @@ const dryRunBadge = (h: H, dryRun: DryRun, form: RuleForm): Html => {
 			h.span(
 				[
 					h.Class(
-						cn(
-							"font-mono text-sm font-semibold tabular-nums",
-							isBreached ? "text-severity-error" : "text-severity-info",
-						),
+						cn("font-mono text-sm font-semibold tabular-nums", isBreached ? "text-severity-error" : "text-severity-info"),
 					),
 				],
 				[formatSignalValue(displaySignalType(form), dryRun.value)],
 			),
-			alertStatusBadge(h, isBreached ? "firing" : "ok", {
-				label: isBreached ? "Would trigger" : "Within threshold",
-			}),
+			alertStatusBadge(h, isBreached ? "firing" : "ok", { label: isBreached ? "Would trigger" : "Within threshold" }),
 		],
 	)
 }
 
 /** The card's header: the condition, the replay's breaches, the dry run and the range picker. */
-type HeaderView = Pick<
-	Model,
-	"preview" | "previewWindow" | "dryRun" | "timePicker" | "previewPreset" | "isDryRunning"
->
+type HeaderView = Pick<Model, "preview" | "previewWindow" | "dryRun" | "timePicker" | "previewPreset" | "isDryRunning">
 
 const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html => {
 	const stats = breachStatsFromPreview(draftPreviewOf(model, form).preview)
 	const summary = groupBySummary(form)
-	const dryRun =
-		model.dryRun !== null && model.dryRun.key === previewIdentityKey(form) ? model.dryRun : null
+	const dryRun = model.dryRun !== null && model.dryRun.key === previewIdentityKey(form) ? model.dryRun : null
 	return h.div(
 		[h.Class("flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2")],
 		[
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-2")],
 				[
-					badge(h, { variant: "outline", className: "font-mono text-xs" }, [
-						conditionSubject(form),
-					]),
+					badge(h, { variant: "outline", className: "font-mono text-xs" }, [conditionSubject(form)]),
 					...(summary === null
 						? []
 						: [
 								h.span(
-									[
-										h.Class(
-											"hidden max-w-90 truncate text-muted-foreground text-xs md:inline",
-										),
-									],
+									[h.Class("hidden max-w-90 truncate text-muted-foreground text-xs md:inline")],
 									["per ", summary],
 								),
 							]),
@@ -215,31 +189,21 @@ const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Ht
 const headerSlot = createLazy()
 const impactSlot = createLazy()
 const chartSlot = createLazy()
-const headerOf = stableSlice((model: Model): HeaderView =>
-	Struct.pick(model, ["preview", "previewWindow", "dryRun", "timePicker", "previewPreset", "isDryRunning"]),
+const headerOf = stableSlice(
+	(model: Model): HeaderView =>
+		Struct.pick(model, ["preview", "previewWindow", "dryRun", "timePicker", "previewPreset", "isDryRunning"]),
 )
-const impactOf = stableSlice((model: Model): ImpactView =>
-	Struct.pick(model, [
-		"savedForm",
-		"savedPreview",
-		"preview",
-		"previewWindow",
-		"incidents",
-		"editingRuleId",
-	]),
+const impactOf = stableSlice(
+	(model: Model): ImpactView =>
+		Struct.pick(model, ["savedForm", "savedPreview", "preview", "previewWindow", "incidents", "editingRuleId"]),
 )
-const chartOf = stableSlice((model: Model): ChartView =>
-	Struct.pick(model, ["preview", "previewWindow", "chart", "themeColors", "chartRuntime"]),
+const chartOf = stableSlice(
+	(model: Model): ChartView =>
+		Struct.pick(model, ["preview", "previewWindow", "chart", "themeColors", "chartRuntime"]),
 )
 
 /** Step 2's chart card; the comparison block joins it while editing with unsaved changes. */
-export const liveChartHero = (
-	h: H,
-	model: Model,
-	form: RuleForm,
-	evaluated: RuleForm,
-	timeZone: string,
-): Html => {
+export const liveChartHero = (h: H, model: Model, form: RuleForm, evaluated: RuleForm, timeZone: string): Html => {
 	const impact = impactSlot(editImpact, [h, impactOf(model), form])
 	return card(
 		h,
@@ -259,9 +223,7 @@ const skippedWarning = (h: H, slot: Model["preview"], form: RuleForm): ReadonlyA
 	if (skipped.skipped === 0) return []
 	const share = skipped.skipped / Math.max(skipped.total, 1)
 	const reasons = [
-		skipped.byReason.below_min_samples > 0
-			? `${skipped.byReason.below_min_samples} under ${form.minimumSampleCount} samples`
-			: null,
+		skipped.byReason.below_min_samples > 0 ? `${skipped.byReason.below_min_samples} under ${form.minimumSampleCount} samples` : null,
 		skipped.byReason.no_data > 0 ? `${skipped.byReason.no_data} with no data` : null,
 		skipped.byReason.no_value > 0 ? `${skipped.byReason.no_value} with no value` : null,
 	].filter((reason): reason is string => reason !== null)
@@ -273,14 +235,7 @@ const skippedWarning = (h: H, slot: Model["preview"], form: RuleForm): ReadonlyA
 				: "Turn on alerting when there is no data to count them."
 	return [
 		h.div(
-			[
-				h.Class(
-					cn(
-						"flex items-start gap-2 text-xs",
-						share >= 0.25 ? "text-severity-warn" : "text-muted-foreground",
-					),
-				),
-			],
+			[h.Class(cn("flex items-start gap-2 text-xs", share >= 0.25 ? "text-severity-warn" : "text-muted-foreground"))],
 			[
 				icon(h, "CircleWarningIcon", { size: 14, className: "mt-px shrink-0" }),
 				h.span(

@@ -268,7 +268,11 @@ const zoneRow = (
 			h.div(
 				[
 					h.Class(
-						cn("w-20", NUMBER, rated ? errorRateClass(zone.errorRate) : "text-muted-foreground"),
+						cn(
+							"w-20",
+							NUMBER,
+							rated ? errorRateClass(zone.errorRate) : "text-muted-foreground",
+						),
 					),
 				],
 				[rated ? formatErrorRate(zone.errorRate) : EMPTY_VALUE],

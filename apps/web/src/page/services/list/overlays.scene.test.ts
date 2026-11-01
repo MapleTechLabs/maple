@@ -19,10 +19,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
 const enter = (model: Model) =>
-	pageUpdate(
-		model,
-		Message.GotCommitCardMessage({ message: HoverCard.Message.EnteredTrigger({ triggerId: trigger }) }),
-	)
+	pageUpdate(model, Message.GotCommitCardMessage({ message: HoverCard.Message.EnteredTrigger({ triggerId: trigger }) }))
 
 describe("services list overlays", () => {
 	test("hovering a deploy arms the commit lookup, which starts 20 ms later", () => {
@@ -38,21 +35,12 @@ describe("services list overlays", () => {
 
 	test("leaving before the arm fires sends nothing, and a looked-up commit is not fetched again", () => {
 		const hovered = enter(entered())
-		const left = pageUpdate(
-			hovered.model,
-			Message.GotCommitCardMessage({ message: HoverCard.Message.LeftTrigger() }),
-		)
-		const stale = pageUpdate(
-			left.model,
-			Message.ElapsedCommitArm({ sha: SHA, generation: hovered.model.commitArm }),
-		)
+		const left = pageUpdate(hovered.model, Message.GotCommitCardMessage({ message: HoverCard.Message.LeftTrigger() }))
+		const stale = pageUpdate(left.model, Message.ElapsedCommitArm({ sha: SHA, generation: hovered.model.commitArm }))
 		expect(names(stale.commands)).toEqual([])
 		const looked = pageUpdate(
 			left.model,
-			Message.CompletedFetchCommitDetail({
-				sha: SHA,
-				result: Result.fail({ tag: "VcsCommitNotFoundError" }),
-			}),
+			Message.CompletedFetchCommitDetail({ sha: SHA, result: Result.fail({ tag: "VcsCommitNotFoundError" }) }),
 		)
 		expect(names(enter(looked.model).commands)).toEqual(["WaitHoverDelay"])
 	})
@@ -67,11 +55,7 @@ describe("services list overlays", () => {
 		expect(copied.outMessage).toBeUndefined()
 		const landed = (isCopied: boolean) =>
 			pageUpdate(copied.model, Message.CompletedCopyCommitSha({ rowUrl: url, isCopied })).outMessage
-		expect(landed(true)).toMatchObject({
-			_tag: "RequestedNavigation",
-			url,
-			toast: { type: "success", title: "commit SHA copied" },
-		})
+		expect(landed(true)).toMatchObject({ _tag: "RequestedNavigation", url, toast: { type: "success", title: "commit SHA copied" } })
 		expect(landed(false)).toMatchObject({
 			_tag: "RequestedNavigation",
 			url,

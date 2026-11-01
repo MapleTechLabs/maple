@@ -142,7 +142,9 @@ export const CreateAwsConnection = Command.define("CreateAwsConnection", {
 			return Message.SucceededAwsCreate({ connection })
 		}).pipe(
 			Effect.catch((error) =>
-				Effect.succeed(Message.FailedAwsCreate({ error: messageOf(error, "Couldn't connect AWS.") })),
+				Effect.succeed(
+					Message.FailedAwsCreate({ error: messageOf(error, "Couldn't connect AWS.") }),
+				),
 			),
 		),
 })

@@ -64,16 +64,10 @@ describe("error issue writes", () => {
 		const claiming = pageUpdate(model, Message.ClickedClaim()).model
 		const done = pageUpdate(
 			claiming,
-			Message.CompletedIssueWrite({
-				write: { _tag: "Claim" },
-				result: Result.succeed({ severity: null }),
-			}),
+			Message.CompletedIssueWrite({ write: { _tag: "Claim" }, result: Result.succeed({ severity: null }) }),
 		).model
 		expect(done.detail.key).not.toBe(staleKey)
-		const late = pageUpdate(
-			done,
-			Message.CompletedFetchDetail({ key: staleKey, result: Result.fail(toLoadFailure("old")) }),
-		)
+		const late = pageUpdate(done, Message.CompletedFetchDetail({ key: staleKey, result: Result.fail(toLoadFailure("old")) }))
 		expect(late.model.detail).toEqual(done.detail)
 	})
 
@@ -94,10 +88,7 @@ describe("error issue writes", () => {
 		expect(confirmed.model.busy).toEqual(["claim", "severity"])
 		const claimed = pageUpdate(
 			confirmed.model,
-			Message.CompletedIssueWrite({
-				write: { _tag: "Claim" },
-				result: Result.succeed({ severity: null }),
-			}),
+			Message.CompletedIssueWrite({ write: { _tag: "Claim" }, result: Result.succeed({ severity: null }) }),
 		)
 		expect(claimed.model.busy).toEqual(["severity"])
 	})

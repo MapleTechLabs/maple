@@ -104,7 +104,10 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div([h.Class("w-44 truncate text-xs text-foreground-soft"), h.Title(type)], [type]),
 		h.div([h.Class(`w-52 ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
 		h.div(
-			[h.Class(`w-32 ${CELL}`), ...(resource.location === null ? [] : [h.Title(resource.location)])],
+			[
+				h.Class(`w-32 ${CELL}`),
+				...(resource.location === null ? [] : [h.Title(resource.location)]),
+			],
 			[resource.location ?? EMPTY_VALUE],
 		),
 		h.div(
@@ -115,7 +118,10 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			[state ?? EMPTY_VALUE],
 		),
 		h.div(
-			[h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"), h.Title(labels.join("\n"))],
+			[
+				h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"),
+				h.Title(labels.join("\n")),
+			],
 			[
 				...(labels.length === 0
 					? []

@@ -37,12 +37,7 @@ const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
 							h.OnClick(Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id })),
 							h.Class("min-w-0 max-w-48 cursor-pointer font-medium outline-none"),
 						],
-						[
-							h.span(
-								[h.Class("block truncate text-xs font-medium"), h.Title(tab.title)],
-								[tab.title],
-							),
-						],
+						[h.span([h.Class("block truncate text-xs font-medium"), h.Title(tab.title)], [tab.title])],
 					),
 				],
 			)
@@ -58,10 +53,7 @@ export type SharedSectionInputs = Readonly<{
 }>
 
 /** One group of a shared board: a collapsed one draws its header only, so its tiles never fetch. */
-export const sharedSection = (
-	h: H,
-	{ section, activeTabId, isCollapsed, grid }: SharedSectionInputs,
-): Html => {
+export const sharedSection = (h: H, { section, activeTabId, isCollapsed, grid }: SharedSectionInputs): Html => {
 	const hasTabs = section.tabs.length >= 2
 	return h.keyed("section")(
 		section.id,
@@ -75,33 +67,20 @@ export const sharedSection = (
 								h,
 								{
 									size: "icon-xs",
-									label: isCollapsed
-										? `Expand ${section.title}`
-										: `Collapse ${section.title}`,
+									label: isCollapsed ? `Expand ${section.title}` : `Collapse ${section.title}`,
 									attributes: [
 										h.AriaExpanded(!isCollapsed),
-										h.OnClick(
-											Message.ClickedSectionChevron({
-												sectionId: section.id,
-												collapsed: !isCollapsed,
-											}),
-										),
+										h.OnClick(Message.ClickedSectionChevron({ sectionId: section.id, collapsed: !isCollapsed })),
 									],
 								},
 								[
 									icon(h, "ChevronDownIcon", {
-										className: cn(
-											"transition-transform duration-150",
-											isCollapsed && "-rotate-90",
-										),
+										className: cn("transition-transform duration-150", isCollapsed && "-rotate-90"),
 									}),
 								],
 							)
 						: h.div([h.Class("size-6 shrink-0"), h.AriaHidden(true)]),
-					h.span(
-						[h.Class("min-w-0 truncate text-sm font-semibold"), h.Title(section.title)],
-						[section.title],
-					),
+					h.span([h.Class("min-w-0 truncate text-sm font-semibold"), h.Title(section.title)], [section.title]),
 					...(hasTabs && !isCollapsed
 						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, section, activeTabId)])]
 						: []),

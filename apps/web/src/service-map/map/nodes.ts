@@ -69,7 +69,10 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 							],
 						),
 					])
-				: h.span([h.Class("font-mono text-2xs tabular-nums text-foreground-faint")], [EMPTY_VALUE]),
+				: h.span(
+						[h.Class("font-mono text-2xs tabular-nums text-foreground-faint")],
+						[EMPTY_VALUE],
+					),
 		],
 	)
 
@@ -157,9 +160,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 								errCell(h, errorRate),
 								avgCell(h, avgLatencyMs),
 								// A service on a platform has no pods; the logo by its name already says where it runs.
-								...(data.infra === undefined && data.runsOn !== undefined
-									? []
-									: [podsCell(h, data)]),
+								...(data.infra === undefined && data.runsOn !== undefined ? [] : [podsCell(h, data)]),
 							],
 						),
 					],

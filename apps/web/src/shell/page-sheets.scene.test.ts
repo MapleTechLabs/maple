@@ -89,14 +89,8 @@ describe("page rails below lg", () => {
 			expect(openFilters).toBeAbsent(),
 			click(role("button", { name: "Open settings" })),
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
-			Command.resolve(
-				Animation.WaitForPaint,
-				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
-			),
-			Command.resolve(
-				Animation.WaitForAnimationSettled,
-				Animation.Message.EndedAnimation({ generation: 1 }),
-			),
+			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
+			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
 			expect(role("dialog", { name: "Settings" })).toContainText("Members tab"),
 		)
 	})

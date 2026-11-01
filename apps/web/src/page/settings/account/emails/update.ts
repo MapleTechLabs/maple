@@ -41,9 +41,7 @@ const CreateEmail = Command.define("CreateClerkEmailAddress", {
 	execute: ({ email }) =>
 		withUserReverified("Couldn't add email address", (user) => user.createEmailAddress({ email })).pipe(
 			Effect.tap((address) =>
-				clerkTry("Couldn't add email address", () =>
-					address.prepareVerification({ strategy: "email_code" }),
-				),
+				clerkTry("Couldn't add email address", () => address.prepareVerification({ strategy: "email_code" })),
 			),
 			Effect.map((address) => ({ addressId: address.id, email: address.emailAddress })),
 			Effect.mapError((error) => error.message),
@@ -56,9 +54,9 @@ const VerifyEmail = Command.define("VerifyClerkEmailAddress", {
 	args: { addressId: Schema.String, code: Schema.String },
 	messages: [Message.CompletedVerify],
 	execute: ({ addressId, code }) =>
-		withAddress(addressId, "That code did not match", (address) =>
-			address.attemptVerification({ code }),
-		).pipe(settled((result) => Message.CompletedVerify({ result }))),
+		withAddress(addressId, "That code did not match", (address) => address.attemptVerification({ code })).pipe(
+			settled((result) => Message.CompletedVerify({ result })),
+		),
 })
 
 /** Re-opens the code step for an address added earlier but never verified. */
@@ -76,21 +74,18 @@ const SetPrimary = Command.define("SetClerkPrimaryEmail", {
 	args: { addressId: Schema.String, email: Schema.String },
 	messages: [Message.CompletedSetPrimary],
 	execute: ({ addressId, email }) =>
-		withUser("Couldn't change your primary email", (user) =>
-			user.update({ primaryEmailAddressId: addressId }),
-		).pipe(settled((result) => Message.CompletedSetPrimary({ email, result }))),
+		withUser("Couldn't change your primary email", (user) => user.update({ primaryEmailAddressId: addressId })).pipe(
+			settled((result) => Message.CompletedSetPrimary({ email, result })),
+		),
 })
 
 const RemoveEmail = Command.define("RemoveClerkEmailAddress", {
 	args: { addressId: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ addressId }) =>
-		withAddress(
-			addressId,
-			"Couldn't remove email address",
-			(address) => address.destroy(),
-			withUserReverified,
-		).pipe(settled((result) => Message.CompletedRemove({ result }))),
+		withAddress(addressId, "Couldn't remove email address", (address) => address.destroy(), withUserReverified).pipe(
+			settled((result) => Message.CompletedRemove({ result })),
+		),
 })
 
 const CODE_ID = "account-email-code"
@@ -110,26 +105,20 @@ export const init = (): Return => ({
 	commands: [ReadEmailsUser()],
 })
 
-const toast = (type: "success" | "error", title: string) =>
-	PageOutMessage.RequestedToast({ type, title, description: "" })
+const toast = (type: "success" | "error", title: string) => PageOutMessage.RequestedToast({ type, title, description: "" })
 
 const liftAdd = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
 		addDialog: step.model,
-		...(step.outMessage?._tag === "Closed" && {
-			add: { _tag: "Email", value: "" } as const,
-			code: initCode(CODE_ID),
-		}),
+		...(step.outMessage?._tag === "Closed" && { add: { _tag: "Email", value: "" } as const, code: initCode(CODE_ID) }),
 	},
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAddDialogMessage({ message })),
 })
 
 const liftRemove = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, removeDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotRemoveDialogMessage({ message }),
-	),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRemoveDialogMessage({ message })),
 })
 
 const withCommands = (step: Return, commands: ReadonlyArray<Command.Command<Message>>): Return => ({
@@ -138,10 +127,7 @@ const withCommands = (step: Return, commands: ReadonlyArray<Command.Command<Mess
 })
 
 /** Clerk requires one verified address, so the primary and the last verified one stay. */
-export const canRemove = (
-	user: { readonly primaryEmailAddressId: string | null; readonly emails: ReadonlyArray<AccountEmail> },
-	address: AccountEmail,
-): boolean => {
+export const canRemove = (user: { readonly primaryEmailAddressId: string | null; readonly emails: ReadonlyArray<AccountEmail> }, address: AccountEmail): boolean => {
 	const verifiedCount = user.emails.filter((email) => email.isVerified).length
 	const isPrimary = address.id === user.primaryEmailAddressId
 	return !isPrimary && !(address.isVerified && verifiedCount === 1)
@@ -150,10 +136,7 @@ export const canRemove = (
 const verify = (model: Model, code: string): Return =>
 	model.add._tag !== "Code" || code.length < 6 || model.isBusy
 		? { model }
-		: {
-				model: { ...model, isBusy: true },
-				commands: [VerifyEmail({ addressId: model.add.addressId, code })],
-			}
+		: { model: { ...model, isBusy: true }, commands: [VerifyEmail({ addressId: model.add.addressId, code })] }
 
 const codeStep = (addressId: string, email: string): AddStep => ({ _tag: "Code", addressId, email })
 
@@ -171,10 +154,7 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 					commands: [PrepareVerification({ addressId: row.id, email: row.email })],
 				}
 			if (value === "primary")
-				return {
-					model: { ...model, isBusy: true },
-					commands: [SetPrimary({ addressId: row.id, email: row.email })],
-				}
+				return { model: { ...model, isBusy: true }, commands: [SetPrimary({ addressId: row.id, email: row.email })] }
 			return liftRemove({ ...model, removing: row }, Dialog.open(model.removeDialog))
 		},
 	})
@@ -183,11 +163,7 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedReadUser: ({ user }) => ({ model: { ...model, isLoaded: true, user } }),
-		ClickedAdd: () =>
-			liftAdd(
-				{ ...model, add: { _tag: "Email", value: "" }, code: initCode(CODE_ID) },
-				Dialog.open(model.addDialog),
-			),
+		ClickedAdd: () => liftAdd({ ...model, add: { _tag: "Email", value: "" }, code: initCode(CODE_ID) }, Dialog.open(model.addDialog)),
 		GotAddDialogMessage: ({ message: child }) => liftAdd(model, Dialog.update(model.addDialog, child)),
 		ChangedEmail: ({ value }) => ({ model: { ...model, add: { _tag: "Email", value } } }),
 		SubmittedAdd: () => {
@@ -199,25 +175,15 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedCreate: ({ result }) =>
 			Result.match(result, {
 				onSuccess: ({ addressId, email }) => ({
-					model: {
-						...model,
-						isBusy: false,
-						add: codeStep(addressId, email),
-						code: initCode(CODE_ID),
-					},
+					model: { ...model, isBusy: false, add: codeStep(addressId, email), code: initCode(CODE_ID) },
 					commands: [ReadEmailsUser()],
 				}),
-				onFailure: (error) => ({
-					model: { ...model, isBusy: false },
-					outMessage: toast("error", error),
-				}),
+				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
 			}),
 		GotCodeMessage: ({ message: child }) => {
 			const step = OtpField.update(model.code, child)
 			const next = { ...model, code: step.model }
-			const commands = Command.mapMessages(step.commands ?? [], (inner) =>
-				Message.GotCodeMessage({ message: inner }),
-			)
+			const commands = Command.mapMessages(step.commands ?? [], (inner) => Message.GotCodeMessage({ message: inner }))
 			// `onValueComplete`: the sixth digit submits.
 			return !isComplete(model.code) && isComplete(step.model)
 				? withCommands(verify(next, OtpField.valueOf(step.model)), commands)
@@ -227,28 +193,16 @@ export const update = (model: Model, message: Message): Return =>
 			Result.match(result, {
 				onSuccess: () =>
 					withCommands(
-						{
-							...liftAdd({ ...model, isBusy: false }, Dialog.close(model.addDialog)),
-							outMessage: toast("success", "Email address verified"),
-						},
+						{ ...liftAdd({ ...model, isBusy: false }, Dialog.close(model.addDialog)), outMessage: toast("success", "Email address verified") },
 						[ReadEmailsUser()],
 					),
-				onFailure: (error) => ({
-					model: { ...model, isBusy: false },
-					outMessage: toast("error", error),
-				}),
+				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
 			}),
 		CompletedPrepare: ({ addressId, email, result }) =>
 			Result.match(result, {
 				onSuccess: () =>
-					liftAdd(
-						{ ...model, isBusy: false, add: codeStep(addressId, email), code: initCode(CODE_ID) },
-						Dialog.open(model.addDialog),
-					),
-				onFailure: (error) => ({
-					model: { ...model, isBusy: false },
-					outMessage: toast("error", error),
-				}),
+					liftAdd({ ...model, isBusy: false, add: codeStep(addressId, email), code: initCode(CODE_ID) }, Dialog.open(model.addDialog)),
+				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
 			}),
 		CompletedSetPrimary: ({ email, result }) =>
 			Result.match(result, {
@@ -257,17 +211,12 @@ export const update = (model: Model, message: Message): Return =>
 					commands: [ReadEmailsUser()],
 					outMessage: toast("success", `${email} is now your primary email`),
 				}),
-				onFailure: (error) => ({
-					model: { ...model, isBusy: false },
-					outMessage: toast("error", error),
-				}),
+				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
 			}),
 		GotRowMenuMessage: ({ menuId, message: child }) => {
 			const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), child)
 			const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }
-			const commands = Command.mapMessages(step.commands ?? [], (inner) =>
-				Message.GotRowMenuMessage({ menuId, message: inner }),
-			)
+			const commands = Command.mapMessages(step.commands ?? [], (inner) => Message.GotRowMenuMessage({ menuId, message: inner }))
 			if (step.outMessage?._tag !== "SelectedItem") return { model: next, commands }
 			const after = pickedRowAction(next, menuId, step.outMessage.value)
 			return { ...after, commands: [...commands, ...(after.commands ?? [])] }
@@ -277,26 +226,17 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedConfirmRemove: () =>
 			model.removing === null || model.isBusy
 				? { model }
-				: {
-						model: { ...model, isBusy: true },
-						commands: [RemoveEmail({ addressId: model.removing.id })],
-					},
+				: { model: { ...model, isBusy: true }, commands: [RemoveEmail({ addressId: model.removing.id })] },
 		CompletedRemove: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () =>
 					withCommands(
 						{
-							...liftRemove(
-								{ ...model, isBusy: false, removing: null },
-								Dialog.close(model.removeDialog),
-							),
+							...liftRemove({ ...model, isBusy: false, removing: null }, Dialog.close(model.removeDialog)),
 							outMessage: toast("success", "Email address removed"),
 						},
 						[ReadEmailsUser()],
 					),
-				onFailure: (error) => ({
-					model: { ...model, isBusy: false },
-					outMessage: toast("error", error),
-				}),
+				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
 			}),
 	})

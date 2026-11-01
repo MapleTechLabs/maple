@@ -40,9 +40,7 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 				h.button(
 					[
 						h.Type("button"),
-						h.Class(
-							"w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate",
-						),
+						h.Class("w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate"),
 						h.OnMouseDown(product(ProductEdit.PickedListField({ index, field }))),
 					],
 					[field],
@@ -60,10 +58,7 @@ export const listColumnRow = (
 	suggestions: ReadonlyArray<string> | null,
 ): Html =>
 	h.div(
-		[
-			h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"),
-			h.DataAttribute(ROW_ATTRIBUTE, ""),
-		],
+		[h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"), h.DataAttribute(ROW_ATTRIBUTE, "")],
 		[
 			h.button(
 				[

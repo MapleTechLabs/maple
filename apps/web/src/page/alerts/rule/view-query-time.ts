@@ -41,6 +41,7 @@ export const checkTimesOf = (checks: ReadonlyArray<AlertCheckDocument>): Readonl
 		),
 	)
 
+
 export const queryTimeCard = (
 	h: H,
 	rule: AlertRuleDocument,
@@ -96,9 +97,7 @@ export const queryTimeCard = (
 					),
 					h.div(
 						[
-							h.Class(
-								"pointer-events-none absolute inset-x-0 border-t border-dashed border-severity-error/60",
-							),
+							h.Class("pointer-events-none absolute inset-x-0 border-t border-dashed border-severity-error/60"),
 							h.Style({ bottom: `${(limitMs / scaleMs) * 100}%` }),
 						],
 						[],
@@ -108,9 +107,7 @@ export const queryTimeCard = (
 						: [
 								h.div(
 									[
-										h.Class(
-											"pointer-events-none absolute inset-x-0 border-t border-dotted border-foreground-subtle",
-										),
+										h.Class("pointer-events-none absolute inset-x-0 border-t border-dotted border-foreground-subtle"),
 										h.Style({ bottom: `${(earlierLimitMs / scaleMs) * 100}%` }),
 									],
 									[],

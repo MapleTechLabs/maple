@@ -183,9 +183,9 @@ const RemoveMember = Command.define("RemoveClerkMember", {
 	args: { memberId: Schema.String, name: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ memberId, name }) =>
-		withMembership(memberId, (member) => clerkTry("Couldn't remove member", () => member.destroy())).pipe(
-			settleClerk((result) => Message.CompletedRemove({ name, result })),
-		),
+		withMembership(memberId, (member) =>
+			clerkTry("Couldn't remove member", () => member.destroy()),
+		).pipe(settleClerk((result) => Message.CompletedRemove({ name, result }))),
 })
 
 const RevokeInvitation = Command.define("RevokeClerkInvitation", {

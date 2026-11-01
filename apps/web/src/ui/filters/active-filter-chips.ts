@@ -69,8 +69,7 @@ export const activeFilterChips = <M>(
 							{
 								size: "icon-xs",
 								label: `Remove filter: ${description}`,
-								className:
-									"-my-1 text-current/60 hover:bg-current/10 active:bg-current/10 hover:text-current active:text-current",
+								className: "-my-1 text-current/60 hover:bg-current/10 active:bg-current/10 hover:text-current active:text-current",
 								attributes: [h.OnClick(chip.onRemove)],
 							},
 							[icon(h, "XmarkIcon")],
@@ -85,8 +84,7 @@ export const activeFilterChips = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className:
-									"ml-1 text-muted-foreground hover:text-foreground active:text-foreground",
+								className: "ml-1 text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClearAll)],
 							},
 							["Clear all"],

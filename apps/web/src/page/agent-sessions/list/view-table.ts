@@ -8,17 +8,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { icon, type IconName } from "../../../ui/icon"
 import { loadingMoreRow } from "../../../ui/list-footer"
-import {
-	ariaSort,
-	rowLink,
-	sortButton,
-	table,
-	tableBody,
-	tableCell,
-	tableHead,
-	tableHeader,
-	tableRow,
-} from "../../../ui/table"
+import { ariaSort, rowLink, sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { middleTruncate } from "../../../ui/middle-truncate"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { emptyValue, measure, NIL_VALUE } from "../../../ui/values"
@@ -267,12 +257,7 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						[h.Class("shrink-0 text-foreground-faint")],
 						[id.kind === "trace" ? "Trace" : "Session"],
 					),
-					middleTruncate(h, {
-						text: id.short,
-						tail: 6,
-						mono: true,
-						className: "text-foreground-subtle",
-					}),
+					middleTruncate(h, { text: id.short, tail: 6, mono: true, className: "text-foreground-subtle" }),
 					...inlineModel(h, row, context),
 				],
 			),
@@ -318,10 +303,14 @@ const modelCell = (h: H, row: DisplayRow, context: RowContext): Html | null => {
 
 /** A count with the kind's glyph, in its hue. */
 const workCount = (h: H, iconName: IconName, tone: string, count: number): Html =>
-	hint(h, cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : NIL_VALUE), [
-		icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
-		formatNumber(count),
-	])
+	hint(
+		h,
+		cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : NIL_VALUE),
+		[
+			icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
+			formatNumber(count),
+		],
+	)
 
 const BUCKET_COVERAGE_MIN = 0.9
 

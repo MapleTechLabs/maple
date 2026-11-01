@@ -511,8 +511,7 @@ export const edgeLabel = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | 
 	)
 }
 
-const CONTROL =
-	"flex size-6.5 items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
+const CONTROL = "flex size-6.5 items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
 
 /** The four zoom buttons: the wheel scrolls the page here. */
 const controls = (h: H): Html =>

@@ -204,7 +204,11 @@ const mutedError = <M>(
 				? []
 				: [
 						h.span(
-							[h.Class("text-3xs text-foreground-subtle max-w-full text-center line-clamp-3")],
+							[
+								h.Class(
+									"text-3xs text-foreground-subtle max-w-full text-center line-clamp-3",
+								),
+							],
 							[state.message],
 						),
 					]),

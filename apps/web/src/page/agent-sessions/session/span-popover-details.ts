@@ -229,10 +229,7 @@ const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, Pan
 
 /** `LogsSection`: the trace panel's span logs, read once the tab is open. */
 const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { timeZone }, p) =>
-	p.div(
-		[p.Class("overflow-hidden rounded-md border border-border-subtle")],
-		[spanLogs(p, state, timeZone)],
-	),
+	p.div([p.Class("overflow-hidden rounded-md border border-border-subtle")], [spanLogs(p, state, timeZone)]),
 )
 
 /** The call's own settings and identity, shown only where the span reported them. */

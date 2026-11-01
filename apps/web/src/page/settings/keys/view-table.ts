@@ -111,12 +111,7 @@ const apiRow = (
 			: []),
 	]
 	return h.div(
-		[
-			h.Key(row.id),
-			h.Class(
-				cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken active:bg-surface-sunken"),
-			),
-		],
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken active:bg-surface-sunken"))],
 		[
 			h.div(
 				[h.Class(cn(COL.name, "flex flex-col gap-1"))],

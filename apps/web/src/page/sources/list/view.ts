@@ -26,8 +26,7 @@ import type { Model, SourceKind } from "./model"
 type H = HtmlBuilder<Message>
 
 // The whole row opens on click; the name is the real link for keyboards and screen readers.
-const NAME_LINK_CLASS =
-	"truncate text-sm font-medium outline-none hover:underline active:underline focus-visible:underline"
+const NAME_LINK_CLASS = "truncate text-sm font-medium outline-none hover:underline active:underline focus-visible:underline"
 
 /** `outline` keeps one filled CTA on the page when the empty state shows its own. */
 const connectButton = (h: H, variant?: "outline"): Html =>

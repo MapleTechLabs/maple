@@ -431,9 +431,7 @@ const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 				].filter((node): node is Html => node !== null),
 				h.a(
 					[
-						h.Class(
-							"pt-1 font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80",
-						),
+						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80 active:text-primary/80"),
 						h.Href(hrefOf(AppRoute.Service({ serviceName: traced.service, search: {} }))),
 					],
 					["Open ", traced.service],

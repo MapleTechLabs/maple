@@ -287,8 +287,7 @@ const commandBlock = (h: H, model: Model): Html =>
 	)
 
 /** The footer's two links share one style. */
-const LINK_CLASS =
-	"font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground"
+const LINK_CLASS = "font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground"
 
 /** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [

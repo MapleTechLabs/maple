@@ -32,13 +32,11 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	}),
 	states: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
-		dependenciesToStream: ({ orgId }) =>
-			ruleStateRows(orgId, (rows) => Message.UpdatedRuleStates({ orgId, rows })),
+		dependenciesToStream: ({ orgId }) => ruleStateRows(orgId, (rows) => Message.UpdatedRuleStates({ orgId, rows })),
 	}),
 	incidents: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
-		dependenciesToStream: ({ orgId }) =>
-			incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
+		dependenciesToStream: ({ orgId }) => incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
 	}),
 	destinations: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
@@ -49,22 +47,18 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	menuChatConnect: entry(ChatConnectStream.Dependencies.fields, {
 		modelToDependencies: ({ model }) => ChatConnectStream.dependenciesOf(model.chatConnect),
 		dependenciesToStream: (dependencies) =>
-			Stream.map(ChatConnectStream.streamOf(dependencies), (message) =>
-				Message.GotChatConnectMessage({ message }),
-			),
+			Stream.map(ChatConnectStream.streamOf(dependencies), (message) => Message.GotChatConnectMessage({ message })),
 	}),
 	/** The destination dialog's Linear connect popup coming back. */
 	destinationConnectReturn: entry(DestinationDialog.ConnectReturnDependencies, {
-		modelToDependencies: ({ model }) =>
-			DestinationDialog.connectReturnDependencies(model.destinationDialog),
+		modelToDependencies: ({ model }) => DestinationDialog.connectReturnDependencies(model.destinationDialog),
 		dependenciesToStream: (dependencies) =>
 			Stream.map(DestinationDialog.connectReturnStream(dependencies), (message) =>
 				Message.GotDestinationDialogMessage({ message }),
 			),
 	}),
 	destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
-		modelToDependencies: ({ model }) =>
-			DestinationDialog.chatConnectDependencies(model.destinationDialog),
+		modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
 		dependenciesToStream: (dependencies) =>
 			Stream.map(DestinationDialog.chatConnectStream(dependencies), (message) =>
 				Message.GotDestinationDialogMessage({ message }),
@@ -85,10 +79,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	sourceDashboard: entry(
 		{ orgId: Schema.String, dashboardId: Schema.NullOr(Schema.String) },
 		{
-			modelToDependencies: ({ model, context }) => ({
-				orgId: context.orgId,
-				dashboardId: lookupDashboardId(model),
-			}),
+			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, dashboardId: lookupDashboardId(model) }),
 			dependenciesToStream: ({ orgId, dashboardId }) =>
 				dashboardId === null
 					? Stream.empty
@@ -100,10 +91,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	dashboardsLoad: entry(watching, {
 		modelToDependencies: ({ model, context }) => ({
 			orgId: context.orgId,
-			isWatching:
-				lookupDashboardId(model) !== null &&
-				model.sourceDashboards === null &&
-				!model.isDashboardsLoadFailed,
+			isWatching: lookupDashboardId(model) !== null && model.sourceDashboards === null && !model.isDashboardsLoadFailed,
 		}),
 		dependenciesToStream: ({ orgId, isWatching }) =>
 			isWatching

@@ -115,7 +115,11 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 			]
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
-		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h, 4)]),
+		onEmpty: () =>
+			section(h, "mb-4 space-y-3", false, [
+				...banner,
+				statRailLoading(h, 4),
+			]),
 		// An empty section keeps no margin, or the page strip's gap above the usage rail doubles.
 		onFailure: () => section(h, banner.length > 0 ? "mb-4 space-y-3" : "space-y-3", false, banner),
 		onData: ([snapshot, anomalies, alerts]) => {

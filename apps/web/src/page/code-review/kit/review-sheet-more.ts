@@ -187,9 +187,7 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 								h.Class(
 									cn(
 										"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-										isCurrent
-											? "bg-muted"
-											: "hover:bg-surface-sunken active:bg-surface-sunken",
+										isCurrent ? "bg-muted" : "hover:bg-surface-sunken active:bg-surface-sunken",
 									),
 								),
 								...(isCurrent ? [h.Disabled(true)] : []),

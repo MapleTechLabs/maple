@@ -221,9 +221,7 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 		[
 			h.div(
 				[
-					h.Class(
-						cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6"),
-					),
+					h.Class(cn(LANE_GUTTER, "shrink-0 truncate border-r border-border-subtle px-2 py-1 pl-6")),
 					h.Title(`${span.serviceName} · ${span.spanName}`),
 				],
 				[
@@ -471,11 +469,7 @@ const tracesSlot = createLazy()
 
 const timelineHeader = (h: H): Html =>
 	h.div(
-		[
-			h.Class(
-				"flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2",
-			),
-		],
+		[h.Class("flex items-center justify-between gap-3 border-b border-border bg-surface-sunken px-3 py-2")],
 		[eyebrow(h, { variant: "label" }, ["Timeline"]), markerLegend(h)],
 	)
 

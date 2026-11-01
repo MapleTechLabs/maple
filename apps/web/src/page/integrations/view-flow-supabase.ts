@@ -131,9 +131,7 @@ const selfHostedLine = (h: H): Html =>
 			h.a(
 				[
 					h.Href(PROMETHEUS_HREF),
-					h.Class(
-						"inline-flex items-center gap-1 text-foreground hover:underline active:underline",
-					),
+					h.Class("inline-flex items-center gap-1 text-foreground hover:underline active:underline"),
 				],
 				["Use Prometheus", icon(h, "ArrowRightIcon", { size: 12 })],
 			),

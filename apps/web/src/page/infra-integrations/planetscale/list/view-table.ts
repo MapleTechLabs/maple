@@ -138,7 +138,11 @@ const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 		[row.hasStats ? formatWholePercent(row.cpuMaxPercent / 100) : EMPTY_VALUE],
 	),
 	h.div(
-		[h.Class(cn("hidden w-28", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)))],
+		[
+			h.Class(
+				cn("hidden w-28", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)),
+			),
+		],
 		[row.hasStats ? formatWholePercent(row.memMaxPercent / 100) : EMPTY_VALUE],
 	),
 	h.div(

@@ -16,18 +16,14 @@ export const HistogramMessage = defineMessageUnion({
 	/** The bar under the pointer; `dragStart` is the bar a press went down on, while it is held. */
 	PointedHistogramBar: { index: Schema.Number, dragStart: Schema.optional(Schema.Number) },
 	LeftHistogram: {},
-	SelectedHistogramRange: {
-		min: Schema.UndefinedOr(Schema.Number),
-		max: Schema.UndefinedOr(Schema.Number),
-	},
+	SelectedHistogramRange: { min: Schema.UndefinedOr(Schema.Number), max: Schema.UndefinedOr(Schema.Number) },
 })
 export type HistogramMessage = typeof HistogramMessage.Type
 
 const Bound = Schema.Struct({ from: Schema.Number, to: Schema.Number, unbounded: Schema.Boolean })
 
 /** A count bucket's last member is `to - 1`: the bound a selection writes. */
-const lastOfBound = (bound: typeof Bound.Type, isCount: boolean): number =>
-	isCount ? bound.to - 1 : bound.to
+const lastOfBound = (bound: typeof Bound.Type, isCount: boolean): number => (isCount ? bound.to - 1 : bound.to)
 
 /** Pointer capture on the bars. */
 export const MountRangeHistogram = Mount.defineStream("MountRangeHistogram", {
@@ -53,13 +49,9 @@ export const MountRangeHistogram = Mount.defineStream("MountRangeHistogram", {
 						state.dragStart = indexAt(event.clientX)
 						Queue.offerUnsafe(
 							queue,
-							HistogramMessage.PointedHistogramBar({
-								index: state.dragStart,
-								dragStart: state.dragStart,
-							}),
+							HistogramMessage.PointedHistogramBar({ index: state.dragStart, dragStart: state.dragStart }),
 						)
-						if (event.currentTarget instanceof Element)
-							event.currentTarget.setPointerCapture(event.pointerId)
+						if (event.currentTarget instanceof Element) event.currentTarget.setPointerCapture(event.pointerId)
 					}
 					const onMove = (event: Event) =>
 						event instanceof PointerEvent &&
@@ -140,8 +132,7 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 					hi: Math.max(config.dragStart, config.hoveredIndex),
 				}
 			: undefined
-	const hasSelection =
-		config.minValue !== undefined || config.maxValue !== undefined || preview !== undefined
+	const hasSelection = config.minValue !== undefined || config.maxValue !== undefined || preview !== undefined
 	const isSelected = (bucket: RangeBucket, index: number): boolean => {
 		if (preview !== undefined) return index >= preview.lo && index <= preview.hi
 		if (config.minValue === undefined && config.maxValue === undefined) return false
@@ -162,11 +153,7 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 		[],
 		[
 			h.div(
-				[
-					h.Class(
-						"mb-1 flex h-4 items-center justify-between text-3xs tabular-nums text-muted-foreground",
-					),
-				],
+				[h.Class("mb-1 flex h-4 items-center justify-between text-3xs tabular-nums text-muted-foreground")],
 				hovered === undefined
 					? [h.span([], [formatNumber(total), " ", config.unitLabel])]
 					: [
@@ -177,21 +164,14 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 			h.div(
 				[
 					// New buckets (a facets refetch) remount the handlers, which captured the old bounds.
-					h.Key(
-						bounds
-							.map((bound) => `${bound.from}-${bound.to}${bound.unbounded ? "+" : ""}`)
-							.join(","),
-					),
+					h.Key(bounds.map((bound) => `${bound.from}-${bound.to}${bound.unbounded ? "+" : ""}`).join(",")),
 					h.AriaLabel(
 						`${config.title} distribution across ${buckets.length} buckets, from ${formatValue(first.from, unit)} to ${last.unbounded === true ? `over ${formatValue(last.from, unit)}` : formatValue(lastOf(last), unit)}`,
 					),
 					h.Class("flex h-8 cursor-crosshair touch-none items-end gap-px"),
 					h.Role("img"),
 					h.OnMount(
-						Mount.mapMessage(
-							MountRangeHistogram({ bounds, isCount: unit === "count" }),
-							config.toMessage,
-						),
+						Mount.mapMessage(MountRangeHistogram({ bounds, isCount: unit === "count" }), config.toMessage),
 					),
 				],
 				buckets.map((bucket, index) =>
@@ -223,14 +203,7 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 				[
 					h.span([], [formatValue(first.from, unit)]),
 					h.span([], [formatValue(middle.from, unit)]),
-					h.span(
-						[],
-						[
-							last.unbounded === true
-								? `${formatValue(last.from, unit)}+`
-								: formatValue(lastOf(last), unit),
-						],
-					),
+					h.span([], [last.unbounded === true ? `${formatValue(last.from, unit)}+` : formatValue(lastOf(last), unit)]),
 				],
 			),
 		],

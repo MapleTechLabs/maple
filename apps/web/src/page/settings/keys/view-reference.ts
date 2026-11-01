@@ -213,7 +213,11 @@ export const apiReference = (h: H, model: Model): Html =>
 
 export const oauthPointer = (h: H): Html =>
 	h.p(
-		[h.Class("w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground")],
+		[
+			h.Class(
+				"w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground",
+			),
+		],
 		[
 			"Clients signed in with OAuth don't use keys. See and revoke them in the ",
 			h.a(

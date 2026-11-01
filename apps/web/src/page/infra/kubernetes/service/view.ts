@@ -1,8 +1,4 @@
-import {
-	deriveLensVerdict,
-	lensHeadline,
-	lensSubhead,
-} from "../../../../components/infra/service-lens/service-lens-summary"
+import { deriveLensVerdict, lensHeadline, lensSubhead } from "../../../../components/infra/service-lens/service-lens-summary"
 import { unifiedBucketDomain } from "../../../../components/infra/service-lens/bucket-domain"
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -12,14 +8,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import {
-	empty,
-	emptyDescription,
-	emptyHeader,
-	emptyMedia,
-	emptyMessage,
-	emptyTitle,
-} from "../../../../ui/empty"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import { skeleton } from "../../../../ui/skeleton"
@@ -48,17 +37,12 @@ import { correlationStrips, type StripSeries } from "../../kit/correlation-strip
 
 type H = HtmlBuilder<Message>
 
-const isInitial = (data: AsyncData.AsyncData<unknown, unknown>) =>
-	AsyncData.isIdle(data) || AsyncData.isLoading(data)
+const isInitial = (data: AsyncData.AsyncData<unknown, unknown>) => AsyncData.isIdle(data) || AsyncData.isLoading(data)
 
 const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedWorkload | null): Html => {
 	if (workload === null) return null
 	return h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground",
-			),
-		],
+		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground")],
 		[
 			h.a(
 				[
@@ -104,36 +88,20 @@ const noWorkload = (h: H, serviceName: string): Html =>
 		"py-16",
 	)
 
-const podsSection = (
-	h: H,
-	model: Model,
-	inputs: PageViewInputs,
-	pods: ReadonlyArray<PodRow>,
-	totalPods: number,
-): Html =>
+const podsSection = (h: H, model: Model, inputs: PageViewInputs, pods: ReadonlyArray<PodRow>, totalPods: number): Html =>
 	h.section(
 		[h.Class("space-y-2.5")],
 		[
 			sectionHeading(h, {
 				title: "The pods behind this service",
 				hint: "worst first, by peak saturation",
-				actions: h.span(
-					[h.Class("font-mono text-2xs tabular-nums text-muted-foreground")],
-					[
-						totalPods > pods.length
-							? `Top ${pods.length} of ${formatNumber(totalPods)}`
-							: countLabel(totalPods, "pod"),
-					],
-				),
+				actions: h.span([h.Class("font-mono text-2xs tabular-nums text-muted-foreground")], [
+					totalPods > pods.length ? `Top ${pods.length} of ${formatNumber(totalPods)}` : countLabel(totalPods, "pod"),
+				]),
 			}),
 			AsyncData.matchData(model.pods.data, {
 				onEmpty: () => podTableLoading(h),
-				onFailure: (failure) =>
-					errorState(h, {
-						failure,
-						title: "Couldn't load pods",
-						onRetry: Message.ClickedRetryPods(),
-					}),
+				onFailure: (failure) => errorState(h, { failure, title: "Couldn't load pods", onRetry: Message.ClickedRetryPods() }),
 				onData: (page) =>
 					page.data.length === 0
 						? emptyMessage(h, { dashed: true, className: "py-12" }, [
@@ -159,11 +127,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			onEmpty: () => null,
 			onData: () => null,
 			onFailure: (failure) =>
-				errorState(h, {
-					failure,
-					title: "Couldn't load this service",
-					onRetry: Message.ClickedRetryOverview(),
-				}),
+				errorState(h, { failure, title: "Couldn't load this service", onRetry: Message.ClickedRetryOverview() }),
 		})
 	const workload = linkedWorkload(model)
 	const points = AsyncData.getOrElse(model.overview.data, () => [])
@@ -176,11 +140,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 		hasWorkload: workload !== null,
 		pods,
 		totalPods,
-		latency: points.map((point) => ({
-			bucket: point.bucket,
-			value: point.p99LatencyMs,
-			hasTraffic: point.totalCount > 0,
-		})),
+		latency: points.map((point) => ({ bucket: point.bucket, value: point.p99LatencyMs, hasTraffic: point.totalCount > 0 })),
 		cpuOfLimit: worstCpuRows,
 		bucketSeconds: window === null ? 0 : bucketSecondsOf(model, window),
 	})
@@ -223,16 +183,10 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			isLoading
 				? h.header(
 						[h.Class("space-y-3")],
-						[
-							skeleton(h, "h-9 w-[520px]"),
-							skeleton(h, "h-4 w-[420px]"),
-							workloadMeta(h, model, serviceName, workload),
-						],
+						[skeleton(h, "h-9 w-[520px]"), skeleton(h, "h-4 w-[420px]"), workloadMeta(h, model, serviceName, workload)],
 					)
 				: pageHero(h, {
-						title: evidenceMissing
-							? `${serviceName}: evidence incomplete.`
-							: lensHeadline(verdict, serviceName),
+						title: evidenceMissing ? `${serviceName}: evidence incomplete.` : lensHeadline(verdict, serviceName),
 						description: evidenceMissing
 							? "The pod list or the CPU series failed to load, so this page can't say whether Kubernetes is involved. The charts below show what did arrive."
 							: lensSubhead(verdict),
@@ -283,10 +237,7 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 			.reduce((map, pod) => {
 				const node = pod.nodeName || "unknown"
 				const existing = map.get(node) ?? { count: 0, worst: 0 }
-				return map.set(node, {
-					count: existing.count + 1,
-					worst: Math.max(existing.worst, pod.saturation),
-				})
+				return map.set(node, { count: existing.count + 1, worst: Math.max(existing.worst, pod.saturation) })
 			}, new Map<string, { count: number; worst: number }>())
 			.entries(),
 	].sort((a, b) => b[1].worst - a[1].worst)
@@ -309,10 +260,7 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 						[
 							h.span([h.Class("text-foreground")], [node]),
 							h.span([h.Class("text-muted-foreground")], [countLabel(count, "pod")]),
-							h.span(
-								[h.Class("tabular-nums text-muted-foreground")],
-								["worst ", formatPercent(worst)],
-							),
+							h.span([h.Class("tabular-nums text-muted-foreground")], ["worst ", formatPercent(worst)]),
 						],
 					),
 				),
@@ -362,22 +310,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(
-						h,
-						model.frame,
-						{ search: model.search, defaultPreset: DEFAULT_PRESET },
-						toFrame,
-					),
+					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 					tabs: kubernetesViewTabs(h, "services", model.search),
 					filtersLabel: "Services",
 					filters: lensRail(h, model.rail, model.serviceName ?? undefined, model.search),
 					filtersWidth: "w-72",
 				},
-				[
-					model.serviceName === null
-						? pickAService(h, model)
-						: lensBody(h, model, model.serviceName, inputs),
-				],
+				[model.serviceName === null ? pickAService(h, model) : lensBody(h, model, model.serviceName, inputs)],
 			),
 		],
 	),

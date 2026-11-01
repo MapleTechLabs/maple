@@ -203,13 +203,7 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			}),
 		]
 	return [
-		row(
-			"public",
-			"Public key",
-			"Client",
-			"text-severity-debug",
-			"For browser and client-side telemetry SDKs",
-		),
+		row("public", "Public key", "Client", "text-severity-debug", "For browser and client-side telemetry SDKs"),
 		row(
 			"private",
 			"Private key",

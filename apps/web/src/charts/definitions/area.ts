@@ -6,7 +6,14 @@ import {
 	trimEmptyTrailingBuckets,
 } from "@maple/ui/components/plot/partial-buckets"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { areaY, d3Curve, defineChart, dot, lineY, type ChartValue } from "@tanstack/charts"
+import {
+	areaY,
+	d3Curve,
+	defineChart,
+	dot,
+	lineY,
+	type ChartValue,
+} from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { thresholdMarks } from "./threshold-marks"
@@ -22,13 +29,7 @@ import {
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import type { BuiltChart } from "./built-chart"
-import {
-	AREA_FILL_END,
-	AREA_FILL_PARTIAL,
-	roundCapDasharray,
-	SERIES_STROKE_WIDTH,
-	verticalGradient,
-} from "./fixed-metric-axes"
+import { AREA_FILL_END, AREA_FILL_PARTIAL, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
 // Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
@@ -155,7 +156,9 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		isLine || isStacked
 			? []
 			: [
-					...visible.map((entry) => verticalGradient(gradientIdFor(entry.key, false), entry.color)),
+					...visible.map((entry) =>
+						verticalGradient(gradientIdFor(entry.key, false), entry.color),
+					),
 					...(hasDashed
 						? visible.map((entry) =>
 								verticalGradient(

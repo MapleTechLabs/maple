@@ -13,16 +13,7 @@ import { meter } from "../../../ui/meter"
 import { skeletonSlowNote } from "../../../ui/skeleton"
 import { panel, panelHeader } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
-import {
-	ROW_LINK_LIFT,
-	rowLink,
-	table,
-	tableBody,
-	tableCell,
-	tableHead,
-	tableHeader,
-	tableRow,
-} from "../../../ui/table"
+import { ROW_LINK_LIFT, rowLink, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import {
 	formatElapsed,
@@ -306,13 +297,7 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 		[h.Class("flex min-w-0 flex-col items-start gap-1")],
 		[
 			runStatusBadge(h, run),
-			h.span(
-				[
-					h.Class(cn("max-w-56 truncate text-xs text-muted-foreground", ROW_LINK_LIFT)),
-					h.Title(detail),
-				],
-				[detail],
-			),
+			h.span([h.Class(cn("max-w-56 truncate text-xs text-muted-foreground", ROW_LINK_LIFT)), h.Title(detail)], [detail]),
 		],
 	)
 }
@@ -349,10 +334,7 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
  */
 const metaLine = (h: H, parts: ReadonlyArray<string>, title: string): Html =>
 	h.span(
-		[
-			h.Class(cn("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)),
-			h.Title(title),
-		],
+		[h.Class(cn("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)), h.Title(title)],
 		parts.map((part, index) =>
 			h.span(
 				[
@@ -385,16 +367,20 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 		[
 			tableCell(h, [
 				// The name is the row's link, stretched over the whole row.
-				rowLink(h, { href, className: "flex min-w-0 items-center gap-2.5" }, [
-					icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-					h.span(
-						[h.Class("flex min-w-0 flex-col")],
-						[
-							repositoryName(h, target.repository, "text-sm font-medium"),
-							metaLine(h, parts, meta),
-						],
-					),
-				]),
+				rowLink(
+					h,
+					{ href, className: "flex min-w-0 items-center gap-2.5" },
+					[
+						icon(h, "GithubIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
+						h.span(
+							[h.Class("flex min-w-0 flex-col")],
+							[
+								repositoryName(h, target.repository, "text-sm font-medium"),
+								metaLine(h, parts, meta),
+							],
+						),
+					],
+				),
 			]),
 			tableCell(h, [lastRunCell(h, model, run)]),
 			tableCell(h, [
@@ -465,9 +451,7 @@ const listLink = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Ht
 			h.a(
 				[
 					h.Href(href),
-					h.Class(
-						"flex items-center gap-4 px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken",
-					),
+					h.Class("flex items-center gap-4 px-4 py-3 hover:bg-surface-sunken active:bg-surface-sunken"),
 				],
 				children,
 			),

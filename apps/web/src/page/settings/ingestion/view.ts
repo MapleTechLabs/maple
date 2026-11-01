@@ -82,8 +82,7 @@ const statusBanner = (h: H, model: Model): Html => {
 						{
 							variant: "ghost",
 							size: "sm",
-							className:
-								"text-muted-foreground hover:text-foreground active:text-foreground gap-1.5",
+							className: "text-muted-foreground hover:text-foreground active:text-foreground gap-1.5",
 							href: "/traces",
 						},
 						["Explore traces", icon(h, "ArrowRightIcon")],

@@ -50,9 +50,7 @@ const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean
 							h.Href(pr.url),
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
-							h.Class(
-								"truncate text-sm font-medium text-foreground hover:underline active:underline",
-							),
+							h.Class("truncate text-sm font-medium text-foreground hover:underline active:underline"),
 						],
 						[pr.repoFullName, "#", String(pr.number)],
 					),
@@ -271,9 +269,7 @@ export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.AlertRule({ ruleId, search: {} }))),
-							h.Class(
-								"text-sm text-primary underline-offset-4 hover:underline active:underline",
-							),
+							h.Class("text-sm text-primary underline-offset-4 hover:underline active:underline"),
 						],
 						["View alert rule →"],
 					),

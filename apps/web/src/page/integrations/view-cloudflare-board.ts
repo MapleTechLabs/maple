@@ -114,7 +114,14 @@ const resourceRow = (
 			],
 		),
 		h.div(
-			[h.Class(cn("hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block", status.detailClass))],
+			[
+				h.Class(
+					cn(
+						"hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block",
+						status.detailClass,
+					),
+				),
+			],
 			detailView(h, status.detail),
 		),
 		h.div(
@@ -315,11 +322,7 @@ export const workersCard = (
 		...(aggregate.kind === "issue" || aggregate.kind === "no-data"
 			? [
 					h.div(
-						[
-							h.Class(
-								cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass),
-							),
-						],
+						[h.Class(cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass))],
 						detailView(h, aggregate.detail),
 					),
 				]

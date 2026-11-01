@@ -242,9 +242,7 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
-							h.Class(
-								"min-w-0 truncate font-medium text-sm text-foreground hover:underline active:underline",
-							),
+							h.Class("min-w-0 truncate font-medium text-sm text-foreground hover:underline active:underline"),
 							h.Title(headline),
 						],
 						[headline],

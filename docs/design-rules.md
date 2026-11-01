@@ -20,15 +20,15 @@ things that move: a popup or sheet entering, a chevron turning, a height opening
 
 Depth comes from surfaces and the hairline. The only shadows are tokens (`maple/no-raw-shadow`):
 
-| Utility                                           | Use                                                                   |
-| ------------------------------------------------- | --------------------------------------------------------------------- |
-| `shadow-raised`                                   | A control or card lifted off its surface                              |
-| `shadow-popup`                                    | Menus, popovers, selects, dialogs, sheets, toasts                     |
-| `shadow-control`                                  | A control's 1px highlight (a shade in light, a line of light in dark) |
-| `shadow-accent-start`                             | The current row's leading accent bar                                  |
-| `shadow-overflow-up`                              | A sticky footer over scrolled content                                 |
-| `shadow-rule-bottom`                              | A sticky table header's bottom rule                                   |
-| `inset-shadow-highlight` / `inset-shadow-pressed` | A filled button at rest / pressed                                     |
+| Utility | Use |
+| --- | --- |
+| `shadow-raised` | A control or card lifted off its surface |
+| `shadow-popup` | Menus, popovers, selects, dialogs, sheets, toasts |
+| `shadow-control` | A control's 1px highlight (a shade in light, a line of light in dark) |
+| `shadow-accent-start` | The current row's leading accent bar |
+| `shadow-overflow-up` | A sticky footer over scrolled content |
+| `shadow-rule-bottom` | A sticky table header's bottom rule |
+| `inset-shadow-highlight` / `inset-shadow-pressed` | A filled button at rest / pressed |
 
 Corners come from the radius scale (`maple/no-arbitrary-radius`). A fill inset 1px inside a
 bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` inside `rounded-lg`.

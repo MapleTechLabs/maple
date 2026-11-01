@@ -431,23 +431,18 @@ const desktopTable = (
 			: groupServices(services, mode).flatMap(([namespace, envGroups]) => [
 					...(mode === "namespace"
 						? [
-								groupHeaderRow(
-									h,
-									`ns-${namespace}`,
-									"bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
-									[
-										namespaceLabel(h, namespace),
-										h.span(
-											[h.Class("text-xs text-muted-foreground")],
-											[
-												countLabel(
-													envGroups.reduce((sum, [, rows]) => sum + rows.length, 0),
-													"service",
-												),
-											],
-										),
-									],
-								),
+								groupHeaderRow(h, `ns-${namespace}`, "bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong", [
+									namespaceLabel(h, namespace),
+									h.span(
+										[h.Class("text-xs text-muted-foreground")],
+										[
+											countLabel(
+												envGroups.reduce((sum, [, rows]) => sum + rows.length, 0),
+												"service",
+											),
+										],
+									),
+								]),
 							]
 						: []),
 					...envGroups.flatMap(([environment, rows]) => [

@@ -135,8 +135,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 
 const COMMIT_SHA_KEYS = new Set(["vcs.ref.head.revision"])
 const FULL_SHA = /^[0-9a-f]{40}$/i
-const COMMIT_SHA_CLASS =
-	"-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken"
+const COMMIT_SHA_CLASS = "-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken"
 
 /** A commit SHA value as a commit link. TODO(commit-card): the hover card itself. */
 const commitShaValue = (h: H, id: string, value: string): Html =>

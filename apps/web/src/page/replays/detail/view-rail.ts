@@ -165,9 +165,7 @@ const filterButton = (
 			h.Class(
 				cn(
 					"flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors",
-					config.isActive
-						? config.selected
-						: cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
+					config.isActive ? config.selected : cn(config.tone, "hover:bg-surface-sunken active:bg-surface-sunken"),
 					config.count === 0 && !config.isActive && "text-muted-foreground opacity-45",
 				),
 			),
@@ -328,9 +326,7 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 					h.Type("button"),
 					h.OnClick(Message.ClickedEvent({ index, timestamp: ev.timestamp })),
 					h.AriaExpanded(isOpen),
-					h.Class(
-						"flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-					),
+					h.Class("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken"),
 					h.Title("Seek replay to this moment"),
 				],
 				[

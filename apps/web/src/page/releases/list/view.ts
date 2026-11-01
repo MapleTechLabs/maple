@@ -32,37 +32,14 @@ const chipsOf = (model: Model) => {
 	const { search } = model
 	return [
 		...(search.excludedEnvironments?.length
-			? [
-					{
-						id: "excludedEnvironments" as const,
-						label: "Environment",
-						values: search.excludedEnvironments,
-						isNegated: true,
-					},
-				]
+			? [{ id: "excludedEnvironments" as const, label: "Environment", values: search.excludedEnvironments, isNegated: true }]
 			: []),
 		...(search.environments?.length
-			? [
-					{
-						id: "environments" as const,
-						label: "Environment",
-						values: search.environments,
-						isNegated: false,
-					},
-				]
+			? [{ id: "environments" as const, label: "Environment", values: search.environments, isNegated: false }]
 			: []),
-		...(search.services?.length
-			? [{ id: "services" as const, label: "Service", values: search.services, isNegated: false }]
-			: []),
+		...(search.services?.length ? [{ id: "services" as const, label: "Service", values: search.services, isNegated: false }] : []),
 		...(search.impact !== undefined
-			? [
-					{
-						id: "impact" as const,
-						label: "Health",
-						values: [RELEASE_HEALTH_LABEL[search.impact]],
-						isNegated: false,
-					},
-				]
+			? [{ id: "impact" as const, label: "Health", values: [RELEASE_HEALTH_LABEL[search.impact]], isNegated: false }]
 			: []),
 	].map((chip) => ({ ...chip, onRemove: Message.RemovedFilterChip({ param: chip.id }) }))
 }
@@ -102,13 +79,9 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 	const { impacts, groups, live, response } = deriveOf(data)
 	const health: ReleaseHealth | undefined = model.search.impact
 	const visibleGroups = health === undefined ? groups : groups.filter((group) => group.health === health)
-	const visibleImpacts =
-		health === undefined ? impacts : impacts.filter((impact) => impact.health === health)
+	const visibleImpacts = health === undefined ? impacts : impacts.filter((impact) => impact.health === health)
 	const services = new Set(impacts.map((impact) => impact.serviceName)).size
-	const windowDays = Math.max(
-		1 / 24,
-		(toEpochMs(response.endTime) - toEpochMs(response.startTime)) / 86_400_000,
-	)
+	const windowDays = Math.max(1 / 24, (toEpochMs(response.endTime) - toEpochMs(response.startTime)) / 86_400_000)
 	const flagged = groups.filter((group) => group.health === "regressed").length
 	const timeSearch = timeSearchOf(model)
 	if (groups.length === 0)
@@ -132,36 +105,17 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 		[h.Class("flex flex-col gap-3")],
 		[
 			h.div(
-				[
-					h.Class(
-						"flex flex-wrap items-baseline gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground",
-					),
-				],
+				[h.Class("flex flex-wrap items-baseline gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground")],
 				[
 					stat(h, formatNumber(groups.length), [pluralize(groups.length, "release")]),
 					stat(h, formatNumber(services), [pluralize(services, "service")]),
 					stat(h, formatRate(groups.length / windowDays), ["per day"]),
 					...(flagged > 0
-						? [
-								stat(
-									h,
-									formatNumber(flagged),
-									[pluralize(flagged, "release"), " with errors up"],
-									"text-severity-error",
-								),
-							]
+						? [stat(h, formatNumber(flagged), [pluralize(flagged, "release"), " with errors up"], "text-severity-error")]
 						: []),
-					h.span(
-						[h.Class("text-foreground-subtle")],
-						["Each release is compared with the version it replaced"],
-					),
+					h.span([h.Class("text-foreground-subtle")], ["Each release is compared with the version it replaced"]),
 					...(response.truncated
-						? [
-								h.span(
-									[h.Class("text-foreground-subtle")],
-									["Showing the newest ", formatNumber(response.releases.length), " rows"],
-								),
-							]
+						? [h.span([h.Class("text-foreground-subtle")], ["Showing the newest ", formatNumber(response.releases.length), " rows"])]
 						: []),
 				],
 			),
@@ -180,15 +134,9 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 				? panel(h, {}, [
 						emptyMessage(h, { className: "flex flex-col items-center gap-3 text-sm" }, [
 							"No releases match the health filter.",
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedClearHealthFilter())],
-								},
-								["Clear filter"],
-							),
+							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedClearHealthFilter())] }, [
+								"Clear filter",
+							]),
 						]),
 					])
 				: h.div(
@@ -215,9 +163,7 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 								? [
 										h.span(
 											[h.Class("px-0.5 text-2xs text-foreground-subtle")],
-											[
-												"Issue counts cover the 100 most recently active issues introduced in this window.",
-											],
+											["Issue counts cover the 100 most recently active issues introduced in this window."],
 										),
 									]
 								: []),
@@ -231,14 +177,8 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.releases.data, {
 		onIdle: () => loadingSkeleton(h),
 		onLoading: () => loadingSkeleton(h),
-		onFailure: (failure) =>
-			errorState(h, { failure, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
-		onStale: ({ error }) =>
-			errorState(h, {
-				failure: error,
-				title: "Couldn't load releases",
-				onRetry: Message.ClickedRetry(),
-			}),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
+		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
 		onSuccess: (data) => loaded(h, model, data, false, timeZone),
 		onRefreshing: (data) => loaded(h, model, data, true, timeZone),
 	})
@@ -267,9 +207,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						toParentMessage: toTimePicker,
 						viewInputs: {
 							label,
-							selectedPreset:
-								model.search.timePreset ??
-								(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+							selectedPreset: model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
 							presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
 						},
 					}),

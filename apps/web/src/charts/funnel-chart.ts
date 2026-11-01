@@ -36,11 +36,7 @@ const sep = (h: H, glyph: string): Html => h.span([h.Class("px-1 text-foreground
 const swatch = (h: H, className: string, color: string): Html =>
 	h.span([h.Class(className), h.Style({ "background-color": color })])
 
-const legendRow = (
-	h: H,
-	legend: ReadonlyArray<{ name: string; color: string }>,
-	hoverGroup: string | null,
-): Html =>
+const legendRow = (h: H, legend: ReadonlyArray<{ name: string; color: string }>, hoverGroup: string | null): Html =>
 	h.div(
 		[h.Class("flex shrink-0 items-start gap-x-3 text-3xs leading-none text-muted-foreground")],
 		[
@@ -62,9 +58,7 @@ const legendRow = (
 									hoverGroup !== null && hoverGroup !== entry.name && "opacity-50",
 								),
 							),
-							h.OnMouseEnter(
-								Message.ChangedActiveGroup({ maybeGroup: Option.some(entry.name) }),
-							),
+							h.OnMouseEnter(Message.ChangedActiveGroup({ maybeGroup: Option.some(entry.name) })),
 							h.OnMouseLeave(Message.ChangedActiveGroup({ maybeGroup: Option.none() })),
 							h.Title(entry.name),
 						],
@@ -101,13 +95,7 @@ const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flag
 	]
 }
 
-const groupBars = (
-	h: H,
-	stage: Stage,
-	hoverGroup: string | null,
-	fade: number,
-	unit: string | undefined,
-): Html =>
+const groupBars = (h: H, stage: Stage, hoverGroup: string | null, fade: number, unit: string | undefined): Html =>
 	h.div(
 		[h.Class("flex w-full flex-col gap-0.5"), h.DataAttribute("slot", "funnel-group-bars")],
 		stage.groups.map((group) =>
@@ -124,9 +112,7 @@ const groupBars = (
 						h.Style({
 							width: `${group.widthPct * 100}%`,
 							"background-color": group.color,
-							opacity: String(
-								(hoverGroup !== null && hoverGroup !== group.name ? 0.35 : 1) * fade,
-							),
+							opacity: String((hoverGroup !== null && hoverGroup !== group.name ? 0.35 : 1) * fade),
 							transition: "opacity 140ms ease, width 220ms ease",
 						}),
 					]),
@@ -190,9 +176,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 										h.Class(
 											cn(
 												"truncate",
-												stage.unnamed
-													? "italic text-muted-foreground"
-													: "text-foreground-soft",
+												stage.unnamed ? "italic text-muted-foreground" : "text-foreground-soft",
 											),
 										),
 										h.Title(stage.name),
@@ -205,19 +189,12 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 								),
 							],
 						),
-						isGrouped
-							? groupBars(h, stage, hoverGroup, fade, inputs.unit)
-							: stageBar(h, stage, fade),
+						isGrouped ? groupBars(h, stage, hoverGroup, fade, inputs.unit) : stageBar(h, stage, fade),
 					],
 				)
 			}),
 			...(hiddenCount > 0
-				? [
-						h.div(
-							[h.Class("shrink-0 text-3xs leading-none text-muted-foreground")],
-							[`+${hiddenCount} more`],
-						),
-					]
+				? [h.div([h.Class("shrink-0 text-3xs leading-none text-muted-foreground")], [`+${hiddenCount} more`])]
 				: []),
 		],
 	)

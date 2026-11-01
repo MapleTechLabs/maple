@@ -484,10 +484,7 @@ export const planSection = (
 					},
 					[
 						"Compare plans",
-						icon(h, "ArrowRightIcon", {
-							className: "size-3.5",
-							attributes: [h.AriaHidden(true)],
-						}),
+						icon(h, "ArrowRightIcon", { className: "size-3.5", attributes: [h.AriaHidden(true)] }),
 					],
 				),
 			}),

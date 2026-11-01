@@ -49,9 +49,7 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number, onCollapse: M): H
 							h.Type("button"),
 							h.Title(`Collapse ${label} into one node`),
 							h.OnClick(onCollapse, { propagation: "Stop" }),
-							h.Class(
-								"shrink-0 opacity-60 transition-opacity hover:opacity-100 active:opacity-100",
-							),
+							h.Class("shrink-0 opacity-60 transition-opacity hover:opacity-100 active:opacity-100"),
 						],
 						[icon(h, "MinimizeIcon", { size: 10 })],
 					),

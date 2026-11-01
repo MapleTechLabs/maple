@@ -160,7 +160,11 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 												...(check.affected_count > check.affected.length
 													? [
 															h.span(
-																[h.Class("text-foreground-subtle text-2xs")],
+																[
+																	h.Class(
+																		"text-foreground-subtle text-2xs",
+																	),
+																],
 																[
 																	"+",
 																	String(

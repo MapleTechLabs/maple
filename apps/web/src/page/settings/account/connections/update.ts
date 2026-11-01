@@ -36,7 +36,8 @@ const redirectOf = (account: ClerkExternalAccountResource): string | null => {
 }
 
 const startedWith =
-	(provider: ProviderId) => (effect: Effect.Effect<ClerkExternalAccountResource, ClerkActionError>) =>
+	(provider: ProviderId) =>
+	(effect: Effect.Effect<ClerkExternalAccountResource, ClerkActionError>) =>
 		effect.pipe(
 			Effect.map(redirectOf),
 			Effect.mapError((error) => error.message),
@@ -96,12 +97,9 @@ const Disconnect = Command.define("DestroyClerkExternalAccount", {
 	args: { accountId: Schema.String, label: Schema.String },
 	messages: [Message.CompletedDisconnect],
 	execute: ({ accountId, label }) =>
-		withAccount(
-			accountId,
-			`Couldn't disconnect ${label}`,
-			(account) => account.destroy(),
-			withUserReverified,
-		).pipe(settled((result) => Message.CompletedDisconnect({ result }))),
+		withAccount(accountId, `Couldn't disconnect ${label}`, (account) => account.destroy(), withUserReverified).pipe(
+			settled((result) => Message.CompletedDisconnect({ result })),
+		),
 })
 
 export const init = (): Return => ({
@@ -115,43 +113,30 @@ export const init = (): Return => ({
 	commands: [ReadConnectionsUser()],
 })
 
-const toast = (type: "success" | "error", title: string) =>
-	PageOutMessage.RequestedToast({ type, title, description: "" })
+const toast = (type: "success" | "error", title: string) => PageOutMessage.RequestedToast({ type, title, description: "" })
 
 const liftRemove = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, removeDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotRemoveDialogMessage({ message }),
-	),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRemoveDialogMessage({ message })),
 })
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedReadUser: ({ user }) => ({ model: { ...model, isLoaded: true, user } }),
 		ClickedConnect: ({ provider }) =>
-			model.busy !== null
-				? { model }
-				: { model: { ...model, busy: provider }, commands: [Connect({ provider })] },
+			model.busy !== null ? { model } : { model: { ...model, busy: provider }, commands: [Connect({ provider })] },
 		ClickedRetry: ({ provider, accountId }) =>
-			model.busy !== null
-				? { model }
-				: { model: { ...model, busy: provider }, commands: [Retry({ provider, accountId })] },
+			model.busy !== null ? { model } : { model: { ...model, busy: provider }, commands: [Retry({ provider, accountId })] },
 		CompletedStart: ({ provider, result }) =>
 			Result.match(result, {
 				onSuccess: (url) =>
 					url === null
 						? {
 								model: { ...model, busy: null },
-								outMessage: toast(
-									"error",
-									`${providerOf(provider).label} did not return a sign-in URL`,
-								),
+								outMessage: toast("error", `${providerOf(provider).label} did not return a sign-in URL`),
 							}
 						: { model, commands: [FollowRedirect({ url })] },
-				onFailure: (error) => ({
-					model: { ...model, busy: null },
-					outMessage: toast("error", error),
-				}),
+				onFailure: (error) => ({ model: { ...model, busy: null }, outMessage: toast("error", error) }),
 			}),
 		CompletedRedirect: () => ({ model }),
 		ClickedDisconnect: ({ provider, accountId }) =>
@@ -163,29 +148,21 @@ export const update = (model: Model, message: Message): Return =>
 			if (removing === null || model.busy !== null) return { model }
 			return {
 				model: { ...model, busy: removing.provider },
-				commands: [
-					Disconnect({ accountId: removing.accountId, label: providerOf(removing.provider).label }),
-				],
+				commands: [Disconnect({ accountId: removing.accountId, label: providerOf(removing.provider).label })],
 			}
 		},
 		CompletedDisconnect: ({ result }) => {
 			const label = model.removing === null ? "" : providerOf(model.removing.provider).label
 			return Result.match(result, {
 				onSuccess: () => {
-					const closed = liftRemove(
-						{ ...model, busy: null, removing: null },
-						Dialog.close(model.removeDialog),
-					)
+					const closed = liftRemove({ ...model, busy: null, removing: null }, Dialog.close(model.removeDialog))
 					return {
 						...closed,
 						commands: [...(closed.commands ?? []), ReadConnectionsUser()],
 						outMessage: toast("success", `${label} disconnected`),
 					}
 				},
-				onFailure: (error) => ({
-					model: { ...model, busy: null },
-					outMessage: toast("error", error),
-				}),
+				onFailure: (error) => ({ model: { ...model, busy: null }, outMessage: toast("error", error) }),
 			})
 		},
 	})

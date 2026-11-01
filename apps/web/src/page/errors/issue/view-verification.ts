@@ -131,9 +131,7 @@ export const verificationCard = <M>(
 									AppRoute.Investigation({ id: verification.investigationId, search: {} }),
 								),
 							),
-							h.Class(
-								"mt-2 inline-block text-xs text-primary hover:underline active:underline",
-							),
+							h.Class("mt-2 inline-block text-xs text-primary hover:underline active:underline"),
 						],
 						["View the verification run"],
 					),
