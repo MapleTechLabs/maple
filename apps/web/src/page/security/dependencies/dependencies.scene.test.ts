@@ -570,6 +570,19 @@ describe("security dependencies tab", () => {
 		)
 	})
 
+	test("before any scan, the focused repository's row still reads as the current one", () => {
+		const routed = routeChanged(
+			loaded(neverScannedOf(NOW), noFindings),
+			AppRoute.SecurityDependencies({ search: { repo: PAYMENTS_ID } }),
+			context,
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			expectView(role("link", { name: "acme/payments-api" })).toHaveAttr("aria-current", "page"),
+		)
+	})
+
 	test("re-picking the focused repository does not navigate again", () => {
 		const focused = routeChanged(
 			loaded(),

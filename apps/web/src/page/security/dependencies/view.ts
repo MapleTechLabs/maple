@@ -36,7 +36,14 @@ const body = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 			return scannedCount(state.repositories) === 0
 				? [
 						firstScan(h, model, state.repositories),
-						repositoriesPanel(h, model, state.repositories, state.findings, null, clock),
+						repositoriesPanel(
+							h,
+							model,
+							state.repositories,
+							state.findings,
+							focused?.id ?? null,
+							clock,
+						),
 					]
 				: [
 						severityRail(h, state.findings, state.repositories, focused),
