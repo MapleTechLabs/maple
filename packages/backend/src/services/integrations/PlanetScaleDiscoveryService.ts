@@ -266,9 +266,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			return { Authorization: planetScaleBearerHeader(accessToken) }
 		})
 
-		const fetchSubTargets = Effect.fn("PlanetScaleDiscoveryService.fetchSubTargets")(function* (
-			row: ScrapeTargetRow,
-		) {
+		const fetchSubTargets = Effect.fnUntraced(function* (row: ScrapeTargetRow) {
 			const headers = yield* authHeadersForRow(row)
 			const response = yield* Effect.gen(function* () {
 				const request = HttpClientRequest.get(row.url).pipe(HttpClientRequest.setHeaders(headers))
@@ -397,7 +395,20 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			const deferred = Deferred.makeUnsafe<ReadonlyArray<PlanetScaleSubTarget>, DiscoveryError>()
 			inFlight.set(row.id, { await: Deferred.await(deferred) })
 
+			// The span wraps the stale fallback too: a failure served from cache closes Ok with
+			// `error.type`, so a slow discovery endpoint does not open an error issue per refresh.
 			const refresh = Effect.gen(function* () {
+				// A revoked grant fails every call until a reconnect; skip it without an error and
+				// without caching, so the reconnect resumes discovery on the next call.
+				if (row.authType === "planetscale_oauth") {
+					const grant = yield* psOAuth.grantStatus(row.orgId)
+					if (grant.revokedAt !== null) {
+						yield* Effect.annotateCurrentSpan({
+							"maple.planetscale.skip_reason": "grant_revoked",
+						})
+						return []
+					}
+				}
 				const fresh = yield* Effect.result(fetchSubTargets(row))
 				if (Result.isSuccess(fresh)) {
 					yield* Ref.update(cache, (entries) =>
@@ -415,6 +426,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 				if (cached) {
 					// Serve stale entries through transient discovery failures; keep the
 					// stale fetchedAt so the next call retries instead of waiting a TTL.
+					yield* Effect.annotateCurrentSpan({ "error.type": fresh.failure._tag })
 					yield* Effect.logWarning("PlanetScale discovery failed; serving stale targets").pipe(
 						Effect.annotateLogs({ scrapeTargetId: row.id, error: message }),
 					)
@@ -425,7 +437,11 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 				}
 
 				return yield* Effect.fail(fresh.failure)
-			})
+			}).pipe(
+				Effect.withSpan("PlanetScaleDiscoveryService.fetchSubTargets", {
+					attributes: { orgId: row.orgId, "maple.scraper.target_id": row.id },
+				}),
+			)
 
 			return yield* refresh.pipe(
 				Effect.tap((entries) => Deferred.succeed(deferred, entries)),

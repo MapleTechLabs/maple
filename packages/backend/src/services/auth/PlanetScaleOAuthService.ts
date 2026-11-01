@@ -195,9 +195,16 @@ export interface PlanetScaleOAuthServiceApi {
 			readonly revokedAt: number | null
 			readonly expiresAt: number | null
 			readonly scopes: ReadonlyArray<string>
+			/** The grant row's last write, for {@link markRevoked}'s race guard. Null when not connected. */
+			readonly updatedAt: number | null
 		},
 		IntegrationsPersistenceError
 	>
+	/**
+	 * Stamp the grant revoked so pollers stop and the UI asks for a reconnect. A no-op when the
+	 * row was rewritten after `unchangedSince` (a reconnect or refresh wins). Best-effort.
+	 */
+	readonly markRevoked: (orgId: OrgId, unchangedSince: number) => Effect.Effect<void>
 	/** Drop the stored grant. PlanetScale documents no revoke endpoint. */
 	readonly disconnect: (
 		orgId: OrgId,
@@ -545,8 +552,12 @@ export class PlanetScaleOAuthService extends Context.Service<
 				revokedAt: row?.revokedAt ?? null,
 				expiresAt: row?.expiresAt ?? null,
 				scopes: (row?.scope ?? "").split(" ").filter((scope) => scope !== ""),
+				updatedAt: row?.updatedAt ?? null,
 			}
 		})
+
+		const markRevoked = (orgId: OrgId, unchangedSince: number) =>
+			oauth.markConnectionRevoked(orgId, unchangedSince)
 
 		const disconnect = Effect.fn("PlanetScaleOAuthService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
@@ -562,6 +573,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			hasConnection,
 			connectedByUserId,
 			grantStatus,
+			markRevoked,
 			disconnect,
 		} satisfies PlanetScaleOAuthServiceApi
 	}),

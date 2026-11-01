@@ -118,6 +118,7 @@ const planetscaleServiceLayer = (fakes: PlanetScaleFakes) =>
 			hasConnection: psDie,
 			connectedByUserId: psDie,
 			grantStatus: psDie,
+			markRevoked: psDie,
 			disconnect: psDie,
 			...fakes.oauth,
 		}),

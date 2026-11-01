@@ -805,25 +805,37 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					)
 					return { outcome: "refreshed" as const, deployEvents }
 				}
+				// A 403 means the grant lost access (org removed from it, scope dropped); it does not
+				// clear on its own. The same 403 two ticks running stamps the grant revoked, so polling
+				// stops and the integration asks for a reconnect instead of failing every tick.
+				const forbiddenAgain =
+					result.error._tag === "@maple/backend/integrations/PlanetScaleForbiddenError" &&
+					connection.lastInventoryError === result.error.message
+				if (forbiddenAgain && grant.updatedAt !== null) {
+					yield* psOAuth.markRevoked(connection.orgId, grant.updatedAt)
+				}
 				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
 					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
 				)
 				yield* reportInventoryPoll(
 					connection,
-					result.error._tag === "@maple/http/errors/IntegrationsRevokedError"
+					forbiddenAgain || result.error._tag === "@maple/http/errors/IntegrationsRevokedError"
 						? DISCONNECTED
 						: { _tag: "Failed", error: result.error.message },
 				)
 				// Fail inside a span so poll failures surface in find_errors, mirroring
 				// the Cloudflare poller's observeDatasetFailure seam — EXCEPT an upstream
-				// timeout, which is a transient provider slowdown (theirs timed out 5+ orgs
-				// at once) that the next tick refreshes, not a Maple failure. That one is
-				// recorded on an Ok span as `error.type` + a Warn log, per CLAUDE.md's
-				// "only 5xx is Error" rule; both paths still log identically.
-				const timedOut = isUpstreamTimeout(result.error)
+				// timeout (a transient provider slowdown the next tick refreshes) and a
+				// repeated 403 (now handed to the user as a reconnect). Those are recorded
+				// on an Ok span as `error.type` + a Warn log; both paths log identically.
+				const expectedType = isUpstreamTimeout(result.error)
+					? "upstream_timeout"
+					: forbiddenAgain
+						? "grant_forbidden"
+						: null
 				yield* (
-					timedOut
-						? Effect.annotateCurrentSpan({ "error.type": "upstream_timeout" })
+					expectedType !== null
+						? Effect.annotateCurrentSpan({ "error.type": expectedType })
 						: Effect.fail(result.error)
 				).pipe(
 					Effect.withSpan("PlanetScaleService.inventoryPollFailed", {
@@ -836,7 +848,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						Effect.logWarning("PlanetScale inventory refresh failed").pipe(
 							Effect.annotateLogs({
 								orgId: connection.orgId,
-								"error.type": timedOut ? "upstream_timeout" : result.error._tag,
+								"error.type": expectedType ?? result.error._tag,
 								error: result.error.message,
 							}),
 						),
