@@ -602,6 +602,7 @@
         "@maple/email": "workspace:*",
         "@maple/eventing-core": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/lockfiles": "workspace:*",
         "@maple/prometheus-otlp": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-engine-integrations": "workspace:*",
