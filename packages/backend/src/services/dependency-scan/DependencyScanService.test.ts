@@ -152,6 +152,19 @@ describe("DependencyScanService", () => {
 		}).pipe(Effect.provide(serviceFor(sent)))
 	})
 
+	it.effect("hides the findings of a repository the org no longer has access to", () => {
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const service = yield* DependencyScanService
+			const vcs = yield* VcsRepository
+			const api = yield* seed
+			yield* recordScan(api.id, "a", true)
+			assert.strictEqual((yield* service.listFindings(org, {})).findings.length, 1)
+			yield* vcs.markRepositoryRemoved(api.id)
+			assert.deepStrictEqual((yield* service.listFindings(org, {})).findings, [])
+		}).pipe(Effect.provide(serviceFor(sent)))
+	})
+
 	it.effect("names each finding's repository and records who dismissed it and why", () => {
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {

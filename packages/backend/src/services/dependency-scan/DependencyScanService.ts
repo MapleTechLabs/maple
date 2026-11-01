@@ -194,13 +194,18 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 						rows.map((row) => row.repositoryId),
 					)
 					.pipe(Effect.mapError(persistence("Could not read repositories")))
-				const names = new Map(repositories.map((repository) => [repository.id, repository.fullName]))
-				yield* Effect.annotateCurrentSpan({ "result.rowCount": rows.length })
-				return {
-					findings: rows.map((row) =>
-						findingViewOf(row, names.get(row.repositoryId) ?? "unknown repository"),
-					),
-				}
+				// A purged or removed repository's findings stay in the table but are not shown.
+				const names = new Map(
+					repositories
+						.filter((repository) => repository.status === "active")
+						.map((repository) => [repository.id, repository.fullName]),
+				)
+				const findings = rows.flatMap((row) => {
+					const name = names.get(row.repositoryId)
+					return name === undefined ? [] : [findingViewOf(row, name)]
+				})
+				yield* Effect.annotateCurrentSpan({ "result.rowCount": findings.length })
+				return { findings }
 			})
 
 			const updateFinding: DependencyScanServiceApi["updateFinding"] = Effect.fn(
