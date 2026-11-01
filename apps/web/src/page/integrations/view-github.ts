@@ -89,7 +89,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 						h.div(
 							[h.Class("flex min-w-0 flex-col gap-1")],
 							[
-								h.span([h.Class("text-sm font-medium")], [choice.accountLogin]),
+								h.span([h.Class("truncate text-sm font-medium")], [choice.accountLogin]),
 								h.span(
 									[h.Class("text-xs text-muted-foreground")],
 									[
@@ -108,6 +108,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 								isDisabled: model.githubCard.selectingInstallation !== null,
 								isLoading: model.githubCard.selectingInstallation === choice.id,
 								attributes: [
+									h.AriaLabel(`Connect ${choice.accountLogin}`),
 									h.OnClick(
 										Message.ClickedSelectGithubInstallation({
 											installationId: choice.id,
@@ -115,7 +116,7 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 									),
 								],
 							},
-							[`Connect ${choice.accountLogin}`],
+							["Connect"],
 						),
 					],
 				),

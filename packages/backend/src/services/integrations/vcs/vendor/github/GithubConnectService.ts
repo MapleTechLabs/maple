@@ -611,8 +611,24 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						}),
 					}
 				}).pipe(
-					Effect.catchTag("@maple/backend/vcs/GithubAppError", () =>
-						Effect.succeed({ _tag: "Unavailable" as const }),
+					// Kept visible: a GitHub failure here reads like "cannot connect" to the user.
+					Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
+						Effect.logWarning(
+							"[GitHub] Could not classify an installation during discovery",
+						).pipe(
+							Effect.annotateLogs({
+								installationId: id,
+								status: error.status ?? "none",
+								message: error.message,
+							}),
+							Effect.andThen(
+								Effect.annotateCurrentSpan({
+									"vcs.connect.classify_upstream_failed": true,
+									"error.type": "@maple/backend/vcs/GithubAppError",
+								}),
+							),
+							Effect.as({ _tag: "Unavailable" as const }),
+						),
 					),
 				)
 

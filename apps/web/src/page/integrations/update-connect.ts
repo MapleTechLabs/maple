@@ -54,12 +54,7 @@ export const clickedConnect = (model: Model, githubMode?: "install"): Return => 
 		return { model }
 	if (integration === "linear" && !model.isAdmin) return { model }
 	const attempt = model.connect.attempts + 1
-	const base =
-		integration === "cloudflare"
-			? Cloudflare.resetPrime(model)
-			: integration === "github"
-				? { ...model, githubCard: { ...model.githubCard, selection: null } }
-				: model
+	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
 	const active = { provider: integration, attempt }
 	return {
 		model: withConnect(base, {
@@ -74,8 +69,14 @@ export const clickedConnect = (model: Model, githubMode?: "install"): Return => 
 /** The start mutation's `reactivityKeys` re-read the provider's status on success. */
 export const succeededStart = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
+	// The popup is out: a GitHub account choice it replaces goes now, not at the click, so a
+	// blocked popup or a failed start keeps the verified picker.
+	const started =
+		active?.provider === "github"
+			? { ...model, githubCard: { ...model.githubCard, selection: null } }
+			: model
 	return active !== null && active.attempt === attempt
-		? chain(withConnect(model, { isStarting: false }), [
+		? chain(withConnect(started, { isStarting: false }), [
 				(next) => refreshProvider(next, context, active.provider),
 				// PlanetScale's start invalidates every `planetscaleIntegration` read, the inventory too.
 				(next) =>

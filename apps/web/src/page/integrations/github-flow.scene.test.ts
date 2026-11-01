@@ -256,6 +256,18 @@ describe("github connect flow", () => {
 		)
 	})
 
+	test("the picker survives until the next popup is out, so a failed start keeps it", () => {
+		const clicked = inner(discovered().model, IntegrationMessage.ClickedConnect())
+		expect(clicked.integrations.githubCard.selection).toEqual(selection)
+		const failed = inner(
+			clicked,
+			IntegrationMessage.FailedStartConnect({ attempt: 1, title: "Popup blocked", description: "" }),
+		)
+		expect(failed.integrations.githubCard.selection).toEqual(selection)
+		const started = inner(clicked, IntegrationMessage.SucceededStartConnect({ attempt: 1 }))
+		expect(started.integrations.githubCard.selection).toBeNull()
+	})
+
 	test("an authorization failure ends the waiting state and keeps recovery available", () => {
 		const started = inner(disconnected(), IntegrationMessage.ClickedConnect())
 		const failed = inner(
