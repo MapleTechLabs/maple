@@ -513,6 +513,17 @@ export class DependencyScanService extends Context.Service<DependencyScanService
 			const updateFinding: DependencyScanServiceApi["updateFinding"] = Effect.fn(
 				"DependencyScanService.updateFinding",
 			)(function* (orgId, actor, findingId, request) {
+				// A finding of a repository the org no longer has is not listed, so it cannot be triaged either.
+				const notFound = new DependencyFindingNotFoundError({ message: "No such finding", findingId })
+				const existing = yield* store
+					.getFinding({ orgId, id: findingId })
+					.pipe(Effect.mapError(persistence("Could not read the finding")))
+				if (Option.isNone(existing)) return yield* notFound
+				const connected = yield* connectedRepositories(orgId).pipe(
+					Effect.mapError(persistence("Could not list repositories")),
+				)
+				if (!connected.some((entry) => entry.repository.id === existing.value.repositoryId))
+					return yield* notFound
 				const row = yield* store
 					.setFindingStatus({
 						orgId,
