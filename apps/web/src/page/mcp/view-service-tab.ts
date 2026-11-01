@@ -114,7 +114,7 @@ const topTools = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Servic
 }
 
 const topClients = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServiceTabOptions<M>): Html => {
-	const clients = data.clients.slice(0, PANEL_LIMIT)
+	const clients = data.clients.filter((client) => client.calls > 0).slice(0, PANEL_LIMIT)
 	const maxCalls = Math.max(...clients.map((client) => client.calls), 1)
 	return panel(h, { className: "min-w-0" }, [
 		panelHeader(h, { title: "Clients", action: viewAll(h, "View all", options.onOpenServer) }),
@@ -163,7 +163,9 @@ export const serviceMcpTab = <M>(
 	options: ServiceTabOptions<M>,
 ): Html => {
 	const { totals } = data
-	const top = data.clients[0]
+	// Clients that only connected have no calls to rank.
+	const callers = data.clients.filter((client) => client.calls > 0)
+	const top = callers[0]
 	return h.div(
 		[h.Class("flex flex-col gap-4 p-4")],
 		[
@@ -215,7 +217,7 @@ export const serviceMcpTab = <M>(
 				}),
 				statRailItem(h, {
 					eyebrow: "Clients",
-					value: String(data.clients.length),
+					value: String(callers.length),
 					subline:
 						top === undefined
 							? ""

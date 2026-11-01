@@ -249,8 +249,22 @@ const serversView = (h: H, model: Model, timeZone: string): Html =>
 		],
 	)
 
+/**
+ * The slot's data while it answers this page. Moving to another server or tool keeps the last
+ * page's answer on screen as it refreshes; that answer belongs to the page left, so it reads as loading.
+ */
+export const dataFor = <A, E>(
+	data: AsyncData.AsyncData<A, E>,
+	isFor: (value: A) => boolean,
+): AsyncData.AsyncData<A, E> =>
+	Option.match(AsyncData.getData(data), {
+		onNone: () => data,
+		onSome: (value) => (isFor(value) ? data : AsyncData.Loading()),
+	})
+
 const serverView = (h: H, model: Model, service: string, timeZone: string): Html => {
-	const data = AsyncData.getOrElse(model.overview.data, () => undefined)
+	const overview = dataFor(model.overview.data, (value) => value.service === service)
+	const data = AsyncData.getOrElse(overview, () => undefined)
 	const window = windowOf(model)
 	const filters = filtersOf(model)
 	const isNew = data !== undefined && window !== undefined && data.firstSpanMs >= window.startMs
@@ -262,7 +276,7 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 					`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
 					...(isNew ? [`first MCP span ${formatClock(data.firstSpanMs, timeZone)}`] : []),
 				].join(" · ")
-	const body = AsyncData.matchData(model.overview.data, {
+	const body = AsyncData.matchData(overview, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
 		onData: (response) => {
@@ -272,6 +286,9 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 					service,
 					window: window.label.replace(/^Last /, "last "),
 					hasOtherSpans: response.methods.length > 0,
+					connected: response.clients
+						.filter((client) => client.connects > 0)
+						.map((client) => client.name),
 					widen: Option.match(Option.fromUndefinedOr(widerPreset(model.window)), {
 						onNone: () => undefined,
 						onSome: (preset) => ({
@@ -283,13 +300,7 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 			return chartsReady(h, model, (theme) =>
 				serverBody(h, overviewOf(response, model.nowMs), {
 					env: chartEnv(model, theme, timeZone),
-					toolbar: toolbar(
-						h,
-						model,
-						response.allClients,
-						AsyncData.isRefreshing(model.overview.data),
-						true,
-					),
+					toolbar: toolbar(h, model, response.allClients, AsyncData.isRefreshing(overview), true),
 					scope: scopeText("all tools", filters),
 					window,
 					toolCount: response.toolCount,
@@ -331,15 +342,16 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 	)
 }
 
-const toolView = (h: H, model: Model, tool: string, timeZone: string): Html => {
-	const data = AsyncData.getOrElse(model.tool.data, () => undefined)
+const toolView = (h: H, model: Model, service: string, tool: string, timeZone: string): Html => {
+	const detail = dataFor(model.tool.data, (value) => value.service === service && value.tool === tool)
+	const data = AsyncData.getOrElse(detail, () => undefined)
 	const window = windowOf(model)
 	const filters = { ...filtersOf(model), search: "" }
 	const description =
 		data === undefined || data.calls === 0
 			? "MCP tool"
 			: `${data.calls.toLocaleString()} calls from ${data.clients} ${data.clients === 1 ? "client" : "clients"} · last call ${formatRelativeTime(data.lastCallMs, model.nowMs)}`
-	const body = AsyncData.matchData(model.tool.data, {
+	const body = AsyncData.matchData(detail, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
 		onData: (response) =>
@@ -352,7 +364,7 @@ const toolView = (h: H, model: Model, tool: string, timeZone: string): Html => {
 								h,
 								model,
 								response.allClients,
-								AsyncData.isRefreshing(model.tool.data),
+								AsyncData.isRefreshing(detail),
 								false,
 							),
 							scope: scopeText(tool, filters),
@@ -401,7 +413,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				? serversView(h, model, timeZone)
 				: model.view._tag === "Server"
 					? serverView(h, model, model.view.service, timeZone)
-					: toolView(h, model, model.view.tool, timeZone),
+					: toolView(h, model, model.view.service, model.view.tool, timeZone),
 		],
 	)
 })

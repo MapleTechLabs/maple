@@ -101,15 +101,71 @@ const splitSeries = (
 		}))
 	})
 
-const clientItems = (
+type ClientReach = Readonly<{
+	client: string
+	kind: string
+	calls: number
+	connects: number
+	sources: number
+	lastSeen: DateTime.Utc
+}>
+
+const kindOf = (value: string) => MCP_CLIENT_KINDS.find((kind) => kind === value) ?? "unknown"
+
+/**
+ * The reach rows the overview may list as connect-only: under the client and kind selection, and
+ * none under a tool search or failing-only, which tool calls alone can match.
+ */
+export const quietClientsFor = (
+	reach: ReadonlyArray<ClientReach>,
+	selection: Readonly<{ client?: string; kind?: string; search?: string; failingOnly?: boolean }>,
+): ReadonlyArray<ClientReach> =>
+	selection.search !== undefined || selection.failingOnly === true
+		? []
+		: reach.filter(
+				(row) =>
+					(selection.client === undefined || row.client === selection.client) &&
+					(selection.kind === undefined || row.kind === selection.kind),
+			)
+
+/**
+ * Tool-call clients with their reach. `quiet` also lists the clients that connected but called
+ * no tool, after the callers. A quiet row made no tool call and at least one connect, so a caller
+ * past the calls read's limit, or a client that only listed tools, stays out.
+ */
+export const clientItems = (
 	rows: ReadonlyArray<Readonly<{ client: string; kind: string; calls: number; errors: number }>>,
-): ReadonlyArray<McpClientItem> =>
-	rows.map((row) => ({
-		name: row.client,
-		kind: MCP_CLIENT_KINDS.find((kind) => kind === row.kind) ?? "unknown",
-		calls: row.calls,
-		errors: row.errors,
-	}))
+	reach: ReadonlyArray<ClientReach> = [],
+	quiet: ReadonlyArray<ClientReach> = [],
+): ReadonlyArray<McpClientItem> => {
+	const reachOf = new Map(reach.map((row) => [row.client, row]))
+	const callers = new Set(rows.map((row) => row.client))
+	return [
+		...rows.map((row) => {
+			const seen = reachOf.get(row.client)
+			return {
+				name: row.client,
+				kind: kindOf(row.kind),
+				calls: row.calls,
+				errors: row.errors,
+				connects: seen?.connects ?? 0,
+				sources: seen?.sources ?? 0,
+				lastSeenMs: seen === undefined ? 0 : toMs(seen.lastSeen),
+			}
+		}),
+		...quiet
+			.filter((row) => row.calls === 0 && row.connects > 0 && !callers.has(row.client))
+			.map((row) => ({
+				name: row.client,
+				kind: kindOf(row.kind),
+				calls: 0,
+				errors: 0,
+				connects: row.connects,
+				sources: row.sources,
+				lastSeenMs: toMs(row.lastSeen),
+			})),
+	]
+}
 
 export const readMcpServers = Effect.fn("McpReads.servers")(function* (
 	tenant: TenantContext,
@@ -204,6 +260,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		toolErrors,
 		allTotals,
 		firstSeen,
+		reach,
 	] = yield* Effect.all(
 		[
 			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSpanSummaryQuery(), params), {
@@ -262,9 +319,15 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				profile: "list",
 				context: "mcpFirstSeen",
 			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientReachQuery(), params), {
+				...aggregate,
+				context: "mcpClientReach",
+			}),
 		],
 		{ concurrency: MCP_READ_CONCURRENCY },
 	)
+	// A tool search or failing-only selection matches tool calls alone, so it hides quiet clients.
+	const quiet = quietClientsFor(reach, payload)
 	const buckets = bucketsOf(window)
 	const sparks = Arr.groupBy(toolSeries, (row) => row.key)
 	const calls = summary.filter((row) => row.method === TOOLS_CALL)
@@ -316,8 +379,8 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				spark: buckets.map((bucket) => spark.get(bucket) ?? 0),
 			}
 		}),
-		clients: clientItems(clients),
-		allClients: clientItems(allClients),
+		clients: clientItems(clients, reach, quiet),
+		allClients: clientItems(allClients, reach),
 		initializers,
 		failures: Object.entries(failures)
 			.map(([errorType, rows]) => ({ errorType, count: sumBy(rows, (row) => row.count) }))
@@ -430,6 +493,7 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 	const total = totals[0]
 	const hasCalls = total !== undefined && total.calls > 0
 	return new McpToolResponse({
+		service: payload.service,
 		tool: payload.tool,
 		calls: total?.calls ?? 0,
 		errors: total?.errors ?? 0,

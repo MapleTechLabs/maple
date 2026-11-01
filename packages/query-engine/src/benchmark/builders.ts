@@ -2021,6 +2021,16 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "mcp",
+		name: "mcpClientReachQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpClientReachQuery({ kind: "agent" }), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
 		name: "mcpSpanSummaryQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.mcpSpanSummaryQuery(), { ...window, serviceName: "maple-ai" }),

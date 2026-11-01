@@ -683,6 +683,7 @@ export {
 	mcpCallSplitSeriesQuery,
 	mcpCallTotalsQuery,
 	mcpClientName,
+	mcpClientReachQuery,
 	mcpClientsQuery,
 	mcpErrorGroupsQuery,
 	mcpErrorTrendQuery,
